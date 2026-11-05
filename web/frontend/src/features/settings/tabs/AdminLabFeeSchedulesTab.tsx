@@ -50,6 +50,10 @@ const unitLabel = (unit: LabFeeItemUnit) =>
   LAB_FEE_ITEM_UNIT_LABELS[unit] || unit;
 
 const formatItemPrice = (item: LabFeeItem) => {
+  if (item.regionPrices) {
+    const p = item.regionPrices;
+    return `전치 ${formatWon(p.anteriorImpression)}/${formatWon(p.anteriorScan)} · 구치 ${formatWon(p.posteriorImpression)}/${formatWon(p.posteriorScan)}`;
+  }
   if (item.unit === "perNTeeth" && item.tiers?.[0]) {
     const tier = item.tiers[0];
     return `${tier.n}개 ${formatWon(tier.price)}`;

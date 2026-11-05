@@ -42,6 +42,8 @@ export type PracticeTransferFormLocalDraft = {
   rushProcessing?: boolean;
   /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
   activeDraftId?: string | null;
+  /** 크라운 제작. 스캔 파일 없이도 스캔일 수 있다. */
+  crownFabrication?: "scan" | "impression" | null;
   updatedAt?: number;
 };
 
@@ -55,6 +57,7 @@ type DropzoneDraftLike = {
   toothWorks?: ToothWorkSelection[];
   patientName?: string;
   rushProcessing?: boolean;
+  crownFabrication?: "scan" | "impression" | null;
 };
 
 const hasMeaningfulFormContent = (draft: PracticeTransferFormLocalDraft | null) => {
@@ -134,6 +137,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
   skipDesignConfirm?: boolean;
   rushProcessing?: boolean;
   activeDraftId?: string | null;
+  crownFabrication?: "scan" | "impression" | null;
 }): number => {
   const existing = readPracticeTransferFormLocal();
   return writePracticeTransferFormLocal({
@@ -155,6 +159,10 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
       fields.activeDraftId !== undefined
         ? fields.activeDraftId
         : existing?.activeDraftId ?? null,
+    crownFabrication:
+      fields.crownFabrication !== undefined
+        ? fields.crownFabrication
+        : existing?.crownFabrication ?? null,
     updatedAt: Date.now(),
   });
 };
@@ -187,6 +195,11 @@ export const adoptDropzoneDraftIntoTransferFormIfNeeded =
         skipDesignConfirm: true,
         rushProcessing:
           parsed.rushProcessing === true || existing?.rushProcessing === true,
+        crownFabrication:
+          parsed.crownFabrication === "scan" ||
+          parsed.crownFabrication === "impression"
+            ? parsed.crownFabrication
+            : existing?.crownFabrication ?? null,
         activeDraftId: existing?.activeDraftId ?? null,
         updatedAt: Date.now(),
       };
@@ -226,5 +239,10 @@ export const readPreferredIntakeFormForDropzone = (
     skipDesignConfirm: true,
     rushProcessing:
       dropzoneDraft.rushProcessing === true || transfer?.rushProcessing === true,
+    crownFabrication:
+      dropzoneDraft.crownFabrication === "scan" ||
+      dropzoneDraft.crownFabrication === "impression"
+        ? dropzoneDraft.crownFabrication
+        : transfer?.crownFabrication ?? null,
   };
 };

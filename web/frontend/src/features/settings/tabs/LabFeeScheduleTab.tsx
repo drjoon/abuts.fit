@@ -77,6 +77,26 @@ const chargeSnapshotItems = (next: LabFeeItem[]) =>
       unit: item.unit,
       price: Math.max(0, Math.round(Number(item.price || 0))),
       remake: Math.max(0, Math.round(Number(item.remake || 0))),
+      regionPrices: item.regionPrices
+        ? {
+            anteriorImpression: Math.max(
+              0,
+              Math.round(Number(item.regionPrices.anteriorImpression || 0)),
+            ),
+            anteriorScan: Math.max(
+              0,
+              Math.round(Number(item.regionPrices.anteriorScan || 0)),
+            ),
+            posteriorImpression: Math.max(
+              0,
+              Math.round(Number(item.regionPrices.posteriorImpression || 0)),
+            ),
+            posteriorScan: Math.max(
+              0,
+              Math.round(Number(item.regionPrices.posteriorScan || 0)),
+            ),
+          }
+        : null,
       tiers: (item.tiers || []).map((tier) => ({
         n: Number(tier.n || 0),
         price: Math.max(0, Math.round(Number(tier.price || 0))),
@@ -133,7 +153,15 @@ const labFeeItemHasChargePrice = (item: LabFeeItem) => {
     0,
     ...item.tiers.map((tier) => Math.round(Number(tier.price || 0))),
   );
-  return Math.max(0, Math.round(Number(item.price || 0)), tierMax) > 0;
+  const regionMax = item.regionPrices
+    ? Math.max(
+        item.regionPrices.anteriorImpression,
+        item.regionPrices.anteriorScan,
+        item.regionPrices.posteriorImpression,
+        item.regionPrices.posteriorScan,
+      )
+    : 0;
+  return Math.max(0, Math.round(Number(item.price || 0)), tierMax, regionMax) > 0;
 };
 
 function WonInput({
@@ -672,10 +700,7 @@ export const LabFeeScheduleTab = () => {
               : `치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면 「${needNames.join("·")}」 수가를 켜고 설정하세요.`}
           </p>
         ) : active &&
-          !items.some(
-            (item) =>
-              item.enabled !== false && Math.round(Number(item.price || 0)) > 0,
-          ) ? (
+          !items.some((item) => labFeeItemHasChargePrice(item)) ? (
           <p className="mt-2 text-[12px] font-medium text-red-600">
             제공할 항목을 켜야 작업을 시작할 수 있습니다.
           </p>
@@ -832,6 +857,42 @@ export const LabFeeScheduleTab = () => {
                   </div>
                 ) : null}
 
+                {item.regionPrices ? (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {(
+                      [
+                        ["anteriorImpression", "전치 impr제작"],
+                        ["anteriorScan", "전치 스캔제작"],
+                        ["posteriorImpression", "구치 impr제작"],
+                        ["posteriorScan", "구치 스캔제작"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <WonInput
+                        key={key}
+                        id={`fee-${item.id}-${key}`}
+                        label={label}
+                        value={item.regionPrices?.[key] || 0}
+                        disabled={!isProvided}
+                        onChange={(price) =>
+                          patchItem(item.id, {
+                            regionPrices: {
+                              ...item.regionPrices!,
+                              [key]: price,
+                            },
+                          })
+                        }
+                      />
+                    ))}
+                    <WonInput
+                      id={`fee-remake-${item.id}`}
+                      label="리메이크"
+                      remake
+                      value={item.remake}
+                      disabled={!isProvided}
+                      onChange={(remake) => patchItem(item.id, { remake })}
+                    />
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-2.5">
                   <WonInput
                     id={`fee-${item.id}`}
@@ -857,6 +918,7 @@ export const LabFeeScheduleTab = () => {
                     }
                   />
                 </div>
+                )}
                 {isCustomAbutmentLabFeeLineType(item.name) &&
                 Math.max(
                   0,

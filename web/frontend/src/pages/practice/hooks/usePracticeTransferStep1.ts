@@ -127,6 +127,8 @@ type Options = {
   starBandEligibleLabIds?: string[] | null;
   /** 우리 치과가 1점을 준 기공소 ID. 검색 가능·주문 불가. */
   ownOneStarBlockedLabIds?: string[] | null;
+  /** 3D 스캔 모델이 새로 붙으면 제작 방식을 스캔으로 맞춘다. */
+  onScanModelFilesAdded?: () => void;
 };
 
 const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
@@ -618,6 +620,8 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   );
   const [recentLabsInitialized, setRecentLabsInitialized] = useState(true);
   const didRestoreCachedFiles = useRef(false);
+  const onScanModelFilesAddedRef = useRef(options?.onScanModelFilesAdded);
+  onScanModelFilesAddedRef.current = options?.onScanModelFilesAdded;
   const blockedDirectLabIdSet = useMemo(
     () => new Set(blockedDirectLabIds.map((id) => String(id || "").trim()).filter(Boolean)),
     [blockedDirectLabIds],
@@ -1022,6 +1026,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     }
 
     if (batch.modelFiles.length > 0) {
+      onScanModelFilesAddedRef.current?.();
       void persistFilesToIndexedDb(batch.modelFiles).then((removedKeys) => {
         if (!Array.isArray(removedKeys) || removedKeys.length === 0) return;
         setFiles((prev) =>

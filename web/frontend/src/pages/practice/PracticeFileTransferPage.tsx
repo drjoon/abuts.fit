@@ -239,7 +239,11 @@ import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
 import { useAccountDesignSoftware } from "@/shared/files/useAccountDesignSoftware";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { partitionDetailAttachFiles, PRACTICE_TRANSFER_IMAGE_EXTENSIONS } from "@/shared/practice/practiceTransferAccept";
+import { partitionDetailAttachFiles, PRACTICE_TRANSFER_IMAGE_EXTENSIONS, isPracticeTransferModelFileName } from "@/shared/practice/practiceTransferAccept";
+import {
+  parseCrownFabrication,
+  useCrownFabricationChoice,
+} from "@/shared/practice/crownFabrication";
 import { OralScanOptionalAttachmentNote } from "@/shared/practice/OralScanOptionalAttachmentNote";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -541,6 +545,7 @@ type PracticeTransferDraftPayload = {
   arrivalDefaultDays?: number;
   prosthesisTypes?: string[];
   files: DraftTransferFileItem[];
+  crownFabrication?: "scan" | "impression" | null;
   updatedAt?: string | null;
   createdAt?: string | null;
   filesTouched?: boolean;
@@ -803,6 +808,7 @@ type PracticeTransferFormFingerprintInput = {
   requestMemo?: string | null;
   prosthesisTypes?: string[] | null;
   toothWorks?: ToothWorkSelection[] | null;
+  crownFabrication?: "scan" | "impression" | null;
 };
 
 const isMongoObjectIdString = (value: unknown) =>
@@ -833,6 +839,7 @@ const buildPracticeTransferFormFingerprint = (
     toothWorks: normalizeToothWorksForSync(
       Array.isArray(input.toothWorks) ? input.toothWorks : [],
     ),
+    crownFabrication: parseCrownFabrication(input.crownFabrication) || "",
   });
 
 const toApiLabAnchorId = (value: unknown): string | null => {
@@ -1571,6 +1578,7 @@ export const PracticeFileTransferPage = ({
   const pendingDraftApplyRef = useRef<
     (PracticeTransferDraftPayload & { forceResync?: boolean }) | null
   >(null);
+  const onScanModelFilesAddedRef = useRef<() => void>(() => {});
   const {
     files,
     setFiles,
@@ -1598,7 +1606,23 @@ export const PracticeFileTransferPage = ({
   } = usePracticeTransferStep1({
     starBandEligibleLabIds,
     ownOneStarBlockedLabIds,
+    onScanModelFilesAdded: () => onScanModelFilesAddedRef.current(),
   });
+  const scanDataAttached = useMemo(
+    () =>
+      files.some((file) => isPracticeTransferModelFileName(file.name)) ||
+      draftFiles.some((file) =>
+        isPracticeTransferModelFileName(file.originalName),
+      ),
+    [draftFiles, files],
+  );
+  const {
+    value: crownFabrication,
+    setChoice: setCrownFabrication,
+    onScanModelFilesAdded,
+    restoreChoice: restoreCrownFabrication,
+  } = useCrownFabricationChoice(scanDataAttached, localFormHydrated);
+  onScanModelFilesAddedRef.current = onScanModelFilesAdded;
 
   const handleComposeIncomingFiles = useCallback((selectedFiles: File[]) => {
     const blocked = new Set(
@@ -2059,6 +2083,7 @@ export const PracticeFileTransferPage = ({
         requestMemo,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
+        crownFabrication,
       }),
     [
       selectedLab?._id,
@@ -2071,6 +2096,7 @@ export const PracticeFileTransferPage = ({
       requestMemo,
       normalizedProsthesisTypes,
       syncToothWorks,
+      crownFabrication,
     ],
   );
   const autoClinicName = useMemo(() => {
@@ -3220,6 +3246,7 @@ export const PracticeFileTransferPage = ({
         requestMemo: parsed.memo,
         prosthesisTypes: parsed.prosthesisTypes,
         toothWorks: parsed.toothWorks,
+        crownFabrication: payload.crownFabrication,
       });
       const currentFingerprint = currentFormFingerprintRef.current;
       // 서버 updatedAt 기준 LWW. 로컬 입력 중이라도 커밋된 원격 스냅샷이 더 최신이면 반영한다.
@@ -3367,6 +3394,8 @@ export const PracticeFileTransferPage = ({
           if (restoredRows.length > 0) nextToothWorks = restoredRows;
         }
         setToothWorks(nextToothWorks);
+        const savedCrownFabrication = parseCrownFabrication(payload.crownFabrication);
+        if (savedCrownFabrication) restoreCrownFabrication(savedCrownFabrication);
 
         const alignedFingerprint = buildPracticeTransferFormFingerprint({
           targetLabAnchorId: payload.targetLabAnchorId,
@@ -3379,6 +3408,7 @@ export const PracticeFileTransferPage = ({
           requestMemo: parsed.memo,
           prosthesisTypes: prosthesisTypesForRestore,
           toothWorks: nextToothWorks,
+          crownFabrication: payload.crownFabrication,
         });
         lastSavedFormFingerprintRef.current = alignedFingerprint;
         setLastSavedFormFingerprint(alignedFingerprint);
@@ -3422,7 +3452,7 @@ export const PracticeFileTransferPage = ({
         });
       }
     },
-    [myUserId, setRequestMemo, setSelectedLab],
+    [myUserId, restoreCrownFabrication, setRequestMemo, setSelectedLab],
   );
 
   const loadPracticeTransferDraft = useCallback(async (options?: {
@@ -4037,12 +4067,14 @@ export const PracticeFileTransferPage = ({
           setToothWorks(restoredRows);
         }
       }
+      const savedCrownFabrication = parseCrownFabrication(parsed.crownFabrication);
+      if (savedCrownFabrication) restoreCrownFabrication(savedCrownFabrication);
     } catch {
       // ignore
     } finally {
       setLocalFormHydrated(true);
     }
-  }, [findCachedLab, setRequestMemo, setSelectedLab, todayDate]);
+  }, [findCachedLab, restoreCrownFabrication, setRequestMemo, setSelectedLab, todayDate]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -4075,6 +4107,7 @@ export const PracticeFileTransferPage = ({
       toothWorks,
       rushProcessing,
       activeDraftId: String(activeDraftId || "").trim() || null,
+      crownFabrication,
       updatedAt,
     };
 
@@ -4121,6 +4154,7 @@ export const PracticeFileTransferPage = ({
     rushProcessing,
     selectedLab,
     toothWorks,
+    crownFabrication,
   ]);
 
   const persistFormDraftAutosave = useCallback(
@@ -4198,6 +4232,7 @@ export const PracticeFileTransferPage = ({
             arrivalDate,
             arrivalDefaultDays,
             transferMemo,
+            crownFabrication,
           },
         });
 
@@ -4332,6 +4367,7 @@ export const PracticeFileTransferPage = ({
       selectedLab?.name,
       effectiveSkipJig,
       notifyDraftFirstAutosave,
+      crownFabrication,
     ],
   );
 
@@ -4479,6 +4515,7 @@ export const PracticeFileTransferPage = ({
           toothWorks: [],
           rushProcessing: nextRush,
           activeDraftId: null,
+          crownFabrication: "impression",
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
       );
@@ -4506,12 +4543,15 @@ export const PracticeFileTransferPage = ({
           toothWorks: [],
           rushProcessing: nextRush,
           activeDraftId: null,
+          crownFabrication: "impression",
           updatedAt: Date.now(),
         } satisfies PracticeTransferLocalFormDraft),
       );
     } catch {
       // ignore
     }
+
+    restoreCrownFabrication(null);
 
     window.setTimeout(() => {
       suppressLocalFormPersistRef.current = false;
@@ -4520,6 +4560,7 @@ export const PracticeFileTransferPage = ({
   }, [
     arrivalDefaultDays,
     clearAllFiles,
+    restoreCrownFabrication,
     setLabOpen,
     setLabSearch,
     setRequestMemo,
@@ -5718,6 +5759,7 @@ export const PracticeFileTransferPage = ({
         keepPastArrival?: boolean;
         skipDraftBind?: boolean;
         skipJig?: boolean;
+        crownFabrication?: "scan" | "impression" | null;
       },
     ) => {
       suppressLocalFormPersistRef.current = true;
@@ -5854,7 +5896,10 @@ export const PracticeFileTransferPage = ({
         requestMemo: parsed.memo,
         prosthesisTypes: prosthesisTypesForRestore,
         toothWorks: nextToothWorks,
+        crownFabrication: options?.crownFabrication,
       });
+      const savedCrownFabrication = parseCrownFabrication(options?.crownFabrication);
+      if (savedCrownFabrication) restoreCrownFabrication(savedCrownFabrication);
       currentFormFingerprintRef.current = fingerprint;
       lastSavedFormFingerprintRef.current = fingerprint;
       setLastSavedFormFingerprint(fingerprint);
@@ -5897,6 +5942,7 @@ export const PracticeFileTransferPage = ({
               orderYmd: parsed.orderDate || todayDate,
               arrivalYmd: parsed.arrivalDate,
             }),
+            crownFabrication: parseCrownFabrication(options?.crownFabrication),
             activeDraftId: options?.skipDraftBind ? null : draft.id,
             updatedAt: Number.isFinite(ts) && ts > 0 ? ts : Date.now(),
           } satisfies PracticeTransferLocalFormDraft),
@@ -5910,7 +5956,7 @@ export const PracticeFileTransferPage = ({
         skipFormAutosaveRef.current = false;
       });
     },
-    [findCachedLab, setLabOpen, setLabSearch, setRequestMemo, setSelectedLab, todayDate, arrivalDefaultDays],
+    [arrivalDefaultDays, findCachedLab, restoreCrownFabrication, setLabOpen, setLabSearch, setRequestMemo, setSelectedLab, todayDate],
   );
 
   /**
@@ -5962,6 +6008,7 @@ export const PracticeFileTransferPage = ({
 
       // 다른 케이스의 로컬(미동기화) 파일이 섞여 전송되지 않게 비운다.
       void clearLocalFilesWithCache();
+      restoreCrownFabrication(null);
       setEditingSentTransfer(null);
       editingSentTransferRef.current = null;
       editReturnTransferRef.current = null;
@@ -5975,6 +6022,7 @@ export const PracticeFileTransferPage = ({
       applyDraftSummaryToForm,
       clearLocalFilesWithCache,
       loadPracticeTransferDraft,
+      restoreCrownFabrication,
       practiceDraftList,
       toast,
     ],
@@ -6050,6 +6098,13 @@ export const PracticeFileTransferPage = ({
         keepPastArrival: true,
         skipDraftBind: true,
         skipJig: Boolean(transfer.skipJig),
+        crownFabrication:
+          parseCrownFabrication(transfer.crownFabrication) ||
+          (restoredFiles.some((file) =>
+            isPracticeTransferModelFileName(file.originalName),
+          )
+            ? "scan"
+            : "impression"),
       });
 
       const linkedRemake = linkedRemakeSourceFromTransfer(transfer);
@@ -7380,6 +7435,7 @@ export const PracticeFileTransferPage = ({
         transferMemo,
         files: nextDraftFiles.map((row) => ({ fileId: row.fileId })),
         draftFilesMode: filesMode,
+        crownFabrication,
         forceResync: true,
       },
     });
@@ -8421,6 +8477,9 @@ export const PracticeFileTransferPage = ({
             requestMemo: parsedEventMemo.memo,
             prosthesisTypes: parsedEventMemo.prosthesisTypes,
             toothWorks: parsedEventMemo.toothWorks,
+            crownFabrication: parseCrownFabrication(
+              (payload as { crownFabrication?: unknown }).crownFabrication,
+            ),
           });
           const sameOpenForm =
             sameOpenPatient &&
@@ -8491,6 +8550,9 @@ export const PracticeFileTransferPage = ({
                   : null,
               targetLabName: eventLabName,
               transferMemo: String(payload.transferMemo || ""),
+              crownFabrication: parseCrownFabrication(
+                (payload as { crownFabrication?: unknown }).crownFabrication,
+              ),
               files: incomingFiles,
               updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
               createdAt: payload.createdAt ? String(payload.createdAt) : null,
@@ -9099,6 +9161,7 @@ export const PracticeFileTransferPage = ({
           skipDesignConfirm: true,
           skipJig: effectiveSkipJig,
           rushProcessing,
+          crownFabrication,
           autoMatchMinLabRating,
           autoMatchMaxLabRating,
           ...(composeRemakeMode
@@ -9505,7 +9568,9 @@ export const PracticeFileTransferPage = ({
       requestMemo: "",
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks: normalizeToothWorksForSync(nextToothWorks),
+      crownFabrication: "impression",
     });
+    restoreCrownFabrication(null);
     lastSavedFormFingerprintRef.current = baselineFingerprint;
     setLastSavedFormFingerprint(baselineFingerprint);
     currentFormFingerprintRef.current = baselineFingerprint;
@@ -10430,6 +10495,9 @@ export const PracticeFileTransferPage = ({
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
     toothChartDisplayMode: "full",
+    scanFabrication: crownFabrication === "scan",
+    crownFabrication,
+    onCrownFabricationChange: setCrownFabrication,
     // compose Dialog(z-320)·모바일 크롬(z-330) 위 — 어벗/스캔바디·전체악궁 모달
     nestedDialogClassName: "z-[340]",
     nestedDialogOverlayClassName: "z-[339]",

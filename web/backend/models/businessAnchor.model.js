@@ -656,6 +656,13 @@ const businessAnchorSchema = new mongoose.Schema(
             enabled: { type: Boolean, default: true },
             price: { type: Number, default: 0, min: 0 },
             remake: { type: Number, default: 0, min: 0 },
+            // 크라운 등: 전치(FDI 1–3)·구치(4–8) × impr제작/스캔제작. 없으면 price.
+            regionPrices: {
+              anteriorImpression: { type: Number, min: 0 },
+              anteriorScan: { type: Number, min: 0 },
+              posteriorImpression: { type: Number, min: 0 },
+              posteriorScan: { type: Number, min: 0 },
+            },
             tiers: [
               {
                 n: { type: Number, default: 3, min: 1 },
@@ -713,6 +720,12 @@ const businessAnchorSchema = new mongoose.Schema(
                 enabled: { type: Boolean, default: true },
                 price: { type: Number, default: 0, min: 0 },
                 remake: { type: Number, default: 0, min: 0 },
+                regionPrices: {
+                  anteriorImpression: { type: Number, min: 0 },
+                  anteriorScan: { type: Number, min: 0 },
+                  posteriorImpression: { type: Number, min: 0 },
+                  posteriorScan: { type: Number, min: 0 },
+                },
                 tiers: [
                   {
                     n: { type: Number, default: 3, min: 1 },

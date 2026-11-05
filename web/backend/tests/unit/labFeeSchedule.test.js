@@ -70,6 +70,70 @@ describe("labFeeSchedule", () => {
     expect(fees.lines).toEqual([]);
   });
 
+  test("크라운은 전치·구치와 impr·스캔 수가, 커스텀어벗은 치아와 무관하다", () => {
+    const schedule = {
+      active: true,
+      items: [
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          enabled: true,
+          price: 60000,
+          remake: 0,
+          regionPrices: {
+            anteriorImpression: 90000,
+            anteriorScan: 80000,
+            posteriorImpression: 70000,
+            posteriorScan: 60000,
+          },
+        },
+        {
+          id: "customAbutmentWithJig",
+          name: "커스텀어벗(지그포함)",
+          unit: "perTooth",
+          enabled: true,
+          price: 25000,
+          remake: 0,
+        },
+      ],
+    };
+    const crown = (toothNumber, scanFabrication) =>
+      computePracticeTransferRetailFees({
+        toothWorks: [{ toothNumber, prosthesisType: "크라운" }],
+        labFeeSchedule: schedule,
+        scanFabrication,
+      }).labFeeTotal;
+    expect(crown("11", false)).toBe(90000);
+    expect(crown("13", false)).toBe(90000);
+    expect(crown("21", true)).toBe(80000);
+    expect(crown("14", false)).toBe(70000);
+    expect(crown("16", false)).toBe(70000);
+    expect(crown("46", true)).toBe(60000);
+
+    const withAbutment = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "11",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+        },
+      ],
+      labFeeSchedule: schedule,
+      scanFabrication: true,
+    });
+    expect(withAbutment.labFeeTotal).toBe(80000 + 25000);
+
+    const stored = normalizeLabFeeItems(schedule);
+    expect(stored.find((item) => item.id === "crown")?.regionPrices).toEqual({
+      anteriorImpression: 90000,
+      anteriorScan: 80000,
+      posteriorImpression: 70000,
+      posteriorScan: 60000,
+    });
+  });
+
   test("치과별 기공수가 할증은 기공비·기공소 어벗만 배수한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [

@@ -126,6 +126,11 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { OralScanOptionalAttachmentNote } from "@/shared/practice/OralScanOptionalAttachmentNote";
+import { isPracticeTransferModelFile } from "@/shared/practice/practiceTransferAccept";
+import {
+  parseCrownFabrication,
+  useCrownFabricationChoice,
+} from "@/shared/practice/crownFabrication";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
@@ -325,6 +330,7 @@ type PracticeDropzoneDraft = {
   phone: string;
   fileKeys: string[];
   rushProcessing?: boolean;
+  crownFabrication?: "scan" | "impression" | null;
 };
 
 type PracticeFileCacheMeta = {
@@ -676,6 +682,7 @@ export const PracticeDropzonePage = () => {
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
+  const onScanModelFilesAddedRef = useRef<() => void>(() => {});
 
   const {
     files,
@@ -703,7 +710,16 @@ export const PracticeDropzonePage = () => {
   } = usePracticeTransferStep1({
     fileCacheMetaKey,
     fileCacheMaxTotalBytes,
+    onScanModelFilesAdded: () => onScanModelFilesAddedRef.current(),
   });
+  const scanDataAttached = files.some((file) => isPracticeTransferModelFile(file));
+  const {
+    value: crownFabrication,
+    setChoice: setCrownFabrication,
+    onScanModelFilesAdded,
+    restoreChoice: restoreCrownFabrication,
+  } = useCrownFabricationChoice(scanDataAttached, draftHydrated);
+  onScanModelFilesAddedRef.current = onScanModelFilesAdded;
 
   useEffect(() => {
     if (!authToken || files.length === 0) return;
@@ -1392,6 +1408,10 @@ export const PracticeDropzonePage = () => {
         setStaffName(String(parsed?.staffName || "").trim());
         setEmail(String(parsed?.email || "").trim().toLowerCase());
         setPhone(formatPhoneNumberInput(String(parsed?.phone || "")));
+        const savedCrownFabrication = parseCrownFabrication(
+          intake?.crownFabrication ?? parsed?.crownFabrication,
+        );
+        if (savedCrownFabrication) restoreCrownFabrication(savedCrownFabrication);
 
         const fileKeys = Array.isArray(parsed?.fileKeys)
           ? parsed.fileKeys.map((k) => String(k || "")).filter(Boolean)
@@ -1560,6 +1580,7 @@ export const PracticeDropzonePage = () => {
       phone,
       fileKeys: files.map((file) => toPracticeFileKey(file)),
       rushProcessing,
+      crownFabrication,
     };
     try {
       localStorage.setItem(PRACTICE_DRAFT_STORAGE_KEY, JSON.stringify(payload));
@@ -1587,6 +1608,7 @@ export const PracticeDropzonePage = () => {
         : null,
       toothWorks,
       rushProcessing,
+      crownFabrication,
     });
   }, [
     draftHydrated,
@@ -1606,6 +1628,7 @@ export const PracticeDropzonePage = () => {
     step,
     files,
     rushProcessing,
+    crownFabrication,
   ]);
 
   useEffect(() => {
@@ -1851,6 +1874,7 @@ export const PracticeDropzonePage = () => {
           rushProcessing,
           transferMemo,
           toothWorks: syncToothWorks,
+          crownFabrication,
           caseInfos: caseInfosPayload,
         },
       });
@@ -1870,6 +1894,7 @@ export const PracticeDropzonePage = () => {
       setPatientName("");
       setRequestMemo("");
       setRushProcessing(false);
+      restoreCrownFabrication(null);
       setToothWorks([
         {
           toothNumber: "",
@@ -2390,6 +2415,9 @@ export const PracticeDropzonePage = () => {
                     },
                   }}
                   requestIntakeProps={{
+                    scanFabrication: crownFabrication === "scan",
+                    crownFabrication,
+                    onCrownFabricationChange: setCrownFabrication,
                     selectedLab,
                     setSelectedLab: selectLabForIntake,
                     labOpen,

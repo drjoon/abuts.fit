@@ -43,6 +43,12 @@ const practiceTransferDraftSchema = new mongoose.Schema(
     },
     targetLabName: { type: String, default: "", trim: true },
     transferMemo: { type: String, default: "", trim: true },
+    // 크라운 제작 선택. scan | impression. 비어 있으면 미선택.
+    crownFabrication: {
+      type: String,
+      enum: ["scan", "impression", null],
+      default: null,
+    },
     files: {
       type: [practiceTransferDraftFileSchema],
       default: [],

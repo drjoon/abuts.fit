@@ -308,6 +308,8 @@ export const buildFeeQuoteFromContext = (params: {
   creditToothWorks?: Parameters<
     typeof computePracticeTransferRetailFees
   >[0]["toothWorks"];
+  /** 3D 스캔 첨부가 있으면 크라운 스캔제작 수가. */
+  scanFabrication?: boolean;
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
@@ -331,6 +333,7 @@ export const buildFeeQuoteFromContext = (params: {
     rushFeeMultiplier,
     remake: useRemake,
     skipAbutmentFees: useRemake || Boolean(params.skipAbutmentFees),
+    scanFabrication: Boolean(params.scanFabrication),
   });
 
   let tempCreditLabFeeTotal = 0;
@@ -348,6 +351,7 @@ export const buildFeeQuoteFromContext = (params: {
       rushFeeMultiplier,
       remake: false,
       skipAbutmentFees: true,
+      scanFabrication: Boolean(params.scanFabrication),
     });
     tempCreditLabFeeTotal = Math.max(
       0,

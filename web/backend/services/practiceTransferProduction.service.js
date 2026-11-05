@@ -429,6 +429,23 @@ export function hasOralScanModelFile(files) {
   );
 }
 
+/** 신규의뢰 크라운 제작. 스캔 파일 없이도 스캐너 직접 전송이면 scan. */
+export function parseCrownFabrication(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "scan" || raw === "impression") return raw;
+  return null;
+}
+
+/**
+ * 저장된 선택이 있으면 그 값. 없는 기존 의뢰만 3D 모델 첨부로 스캔을 추정한다.
+ */
+export function resolveScanFabrication({ crownFabrication, files } = {}) {
+  const choice = parseCrownFabrication(crownFabrication);
+  if (choice === "scan") return true;
+  if (choice === "impression") return false;
+  return hasOralScanModelFile(files);
+}
+
 /** @deprecated 생성 시 구강스캔은 선택이었던 문구. 레거시 클라이언트용 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";

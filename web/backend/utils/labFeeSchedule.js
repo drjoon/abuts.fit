@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-11-05: 크라운 regionPrices — 전치(1–3)·구치(4–8) × 인상/스캔. 선택은 의뢰의 crownFabrication.
 // - 2026-09-28: 임시치아 스팬 어벗 합산은 임시치아 행만(같은 치아 커스텀어벗 행 이중 합산 제거). 스팬 안 레거시 Pontic 브리지 수가 별도 청구 제거.
 // - 2026-09-28: 치아당 CA 1회 — 보철+CA가 있는 치아의 단독 커스텀어벗 행은 과금·필요 수가·CA 건수에서 제외.// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-09: PTX 리메이크 — CA 기본 제외 헬퍼. remake+CA 포함 시 기공소 CA 리메이크 수가 합산(어벗츠 retail은 제외).
@@ -358,10 +359,14 @@ export function isLabFeeFreeRemakeYearsConfigured(schedule) {
 
 /** 제공(on)이고 단가>0인 항목이 하나라도 있으면 true. */
 export function hasEnabledLabFeePrices(schedule) {
-  return normalizeLabFeeItems(schedule).some(
-    (item) =>
-      item.enabled !== false && Math.round(Number(item.price || 0)) > 0,
-  );
+  return normalizeLabFeeItems(schedule).some((item) => {
+    if (item.enabled === false) return false;
+    if (Math.round(Number(item.price || 0)) > 0) return true;
+    if (normalizeLabFeeRegionPrices(item.regionPrices)) return true;
+    return (Array.isArray(item.tiers) ? item.tiers : []).some(
+      (tier) => Math.round(Number(tier?.price || 0)) > 0,
+    );
+  });
 }
 
 /** 수락·견적 SSOT. 마스터 On + 제공 항목 수가. 항목 전부 Off면 0원 청구 금지. */
@@ -653,6 +658,58 @@ export function resolveLabPracticeSpecialSupplyRow(labDoc, practiceAnchorId) {
   return rows.find((row) => row.practiceAnchorId === practiceId) || null;
 }
 
+/** FDI 뒷자리 1–3=전치, 4–8=구치. */
+export function isAnteriorFdiTooth(toothNumber) {
+  const tooth = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(tooth)) return false;
+  const pos = Number(tooth[1]);
+  return pos >= 1 && pos <= 3;
+}
+
+const LAB_FEE_REGION_PRICE_KEYS = [
+  "anteriorImpression",
+  "anteriorScan",
+  "posteriorImpression",
+  "posteriorScan",
+];
+
+/** 전치/구치 × impr/스캔. 네 칸이 모두 0이면 null. */
+export function normalizeLabFeeRegionPrices(input) {
+  const src = input && typeof input === "object" ? input : null;
+  if (!src) return null;
+  const prices = {};
+  for (const key of LAB_FEE_REGION_PRICE_KEYS) {
+    const n = Math.round(Number(src[key] || 0));
+    prices[key] = Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  if (LAB_FEE_REGION_PRICE_KEYS.every((key) => prices[key] <= 0)) return null;
+  return prices;
+}
+
+export function resolvePerToothLabUnitPrice(
+  item,
+  { toothNumber, scanFabrication = false, remake = false } = {},
+) {
+  if (remake && LAB_FEE_REMAKE_FREE) return 0;
+  if (remake) {
+    return Math.max(0, Math.round(Number(item?.remake || 0)));
+  }
+  const matrix = normalizeLabFeeRegionPrices(item?.regionPrices);
+  if (matrix) {
+    const anterior = isAnteriorFdiTooth(toothNumber);
+    const scan = Boolean(scanFabrication);
+    const key = anterior
+      ? scan
+        ? "anteriorScan"
+        : "anteriorImpression"
+      : scan
+        ? "posteriorScan"
+        : "posteriorImpression";
+    return matrix[key];
+  }
+  return Math.max(0, Math.round(Number(item?.price || 0)));
+}
+
 function applyDiscountToUnit(base, { rate = 0, amount = 0 } = {}) {
   const baseWon = toSpecialSupplyWon(base);
   if (rate > 0) {
@@ -665,6 +722,25 @@ function applyDiscountToUnit(base, { rate = 0, amount = 0 } = {}) {
     return Math.max(0, baseWon - toSpecialSupplyWon(amount));
   }
   return baseWon;
+}
+
+function discountLabFeeRegionPrices(regionPrices, discount) {
+  const matrix = normalizeLabFeeRegionPrices(regionPrices);
+  if (!matrix) return null;
+  const next = {};
+  for (const key of LAB_FEE_REGION_PRICE_KEYS) {
+    next[key] = applyDiscountToUnit(matrix[key], discount);
+  }
+  return normalizeLabFeeRegionPrices(next);
+}
+
+function itemWithDiscountedRegionPrices(item, price, remake, discount) {
+  const next = { ...item, price, remake };
+  if (!normalizeLabFeeRegionPrices(item?.regionPrices)) return next;
+  const regionPrices = discountLabFeeRegionPrices(item.regionPrices, discount);
+  if (regionPrices) next.regionPrices = regionPrices;
+  else delete next.regionPrices;
+  return next;
 }
 
 /**
@@ -692,6 +768,7 @@ export function applyLabPracticeSpecialSupplyRowToSchedule(schedule, row) {
   const nextItems = baseItems.map((item) => {
     let price;
     let remake;
+    let regionDiscount = null;
     if (row.mode === "rate") {
       const basePrice =
         item.unit === "perNTeeth"
@@ -701,9 +778,14 @@ export function applyLabPracticeSpecialSupplyRowToSchedule(schedule, row) {
         item.unit === "perNTeeth"
           ? item.tiers?.[0]?.remake ?? item.remake
           : item.remake;
-      price = applyDiscountToUnit(basePrice, { rate: row.discountRate });
-      remake = applyDiscountToUnit(baseRemake, { rate: row.discountRate });
-      if (price === toSpecialSupplyWon(basePrice) && remake === toSpecialSupplyWon(baseRemake)) {
+      regionDiscount = { rate: row.discountRate };
+      price = applyDiscountToUnit(basePrice, regionDiscount);
+      remake = applyDiscountToUnit(baseRemake, regionDiscount);
+      if (
+        price === toSpecialSupplyWon(basePrice) &&
+        remake === toSpecialSupplyWon(baseRemake) &&
+        !normalizeLabFeeRegionPrices(item.regionPrices)
+      ) {
         return item;
       }
       changed = true;
@@ -720,15 +802,20 @@ export function applyLabPracticeSpecialSupplyRowToSchedule(schedule, row) {
         item.unit === "perNTeeth"
           ? item.tiers?.[0]?.remake ?? item.remake
           : item.remake;
-      price = applyDiscountToUnit(basePrice, {
-        amount: override.discountAmount,
-      });
+      regionDiscount = { amount: override.discountAmount };
+      price = applyDiscountToUnit(basePrice, regionDiscount);
       remake = applyDiscountToUnit(baseRemake, {
         amount: override.remakeDiscountAmount,
       });
       changed = true;
     }
 
+    const priced = itemWithDiscountedRegionPrices(
+      item,
+      price,
+      remake,
+      regionDiscount,
+    );
     if (item.unit === "perNTeeth") {
       const tiers =
         Array.isArray(item.tiers) && item.tiers.length > 0
@@ -736,9 +823,9 @@ export function applyLabPracticeSpecialSupplyRowToSchedule(schedule, row) {
               idx === 0 ? { ...tier, price, remake } : tier,
             )
           : [{ n: 3, price, remake }];
-      return { ...item, price, remake, tiers };
+      return { ...priced, tiers };
     }
-    return { ...item, price, remake };
+    return priced;
   });
   if (!changed) return schedule;
 
@@ -1806,6 +1893,8 @@ export function normalizeLabFeeItem(input, index = 0) {
       normalizeLabFeeItemTier({ n: 3, price, remake }, 0),
     );
   }
+  const regionPrices =
+    unit === "perTooth" ? normalizeLabFeeRegionPrices(src.regionPrices) : null;
   return {
     id,
     name,
@@ -1814,6 +1903,7 @@ export function normalizeLabFeeItem(input, index = 0) {
     price: Number.isFinite(price) ? price : 0,
     remake: Number.isFinite(remake) ? remake : 0,
     tiers: unit === "perNTeeth" ? tiers : [],
+    ...(regionPrices ? { regionPrices } : {}),
   };
 }
 
@@ -2450,6 +2540,8 @@ export function computePracticeTransferRetailFees({
   rushFeeMultiplier = 1,
   /** @deprecated 치과→기공소 배송 무료. 무시되며 labShippingFee는 항상 0. */
   includeLabShippingFee = false,
+  /** 3D 스캔(STL·PLY·OBJ·DCM)이 있으면 스캔제작. 없으면 impr제작. */
+  scanFabrication = false,
 }) {
   void _abutmentPricingTier;
   void _abutmentPrices;
@@ -2553,10 +2645,15 @@ export function computePracticeTransferRetailFees({
     if (isFollowUpProsthesisPhase(row) && isFinalProsthesisType(prosthesisType)) {
       const item = findLabFeeItemForProsthesisType(items, prosthesisType);
       if (!item) continue;
-      const unitLabFee = resolveFollowUpPerToothLabFee(item, useRemake);
       for (const tooth of followUpFinalProsthesisTeeth(row)) {
         if (bridgeTeethBilled.has(tooth)) continue;
         bridgeTeethBilled.add(tooth);
+        const unitLabFee = resolveFollowUpPerToothLabFee(
+          item,
+          useRemake,
+          tooth,
+          scanFabrication,
+        );
         labFeeTotal += unitLabFee;
         lines.push({
           toothNumber: tooth,
@@ -2617,18 +2714,18 @@ export function computePracticeTransferRetailFees({
     const item = findLabFeeItemForProsthesisType(items, prosthesisType);
     if (!item) continue;
     if (item.unit === "perTooth") {
-      const unitLabFee =
-        useRemake && LAB_FEE_REMAKE_FREE
-          ? 0
-          : Math.max(
-              0,
-              Math.round(Number(useRemake ? item.remake : item.price) || 0),
-            );
+      const unitLabFeeForTooth = (tooth) =>
+        resolvePerToothLabUnitPrice(item, {
+          toothNumber: tooth,
+          scanFabrication,
+          remake: useRemake,
+        });
 
       if (prosthesisType === "브리지") {
         for (const tooth of followUpFinalProsthesisTeeth(row)) {
           if (bridgeTeethBilled.has(tooth)) continue;
           bridgeTeethBilled.add(tooth);
+          const unitLabFee = unitLabFeeForTooth(tooth);
           // 연결치에 펼칠 때 customAbutment는 그 치아 행만 본다(원본 행 플래그 전파 금지).
           const sourceRow =
             rows.find((candidate) => {
@@ -2702,6 +2799,7 @@ export function computePracticeTransferRetailFees({
         }
         continue;
       }
+      const unitLabFee = unitLabFeeForTooth(toothNumber);
       labFeeTotal += unitLabFee;
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
@@ -2880,13 +2978,19 @@ function followUpFinalProsthesisTeeth(row) {
 }
 
 /** 후속 보철은 크라운과 같이 1치=1기공비(perTooth 단가) */
-function resolveFollowUpPerToothLabFee(item, useRemake) {
+function resolveFollowUpPerToothLabFee(
+  item,
+  useRemake,
+  toothNumber,
+  scanFabrication = false,
+) {
   if (useRemake && LAB_FEE_REMAKE_FREE) return 0;
   if (item.unit === "perTooth") {
-    return Math.max(
-      0,
-      Math.round(Number(useRemake ? item.remake : item.price) || 0),
-    );
+    return resolvePerToothLabUnitPrice(item, {
+      toothNumber,
+      scanFabrication,
+      remake: useRemake,
+    });
   }
   if (item.unit === "perNTeeth" && Array.isArray(item.tiers) && item.tiers.length > 0) {
     return nTeethFeeForCount(1, item.tiers, useRemake);

@@ -237,6 +237,8 @@ import {
 import { invalidateChatPerfForUsers } from "../chats/chat.controller.js";
 import {
   assertOralScanFilesForCreate,
+  parseCrownFabrication,
+  resolveScanFabrication,
   ORAL_SCAN_REQUIRED_TO_SEND,
   canStartAbutmentProduction,
   clearRelatedAbutmentProductionOnRelease,
@@ -1265,6 +1267,7 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     matchingMode,
     autoMatch: autoFields.autoMatch,
     toothWorks,
+    crownFabrication: parseCrownFabrication(transferDoc?.crownFabrication),
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
     prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
       transferDoc?.prosthesisFollowUps,
@@ -1839,6 +1842,7 @@ const toDraftResponse = (doc, ownerMeta = null) => {
     targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
     targetLabName: String(doc.targetLabName || "").trim(),
     transferMemo: String(doc.transferMemo || "").trim(),
+    crownFabrication: parseCrownFabrication(doc.crownFabrication),
     files: files
       .map((row) => ({
         fileId: String(row?.fileId || "").trim(),
@@ -1912,6 +1916,7 @@ const toDraftUpsertedRealtimePayload = ({
   targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
   targetLabName: draftPayload?.targetLabName || "",
   transferMemo: String(draftPayload?.transferMemo || ""),
+  crownFabrication: parseCrownFabrication(draftPayload?.crownFabrication),
   files: Array.isArray(draftPayload?.files) ? draftPayload.files : [],
   fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
   // files 미포함 upsert(폼 autosave)는 keep. FE가 빈 배열로 첨부를 덮지 않게 한다.
@@ -2771,11 +2776,17 @@ export async function upsertPracticeTransferDraft(req, res) {
     }
 
     if (doc?._id) {
+      const requestedCrownFabrication = parseCrownFabrication(
+        req.body?.crownFabrication,
+      );
       const $set = {
         practiceBusinessAnchorId: req.user?.businessAnchorId || null,
         targetLabAnchorId,
         targetLabName,
         transferMemo,
+        ...(requestedCrownFabrication
+          ? { crownFabrication: requestedCrownFabrication }
+          : {}),
       };
       if (filesProvided) {
         $set.files =
@@ -2791,12 +2802,18 @@ export async function upsertPracticeTransferDraft(req, res) {
     }
 
     if (!doc) {
+      const createdCrownFabrication = parseCrownFabrication(
+        req.body?.crownFabrication,
+      );
       const created = await PracticeTransferDraft.create({
         practiceUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId || null,
         targetLabAnchorId,
         targetLabName,
         transferMemo,
+        ...(createdCrownFabrication
+          ? { crownFabrication: createdCrownFabrication }
+          : {}),
         files: filesProvided ? normalizedDraftFiles : [],
         deletedAt: null,
       });
@@ -3558,6 +3575,10 @@ export async function createPracticeTransfer(req, res) {
         subcontracted: assigneeKind === "subcontract",
         consentLabAnchorId:
           assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
+        scanFabrication: resolveScanFabrication({
+          crownFabrication: req.body?.crownFabrication,
+          files,
+        }),
       }),
       performingLabAnchorId
         ? assertLabWithinPracticeStarBand({
@@ -3692,6 +3713,11 @@ export async function createPracticeTransfer(req, res) {
       tag,
       status: "active",
       files,
+      ...(parseCrownFabrication(req.body?.crownFabrication)
+        ? {
+            crownFabrication: parseCrownFabrication(req.body?.crownFabrication),
+          }
+        : {}),
       toothWorks: toothWorksRaw,
       labRequestStagePlans: normalizeLabRequestStagePlans(
         req.body?.labRequestStagePlans,
@@ -4336,12 +4362,27 @@ export async function updatePracticeTransferContent(req, res) {
     const rushMultiplierChanged =
       Number(rushFeeMultiplier || 1) !==
       Number(previousBilling.rushFeeMultiplier || 1);
+    const requestedCrownFabrication = parseCrownFabrication(
+      req.body?.crownFabrication,
+    );
+    const nextCrownFabrication =
+      requestedCrownFabrication || parseCrownFabrication(doc.crownFabrication);
+    const scanFabricationChanged =
+      resolveScanFabrication({
+        crownFabrication: nextCrownFabrication,
+        files,
+      }) !==
+      resolveScanFabrication({
+        crownFabrication: doc.crownFabrication,
+        files: previousFiles,
+      });
     const billingInputsChanged =
       labChanged ||
       toothWorksChanged ||
       skipJigChanged ||
       rushMultiplierChanged ||
-      remakeChanged;
+      remakeChanged ||
+      scanFabricationChanged;
     const remakeBillingStale =
       hasRemakeFlagInBody &&
       isRemakeRequest &&
@@ -4419,6 +4460,10 @@ export async function updatePracticeTransferContent(req, res) {
                 internalPerformer: doc.billing?.internalPerformer === true,
               }
             : null,
+        scanFabrication: resolveScanFabrication({
+          crownFabrication: nextCrownFabrication,
+          files,
+        }),
       });
 
       try {
@@ -4563,6 +4608,9 @@ export async function updatePracticeTransferContent(req, res) {
       }),
       tag: tag || doc.tag,
       files,
+      ...(requestedCrownFabrication
+        ? { crownFabrication: requestedCrownFabrication }
+        : {}),
       toothWorks: toothWorksRaw,
       production: nextProduction,
       requestorReadAt: null,
@@ -5497,6 +5545,10 @@ export async function appendPracticeTransferProsthesis(req, res) {
             aiTrainingConsent: doc.billing?.aiTrainingConsent,
             internalPerformer: doc.billing?.internalPerformer === true,
           },
+          scanFabrication: resolveScanFabrication({
+            crownFabrication: doc?.crownFabrication,
+            files: doc?.files,
+          }),
         });
         nextProsthesisFeeStages = upsertProsthesisFeeStage(
           nextProsthesisFeeStages,
@@ -13077,6 +13129,10 @@ export async function retargetPracticeTransferLab(req, res) {
       subcontracted: assigneeKind === "subcontract",
       consentLabAnchorId:
         assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
+      scanFabrication: resolveScanFabrication({
+        crownFabrication: doc?.crownFabrication,
+        files: doc?.files,
+      }),
     });
 
     try {

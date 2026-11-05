@@ -226,6 +226,13 @@ const practiceTransferSchema = new mongoose.Schema(
      * status pending|ready|incomplete. 보철 업로드로 작업완료된 뒤 정합·마진을 채운다.
      */
     aiTraining: { type: mongoose.Schema.Types.Mixed, default: undefined },
+    // 크라운 제작. scan=스캔(파일 없이 스캐너 직접 전송 포함), impression=인상.
+    // 비어 있으면 기존 의뢰는 3D 모델 첨부로만 스캔을 추정한다.
+    crownFabrication: {
+      type: String,
+      enum: ["scan", "impression", null],
+      default: null,
+    },
     // 보철 치식(과금·표시). 전송 시점 스냅샷
     toothWorks: {
       type: [mongoose.Schema.Types.Mixed],

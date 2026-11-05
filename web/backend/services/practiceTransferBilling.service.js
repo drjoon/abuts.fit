@@ -163,6 +163,7 @@ import {
   stripCustomAbutmentFromToothWorks,
   countCustomAbutmentWorks,
 } from "../utils/labFeeSchedule.js";
+import { resolveScanFabrication } from "./practiceTransferProduction.service.js";
 import {
   normalizeConfiguredRushFeeMultiplier,
   normalizeRushFeeMultiplier,
@@ -748,6 +749,8 @@ export async function assertPracticeTransferPaidCreditSufficient({
   balanceMode = "ledger",
   /** 신규 기공의뢰 생성 시에만 true. 작업시작·확정 등 기존 의뢰 진행은 막지 않는다. */
   enforceSettlementLock = false,
+  /** 3D 스캔 첨부가 있으면 크라운 스캔제작 수가. */
+  scanFabrication = false,
 }) {
   const practiceId = String(practiceAnchorId || "").trim();
   if (!practiceId || !Types.ObjectId.isValid(practiceId)) {
@@ -823,6 +826,7 @@ export async function assertPracticeTransferPaidCreditSufficient({
         skipAbutmentFees: useRemake,
         labFeeMultiplier: resolveLabPracticeFeeMultiplier(lab, practiceId),
         rushFeeMultiplier: normalizeRushFeeMultiplier(rushFeeMultiplier),
+        scanFabrication: Boolean(scanFabrication),
       },
       {
         toothWorks,
@@ -1785,6 +1789,10 @@ async function resolveHoldShareAmounts({
       toothWorks: toothWorks || transfer?.toothWorks || [],
       remake: isPracticeTransferRemake(transfer),
       autoMatchBudget: transfer?.billing?.autoMatchBudget || null,
+      scanFabrication: resolveScanFabrication({
+        crownFabrication: transfer?.crownFabrication,
+        files: transfer?.files,
+      }),
     });
     if (lab == null) {
       lab = Math.max(0, Math.round(Number(check?.fees?.labFeeTotal || 0)));
@@ -5017,6 +5025,8 @@ export async function buildPracticeTransferQuote({
   subcontracted = false,
   feeSnapshot = null,
   consentLabAnchorId = null,
+  /** 3D 스캔 첨부가 있으면 크라운 스캔제작 수가. */
+  scanFabrication = false,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -5157,6 +5167,7 @@ export async function buildPracticeTransferQuote({
             skipAbutmentFees,
             labFeeMultiplier,
             rushFeeMultiplier,
+            scanFabrication: Boolean(scanFabrication),
           },
           {
             toothWorks,
@@ -6700,6 +6711,10 @@ export async function quoteProsthesisFollowUpFees({
     matchingMode: "direct",
     rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
     feeSnapshot: frozenPracticeTransferFeeSnapshot(transferDoc?.billing),
+    scanFabrication: resolveScanFabrication({
+      crownFabrication: transferDoc?.crownFabrication,
+      files: transferDoc?.files,
+    }),
   });
 
   const tempRows = pickSourceTempRowsForFollowUpCredit(
@@ -6724,6 +6739,10 @@ export async function quoteProsthesisFollowUpFees({
       matchingMode: "direct",
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
       feeSnapshot: frozenPracticeTransferFeeSnapshot(transferDoc?.billing),
+      scanFabrication: resolveScanFabrication({
+      crownFabrication: transferDoc?.crownFabrication,
+      files: transferDoc?.files,
+    }),
     });
     tempCreditLabFeeTotal = Math.max(
       0,
@@ -7070,6 +7089,10 @@ export async function buildFeeQuotesForTransferDocs({
     // 치과의뢰 수신하기 리메이크비: 무료(LAB_FEE_REMAKE_FREE).
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);
+    const scanFabrication = resolveScanFabrication({
+      crownFabrication: doc?.crownFabrication,
+      files: doc?.files,
+    });
     const remakeFees = computePracticeTransferRetailFees({
       toothWorks: remakeToothWorksProsthesisOnly,
       implantFavorites,
@@ -7079,6 +7102,7 @@ export async function buildFeeQuotesForTransferDocs({
       remake: true,
       labFeeMultiplier: remakeLabFeeMultiplier,
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+      scanFabrication,
     });
     const remakeFeesWithCustomAbutment =
       countCustomAbutmentWorks(toothWorks) > 0
@@ -7091,6 +7115,7 @@ export async function buildFeeQuotesForTransferDocs({
             remake: true,
             labFeeMultiplier: remakeLabFeeMultiplier,
             rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+            scanFabrication,
           })
         : null;
     const fees = computePracticeTransferRetailFees({
@@ -7103,6 +7128,7 @@ export async function buildFeeQuotesForTransferDocs({
       skipAbutmentFees: remake,
       labFeeMultiplier: feeLabFeeMultiplier,
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+      scanFabrication,
     });
     const feesWithLabShipping = computePracticeTransferRetailFeesWithLabShipping(
       {
@@ -7115,6 +7141,7 @@ export async function buildFeeQuotesForTransferDocs({
         skipAbutmentFees: remake,
         labFeeMultiplier: feeLabFeeMultiplier,
         rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+        scanFabrication,
       },
       doc,
     );

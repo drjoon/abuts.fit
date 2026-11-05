@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-11-05: 크라운 regionPrices — 전치(1–3)·구치(4–8) × 인상/스캔. 선택은 의뢰의 crownFabrication.
 // - 2026-09-28: 임시치아 스팬 어벗 합산은 임시치아 행만(같은 치아 커스텀어벗 행 이중 합산 제거). 스팬 안 레거시 Pontic 브리지 수가 별도 청구 제거.
 // - 2026-09-28: 치아당 CA 1회 — 보철+CA가 있는 치아의 단독 커스텀어벗 행은 과금·필요 수가에서 제외.// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-09: PTX 리메이크 — CA가 toothWorks에 있으면 기공소 CA 리메이크 수가 합산(어벗츠 retail 제외).
@@ -807,6 +808,68 @@ export type LabFeeItemTier = {
   remake: number;
 };
 
+/** 전치(FDI 1–3)·구치(4–8) × impr제작/스캔제작. */
+export type LabFeeRegionPrices = {
+  anteriorImpression: number;
+  anteriorScan: number;
+  posteriorImpression: number;
+  posteriorScan: number;
+};
+
+export const LAB_FEE_REGION_PRICE_KEYS = [
+  "anteriorImpression",
+  "anteriorScan",
+  "posteriorImpression",
+  "posteriorScan",
+] as const;
+
+/** FDI 뒷자리 1–3=전치, 4–8=구치. */
+export const isAnteriorFdiTooth = (toothNumber?: string | null) => {
+  const tooth = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(tooth)) return false;
+  const pos = Number(tooth[1]);
+  return pos >= 1 && pos <= 3;
+};
+
+/** 네 칸이 모두 0이면 null. */
+export const normalizeLabFeeRegionPrices = (
+  input?: Partial<LabFeeRegionPrices> | null,
+): LabFeeRegionPrices | null => {
+  const src = input && typeof input === "object" ? input : null;
+  if (!src) return null;
+  const prices = {} as LabFeeRegionPrices;
+  for (const key of LAB_FEE_REGION_PRICE_KEYS) {
+    const n = Math.round(Number(src[key] || 0));
+    prices[key] = Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  if (LAB_FEE_REGION_PRICE_KEYS.every((key) => prices[key] <= 0)) return null;
+  return prices;
+};
+
+export const resolvePerToothLabUnitPrice = (
+  item: Pick<LabFeeItem, "price" | "remake" | "regionPrices"> | null | undefined,
+  opts?: { toothNumber?: string | null; scanFabrication?: boolean; remake?: boolean },
+) => {
+  if (opts?.remake && LAB_FEE_REMAKE_FREE) return 0;
+  if (opts?.remake) {
+    return Math.max(0, Math.round(Number(item?.remake || 0)));
+  }
+  const matrix = normalizeLabFeeRegionPrices(item?.regionPrices);
+  if (matrix) {
+    const anterior = isAnteriorFdiTooth(opts?.toothNumber);
+    const scan = Boolean(opts?.scanFabrication);
+    const key = anterior
+      ? scan
+        ? "anteriorScan"
+        : "anteriorImpression"
+      : scan
+        ? "posteriorScan"
+        : "posteriorImpression";
+    return matrix[key];
+  }
+  return Math.max(0, Math.round(Number(item?.price || 0)));
+};
+
 export type LabFeeItem = {
   id: string;
   name: string;
@@ -815,6 +878,8 @@ export type LabFeeItem = {
   price: number;
   remake: number;
   tiers: LabFeeItemTier[];
+  /** 크라운: 전치/구치 × impr/스캔. 없으면 price. */
+  regionPrices?: LabFeeRegionPrices;
   /** 어벗츠 수가: 기공소 신규 제안 · 관리자 검증 대기 */
   pendingReview?: boolean;
   proposedByLabName?: string;
@@ -974,6 +1039,8 @@ export const normalizeLabFeeItem = (
   if (unit === "perNTeeth" && tiers.length === 0) {
     tiers.push(normalizeLabFeeItemTier({ n: 3, price, remake }, 0));
   }
+  const regionPrices =
+    unit === "perTooth" ? normalizeLabFeeRegionPrices(src.regionPrices) : null;
   return {
     id,
     name,
@@ -982,6 +1049,7 @@ export const normalizeLabFeeItem = (
     price: Number.isFinite(price) ? price : 0,
     remake: Number.isFinite(remake) ? remake : 0,
     tiers: unit === "perNTeeth" ? tiers : [],
+    ...(regionPrices ? { regionPrices } : {}),
     ...(src.pendingReview === true
       ? {
           pendingReview: true,
@@ -1602,7 +1670,10 @@ export const computePracticeTransferRetailFees = (params: {
   skipAbutmentFees?: boolean;
   labFeeMultiplier?: number;
   rushFeeMultiplier?: number;
+  /** 3D 스캔(STL·PLY·OBJ·DCM)이 있으면 스캔제작. 없으면 impr제작. */
+  scanFabrication?: boolean;
 }): PracticeTransferRetailFees => {
+  const scanFabrication = Boolean(params.scanFabrication);
   const useRemake = Boolean(params.remake);
   const items = normalizeLabFeeItems(params.labFeeSchedule);
   // remake: CA가 남아 있으면 기공소 CA 리메이크 수가 합산. skipAbutmentFees(비-remake)만 전체 스킵.
@@ -1701,8 +1772,13 @@ export const computePracticeTransferRetailFees = (params: {
     if (isFollowUpProsthesisPhase(row) && isFinalProsthesisType(prosthesisType)) {
       const item = findLabFeeItemForProsthesisType(items, prosthesisType);
       if (!item) continue;
-      const unitLabFee = resolveFollowUpPerToothLabFee(item, useRemake);
       for (const tooth of followUpFinalProsthesisTeeth(row)) {
+        const unitLabFee = resolveFollowUpPerToothLabFee(
+          item,
+          useRemake,
+          tooth,
+          scanFabrication,
+        );
         if (bridgeTeethBilled.has(tooth)) continue;
         bridgeTeethBilled.add(tooth);
         labFeeTotal += unitLabFee;
@@ -1765,16 +1841,16 @@ export const computePracticeTransferRetailFees = (params: {
     const item = findLabFeeItemForProsthesisType(items, prosthesisType);
     if (!item) continue;
     if (item.unit === "perTooth") {
-      const unitLabFee =
-        useRemake && LAB_FEE_REMAKE_FREE
-          ? 0
-          : Math.max(
-              0,
-              Math.round(Number(useRemake ? item.remake : item.price) || 0),
-            );
+      const unitLabFeeForTooth = (tooth: string) =>
+        resolvePerToothLabUnitPrice(item, {
+          toothNumber: tooth,
+          scanFabrication,
+          remake: useRemake,
+        });
 
       if (prosthesisType === "브리지") {
         for (const tooth of followUpFinalProsthesisTeeth(row)) {
+          const unitLabFee = unitLabFeeForTooth(tooth);
           if (bridgeTeethBilled.has(tooth)) continue;
           bridgeTeethBilled.add(tooth);
           // 연결치에 펼칠 때 customAbutment는 그 치아 행만 본다(원본 행 플래그 전파 금지).
@@ -1850,6 +1926,7 @@ export const computePracticeTransferRetailFees = (params: {
         }
         continue;
       }
+      const unitLabFee = unitLabFeeForTooth(toothNumber);
       labFeeTotal += unitLabFee;
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기
@@ -2032,13 +2109,19 @@ function followUpFinalProsthesisTeeth(row: FeeToothRow) {
 }
 
 /** 후속 보철은 크라운과 같이 1치=1기공비(perTooth 단가) */
-function resolveFollowUpPerToothLabFee(item: LabFeeItem, useRemake: boolean) {
+function resolveFollowUpPerToothLabFee(
+  item: LabFeeItem,
+  useRemake: boolean,
+  toothNumber?: string,
+  scanFabrication = false,
+) {
   if (useRemake && LAB_FEE_REMAKE_FREE) return 0;
   if (item.unit === "perTooth") {
-    return Math.max(
-      0,
-      Math.round(Number(useRemake ? item.remake : item.price) || 0),
-    );
+    return resolvePerToothLabUnitPrice(item, {
+      toothNumber,
+      scanFabrication,
+      remake: useRemake,
+    });
   }
   if (item.unit === "perNTeeth" && Array.isArray(item.tiers) && item.tiers.length > 0) {
     return nTeethFeeForCount(1, item.tiers, useRemake);

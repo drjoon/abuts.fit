@@ -148,6 +148,8 @@ export const usePracticeTransferFeeQuote = (params: {
   remake?: boolean;
   /** 후속 제작: 원 임시치아 행 — 기공비 차감 */
   creditToothWorks?: ToothWorkSelection[] | null;
+  /** 크라운 스캔제작 수가. 신규의뢰 스캔/인상 선택. */
+  scanFabrication?: boolean;
 }): {
   quote: PracticeTransferFeeQuote;
   context: PracticeTransferQuoteContext;
@@ -234,6 +236,7 @@ export const usePracticeTransferFeeQuote = (params: {
       skipAbutmentFees: params.skipAbutmentFees,
       remake,
       creditToothWorks: creditToothWorks || undefined,
+      scanFabrication: Boolean(params.scanFabrication),
       context: {
         ...context,
         abutmentPricingTier:
@@ -252,6 +255,7 @@ export const usePracticeTransferFeeQuote = (params: {
     params.implantFavorites,
     params.rushFeeMultiplier,
     params.skipAbutmentFees,
+    params.scanFabrication,
     remake,
     settingsPrices,
     toothWorks,

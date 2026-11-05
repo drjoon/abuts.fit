@@ -137,6 +137,8 @@ export type PracticeRecentRequestItem = {
   } | null;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
+  /** 크라운 제작. 없으면 첨부 3D 모델로 추정한 기존 의뢰. */
+  crownFabrication?: "scan" | "impression" | null;
   designReadyAt?: string | null;
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
@@ -230,6 +232,7 @@ export type PracticeRecentTransferItem = {
   } | null;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
+  crownFabrication?: "scan" | "impression" | null;
   designReadyAt?: string | null;
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
@@ -991,6 +994,10 @@ export const mapMyPracticeTransferApiRows = (
             : null,
         skipDesignConfirm: productionRaw?.skipDesignConfirm !== false,
         skipJig: Boolean(productionRaw?.skipJig),
+        crownFabrication:
+          r.crownFabrication === "scan" || r.crownFabrication === "impression"
+            ? r.crownFabrication
+            : null,
         designReadyAt: productionRaw?.designReadyAt
           ? String(productionRaw.designReadyAt)
           : null,
@@ -1443,6 +1450,12 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     skipJig: openRows.some((r) => r.skipJig === false)
       ? false
       : Boolean(prev.skipJig || openRows.some((r) => r.skipJig)),
+    crownFabrication:
+      openRows.find(
+        (r) => r.crownFabrication === "scan" || r.crownFabrication === "impression",
+      )?.crownFabrication ||
+      prev.crownFabrication ||
+      null,
     hasCustomAbutment:
       prev.hasCustomAbutment || openRows.some((r) => Boolean(r.hasCustomAbutment)),
     canRateLab: prev.canRateLab || openRows.some((r) => Boolean(r.canRateLab)),
@@ -1680,6 +1693,10 @@ export const groupPracticeRecentRequests = (
         abutmentDeliveryInfo: req.abutmentDeliveryInfo || null,
         skipDesignConfirm: req.skipDesignConfirm !== false,
         skipJig: Boolean(req.skipJig),
+        crownFabrication:
+          req.crownFabrication === "scan" || req.crownFabrication === "impression"
+            ? req.crownFabrication
+            : null,
         designReadyAt: req.designReadyAt || null,
         designFileCount: Math.max(
           Number(req.designFileCount || 0),

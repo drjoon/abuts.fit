@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -893,6 +894,11 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothChartResetNonce?: number;
   /** 상·하악 사이에 견적(크레딧 소비액) 표시. 기공의뢰서만 */
   showFeeEstimate?: boolean;
+  /** 크라운 스캔제작 수가. 라디오가 있으면 그 선택. */
+  scanFabrication?: boolean;
+  /** 스캔/인상. 기공소 크라운이 전치·구치 수가면 라디오를 보여 준다. */
+  crownFabrication?: "scan" | "impression";
+  onCrownFabricationChange?: (next: "scan" | "impression") => void;
   /** 리메이크 수가로 견적(플랫폼 도입 전 리메이크 작성) */
   remake?: boolean;
   /** @deprecated 2026-08-22 skipJig 옵션 삭제. 호환용 props */
@@ -1033,6 +1039,9 @@ export const PracticeTransferRequestIntakePanel = ({
   alternateAbutmentModePageLabel = "기공소에 의뢰하기",
   toothChartResetNonce = 0,
   showFeeEstimate = false,
+  scanFabrication = false,
+  crownFabrication = "impression",
+  onCrownFabricationChange,
   remake = false,
   // 레거시(2026-08-22): skipJig / onSkipJigChange UI 삭제. props는 호환용으로만 수신.
   skipJig: _skipJig = true,
@@ -1479,8 +1488,11 @@ export const PracticeTransferRequestIntakePanel = ({
     }
   };
 
-  const { quote: feeQuote } = usePracticeTransferFeeQuote({
-    enabled: showFeeEstimate && Boolean(selectedLab),
+  const crownFabricationRadioName = useId();
+  const { quote: feeQuote, context: feeContext } = usePracticeTransferFeeQuote({
+    enabled:
+      Boolean(selectedLab) &&
+      (showFeeEstimate || Boolean(onCrownFabricationChange)),
     labAnchorId: selectedLab?._id,
     toothWorks,
     implantFavorites,
@@ -1488,7 +1500,21 @@ export const PracticeTransferRequestIntakePanel = ({
     // 신속처리 할증 없음
     rushFeeMultiplier: 1,
     remake,
+    scanFabrication,
   });
+  const crownHasRegionPrices = useMemo(
+    () =>
+      (feeContext.items || []).some(
+        (item) =>
+          item.id === "crown" &&
+          item.enabled !== false &&
+          Boolean(item.regionPrices),
+      ),
+    [feeContext.items],
+  );
+  const showCrownFabricationChoice =
+    Boolean(onCrownFabricationChange) && crownHasRegionPrices;
+  const showLiveFee = showFeeEstimate || showCrownFabricationChoice;
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();
     if (!isAutoMatchLab(selectedLab)) return map;
@@ -4605,10 +4631,10 @@ export const PracticeTransferRequestIntakePanel = ({
                 onPointerDown={handleToothChartPointerDown}
               >
                 {chartRows[0]}
-                {showFeeEstimate ? (
+                {showLiveFee ? (
                   <div
                     className={cn(
-                      "flex items-center justify-center gap-3 px-1",
+                      "flex flex-col items-center justify-center gap-2 px-1",
                       isOralSpotlight("oral_estimate") &&
                         "practice-tooth-guide-pulse rounded-lg",
                     )}
@@ -4618,8 +4644,39 @@ export const PracticeTransferRequestIntakePanel = ({
                         : undefined
                     }
                   >
+                    {showCrownFabricationChoice ? (
+                      <div
+                        role="radiogroup"
+                        aria-label="제작 방식"
+                        className="flex w-fit items-center gap-3"
+                      >
+                        {(
+                          [
+                            { value: "scan", label: "스캔" },
+                            { value: "impression", label: "인상" },
+                          ] as const
+                        ).map((option) => (
+                          <label
+                            key={option.value}
+                            className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-700"
+                          >
+                            <input
+                              type="radio"
+                              name={crownFabricationRadioName}
+                              className="h-3.5 w-3.5 accent-primary-strong"
+                              checked={crownFabrication === option.value}
+                              onChange={() =>
+                                onCrownFabricationChange?.(option.value)
+                              }
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
+                    {showLiveFee ? (
                     <PracticeTransferFeeEstimate
-                      className="min-w-0 flex-1"
+                      className="min-w-0 w-full"
                       quote={feeQuote}
                       viewer="practice"
                       labPending={
@@ -4654,6 +4711,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           : undefined
                       }
                     />
+                    ) : null}
                     {/* 레거시(2026-08-22): skipJig「지그 필요없음」체크 UI 삭제 */}
                   </div>
                 ) : null}
