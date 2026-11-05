@@ -14,6 +14,7 @@ namespace DentalAddin
     /// 피니시라인 팁쪽에서 헥스끝까지, 체인 반지름을 상단 볼록 직선 포락선 아래로 내리지 않는다.
     /// z < 0(헥스)은 제외하고 z=0(BackPointX)은 LowerY로 고정해 수평 연장이 허공에 뜨지 않게 한다.
     /// 축 구간은 유지한다. 황삭이 깎지 않은 원소재 벽을 물지 않게 하기 위해서다.
+    /// Back_Turn은 하강 각도도 BackTurnMaxDescentDeg로 제한한다(LimitDescent). 그 아래 살은 Back_Rough가 깎는다.
     /// </summary>
     internal static class CuffTurnEnvelope
     {
@@ -29,6 +30,17 @@ namespace DentalAddin
 
         /// <summary>스크류홀 내경 정점이 외경 포락선 bin에 섞이지 않게 하는 최소 반지름.</summary>
         public const double MinRadiusMm = 1.5;
+
+        /// <summary>
+        /// Back_Turn(T05) 체인이 헥스 쪽(X+)으로 내려가는 최대 각도(축 기준).
+        /// 실제 백턴 바이트 날은 축 대비 약 51°다. ESPRIT은 이 공구를 측면이 수직인 미니 그루빙으로 알고
+        /// BackClearanceAngle 10°(80° 하강)까지 내려간다. 더 가파르게 내려가면 코너는 STL 밖이어도
+        /// 팁 쪽 날이 마진·커프를 원뿔로 깎는다.
+        /// </summary>
+        public const double BackTurnMaxDescentDeg = 45.0;
+
+        /// <summary>올린 양이 이 값 이하이면 원래 프로파일로 본다.</summary>
+        private const double DescentLiftEpsMm = 0.05;
 
         public static void Add(Dictionary<int, double> bins, double z, double x, double y, double zCeiling)
         {
@@ -165,6 +177,63 @@ namespace DentalAddin
                 }
             }
             return raised;
+        }
+
+        /// <summary>
+        /// points[i] = { axialX, radiusY, z }, X 오름차순(팁 → 헥스).
+        /// 체인이 X+로 tan(maxDescentDeg)보다 가파르게 내려가지 않게 Y를 올린다.
+        /// 올린 직선이 원래 프로파일과 만나는 점을 끼워 넣어 그 뒤는 원래 반지름을 따른다.
+        /// liftEndX = 마지막으로 올린 X. 없으면 NaN.
+        /// </summary>
+        public static int LimitDescent(List<double[]> points, double maxDescentDeg, out double liftEndX)
+        {
+            liftEndX = double.NaN;
+            if (points == null || points.Count < 2) return 0;
+            if (!(maxDescentDeg > 0.0 && maxDescentDeg < 90.0)) return 0;
+            double slope = Math.Tan(maxDescentDeg * Math.PI / 180.0);
+
+            var output = new List<double[]>(points.Count + 4) { (double[])points[0].Clone() };
+            double currentY = points[0][1];
+            int lifted = 0;
+            for (int i = 1; i < points.Count; i++)
+            {
+                double[] prev = points[i - 1];
+                double[] curr = points[i];
+                double dx = Math.Max(0.0, curr[0] - prev[0]);
+                double allowedY = currentY - slope * dx;
+                if (curr[1] + 1e-9 >= allowedY)
+                {
+                    if (currentY > prev[1] + DescentLiftEpsMm && dx > 1e-9)
+                    {
+                        double k = (curr[1] - prev[1]) / dx;
+                        double t = (currentY - prev[1]) / (k + slope);
+                        if (t > 1e-6 && t < dx - 1e-6)
+                        {
+                            double ratio = t / dx;
+                            double z = prev.Length > 2 && curr.Length > 2 ? prev[2] + ratio * (curr[2] - prev[2]) : 0.0;
+                            output.Add(new[] { prev[0] + t, currentY - slope * t, z });
+                            liftEndX = prev[0] + t;
+                        }
+                    }
+                    currentY = curr[1];
+                    output.Add((double[])curr.Clone());
+                    continue;
+                }
+
+                double[] raisedPoint = (double[])curr.Clone();
+                raisedPoint[1] = allowedY;
+                output.Add(raisedPoint);
+                currentY = allowedY;
+                if (allowedY - curr[1] > DescentLiftEpsMm)
+                {
+                    lifted++;
+                    liftEndX = curr[0];
+                }
+            }
+
+            points.Clear();
+            points.AddRange(output);
+            return lifted;
         }
 
         private static bool ChordClears(double[] z, double[] r, int i, int j)

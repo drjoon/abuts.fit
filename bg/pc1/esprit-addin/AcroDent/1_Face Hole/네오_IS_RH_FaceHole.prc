@@ -145,7 +145,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
     :(T02:Turn[KY-R/NR0.4])
     :(T03:B-Turn[KY-R/NR0.05]WZ-0.4/GZ3.7)
     :(T06:HEX[EM*D1.5]WX-0.3/WZ-0.4/GZ10.9)
-    :(T07:Finish[Ball D1.2*L3.0]WX-0.3/WZ-0.4/GZ10.9)
+    :(T07:Finish[Ball D1.0*L3.0]WX-0.3/WZ-0.4/GZ10.9)
     :(T08:Rough[Ball D4.0]WX-0.3/WZ-0.4/GX5.0/GZ10.9)
     :(T09:Engraving[D2.0*A90]WX-0.3/WZ-0.4/GZ15.86)
     :(T41:C-drill[D5.0*A90]WZ-0.4)

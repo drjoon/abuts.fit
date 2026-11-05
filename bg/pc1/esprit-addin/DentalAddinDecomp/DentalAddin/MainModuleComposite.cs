@@ -821,7 +821,7 @@ namespace DentalAddin
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
             // Splitline_2 = SharedFinishSplitX. Rough/Turn seam.
-            // Finish 경계: none/deep 경계=Splitline_2−0.5(팁). Front/Back 각 ±0.25(공구반경 0.5 중첩).
+            // Finish 경계: none/deep 경계=Splitline_2−0.5(팁). Front/Back 각 ±0.07(1피치)씩 넘어간다.
             // Finish A/B는 피처 재해석 없이 그 X를 StartEndScale(20mm)로만 환산한다.
             if (!TryResolveSharedFinishSplitX(out double sharedSplitX, out string sharedSplitSource))
             {
@@ -997,8 +997,8 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, FrontPointX={MoveSTL_Module.FrontPointX:F3}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(Front-{FinishFrontStartTowardTipFromFrontMm:F3})={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, first%={baseAFirstPercent:F2}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             // Finish seam. Back 스텝은 커넥션 → 팁이라, 팁쪽 끝은 FirstPass(X−)다.
-            // none/deep: 경계 = Splitline_2 − 0.5mm (팁). Front/Back이 공구반경(0.5)만큼 중첩.
-            //            경계에서 Front +0.25(헥스), Back −0.25(팁).
+            // none/deep: 경계 = Splitline_2 − 0.5mm (팁). Front/Back이 각자 1피치(0.07)씩 반대쪽으로 넘어간다.
+            //            경계에서 Front +0.07(헥스), Back −0.07(팁).
             // Finish는 Front/Back만. safe split의 Xk는 Turn/Rough 전용이라 Finish 경계를 자르지 않는다.
             double finishOverlapMm = GetFinishSeamOverlapMm();
             double finishHalfOverlapMm = finishOverlapMm / 2.0;
@@ -1018,9 +1018,9 @@ namespace DentalAddin
             TryResolveFinishLineMaxX(out _, out finishLineMaxZ);
             double finishSeamX = splitX - FinishPastSplitline2TowardTipMm;
             finishFrontEndX = finishSeamX + finishHalfOverlapMm;
-            finishFrontEndSource = "Splitline_2-0.5+0.25hex";
+            finishFrontEndSource = "Splitline_2-0.5+0.07hex";
             finishBackStartX = finishSeamX - finishHalfOverlapMm;
-            finishBackStartSource = "Splitline_2-0.5-0.25tip";
+            finishBackStartSource = "Splitline_2-0.5-0.07tip";
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 경계=Splitline_2-{FinishPastSplitline2TowardTipMm:F1}tip X={finishSeamX:F3} (Splitline_2={splitX:F3}), Front끝=+{finishHalfOverlapMm:F3}hex X={finishFrontEndX:F3}, Back팁끝=-{finishHalfOverlapMm:F3}tip X={finishBackStartX:F3}, overlap={finishOverlapMm:F3}, grooveIsDeep={grooveIsDeep}");
 
             DentalLogger.Log($"Composite2SplitLine2 - Finish 경계: Front.end X={finishFrontEndX:F3} ({finishFrontEndSource}, minZ={finishLineMinZ:F3}), Back.start X={finishBackStartX:F3} ({finishBackStartSource}, maxZ={finishLineMaxZ:F3}), Splitline_2={splitX:F3}, grooveIsDeep={grooveIsDeep}");
@@ -1092,7 +1092,7 @@ namespace DentalAddin
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
-            // Front/Back seam 재확인: 최종 클램프 후에도 경계±0.25(공구반경 중첩) X 기준으로 재동기화
+            // Front/Back seam 재확인: 최종 클램프 후에도 경계±0.07(1피치) X 기준으로 재동기화
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
             if (runB && opB != null)
@@ -1518,7 +1518,7 @@ namespace DentalAddin
             }
         }
 
-        // Finish Front/Back 중첩 = D1.0 공구반경(0.5). 경계에서 양쪽 각 0.25mm.
+        // Finish Front/Back 중첩 = 경계에서 양쪽 각 1피치(0.07mm).
         // StepIncrement(유지홈 none/deep)와 별개다.
         private static double GetFinishSeamOverlapMm()
         {
@@ -1878,23 +1878,25 @@ namespace DentalAddin
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
-        //   Finish                : none/deep Front [팁 ~ Splitline_2−0.5+0.25]
-        //                           none/deep Back [Splitline_2−0.5−0.25 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
+        //   Finish                : none/deep Front [팁 ~ Splitline_2−0.5+0.07]
+        //                           none/deep Back [Splitline_2−0.5−0.07 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
         //   Xk = (BackPointX - FL min_z) + 0.2  (Turn/Rough 경계. Finish seam은 피니시라인)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
         private const double SafeSplitBackZonePastFinishLineMinMm = 0.2;
 
-        // Finish Front/Back 중첩 = D1.0 공구반경(0.5). 경계에서 양쪽 각 0.25.
+        // Finish Front/Back은 경계에서 각자 1피치(0.07, Composite PRC StepIncrement)씩 반대쪽으로 넘어간다.
+        //   공구반경(0.5) 중첩은 두 번 깎인 띠가 홈으로 남았다.
         //   Front_Finish 시작 = FrontPointX − 0.3 (팁, X-)
         //   none/deep 경계 = Splitline_2 − 0.5 (팁, X-)
-        //   none/deep Front_Finish 끝 = 경계 + 0.25 (헥스)
-        //   none/deep Back_Finish 팁쪽 끝 = 경계 − 0.25. 스텝은 커넥션 → 팁
+        //   none/deep Front_Finish 끝 = 경계 + 0.07 (헥스)
+        //   none/deep Back_Finish 팁쪽 끝 = 경계 − 0.07. 스텝은 커넥션 → 팁
         //   Back_Finish   커넥션쪽 = BackPointX (헥스. 예전 -0.20은 팁 쪽 1피치)
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
         private const double FinishFrontStartTowardTipFromFrontMm = 0.3;
         private const double FinishPastSplitline2TowardTipMm = 0.5;
-        private const double FinishAdjacentOverlapMm = CompositeFinishCommonToolDiameterMm / 2.0;
+        private const double FinishSeamCrossPitchMm = 0.07;
+        private const double FinishAdjacentOverlapMm = FinishSeamCrossPitchMm * 2.0;
         private const double SafeSplitMinBackZoneMm = 1.5;
         // Middle_Turn 끝(Xk+황삭반경)이 BackPointX를 넘으면 Middle 제거 → Front/Back 2단.
         private const double SafeSplitMaxTurnPastBackPointMm = 0.0;
@@ -2793,6 +2795,19 @@ namespace DentalAddin
                 DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, extra={backRoughExtraMm.ToString("0.###", CultureInfo.InvariantCulture)}");
             }
 
+            // 가파른 커프에서 Back_Turn은 45°로만 내려가 BackPointX 너머까지 링을 남긴다.
+            // Back_Rough가 그 끝까지 가야 Back_Finish(D1.0)가 헥스 앞 링을 물지 않는다. 상한은 short-cuff 최대 연장과 같다.
+            if (!double.IsNaN(s_backTurnLiftEndX) && s_backTurnLiftEndX > backEnd)
+            {
+                double liftCapX = backPointX + AppConfig.ShortFinishLineBackExtraBiasMm;
+                double liftEnd = Math.Min(s_backTurnLiftEndX, liftCapX);
+                if (liftEnd > backEnd)
+                {
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝을 Back_Turn 하강 제한 끝까지 연장: {backEnd.ToString("F3", CultureInfo.InvariantCulture)} -> {liftEnd.ToString("F3", CultureInfo.InvariantCulture)} (liftEndX={s_backTurnLiftEndX.ToString("F3", CultureInfo.InvariantCulture)}, cap={liftCapX.ToString("F3", CultureInfo.InvariantCulture)})");
+                    backEnd = liftEnd;
+                }
+            }
+
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
             // Safe split: region BACK(Middle_Rough) 끝 = Xk+0.5, region BACK2(Back_Rough) = [Xk-roughR ~ BackPointX(+short)]
@@ -3096,11 +3111,11 @@ namespace DentalAddin
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine = SharedFinishSplitX (finishLineTopX - 0.5mm, tip 쪽)
         //   Finish_Front 시작 = FrontPointX − 0.3 (팁).
-        //   none/deep Finish 경계=Splitline_2−0.5(팁). Front/Back 각 ±0.25(공구반경 0.5 중첩).
+        //   none/deep Finish 경계=Splitline_2−0.5(팁). Front/Back 각 ±0.07(1피치)씩 넘어간다.
         // - 인접 툴패스:
         //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.5), 후행(Back) 시작=경계 tip쪽(X-) 공구반경
         //     Rough(Back): GetRoughAdjacentOverlapMm() = D4→2.0 / D2→1.0
-        //   Finish none/deep: Front 끝=경계+0.25, Back 팁쪽 끝=경계−0.25
+        //   Finish none/deep: Front 끝=경계+0.07, Back 팁쪽 끝=경계−0.07
         //     safe split Middle 끝=Xk, Back(B2) 시작=Xk-0.5
         // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough) + Back
         // - Splitline_2<=5mm: Front+Back만 (Middle 미생성)
@@ -3163,7 +3178,7 @@ namespace DentalAddin
             return AppConfig.ShortFinishLineBackExtraBiasMm - z;
         }
 
-        // Finish Front/Back 총 중첩 = D1.0 공구반경(0.5). 경계에서 양쪽 각 절반(0.25).
+        // Finish Front/Back 총 중첩 = 0.14. 경계에서 양쪽 각 1피치(0.07).
         // StepIncrement(retentionGroove none=Front PRC, deep=0.20)와 별개다.
         private static double GetFinishAdjacentOverlapMm()
         {
@@ -3172,7 +3187,7 @@ namespace DentalAddin
 
         // 선행 3D 황삭을 Finish seam보다 이만큼(X+) 더 깎는다. Finish 끝은 경계에 두고,
         // D1.0 반경·5축 기울기가 치은 쪽 미황삭을 물지 않게 한다.
-        // Front_Rough 끝 = Splitline_2 + 0.5. none/deep Finish 경계는 Splitline_2−0.5(±0.25 중첩).
+        // Front_Rough 끝 = Splitline_2 + 0.5. none/deep Finish 경계는 Splitline_2−0.5(±0.07 중첩).
         private static double GetRoughPastFinishSeamMm()
         {
             return GetFinishFrontEndPastSplitMm() + RoughPastFinishEndMm;
@@ -3245,7 +3260,7 @@ namespace DentalAddin
 
         /// <summary>
         /// [SSOT] Splitline_2 = finishLineTopX - 0.5mm. Rough/Turn seam.
-        /// none/deep Finish 경계 = Splitline_2 − 0.5(팁). Front/Back 각 ±0.25(공구반경 0.5 중첩).
+        /// none/deep Finish 경계 = Splitline_2 − 0.5(팁). Front/Back 각 ±0.07(1피치)씩 넘어간다.
         /// 식: finishLineTopX + SharedFinishSplitOffsetFromFinishLineTopMm (-0.5mm, tip 쪽).
         /// 좌표: FrontPointX = -FrontPoint.z → finishLineTopX = -finishLineTopZ (+ MoveSTL).
         /// </summary>

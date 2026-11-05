@@ -33,6 +33,7 @@ namespace DentalAddin
     {
         public static void OperationSeq()
         {
+            s_backTurnLiftEndX = double.NaN;
             // 2026-06-08: Two-Phase를 기본값으로 변경, One-Phase는 명시적 요청 시에만 사용
             bool onePhaseEnabled = IsOnePhaseEnabled();
             bool roughSplitEnabled = IsRoughSplitEnabled();
@@ -117,7 +118,7 @@ namespace DentalAddin
 
                 // Front_Finish는 Front Face 다음에 생성한다.
                 // [legacy One Pass] ABUTS_FINISH_ONE_PASS — 제품 정책상 항상 Front/Back 2단.
-                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−0.25 ~ BackPointX.
+                // safe split이면 Back_Finish는 B2. none/deep은 Splitline_2−0.5−0.07 ~ BackPointX.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
@@ -919,7 +920,9 @@ namespace DentalAddin
                     if (twoPhaseSplitReady)
                     {
                         // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                        FeatureChain regionChain = BuildTurningRangeChain(array[targetIndex], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{targetIndex}");
+                        bool backTurnRegion = string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(twoPhaseRegion, "BACK2", StringComparison.OrdinalIgnoreCase);
+                        FeatureChain regionChain = BuildTurningRangeChain(array[targetIndex], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{targetIndex}", backTurnRegion);
                         if (regionChain != null)
                         {
                             opChain = regionChain;
@@ -1749,7 +1752,7 @@ namespace DentalAddin
 
         // turning 프로파일 체인(source)을 [minX, maxX] 구간으로 잘라 새 체인으로 생성한다.
         // arc/segment 혼합 프로파일을 PointAlong로 조밀 샘플링하여 polyline으로 재구성한다.
-        private static FeatureChain BuildTurningRangeChain(FeatureChain source, double minX, double maxX, string newName)
+        private static FeatureChain BuildTurningRangeChain(FeatureChain source, double minX, double maxX, string newName, bool limitBackTurnDescent = false)
         {
             try
             {
@@ -1885,6 +1888,11 @@ namespace DentalAddin
                     region.Add(new[] { maxX, lastPt[1], lastPt[2] });
                     lastPt = region[region.Count - 1];
                 }
+                if (limitBackTurnDescent)
+                {
+                    TryLimitBackTurnDescent(region, newName);
+                    lastPt = region[region.Count - 1];
+                }
                 DentalLogger.Log($"BuildTurningRangeChain - '{newName}' 끝 형상: profileEnd=({EndXValue:0.###},{LowerY:0.###}), 수평끝=({lastPt[0]:0.###},{lastPt[1]:0.###}), 45도→({lastPt[0] + Math.Max(0.0, exitTopY - lastPt[1]):0.###},{exitTopY:0.###})");
                 double risePast = exitTopY - lastPt[1];
                 if (exitTopY > 0.0)
@@ -1959,6 +1967,26 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"BuildTurningRangeChain - 커프 포락선 적용 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // Back_Turn 하강 각도를 올린 끝 X. Back_Rough 끝이 이보다 짧으면 헥스 앞 링을 Back_Finish(D1.0)가 문다.
+        private static double s_backTurnLiftEndX = double.NaN;
+
+        private static void TryLimitBackTurnDescent(List<double[]> region, string chainName)
+        {
+            try
+            {
+                int lifted = CuffTurnEnvelope.LimitDescent(region, CuffTurnEnvelope.BackTurnMaxDescentDeg, out double liftEndX);
+                if (!double.IsNaN(liftEndX) && (double.IsNaN(s_backTurnLiftEndX) || liftEndX > s_backTurnLiftEndX))
+                {
+                    s_backTurnLiftEndX = liftEndX;
+                }
+                DentalLogger.Log($"BuildTurningRangeChain - '{chainName}' 하강 각도 제한 {CuffTurnEnvelope.BackTurnMaxDescentDeg:0.#}°: 올림 {lifted}점, liftEndX={(double.IsNaN(liftEndX) ? "none" : liftEndX.ToString("0.###", CultureInfo.InvariantCulture))}, back={MoveSTL_Module.BackPointX:0.###}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"BuildTurningRangeChain - 하강 각도 제한 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 
