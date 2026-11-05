@@ -302,12 +302,11 @@
 
 - 커프·피니시라인은 회전면이 아니다. 단면 프로파일을 돌리면 튀어나온 마진이 잘리고 마진 폭이 좁아진다. 가공 여유 0.2mm는 그 편심을 대신하지 못한다.
 - 선반 축 구간은 §4.12 그대로다. 구간을 당기면 D4가 원소재를 문다.
-- 반지름만 올린다. 피니시라인 최고점보다 팁쪽 0.5mm ~ `BackPointX`에서, 체인 Y가 그 source Z의 최대 반지름보다 작으면 올린다.
-- 최대 반지름은 STL 정점과 피니시라인 점의 `hypot(x,y)`. source Z ≤ `finishLineTopZ + 0.5`, bin 0.1mm.
-- 계단 평탄과 15° 메우기는 쓰지 않는다. 포락선 꼭짓점을 직선으로 잇는다.
-  - 직선이 중간 최대 반지름보다 0.05mm 넘게 안쪽이면 꼭짓점을 남긴다(마진 보호).
-  - 직선이 중간 최대 반지름보다 0.10mm 넘게 바깥이면 그 골의 꼭짓점을 남긴다. 골을 메우면 커프 어깨가 원소재로 남고 `Back_Finish` D1.0이 물어 부러진다.
-- 포락선 샘플 Z 밖은 올리지 않는다. 헥스쪽 끝 반지름을 샘플 밖으로 연장하면 수평 연장이 넓은 반지름으로 남아 같은 어깨가 된다.
+- 반지름만 올린다. 피니시라인 최고점보다 팁쪽 0.5mm ~ `BackPointX`에서, 체인 Y가 직선 포락선보다 작으면 그 선까지 올린다.
+- 최대 반지름은 STL 정점과 피니시라인 점의 `hypot(x,y)`. `0 <= source Z <= finishLineTopZ + 0.5`, 외경 `r >= 1.5mm`, bin 0.1mm.
+  - `source Z < 0`(커넥션 원뿔·헥스)과 스크류홀 내경(`r < 1.5mm`)은 제외한다. 헥스 정점이 들어가면 마진에서 헥스로 직선이 그어져 `BackPointX` 수평 연장이 허공에 뜨고 `Back_Finish` D1.0이 부러진다.
+- 계단 평탄과 15° 메우기는 쓰지 않는다. `source Z = 0`(`BackPointX`, 반지름 `LowerY`)을 시작 앵커로 두고 포락선 꼭짓점을 상단 볼록 직선(`SimplifyToUpperLines`, 공차 0.05mm)으로 잇는다. 오목한 커프 골을 그대로 따라 내려가면 바이트 뒷날이 마진·커프를 깎는다.
+- 포락선 샘플 Z 밖(`X > BackPointX`)은 올리지 않아 수평 연장이 `LowerY`로 유지된다.
 - 그 안쪽 살(편심분)은 `Back_Rough`·`Back_Finish`가 깎는다.
 - 구현: `CuffTurnEnvelope`, `TryPublishCuffTurnEnvelope`, `TryRaiseTurningChainAboveCuff`. env `ABUTS_CUFF_TURN_ENVELOPE`.
 

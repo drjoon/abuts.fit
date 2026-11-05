@@ -11,8 +11,8 @@ namespace DentalAddin
     /// <summary>
     /// 커프·피니시라인은 임플란트 축에 대한 원이 아니다.
     /// 선반 프로파일(한 단면)을 그대로 돌리면 튀어나온 마진이 잘린다.
-    /// 피니시라인 팁쪽에서 헥스끝까지, 체인 반지름을 그 축 위치의 최대 반지름 아래로 내리지 않는다.
-    /// 골을 직선으로 메우거나 샘플 밖으로 끝 반지름을 밀지 않는다. 원소재 어깨가 남으면 Back_Finish D1.0이 부러진다.
+    /// 피니시라인 팁쪽에서 헥스끝까지, 체인 반지름을 상단 볼록 직선 포락선 아래로 내리지 않는다.
+    /// z < 0(헥스)은 제외하고 z=0(BackPointX)은 LowerY로 고정해 수평 연장이 허공에 뜨지 않게 한다.
     /// 축 구간은 유지한다. 황삭이 깎지 않은 원소재 벽을 물지 않게 하기 위해서다.
     /// </summary>
     internal static class CuffTurnEnvelope
@@ -27,22 +27,20 @@ namespace DentalAddin
         /// <summary>직선이 포락선 아래로 이 값보다 더 들어가면 꼭짓점을 남긴다.</summary>
         public const double StraightToleranceMm = 0.05;
 
-        /// <summary>
-        /// 직선이 그 축의 최대 반지름보다 이 값보다 더 바깥이면 골 꼭짓점을 남긴다.
-        /// 골을 메우면 Back_Rough가 못 지우는 어깨가 남고 Back_Finish D1.0이 물어서 부러진다.
-        /// </summary>
-        public const double ValleyFillMaxMm = 0.10;
-
-        public const double MinRadiusMm = 0.2;
+        /// <summary>스크류홀 내경 정점이 외경 포락선 bin에 섞이지 않게 하는 최소 반지름.</summary>
+        public const double MinRadiusMm = 1.5;
 
         public static void Add(Dictionary<int, double> bins, double z, double x, double y, double zCeiling)
         {
             if (bins == null) return;
-            if (double.IsNaN(z) || double.IsInfinity(z) || z > zCeiling) return;
+            // z < 0 은 BackPointX 너머 커넥션 원뿔·헥스 구간이므로 제외한다.
+            // 헥스 정점이 들어가면 마진에서 헥스로 직선이 그어져 BackPointX 반지름이 허공에 뜬다.
+            if (double.IsNaN(z) || double.IsInfinity(z) || z < 0.0 || z > zCeiling) return;
             if (double.IsNaN(x) || double.IsInfinity(x) || double.IsNaN(y) || double.IsInfinity(y)) return;
             double r = Math.Sqrt(x * x + y * y);
             if (double.IsNaN(r) || r < MinRadiusMm) return;
             int key = (int)Math.Round(z / BinMm);
+            if (key < 0) return;
             if (!bins.TryGetValue(key, out double current) || r > current)
             {
                 bins[key] = r;
@@ -81,7 +79,7 @@ namespace DentalAddin
                 if (!double.TryParse(part.Substring(0, colon), NumberStyles.Float, CultureInfo.InvariantCulture, out double zz)) continue;
                 if (!double.TryParse(part.Substring(colon + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out double rr)) continue;
                 if (double.IsNaN(zz) || double.IsInfinity(zz) || double.IsNaN(rr) || double.IsInfinity(rr)) continue;
-                if (rr < MinRadiusMm) continue;
+                if (zz < 0.0 || rr < MinRadiusMm) continue;
                 zs.Add(zz);
                 rs.Add(rr);
             }
@@ -95,8 +93,8 @@ namespace DentalAddin
         /// <summary>
         /// 포락선 위를 직선으로 잇는다.
         /// 직선이 중간 최대 반지름보다 0.05mm 넘게 안쪽이면 꼭짓점을 남긴다.
-        /// 직선이 중간 최대 반지름보다 0.10mm 넘게 바깥이면 그 골도 남긴다.
-        /// 15도로 골을 메우면 황삭이 원소재에 가깝게 남고, 창 최대값 평탄은 계단이 된다.
+        /// 오목한 커프 골은 직선으로 건너뛰어 바이트 뒷날이 마진·커프를 깎지 않게 하고,
+        /// z=0(BackPointX) 앵커로 수평 연장 시작 반지름은 원뿔 끝 반지름(LowerY)에 맞춘다.
         /// </summary>
         public static void SimplifyToUpperLines(double[] z, double[] r, out double[] outZ, out double[] outR)
         {
@@ -132,13 +130,24 @@ namespace DentalAddin
         /// X가 [xLo, xHi] 이고 source Z가 포락선 샘플 안이면, 그 축의 최대 반지름 아래로 두지 않는다.
         /// 샘플 밖(헥스쪽 메시가 없는 구간)은 끝 반지름을 연장하지 않는다.
         /// </summary>
-        public static int Raise(List<double[]> points, double[] z, double[] r, double backPointX, double xLo, double xHi)
+        public static int Raise(List<double[]> points, double[] z, double[] r, double backPointX, double xLo, double xHi, double backEndRadiusY = 0.0)
         {
             if (points == null || z == null || r == null || z.Length == 0 || z.Length != r.Length) return 0;
             if (double.IsNaN(backPointX) || double.IsInfinity(backPointX)) return 0;
             if (double.IsNaN(xLo) || double.IsNaN(xHi)) return 0;
             double lo = Math.Min(xLo, xHi);
             double hi = Math.Max(xLo, xHi);
+            if (z[0] > 1e-6 && backEndRadiusY >= MinRadiusMm)
+            {
+                double[] zWithAnchor = new double[z.Length + 1];
+                double[] rWithAnchor = new double[r.Length + 1];
+                zWithAnchor[0] = 0.0;
+                rWithAnchor[0] = backEndRadiusY;
+                Array.Copy(z, 0, zWithAnchor, 1, z.Length);
+                Array.Copy(r, 0, rWithAnchor, 1, r.Length);
+                z = zWithAnchor;
+                r = rWithAnchor;
+            }
             SimplifyToUpperLines(z, r, out double[] lineZ, out double[] lineR);
             int raised = 0;
             for (int i = 0; i < points.Count; i++)
@@ -166,7 +175,6 @@ namespace DentalAddin
                 double t = dz < 1e-9 ? 1.0 : (z[k] - z[i]) / dz;
                 double line = r[i] + t * (r[j] - r[i]);
                 if (line + StraightToleranceMm < r[k]) return false;
-                if (line > r[k] + ValleyFillMaxMm) return false;
             }
             return true;
         }

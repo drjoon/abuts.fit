@@ -1952,8 +1952,9 @@ namespace DentalAddin
                     xHi = finishX + CuffTurnEnvelope.TipBufferMm;
                 }
 
-                int raised = CuffTurnEnvelope.Raise(region, zs, rs, backX, xLo, xHi);
-                DentalLogger.Log($"BuildTurningRangeChain - 커프 포락선 반지름 올림 {raised}점 (X=[{xLo:0.###},{xHi:0.###}], back={backX:0.###}, bins={zs.Length})");
+                double backEndRadiusY = LowerY > 0.0 ? LowerY : (region.Count > 0 ? region[region.Count - 1][1] : 0.0);
+                int raised = CuffTurnEnvelope.Raise(region, zs, rs, backX, xLo, xHi, backEndRadiusY);
+                DentalLogger.Log($"BuildTurningRangeChain - 커프 포락선 반지름 올림 {raised}점 (X=[{xLo:0.###},{xHi:0.###}], back={backX:0.###}, backEndY={backEndRadiusY:0.###}, bins={zs.Length})");
             }
             catch (Exception ex)
             {
