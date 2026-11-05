@@ -909,6 +909,18 @@ namespace DentalAddin
                 }
 
                 IEnumerable<int> targetTurningIndices = GetTurningTargetIndices(array, twoPhaseRegion);
+                bool backTurnRegion = string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(twoPhaseRegion, "BACK2", StringComparison.OrdinalIgnoreCase);
+                // 가닥마다 liftEndX가 다르다. 연장 전에 최댓값을 모아 두어야 첫 가닥도 최종 Back_Rough 끝 + R + 0.2까지 간다.
+                // 이 측정은 LimitDescent만 하고 체인을 만들지 않으므로 Back_Rough 끝은 바뀌지 않는다.
+                if (backTurnRegion && twoPhaseSplitReady)
+                {
+                    foreach (int targetIndex in targetTurningIndices)
+                    {
+                        if (targetIndex < 1 || targetIndex > 15 || array[targetIndex] == null) continue;
+                        BuildTurningRangeChain(array[targetIndex], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{targetIndex}", true, measureLiftOnly: true);
+                    }
+                }
                 foreach (int targetIndex in targetTurningIndices)
                 {
                     if (targetIndex < 1 || targetIndex > 15 || array[targetIndex] == null)
@@ -920,8 +932,6 @@ namespace DentalAddin
                     if (twoPhaseSplitReady)
                     {
                         // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                        bool backTurnRegion = string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(twoPhaseRegion, "BACK2", StringComparison.OrdinalIgnoreCase);
                         FeatureChain regionChain = BuildTurningRangeChain(array[targetIndex], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{targetIndex}", backTurnRegion);
                         if (regionChain != null)
                         {
@@ -1683,11 +1693,77 @@ namespace DentalAddin
 
         private static double ResolveBackTurnExitAllowance()
         {
-            // 기본: BackPointX + R + 0.5. minZ≤2 short-cuff면 +(3−minZ) (Back_Turn만, Front/Middle 미적용).
+            // 하강 제한 전 클립. BackPointX + R + 0.5. minZ≤2 short-cuff면 +(3−minZ).
+            // 45°가 이 평탄을 먹어도 liftEndX(Back_Rough 끝)는 이 길이에서 정해진다.
+            // 툴패스에 남는 수평은 ExtendBackTurnFlatPastRough가 R+0.2+ZStock으로 다시 맞춘다.
             double shortExtra = GetShortFinishLineCuffExtraPastSeamMm();
             double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughCompMm + shortExtra;
-            DentalLogger.Log($"TurningOp BACK - 수평 끝 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} + shortExtra{shortExtra:0.###} = +{allowance:0.###}");
+            DentalLogger.Log($"TurningOp BACK - 하강제한 전 클립 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} + shortExtra{shortExtra:0.###} = +{allowance:0.###}");
             return allowance;
+        }
+
+        // 툴패스 수평 길이. ZStock은 45도 모서리를 팁 쪽으로 당기므로 체인에만 더한다.
+        private static double ResolveBackTurnFlatPastRoughMm()
+        {
+            double zStock = s_activeTurningZStockMm;
+            if (double.IsNaN(zStock) || zStock < 0.0) zStock = 0.0;
+            return GetTurnPastRoughEndMm() + FrontMiddleTurnPastRadiusAllowanceMm + zStock;
+        }
+
+        // Back_Rough 끝과 같은 식. 여기서 러프 경계를 바꾸지 않는다.
+        private static double ResolveBackRoughEndXMatchingRough()
+        {
+            double backPointX = MoveSTL_Module.BackPointX;
+            if (double.IsNaN(backPointX) || double.IsInfinity(backPointX)) return double.NaN;
+            double roughEnd = backPointX + GetShortFinishLineCuffExtraPastSeamMm();
+            if (!double.IsNaN(s_backTurnLiftEndX) && s_backTurnLiftEndX > roughEnd)
+            {
+                double liftEnd = Math.Min(s_backTurnLiftEndX, backPointX + AppConfig.ShortFinishLineBackExtraBiasMm);
+                if (liftEnd > roughEnd) roughEnd = liftEnd;
+            }
+            return roughEnd;
+        }
+
+        // 끝 반지름이 유지되는 수평 꼬리의 시작 X.
+        private static double FindTrailingFlatStartX(List<double[]> region)
+        {
+            int last = region.Count - 1;
+            double y = region[last][1];
+            double start = region[last][0];
+            const double yEps = 0.05;
+            for (int i = last - 1; i >= 0; i--)
+            {
+                if (region[i] == null || region[i].Length < 2) break;
+                if (Math.Abs(region[i][1] - y) > yEps) break;
+                start = region[i][0];
+            }
+            return start;
+        }
+
+        // 45° 제한 뒤, 러프 끝(또는 평탄 시작)부터 R+0.2가 체인에 남게 같은 반지름으로 연장한다.
+        private static void ExtendBackTurnFlatPastRough(List<double[]> region, string chainName)
+        {
+            if (region == null || region.Count == 0) return;
+            double[] last = region[region.Count - 1];
+            if (last == null || last.Length < 3) return;
+
+            double flatStart = FindTrailingFlatStartX(region);
+            double roughEnd = ResolveBackRoughEndXMatchingRough();
+            double anchor = flatStart;
+            if (!double.IsNaN(roughEnd)) anchor = Math.Max(anchor, roughEnd);
+
+            double past = ResolveBackTurnFlatPastRoughMm();
+            double endX = anchor + past;
+            double zStock = s_activeTurningZStockMm;
+            if (double.IsNaN(zStock) || zStock < 0.0) zStock = 0.0;
+            if (endX - last[0] <= 1e-4)
+            {
+                DentalLogger.Log($"BuildTurningRangeChain - '{chainName}' 수평 평탄 유지: flatStart={flatStart:0.###}, roughEnd={(double.IsNaN(roughEnd) ? "none" : roughEnd.ToString("0.###", CultureInfo.InvariantCulture))}, endX={last[0]:0.###}, need={endX:0.###}");
+                return;
+            }
+
+            region.Add(new[] { endX, last[1], last.Length > 2 ? last[2] : 0.0 });
+            DentalLogger.Log($"BuildTurningRangeChain - '{chainName}' 수평 연장(러프 유지): flatStart={flatStart:0.###}, roughEnd={(double.IsNaN(roughEnd) ? "none" : roughEnd.ToString("0.###", CultureInfo.InvariantCulture))}, {last[0]:0.###} -> {endX:0.###}, past=R{GetTurnPastRoughEndMm():0.###}+{FrontMiddleTurnPastRadiusAllowanceMm:0.###}+ZStock{zStock:0.###}");
         }
 
         private static double ResolveBackTurningExtendForBackTurnRange()
@@ -1752,7 +1828,7 @@ namespace DentalAddin
 
         // turning 프로파일 체인(source)을 [minX, maxX] 구간으로 잘라 새 체인으로 생성한다.
         // arc/segment 혼합 프로파일을 PointAlong로 조밀 샘플링하여 polyline으로 재구성한다.
-        private static FeatureChain BuildTurningRangeChain(FeatureChain source, double minX, double maxX, string newName, bool limitBackTurnDescent = false)
+        private static FeatureChain BuildTurningRangeChain(FeatureChain source, double minX, double maxX, string newName, bool limitBackTurnDescent = false, bool measureLiftOnly = false)
         {
             try
             {
@@ -1881,8 +1957,9 @@ namespace DentalAddin
                 // Tech_Default_Path.xml Exit angle(80)은 이 3-stage 구간 체인에서 쓰지 않는다.
                 double exitTopY = (Document?.LatheMachineSetup?.BarDiameter ?? 0.0) / 2.0;
                 double[] lastPt = region[region.Count - 1];
-                // Back_Turn: 프로파일 끝(EndXValue, TurningProfile trim이 BackPointX 세그먼트를 제거해 BackPointX보다 짧음)에서
-                // maxX(= BackPointX + 황삭 공구 반경)까지 같은 반경으로 수평 연장한 뒤 45도로 퇴출한다.
+                // Back_Turn: 프로파일 끝(EndXValue)에서 maxX까지 같은 반경으로 일단 잇는다.
+                // 이 길이는 하강 제한(liftEndX) 입력이라 Back_Rough 끝을 바꾸지 않으려고 유지한다.
+                // 45° 제한이 이 평탄을 먹으면, 아래에서 러프 끝 이후로 R+0.2만큼 다시 수평 연장한다.
                 if (maxX - lastPt[0] > 1e-4)
                 {
                     region.Add(new[] { maxX, lastPt[1], lastPt[2] });
@@ -1891,6 +1968,11 @@ namespace DentalAddin
                 if (limitBackTurnDescent)
                 {
                     TryLimitBackTurnDescent(region, newName);
+                    if (measureLiftOnly)
+                    {
+                        return null;
+                    }
+                    ExtendBackTurnFlatPastRough(region, newName);
                     lastPt = region[region.Count - 1];
                 }
                 DentalLogger.Log($"BuildTurningRangeChain - '{newName}' 끝 형상: profileEnd=({EndXValue:0.###},{LowerY:0.###}), 수평끝=({lastPt[0]:0.###},{lastPt[1]:0.###}), 45도→({lastPt[0] + Math.Max(0.0, exitTopY - lastPt[1]):0.###},{exitTopY:0.###})");
