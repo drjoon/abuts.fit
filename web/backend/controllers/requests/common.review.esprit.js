@@ -241,7 +241,7 @@ export async function triggerEspritForNc({
       TiltAxisVector: request?.caseInfos?.tiltAxisVector || null,
       // source 등 부가 필드는 DataContract 역직렬화에서 FrontPoint 전체를 버리므로 x,y,z만 보낸다.
       FrontPoint: frontPoint,
-      // 수동 Front Point 시 Face 끝 오프셋(mm). 없으면 Esprit 기본 +1.0mm.
+      // 저장값. Face 끝은 팁에서 1mm 고정이라 가공 길이에 더하지 않는다.
       FrontFaceEndOffsetMm: (() => {
         const raw = Number(request?.caseInfos?.frontFaceEndOffsetMm);
         return Number.isFinite(raw) ? raw : null;

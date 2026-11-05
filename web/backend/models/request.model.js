@@ -112,9 +112,7 @@ const requestSchema = new mongoose.Schema(
         // "frontend-manual" | undefined(auto/rhino)
         source: String,
       },
-      // Front Face 끝점 오프셋(mm): Face.RightX = FrontPointX + 이 값
-      // - 수동 Front Point 지정 시 0 (찍은 점이 Face 끝)
-      // - 미지정 시 Esprit 기본값 1.0 사용
+      // 가공 길이에 쓰지 않는다. Face는 팁에서 1mm, Finish Front는 팁에서 0.5mm.
       frontFaceEndOffsetMm: Number,
       hexRotation: {
         // Esprit 가공 SSOT: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"

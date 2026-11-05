@@ -433,7 +433,7 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 끝점: RightX = max(FrontPointX+1.0, 0.5). Splitline_2 클램프.
+                // Front Face 끝점: 팁에서 1mm. Splitline_2 클램프.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
                 ZH = Math.Abs(MoveSTL_Module.FrontPointX);

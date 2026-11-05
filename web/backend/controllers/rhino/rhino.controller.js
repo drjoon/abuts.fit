@@ -386,9 +386,8 @@ export const saveManualFrontPoint = asyncHandler(async (req, res) => {
 
   request.caseInfos = request.caseInfos || {};
   // 수동 Front Point:
-  // - FrontPointX(Splitline_1) SSOT로 사용
-  // - Face.RightX = FrontPointX + frontFaceEndOffsetMm
-  //   (수동 시 offset=0 → Face 끝이 찍은 Front Point에 정렬)
+  // - FrontPointX(Splitline_1) 앵커. Face 길이는 바꾸지 않는다.
+  // - Face는 팁에서 1mm, Finish Front는 팁에서 0.5mm.
   request.caseInfos.frontPoint = {
     ...normalized,
     source: "frontend-manual",
