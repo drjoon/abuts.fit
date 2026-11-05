@@ -285,7 +285,7 @@
 - 이유: Rough(D4)가 Turn 미삭제 부위(공구 반경 2mm)에 걸리면 소재가 떨려 공구 파손·미삭제가 생긴다.
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
   - Front: Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R + 0.2 = `Splitline_2 + 0.5 + R + 0.2` (D4 → 2.7). short-cuff extra 없음
-  - Middle: Rough 끝 = `Xk + 0.5`, Turn 끝 = Rough 끝 + R + 0.2 = `Xk + 0.5 + R + 0.2` (D4 → 2.7). **Turn 끝이 `BackPointX+1.5`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`)
+  - Middle: Rough 끝 = `Xk + 0.5`, Turn 끝 = Rough 끝 + R + 0.2 = `Xk + 0.5 + R + 0.2` (D4 → 2.7). 여기서 45° 퇴출. `ExtendBackTurnFlatPastRough`(Back 러프 끝 연장)는 쓰지 않는다. **Turn 끝이 `BackPointX+1.5`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`)
   - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`(+`3−minZ` if minZ≤2, 또는 §4.12.3 liftEnd). Turn 체인 수평 끝 = 그 러프 끝(또는 45° 뒤 평탄 시작 중 큰 쪽) + R + 0.2 + ZStock
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - 하강 제한 전 클립은 `BackPointX + R + 0.5`(+short-cuff)로 두어 `liftEndX`와 Back_Rough 끝을 바꾸지 않는다. 45°가 이 평탄을 먹으면 제한 뒤에 같은 반지름으로 다시 연장한다 (`ExtendBackTurnFlatPastRough`).
@@ -313,9 +313,9 @@
 - 마진·커프 과삭제의 원인은 편심이 아니라 백턴 바이트(T05) 날 각도다. `CreateTurningProfile`은 이미 360° 최대 반지름이라 코너는 STL 밖을 지난다.
 - 실제 날은 축 대비 약 51°다(가공물에 남은 원뿔). ESPRIT은 `BackTurn_R0.05`를 측면이 수직인 미니 그루빙으로 알고 `BackClearanceAngle` 10°(80° 하강)까지 내려간다.
 - 커프가 그보다 가파르면 코너가 바닥에 닿을 때 팁 쪽 날이 마진을 원뿔로 깎는다. 예: 송용원 27(`20261104-SNXZVBBV`) 12:03 경로는 67.7°로 내려가 51° 날이 마진을 반경 1.56mm 파고든다.
-- Back_Turn(BACK·BACK2) 체인은 X+로 `BackTurnMaxDescentDeg`(45°)보다 가파르게 내려가지 않는다. 체인을 올리고, 원래 프로파일과 만나는 점부터 다시 따른다(`CuffTurnEnvelope.LimitDescent`). Front_Turn(T02)은 ESPRIT 공구 모델이 맞아 제외.
+- Back_Turn(BACK·BACK2) 체인은 X+로 `BackTurnMaxDescentDeg`(45°)보다 가파르게 내려가지 않는다. 체인을 올리고, 원래 프로파일과 만나는 점부터 다시 따른다(`CuffTurnEnvelope.LimitDescent`). Front_Turn(T02)은 ESPRIT 공구 모델이 맞아 제외. Safe split의 Middle_Turn(region BACK)도 T05라 하강 제한은 같다. 퇴출 X는 Middle_Rough 끝 + R + 0.2이고, Back 러프 끝까지 수평 연장하지 않는다.
 - 그 아래 살은 `Back_Rough`가 깎는다. 올린 구간이 `BackPointX` 너머까지 가면 `Back_Rough` 끝을 그 X까지 늘린다(상한 `BackPointX + 3`). 짧으면 헥스 앞 링을 `Back_Finish` D1.0이 문다.
-- 45°가 수평 꼬리를 먹으면 툴패스 평탄이 R+0.2보다 짧아진다. `LimitDescent` 뒤에 끝 반지름을 유지한 채 러프 끝 + R + 0.2 + ZStock까지 연장한다. 이 점은 하강 제한에 다시 넣지 않아 Back_Rough 끝은 그대로다. 연장은 헥스 쪽(+X)이라 마진·커프 반지름을 내리지 않는다.
+- Back_Turn만: 45°가 수평 꼬리를 먹으면 툴패스 평탄이 R+0.2보다 짧아진다. `LimitDescent` 뒤에 끝 반지름을 유지한 채 러프 끝 + R + 0.2 + ZStock까지 연장한다(`ExtendBackTurnFlatPastRough`). Middle_Turn에는 이 연장을 넣지 않는다. 이 점은 하강 제한에 다시 넣지 않아 Back_Rough 끝은 그대로다. 연장은 헥스 쪽(+X)이라 마진·커프 반지름을 내리지 않는다.
 - 커넥션 `T0303`(Rough U0.1·Finish·Final Deburr)은 `#520+#523−0.5`(source Z 0.5)에서 반경으로 내려가 R≈1.8에 선다. 송용원 27에서 이 위치가 마진을 안 치려면 팁 쪽 날이 축 대비 75° 이상이어야 한다(51°면 2.4mm 파고든다).
   - 10:42 가공물은 Z8.81에서 R≈3.1이 남아 있었다. T03이 51°였다면 목(R≈1.9)까지 깎였어야 하므로 T03은 원인이 아니다. PRC는 그대로 둔다.
   - 시작 Z를 헥스 쪽으로 옮겨도 51° 날이 마진을 피하려면 Z≈10.7(헥스 안)까지 가야 해 11° 면을 못 깎는다. T03 날이 실제로 51° 근처면 이런 80° 언더컷 커프는 PRC로 못 막는다.
