@@ -1,3 +1,4 @@
+// - 2026-11-05: v18 — 토스트 보기: Chrome Apple Events JS가 꺼져 계정을 못 읽는 탭도 URL로 열고, 못 찾으면 새 탭. osascript는 백그라운드.
 // - 2026-10-27: v17 — 알람 WS는 URLSession 하나. 실패하면 백오프(세션을 시도마다 만들면 메모리가 쌓인다).
 // - 2026-10-21: open-href — 창 하나에서 오류가 나도 나머지 창을 찾고, 고른 창을 앞으로.
 // - 2026-10-04: v16 — OS 토스트를 웹 전역 공통 default(border-2 primary)에 맞춤.
@@ -25,7 +26,7 @@ import Foundation
 import Network
 import QuartzCore
 
-let helperVersion = 17
+let helperVersion = 18
 /** macOS 13+ 「개인정보 보호 및 보안」 */
 let macPrivacySettingsURL =
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
@@ -428,10 +429,11 @@ final class AlarmToastController: NSObject {
   @objc private func openChat() {
     let link = href
     hide()
-    if !link.isEmpty {
-      // ba= 있으면 그 계정 탭만. 못 찾으면 앞창(다른 계정)에 새 탭을 열지 않음.
-      let hasBa = link.range(of: "ba=") != nil
-      _ = AlarmNotify.openHref(link, fallbackNew: !hasBa)
+    guard !link.isEmpty else { return }
+    // osascript가 수 초 걸린다 — 메인 스레드에서 돌리면 토스트·클릭이 멈춘다.
+    // 탭을 못 찾으면 새 탭. 다른 계정이면 웹이 ba를 보고 채팅을 열지 않는다.
+    DispatchQueue.global(qos: .userInitiated).async {
+      _ = AlarmNotify.openHref(link, fallbackNew: true)
     }
   }
 
@@ -729,6 +731,21 @@ enum AlarmNotify {
       if (tabBa !== wantBa) return false;
       return openOnTab(tabs[ti], target, onActivate);
     }
+    // 3차(목록)·4차(아무 페이지): Apple Events JS가 꺼져 계정을 못 읽는 같은 host 탭.
+    // 웹이 URL ba와 로그인 계정이 다르면 채팅을 열지 않으므로 URL 이동은 안전하다.
+    function tryUnknownTab(tabs, w, ti, target, onActivate, listOnly) {
+      var u = "";
+      try { u = tabs[ti].url(); } catch (e) { return false; }
+      if (!sameHost(u, target)) return false;
+      if (listOnly && (!isListPath(u) || !modeOk(u, target))) return false;
+      if (resolveTabBa(tabs[ti], u)) return false;
+      return openOnTab(tabs[ti], target, onActivate);
+    }
+    function tryPass(tabs, w, ti, target, act, pass) {
+      if (pass === 1) return tryListTab(tabs, w, ti, target, act);
+      if (pass === 2) return tryAccountTab(tabs, w, ti, target, act);
+      return tryUnknownTab(tabs, w, ti, target, act, pass === 3);
+    }
     function scanChrome(name, target, pass) {
       var app = Application(name);
       if (!app.running()) return false;
@@ -743,9 +760,7 @@ enum AlarmNotify {
               var act = (function(win, idx) {
                 return function() { activateChrome(app, name, win, idx); };
               })(w, ti);
-              if (pass === 1) {
-                if (tryListTab(tabs, w, ti, target, act)) return true;
-              } else if (tryAccountTab(tabs, w, ti, target, act)) return true;
+              if (tryPass(tabs, w, ti, target, act, pass)) return true;
             } catch (eTab) {}
           }
         } catch (eWin) {}
@@ -766,9 +781,7 @@ enum AlarmNotify {
               var act = (function(win, tabsArr, idx) {
                 return function() { activateSafari(app, win, tabsArr, idx); };
               })(w, tabs, ti);
-              if (pass === 1) {
-                if (tryListTab(tabs, w, ti, target, act)) return true;
-              } else if (tryAccountTab(tabs, w, ti, target, act)) return true;
+              if (tryPass(tabs, w, ti, target, act, pass)) return true;
             } catch (eTab) {}
           }
         } catch (eWin) {}
@@ -778,7 +791,7 @@ enum AlarmNotify {
     var target = \(target);
     var names = ["Google Chrome", "Google Chrome Canary", "Chromium", "Microsoft Edge", "Brave Browser", "Arc"];
     var found = false;
-    for (var pass = 1; pass <= 2 && !found; pass++) {
+    for (var pass = 1; pass <= 4 && !found; pass++) {
       for (var i = 0; i < names.length; i++) {
         try { if (scanChrome(names[i], target, pass)) { found = true; break; } } catch (e) {}
       }
@@ -834,8 +847,9 @@ final class AlarmNotifCenter: NSObject, NSUserNotificationCenterDelegate {
     switch notification.activationType {
     case .contentsClicked, .actionButtonClicked:
       let href = (notification.userInfo?["href"] as? String) ?? ""
-      let hasBa = href.range(of: "ba=") != nil
-      _ = AlarmNotify.openHref(href, fallbackNew: !hasBa)
+      DispatchQueue.global(qos: .userInitiated).async {
+        _ = AlarmNotify.openHref(href, fallbackNew: true)
+      }
     default:
       break
     }

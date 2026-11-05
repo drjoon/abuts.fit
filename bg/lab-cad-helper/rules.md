@@ -106,6 +106,7 @@ bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니�
 - v15: OS 토스트를 웹 alert 토스트(소프트 sky)에 맞추고, 알림음 샘플 5종을 WAV로 합성한다. 웹 헤더 설정에서 고른 `soundId`를 session/notify로 받는다. auto-update는 `appOrigin`(Vite)·localhost:5173을 먼저 보고, origin이 낮아도 다음 origin을 계속 본다(로컬이 prod보다 앞설 때 prod v에서 멈추지 않음).
 - v16: OS 토스트를 웹 전역 공통 default 토스트(`border-2 primary`·A뱃지/액센트 없음·「보기」)에 맞춘다.
 - v17: Mac 알람 WS는 `URLSession`을 프로세스당 하나만 쓰고, 연결이 바로 끊기면 1초→30초 백오프한다. 시도마다 세션을 만들면 실패한 소켓이 메모리를 놓지 않는다. Windows `GET /printers` · `POST /print-png`(택배 라벨)도 이 번호다. `helperVersion`·`version.json`·`LAB_HELPER_CURRENT_VERSION`을 같이 올린다. Mac만 번호를 그대로 두면 같은 zip을 반복해서 받는다. 라벨 화면은 `LAB_HELPER_PRINT_MIN_VERSION`=17.
+- v18: Mac 토스트 「보기」 — Chrome 「Apple Events의 자바스크립트 허용」이 꺼져 있으면 탭 계정(`ba`)을 못 읽는다. 그럴 때는 같은 host 탭(목록 우선)에 URL을 넣어 연다. 끝내 못 찾으면 새 탭으로 연다(v13의 「새 탭 금지」 폐기). 다른 계정이면 웹이 `ba`를 보고 채팅을 열지 않는다. osascript는 메인 스레드 밖에서 돈다. Windows는 번호만 맞춤.
 
 ## 6) 레거시
 
