@@ -888,6 +888,7 @@ namespace DentalAddin
                 bool twoPhaseSplitReady = false;
                 double regionMinX = 0.0;
                 double regionMaxX = 0.0;
+                s_activeTurningXStockMm = effectiveTurningTechs.Count > 0 ? effectiveTurningTechs.Max(t => t.XStock) : 0.0;
                 s_activeTurningZStockMm = effectiveTurningTechs.Count > 0 ? effectiveTurningTechs.Max(t => t.ZStock) : 0.0;
                 if (!string.IsNullOrWhiteSpace(twoPhaseRegion))
                 {
@@ -1686,6 +1687,7 @@ namespace DentalAddin
         // Rough 끝 = seam + 0.5 → past seam = 0.5 + R + 0.2 (D4 → 2.7). short-cuff extra(3−minZ)는 Back만.
         private const double FrontMiddleTurnPastRadiusAllowanceMm = 0.2;
         private const double BackTurnPastRoughCompMm = 0.5;
+        private static double s_activeTurningXStockMm;
         private static double s_activeTurningZStockMm;
 
         private static double GetFrontMiddleTurnPastSeamMm()
@@ -1705,6 +1707,29 @@ namespace DentalAddin
             double allowance = GetTurnPastRoughEndMm() + BackTurnPastRoughCompMm + shortExtra;
             DentalLogger.Log($"TurningOp BACK - 하강제한 전 클립 = BackPointX + R{GetTurnPastRoughEndMm():0.###} + 보정{BackTurnPastRoughCompMm:0.###} + shortExtra{shortExtra:0.###} = +{allowance:0.###}");
             return allowance;
+        }
+
+        // Middle은 프로파일 끝에서 바로 45°로 빠진다. 수평 꼬리가 없으면 XStock과 ZStock이 모서리를 같이 팁 쪽으로 당긴다.
+        // Turning.prc 0.2+0.2 = 0.4. 체인에만 더해야 툴패스 퇴출이 Rough 끝 + R + 0.2에 남는다.
+        private static double ResolveMiddleTurnExitCornerPullMm()
+        {
+            double xStock = s_activeTurningXStockMm;
+            double zStock = s_activeTurningZStockMm;
+            if (double.IsNaN(xStock) || xStock < 0.0) xStock = 0.0;
+            if (double.IsNaN(zStock) || zStock < 0.0) zStock = 0.0;
+            return xStock + zStock;
+        }
+
+        private static void ExtendMiddleTurnExitForCornerPull(List<double[]> region, string chainName)
+        {
+            if (region == null || region.Count == 0) return;
+            double[] last = region[region.Count - 1];
+            if (last == null || last.Length < 2) return;
+            double pull = ResolveMiddleTurnExitCornerPullMm();
+            if (pull <= 1e-4) return;
+            double endX = last[0] + pull;
+            region.Add(new[] { endX, last[1], last.Length > 2 ? last[2] : 0.0 });
+            DentalLogger.Log($"BuildTurningRangeChain - '{chainName}' Middle 45° 모서리 보정: {last[0]:0.###} -> {endX:0.###} (XStock+ZStock={pull:0.###}, 툴패스 퇴출은 보정 전 X)");
         }
 
         // 툴패스 수평 길이. ZStock은 45도 모서리를 팁 쪽으로 당기므로 체인에만 더한다.
@@ -1964,7 +1989,7 @@ namespace DentalAddin
                 double[] lastPt = region[region.Count - 1];
                 // 프로파일 끝이 maxX보다 앞이면 같은 반경으로 maxX까지 잇는다.
                 // Back_Turn의 maxX는 하강 제한(liftEndX) 입력이라 Back_Rough 끝을 바꾸지 않으려고 둔다.
-                // Middle_Turn의 maxX는 Middle_Rough 끝 + R + 0.2. 여기서 45° 퇴출이 시작된다.
+                // Middle_Turn의 maxX는 Middle_Rough 끝 + R + 0.2. 45° 모서리 당김(XStock+ZStock)은 그 뒤에 체인에만 더한다.
                 // 45° 제한이 Back 평탄을 먹으면, extendFlatPastRough일 때만 러프 끝 이후로 R+0.2를 다시 잇는다.
                 if (maxX - lastPt[0] > 1e-4)
                 {
@@ -1981,6 +2006,10 @@ namespace DentalAddin
                     if (extendFlatPastRough)
                     {
                         ExtendBackTurnFlatPastRough(region, newName);
+                    }
+                    else
+                    {
+                        ExtendMiddleTurnExitForCornerPull(region, newName);
                     }
                     lastPt = region[region.Count - 1];
                 }
