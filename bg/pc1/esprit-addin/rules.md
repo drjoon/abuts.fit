@@ -90,11 +90,11 @@
     - Front_Rough 끝 = `Splitline_2` + 0.5, Middle_Rough 끝 = `Xk` + 0.5 (D1.0 볼 반경). Back_Rough 끝 = BackPointX
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - none/deep Front_Finish 끝은 Splitline_2−0.5(팁)
-  - Finish (2026-10-21):
+  - Finish (2026-11-05):
     - Front 시작 = `FrontPointX − 0.3`(팁, X−)
-    - none/deep: Front 끝 = `Splitline_2 − 0.5`(팁, X−). Back 팁쪽 끝 = 그 X − 1피치. 스텝은 커넥션 → 팁. 마진 띠는 Back만. 1피치는 각 유지홈 StepIncrement
+    - none/deep: 경계 = `Splitline_2 − 0.5`(팁, X−). Front 끝 = 경계 + 0.25(헥스), Back 팁쪽 끝 = 경계 − 0.25. 총 중첩 = D1.0 공구반경(0.5). 스텝은 커넥션 → 팁
     - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
-    - `GetFinishAdjacentOverlapMm()` = D1.0 직경의 2/3(약 0.67) — StepIncrement 해석 실패 시 Back 시작 fallback만
+    - `GetFinishAdjacentOverlapMm()` / `GetFinishSeamOverlapMm()` = D1.0 공구반경(0.5)
     - StepIncrement SSOT: 백엔드 `retentionGroove` (`none`→`5axisComposite_Front.prc` StepIncrement 그대로, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
   - Turn: **`Front_Turn` 끝 = Front_Rough 끝 + R + 0.2** = `Splitline_2 + 0.5 + R + 0.2` (D4 → 2.7). short-cuff extra 없음.
@@ -109,7 +109,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + R + 0.2 = `Xk + 0.5 + R + 0.2` (D4 → 2.7). short-cuff extra 없음.
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - none/deep Back_Finish `[Splitline_2−0.5−1피치 ~ BackPointX]`, Front 끝 = Splitline_2−0.5(팁). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 예전 `-0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
+  - none/deep Back_Finish `[Splitline_2−0.5−0.25 ~ BackPointX]`, Front 끝 = Splitline_2−0.5+0.25. 총 중첩 0.5(공구반경). 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 예전 `-0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
 - Middle_Turn 끝(`Xk+0.5+R+0.2`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5`. 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 R+0.2(D4 → 2.2) 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.5mm 더 깎아 D1.0이 미황삭을 물지 않게 한다.
@@ -120,13 +120,14 @@
 - 목적: **한 식**으로 아래를 동일 경계 좌표에 둔다.
   - `Splitline_2` / `TwoPhaseSplitLine` (Rough/Turn seam)
   - `Front_Rough` 끝 = 그 경계 + `GetRoughPastFinishSeamMm()` (`0.5`)
-  - Finish: none/deep Front 끝 = Splitline_2 − 0.5(팁), Back 팁쪽 끝 = 그 X − 1피치
+  - Finish: none/deep 경계 = Splitline_2 − 0.5(팁). Front 끝 = 경계 + 0.25, Back 팁쪽 끝 = 경계 − 0.25 (공구반경 0.5 중첩)
 - 기준식:
   - `SharedFinishSplitX = finishLineTopX - 0.5` (tip 쪽 0.5mm, Z+0.5 ≡ X-0.5). 축에 수직인 한 평면이라 피니시라인 둘레 높낮이는 따라가지 않는다.
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
-  - none/deep `Back_Finish` 팁쪽 끝 = (`Splitline_2 − 0.5`) − 1×StepIncrement. pitch 실패 시 −`GetFinishAdjacentOverlapMm()` (약 0.67)
-    - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20). 겹침과 별개.
+  - none/deep `Back_Finish` 팁쪽 끝 = (`Splitline_2 − 0.5`) − 0.25. Front 끝 = (`Splitline_2 − 0.5`) + 0.25
+    - 중첩 SSOT: `GetFinishSeamOverlapMm()` = D1.0 공구반경(0.5). StepIncrement와 별개.
+    - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20)
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
 - 좌표 변환 (`EspritHttpServer`: `FrontPointX = -FrontPoint.z`):
@@ -139,7 +140,7 @@
 - 구현:
   - `TryResolveSharedFinishSplitX` → `TryResolveTwoPhaseSplitLineTargetX`
   - Rough: `frontEnd = splitline2 + GetRoughPastFinishSeamMm()` (`0.5`) / wide 시 `Front_Face` end, `backStart = splitline2 - GetRoughAdjacentOverlapMm()`, Middle은 wide 시만
-  - Finish none/deep: `Front_Finish` 끝 = `Splitline_2 − 0.5`(팁). Back 팁쪽 끝 = 그 X − 1피치. 마진 띠는 Back만
+  - Finish none/deep: 경계 = `Splitline_2 − 0.5`(팁). Front 끝 = 경계 + 0.25, Back 팁쪽 끝 = 경계 − 0.25
   - Middle 끝 = `Xk`, Middle_Rough 끝 = `Xk + 0.5`. Back_Finish 는 `Xk` 로 자르지 않음
   - Finish_Front StepIncrement: `none`은 `5axisComposite_Front.prc` 값 유지, `deep`만 COM SetProperty 0.20 (`TrySetCompositeStepIncrement`)
   - `safeBFirstMax`는 seam을 당기지 않는다(로그만)
@@ -291,7 +292,7 @@
   - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`(+`3−minZ` if minZ≤2). Turn 체인 수평 끝 = `BackPointX + R + 0.5`(+`3−minZ` if minZ≤2) + ZStock
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - `Turning.prc` ZStock(0.3)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에 더한다. 0.5는 Back_Rough 툴패스가 BackPointX를 조금 넘는 몫.
-- Finish 겹침 (2026-10-20): Front_Finish 끝 = 경계(max_z 또는 Splitline_2). Back_Finish 시작 = 경계 − 1피치. safe split의 `Xk − overlap`은 Turn/Rough만.
+- Finish 겹침 (2026-11-05): 경계 = Splitline_2−0.5. Front_Finish 끝 = 경계 + 0.25, Back_Finish 팁쪽 = 경계 − 0.25 (공구반경 0.5 중첩). safe split의 `Xk − overlap`은 Turn/Rough만.
 - 퇴출: Front/Middle/Back 모두 Turn 끝에서 45도로 올라가 소재 반경(topY)에 닿은 뒤 90도(수직)로 빠진다 (`BuildTurningRangeChain`).
 - `Tech_Default_Path.xml` Turning Extend(NumData[5])·Exit angle(80)은 3-stage Turn 끝점에 쓰지 않는다. XML 값은 2.0으로 두고 주석으로 기록.
 - 구현: `GetTurnPastRoughEndMm`, `GetTurnPastFinishSeamMm`, `ResolveBackTurnExitAllowance`, `TryPrepareTurningRegionRange`, `aEndOffsetFromSplitMm`(Front_Finish 끝)
