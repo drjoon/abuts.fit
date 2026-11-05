@@ -1235,7 +1235,15 @@ const MIN_RADIUS_ROUNDS = 24;
  * 커넥션 원점 상방 CUFF_DEFORM_MIN_Z_MM(0.3mm) 아래는 건드리지 않으며, 피니시라인 위 끝 반경(c4)도 그대로 둔다.
  * 원래 프로파일에 제어점 보정량만 더하고, 보정량은 매 회 둘레로 평활한다(열마다 갈아 끼우면 보정 열 경계가 세로 주름이 된다).
  */
-function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tailWeights = null, measuredMeridian = null) {
+function enforceMinToolRadiusOnProfiles(
+  profiles,
+  hs,
+  zA,
+  canLiftD0 = false,
+  tailWeights = null,
+  measuredMeridian = null,
+  skipBotMm = null,
+) {
   const n = profiles.length;
   // 4차 제어 다각형 검사는 실제 곡선보다 보수적이다. 4차로 설계하지 않은 열은 실제 자오선 곡률로 보고, 이미 넉넉하면 자오선은 메우지 않는다.
   const meridianOk = measuredMeridian
@@ -1259,7 +1267,7 @@ function enforceMinToolRadiusOnProfiles(profiles, hs, zA, canLiftD0 = false, tai
   let changed = false;
   for (let round = 0; round < MIN_RADIUS_ROUNDS; round += 1) {
     const next = cur.map((c) => c.slice());
-    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights, meridianOk, profiles, ctrl0)) break;
+    if (!enforceMinToolRadiusOnCtrl(next, hs, zA, canLiftD0, tailWeights, meridianOk, profiles, ctrl0, skipBotMm)) break;
     changed = true;
     for (let k = 1; k <= 3; k += 1) {
       const step = circularSmooth(
@@ -1326,6 +1334,7 @@ function enforceMinToolRadiusOnCtrl(
   meridianOk = null,
   profiles = null,
   ctrl0 = null,
+  skipBotMm = null,
 ) {
   const n = ctrl.length;
   const modified = new Uint8Array(n);
@@ -1403,7 +1412,9 @@ function enforceMinToolRadiusOnCtrl(
     const active = Array.from({ length: nz }, (_, iz) => {
       const z = zLevels[iz];
       return Array.from({ length: n }, (_, j) => {
-        if (z >= zTops[j] - 0.02) return null;
+        const botSkip = skipBotMm ? Math.max(0.05, skipBotMm[j] || 0) : 0.05;
+        const topSkip = meridianOk?.[j] ? MERIDIAN_CHECK_SKIP_TOP_MM : 0.02;
+        if (z < zA + botSkip - 1e-6 || z >= zTops[j] - topSkip) return null;
         const h = hs[j];
         const invH = 1 / h;
         const invH2 = invH * invH;
@@ -1420,13 +1431,13 @@ function enforceMinToolRadiusOnCtrl(
         const b2 = 6 * u2 * t2;
         const b3 = 4 * u * t3;
         const b4 = t4;
-        const norm = b1 * b1 + b2 * b2 + b3 * b3 + 1e-6;
+        const norm = Math.max(0.05, b1 * b1 + b2 * b2 + b3 * b3);
         let baseR = null;
         let baseRz = null;
         let baseRzz = null;
         if (profiles && ctrl0) {
           const fn = profiles[j];
-          const dt = Math.min(1e-3, 0.25 * Math.min(t, 1 - t));
+          const dt = Math.min(2 / PROFILE_SMOOTH_LEVELS, 0.25 * Math.min(t, 1 - t));
           if (dt > 1e-6) {
             const rm = fn(t - dt);
             const r0 = fn(t);
@@ -1529,7 +1540,8 @@ function enforceMinToolRadiusOnCtrl(
           const W = Math.sqrt(W2);
           const L = (r * (rThth - r) - 2 * rTh * rTh) / W;
           const M = (r * rThz - rTh * rz) / W;
-          // 자오선 오목(N)도 넣은 최대 주곡률. 둘레만 보면 두 방향이 같이 오목한 곳(커넥션 바로 위 골)을 놓친다.
+          // 자오선 오목(N)도 넣은 최대 주곡률. 단, relaxMeridianConcavity로 자오선 곡률을 이미 맞춘 열(meridianOk)은
+          // 자오선 성분(N>0)이 미소 둘레 골(L>0)과 결합해 해당 열만 바깥으로 부풀리는 세로 능선을 만들지 않게 둘레·비틀림 주곡률만 본다.
           const c = ctrl[j];
           let rzz;
           if (a.baseRzz != null && ctrl0) {
@@ -1543,7 +1555,8 @@ function enforceMinToolRadiusOnCtrl(
               a.s2 *
               (a.u2 * (c[2] - 2 * c[1] + c[0]) + a.ut * (c[3] - 2 * c[2] + c[1]) + a.t2 * (c[4] - 2 * c[3] + c[2]));
           }
-          const N = (r * rzz) / W;
+          const rawN = (r * rzz) / W;
+          const N = meridianOk?.[j] ? Math.min(0, rawN) : rawN;
           const Hc = (E * N - 2 * F * M + G * L) / (2 * W2);
           const Kc = (L * N - M * M) / W2;
           const kTh = Hc + Math.sqrt(Math.max(0, Hc * Hc - Kc));
@@ -1621,9 +1634,9 @@ const PROFILE_SMOOTH_LEVELS = 128;
  */
 const PROFILE_INNER_PASS_HARMONICS = 16;
 const PROFILE_INNER_STOP_HARMONICS = 32;
-/** 커프 몸통(마진 아래 SEAM_BLEND_DEPTH_MM 하방) 저역 통과 차수. 위 끝(smoothCreaseR 16~32차)과 맞추어 topKeep 경계에서 주름이 안 생기게 한다. */
-const PROFILE_BODY_PASS_HARMONICS = 16;
-const PROFILE_BODY_STOP_HARMONICS = 32;
+/** 커프 몸통(마진 아래 SEAM_BLEND_DEPTH_MM 하방)은 4~10차(36~90°) 광역 저역 통과로 고른다. 16~32차만 쓰면 낮은 마진(310°) 근처 40° 폭만 국소적으로 볼록하게 남는다(20261103-CEWBUDCG). */
+const PROFILE_BODY_PASS_HARMONICS = 4;
+const PROFILE_BODY_STOP_HARMONICS = 10;
 const PROFILE_START_SLOPE_EPS = 1e-4;
 
 /**
@@ -1679,10 +1692,10 @@ function smoothProfilesAcrossColumns(profiles, heights = null) {
     const u = x * L;
     const i = Math.min(L - 1, Math.floor(u));
     const f = u - i;
-    const p0 = levels[Math.max(0, i - 1)][j];
+    const p0 = i > 0 ? levels[i - 1][j] : 2 * levels[0][j] - levels[1][j];
     const p1 = levels[i][j];
     const p2 = levels[i + 1][j];
-    const p3 = levels[Math.min(L, i + 2)][j];
+    const p3 = i + 2 <= L ? levels[i + 2][j] : 2 * levels[L][j] - levels[L - 1][j];
     const q = p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
     return base(j, x) + q;
   });
@@ -3719,7 +3732,7 @@ export function blendCuffJunction(buffer, options = {}) {
         if (!fitted || !(ORIG_MID_LIFT > 1e-6)) return Math.max(base, rSOrig);
         const fVal = Math.max(base, Math.min(rTop, fitted(t)));
         const targetOrig = Math.max(rSOrig, rSOrig + ORIG_MID_LIFT * (fVal - rSOrig));
-        return Math.max(base, targetOrig);
+        return Math.max(base, Math.min(rTop, targetOrig));
       });
     };
     const legacyConcaveOf = (rTop, eSlope, hb, relax = 0, j = -1) => {
@@ -3847,6 +3860,7 @@ export function blendCuffJunction(buffer, options = {}) {
       false,
       tailWeights,
       blendedCols,
+      relaxSkipBotMm,
     );
     const profiles = floorKeep
       ? enforcedProfiles.map((fn, j) => withDeformFloor(fn, bowls[j].floorBase, floorKeep[j], hs[j]))

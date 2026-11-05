@@ -640,6 +640,73 @@ describe("blendCuffJunction", () => {
     }
     expect(worstNz).toBeGreaterThan(-0.35);
   });
+
+  it("does not inflate high-cuff columns into vertical ridges when margin height scallops between 4.3mm and 6.0mm (20261105-CHXYWTCH)", () => {
+    const seg = 96;
+    const zCreaseAt = (a) => 5.14 - 0.85 * Math.cos(a + 0.15) - 0.12 * Math.cos(2 * a);
+    const rCreaseAt = (a) => 2.61 - 0.48 * Math.cos(a + 0.15) + 0.03 * Math.cos(3 * a);
+    const rAt = (a, z) => {
+      if (z <= 0.19) return cone(z);
+      const zc = zCreaseAt(a);
+      const rc = rCreaseAt(a);
+      if (z >= zc) return rc - 0.25 * (z - zc);
+      const u = (z - 0.19) / (zc - 0.19);
+      const r0 = cone(0.19);
+      return r0 + 0.035 * (z - 0.19) + (rc - r0 - 0.035 * (zc - 0.19)) * (0.3 * u * u + 0.7 * u * u * u);
+    };
+    const zs = [-1.2, -0.5, 0, 0.1, 0.19, 0.35, 0.7, 1.2, 1.8, 2.4, 3.0, 3.6, 4.1, 4.3, 4.6, 5.0, 5.5, 6.0, 7.2];
+    const tris = [];
+    const pt = (i, z) => {
+      const a = (i / seg) * Math.PI * 2;
+      const r = rAt(a, z);
+      return [r * Math.cos(a), r * Math.sin(a), z];
+    };
+    const ch = (i, z) => {
+      const a = (i / seg) * Math.PI * 2;
+      return [R_CHANNEL * Math.cos(a), R_CHANNEL * Math.sin(a), z];
+    };
+    for (let k = 0; k + 1 < zs.length; k += 1) {
+      const z0 = zs[k];
+      const z1 = zs[k + 1];
+      for (let i = 0; i < seg; i += 1) {
+        const j = (i + 1) % seg;
+        tris.push([pt(i, z0), pt(j, z0), pt(j, z1)], [pt(i, z0), pt(j, z1), pt(i, z1)]);
+        tris.push([ch(i, z0), ch(j, z1), ch(j, z0)], [ch(i, z0), ch(i, z1), ch(j, z1)]);
+      }
+    }
+    for (let i = 0; i < seg; i += 1) {
+      const j = (i + 1) % seg;
+      const zBot = zs[0];
+      const zTop = zs[zs.length - 1];
+      tris.push([pt(i, zTop), pt(j, zTop), ch(j, zTop)], [pt(i, zTop), ch(j, zTop), ch(i, zTop)]);
+      tris.push([pt(i, zBot), ch(j, zBot), pt(j, zBot)], [pt(i, zBot), ch(i, zBot), ch(j, zBot)]);
+    }
+    const positions = new Float64Array(tris.length * 9);
+    tris.forEach((t, idx) => positions.set(t.flat(), idx * 9));
+    const input = writeBinaryStl({ positions, attributes: new Uint16Array(tris.length) });
+    const finishLine = {
+      points: Array.from({ length: 64 }, (_, i) => {
+        const a = (i / 64) * Math.PI * 2;
+        const r = rCreaseAt(a);
+        return [r * Math.cos(a), r * Math.sin(a), zCreaseAt(a)];
+      }),
+    };
+    const neo = resolveCuffConnectionSpec({
+      implantManufacturer: "NEOBIOTECH",
+      implantBrand: "IS2",
+      implantFamily: "Regular",
+    });
+    const res = blendCuffJunction(input, { ...neo, specKey: neo.key, finishLine });
+    expect(res.ok).toBe(true);
+    const probe = _prepare(res.buffer).probe;
+    for (const z of [1.5, 2.0, 2.5, 3.0]) {
+      const rs = Array.from({ length: 360 }, (_, d) => probe.rayRadius((d * Math.PI) / 180, z));
+      for (let d = 0; d < 360; d += 1) {
+        const d2 = Math.abs(rs[(d + 1) % 360] - 2 * rs[d] + rs[(d + 359) % 360]);
+        expect(d2).toBeLessThan(0.0015);
+      }
+    }
+  });
 });
 
 describe("angularRow", () => {

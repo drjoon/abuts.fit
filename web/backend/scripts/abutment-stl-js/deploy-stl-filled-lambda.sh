@@ -209,7 +209,23 @@ fi
 if [[ -n "$EB_ENV" ]]; then
   EB_CMD="/Users/joonholee/miniforge3/bin/eb"
   [[ -x "$EB_CMD" ]] || EB_CMD="$(command -v eb || true)"
+  current_lambda=""
   if [[ -n "$EB_CMD" ]]; then
+    current_lambda="$(
+      (cd "$WEB_DIR" && "$EB_CMD" printenv "$EB_ENV" 2>/dev/null || true) | awk -F'=' '
+        {
+          key=$1
+          val=$2
+          gsub(/^[ \t]+|[ \t]+$/, "", key)
+          gsub(/^[ \t]+|[ \t]+$/, "", val)
+          if (key == "ABUTMENT_STL_FILLED_LAMBDA") { print val; exit }
+        }
+      '
+    )"
+  fi
+  if [[ "$current_lambda" == "$FUNCTION_NAME" ]]; then
+    info "EB 환경변수 유지: ABUTMENT_STL_FILLED_LAMBDA=$FUNCTION_NAME ($EB_ENV)"
+  elif [[ -n "$EB_CMD" ]]; then
     info "EB setenv: ABUTMENT_STL_FILLED_LAMBDA=$FUNCTION_NAME ($EB_ENV)"
     (cd "$WEB_DIR" && "$EB_CMD" setenv "ABUTMENT_STL_FILLED_LAMBDA=$FUNCTION_NAME" --environment "$EB_ENV")
   fi
