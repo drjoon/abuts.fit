@@ -91,7 +91,7 @@
     - 후행 Rough 시작 = 선행 Rough 끝 − 2.0 (`GetRoughAdjacentOverlapMm`)
     - none/deep Front_Finish 끝은 Splitline_2−0.5(팁)
   - Finish (2026-11-05):
-    - Front 시작 = 팁(원점) + 0.5. Face 끝(팁+1.0)과 0.5mm 겹친다
+    - Front 시작 = 팁(원점) + 0.1. Face 끝(팁+1.5)과 1.4mm 겹친다
     - none/deep: 경계 = `Splitline_2 − 0.5`(팁, X−). Front 끝 = 경계 + 0.07(헥스), Back 팁쪽 끝 = 경계 − 0.07. 양쪽이 1피치(StepIncrement 0.07)씩 넘어간다. 공구반경(0.5) 중첩은 두 번 깎인 띠가 홈으로 남았다. 스텝은 커넥션 → 팁
     - safe split이어도 Finish는 `Xk`로 나누지 않는다. `Xk`는 Turn/Rough만.
     - `GetFinishAdjacentOverlapMm()` / `GetFinishSeamOverlapMm()` = 0.14 (`FinishSeamCrossPitchMm` 0.07 × 2)
@@ -167,10 +167,10 @@
 
 - Front Face 시작/종료점 정책(현행 SSOT):
   - 시작: `Face.StartX = 0` (원점). 면 전체를 항상 깎는다. TopZ는 FACE.prc 유지
-  - 끝: `Face.RightX = 1.0` (팁에서 1mm). FrontPoint와 무관
+  - 끝: `Face.RightX = 1.5` (팁에서 1.5mm). FrontPoint와 무관
   - 클램프: 항상 `Face.RightX ≤ Splitline_2` (= **FinishLine top 상방 0.5mm**)
     - `Splitline_2 = finishLineTopX - 0.5`, margin 0 → FL top − 0.5
-  - 피니시라인 top이 팁에서 1mm보다 가까우면 Face는 Splitline_2에서 멈춘다 (2026-11-05)
+  - 피니시라인 top이 팁에서 1.5mm보다 가까우면 Face는 Splitline_2에서 멈춘다 (2026-11-06)
   - `LastAppliedFrontFaceDepthMm = 0.5mm`
   - 구현: `ApplyFrontFaceFixedDepth` / `ClampFaceRightXBelowSplitline2` / `TryApplyFaceRightEndGuard`
 

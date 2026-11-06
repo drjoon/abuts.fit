@@ -387,7 +387,7 @@ export const saveManualFrontPoint = asyncHandler(async (req, res) => {
   request.caseInfos = request.caseInfos || {};
   // 수동 Front Point:
   // - FrontPointX(Splitline_1) 앵커. Face 길이는 바꾸지 않는다.
-  // - Face는 팁에서 1mm, Finish Front는 팁에서 0.5mm.
+  // - Face는 팁에서 1.5mm, Finish Front는 팁에서 0.1mm.
   request.caseInfos.frontPoint = {
     ...normalized,
     source: "frontend-manual",

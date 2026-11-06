@@ -112,7 +112,7 @@ const requestSchema = new mongoose.Schema(
         // "frontend-manual" | undefined(auto/rhino)
         source: String,
       },
-      // 가공 길이에 쓰지 않는다. Face는 팁에서 1mm, Finish Front는 팁에서 0.5mm.
+      // 가공 길이에 쓰지 않는다. Face는 팁에서 1.5mm, Finish Front는 팁에서 0.1mm.
       frontFaceEndOffsetMm: Number,
       hexRotation: {
         // Esprit 가공 SSOT: "STL모델대로" | "헥스30도회전" | "STL모델+" | "헥스30+"

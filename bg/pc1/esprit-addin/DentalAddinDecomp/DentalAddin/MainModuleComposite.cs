@@ -967,7 +967,7 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // Finish_Front 시작점: 팁(원점)에서 0.5mm. Face(팁~1mm)와 0.5mm 겹친다.
+            // Finish_Front 시작점: 팁(원점)에서 0.1mm. Face(팁~1.5mm)와 1.4mm 겹친다.
             double splitline1X = MoveSTL_Module.FrontPointX;
             double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
             bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out _, out double resolvedXMin, out _);
@@ -1065,7 +1065,7 @@ namespace DentalAddin
             }
 
             // Finish_Front 시작점 정책:
-            // - 기본값: 팁(원점)에서 0.5mm
+            // - 기본값: 팁(원점)에서 0.1mm
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = firstPassPercentOverride ?? baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1817,8 +1817,8 @@ namespace DentalAddin
         private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
-        // Front Face 종료점: 팁(원점)에서 1mm. FrontPoint·교합 각도와 무관.
-        private const double FrontFaceFromTipMm = 1.0;
+        // Front Face 종료점: 팁(원점)에서 1.5mm. FrontPoint·교합 각도와 무관.
+        private const double FrontFaceFromTipMm = 1.5;
         private const double FrontFaceTipClearanceMm = 1.0;
         // Face.RightX 하한. 요청이 이보다 짧으면 0.5mm는 깎는다.
         private const double FrontFaceShortPastFrontMm = 0.5;
@@ -1853,7 +1853,7 @@ namespace DentalAddin
         //                           Middle_Turn   [FrontPointX ~ Xk+3.0]         (황삭 끝+D4 반경 2.0+칩 0.2)
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
-        //   Finish                : none/deep Front [팁 ~ Splitline_2−0.5+0.07]
+        //   Finish                : none/deep Front [팁+0.1 ~ Splitline_2−0.5+0.07]
         //                           none/deep Back [Splitline_2−0.5−0.07 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
         //   Xk = (BackPointX - FL min_z) + 0.2  (Turn/Rough 경계. Finish seam은 피니시라인)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
@@ -1862,13 +1862,13 @@ namespace DentalAddin
 
         // Finish Front/Back은 경계에서 각자 1피치(0.07, Composite PRC StepIncrement)씩 반대쪽으로 넘어간다.
         //   공구반경(0.5) 중첩은 두 번 깎인 띠가 홈으로 남았다.
-        //   Front_Finish 시작 = 팁 + 0.5. Face는 팁 + 1.0에서 끝난다.
+        //   Front_Finish 시작 = 팁 + 0.1. Face는 팁 + 1.5에서 끝난다.
         //   none/deep 경계 = Splitline_2 − 0.5 (팁, X-)
         //   none/deep Front_Finish 끝 = 경계 + 0.07 (헥스)
         //   none/deep Back_Finish 팁쪽 끝 = 경계 − 0.07. 스텝은 커넥션 → 팁
         //   Back_Finish   커넥션쪽 = BackPointX (헥스. 예전 -0.20은 팁 쪽 1피치)
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
-        private const double FinishFrontFromTipMm = 0.5;
+        private const double FinishFrontFromTipMm = 0.1;
         private const double FinishPastSplitline2TowardTipMm = 0.5;
         private const double FinishSeamCrossPitchMm = 0.07;
         private const double FinishAdjacentOverlapMm = FinishSeamCrossPitchMm * 2.0;
@@ -2107,7 +2107,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face tip 시작 X = 원점 0. RightX 끝은 팁에서 1mm.
+        /// Front Face tip 시작 X = 원점 0. RightX 끝은 팁에서 1.5mm.
         /// 면 전체를 항상 깎는다. 홀 베벨은 Face Hole 센터드릴 Z[#523+1.33]에 맡긴다.
         /// </summary>
         private static double ResolveFrontFaceStartX(out double frontX)
@@ -2194,9 +2194,9 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 팁에서 1mm.
+        /// Front Face(ParallelPlanes): tip 시작 원점 0, 끝은 팁에서 1.5mm.
         /// - 시작: Face.StartX = 0 (원점). TopZ는 FACE.prc 유지(1.0)
-        /// - 끝: Face.RightX = 1.0. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
+        /// - 끝: Face.RightX = 1.5. 하한 0.5. 상한: Face.RightX ≤ Splitline_2 (= FL top 상방 0.5mm)
         /// - LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm(0.5mm)
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -2236,7 +2236,7 @@ namespace DentalAddin
                 SetFaceTopZLimitFromStartX(faceOp, faceStartX);
                 SetFaceBottomZLimitFromRightX(faceOp, appliedFaceRightX);
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - 팁 기준 1mm: frontX={frontX:F3}, startX={faceStartX:F3}(origin), fromTip={FrontFaceFromTipMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 0.5mm)");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - 팁 기준 1.5mm: frontX={frontX:F3}, startX={faceStartX:F3}(origin), fromTip={FrontFaceFromTipMm:F3}, requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ(prc)={faceOp.TopZLimit:F3} (was {oldTop:F3}), BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, DepthRef={LastAppliedFrontFaceDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={FrontFaceSplitline2NoCrossMarginMm:F3} (=FL top 상방 0.5mm)");
             }
             catch (Exception ex)
             {
@@ -3084,7 +3084,7 @@ namespace DentalAddin
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
         // - Splitline_2 / TwoPhaseSplitLine = SharedFinishSplitX (finishLineTopX - 0.5mm, tip 쪽)
-        //   Finish_Front 시작 = 팁 + 0.5. Face 끝 = 팁 + 1.0.
+        //   Finish_Front 시작 = 팁 + 0.1. Face 끝 = 팁 + 1.5.
         //   none/deep Finish 경계=Splitline_2−0.5(팁). Front/Back 각 ±0.07(1피치)씩 넘어간다.
         // - 인접 툴패스:
         //   Rough: 선행 끝=경계+GetRoughPastFinishSeamMm(0.5), 후행(Back) 시작=경계 tip쪽(X-) 공구반경
