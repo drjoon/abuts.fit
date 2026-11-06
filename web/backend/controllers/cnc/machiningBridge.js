@@ -334,7 +334,7 @@ const resolveMachiningDurationSeconds = (record) => {
 };
 
 const MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS = 3 * 60; // 3분 이하
-const MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS = 15 * 60; // 15분 이상
+const MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS = 20 * 60; // 20분 이상
 
 const buildCompletedAtRangeFromQuery = (req) => {
   const fromYmd = String(req.query.from || "").trim();

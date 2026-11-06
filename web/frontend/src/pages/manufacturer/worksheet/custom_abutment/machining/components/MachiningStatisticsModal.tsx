@@ -2,6 +2,7 @@
 // - 2026-08-24: 아웃라이어를 차트에서 제외하고 하단 표로 분리. 7일 필터.
 // - 2026-08-24: 소요시간 라벨을 Customized+하단 수치로 표시. 관리자 대시보드 진입.
 // - 2026-08-24: 소요시간 누적 막대 차트, 모달 여백·Y축 상단 여유 조정.
+// - 2026-11-06: 장시간 아웃라이어 기준 15분 → 20분 이상.
 // related files:
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
@@ -92,7 +93,7 @@ const DIAMETER_LABELS = ["6", "8", "10", "12"] as const;
 /** 백엔드 SSOT와 동일 기본값 (API outlierCriteria 없을 때 폴백) */
 const DEFAULT_OUTLIER_CRITERIA: MachiningStatsOutlierCriteria = {
   lowMaxSeconds: 3 * 60,
-  highMinSeconds: 15 * 60,
+  highMinSeconds: 20 * 60,
 };
 
 const countRatioChartConfig = {
