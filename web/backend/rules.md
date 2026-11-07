@@ -250,6 +250,16 @@
   1:1 룸(participants=`[designPartner, requestor]`, `relatedRequestId`). 제조사 룸과 분리.
 - 파일: 디자인 파트너는 `original-file-url` 및 Request `caseInfos.file`/`files` S3 키 다운로드 허용.
 
+### Finish_Back 스텝 간격
+
+Finish_Back(치은)만. Finish_Front와 경계 중첩 0.07(`FinishSeamCrossPitchMm`)은 그대로다.
+
+- 기준은 가공되는 커프의 최대 기울기. 보정이 적용됐으면 `cuffBlend.maxAngleDeg`(축 기준, 0°=수직). 아니면 제안 전 `cuffProposal.maxCuffAngleDegBefore`. 피니시라인 `min_z`는 쓰지 않는다. 송용원 27(`20261108-DTVMBSGY`)은 `min_z` 1.62mm·각도 80.5°라 1mm 높이 기준이면 0.07로 남는다.
+- 식: 78°에 축 스텝 0.03mm를 둔 면 간격을 0.01mm 단위로. `clamp(round(0.03/cos(78°)·cos(θ), 0.01), 0.03, 0.07)`. 약 63° 이하는 0.07, 76° 이상은 0.03. 각도가 없으면 0.07.
+- 제조사 `compositeStepIncrementGingivaOverrideMm`가 있으면 그 값(0.03·0.05·0.10·0.20).
+- request-meta가 정한 값을 애드인 Finish_Back에 넣는다. NC 스탬프 `gingivaStepRule=cuff-angle-v1`. 그 표식 없이 치은 0.05로 찍힌 옛 NC는 실제 0.07로 본다.
+- SSOT: `utils/compositeStepIncrement.js` `resolveFinishBackStepMm`.
+
 ### 가공 우선순위
 
 장비 생산 큐(재생목록 / Next Up / 자동 연속 가공) 정렬·배정 SSOT.

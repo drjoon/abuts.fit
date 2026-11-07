@@ -2428,12 +2428,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         }
 
         // 유지홈(retentionGroove) + 제조사 compositeStepIncrement*OverrideMm → STEP_INCREMENT env.
-        // 포스트(A): override ?? (deep→0.20, none→Front PRC). 치은(B): override ?? Back PRC.
+        // 포스트(A): override ?? (deep→0.20, none→Front PRC).
+        // 치은(B): request-meta가 Finish_Back 스텝(수동 override 또는 커프 각도 0.03~0.07)을 보낸다. 없으면 Back PRC.
         private const string RetentionGrooveMissingMessage =
             "유지홈(retentionGroove)이 백엔드에서 전달되지 않았습니다. none 또는 deep이 필요합니다.";
 
+        // 수동 override 0.10/0.20 + Finish_Back 0.03~0.07(0.01).
         private static readonly double[] AllowedCompositeStepIncrementMm =
-            { 0.03, 0.05, 0.10, 0.20 };
+            { 0.03, 0.04, 0.05, 0.06, 0.07, 0.10, 0.20 };
 
         private static string CompositePrcFrontPath =>
             Path.Combine(

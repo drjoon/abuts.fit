@@ -498,7 +498,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // 유지홈 옵션 ("none"|"deep") —
             // none: 5axisComposite_Front.prc StepIncrement 그대로. deep: Finish_Front 0.20.
             [DataMember] public string retentionGroove { get; set; }
-            // Finish StepIncrement(mm) 제조사 override. null/미수신=의뢰자설정.
+            // Finish StepIncrement(mm). 포스트는 제조사 override(null=retentionGroove).
+            // 치은은 백엔드가 정한 Finish_Back 스텝(override 또는 커프 각도). null이면 Back PRC.
             [DataMember(EmitDefaultValue = false)] public double? compositeStepIncrementPostOverrideMm { get; set; }
             [DataMember(EmitDefaultValue = false)] public double? compositeStepIncrementGingivaOverrideMm { get; set; }
             // PreviewModal「Wide Split」: FL 하단에서 끊어 Front/Middle/Back 3구간. 미수신(null) 시 OFF.

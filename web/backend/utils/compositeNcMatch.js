@@ -1,15 +1,16 @@
 import Request from "../models/request.model.js";
 import {
   compositeStepsMatch,
+  interpretBakedCompositeSteps,
   ncOwnerRequestId,
-  readStampedCompositeSteps,
   resolveEffectiveCompositeSteps,
 } from "./compositeStepIncrement.js";
 
-async function stepsBakedIntoNc(ncFile, selfRequestId) {
-  const stamped = readStampedCompositeSteps(ncFile);
-  if (stamped) return stamped;
+async function stepsBakedIntoNc(ncFile, request) {
+  const baked = interpretBakedCompositeSteps(ncFile, request?.caseInfos);
+  if (baked) return baked;
 
+  const selfRequestId = request?.requestId;
   const ownerId = ncOwnerRequestId(ncFile, selfRequestId);
   const self = String(selfRequestId || "").trim().toLowerCase();
   if (!ownerId || ownerId.toLowerCase() === self) return null;
@@ -19,13 +20,17 @@ async function stepsBakedIntoNc(ncFile, selfRequestId) {
       "caseInfos.retentionGroove": 1,
       "caseInfos.compositeStepIncrementPostOverrideMm": 1,
       "caseInfos.compositeStepIncrementGingivaOverrideMm": 1,
+      "caseInfos.cuffBlend.status": 1,
+      "caseInfos.cuffBlend.maxAngleDeg": 1,
+      "caseInfos.cuffProposal.maxCuffAngleDegBefore": 1,
       "caseInfos.ncFile.compositeStepPostMm": 1,
       "caseInfos.ncFile.compositeStepGingivaMm": 1,
+      "caseInfos.ncFile.gingivaStepRule": 1,
     })
     .lean();
   if (!owner) return { missingOwner: true };
   return (
-    readStampedCompositeSteps(owner?.caseInfos?.ncFile) ||
+    interpretBakedCompositeSteps(owner?.caseInfos?.ncFile, owner?.caseInfos) ||
     resolveEffectiveCompositeSteps(owner?.caseInfos)
   );
 }
@@ -35,7 +40,7 @@ export async function compositeNcIsStale(request) {
   const nc = request?.caseInfos?.ncFile;
   if (!nc?.s3Key && !nc?.filePath && !nc?.fileName) return false;
   const effective = resolveEffectiveCompositeSteps(request?.caseInfos);
-  const baked = await stepsBakedIntoNc(nc, request?.requestId);
+  const baked = await stepsBakedIntoNc(nc, request);
   if (!baked) return false;
   if (baked.missingOwner) return true;
   return !compositeStepsMatch(baked, effective);

@@ -235,7 +235,8 @@ const requestSchema = new mongoose.Schema(
         type: String,
         enum: ["abuts", "manufacturer"],
       },
-      // Finish Composite StepIncrement(mm) — 제조사 override. null=의뢰자설정(포스트=retentionGroove, 치은=PRC 0.05).
+      // Finish Composite StepIncrement(mm) — 제조사 override. null=자동.
+      // 포스트=retentionGroove. 치은(Finish_Back)=커프 각도 0.03~0.07, 기본 0.07.
       compositeStepIncrementPostOverrideMm: {
         type: Number,
         default: null,
@@ -571,6 +572,8 @@ const requestSchema = new mongoose.Schema(
         // 이 NC를 만들 때 쓴 Finish StepIncrement(mm). 카드 피치와 다르면 재생성.
         compositeStepPostMm: Number,
         compositeStepGingivaMm: Number,
+        // cuff-angle-v1: 치은 스텝이 실제 Finish_Back 값. 없으면 예전 0.05 스탬프는 PRC 0.07.
+        gingivaStepRule: String,
         // NC 사후 분석(좌표 범위·용량). flags가 있으면 자동 연속 가공이 건너뛴다.
         // related: web/backend/utils/ncProgramCheck.js
         analysis: { type: {}, default: undefined },

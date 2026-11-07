@@ -48,14 +48,52 @@ export function resolveCompositePostStepMm(
   return retentionGroove === "deep" ? 0.2 : 0.05;
 }
 
+/** Finish_Back 기본. 5axisComposite_Back.prc. 백엔드 resolveFinishBackStepMm과 같다. */
+export const FINISH_BACK_STEP_DEFAULT_MM = 0.07;
+const FINISH_BACK_STEP_MIN_MM = 0.03;
+const FINISH_BACK_STEP_MAX_MM = 0.07;
+const FINISH_BACK_SURFACE_STEP_MM =
+  FINISH_BACK_STEP_MIN_MM / Math.cos((78 * Math.PI) / 180);
+
+function quantizeFinishBackStepMm(mm: number): number {
+  const rounded = Math.round((mm + Number.EPSILON) * 100) / 100;
+  return Math.min(FINISH_BACK_STEP_MAX_MM, Math.max(FINISH_BACK_STEP_MIN_MM, rounded));
+}
+
+export function finishBackStepMmFromCuffAngleDeg(angleDeg: number): number {
+  if (!Number.isFinite(angleDeg)) return FINISH_BACK_STEP_DEFAULT_MM;
+  const clampedAngle = Math.min(89, Math.max(0, angleDeg));
+  const raw = FINISH_BACK_SURFACE_STEP_MM * Math.cos((clampedAngle * Math.PI) / 180);
+  const clamped = Math.min(FINISH_BACK_STEP_MAX_MM, Math.max(FINISH_BACK_STEP_MIN_MM, raw));
+  return quantizeFinishBackStepMm(clamped);
+}
+
+export function readCuffAngleDegForFinishBack(caseInfos?: {
+  cuffBlend?: { status?: string; maxAngleDeg?: number | null };
+  cuffProposal?: { maxCuffAngleDegBefore?: number | null };
+} | null): number | null {
+  const blend = caseInfos?.cuffBlend;
+  const applied = Number(blend?.maxAngleDeg);
+  if (blend?.status === "applied" && Number.isFinite(applied)) return applied;
+  const before = Number(caseInfos?.cuffProposal?.maxCuffAngleDegBefore);
+  if (Number.isFinite(before)) return before;
+  return null;
+}
+
 export function resolveCompositeGingivaStepMm(
   overrideMm: unknown,
-): CompositeFinishStepMm {
+  caseInfos?: {
+    cuffBlend?: { status?: string; maxAngleDeg?: number | null };
+    cuffProposal?: { maxCuffAngleDegBefore?: number | null };
+  } | null,
+): number {
   const normalized = normalizeCompositeFinishStepOverrideMm(overrideMm);
   if (normalized != null && normalized !== undefined && ALLOWED.has(normalized)) {
     return normalized;
   }
-  return 0.05;
+  const angle = readCuffAngleDegForFinishBack(caseInfos);
+  if (angle == null) return FINISH_BACK_STEP_DEFAULT_MM;
+  return finishBackStepMmFromCuffAngleDeg(angle);
 }
 
 export function formatCompositeStepMmLabel(mm: number): string {
@@ -81,7 +119,9 @@ export function resolveEffectiveCompositeSteps(caseInfos?: {
   retentionGroove?: "none" | "shallow" | "deep";
   compositeStepIncrementPostOverrideMm?: unknown;
   compositeStepIncrementGingivaOverrideMm?: unknown;
-} | null): { post: CompositeFinishStepMm; gingiva: CompositeFinishStepMm } {
+  cuffBlend?: { status?: string; maxAngleDeg?: number | null };
+  cuffProposal?: { maxCuffAngleDegBefore?: number | null };
+} | null): { post: CompositeFinishStepMm; gingiva: number } {
   return {
     post: resolveCompositePostStepMm(
       caseInfos?.retentionGroove,
@@ -89,6 +129,7 @@ export function resolveEffectiveCompositeSteps(caseInfos?: {
     ),
     gingiva: resolveCompositeGingivaStepMm(
       caseInfos?.compositeStepIncrementGingivaOverrideMm,
+      caseInfos,
     ),
   };
 }

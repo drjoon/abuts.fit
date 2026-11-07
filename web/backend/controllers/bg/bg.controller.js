@@ -65,7 +65,9 @@ import {
 
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import {
+  GINGIVA_STEP_RULE_CUFF_ANGLE,
   resolveEffectiveCompositeSteps,
+  resolveFinishBackStepMm,
   // [legacy One Pass] resolveOnePassEnabled,
 } from "../../utils/compositeStepIncrement.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
@@ -1216,6 +1218,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               : {}),
             compositeStepPostMm: bakedSteps.post,
             compositeStepGingivaMm: bakedSteps.gingiva,
+            gingivaStepRule: GINGIVA_STEP_RULE_CUFF_ANGLE,
           };
         }
         updateData["productionSchedule.actualCamComplete"] = now;
@@ -2299,10 +2302,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
             typeof ci.compositeStepIncrementPostOverrideMm === "number"
               ? ci.compositeStepIncrementPostOverrideMm
               : null,
-          compositeStepIncrementGingivaOverrideMm:
-            typeof ci.compositeStepIncrementGingivaOverrideMm === "number"
-              ? ci.compositeStepIncrementGingivaOverrideMm
-              : null,
+          // Finish_Back만. 수동 override 또는 커프 각도(0.03~0.07). Front는 아래 post 필드.
+          compositeStepIncrementGingivaOverrideMm: resolveFinishBackStepMm(ci),
           safeSplitEnabled: true,
           // PreviewModal「ESP」: true일 때만 Esprit가 CAM ESP 저장. 기본 false.
           espSaveEnabled: ci?.espSaveEnabled === true,

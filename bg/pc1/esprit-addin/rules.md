@@ -126,7 +126,8 @@
 - 인접 후행 시작:
   - `Back_Rough` 시작 = `Splitline_2 - roughRadius` (D4→2.0)
   - none/deep `Back_Finish` 팁쪽 끝 = (`Splitline_2 − 0.5`) − 0.07. Front 끝 = (`Splitline_2 − 0.5`) + 0.07
-    - 중첩 SSOT: `FinishSeamCrossPitchMm` = 0.07(Composite PRC StepIncrement 1피치). deep의 Front StepIncrement 0.20과는 별개로 0.07 고정.
+    - 중첩 SSOT: `FinishSeamCrossPitchMm` = 0.07(Composite PRC StepIncrement 1피치). deep의 Front StepIncrement 0.20과는 별개로 0.07 고정. Finish_Back 스텝을 줄여도 이 중첩은 0.07이다.
+    - Finish_Back StepIncrement: request-meta `compositeStepIncrementGingivaOverrideMm`. 제조사 override가 없으면 커프 최대 기울기(`cuffBlend.maxAngleDeg`, 축 기준). 78°·0.03mm와 같은 면 간격을 0.01mm 단위로 `clamp(round(0.03/cos(78°)·cos(θ), 0.01), 0.03, 0.07)`. 각도 없으면 0.07. 피니시라인 `min_z`는 쓰지 않는다. SSOT `resolveFinishBackStepMm`.
     - StepIncrement: `TryResolveFinishFrontStepIncrementOverrideMm()` (`none`→`5axisComposite_Front.prc` 그대로, `deep`→0.20)
     - `StlFileProcessor.RequireBackendRetentionGrooveOrThrow` — none/deep만 허용, 미수신 시 예외
     - 실패 보고: `NotifyBackendFailure` → `/bg/register-file` status=failed → `request:async-action-failed` 토스트
