@@ -346,7 +346,13 @@ const practiceTransferSchema = new mongoose.Schema(
         ],
         default: [],
       },
+      /**
+       * 다치아 abutment-design-handoff 병렬 시 CA Request 생성 레이스 방지.
+       * ensureAbutmentRequestsForHandoff가 원자적으로 잡고, 생성 끝나면 unset.
+       */
+      abutmentRequestEnsureLockAt: { type: Date, default: null },
     },
+
     billing: {
       labFeeTotal: { type: Number, default: 0 },
       labAbutmentTotal: { type: Number, default: 0 },

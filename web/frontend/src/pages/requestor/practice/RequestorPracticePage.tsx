@@ -90,7 +90,8 @@
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
 // - 2026-09-16: 지르 작업 시작 — stickyTrailing(업로드 옆 유지). 채팅 상·하단 중복 CTA 제거는 DetailChatDialog.
 // - 2026-09-16: 보철·의뢰파일 — S3(병렬) 후 낙관 패치·busy 해제, 저장 API는 백그라운드(어벗 handoff와 동일).
-// - 2026-09-16: 어벗 handoff — 확인 직후 S3·낙관 패치·다음 파일. handoff는 Promise.allSettled 병렬(다치아). BE 미러 clear 수정으로 레이스 완화.
+// - 2026-11-07: 어벗 handoff — 다치아도 크레딧 hold 직렬 체인. 성공 토스트는 전부 settle 후(일부만 제조사 등록되던 레이스 방지).
+// - 2026-09-16: 어벗 handoff — 확인 직후 S3·낙관 패치·다음 파일. handoff는 Promise.allSettled(다치아). BE 미러 clear 수정으로 레이스 완화.
 // - 2026-09-12: 어벗 handoff 성공 시 stale designFiles 덮어쓰기 금지(취소선·썸네일 플리커 제거).
 // - 2026-09-12: 어벗 업로드 가드 — 취소선과 동일 uploadedTeeth SSOT. handoff 실패 시 해당 파일만 롤백.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
@@ -1090,8 +1091,9 @@ export function RequestorPracticeReceivePage({
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
   /** handoff API in-flight — 「처리 중」표시 없이 중복 확인 클릭만 막음 */
   const designHandoffInFlightRef = useRef(false);
-  /** 다치아 큐에서 병렬 handoff Promise — 마지막 확인 시 Promise.allSettled */
+  /** 다치아 큐 handoff — 크레딧 hold 직렬 체인(같은 lab 락). settle은 마지막 확인에서 */
   const designHandoffPromisesRef = useRef<Promise<void>[]>([]);
+  const designHandoffTailRef = useRef<Promise<void>>(Promise.resolve());
   const unsupportedHandoffRef = useRef<UnsupportedConnectionCancelItem[]>([]);
   const [unsupportedCancelItems, setUnsupportedCancelItems] = useState<
     UnsupportedConnectionCancelItem[]
@@ -6412,6 +6414,8 @@ export function RequestorPracticeReceivePage({
     setDesignConfirmQueueIndex(0);
     setDesignConfirmTransfer(null);
     setDesignConfirmPendingMetas([]);
+    designHandoffPromisesRef.current = [];
+    designHandoffTailRef.current = Promise.resolve();
   }, []);
 
   const clearPendingProstheticAfterAbutment = useCallback(() => {
@@ -6690,6 +6694,7 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmQueue(queue);
       setDesignConfirmQueueIndex(0);
       designHandoffPromisesRef.current = [];
+      designHandoffTailRef.current = Promise.resolve();
       unsupportedHandoffRef.current = [];
       setDesignConfirmOpen(true);
     },
@@ -7096,14 +7101,8 @@ export function RequestorPracticeReceivePage({
         const nextIndex = queueIndex + 1;
         const isLast = nextIndex >= queueTotal;
         if (isLast) {
+          // handoff settle 후 성공/실패 토스트 — 여기서는 모달만 닫음
           clearDesignConfirmState();
-          toast({
-            title: "어벗디자인 업로드",
-            description:
-              queueTotal > 1
-                ? `${queueTotal}개 완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.`
-                : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
-          });
         } else {
           setDesignConfirmTransfer(
             patchedForQueue || mergeOptimisticDesignFile(transfer),
@@ -7115,7 +7114,7 @@ export function RequestorPracticeReceivePage({
           });
         }
 
-        // S3·낙관 패치 끝 — 「처리 중」해제. handoff는 병렬.
+        // S3·낙관 패치 끝 — 「처리 중」해제. handoff는 크레딧 hold 직렬 체인.
         designHandoffInFlightRef.current = false;
         setDesignConfirmBusy(false);
         setCardActionBusyId("");
@@ -7123,7 +7122,7 @@ export function RequestorPracticeReceivePage({
         const transferKey = String(
           transfer.transferId || transfer._id || "",
         ).trim();
-        const handoffPromise = (async () => {
+        const runHandoff = async () => {
           const res = await apiFetch<{
             success?: boolean;
             message?: string;
@@ -7206,7 +7205,12 @@ export function RequestorPracticeReceivePage({
                 : prev,
             );
             if (openPracticeBilling402FromResponse(body, res.status)) {
-              return;
+              throw new Error(
+                String(
+                  body.message ||
+                    "잔액이 부족해 어벗디자인 업로드를 완료하지 못했습니다.",
+                ),
+              );
             }
             throw new Error(
               String(
@@ -7326,23 +7330,47 @@ export function RequestorPracticeReceivePage({
               );
             }
           }
-        })().catch((error) => {
-          toast({
-            title: "업로드 실패",
-            description:
-              error instanceof Error
-                ? error.message
-                : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
-            variant: "destructive",
-          });
-        });
+        };
 
+        // 같은 기공소 크레딧 락 — 이전 handoff가 끝난 뒤 실행(확인 UI는 계속 진행)
+        const handoffPromise = designHandoffTailRef.current
+          .catch(() => undefined)
+          .then(() => runHandoff());
+        designHandoffTailRef.current = handoffPromise.then(
+          () => undefined,
+          () => undefined,
+        );
         designHandoffPromisesRef.current.push(handoffPromise);
 
         if (isLast) {
           const pending = designHandoffPromisesRef.current;
           designHandoffPromisesRef.current = [];
-          void Promise.allSettled(pending).then(() => {
+          designHandoffTailRef.current = Promise.resolve();
+          void Promise.allSettled(pending).then((results) => {
+            const failed = results.filter((row) => row.status === "rejected");
+            if (failed.length === 0) {
+              toast({
+                title: "어벗디자인 업로드",
+                description:
+                  queueTotal > 1
+                    ? `${queueTotal}개 완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.`
+                    : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
+              });
+            } else {
+              const firstReason =
+                failed[0]?.status === "rejected" &&
+                failed[0].reason instanceof Error
+                  ? failed[0].reason.message
+                  : "어벗디자인 파일 업로드 중 오류가 발생했습니다.";
+              toast({
+                title: "일부 어벗디자인 업로드 실패",
+                description:
+                  queueTotal > 1
+                    ? `${queueTotal}개 중 ${failed.length}개가 제조사에 등록되지 않았습니다. ${firstReason}`
+                    : firstReason,
+                variant: "destructive",
+              });
+            }
             const pendingUnsupported = unsupportedHandoffRef.current.splice(0);
             if (pendingUnsupported.length > 0) {
               setUnsupportedCancelItems(pendingUnsupported);
@@ -7350,7 +7378,10 @@ export function RequestorPracticeReceivePage({
             const pendingProsthetic =
               pendingProstheticAfterAbutmentRef.current;
             pendingProstheticAfterAbutmentRef.current = null;
-            if (pendingProsthetic?.files?.length) {
+            if (
+              failed.length === 0 &&
+              pendingProsthetic?.files?.length
+            ) {
               beginCompleteWithFiles(
                 mergeOptimisticDesignFile(transfer),
                 pendingProsthetic.files,

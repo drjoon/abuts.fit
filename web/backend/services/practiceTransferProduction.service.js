@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-07: ensureAbutmentRequestsForHandoff — 다치아 병렬 handoff 시 생성 락(relatedRequestIds 이중 생성·빈 stub 방지).
 // - 2026-10-21: 미제공 커넥션도 CA Request를 만든다. R&D 보관·해당 치아 취소는 design-handoff.
 // - 2026-09-29: abutmentToothStages — 연동 CA Request 치아별 제조사 공정(기공소 채팅 `43(준비), 44(세척.패킹)`).
 // - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
@@ -1555,6 +1556,162 @@ export async function createAbutmentRequestsFromPracticeTransfer({
  * 이미 생성된 Request는 수행 기공소(assignee, 없으면 원청)로 소유를 맞춘다.
  * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
  */
+export const ABUTMENT_ENSURE_LOCK_STALE_MS = 60_000;
+const ABUTMENT_ENSURE_LOCK_WAIT_MS = 100;
+const ABUTMENT_ENSURE_LOCK_WAIT_MAX = 50;
+
+/** @param {unknown} production */
+export function readRelatedRequestIdsFromProduction(production) {
+  return (
+    Array.isArray(production?.relatedRequestIds)
+      ? production.relatedRequestIds
+      : []
+  )
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+}
+
+/** @param {unknown} lockAt */
+export function isAbutmentRequestEnsureLockHeld(
+  lockAt,
+  nowMs = Date.now(),
+  staleMs = ABUTMENT_ENSURE_LOCK_STALE_MS,
+) {
+  const at = lockAt ? new Date(lockAt).getTime() : 0;
+  return Number.isFinite(at) && at > 0 && nowMs - at < staleMs;
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * 다치아 병렬 handoff가 동시에 create하면 relatedRequestIds·빈 stub이 갈라진다.
+ * related가 비어 있을 때만 락을 잡고, 못 잡으면 상대 생성이 끝날 때까지 대기한다.
+ */
+async function claimOrWaitAbutmentRequestEnsureLock(transferDoc) {
+  const transferId = transferDoc?._id;
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
+    return { mode: "create", transferDoc };
+  }
+
+  const existing = readRelatedRequestIdsFromProduction(transferDoc?.production);
+  if (existing.length > 0) {
+    return { mode: "already", requestIds: existing, transferDoc };
+  }
+
+  const staleBefore = new Date(Date.now() - ABUTMENT_ENSURE_LOCK_STALE_MS);
+  const claimed = await PracticeTransfer.findOneAndUpdate(
+    {
+      _id: transferId,
+      $and: [
+        {
+          $or: [
+            { "production.relatedRequestIds": { $exists: false } },
+            { "production.relatedRequestIds": { $size: 0 } },
+            { "production.relatedRequestIds": null },
+          ],
+        },
+        {
+          $or: [
+            { "production.abutmentRequestEnsureLockAt": { $exists: false } },
+            { "production.abutmentRequestEnsureLockAt": null },
+            { "production.abutmentRequestEnsureLockAt": { $lt: staleBefore } },
+          ],
+        },
+      ],
+    },
+    { $set: { "production.abutmentRequestEnsureLockAt": new Date() } },
+    { new: true },
+  );
+
+  if (claimed) {
+    transferDoc.production = claimed.production;
+    return { mode: "create", transferDoc: claimed };
+  }
+
+  let cursor = transferDoc;
+  for (let i = 0; i < ABUTMENT_ENSURE_LOCK_WAIT_MAX; i += 1) {
+    await sleepMs(ABUTMENT_ENSURE_LOCK_WAIT_MS);
+    const fresh = await PracticeTransfer.findById(transferId).select({
+      production: 1,
+      toothWorks: 1,
+      implantFavorites: 1,
+      billing: 1,
+      targetLabAnchorId: 1,
+      assigneeLabAnchorId: 1,
+      assigneeKind: 1,
+      practiceBusinessAnchorId: 1,
+      transferMemo: 1,
+      files: 1,
+      remake: 1,
+      screwSupply: 1,
+      matchingMode: 1,
+      autoMatch: 1,
+      requestorDownloadedAt: 1,
+    });
+    if (!fresh) {
+      throw new Error("전송 내역을 찾을 수 없습니다.");
+    }
+    cursor = fresh;
+    const ids = readRelatedRequestIdsFromProduction(fresh.production);
+    if (ids.length > 0) {
+      return { mode: "already", requestIds: ids, transferDoc: fresh };
+    }
+    if (
+      isAbutmentRequestEnsureLockHeld(
+        fresh.production?.abutmentRequestEnsureLockAt,
+      )
+    ) {
+      continue;
+    }
+
+    const reclaimed = await PracticeTransfer.findOneAndUpdate(
+      {
+        _id: transferId,
+        $and: [
+          {
+            $or: [
+              { "production.relatedRequestIds": { $exists: false } },
+              { "production.relatedRequestIds": { $size: 0 } },
+              { "production.relatedRequestIds": null },
+            ],
+          },
+          {
+            $or: [
+              { "production.abutmentRequestEnsureLockAt": { $exists: false } },
+              { "production.abutmentRequestEnsureLockAt": null },
+              {
+                "production.abutmentRequestEnsureLockAt": { $lt: staleBefore },
+              },
+            ],
+          },
+        ],
+      },
+      { $set: { "production.abutmentRequestEnsureLockAt": new Date() } },
+      { new: true },
+    );
+    if (reclaimed) {
+      return { mode: "create", transferDoc: reclaimed };
+    }
+  }
+
+  const finalIds = readRelatedRequestIdsFromProduction(cursor?.production);
+  if (finalIds.length > 0) {
+    return { mode: "already", requestIds: finalIds, transferDoc: cursor };
+  }
+
+  throw new Error(
+    "커스텀어벗 의뢰 생성 대기 중 시간이 초과되었습니다. 잠시 후 다시 업로드해 주세요.",
+  );
+}
+
+async function clearAbutmentRequestEnsureLock(transferId) {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) return;
+  await PracticeTransfer.updateOne(
+    { _id: transferId },
+    { $unset: { "production.abutmentRequestEnsureLockAt": 1 } },
+  );
+}
+
 export async function ensureAbutmentRequestsForHandoff({
   transferDoc,
   actorUserId = null,
@@ -1563,16 +1720,48 @@ export async function ensureAbutmentRequestsForHandoff({
     return { created: false, requestIds: [], shippingMode: null };
   }
 
-  const result = await createAbutmentRequestsFromPracticeTransfer({
-    transferDoc,
-    actorUserId,
-  });
+  const gate = await claimOrWaitAbutmentRequestEnsureLock(transferDoc);
+  const workingTransfer = gate.transferDoc || transferDoc;
+
+  if (gate.mode === "already") {
+    workingTransfer.production = {
+      ...(workingTransfer.production &&
+      typeof workingTransfer.production === "object"
+        ? workingTransfer.production
+        : {}),
+      relatedRequestIds: gate.requestIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id)),
+    };
+    transferDoc.production = workingTransfer.production;
+    await syncRelatedRequestOwnershipToAcceptingLab(workingTransfer);
+    return {
+      created: false,
+      skippedReason: "already_created",
+      requestIds: gate.requestIds,
+      shippingMode: workingTransfer.production?.shippingMode || null,
+    };
+  }
+
+  let result;
+  try {
+    result = await createAbutmentRequestsFromPracticeTransfer({
+      transferDoc: workingTransfer,
+      actorUserId,
+    });
+  } catch (createErr) {
+    await clearAbutmentRequestEnsureLock(workingTransfer._id);
+    throw createErr;
+  }
+
   if (result.skippedReason === "no_custom_abutment") {
+    await clearAbutmentRequestEnsureLock(workingTransfer._id);
     return { created: false, requestIds: [], shippingMode: null };
   }
 
   let requestIds = Array.isArray(result.requestIds) ? result.requestIds : [];
-  const shippingMode = result.shippingMode || transferDoc?.production?.shippingMode || null;
+  const shippingMode =
+    result.shippingMode || workingTransfer?.production?.shippingMode || null;
 
   // 레거시: 헥스 확인 샘플이 relatedRequestIds에 섞인 경우 제거
   const candidateOids = requestIds
@@ -1594,25 +1783,28 @@ export async function ensureAbutmentRequestsForHandoff({
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
 
-  transferDoc.production = {
-    ...(transferDoc.production && typeof transferDoc.production === "object"
-      ? transferDoc.production
+  workingTransfer.production = {
+    ...(workingTransfer.production &&
+    typeof workingTransfer.production === "object"
+      ? workingTransfer.production
       : {}),
     relatedRequestIds: oidList,
     ...(shippingMode ? { shippingMode } : {}),
   };
+  transferDoc.production = workingTransfer.production;
   await PracticeTransfer.updateOne(
-    { _id: transferDoc._id },
+    { _id: workingTransfer._id },
     {
       $set: {
         "production.relatedRequestIds": oidList,
         ...(shippingMode ? { "production.shippingMode": shippingMode } : {}),
       },
+      $unset: { "production.abutmentRequestEnsureLockAt": 1 },
     },
   );
 
   if (result.skippedReason === "already_created") {
-    await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
+    await syncRelatedRequestOwnershipToAcceptingLab(workingTransfer);
   }
 
   // 생산·배송 크레딧 hold는 design-handoff에서 잡음.
