@@ -24,6 +24,7 @@ import {
 } from "./distribution.utils.js";
 import {
   clearNcAndForceEspritRetrigger,
+  isDummySampleExcludedFromDiameterRetrigger,
   isMaterialDiameterChanged,
   shouldRetriggerEspritForMaterialDiameter,
 } from "../requests/espritDiameterRetrigger.utils.js";
@@ -243,6 +244,8 @@ export async function updateMachineMaterial(req, res) {
           .select({
             _id: 1,
             requestId: 1,
+            source: 1,
+            requestCategory: 1,
             productionSchedule: 1,
             caseInfos: 1,
           })
@@ -253,6 +256,7 @@ export async function updateMachineMaterial(req, res) {
           .lean();
 
         const retriggerIds = queueDocs
+          .filter((doc) => !isDummySampleExcludedFromDiameterRetrigger(doc))
           .filter(
             (doc) =>
               !isMachiningInProgress(doc) && !isMachiningCompleted(doc),
@@ -313,6 +317,8 @@ export async function updateMachineMaterial(req, res) {
         const pending = await Request.find({
           manufacturerStage: "가공",
           "rnd.unmachinableAt": null,
+          source: { $ne: "dummy_sample" },
+          requestCategory: { $ne: "dummy_sample" },
           "caseInfos.reviewByStage.cam.status": "PENDING",
           "productionSchedule.diameter": matDia,
           $or: [

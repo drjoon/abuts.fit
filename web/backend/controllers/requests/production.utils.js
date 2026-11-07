@@ -34,6 +34,7 @@ import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
   EXCLUDE_UNMACHINABLE_FILTER,
+  EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
   buildMachineQueueLoadMap,
   getMachiningLoadWeight,
   normalizeDiameterGroupValue,
@@ -862,6 +863,7 @@ export async function recalculateQueueOnMaterialChange(
   const assignedCounts = await Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
     ...EXCLUDE_UNMACHINABLE_FILTER,
+    ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
     "productionSchedule.assignedMachine": { $in: candidateMachineIds },
   })
     .select("productionSchedule.assignedMachine")
@@ -875,14 +877,21 @@ export async function recalculateQueueOnMaterialChange(
   }
 
   const unassignedRequests = await Request.find({
-    manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
-    ...EXCLUDE_UNMACHINABLE_FILTER,
-    $or: [
-      { "productionSchedule.assignedMachine": { $exists: false } },
-      { "productionSchedule.assignedMachine": null },
-      { "productionSchedule.assignedMachine": "" },
+    $and: [
+      {
+        manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+        ...EXCLUDE_UNMACHINABLE_FILTER,
+        ...EXCLUDE_IDLE_DUMMY_SAMPLE_FILTER,
+        "productionSchedule.diameterGroup": normalizedGroup,
+      },
+      {
+        $or: [
+          { "productionSchedule.assignedMachine": { $exists: false } },
+          { "productionSchedule.assignedMachine": null },
+          { "productionSchedule.assignedMachine": "" },
+        ],
+      },
     ],
-    "productionSchedule.diameterGroup": normalizedGroup,
   })
     .sort({
       "productionSchedule.scheduledShipPickup": 1,

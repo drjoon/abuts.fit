@@ -55,6 +55,7 @@ import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
 import { resolveEffectiveShippingMode } from "../requests/shippingPriority.utils.js";
 import {
   clearNcAndForceEspritRetrigger,
+  isDummySampleExcludedFromDiameterRetrigger,
   shouldRetriggerEspritForMaterialDiameter,
 } from "../requests/espritDiameterRetrigger.utils.js";
 
@@ -163,7 +164,7 @@ export async function rebalanceProductionQueuesInternal({
     ...scope.requestFilter,
   })
     .select(
-      "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
+      "_id requestId source requestCategory manufacturerStage productionSchedule assignedMachine caseInfos",
     )
     .populate({
       path: "productionSchedule.machiningRecord",
@@ -308,12 +309,16 @@ export async function rebalanceProductionQueuesInternal({
     list.forEach((reqItem, idx) => {
       const prevDia = Number(reqItem?.productionSchedule?.diameter);
       const hasNc = Boolean(reqItem?.caseInfos?.ncFile?.s3Key);
-      const needsEspritRetrigger = shouldRetriggerEspritForMaterialDiameter({
-        previousDiameter: prevDia,
-        nextDiameter: materialDia,
-        hasNc,
-        ncMaterialDiameter: Number(reqItem?.caseInfos?.ncFile?.materialDiameter),
-      });
+      const needsEspritRetrigger =
+        !isDummySampleExcludedFromDiameterRetrigger(reqItem) &&
+        shouldRetriggerEspritForMaterialDiameter({
+          previousDiameter: prevDia,
+          nextDiameter: materialDia,
+          hasNc,
+          ncMaterialDiameter: Number(
+            reqItem?.caseInfos?.ncFile?.materialDiameter,
+          ),
+        });
       const $set = {
         "productionSchedule.assignedMachine": uid,
         "productionSchedule.queuePosition": idx + 1,

@@ -8,6 +8,13 @@ import Request from "../../models/request.model.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
 import { inferDiameterGroupFromValue } from "../cnc/distribution.utils.js";
 
+/** 더미 복사본은 소재 교체·재배정으로 NC를 다시 만들지 않는다. */
+export function isDummySampleExcludedFromDiameterRetrigger(doc) {
+  const source = String(doc?.source || "").trim();
+  const category = String(doc?.requestCategory || "").trim();
+  return source === "dummy_sample" || category === "dummy_sample";
+}
+
 export function isMaterialDiameterChanged(fromDia, toDia) {
   return (
     Number.isFinite(fromDia) &&
