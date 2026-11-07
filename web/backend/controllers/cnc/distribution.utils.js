@@ -236,6 +236,38 @@ export function rankCoveringMachinesForRequest({
     });
 }
 
+/**
+ * 장착 소재를 이 직경으로 바꿀 때, 그 장비 대기·가공중 건 가운데
+ * maxDiameter를 커버하지 못하는 의뢰. 완료 건과 maxDiameter가 없는 건은 뺀다.
+ */
+export function materialDiameterChangeBlockers(docs, nextDiameter) {
+  const dia = Number(nextDiameter);
+  const rows = [];
+  for (const doc of Array.isArray(docs) ? docs : []) {
+    if (!doc || isMachiningCompleted(doc)) continue;
+    const maxD = Number(doc?.caseInfos?.maxDiameter);
+    if (!Number.isFinite(maxD) || maxD <= 0) continue;
+    if (machineMaterialCoversMaxDiameter(dia, maxD)) continue;
+    const ci = doc.caseInfos || {};
+    rows.push({
+      requestId: String(doc.requestId || "").trim(),
+      patientName: String(ci.patientName || "").trim(),
+      clinicName: String(ci.clinicName || "").trim(),
+      tooth: String(ci.tooth || "").trim(),
+      maxDiameter: maxD,
+      requiredGroup: inferDiameterGroupFromValue(maxD),
+      inProgress: isMachiningInProgress(doc),
+      queuePosition: Number(doc?.productionSchedule?.queuePosition) || 0,
+    });
+  }
+  rows.sort((a, b) => {
+    if (a.inProgress !== b.inProgress) return a.inProgress ? -1 : 1;
+    if (a.queuePosition !== b.queuePosition) return a.queuePosition - b.queuePosition;
+    return a.requestId.localeCompare(b.requestId);
+  });
+  return rows;
+}
+
 export function isMachiningInProgress(reqItem) {
   const record = reqItem?.productionSchedule?.machiningRecord;
   if (!record) return false;

@@ -6,6 +6,7 @@ import {
   inferRequestDiameterGroup,
   isRequestDiameterCompatibleWithMachineMaterial,
   machineMaterialCoversMaxDiameter,
+  materialDiameterChangeBlockers,
   rankCoveringMachinesForRequest,
 } from "../../controllers/cnc/distribution.utils.js";
 
@@ -76,5 +77,41 @@ describe("diameter cover ranking (≤8mm → 8mm first)", () => {
       ],
     });
     expect(ranked[0].machineId).toBe("M4");
+  });
+});
+
+describe("material diameter change blockers", () => {
+  test("D10 does not cover a D12 part still in the queue", () => {
+    const blockers = materialDiameterChangeBlockers(
+      [
+        {
+          requestId: "RQ-27",
+          caseInfos: {
+            patientName: "송용원",
+            clinicName: "평온치과의원",
+            tooth: "27",
+            maxDiameter: 11.2,
+          },
+          productionSchedule: { queuePosition: 1 },
+        },
+        {
+          requestId: "RQ-SMALL",
+          caseInfos: { patientName: "김작은", tooth: "11", maxDiameter: 8.2 },
+          productionSchedule: { queuePosition: 2 },
+        },
+        {
+          requestId: "RQ-DONE",
+          caseInfos: { patientName: "완료", tooth: "21", maxDiameter: 11.4 },
+          productionSchedule: {
+            queuePosition: 0,
+            actualMachiningComplete: new Date().toISOString(),
+          },
+        },
+      ],
+      10,
+    );
+    expect(blockers.map((row) => row.requestId)).toEqual(["RQ-27"]);
+    expect(blockers[0].requiredGroup).toBe("12");
+    expect(blockers[0].patientName).toBe("송용원");
   });
 });

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Machine } from "../types";
 import type { CncMaterialInfo } from "../components/CncMaterialModal";
+import { readMaterialDiameterBlocked } from "../materialDiameterBlock";
 
 interface CncMachineMeta {
   currentMaterial?: CncMaterialInfo;
@@ -435,6 +436,8 @@ export function useCncDashboardMaterials({
         },
       );
       const body: any = await res.json().catch(() => ({}));
+      const blocked = readMaterialDiameterBlocked(body);
+      if (blocked) throw blocked;
       if (!res.ok || body?.success === false) {
         throw new Error(body?.message || "소재교체에 실패했습니다.");
       }

@@ -21,6 +21,7 @@ import {
   isMachiningInProgress,
   isMachiningCompleted,
   inferDiameterGroupFromValue,
+  materialDiameterChangeBlockers,
 } from "./distribution.utils.js";
 import {
   clearNcAndForceEspritRetrigger,
@@ -208,6 +209,42 @@ export async function updateMachineMaterial(req, res) {
     }
 
     const previousDiameter = toNumberOrNull(machine.currentMaterial?.diameter);
+    const nextDiameterPreview = toNumberOrNull(
+      diameter || parseInt(normalizedGroup, 10),
+    );
+    if (isMaterialDiameterChanged(previousDiameter, nextDiameterPreview)) {
+      const queueDocs = await Request.find({
+        manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+        ...EXCLUDE_UNMACHINABLE_FILTER,
+        "productionSchedule.assignedMachine": machineId,
+      })
+        .select({
+          requestId: 1,
+          caseInfos: 1,
+          productionSchedule: 1,
+        })
+        .populate({
+          path: "productionSchedule.machiningRecord",
+          select: "status startedAt completedAt",
+        })
+        .lean();
+      const blockers = materialDiameterChangeBlockers(
+        queueDocs,
+        nextDiameterPreview,
+      );
+      if (blockers.length) {
+        return res.status(409).json({
+          success: false,
+          code: "MATERIAL_DIAMETER_BLOCKED",
+          message: "이 직경으로 가공할 수 없는 대기 건이 있습니다.",
+          data: {
+            diameter: nextDiameterPreview,
+            items: blockers,
+          },
+        });
+      }
+    }
+
     const nextMaterial = {
       materialType: String(materialType || "").trim(),
       heatNo: String(heatNo || "").trim(),

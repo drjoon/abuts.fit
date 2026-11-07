@@ -20,10 +20,15 @@ import { useToast } from "@/shared/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  MaterialDiameterBlockedError,
+  type MaterialDiameterBlocker,
+} from "../materialDiameterBlock";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -121,6 +126,10 @@ export const CncMaterialModal = ({
     String(base.remainingLength || ""),
   );
   const [loading, setLoading] = useState(false);
+  const [blocked, setBlocked] = useState<{
+    diameter: number;
+    items: MaterialDiameterBlocker[];
+  } | null>(null);
 
   const hydrationSignature = useMemo(() => {
     const rawGroups =
@@ -152,6 +161,7 @@ export const CncMaterialModal = ({
   useEffect(() => {
     if (!open) {
       lastHydrationSignatureRef.current = null;
+      setBlocked(null);
       return;
     }
 
@@ -246,6 +256,10 @@ export const CncMaterialModal = ({
       toast({ title: "소재교체", description: "소재 정보를 변경했습니다." });
       onClose();
     } catch (e: any) {
+      if (e instanceof MaterialDiameterBlockedError) {
+        setBlocked({ diameter: e.diameter, items: e.items });
+        return;
+      }
       toast({
         title: "실패",
         description: e?.message || "소재교체에 실패했습니다.",
@@ -282,6 +296,7 @@ export const CncMaterialModal = ({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
@@ -493,5 +508,105 @@ export const CncMaterialModal = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <MaterialDiameterBlockedDialog
+      open={blocked != null}
+      diameter={blocked?.diameter ?? 0}
+      items={blocked?.items ?? []}
+      onClose={() => setBlocked(null)}
+    />
+    </>
   );
 };
+
+function formatMaxDiameter(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+function MaterialDiameterBlockedDialog({
+  open,
+  diameter,
+  items,
+  onClose,
+}: {
+  open: boolean;
+  diameter: number;
+  items: MaterialDiameterBlocker[];
+  onClose: () => void;
+}) {
+  const diaLabel = Number.isFinite(diameter) && diameter > 0 ? `D${diameter}` : "이 직경";
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        overlayClassName="z-[140] bg-slate-900/45 backdrop-blur-[2px]"
+        className="z-[140] gap-0 overflow-hidden border-slate-200/80 p-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-[26rem]"
+      >
+        <div className="border-b border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 px-5 pb-4 pt-5">
+          <div className="mb-3 inline-flex items-center rounded-full border border-rose-200 bg-white/80 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-rose-700">
+            변경 불가
+          </div>
+          <DialogHeader className="space-y-1.5 text-left">
+            <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
+              소재를 바꿀 수 없습니다
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-relaxed text-slate-600">
+              {diaLabel}으로는 가공할 수 없는 대기 건이 있습니다.
+              <br />
+              다른 장비로 옮긴 뒤 바꾸세요.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <ul className="max-h-80 space-y-2 overflow-y-auto px-4 py-3">
+          {items.map((item) => {
+            const who = [item.patientName, item.tooth].filter(Boolean).join("-");
+            const maxLabel = formatMaxDiameter(item.maxDiameter);
+            return (
+              <li
+                key={item.requestId}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-900">
+                      {who || item.requestId}
+                    </div>
+                    {item.clinicName ? (
+                      <div className="mt-0.5 truncate text-xs text-slate-500">
+                        {item.clinicName}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {item.requiredGroup ? (
+                      <span className="rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        필요 D{item.requiredGroup}
+                      </span>
+                    ) : null}
+                    {item.inProgress ? (
+                      <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                        가공중
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                {maxLabel ? (
+                  <div className="mt-1.5 text-[11px] text-slate-400">
+                    최대 Ø{maxLabel}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="border-t border-slate-100 px-4 py-3">
+          <Button className="h-10 w-full" onClick={onClose}>
+            확인
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
