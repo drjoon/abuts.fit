@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-11-07: PTX 다치아 STL 일부 미업로드 건「미업로드」뱃지·준비 큐 포함.
+// - 2026-11-07: PTX 다치아 STL 일부 미업로드 건「STL 누락」뱃지·준비 큐 포함.
 // - 2026-10-22: 상태 칩과 요약 카드 중복 제거. 취소 카드 추가. 목록은 전폭.
 // - 2026-10-14: 준비 카드·사이드 배지 = comm-badges 준비 큐(기간 필터와 분리). 진입 시 배지 재조회.
 // - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게.
@@ -800,7 +800,7 @@ export const AdminRequestMonitoring = () => {
                                   className="shrink-0 rounded-md border border-amber-500/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
                                   title="동일 기공의뢰의 다른 치아 STL은 올라왔고, 이 치아 어벗 STL은 없습니다."
                                 >
-                                  미업로드
+                                  STL 누락
                                 </span>
                               ) : null}
                               {showPriority ? (

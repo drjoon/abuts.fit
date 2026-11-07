@@ -107,6 +107,8 @@ export type ManufacturerRequest = RequestBase & {
   shippingReceiver?: PracticeDirectShippingContact | null;
   partnerBilling?: {
     relatedPracticeTransferId?: string | { _id?: string } | null;
+    /** 동일 PTX 다치아 — 일부만 어벗 STL 업로드 시 미업로드 sibling 준비 큐 노출 */
+    ptxDesignUploadMissingVisible?: boolean | null;
     practiceBusinessAnchorId?:
       | string
       | {

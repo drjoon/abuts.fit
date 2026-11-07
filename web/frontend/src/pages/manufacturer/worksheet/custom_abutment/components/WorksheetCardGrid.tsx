@@ -3,7 +3,7 @@
 // - 2026-10-24: 마진 필레만 약한 건은 불완전 뱃지에서 뺀다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
-// - 2026-11-07: PTX 다치아 STL 일부 미업로드 — 「미업로드」뱃지·점선 테두리·승인 차단.
+// - 2026-11-07: PTX 다치아 STL 일부 미업로드 — 좌하단「STL 누락」뱃지·점선 테두리(마감·커프 실선보다 우선)·승인 차단.
 // - 2026-10-21: 준비 카드 JS 실패는 뱃지와 함께 사유 문구를 본문에 남긴다.
 // - 2026-10-18: 준비 «제외» 뱃지는 자동 승인이 켜져 있을 때만 표시한다.
 // - 2026-10-14: 준비 카드 — 자동 승인에서 뺀 의뢰자의 의뢰에 «제외» 뱃지.
@@ -382,7 +382,7 @@ export const WorksheetCardGrid = ({
         const accept = getAcceptByStage(stageLabel || currentStageForTab);
         const formatDisplayName = (name: string) => name || "파일명 없음";
 
-        const stlMissing = isPtxDesignStlMissing(request as any);
+        const stlMissing = isPtxDesignStlMissing(request);
         const originalFileName =
           caseInfos.file?.filePath || caseInfos.file?.originalName || "";
         const filledStl = resolveFilledStlFile(caseInfos);
@@ -798,7 +798,6 @@ export const WorksheetCardGrid = ({
         const showStlMissingBadge = tabStage === "request" && stlMissing;
         const hasTopFloatingControls =
           showAutoExcludeBadge ||
-          showStlMissingBadge ||
           Boolean(onToggleSelected) ||
           Boolean(isSampleRequest) ||
           hasRealtimeProgress ||
@@ -936,7 +935,7 @@ export const WorksheetCardGrid = ({
                 : isPackingMatchHint
                   ? "border-primary border-2 bg-primary-soft/50 ring-2 ring-primary/30"
                   : stlMissing
-                    ? "border-dashed border-amber-400/90 bg-amber-50/40"
+                    ? "border-2 border-dashed border-amber-500 bg-amber-50/40"
                   : isSampleRequest
                   ? isRndVisualSample
                     ? "border-primary/70 bg-primary-soft/40"
@@ -955,7 +954,9 @@ export const WorksheetCardGrid = ({
                               ? "border-accent border-2"
                               : "border-slate-200"
             } ${
-              isCuffSpecPendingCard
+              stlMissing
+                ? "!border-2 !border-dashed !border-amber-500"
+                : isCuffSpecPendingCard
                 ? "!border-destructive border-2 ring-2 ring-destructive/40"
                 : isFinishLineMinZRisky ||
                     isUnmachinableSample ||
@@ -1006,15 +1007,6 @@ export const WorksheetCardGrid = ({
               </div>
             ) : null}
             <div className="absolute left-2 top-2 z-20 flex items-center gap-1">
-              {showStlMissingBadge ? (
-                <Badge
-                  variant="outline"
-                  className="flex h-7 items-center border-amber-500/80 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                  title="동일 기공의뢰의 다른 치아 STL은 올라왔고, 이 치아 어벗 STL은 없습니다. 기공소에 업로드를 요청하세요."
-                >
-                  미업로드
-                </Badge>
-              ) : null}
               {showAutoExcludeBadge ? (
                 <Badge
                   variant="outline"
@@ -1279,33 +1271,46 @@ export const WorksheetCardGrid = ({
               )}
             </div>
             {hasBottomFloatingBadges ? (
-              <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
-                {shouldShowFullLot && (
-                  <Badge variant="outline" className={`${lotBadgeClass} whitespace-nowrap`}>
-                    {lotCodeSource}
-                  </Badge>
-                )}
-                {showNcBadge && (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
-                  >
-                    NC
-                  </Badge>
-                )}
-                <ShippingModeBadge
-                  mode={shippingMode}
-                  className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap"
-                />
-                {deadlineInfo && (
-                  <Badge
-                    variant="outline"
-                    className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
-                  >
-                    {deadlineInfo.displayText}
-                  </Badge>
-                )}
-              </div>
+              <>
+                {showStlMissingBadge ? (
+                  <div className="absolute left-2 bottom-2 z-20">
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap border-amber-500/80 bg-amber-50 text-amber-900"
+                      title="동일 기공의뢰의 다른 치아 STL은 올라왔고, 이 치아 어벗 STL은 없습니다. 기공소에 업로드를 요청하세요."
+                    >
+                      STL 누락
+                    </Badge>
+                  </div>
+                ) : null}
+                <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
+                  {shouldShowFullLot && (
+                    <Badge variant="outline" className={`${lotBadgeClass} whitespace-nowrap`}>
+                      {lotCodeSource}
+                    </Badge>
+                  )}
+                  {showNcBadge && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
+                    >
+                      NC
+                    </Badge>
+                  )}
+                  <ShippingModeBadge
+                    mode={shippingMode}
+                    className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap"
+                  />
+                  {deadlineInfo && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
+                    >
+                      {deadlineInfo.displayText}
+                    </Badge>
+                  )}
+                </div>
+              </>
             ) : null}
             {isUploading && progress !== undefined && (
               <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
