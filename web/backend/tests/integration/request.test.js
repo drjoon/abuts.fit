@@ -26,6 +26,7 @@ import {
   createPracticeAnchor,
   createUser,
   ensureDevopsEscrowAnchor,
+  grantFreeRequestCredit,
   grantPaidCredit,
   seedOrderableConnection,
   seedRequest,
@@ -95,6 +96,12 @@ describe("의뢰(CA 생산의뢰) API", () => {
             tooth: "16",
             workType: "abutment",
             designSoftware: "3Shape",
+            file: {
+              originalName: "case.stl",
+              mimetype: "model/stl",
+              size: 1024,
+              s3Key: "temp/test-case.stl",
+            },
             ...TEST_IMPLANT,
             ...overrides,
           },
@@ -103,7 +110,7 @@ describe("의뢰(CA 생산의뢰) API", () => {
 
     it("Draft를 준비 단계 의뢰로 만들고 응답 뒤 크레딧을 보류한다", async () => {
       await seedOrderableConnection();
-      await grantPaidCredit(labAnchor._id, 1_000_000);
+      await grantFreeRequestCredit(labAnchor._id, 1_000_000);
       const draft = await buildDraft(labOwner.user._id);
 
       const res = await request(app)
@@ -185,6 +192,66 @@ describe("의뢰(CA 생산의뢰) API", () => {
       expect(res.body.missingFiles[0].missingFields).toEqual(
         expect.arrayContaining(["환자이름", "디자인 소프트웨어"]),
       );
+    });
+
+    it("업로드된 STL(s3Key)이 없는 Draft는 접수하지 않는다", async () => {
+      await seedOrderableConnection();
+      await grantPaidCredit(labAnchor._id, 1_000_000);
+      const draft = await buildDraft(labOwner.user._id, { file: undefined });
+
+      const res = await request(app)
+        .post("/api/requests/from-draft")
+        .set(bearer(labOwner.token))
+        .send({ draftId: String(draft._id) })
+        .expect(400);
+      expect(res.body.missingFiles[0].missingFields).toEqual(
+        expect.arrayContaining(["업로드된 STL 파일"]),
+      );
+      expect(await Request.countDocuments({})).toBe(0);
+    });
+
+    it("일부 케이스만 누락돼도 전체를 접수하지 않는다", async () => {
+      await seedOrderableConnection();
+      await grantPaidCredit(labAnchor._id, 1_000_000);
+      const draft = await buildDraft(labOwner.user._id);
+      const good = draft.toObject().caseInfos[0];
+      const caseInfos = [
+        good,
+        { ...good, _id: undefined, tooth: "17", patientName: "" },
+      ];
+      const res = await request(app)
+        .post("/api/requests/from-draft")
+        .set(bearer(labOwner.token))
+        .send({ draftId: String(draft._id), caseInfos })
+        .expect(400);
+      expect(res.body.missingFiles).toHaveLength(1);
+      expect(await Request.countDocuments({})).toBe(0);
+    });
+
+    it("같은 Draft를 다시 보내면 중복 접수하지 않고 이전 결과를 돌려준다", async () => {
+      await seedOrderableConnection();
+      await grantFreeRequestCredit(labAnchor._id, 1_000_000);
+      const draft = await buildDraft(labOwner.user._id);
+
+      const first = await request(app)
+        .post("/api/requests/from-draft")
+        .set(bearer(labOwner.token))
+        .send({ draftId: String(draft._id) })
+        .expect(201);
+      await waitFor(async () =>
+        (await DraftRequest.findById(draft._id).lean())?.status === "submitted"
+          ? true
+          : null,
+      );
+
+      const second = await request(app)
+        .post("/api/requests/from-draft")
+        .set(bearer(labOwner.token))
+        .send({ draftId: String(draft._id) })
+        .expect(200);
+      expect(second.body.data.replayed).toBe(true);
+      expect(second.body.data.requestIds).toEqual(first.body.data.requestIds);
+      expect(await Request.countDocuments({})).toBe(1);
     });
 
     it("사업자 검증 전(active)이면 유료 의뢰 가드가 403으로 막는다", async () => {

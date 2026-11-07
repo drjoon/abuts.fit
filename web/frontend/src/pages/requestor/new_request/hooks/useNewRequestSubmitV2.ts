@@ -74,6 +74,8 @@ type UseNewRequestSubmitV2Params = {
     onProgress?: (progress: Record<string, number>) => void,
   ) => Promise<TempUploadedFile[]>;
   peekCachedUploadedFiles?: (files: File[]) => TempUploadedFile[] | null;
+  /** 서버가 S3에서 못 찾은 사전 업로드 캐시를 버려 다시 올리게 한다. */
+  forgetUploadedFiles?: (files: File[]) => void;
   onDuplicateDetected?: (payload: {
     mode: "active" | "tracking";
     duplicates: any[];
@@ -117,6 +119,7 @@ export const useNewRequestSubmitV2 = ({
   resolveCorrectedDesignUpload,
   uploadFiles,
   peekCachedUploadedFiles,
+  forgetUploadedFiles,
   onDuplicateDetected,
   onSubmitStart,
   onDraftMissing,
@@ -252,8 +255,9 @@ export const useNewRequestSubmitV2 = ({
 
   const submitFromDraft = async (
     duplicateResolutions?: DuplicateResolutionCase[],
+    internal?: { reuploaded?: boolean },
   ) => {
-    if (submittingRef.current || isSubmitting) return;
+    if (!internal?.reuploaded && (submittingRef.current || isSubmitting)) return;
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -549,6 +553,23 @@ export const useNewRequestSubmitV2 = ({
           return;
         }
 
+        // 업로드 결과가 파일마다 있어야 한다. 하나라도 비면 그 파일만 조용히 빠진 채 접수된다.
+        const uploadIncomplete =
+          files.length > 0 &&
+          (tempFiles.length !== files.length ||
+            files.some((_, i) => !String(tempFiles[i]?.key || "").trim()));
+        if (uploadIncomplete) {
+          forgetUploadedFiles?.(files);
+          dismiss();
+          toast({
+            title: "파일 업로드가 완료되지 않았습니다",
+            description: "일부 파일이 서버에 올라가지 않았습니다. 다시 제출해 주세요.",
+            variant: "destructive",
+            duration: 6000,
+          });
+          return;
+        }
+
         if (files.length > 0 && tempFiles.length > 0) {
           const fileByKey = new Map<
             string,
@@ -667,6 +688,38 @@ export const useNewRequestSubmitV2 = ({
             .filter((ci): ci is NonNullable<typeof ci> =>
               Boolean(ci?.file?.s3Key),
             );
+
+          // 첨부한 모든 파일이 어떤 케이스의 대표/추가 파일로 들어갔는지 확인한다.
+          const coveredKeys = new Set<string>();
+          for (const ci of submitCaseInfos || []) {
+            const primary = String((ci as any)?.file?.s3Key || "").trim();
+            if (primary) coveredKeys.add(primary);
+            for (const f of ((ci as any)?.files as any[]) || []) {
+              const k = String(f?.s3Key || "").trim();
+              if (k) coveredKeys.add(k);
+            }
+          }
+          const uncovered = files.filter((file) => {
+            const k = String(
+              fileByKey.get(toNormalizedFileKey(file))?.temp.key || "",
+            ).trim();
+            return !k || !coveredKeys.has(k);
+          });
+          if (uncovered.length > 0) {
+            dismiss();
+            toast({
+              title: "의뢰에 포함되지 않은 파일이 있습니다",
+              description: `${uncovered
+                .slice(0, 3)
+                .map((f) => f.name)
+                .join(", ")}${
+                uncovered.length > 3 ? ` 외 ${uncovered.length - 3}개` : ""
+              } 파일을 확인한 뒤 다시 제출해 주세요.`,
+              variant: "destructive",
+              duration: 8000,
+            });
+            return;
+          }
         } else if (
           patchDraftImmediately &&
           Object.keys(filteredMap).length > 0
@@ -743,6 +796,49 @@ export const useNewRequestSubmitV2 = ({
             errData = res.ok ? null : await res.json().catch(() => ({}));
           }
         }
+      }
+
+      // 서버가 S3에서 업로드 파일을 못 찾음(사전 업로드 캐시가 오래됐거나 업로드가 유실).
+      // 캐시를 버리고 한 번 자동으로 다시 올려 제출한다.
+      if (
+        !res.ok &&
+        res.status === 422 &&
+        errData?.code === "UPLOAD_MISSING" &&
+        !internal?.reuploaded
+      ) {
+        console.warn("[useNewRequestSubmitV2] upload missing on server, re-uploading", {
+          missing: errData?.data?.missingFiles,
+        });
+        forgetUploadedFiles?.(files);
+        preparedDraftRef.current = null;
+        dismiss();
+        toast({
+          title: "파일을 다시 올리는 중입니다",
+          description: "서버에서 확인되지 않은 파일을 다시 업로드한 뒤 자동으로 제출합니다.",
+          duration: 4000,
+        });
+        await submitFromDraft(duplicateResolutions, { reuploaded: true });
+        return;
+      }
+
+      if (!res.ok && res.status === 422 && errData?.code === "UPLOAD_MISSING") {
+        const names = Array.isArray(errData?.data?.missingFiles)
+          ? errData.data.missingFiles
+              .map((f: any) => String(f?.fileName || "").trim())
+              .filter(Boolean)
+          : [];
+        forgetUploadedFiles?.(files);
+        preparedDraftRef.current = null;
+        dismiss();
+        toast({
+          title: "파일 업로드를 확인하지 못했습니다",
+          description: `${names.slice(0, 3).join(", ")}${
+            names.length > 3 ? ` 외 ${names.length - 3}개` : ""
+          } 파일을 다시 첨부한 뒤 제출해 주세요.`,
+          variant: "destructive",
+          duration: 10000,
+        });
+        return;
       }
 
       if (!res.ok) {
@@ -900,6 +996,30 @@ export const useNewRequestSubmitV2 = ({
       }
 
       const okBody = await res.json().catch(() => ({}));
+
+      // 서버가 일부 파일을 제외했다고 알리면(필수 정보 누락 등) 입력을 비우지 않는다.
+      const excludedFiles = Array.isArray(okBody?.missingFiles)
+        ? okBody.missingFiles
+        : [];
+      if (excludedFiles.length > 0) {
+        dismiss();
+        toast({
+          title: "일부 파일이 접수되지 않았습니다",
+          description: String(
+            okBody?.warning ||
+              excludedFiles
+                .map(
+                  (f: any) =>
+                    `${f?.fileName}: ${(f?.missingFields || []).join(", ")}`,
+                )
+                .join("\n"),
+          ),
+          variant: "destructive",
+          duration: 12000,
+        });
+        return;
+      }
+
       const unsupportedRaw = okBody?.data?.unsupportedConnections;
       const unsupportedConnections = Array.isArray(unsupportedRaw)
         ? unsupportedRaw.filter(

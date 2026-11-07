@@ -103,7 +103,22 @@ import {
   isDuplicateKeyError,
 } from "./creation.helpers.controller.js";
 
+import { findMissingUploadedFiles } from "../../services/requestSubmitIntegrity.service.js";
+
 const REQUEST_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+/** 응답 유실 후 같은 Draft 재전송을 이전 접수 결과로 돌려주는 기간 */
+const DRAFT_RESUBMIT_IDEMPOTENT_MS = 30 * 60 * 1000;
+const CREDIT_HOLD_MAX_ATTEMPTS = 3;
+const REQUEST_INSERT_MAX_ATTEMPTS = 3;
+
+const sleepMs = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isRequestIdCollision = (err) =>
+  Number(err?.code) === 11000 &&
+  String(err?.message || "").includes("requestId");
 const REQUEST_ID_SUFFIX_LEN = 8;
 const REQUEST_ID_MAX_TRIES = 8;
 
@@ -347,7 +362,7 @@ function creditLockFromOrderAndAnchor(chargeOrder, anchor) {
   return { isLocked: false };
 }
 
-async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays }) {
+export async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays }) {
   const docs = (Array.isArray(requests) ? requests : []).filter(Boolean);
   if (!docs.length) return;
   let manufacturerLeadTimes = null;
@@ -379,7 +394,11 @@ async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays }) {
       doc.timeline.nextEstimatedShipYmd = pickupYmd;
       doc.timeline.estimatedShipYmd = pickupYmd;
     }
-    const set = { productionSchedule: schedule };
+    // 서브문서 통째 교체 금지: 먼저 올라간 stlPreload 등 다른 키를 지우지 않는다.
+    const set = {};
+    for (const [key, value] of Object.entries(schedule || {})) {
+      set[`productionSchedule.${key}`] = value;
+    }
     if (pickupYmd) {
       set["timeline.originalEstimatedShipYmd"] = pickupYmd;
       set["timeline.nextEstimatedShipYmd"] = pickupYmd;
@@ -410,35 +429,6 @@ async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays }) {
  *
  * @route POST /api/requests/from-draft
  */
-/** 크레딧 보류가 실패한 방금 만든 의뢰를 취소로 남긴다(감사 기록 유지). */
-async function cancelRequestsAfterHoldFailure(requests, actorUserId) {
-  const ids = (Array.isArray(requests) ? requests : [])
-    .map((row) => row?._id)
-    .filter(Boolean);
-  if (ids.length === 0) return;
-  try {
-    await Request.updateMany(
-      { _id: { $in: ids } },
-      {
-        $set: { manufacturerStage: "취소" },
-        $push: {
-          statusHistory: {
-            status: "취소",
-            note: "크레딧 보류 실패로 접수하지 않음",
-            updatedBy: actorUserId || null,
-            updatedAt: new Date(),
-          },
-        },
-      },
-    );
-  } catch (cancelErr) {
-    console.error(
-      "[createRequestsFromDraft] cancel after hold failure failed",
-      cancelErr?.message || cancelErr,
-    );
-  }
-}
-
 export async function createRequestsFromDraft(req, res) {
   try {
     const startTime = Date.now();
@@ -645,6 +635,32 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    // 직전에 접수가 끝났는데 응답이 유실돼 같은 Draft로 다시 온 경우: 새로 만들지 않고 이전 결과를 돌려준다.
+    if (
+      draft.status === "submitted" &&
+      Array.isArray(draft.submittedRequestIds) &&
+      draft.submittedRequestIds.length > 0 &&
+      draft.submittedAt &&
+      Date.now() - new Date(draft.submittedAt).getTime() <
+        DRAFT_RESUBMIT_IDEMPOTENT_MS &&
+      !req.body?.duplicateResolutions
+    ) {
+      console.log("[createRequestsFromDraft] idempotent replay", {
+        draftId: String(draftId),
+        count: draft.submittedRequestIds.length,
+      });
+      return res.status(200).json({
+        success: true,
+        message: `${draft.submittedRequestIds.length}건의 의뢰가 이미 접수되었습니다.`,
+        data: {
+          count: draft.submittedRequestIds.length,
+          requestIds: draft.submittedRequestIds,
+          requestMongoIds: draft.submittedRequestMongoIds || [],
+          replayed: true,
+        },
+      });
+    }
+
     // related files:
     // - web/backend/models/practiceTransfer.model.js
     // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
@@ -733,6 +749,9 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    // S3 임시 업로드 존재 확인은 케이스 정규화와 병렬로 돌린다.
+    const uploadVerifyPromise = findMissingUploadedFiles(abutmentCases);
+
     const createdRequests = [];
     const missingFieldsByFile = [];
     const preparedCases = [];
@@ -770,6 +789,10 @@ export async function createRequestsFromDraft(req, res) {
         if (!clinicName) missing.push("치과이름");
         if (!patientName) missing.push("환자이름");
         if (!designSoftwareValue) missing.push("디자인 소프트웨어");
+        // STL이 없는 의뢰는 제조사-준비에서 처리할 수 없다. 접수 전에 막는다.
+        if (!String(ci?.file?.s3Key || "").trim()) {
+          missing.push("업로드된 STL 파일");
+        }
 
         // 신규 임플란트 의뢰(newSystemRequest)가 아닌 경우 임플란트 필드 검증
         // strict=false로 normalization 후 여기서 명시적으로 체크
@@ -1010,7 +1033,9 @@ export async function createRequestsFromDraft(req, res) {
       preparedCases.push(candidate);
     }
 
-    if (preparedCases.length === 0) {
+    // 한 건이라도 필수 정보가 빠지면 전체를 접수하지 않는다.
+    // 일부만 접수하면 클라이언트가 입력을 비워 제외된 건이 조용히 사라진다.
+    if (missingFieldsByFile.length > 0 || preparedCases.length === 0) {
       return res.status(400).json({
         success: false,
         message: "필수 정보가 누락된 파일이 있습니다.",
@@ -1032,6 +1057,21 @@ export async function createRequestsFromDraft(req, res) {
         success: false,
         message:
           "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
+      });
+    }
+
+    const missingUploads = await uploadVerifyPromise;
+    if (missingUploads.length > 0) {
+      console.warn("[createRequestsFromDraft] uploaded file missing in S3", {
+        draftId: String(draftId),
+        files: missingUploads.map((f) => f.fileName),
+      });
+      return res.status(422).json({
+        success: false,
+        code: "UPLOAD_MISSING",
+        message:
+          "업로드된 STL 파일을 서버에서 찾을 수 없습니다. 파일을 다시 올린 뒤 제출해 주세요.",
+        data: { missingFiles: missingUploads },
       });
     }
 
@@ -1730,7 +1770,7 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
-    const requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
+    let requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
     let session = null;
     let deferredDashboardRefreshAnchorId = null;
     let deferredHexSampleContext = null;
@@ -2064,22 +2104,90 @@ export async function createRequestsFromDraft(req, res) {
           requestDocs.push(newRequest);
         }
 
+        // 스키마 오류는 삽입 전에 모두 잡는다. 다건 insertMany가 중간에 실패해 일부만 남는 것을 막는다.
+        for (const doc of requestDocs) {
+          await new Request(doc).validate();
+        }
+
         await ensureLotNumbersOnReadyEnter(requestDocs, session);
 
-        const insertedRequests = await Request.insertMany(
-          requestDocs,
-          session ? { session } : {},
-        );
-        insertedRequests.forEach((doc) => createdRequests.push(doc));
+        try {
+          const insertedRequests = await Request.insertMany(
+            requestDocs,
+            session ? { session } : {},
+          );
+          insertedRequests.forEach((doc) => createdRequests.push(doc));
+        } catch (insertErr) {
+          // 트랜잭션이면 롤백된다. 아니면 이번 시도에서 들어간 건을 지워 반쪽 접수를 남기지 않는다.
+          if (!session) {
+            await Request.deleteMany({
+              requestId: { $in: requestDocs.map((d) => d.requestId) },
+              requestor: req.user._id,
+            }).catch((cleanupErr) => {
+              console.error(
+                "[createRequestsFromDraft] partial insert cleanup failed",
+                cleanupErr?.message || cleanupErr,
+              );
+            });
+          }
+          throw insertErr;
+        }
       };
-      if (session) {
-        await session.withTransaction(writeCreatedRequests);
-      } else {
-        await writeCreatedRequests();
+      // requestId 충돌은 새 번호로 다시 시도한다(사용자에게 재제출을 떠넘기지 않는다).
+      for (
+        let attempt = 1;
+        attempt <= REQUEST_INSERT_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        try {
+          createdRequests.length = 0;
+          if (session) {
+            await session.withTransaction(writeCreatedRequests);
+          } else {
+            await writeCreatedRequests();
+          }
+          break;
+        } catch (writeErr) {
+          if (
+            attempt < REQUEST_INSERT_MAX_ATTEMPTS &&
+            isRequestIdCollision(writeErr)
+          ) {
+            console.warn(
+              "[createRequestsFromDraft] requestId collision, regenerating",
+              { attempt },
+            );
+            requestIds = generateRequestIdBatch(preparedCasesForCreate.length);
+            continue;
+          }
+          throw writeErr;
+        }
       }
       console.log("[createRequestsFromDraft] transaction done", {
         t: Date.now() - startTime,
         created: createdRequests.length,
+      });
+
+      // 응답이 유실돼 같은 Draft로 재전송돼도 중복 접수하지 않도록 결과를 Draft에 남긴다.
+      // 응답을 막지 않는다. 실패해도 접수는 이미 끝났다.
+      void DraftRequest.updateOne(
+        { _id: draftId },
+        {
+          $set: {
+            status: "submitted",
+            submittedAt: new Date(),
+            submittedRequestIds: createdRequests
+              .map((row) => String(row?.requestId || "").trim())
+              .filter(Boolean),
+            submittedRequestMongoIds: createdRequests
+              .map((row) => String(row?._id || "").trim())
+              .filter(Boolean),
+          },
+        },
+      ).catch((markErr) => {
+        console.warn(
+          "[createRequestsFromDraft] draft submitted mark failed",
+          markErr?.message || markErr,
+        );
       });
 
       if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
@@ -2335,44 +2443,61 @@ export async function createRequestsFromDraft(req, res) {
               );
             }
             const holdT0 = Date.now();
-            try {
-              await holdRequestCreditsOnSubmit({
-                requests: holdCtx.requests,
-                actorUserId: holdCtx.actorUserId || null,
-                session: null,
-                shippingFee: holdCtx.shippingFee,
-                seedBalance: holdCtx.seedBalance,
-                labHoldPolicy: holdCtx.labHoldPolicy,
-                postpaidActive: holdCtx.postpaidActive,
-                fmDentalShippingActive: holdCtx.fmDentalShippingActive,
-                assumeNoExistingHolds: true,
-              });
-              console.log("[createRequestsFromDraft] credit hold done", {
-                dt: Date.now() - holdT0,
-                created: holdCtx.requests.length,
-              });
-            } catch (holdErr) {
-              holdOk = false;
+            // 일시 장애(DB 락·네트워크)로 보류가 한 번 실패했다고 의뢰를 취소하지 않는다.
+            // 보류는 idempotencyKey로 멱등이라 재시도해도 이중으로 잡히지 않는다.
+            for (
+              let holdAttempt = 1;
+              holdAttempt <= CREDIT_HOLD_MAX_ATTEMPTS;
+              holdAttempt += 1
+            ) {
+              try {
+                await holdRequestCreditsOnSubmit({
+                  requests: holdCtx.requests,
+                  actorUserId: holdCtx.actorUserId || null,
+                  session: null,
+                  shippingFee: holdCtx.shippingFee,
+                  seedBalance: holdAttempt === 1 ? holdCtx.seedBalance : null,
+                  labHoldPolicy: holdCtx.labHoldPolicy,
+                  postpaidActive: holdCtx.postpaidActive,
+                  fmDentalShippingActive: holdCtx.fmDentalShippingActive,
+                  assumeNoExistingHolds: holdAttempt === 1,
+                });
+                holdOk = true;
+                console.log("[createRequestsFromDraft] credit hold done", {
+                  dt: Date.now() - holdT0,
+                  created: holdCtx.requests.length,
+                  attempt: holdAttempt,
+                });
+                break;
+              } catch (holdErr) {
+                holdOk = false;
+                console.error(
+                  "[createRequestsFromDraft] credit hold failed",
+                  { attempt: holdAttempt },
+                  holdErr?.message || holdErr,
+                );
+                if (holdAttempt < CREDIT_HOLD_MAX_ATTEMPTS) {
+                  await sleepMs(400 * holdAttempt);
+                }
+              }
+            }
+            if (!holdOk) {
+              // 의뢰는 준비에 남긴다. 보류는 requestSubmitReconcileWorker가 이어서 잡는다.
               console.error(
-                "[createRequestsFromDraft] credit hold failed",
-                holdErr?.message || holdErr,
-              );
-              await cancelRequestsAfterHoldFailure(
-                holdCtx.requests,
-                holdCtx.actorUserId || null,
+                "[createRequestsFromDraft] credit hold exhausted; request stays in 준비 for reconcile",
+                holdCtx.requests.map((r) => r?.requestId),
               );
             }
           }
 
-          if (holdOk) {
-            try {
-              dispatchRhinoJobs();
-            } catch (rhinoErr) {
-              console.warn(
-                "[createRequestsFromDraft] rhino dispatch failed",
-                rhinoErr?.message || rhinoErr,
-              );
-            }
+          // STL 처리는 보류 성공 여부와 무관하게 시작한다(준비 카드가 STL 없이 멈추지 않게).
+          try {
+            dispatchRhinoJobs();
+          } catch (rhinoErr) {
+            console.warn(
+              "[createRequestsFromDraft] rhino dispatch failed",
+              rhinoErr?.message || rhinoErr,
+            );
           }
 
           if (holdCtx?.requests?.length && refreshAnchorId && holdOk) {
@@ -2431,7 +2556,7 @@ export async function createRequestsFromDraft(req, res) {
           try {
             await triggerDashboardSummaryRefreshForAnchorId(
               refreshAnchorId,
-              holdOk ? "request-created" : "request-hold-failed-cancel",
+              "request-created",
             );
           } catch (err) {
             console.error(
@@ -2442,9 +2567,9 @@ export async function createRequestsFromDraft(req, res) {
           // 스냅샷 갱신 후에야 헤더가 최신 건수를 읽도록 stage-changed emit
           emitAppEventToRoles(["requestor"], "request:stage-changed", {
             source: "createRequestsFromDraft",
-            action: holdOk ? "created" : "hold-failed-cancel",
+            action: "created",
             fromStage: "",
-            toStage: holdOk ? "준비" : "취소",
+            toStage: "준비",
             businessAnchorId: refreshAnchorId,
             requestorBusinessAnchorId: refreshAnchorId,
             requestIds: requestIdsForRefresh,

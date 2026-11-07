@@ -166,6 +166,28 @@ export async function grantPaidCredit(anchorId, amount) {
   });
 }
 
+/** 무료 의뢰 크레딧 지급. 기공소 커스텀어벗은 무료 크레딧만 쓸 수 있다. */
+export async function grantFreeRequestCredit(anchorId, amount) {
+  return postGeneralLedgerJournal({
+    idempotencyKey: `test:charge-free:${String(anchorId)}:${nextSeq()}`,
+    eventType: "CHARGE_FREE_REQUEST",
+    businessAnchorId: anchorId,
+    refType: "TEST",
+    lines: [
+      {
+        accountCode: "REQ_FREE_REQUEST_CREDIT",
+        ownerRole: "requestor",
+        ownerId: anchorId,
+        amount,
+        amountExcludingVat: amount,
+        vatAmount: 0,
+        amountIncludingVat: amount,
+        creditKind: "FREE_REQUEST",
+      },
+    ],
+  });
+}
+
 /** 주문 가능(isActive) 임플란트 조합. 생성·수정 시 assertOrderableImplantPresetOrThrow가 본다. */
 export const seedOrderableConnection = () =>
   Connection.create({

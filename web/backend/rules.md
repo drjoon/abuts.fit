@@ -505,7 +505,13 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 공정 단계 변경 SSOT: `PATCH /api/requests/:id/status` `{ manufacturerStage }`. 의뢰자는 `취소`만, 그 밖의 단계(복구 `준비` 등)는 관리자만. 레거시 입력 `의뢰`는 `준비`로 받는다. `PATCH /api/admin/requests/:id/status`는 예전 `{ status }`(준비·가공·발송→포장.발송·완료→추적관리·취소)를 바꿔 같은 핸들러로 넘긴다.
 - 배송 리드타임 SSOT는 제조사 `shippingPolicy.leadTimes`. `PUT /api/admin/settings` `deliveryEtaLeadDays`는 조회와 같은 제조사 문서의 `maxBusinessDays`를 바꾼다(`updateManufacturerMaxLeadDays`). `SystemSettings.deliveryEtaLeadDays`는 쓰지 않는다.
 - 파일 목록 API(`GET /api/files`, `/my`, `/request/:id`)는 사용처가 없어 제거했다.
-- 제조의뢰 제출(`POST /api/requests/from-draft`): 잔액 사전검사(402) → insert 트랜잭션 → **크레딧 보류(`holdRequestCreditsOnSubmit`)를 응답 전에** 끝낸다. 보류 실패면 방금 만든 의뢰를 `취소`로 남기고 402(잔액 경합)/500으로 응답한다. 201 뒤 조용한 자동 취소는 없다. Rhino 트리거·알림·헥스 샘플·대시보드 갱신은 보류 성공 뒤(대시보드·샘플은 응답 후).
+- 제조의뢰 제출(`POST /api/requests/from-draft`) 무손실 규칙 (2026-11-08):
+  - **전부 아니면 전무**: 한 케이스라도 필수 정보·`file.s3Key`가 없으면 400(`missingFiles`)으로 전체를 접수하지 않는다. 일부 제외 후 201은 없다(클라이언트가 입력을 비워 제외된 건이 사라짐).
+  - **S3 확인**: 접수 전 대표·추가 파일 s3Key를 HEAD로 확인한다(`findMissingUploadedFiles`, Jest·`REQUEST_UPLOAD_VERIFY=false`는 생략). 없으면 422 `UPLOAD_MISSING` → 프론트는 사전 업로드 캐시를 버리고 한 번 자동 재업로드 후 재제출한다.
+  - **멱등**: 성공 시 Draft에 `status=submitted`·`submittedRequestIds`를 남기고, 30분 안에 같은 Draft가 다시 오면 200 `replayed`로 이전 결과를 돌려준다(응답 유실·재시도 중복 방지).
+  - **삽입**: 스키마 검증을 먼저 하고, requestId 충돌은 새 번호로 최대 3회 재시도한다. 트랜잭션이 아닌 경로에서 insertMany가 실패하면 이번 시도 건을 지운다(반쪽 접수 금지).
+  - **후처리**(출고일 계산·크레딧 보류·STL 처리 트리거)는 응답 뒤. 보류는 최대 3회 재시도(idempotencyKey 멱등)하고, **끝내 실패해도 의뢰를 취소하지 않는다**(준비에 남김). STL 처리는 보류 결과와 무관하게 시작한다.
+  - **복구**: `jobs/requestSubmitReconcileWorker.js`(1분 주기, `REQUEST_SUBMIT_RECONCILE_ENABLED=false`로 끔)가 2분 이상 지난 준비 의뢰의 출고일 미계산·STL 트리거 유실/10분 이상 GENERATING·보류 미기록(30분 내)을 이어 준다. 서버 재시작으로 201 뒤 후처리가 끊겨도 제조사-준비에서 멈추지 않는다.
 - 의뢰 취소 정책 SSOT: `PATCH /api/requests/:id/status`로 `manufacturerStage=취소` 시
   정규화 단계가 `request`(준비)인 경우만 허용. 불완전가공(`rnd.unmachinableAt`)은 예외로 취소 가능.
   - 레거시 문구/판정(`의뢰 또는 CAM 단계`) 사용 금지.

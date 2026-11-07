@@ -37,6 +37,7 @@ import { startPracticeTransferArrivalAutoCompleteWorker } from "./jobs/practiceT
 import { startDailyReferralOwnershipResetWorker } from "./jobs/dailyReferralOwnershipResetWorker.js";
 import { startWorkScanAutoAlignWorker } from "./jobs/workScanAutoAlignWorker.js";
 import { startAbutmentStlShadowWorker } from "./jobs/abutmentStlShadowWorker.js";
+import { startRequestSubmitReconcileWorker } from "./jobs/requestSubmitReconcileWorker.js";
 import { startAutoMachiningGateWorker } from "./jobs/autoMachiningGateWorker.js";
 import { startBusinessVerificationRetryWorker } from "./jobs/businessVerificationRetryWorker.js";
 import { startEasyFinBankSyncWorker } from "./jobs/easyFinBankSyncWorker.js";
@@ -194,6 +195,8 @@ dbReady
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지
     startReviewApprovalWorker();
     startAutoMachiningGateWorker();
+    // 접수 뒤 후처리(출고일·크레딧 보류·STL 트리거) 유실 복구
+    startRequestSubmitReconcileWorker();
 
     // 한진 배송조회 자동 동기화 워커 시작 (기본 1시간 주기)
     // 옵션 B: 부팅 직후 즉시 호출(runImmediate)은 비활성화하여

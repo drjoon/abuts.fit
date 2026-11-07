@@ -1396,6 +1396,7 @@ export const useNewRequestPage = (
     resolveCorrectedDesignUpload: options?.resolveCorrectedDesignUpload,
     uploadFiles: ensureFilesUploaded,
     peekCachedUploadedFiles,
+    forgetUploadedFiles: (targets) => targets.forEach((f) => forgetFile(f)),
     onDuplicateDetected: handleServerDuplicateDetected,
     onSubmitStart: () => {
       suspendDraftPatches();

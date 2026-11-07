@@ -30,6 +30,10 @@ const draftCaseSchema = new mongoose.Schema(
       enum: ["draft", "submitted", "cancelled"],
       default: "draft",
     },
+    // from-draft 성공 기록. 응답이 유실돼 클라이언트가 같은 Draft로 재전송해도 중복 접수하지 않는다.
+    submittedAt: { type: Date, default: null },
+    submittedRequestIds: { type: [String], default: undefined },
+    submittedRequestMongoIds: { type: [String], default: undefined },
     caseInfos: [
       {
         // 이 case 에 연결된 파일 메타정보 (임시 업로드 파일)
