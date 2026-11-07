@@ -1035,6 +1035,9 @@ const toProductionApiFields = (
       mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
       size: Number(item?.file?.size || 0),
       s3Key: String(item?.file?.s3Key || "").trim(),
+      uploadedAt: item?.uploadedAt
+        ? new Date(item.uploadedAt).toISOString()
+        : null,
     })),
     labWorkScanFiles: normalizeResultFiles(p.labWorkScanFiles).map((item, idx) => ({
       id: `work-scan::${idx + 1}`,

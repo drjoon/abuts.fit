@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-11-07: 준비 큐 — PTX 다치아 미업로드 sibling(ptxDesignUploadMissingVisible) 포함.
 // - 2026-10-22: 가공(machiningCount) — getProductionQueues·Next Up SSOT(더미 Next Up pinned 포함).
 // - 2026-09-30: 세척.패킹 헤더 카운트 — 출고했거나 출고시간(16:00 KST)이 지난 불완전가공은 제외.
 // - 2026-09-02: 추적관리 워크시트 헤더 카운트 — TrackingPage 노출/기간 SSOT(trackingWorksheet*).
@@ -34,6 +35,7 @@ function buildHasMeaningfulValueExpr(fieldPath) {
  * SSOT: common.requests.controller productModeNe=design_custom_abutment
  * - 레거시 디자인 mode 제외
  * - PTX 연동 + designCompletedAt 없음 → 디자인 대기, 준비 배지/카드에서 제외
+ * - 예외: ptxDesignUploadMissingVisible(동일 PTX 일부 STL만 업로드)은 포함
  */
 function buildIsWorksheetReadyQueueRequestExpr() {
   return {
@@ -54,6 +56,12 @@ function buildIsWorksheetReadyQueueRequestExpr() {
             ],
           },
           { $eq: [{ $type: "$designCompletedAt" }, "date"] },
+          {
+            $eq: [
+              { $ifNull: ["$partnerBilling.ptxDesignUploadMissingVisible", false] },
+              true,
+            ],
+          },
         ],
       },
     ],

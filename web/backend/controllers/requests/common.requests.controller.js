@@ -1538,6 +1538,7 @@ export async function getAllRequests(req, res) {
     // - productMode=design_custom_abutment → 레거시 디자인 파트너 큐(신규 유입 없음)
     // - productModeNe=design_custom_abutment → 제조사 준비: 레거시 디자인 mode +
     //   PTX 디자인 미완료(relatedPracticeTransferId ∧ !designCompletedAt) 제외
+    //   (ptxDesignUploadMissingVisible sibling은 누락 피드백용으로 포함)
     if (typeof req.query.productMode === "string") {
       const productMode = String(req.query.productMode || "").trim();
       if (productMode) {

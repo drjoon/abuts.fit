@@ -2,8 +2,10 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/admin/adminCommBadges.controller.js
 // - web/backend/services/requestDashboardStats.service.js
+// - web/backend/services/ptxDesignUploadMissing.service.js
 // - web/frontend/src/pages/admin/requests/AdminRequestMonitoring.tsx
 // change-log:
+// - 2026-11-07: PTX 다치아 일부 STL만 업로드 시 sibling(ptxDesignUploadMissingVisible)도 준비 큐 포함.
 // - 2026-10-14: 관리자 의뢰 배지 = 모니터링 ops 준비 큐와 동일 필터(SSOT).
 // - 2026-09-03: 헥스 확인용 복사샘플은 PTX designCompletedAt 대기가드 면제(준비 목록 누락 방지).
 // - 2026-08-26: 제조사 준비 큐·관리자 모니터링·의뢰 배지 공통 가드 분리.
@@ -57,6 +59,7 @@ export function buildAdminRequestReadyBadgeFilter() {
  * SSOT: productModeNe=design_custom_abutment (RequestPage / dashboard requestCount)
  * - 레거시 디자인 mode 제외
  * - PTX 연동 + designCompletedAt 없음 → 기공소 디자인 대기, 제조 준비·관리자 모니터링·의뢰 배지에서 제외
+ * - 예외: 동일 PTX에 STL이 일부만 올라온 sibling(ptxDesignUploadMissingVisible)은 누락 피드백용으로 포함
  * - 헥스 확인용 복사샘플은 제조 확인용이라 PTX 디자인 대기와 무관 → 항상 준비 큐 포함
  */
 export function buildWorksheetReadyQueueGuard() {
@@ -74,11 +77,22 @@ export function buildWorksheetReadyQueueGuard() {
           { "partnerBilling.relatedPracticeTransferId": null },
           { "partnerBilling.relatedPracticeTransferId": { $exists: false } },
           { designCompletedAt: { $type: "date" } },
+          { "partnerBilling.ptxDesignUploadMissingVisible": true },
         ],
       },
       { "caseInfos.unsupportedConnection.pendingCancel": { $ne: true } },
     ],
   };
+}
+
+/** PTX sibling 미업로드 노출 플래그 — Request 모델 import 없이 가드에서 판정 */
+function isPtxDesignUploadMissingVisible(requestLike) {
+  if (requestLike?.caseInfos?.hexVerificationSample === true) return false;
+  if (requestLike?.designCompletedAt) return false;
+  const relatedPtxId =
+    requestLike?.partnerBilling?.relatedPracticeTransferId ?? null;
+  if (!relatedPtxId) return false;
+  return requestLike?.partnerBilling?.ptxDesignUploadMissingVisible === true;
 }
 
 /** 의뢰가 제조사 준비 큐(배지·모니터링) 대상인지 — create/handoff emit 가드 */
@@ -88,7 +102,9 @@ export function isWorksheetReadyQueueRequest(requestLike) {
   if (productMode === "design_custom_abutment") return false;
   const relatedPtxId =
     requestLike?.partnerBilling?.relatedPracticeTransferId ?? null;
-  if (relatedPtxId && !requestLike?.designCompletedAt) return false;
+  if (relatedPtxId && !requestLike?.designCompletedAt) {
+    if (!isPtxDesignUploadMissingVisible(requestLike)) return false;
+  }
   if (requestLike?.caseInfos?.unsupportedConnection?.pendingCancel === true) {
     return false;
   }

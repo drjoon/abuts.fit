@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-07: PTX 다치아 STL 일부 미업로드 건「미업로드」뱃지·준비 큐 포함.
 // - 2026-10-22: 상태 칩과 요약 카드 중복 제거. 취소 카드 추가. 목록은 전폭.
 // - 2026-10-14: 준비 카드·사이드 배지 = comm-badges 준비 큐(기간 필터와 분리). 진입 시 배지 재조회.
 // - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게.
@@ -43,6 +44,7 @@ import {
   fetchAdminCommBadges,
   useAdminCommBadgeStore,
 } from "@/shared/hooks/useAdminCommBadges";
+import { isPtxDesignStlMissing } from "@/shared/request/ptxDesignUploadMissing";
 
 type StatusFilter =
   | "all"
@@ -105,6 +107,7 @@ const isSampleRequest = (request: any) => {
  * 제조사 준비 큐 대상인지 — BE buildWorksheetReadyQueueGuard / productModeNe SSOT
  * - 레거시 design_custom_abutment 제외
  * - PTX 연동 + designCompletedAt 없음 → 기공소 디자인 대기, 제외
+ * - 예외: ptxDesignUploadMissingVisible(동일 PTX 일부 STL만 업로드)은 누락 피드백용 포함
  * - 불완전가공(rnd.unmachinableAt) 제외 — 제조사 일반 탭과 동일(불완전가공 탭 전용)
  */
 const isWorksheetReadyQueueRequest = (request: any) => {
@@ -113,7 +116,11 @@ const isWorksheetReadyQueueRequest = (request: any) => {
   if (productMode === "design_custom_abutment") return false;
   const relatedPtxId =
     request?.partnerBilling?.relatedPracticeTransferId ?? null;
-  if (relatedPtxId && !request?.designCompletedAt) return false;
+  if (relatedPtxId && !request?.designCompletedAt) {
+    if (request?.partnerBilling?.ptxDesignUploadMissingVisible !== true) {
+      return false;
+    }
+  }
   return true;
 };
 
@@ -757,11 +764,16 @@ export const AdminRequestMonitoring = () => {
                         : selectedStatus === "불완전가공"
                           ? "불완전가공"
                           : stage;
+                    const stlMissing = isPtxDesignStlMissing(request);
 
                     return (
                       <div
                         key={request._id || request.id}
-                        className={`relative rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 transition-colors hover:bg-slate-50/70 ${
+                        className={`relative rounded-xl border bg-white px-3.5 py-2.5 transition-colors hover:bg-slate-50/70 ${
+                          stlMissing
+                            ? "border-dashed border-amber-400/90 bg-amber-50/40"
+                            : "border-slate-200/80"
+                        } ${
                           isActionPending
                             ? "pointer-events-none opacity-50"
                             : ""
@@ -783,6 +795,14 @@ export const AdminRequestMonitoring = () => {
                                   </span>
                                 ) : null}
                               </h3>
+                              {stlMissing ? (
+                                <span
+                                  className="shrink-0 rounded-md border border-amber-500/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900"
+                                  title="동일 기공의뢰의 다른 치아 STL은 올라왔고, 이 치아 어벗 STL은 없습니다."
+                                >
+                                  미업로드
+                                </span>
+                              ) : null}
                               {showPriority ? (
                                 <span className="shrink-0 rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
                                   {priority}
@@ -798,6 +818,11 @@ export const AdminRequestMonitoring = () => {
                                 {formatKstDate(request.createdAt)}
                               </span>
                             </div>
+                            {stlMissing ? (
+                              <p className="mt-1.5 text-[11px] font-medium text-amber-800">
+                                어벗 STL 없음
+                              </p>
+                            ) : null}
                             {selectedStatus === "불완전가공" &&
                             unmachinableReason ? (
                               <p className="mt-1.5 line-clamp-2 text-[11px] text-accent-strong">

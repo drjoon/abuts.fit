@@ -1339,6 +1339,8 @@ const requestSchema = new mongoose.Schema(
       },
       // PTX CA: 기공소 디자인·제조 생산만. 스키마에 명시해 저장이 깨지지 않게 한다.
       labDesignedAbutment: { type: Boolean, default: false },
+      // PTX 다치아: 형제 중 일부만 어벗 STL 업로드 → 미업로드 sibling을 준비 큐에 노출.
+      ptxDesignUploadMissingVisible: { type: Boolean, default: false },
       // PTX 직납 수취 치과 BusinessAnchor
       practiceBusinessAnchorId: {
         type: mongoose.Schema.Types.ObjectId,

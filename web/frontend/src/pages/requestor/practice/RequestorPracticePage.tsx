@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-07: 수신 캘린더 툴바 — 당일 어벗 STL 일부 미업로드 깜빡임 경고.
 // - 2026-10-27: 택배 라벨 헤더 버튼·완료 후 출력 확인은 어벗츠기공소(internalLab)만.
 // - 2026-10-24: 치과의뢰 수신 — 택배 라벨. 보철 완료 후 출력 여부, 헤더에서 치과별 선택.
 // - 2026-10-04: 역할이 다른 openTransfer는 자식 마운트 전에 넘김 — 치과 창에 채팅이 열리지 않음.
@@ -416,6 +417,8 @@ import {
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
+import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practice/practiceTransferPartialAbutmentUpload";
+import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
 import {
   parseLabTechnician,
   viewerCanAssignLabTechnician,
@@ -3141,6 +3144,17 @@ export function RequestorPracticeReceivePage({
     transferChatUnreadCount,
     viewerIsPrimeLab,
   ]);
+
+  const sameDayPartialAbutmentUploads = useMemo(
+    () =>
+      sortedFilteredTransfers.filter((transfer) =>
+        isPracticeTransferSameDayPartialAbutmentUpload(
+          transfer,
+          implantCatalog,
+        ),
+      ),
+    [implantCatalog, sortedFilteredTransfers],
+  );
 
   const selectedLabBasketTransferId = String(
     selectedTransfer?.transferId || selectedTransfer?._id || "",
@@ -9889,6 +9903,17 @@ export function RequestorPracticeReceivePage({
               showLabColorLegend
               colorLegendTitle="치과"
               pinAbutsInColorLegend={false}
+              toolbarMiddle={
+                <LabPartialAbutmentUploadToolbarAlert
+                  transfers={sameDayPartialAbutmentUploads}
+                  catalog={implantCatalog}
+                  onSelect={(transfer) => {
+                    selectTransferFromCalendar(
+                      transfer as ReceivedPracticeTransfer,
+                    );
+                  }}
+                />
+              }
             />
           )}
         </>

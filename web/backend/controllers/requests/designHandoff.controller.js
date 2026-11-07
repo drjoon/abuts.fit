@@ -1,3 +1,4 @@
+// - 2026-11-07: PTX 다치아 — 일부 STL만 업로드 시 sibling 미업로드를 준비 큐에 노출(누락 피드백).
 // - 2026-09-27: PTX CA 생산 hold — 수행 기공소(assignee) 잔액. 원청(target)으로 소유를 되돌리지 않음.
 // - 2026-09-27: PTX 어벗 STL 업로드 — 협력·하청 수행 기공소(assignee)도 작업시작 기공소로 허용.
 // - 2026-09-20: handoff — body.caseInfos.anodizingEnabled를 요청에 반영(계정 labMeta보다 우선).
@@ -121,6 +122,11 @@ import { ensureLotNumberOnReadyEnter, classifyImplantPreset } from "./utils.js";
 import { cloneUnsupportedConnectionToRnd } from "../../services/unsupportedConnectionRnd.service.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { alertAdminImplantCatalogMismatch } from "../../utils/implantCatalogMismatchAlert.js";
+import {
+  clearOwnPtxDesignUploadMissingVisible,
+  refreshPtxSiblingDesignUploadMissingVisibility,
+  revealPtxSiblingDesignUploadMissing,
+} from "../../services/ptxDesignUploadMissing.service.js";
 
 /** PTX CA(어벗 생산) — 기공소 실크레딧 부족 (수락→디자인 업로드 시점) */
 const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
@@ -950,6 +956,7 @@ export async function handoffDesignToProduction(req, res) {
     }
     request.designCompletedBy = new Types.ObjectId(userId);
     request.designCompletedAt = new Date();
+    clearOwnPtxDesignUploadMissingVisible(request);
 
     const relatedTransferId = relatedTransferIdEarly;
 
@@ -1517,6 +1524,18 @@ export async function handoffDesignToProduction(req, res) {
 
         try {
           if (!unsupportedConnectionLabel) {
+            // 동일 PTX 다치아 — 아직 STL 없는 sibling을 「미업로드」로 준비 큐에 올린다.
+            try {
+              await revealPtxSiblingDesignUploadMissing({
+                relatedPracticeTransferId: relatedTransferId,
+                excludeRequestId: String(request._id),
+              });
+            } catch (revealErr) {
+              console.warn(
+                "[DESIGN_HANDOFF] ptx sibling missing-stl reveal failed",
+                revealErr?.message || revealErr,
+              );
+            }
             emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
               reason: "ptx-design-handoff",
               requestId: String(request._id),
@@ -1734,6 +1753,15 @@ export async function cancelDesignHandoff(req, res) {
       feeRevokePending = false,
       feeRevokeRequestIds = null,
     }) => {
+      // 남은 디자인 sibling이 없으면 미업로드 노출 플래그 해제(다시 숨김)
+      void refreshPtxSiblingDesignUploadMissingVisibility(relatedTransferId).catch(
+        (refreshErr) => {
+          console.warn(
+            "[DESIGN_HANDOFF_CANCEL] ptx sibling missing-stl refresh failed",
+            refreshErr?.message || refreshErr,
+          );
+        },
+      );
       try {
         emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
           reason: String(extraData.cancelReason || "ptx-design-handoff-cancel"),
