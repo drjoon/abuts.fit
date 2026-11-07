@@ -4,6 +4,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/requestCreditHold.service.js
 // change-log:
+// - 2026-11-07: postGeneralLedgerJournals — WriteConflict도 재시도(다치아 handoff 병렬 hold가 한 건만 실패하지 않게).
 // - 2026-09-06: postGeneralLedgerCancelRefund — 비제조사 소비 취소(원본 유지+REFUND).
 // - 2026-09-03: postGeneralLedgerJournals — 같은 ClientSession에서 insertMany 병렬 금지
 //   (NoSuchTransaction/txn number mismatch). journal→line 순차 + TransientTransaction 1회 재시도.
@@ -329,24 +330,38 @@ export async function postGeneralLedgerJournals({
     }
   };
 
-  try {
-    return await runOnce();
-  } catch (error) {
+  const isRetryableLedgerWrite = (error) => {
     const labels = error?.errorLabelSet;
-    const isTransient =
-      (labels && typeof labels.has === "function" && labels.has("TransientTransactionError")) ||
-      Number(error?.code || 0) === 251 ||
-      String(error?.codeName || "") === "NoSuchTransaction";
-    // 호출측이 session을 넘긴 경우 재시도하면 바깥 txn과 꼬이므로 ownSession 경로만.
-    if (!session && isTransient) {
-      console.warn(
-        "[postGeneralLedgerJournals] TransientTransactionError — retry once",
-        error?.message || error,
-      );
+    const code = Number(error?.code || 0);
+    const codeName = String(error?.codeName || "");
+    const transient =
+      (labels &&
+        typeof labels.has === "function" &&
+        labels.has("TransientTransactionError")) ||
+      code === 251 ||
+      codeName === "NoSuchTransaction";
+    const writeConflict = code === 112 || codeName === "WriteConflict";
+    return transient || writeConflict;
+  };
+
+  // 호출측이 session을 넘긴 경우 재시도하면 바깥 txn과 꼬이므로 ownSession 경로만.
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
       return await runOnce();
+    } catch (error) {
+      lastError = error;
+      if (session || !isRetryableLedgerWrite(error) || attempt === 2) {
+        throw error;
+      }
+      console.warn(
+        "[postGeneralLedgerJournals] retryable write — retry",
+        { attempt, message: error?.message || String(error) },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
     }
-    throw error;
   }
+  throw lastError;
 }
 
 /** 제조사 의뢰비·배송비 — 취소 시 REFUND 금지, 물리 삭제만. */

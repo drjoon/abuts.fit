@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
 // - 2026-11-07: ensureAbutmentRequestsForHandoff — 다치아 병렬 handoff 시 생성 락(relatedRequestIds 이중 생성·빈 stub 방지).
 // - 2026-10-21: 미제공 커넥션도 CA Request를 만든다. R&D 보관·해당 치아 취소는 design-handoff.
 // - 2026-09-29: abutmentToothStages — 연동 CA Request 치아별 제조사 공정(기공소 채팅 `43(준비), 44(세척.패킹)`).
@@ -1821,13 +1822,31 @@ export async function ensureAbutmentRequestsForHandoff({
 export const ensureAbutmentRequestsOnAccept = ensureAbutmentRequestsForHandoff;
 
 /**
+ * relatedRequestIds 중 tooth와 일치하는 CA Request를 고른다.
+ * tooth가 있으면 불일치 시 null — 다른 치아(미완료 첫 건)에 붙이면 남은 치아 STL이 빈다.
+ * tooth가 없을 때만 미완료 첫 건으로 폴백한다.
+ */
+export function pickAbutmentRequestIdForTooth(docs, tooth = "") {
+  const list = Array.isArray(docs) ? docs : [];
+  const toothKey = String(tooth || "").trim();
+  if (toothKey) {
+    const exact = list.find(
+      (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothKey,
+    );
+    return exact?._id ? String(exact._id) : null;
+  }
+  const pending = list.find((doc) => !doc?.designCompletedAt);
+  if (pending?._id) return String(pending._id);
+  return list[0]?._id ? String(list[0]._id) : null;
+}
+
+/**
  * relatedRequestIds 중 tooth와 일치하는 CA Request를 찾는다.
  */
 export async function findRelatedAbutmentRequestIdForTooth({
   relatedRequestIds = [],
   tooth = "",
 }) {
-  const toothKey = String(tooth || "").trim();
   const ids = (Array.isArray(relatedRequestIds) ? relatedRequestIds : [])
     .map((id) => String(id || "").trim())
     .filter((id) => Types.ObjectId.isValid(id));
@@ -1840,17 +1859,71 @@ export async function findRelatedAbutmentRequestIdForTooth({
     .select({ "caseInfos.tooth": 1, designCompletedAt: 1 })
     .lean();
 
-  if (toothKey) {
-    const exact = docs.find(
-      (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothKey,
+  return pickAbutmentRequestIdForTooth(docs, tooth);
+}
+
+const ABUTMENT_HANDOFF_LOCK_STALE_MS = 90_000;
+const ABUTMENT_HANDOFF_LOCK_WAIT_MS = 200;
+const ABUTMENT_HANDOFF_LOCK_WAIT_MAX = 150;
+const ABUTMENT_HANDOFF_LOCK_FIELD = "production.abutmentDesignHandoffLockAt";
+
+/**
+ * 같은 PTX handoff의 크레딧 hold·Request 저장을 서버 간에 직렬화한다.
+ * FE 체인만으로는 탭 두 개·인스턴스 두 대의 병렬 hold(WriteConflict)를 막지 못한다.
+ */
+export async function claimAbutmentDesignHandoffLock(transferId) {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) {
+    return;
+  }
+  const staleBefore = new Date(Date.now() - ABUTMENT_HANDOFF_LOCK_STALE_MS);
+  const claimOnce = () =>
+    PracticeTransfer.findOneAndUpdate(
+      {
+        _id: transferId,
+        $or: [
+          { [ABUTMENT_HANDOFF_LOCK_FIELD]: { $exists: false } },
+          { [ABUTMENT_HANDOFF_LOCK_FIELD]: null },
+          { [ABUTMENT_HANDOFF_LOCK_FIELD]: { $lt: staleBefore } },
+        ],
+      },
+      { $set: { [ABUTMENT_HANDOFF_LOCK_FIELD]: new Date() } },
     );
-    if (exact) return String(exact._id);
+
+  if (await claimOnce()) return;
+
+  for (let i = 0; i < ABUTMENT_HANDOFF_LOCK_WAIT_MAX; i += 1) {
+    await sleepMs(ABUTMENT_HANDOFF_LOCK_WAIT_MS);
+    const fresh = await PracticeTransfer.findById(transferId)
+      .select({ [ABUTMENT_HANDOFF_LOCK_FIELD]: 1 })
+      .lean();
+    if (!fresh) {
+      throw new Error("전송 내역을 찾을 수 없습니다.");
+    }
+    if (
+      isAbutmentRequestEnsureLockHeld(
+        fresh?.production?.abutmentDesignHandoffLockAt,
+        Date.now(),
+        ABUTMENT_HANDOFF_LOCK_STALE_MS,
+      )
+    ) {
+      continue;
+    }
+    if (await claimOnce()) return;
   }
 
-  // tooth 미지정·미매칭: 아직 디자인 미완료인 첫 Request
-  const pending = docs.find((doc) => !doc?.designCompletedAt);
-  if (pending) return String(pending._id);
-  return docs[0] ? String(docs[0]._id) : null;
+  const err = new Error(
+    "다른 어벗 디자인 업로드가 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  );
+  err.statusCode = 409;
+  throw err;
+}
+
+export async function releaseAbutmentDesignHandoffLock(transferId) {
+  if (!transferId || !Types.ObjectId.isValid(String(transferId))) return;
+  await PracticeTransfer.updateOne(
+    { _id: transferId },
+    { $unset: { [ABUTMENT_HANDOFF_LOCK_FIELD]: 1 } },
+  );
 }
 
 /**

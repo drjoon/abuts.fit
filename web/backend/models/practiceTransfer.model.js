@@ -351,6 +351,11 @@ const practiceTransferSchema = new mongoose.Schema(
        * ensureAbutmentRequestsForHandoff가 원자적으로 잡고, 생성 끝나면 unset.
        */
       abutmentRequestEnsureLockAt: { type: Date, default: null },
+      /**
+       * 같은 PTX의 abutment-design-handoff(크레딧 hold·저장)를 인스턴스 간에 직렬화.
+       * 병렬 hold가 WriteConflict로 한 치아만 실패하는 것을 막는다.
+       */
+      abutmentDesignHandoffLockAt: { type: Date, default: null },
     },
 
     billing: {

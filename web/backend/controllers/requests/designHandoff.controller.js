@@ -1,3 +1,4 @@
+// - 2026-11-07: PTX abutment-design-handoff — 같은 의뢰 hold를 서버 락으로 직렬화(병렬 WriteConflict로 한 치아만 탈락 방지).
 // - 2026-11-07: PTX 다치아 — 일부 STL만 업로드 시 sibling 미업로드를 준비 큐에 노출(누락 피드백).
 // - 2026-09-27: PTX CA 생산 hold — 수행 기공소(assignee) 잔액. 원청(target)으로 소유를 되돌리지 않음.
 // - 2026-09-27: PTX 어벗 STL 업로드 — 협력·하청 수행 기공소(assignee)도 작업시작 기공소로 허용.
@@ -67,9 +68,11 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  claimAbutmentDesignHandoffLock,
   collectLinkedAbutmentRequestObjectIds,
   ensureAbutmentRequestsForHandoff,
   findRelatedAbutmentRequestIdForTooth,
+  releaseAbutmentDesignHandoffLock,
   hasCustomAbutmentToothWorks,
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
@@ -2067,6 +2070,9 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
       });
     }
 
+    // 같은 PTX의 크레딧 hold·저장은 한 번에 하나. 탭/인스턴스가 달라도 치아가 빠지지 않게.
+    await claimAbutmentDesignHandoffLock(transferDoc._id);
+    try {
     // 구강스캔(transfer.files)은 선택 — 어벗 디자인 STL만 있으면 제조사 의뢰 생성.
     const tooth = String(
       req.body?.tooth ||
@@ -2178,7 +2184,10 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     };
 
     req.params = { ...(req.params || {}), id: requestId };
-    return handoffDesignToProduction(req, res);
+    return await handoffDesignToProduction(req, res);
+    } finally {
+      await releaseAbutmentDesignHandoffLock(transferDoc._id);
+    }
   } catch (error) {
     console.error("[PTX_ABUTMENT_DESIGN_HANDOFF_ERROR]", error);
     return res.status(error?.statusCode || 500).json({
