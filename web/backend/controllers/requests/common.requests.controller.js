@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-07: worksheet·monitoring select에 ptxDesignUploadMissingVisible·designCompletedAt. STL 누락 뱃지.
 // - 2026-10-22: STL/30° 헥스 변경은 의뢰 1건만. 계정 defaultManufacturerHexRotation 심기 금지.
 // - 2026-10-22: ExoCAD 3.2 이상 의뢰의 헥스 변경은 그 건만. 계정 기본값으로 심지 않음.
 // - 2026-10-21: 불완전가공 판정 뒤 짧은 커프 명단을 맞춘다(응답 전 필수 아님).
@@ -1800,9 +1801,11 @@ export async function getAllRequests(req, res) {
       "productionSchedule.stlJsFallback",
       "productionSchedule.ncPreload",
       "timeline.estimatedShipYmd",
+      "designCompletedAt",
       "requestor",
       "shippingReceiver",
       "partnerBilling.relatedPracticeTransferId",
+      "partnerBilling.ptxDesignUploadMissingVisible",
       "partnerBilling.practiceBusinessAnchorId",
     ].join(" ");
 
@@ -1950,6 +1953,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.productMode",
       "designCompletedAt",
       "partnerBilling.relatedPracticeTransferId",
+      "partnerBilling.ptxDesignUploadMissingVisible",
       "rnd.unmachinableAt",
       "rnd.unmachinableReason",
       "rnd.unmachinableFromStage",
