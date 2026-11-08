@@ -3135,8 +3135,16 @@ function creaseRayIntersector(loop, verts) {
   };
 }
 
-function findFinishCrease(mesh, flZ) {
-  const { verts, faces, faceMain } = mesh;
+function findFinishCrease(mesh, flZ, options = {}) {
+  const { allowWideFallback = false } = options;
+  return (
+    findFinishCreaseWithWindow(mesh, flZ, CREASE_WINDOW_MM) ||
+    (allowWideFallback ? findFinishCreaseWithWindow(mesh, flZ, 0.15) : null)
+  );
+}
+
+function findFinishCreaseWithWindow(mesh, flZ, windowMm) {
+  const { verts, faces, faceMain, faceAttr } = mesh;
   const fc = faces.length / 3;
   const normals = new Float64Array(fc * 3);
   const edgeFaces = new Map();
@@ -3162,14 +3170,17 @@ function findFinishCrease(mesh, flZ) {
       else edgeFaces.set(key, [f]);
     }
   }
-  const near = (v) => Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]) < CREASE_WINDOW_MM;
+  const near = (v) => Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]) < windowMm;
   const cosMax = Math.cos((CREASE_MIN_DEG * Math.PI) / 180);
   const adj = new Map();
   for (const [key, fs] of edgeFaces) {
     if (fs.length !== 2) continue;
     const [p, q] = fs;
     const dot = normals[p * 3] * normals[q * 3] + normals[p * 3 + 1] * normals[q * 3 + 1] + normals[p * 3 + 2] * normals[q * 3 + 2];
-    if (dot > cosMax) continue;
+    const isPatchBoundary =
+      windowMm > CREASE_WINDOW_MM &&
+      (faceAttr?.[p] === CUFF_BLEND_PATCH_ATTRIBUTE) !== (faceAttr?.[q] === CUFF_BLEND_PATCH_ATTRIBUTE);
+    if (!isPatchBoundary && dot > cosMax) continue;
     const [a, b] = key.split("_").map(Number);
     if (!near(a) || !near(b)) continue;
     if (!adj.has(a)) adj.set(a, []);
@@ -3177,7 +3188,7 @@ function findFinishCrease(mesh, flZ) {
     adj.get(a).push(b);
     adj.get(b).push(a);
   }
-  // 닫힌 고리에 붙은 가지만 뗀다. 모서리 한 곳이 20°보다 둔해서 고리가 경로로 열린 경우는 지우지 않는다.
+  // 닫힌 고리에 붙은 짧은 가지만 뗀다. 모서리 한 곳이 20°보다 둔해서 고리가 경로로 열린 경우는 지우지 않는다.
   // 그 경로까지 끝점부터 걷어 내면 마진 한 바퀴가 사라지고 포스트 다듬기가 통째로 빠진다.
   const pending = [];
   for (const [v, ns] of adj) if (ns.length < 2) pending.push(v);
@@ -3190,7 +3201,7 @@ function findFinishCrease(mesh, flZ) {
     let prev = v;
     let cur = ns[0];
     let junction = false;
-    for (let guard = 0; guard < adj.size + 2; guard += 1) {
+    for (let guard = 0; guard < 8; guard += 1) {
       const nexts = adj.get(cur);
       if (!nexts) break;
       if (nexts.length >= 3) {
@@ -3263,8 +3274,42 @@ function findFinishCrease(mesh, flZ) {
     if (loop.length !== comp.length) continue;
     const [a, b] = [loop[0], loop[loop.length - 1]];
     const closing = edgeFaces.get(ek(a, b));
-    // 양 끝이 메시 변으로 이어져 있으면 그 변의 꺾임이 20° 미만이어도 마진 고리로 닫는다.
-    if (closing?.length === 2) accept(loop);
+    // 양 끝이 메시 변(또는 둔각 2~3변)으로 이어져 있으면 마진 고리로 닫는다.
+    if (closing?.length === 2) {
+      accept(loop);
+      continue;
+    }
+    const meshAdj = new Map();
+    for (const [k, fsList] of edgeFaces) {
+      if (fsList.length !== 2) continue;
+      const [u, v] = k.split("_").map(Number);
+      if (!near(u) || !near(v)) continue;
+      if (!meshAdj.has(u)) meshAdj.set(u, []);
+      if (!meshAdj.has(v)) meshAdj.set(v, []);
+      meshAdj.get(u).push(v);
+      meshAdj.get(v).push(u);
+    }
+    const used = new Set(loop);
+    used.delete(a);
+    used.delete(b);
+    const q = [[b]];
+    const seenBridge = new Set([b]);
+    let bridge = null;
+    while (q.length && !bridge) {
+      const p = q.shift();
+      const last = p[p.length - 1];
+      if (p.length > 5) continue;
+      for (const nxt of meshAdj.get(last) || []) {
+        if (nxt === a && p.length >= 2) {
+          bridge = p;
+          break;
+        }
+        if (seenBridge.has(nxt) || used.has(nxt)) continue;
+        seenBridge.add(nxt);
+        q.push([...p, nxt]);
+      }
+    }
+    if (bridge) accept([...loop, ...bridge.slice(1)]);
   }
   if (!best) return null;
   const edges = new Set(best.loop.map((v, i) => ek(v, best.loop[(i + 1) % best.loop.length])));
@@ -3459,7 +3504,7 @@ export function blendCuffJunction(buffer, options = {}) {
       mesh = solid.mesh;
       strippedSolid = solid.stripped;
     }
-    const crease = findFinishCrease(mesh, flZ);
+    const crease = findFinishCrease(mesh, flZ, { allowWideFallback: true });
     const seamZ = crease ? crease.zOf : marginCrestZByAngle(probe, flZ);
     const attempt = (offsetMm) => {
       let topZ;

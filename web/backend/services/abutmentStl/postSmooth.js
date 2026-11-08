@@ -20,16 +20,14 @@ export const POST_SMOOTH_ALREADY_REASON = "이미 다듬은 포스트입니다."
 /** 이 attribute의 삼각형은 포스트 다듬기 곡면이다. */
 export const POST_SMOOTH_PATCH_ATTRIBUTE = 0x5053;
 
-/** 이보다 꺾인 모서리는 디자인 모서리. 매끈한 면의 계단은 10° 안이다. */
-const FEATURE_DEG = 30;
-/** 마진 바로 위 수직 칼라(시멘트 갭 경계, 약 0.05mm)에서 숄더로 꺾이는 고리는 디자인 경계로 막지 않는다. */
-const MARGIN_COLLAR_HEIGHT_MM = 0.15;
-const MARGIN_COLLAR_MAX_DEG = 55;
-/** 마진 위 곡률이 큰 숄더 구간(이 높이 안)은 한 번 더 4등분해 법선 꺾임을 줄인다. */
-const SHOULDER_REFINE_HEIGHT_MM = 1.2;
-/** 국소 2차 곡면 가중치 폭. 기공소 메시 한 칸(약 0.18mm)보다 넓어야 계단이 평균된다. */
-const FIT_SIGMA_MM = 0.2;
-const FIT_RADIUS_MM = FIT_SIGMA_MM * 2.5;
+/** 이보다 꺾인 모서리는 디자인 모서리. 포스트 축면→교합면 전이(약 35~41°)는 넘어간다. */
+const FEATURE_DEG = 45;
+/** 마진 바로 위 수직 칼라·챔퍼에서 숄더로 꺾이는 고리는 디자인 경계로 막지 않는다. */
+const MARGIN_COLLAR_HEIGHT_MM = 0.65;
+const MARGIN_COLLAR_MAX_DEG = 78;
+/** 포스트 전체를 2회 균일 4등분하고, 원본 큰 면(>0.42mm)과 급한 꺾임(>20°) 주변은 1회 더 4등분한다. */
+const LARGE_FACE_EDGE_MM = 0.42;
+const HOT_EDGE_DEG = 20;
 /** 포스트 꼭짓점이 그 각도의 마진 모서리 높이보다 이만큼 넘게 낮으면 포스트가 아니다. */
 const BELOW_MARGIN_MM = 0.1;
 /** 마진 모서리에서 이 높이까지 원본 → 다듬은 면으로 넘어간다. */
@@ -40,13 +38,13 @@ const FEATURE_RAMP_MM = 0.12;
 const LIFT_RADIUS_MM = 0.1;
 const LIFT_ROUNDS = 5;
 /** 한 번에 넘친 양보다 조금 더 내려 반복 횟수를 줄인다. */
-const LIFT_OVERSHOOT = 1.25;
+const LIFT_OVERSHOOT = 1.2;
 /** 한 번 내린 뒤에도 넘친 양이 이 비율 넘게 남으면 그 꼭짓점은 고정한다. */
 const STUCK_RATIO = 0.5;
 /** 원본 면 밖으로 이만큼도 나가지 않는다(float32 반올림 여유 포함). */
 const OUTSIDE_TOL_MM = 2e-5;
-/** 이보다 깊이 들어가야 하는 꼭짓점은 안쪽 이동을 5µm로 묶거나 고정한다. */
-const MAX_INWARD_MM = 0.005;
+/** 이보다 깊이 들어가야 하는 꼭짓점은 안쪽 이동을 15µm 안으로 묶거나(평균 ~3µm) 급한 돌기는 고정한다. */
+const MAX_INWARD_MM = 0.015;
 /** 스크류 채널 벽과 그 입구 띠 반경. 여기서는 거친 면을 디자인 모서리나 얇은 벽으로 고정하지 않는다. */
 const CHANNEL_COLLAR_MAX_R_MM = 1.55;
 /** 면 안쪽 이 깊이들에 다른 면(스크류 채널 등)이 먼저 나오면 얇은 벽이라 그 꼭짓점은 고정한다. */
@@ -525,42 +523,8 @@ class SignedDistance {
   }
 }
 
-/** 6×6 대칭 연립방정식(가우스 소거, 부분 피벗). 특이하면 null. */
-function solve6(M, rhs) {
-  const n = 6;
-  const a = new Float64Array(42);
-  for (let i = 0; i < n; i += 1) {
-    for (let j = 0; j < n; j += 1) a[i * 7 + j] = M[i * 6 + j];
-    a[i * 7 + 6] = rhs[i];
-  }
-  for (let col = 0; col < n; col += 1) {
-    let piv = col;
-    for (let r = col + 1; r < n; r += 1) if (Math.abs(a[r * 7 + col]) > Math.abs(a[piv * 7 + col])) piv = r;
-    if (Math.abs(a[piv * 7 + col]) < 1e-18) return null;
-    if (piv !== col) {
-      for (let j = 0; j < 7; j += 1) {
-        const t = a[col * 7 + j];
-        a[col * 7 + j] = a[piv * 7 + j];
-        a[piv * 7 + j] = t;
-      }
-    }
-    for (let r = col + 1; r < n; r += 1) {
-      const fct = a[r * 7 + col] / a[col * 7 + col];
-      if (!fct) continue;
-      for (let j = col; j < 7; j += 1) a[r * 7 + j] -= fct * a[col * 7 + j];
-    }
-  }
-  const x = new Float64Array(n);
-  for (let r = n - 1; r >= 0; r -= 1) {
-    let s = a[r * 7 + 6];
-    for (let j = r + 1; j < n; j += 1) s -= a[r * 7 + j] * x[j];
-    x[r] = s / a[r * 7 + r];
-  }
-  return x;
-}
-
 /**
- * 크라운이 앉는 포스트 면을 고른다. 마진 모서리 바로 위 면에서 시작해 디자인 모서리(30° 초과)를 넘지 않고 이어진 면만.
+ * 크라운이 앉는 포스트 면을 고른다. 마진 모서리 바로 위 면에서 시작해 디자인 모서리(45° 초과)를 넘지 않고 이어진 면만.
  * 스크류 채널 벽·슬롯 벽은 날카로운 모서리 너머라 들어오지 않는다. 홀은 이 단계에서 열려 있다.
  */
 function selectPostRegion(mesh, crease, fn) {
@@ -626,6 +590,18 @@ function selectPostRegion(mesh, crease, fn) {
       const g = list[0] === f ? list[1] : list[0];
       if (inRegion[g]) continue;
       if (belowMargin(g)) continue;
+      const ga = faces[g * 3] * 3, gb = faces[g * 3 + 1] * 3, gc = faces[g * 3 + 2] * 3;
+      const gcx = (verts[ga] + verts[gb] + verts[gc]) / 3;
+      const gcy = (verts[ga + 1] + verts[gb + 1] + verts[gc + 1]) / 3;
+      const grc = Math.hypot(gcx, gcy);
+      if (
+        grc > 1e-6 &&
+        grc <= 1.65 &&
+        -(fn[g * 3] * gcx + fn[g * 3 + 1] * gcy) / grc >= 0.65 &&
+        Math.abs(fn[g * 3 + 2]) <= 0.7
+      ) {
+        continue;
+      }
       const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
       const mz = (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2;
       const mth = Math.atan2((verts[a * 3 + 1] + verts[b * 3 + 1]) / 2, (verts[a * 3] + verts[b * 3]) / 2);
@@ -712,7 +688,48 @@ function refineRegion(pos, tri, fixed) {
       out.push(a, ab, ca, orig, ab, b, bc, orig, ca, bc, c, orig, ab, bc, ca, orig);
     }
   }
-  return { pos: Float64Array.from(next), tri: out };
+  const P = Float64Array.from(next);
+  const nvOut = P.length / 3;
+  const tcOut = out.length / 4;
+  const eMap = new Map();
+  for (let t = 0; t < tcOut; t += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const a = out[t * 4 + k];
+      const b = out[t * 4 + ((k + 1) % 3)];
+      const key = a < b ? a * nvOut + b : b * nvOut + a;
+      const list = eMap.get(key);
+      if (list) list.push(t);
+      else eMap.set(key, [t]);
+    }
+  }
+  const cosAngleAt = (u, v, w) => {
+    const ux = P[u * 3] - P[v * 3], uy = P[u * 3 + 1] - P[v * 3 + 1], uz = P[u * 3 + 2] - P[v * 3 + 2];
+    const wx = P[w * 3] - P[v * 3], wy = P[w * 3 + 1] - P[v * 3 + 1], wz = P[w * 3 + 2] - P[v * 3 + 2];
+    const l = Math.hypot(ux, uy, uz) * Math.hypot(wx, wy, wz);
+    return l > 0 ? (ux * wx + uy * wy + uz * wz) / l : 1;
+  };
+  for (const [, ts] of eMap) {
+    if (ts.length !== 2) continue;
+    const [t1, t2] = ts;
+    if (out[t1 * 4 + 3] !== out[t2 * 4 + 3]) continue;
+    const v1 = [out[t1 * 4], out[t1 * 4 + 1], out[t1 * 4 + 2]];
+    const v2 = [out[t2 * 4], out[t2 * 4 + 1], out[t2 * 4 + 2]];
+    let i1 = -1;
+    for (let k = 0; k < 3; k += 1) if (!v2.includes(v1[k])) i1 = k;
+    let i2 = -1;
+    for (let k = 0; k < 3; k += 1) if (!v1.includes(v2[k])) i2 = k;
+    if (i1 < 0 || i2 < 0) continue;
+    const c = v1[i1], a = v1[(i1 + 1) % 3], b = v1[(i1 + 2) % 3], d = v2[i2];
+    if (cosAngleAt(a, c, b) < -0.92 && cosAngleAt(b, d, a) < -0.92) {
+      out[t1 * 4] = c;
+      out[t1 * 4 + 1] = a;
+      out[t1 * 4 + 2] = d;
+      out[t2 * 4] = d;
+      out[t2 * 4 + 1] = b;
+      out[t2 * 4 + 2] = c;
+    }
+  }
+  return { pos: P, tri: out };
 }
 
 /**
@@ -745,8 +762,8 @@ function run(buffer, { finishLine }) {
   const { mesh } = prepareCuffMesh(buffer);
   // Re 재디자인은 이미 다듬은 filled를 다시 받는다. 또 다듬으면 안쪽으로 누적해 들어간다.
   if (mesh.faceAttr.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) skip(POST_SMOOTH_ALREADY_REASON);
-  const sharpCrease = findFinishCrease(mesh, flZ);
-  const crease = sharpCrease || traceFinishMargin(mesh, flZ);
+  const sharpCrease = findFinishCrease(mesh, flZ) || (mesh.faceAttr.some((a) => a !== 0) ? findFinishCrease(mesh, flZ, { allowWideFallback: true }) : null);
+  const crease = sharpCrease || traceFinishMargin(mesh, flZ) || findFinishCrease(mesh, flZ, { allowWideFallback: true });
   if (!crease) skip("마진 모서리를 찾지 못했습니다.");
   lap("prepare");
   const { verts, faces, faceAttr, faceMain } = mesh;
@@ -768,7 +785,7 @@ function run(buffer, { finishLine }) {
   for (let v = 0; v < nv0; v += 1) {
     if (fixed[v]) continue;
     const z = P0[v * 3 + 2];
-    if (z < flZ(Math.atan2(P0[v * 3 + 1], P0[v * 3])) - 0.005) fixed[v] = 1;
+    if (z < crease.zOf(Math.atan2(P0[v * 3 + 1], P0[v * 3])) - 0.005) fixed[v] = 1;
   }
   const cosFeature = Math.cos((FEATURE_DEG * Math.PI) / 180);
   /** 원본 영역 면 이웃(디자인 모서리·경계는 -1). 국소 곡면 맞춤 범위를 넓힐 때 쓴다. */
@@ -856,12 +873,44 @@ function run(buffer, { finishLine }) {
   const refined1 = refineRegion(P0, rfaces, fixed);
   const fixed2 = new Uint8Array(refined1.pos.length / 3);
   for (let v = 0; v < fixed.length; v += 1) if (fixed[v]) fixed2[v] = 1;
-  for (let v = 0; v < fixed2.length; v += 1) {
-    const z = refined1.pos[v * 3 + 2];
-    const th = Math.atan2(refined1.pos[v * 3 + 1], refined1.pos[v * 3]);
-    if (z - crease.zOf(th) > SHOULDER_REFINE_HEIGHT_MM) fixed2[v] = 1;
+  const refined2 = refineRegion(refined1.pos, refined1.tri, fixed2);
+  const cosHot = Math.cos((HOT_EDGE_DEG * Math.PI) / 180);
+  const origHot = new Uint8Array(fc);
+  for (const [key] of regionEdges) {
+    const [f, g] = edgeFaces.get(key);
+    if (fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2] < cosHot) {
+      origHot[f] = 1;
+      origHot[g] = 1;
+    }
   }
-  const refined = refineRegion(refined1.pos, refined1.tri, fixed2);
+  for (const f of regionFaces) {
+    const a = faces[f * 3] * 3, b = faces[f * 3 + 1] * 3, c = faces[f * 3 + 2] * 3;
+    const l1 = Math.hypot(P0[a] - P0[b], P0[a + 1] - P0[b + 1], P0[a + 2] - P0[b + 2]);
+    const l2 = Math.hypot(P0[b] - P0[c], P0[b + 1] - P0[c + 1], P0[b + 2] - P0[c + 2]);
+    const l3 = Math.hypot(P0[c] - P0[a], P0[c + 1] - P0[a + 1], P0[c + 2] - P0[a + 2]);
+    if (Math.max(l1, l2, l3) > LARGE_FACE_EDGE_MM) origHot[f] = 1;
+  }
+  {
+    const prevHot = Uint8Array.from(origHot);
+    for (const f of regionFaces) {
+      if (!prevHot[f]) continue;
+      for (let k = 0; k < 3; k += 1) if (nbr[f * 3 + k] >= 0) origHot[nbr[f * 3 + k]] = 1;
+    }
+  }
+  const nv2 = refined2.pos.length / 3;
+  const tc2 = refined2.tri.length / 4;
+  const hotVert2 = new Uint8Array(nv2);
+  for (let t = 0; t < tc2; t += 1) {
+    if (!origHot[refined2.tri[t * 4 + 3]]) continue;
+    hotVert2[refined2.tri[t * 4]] = 1;
+    hotVert2[refined2.tri[t * 4 + 1]] = 1;
+    hotVert2[refined2.tri[t * 4 + 2]] = 1;
+  }
+  const fixed3 = new Uint8Array(nv2);
+  for (let v = 0; v < nv2; v += 1) {
+    if ((v < fixed.length && fixed[v]) || !hotVert2[v]) fixed3[v] = 1;
+  }
+  const refined = refineRegion(refined2.pos, refined2.tri, fixed3);
   const pos = refined.pos;
   const tri = refined.tri;
   const nv = pos.length / 3;
@@ -907,160 +956,115 @@ function run(buffer, { finishLine }) {
   computeRamp(featureIds);
   lap("ramp");
 
-  // 국소 2차 곡면: 원본 영역 모서리 가운데 점(면 넓이 가중)에 맞춘다. 디자인 모서리를 넘지 않는다.
-  const edgeSamples = [];
-  const edgeIdOf = new Map();
-  for (const [key, e] of regionEdges) {
-    edgeIdOf.set(key, edgeSamples.length / 4);
-    edgeSamples.push((P0[e.a * 3] + P0[e.b * 3]) / 2, (P0[e.a * 3 + 1] + P0[e.b * 3 + 1]) / 2, (P0[e.a * 3 + 2] + P0[e.b * 3 + 2]) / 2, e.w);
-  }
-  const faceEdgeIds = new Int32Array(fc * 3).fill(-1);
-  for (const f of regionFaces) {
-    for (let k = 0; k < 3; k += 1) {
-      const a = faces[f * 3 + k];
-      const b = faces[f * 3 + ((k + 1) % 3)];
-      const id = edgeIdOf.get(a < b ? a * nv0 + b : b * nv0 + a);
-      if (id !== undefined) faceEdgeIds[f * 3 + k] = id;
-    }
-  }
-  // 원본 면마다 맞춤 범위(그 면에서 FIT_RADIUS 안, 디자인 모서리 너머 제외)를 한 번만 모은다. 같은 면 위 새 꼭짓점이 함께 쓴다.
-  const faceStamp = new Int32Array(fc);
-  let stamp = 0;
-  const neighborhoodCache = new Map();
-  const neighborhoodOf = (f0) => {
-    let hood = neighborhoodCache.get(f0);
-    if (hood) return hood;
-    const a0 = faces[f0 * 3] * 3;
-    const b0 = faces[f0 * 3 + 1] * 3;
-    const c0 = faces[f0 * 3 + 2] * 3;
-    const cx = (P0[a0] + P0[b0] + P0[c0]) / 3;
-    const cy = (P0[a0 + 1] + P0[b0 + 1] + P0[c0 + 1]) / 3;
-    const cz = (P0[a0 + 2] + P0[b0 + 2] + P0[c0 + 2]) / 3;
-    let rad = 0;
-    for (const p of [a0, b0, c0]) rad = Math.max(rad, Math.hypot(P0[p] - cx, P0[p + 1] - cy, P0[p + 2] - cz));
-    const reach2 = (FIT_RADIUS_MM + rad) ** 2;
-    stamp += 1;
-    const visited = [f0];
-    faceStamp[f0] = stamp;
-    for (let i = 0; i < visited.length; i += 1) {
-      const f = visited[i];
-      for (let k = 0; k < 3; k += 1) {
-        const g = nbr[f * 3 + k];
-        if (g < 0 || faceStamp[g] === stamp) continue;
-        faceStamp[g] = stamp;
-        let near = false;
-        for (let m = 0; m < 3 && !near; m += 1) {
-          const p = faces[g * 3 + m] * 3;
-          near = (P0[p] - cx) ** 2 + (P0[p + 1] - cy) ** 2 + (P0[p + 2] - cz) ** 2 <= reach2;
-        }
-        if (near) visited.push(g);
-      }
-    }
-    const edgeSet = new Set();
-    for (const f of visited) for (let k = 0; k < 3; k += 1) if (faceEdgeIds[f * 3 + k] >= 0) edgeSet.add(faceEdgeIds[f * 3 + k]);
-    const fcent = new Float64Array(visited.length * 3);
-    visited.forEach((f, i) => {
-      for (let q = 0; q < 3; q += 1) fcent[i * 3 + q] = (P0[faces[f * 3] * 3 + q] + P0[faces[f * 3 + 1] * 3 + q] + P0[faces[f * 3 + 2] * 3 + q]) / 3;
-    });
-    hood = { faces: Int32Array.from(visited), centroids: fcent, edges: Int32Array.from(edgeSet) };
-    neighborhoodCache.set(f0, hood);
-    return hood;
-  };
-  const S = Float64Array.from(pos);
+  // 꼭짓점 법선(SN): 인접 면 법선(넓이 가중)을 구하고 메시 이웃으로 매끈하게 편다.
   const SN = new Float64Array(nv * 3);
-  const M = new Float64Array(36);
-  const rhs = new Float64Array(6);
-  const basis = new Float64Array(6);
-  const r2Max = FIT_RADIUS_MM * FIT_RADIUS_MM;
-  const inv2s = 1 / (FIT_SIGMA_MM * FIT_SIGMA_MM);
+  for (let t = 0; t < tc; t += 1) {
+    const orig = tri[t * 4 + 3];
+    const nx = fn[orig * 3], ny = fn[orig * 3 + 1], nz = fn[orig * 3 + 2];
+    const w = farea[orig];
+    for (let k = 0; k < 3; k += 1) {
+      const v = tri[t * 4 + k];
+      SN[v * 3] += nx * w;
+      SN[v * 3 + 1] += ny * w;
+      SN[v * 3 + 2] += nz * w;
+    }
+  }
   for (const v of regionVerts) {
-    if (ramp[v] <= 0) continue;
-    const qx = pos[v * 3];
-    const qy = pos[v * 3 + 1];
-    const qz = pos[v * 3 + 2];
-    const hood = neighborhoodOf(vOrig[v]);
-    let nx = 0;
-    let ny = 0;
-    let nz = 0;
-    for (let i = 0; i < hood.faces.length; i += 1) {
-      const f = hood.faces[i];
-      const d2 = (hood.centroids[i * 3] - qx) ** 2 + (hood.centroids[i * 3 + 1] - qy) ** 2 + (hood.centroids[i * 3 + 2] - qz) ** 2;
-      if (d2 > r2Max) continue;
-      const wgt = farea[f] * Math.exp(-d2 * inv2s);
-      nx += fn[f * 3] * wgt;
-      ny += fn[f * 3 + 1] * wgt;
-      nz += fn[f * 3 + 2] * wgt;
-    }
-    const nl = Math.hypot(nx, ny, nz);
-    if (!(nl > 0)) {
+    const l = Math.hypot(SN[v * 3], SN[v * 3 + 1], SN[v * 3 + 2]);
+    if (!(l > 0)) {
       ramp[v] = 0;
       continue;
     }
-    nx /= nl;
-    ny /= nl;
-    nz /= nl;
-    // 접평면 기저
-    let tx = Math.abs(nz) < 0.9 ? -ny : 0;
-    let ty = Math.abs(nz) < 0.9 ? nx : -nz;
-    let tz = Math.abs(nz) < 0.9 ? 0 : ny;
-    const tl = Math.hypot(tx, ty, tz);
-    tx /= tl;
-    ty /= tl;
-    tz /= tl;
-    const bx = ny * tz - nz * ty;
-    const by = nz * tx - nx * tz;
-    const bz = nx * ty - ny * tx;
-    M.fill(0);
-    rhs.fill(0);
-    let count = 0;
-    let wsum = 0;
-    for (const id of hood.edges) {
-      const ex = edgeSamples[id * 4] - qx;
-      const ey = edgeSamples[id * 4 + 1] - qy;
-      const ez = edgeSamples[id * 4 + 2] - qz;
-      const d2 = ex * ex + ey * ey + ez * ez;
-      if (d2 > r2Max) continue;
-      const wgt = edgeSamples[id * 4 + 3] * Math.exp(-d2 * inv2s);
-      const u = ex * tx + ey * ty + ez * tz;
-      const w = ex * bx + ey * by + ez * bz;
-      const h = ex * nx + ey * ny + ez * nz;
-      basis[0] = 1;
-      basis[1] = u;
-      basis[2] = w;
-      basis[3] = u * u;
-      basis[4] = u * w;
-      basis[5] = w * w;
-      for (let i = 0; i < 6; i += 1) {
-        const bi = wgt * basis[i];
-        rhs[i] += bi * h;
-        for (let j = i; j < 6; j += 1) M[i * 6 + j] += bi * basis[j];
+    SN[v * 3] /= l;
+    SN[v * 3 + 1] /= l;
+    SN[v * 3 + 2] /= l;
+  }
+  const vAdj = Array.from({ length: nv }, () => []);
+  {
+    const seen = new Set();
+    for (let t = 0; t < tc; t += 1) {
+      for (let k = 0; k < 3; k += 1) {
+        const a = tri[t * 4 + k], b = tri[t * 4 + ((k + 1) % 3)];
+        const key = a < b ? a * nv + b : b * nv + a;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        vAdj[a].push(b);
+        vAdj[b].push(a);
       }
-      count += 1;
-      wsum += wgt;
     }
-    if (count < 8) {
-      ramp[v] = 0;
-      continue;
+  }
+  {
+    let curSN = SN;
+    for (let pass = 0; pass < 8; pass += 1) {
+      const nextSN = Float64Array.from(curSN);
+      for (const v of regionVerts) {
+        if (ramp[v] <= 0) continue;
+        const nbs = vAdj[v];
+        if (!nbs.length) continue;
+        let nx = curSN[v * 3], ny = curSN[v * 3 + 1], nz = curSN[v * 3 + 2];
+        for (const u of nbs) {
+          if (ramp[u] <= 0) continue;
+          nx += curSN[u * 3];
+          ny += curSN[u * 3 + 1];
+          nz += curSN[u * 3 + 2];
+        }
+        const l = Math.hypot(nx, ny, nz) || 1;
+        nextSN[v * 3] = nx / l;
+        nextSN[v * 3 + 1] = ny / l;
+        nextSN[v * 3 + 2] = nz / l;
+      }
+      curSN = nextSN;
     }
-    for (let i = 0; i < 6; i += 1) for (let j = 0; j < i; j += 1) M[i * 6 + j] = M[j * 6 + i];
-    // 한쪽으로 몰린 표본에서 2차 항이 튀지 않게 약하게 묶는다.
-    const ridge = wsum * 1e-6;
-    for (let i = 3; i < 6; i += 1) M[i * 6 + i] += ridge;
-    const coef = solve6(M, rhs);
-    if (!coef || !Number.isFinite(coef[0])) {
-      ramp[v] = 0;
-      continue;
+    SN.set(curSN);
+  }
+  // 법선 방향 페어링: 가우시안 커널로 계단 결을 먼저 평균한 뒤, 메시 이웃으로 매끈하게 편다.
+  const S = Float64Array.from(pos);
+  {
+    const sGrid = new PointGrid(pos, regionVerts, 0.25);
+    const inv2s = 1 / (0.18 * 0.18);
+    for (const v of regionVerts) {
+      if (ramp[v] <= 0) continue;
+      const qx = pos[v * 3], qy = pos[v * 3 + 1], qz = pos[v * 3 + 2];
+      const nx = SN[v * 3], ny = SN[v * 3 + 1], nz = SN[v * 3 + 2];
+      let hSum = 0, wSum = 0;
+      sGrid.forEachNear(qx, qy, qz, 0.25, (j, d2) => {
+        const w = Math.exp(-d2 * inv2s);
+        hSum += ((pos[j * 3] - qx) * nx + (pos[j * 3 + 1] - qy) * ny + (pos[j * 3 + 2] - qz) * nz) * w;
+        wSum += w;
+      });
+      if (wSum > 0) {
+        const rawH = hSum / wSum;
+        const h = rawH < -0.025 ? rawH : Math.max(-0.004, Math.min(0.004, rawH * 0.45));
+        S[v * 3] = qx + h * nx;
+        S[v * 3 + 1] = qy + h * ny;
+        S[v * 3 + 2] = qz + h * nz;
+      }
     }
-    S[v * 3] = qx + coef[0] * nx;
-    S[v * 3 + 1] = qy + coef[0] * ny;
-    S[v * 3 + 2] = qz + coef[0] * nz;
-    let sx = nx - coef[1] * tx - coef[2] * bx;
-    let sy = ny - coef[1] * ty - coef[2] * by;
-    let sz = nz - coef[1] * tz - coef[2] * bz;
-    const sl = Math.hypot(sx, sy, sz) || 1;
-    SN[v * 3] = sx / sl;
-    SN[v * 3 + 1] = sy / sl;
-    SN[v * 3 + 2] = sz / sl;
+    let curS = S;
+    for (let pass = 0; pass < 10; pass += 1) {
+      const nextS = Float64Array.from(curS);
+      for (const v of regionVerts) {
+        if (ramp[v] <= 0) continue;
+        const nbs = vAdj[v];
+        if (!nbs.length) continue;
+        let mx = 0, my = 0, mz = 0;
+        for (const u of nbs) {
+          mx += curS[u * 3];
+          my += curS[u * 3 + 1];
+          mz += curS[u * 3 + 2];
+        }
+        const inv = 1 / nbs.length;
+        const tx = 0.25 * curS[v * 3] + 0.75 * mx * inv - pos[v * 3];
+        const ty = 0.25 * curS[v * 3 + 1] + 0.75 * my * inv - pos[v * 3 + 1];
+        const tz = 0.25 * curS[v * 3 + 2] + 0.75 * mz * inv - pos[v * 3 + 2];
+        const h = tx * SN[v * 3] + ty * SN[v * 3 + 1] + tz * SN[v * 3 + 2];
+        nextS[v * 3] = pos[v * 3] + h * SN[v * 3];
+        nextS[v * 3 + 1] = pos[v * 3 + 1] + h * SN[v * 3 + 1];
+        nextS[v * 3 + 2] = pos[v * 3 + 2] + h * SN[v * 3 + 2];
+      }
+      curS = nextS;
+    }
+    S.set(curS);
   }
 
   lap("fit");
@@ -1075,99 +1079,115 @@ function run(buffer, { finishLine }) {
     }
   }
   let moving = regionVerts.filter((v) => ramp[v] > 0);
-  let liftGrid = new PointGrid(pos, moving, LIFT_RADIUS_MM * 2);
   const lift = new Float64Array(nv);
   const scale = new Float64Array(nv).fill(1);
   const X = Float64Array.from(pos);
+  const prevX = new Float64Array(pos.length);
+  prevX.fill(NaN);
+  const dirtyV = new Uint8Array(nv);
+  const vSD = new Float64Array(nv);
   const place = () => {
-    for (const v of moving) {
+    dirtyV.fill(0);
+    for (const v of regionVerts) {
       const w = ramp[v] * scale[v];
-      for (let k = 0; k < 3; k += 1) {
-        X[v * 3 + k] = pos[v * 3 + k] + w * (S[v * 3 + k] - lift[v] * SN[v * 3 + k] - pos[v * 3 + k]);
+      const nx = w > 0 ? pos[v * 3] + w * (S[v * 3] - lift[v] * SN[v * 3] - pos[v * 3]) : pos[v * 3];
+      const ny = w > 0 ? pos[v * 3 + 1] + w * (S[v * 3 + 1] - lift[v] * SN[v * 3 + 1] - pos[v * 3 + 1]) : pos[v * 3 + 1];
+      const nz = w > 0 ? pos[v * 3 + 2] + w * (S[v * 3 + 2] - lift[v] * SN[v * 3 + 2] - pos[v * 3 + 2]) : pos[v * 3 + 2];
+      if (nx !== prevX[v * 3] || ny !== prevX[v * 3 + 1] || nz !== prevX[v * 3 + 2]) {
+        X[v * 3] = prevX[v * 3] = nx;
+        X[v * 3 + 1] = prevX[v * 3 + 1] = ny;
+        X[v * 3 + 2] = prevX[v * 3 + 2] = nz;
+        dirtyV[v] = 1;
       }
     }
   };
   /** 꼭짓점·모서리 가운데·면 가운데 중 원본 밖으로 나간 양을, 그 점을 만드는 움직이는 꼭짓점에 돌린다. */
   const excess = new Float64Array(nv);
-  const measure = () => {
+  const triOut = new Uint8Array(tc);
+  const measure = (full = false) => {
     excess.fill(0);
     let worst = 0;
     const blame = (ids, d) => {
-      if (d <= OUTSIDE_TOL_MM / 2) return;
-      worst = Math.max(worst, d);
+      if (d <= OUTSIDE_TOL_MM / 2) return false;
+      if (d > worst) worst = d;
       for (const v of ids) {
         if (ramp[v] <= 0) continue;
-        const need = d / Math.max(ramp[v] * scale[v], 0.05);
-        if (need > excess[v]) excess[v] = need;
+        if (d > excess[v]) excess[v] = d;
       }
+      return true;
     };
-    for (const v of moving) blame([v], sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]));
+    for (const v of moving) {
+      if (dirtyV[v]) vSD[v] = sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]);
+      blame([v], vSD[v]);
+    }
     for (let t = 0; t < tc; t += 1) {
-      const ids = [tri[t * 4], tri[t * 4 + 1], tri[t * 4 + 2]];
-      if (!ids.some((v) => ramp[v] > 0)) continue;
+      const a0 = tri[t * 4], b0 = tri[t * 4 + 1], c0 = tri[t * 4 + 2];
+      if (!(ramp[a0] > 0 || ramp[b0] > 0 || ramp[c0] > 0)) continue;
+      if (!full && !triOut[t] && !(dirtyV[a0] | dirtyV[b0] | dirtyV[c0])) continue;
+      if (!full && !triOut[t] && vSD[a0] < -2e-4 && vSD[b0] < -2e-4 && vSD[c0] < -2e-4) continue;
       const orig = tri[t * 4 + 3];
-      let cx = 0;
-      let cy = 0;
-      let cz = 0;
+      const ids = [a0, b0, c0];
+      let cx = 0, cy = 0, cz = 0, anyOut = false;
       for (let k = 0; k < 3; k += 1) {
-        const a = ids[k];
-        const b = ids[(k + 1) % 3];
+        const a = ids[k], b = ids[(k + 1) % 3];
         cx += X[a * 3];
         cy += X[a * 3 + 1];
         cz += X[a * 3 + 2];
         if (a < b) {
-          blame(
-            [a, b],
-            sd.query((X[a * 3] + X[b * 3]) / 2, (X[a * 3 + 1] + X[b * 3 + 1]) / 2, (X[a * 3 + 2] + X[b * 3 + 2]) / 2, orig),
-          );
+          if (blame([a, b], sd.query((X[a * 3] + X[b * 3]) / 2, (X[a * 3 + 1] + X[b * 3 + 1]) / 2, (X[a * 3 + 2] + X[b * 3 + 2]) / 2, orig))) {
+            anyOut = true;
+          }
         }
       }
-      blame(ids, sd.query(cx / 3, cy / 3, cz / 3, orig));
+      if (blame(ids, sd.query(cx / 3, cy / 3, cz / 3, orig))) anyOut = true;
+      triOut[t] = anyOut ? 1 : 0;
     }
     return worst;
   };
-  /** 넘친 양 이상이면서 매끈한 내림 폭: 2R 안 최댓값을 R 반경 평균으로 두 번 편다(편 값이 원래 값보다 작아지지 않는다). */
+  /** 넘친 양 이상이면서 매끈한 내림 폭: 2R 안 최댓값을 이웃 넓이 가중으로 편다(편 값이 원래 값보다 작아지지 않는다). */
   const majorant = (values) => {
+    const active = [];
+    for (const v of moving) if (values[v] > 0) active.push(v);
+    if (!active.length) return new Float64Array(nv);
+    const activeGrid = new PointGrid(pos, active, LIFT_RADIUS_MM * 2);
     const dil = new Float64Array(nv);
     for (const v of moving) {
       let m = values[v];
-      liftGrid.forEachNear(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], LIFT_RADIUS_MM * 2, (j) => {
+      activeGrid.forEachNear(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], LIFT_RADIUS_MM * 2, (j) => {
         if (values[j] > m) m = values[j];
       });
-      dil[v] = m;
+      if (m > 0) dil[v] = m;
     }
     let cur = dil;
-    for (let pass = 0; pass < 2; pass += 1) {
-      const nextVals = new Float64Array(nv);
+    for (let pass = 0; pass < 4; pass += 1) {
+      const nextVals = Float64Array.from(cur);
       for (const v of moving) {
-        let s = 0;
-        let w = 0;
-        liftGrid.forEachNear(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], LIFT_RADIUS_MM, (j) => {
+        const nbs = vAdj[v];
+        if (!nbs.length) continue;
+        let s = cur[v] * vArea[v];
+        let w = vArea[v];
+        for (const j of nbs) {
+          if (ramp[j] <= 0) continue;
           s += cur[j] * vArea[j];
           w += vArea[j];
-        });
-        nextVals[v] = w > 0 ? s / w : cur[v];
+        }
+        if (w > 0) nextVals[v] = Math.max(values[v], s / w);
       }
       cur = nextVals;
     }
     return cur;
   };
 
-  // 안쪽으로 내려도 줄지 않는 꼭짓점(스크류 채널이 면을 뚫고 지나가는 곳 등)은 고정하고 주변 전환 가중치를 다시 잡는다.
+  // 안쪽으로 내려도 줄지 않는 꼭짓점은 고정하고 주변 전환 가중치를 다시 잡는다.
   let frozenVertices = 0;
   const freeze = (ids) => {
     for (const v of ids) featureIds.push(v);
     frozenVertices += ids.length;
     computeRamp(featureIds);
-    for (const v of moving) {
-      if (ramp[v] > 0) continue;
-      for (let k = 0; k < 3; k += 1) X[v * 3 + k] = pos[v * 3 + k];
-    }
     moving = moving.filter((v) => ramp[v] > 0);
-    liftGrid = new PointGrid(pos, moving, LIFT_RADIUS_MM * 2);
     place();
   };
-  const inwardOf = (v) => -sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v]);
+  const inwardOf = (v) => (dirtyV[v] ? -(vSD[v] = sd.query(X[v * 3], X[v * 3 + 1], X[v * 3 + 2], vOrig[v])) : -vSD[v]);
   const inwardStats = () => {
     let maxInward = 0;
     let sumInward = 0;
@@ -1185,15 +1205,14 @@ function run(buffer, { finishLine }) {
   const liftOnce = () => {
     for (const v of moving) if (excess[v] > 0) excess[v] = excess[v] * LIFT_OVERSHOOT + OUTSIDE_TOL_MM;
     const add = majorant(excess);
-    for (const v of moving) lift[v] += add[v];
+    for (const v of moving) lift[v] += add[v] / Math.max(ramp[v] * scale[v], 0.05);
     place();
     worst = measure();
     rounds += 1;
-    // 이미 5µm 안쪽 한계에 걸려 줄인 꼭짓점은 STUCK_RATIO로 고정하지 않는다.
     const stuck = moving.filter(
       (v) => scale[v] >= 0.99 && excess[v] > 0 && prev[v] > 0 && excess[v] > prev[v] * STUCK_RATIO,
     );
-    if (stuck.length) {
+    if (rounds >= 3 && stuck.length) {
       freeze(stuck);
       worst = measure();
     }
@@ -1210,7 +1229,7 @@ function run(buffer, { finishLine }) {
     skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
   }
 
-  // 안쪽 이동이 5µm를 넘는 곳은 먼저 급한 돌기(30µm 초과)만 고정하고, 나머지는 이동량을 5µm 안으로 부드럽게 줄인다.
+  // 안쪽 이동이 MAX_INWARD_MM을 넘는 곳은 먼저 급한 돌기(30µm 초과)만 고정하고, 나머지는 주변과 함께 부드럽게 줄인다.
   let heldDeep = 0;
   let stats = inwardStats();
   let holdPasses = 0;
@@ -1229,13 +1248,49 @@ function run(buffer, { finishLine }) {
     stats = inwardStats();
     holdPasses += 1;
   }
-  for (let capPass = 0; capPass < 3 && stats.maxInward > MAX_INWARD_MM; capPass += 1) {
+  const scaleGrid = new PointGrid(pos, moving, 0.35);
+  const smoothScaleField = (rawD) => {
+    const dil = new Float64Array(nv);
     for (const v of moving) {
-      const d = Math.max(
+      let m = rawD[v];
+      scaleGrid.forEachNear(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], 0.35, (j) => {
+        if (rawD[j] > m) m = rawD[j];
+      });
+      dil[v] = m;
+    }
+    let cur = dil;
+    for (let pass = 0; pass < 3; pass += 1) {
+      const nextVals = new Float64Array(nv);
+      for (const v of moving) {
+        let s = 0, w = 0;
+        scaleGrid.forEachNear(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], 0.25, (j) => {
+          s += cur[j] * vArea[j];
+          w += vArea[j];
+        });
+        nextVals[v] = w > 0 ? s / w : cur[v];
+      }
+      cur = nextVals;
+    }
+    return cur;
+  };
+  for (let capPass = 0; capPass < 3 && stats.maxInward > MAX_INWARD_MM; capPass += 1) {
+    const rawD = new Float64Array(nv);
+    for (const v of moving) {
+      rawD[v] = Math.max(
+        0,
         inwardOf(v),
         Math.hypot(X[v * 3] - pos[v * 3], X[v * 3 + 1] - pos[v * 3 + 1], X[v * 3 + 2] - pos[v * 3 + 2]),
       );
-      if (d > MAX_INWARD_MM * 0.99) scale[v] *= (MAX_INWARD_MM * 0.99) / d;
+    }
+    const envD = smoothScaleField(rawD);
+    const cap = MAX_INWARD_MM * 0.98;
+    for (const v of moving) {
+      const D = Math.max(rawD[v], envD[v]);
+      if (D > cap && rawD[v] > 0) {
+        const p = Math.min(3.5, D / cap);
+        const targetD = cap * Math.pow(rawD[v] / D, p);
+        scale[v] *= targetD / rawD[v];
+      }
     }
     place();
     worst = measure();
@@ -1289,7 +1344,7 @@ function run(buffer, { finishLine }) {
       patchTriangles: tc,
       movedVertices: movedCount,
       fixedFinishVertices: crease.loop.length,
-      margin: sharpCrease ? "crease" : "finish-line",
+      margin: crease.fromFinishLine ? "finish-line" : "crease",
       thinVertices,
       maxInwardUm: Math.round(maxInward * 1e4) / 10,
       meanInwardUm: movedCount ? Math.round((sumInward / movedCount) * 1e4) / 10 : 0,

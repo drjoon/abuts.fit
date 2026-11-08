@@ -88,7 +88,7 @@ describe("smoothPostAboveFinishLine", () => {
   it("applies on a stepped post", () => {
     expect(result.status).toBe("applied");
     expect(result.detail.fixedFinishVertices).toBe(SEGMENTS);
-    expect(result.detail.maxInwardUm).toBeLessThanOrEqual(5);
+    expect(result.detail.maxInwardUm).toBeLessThanOrEqual(15);
   });
 
   it("keeps the finish line and everything below it bit-exact", () => {
@@ -161,7 +161,7 @@ describe("smoothPostAboveFinishLine", () => {
     const out = smoothPostAboveFinishLine(ridged, { finishLine });
     expect(out.status).toBe("applied");
     expect(out.detail.heldDeepVertices).toBeGreaterThan(0);
-    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(5);
+    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(15);
     const away = (verts) =>
       stairRoughness(
         verts.filter((p) => {
@@ -332,6 +332,6 @@ describe("smoothPostAboveFinishLine", () => {
     const out = smoothPostAboveFinishLine(collared, { finishLine });
     expect(out.status).toBe("applied");
     expect(out.detail.movedVertices).toBeGreaterThan(SEGMENTS * 10);
-    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(5);
+    expect(out.detail.maxInwardUm).toBeLessThanOrEqual(15);
   });
 });
