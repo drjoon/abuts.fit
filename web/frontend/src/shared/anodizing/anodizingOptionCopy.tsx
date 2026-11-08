@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // change-log:
+// - 2026-11-08: 팝오버 안내는 On 높이로 고정. 호버 때 줄어들지 않는다.
 // - 2026-11-08: 안내는 선택 팝오버 안에만. 화면에는 두지 않는다.
 // - 2026-11-08: 의뢰 아노다이징 기본 On. Off는 출고 +1영업일 안내.
 import type { ReactNode } from "react";
@@ -42,8 +43,25 @@ export function AnodizingOptionNote({
   );
 }
 
+/** On·Off 문구를 겹쳐 두어 팝오버 높이가 호버마다 줄지 않게 한다. */
 export function anodizingPopoverNote(value: string): ReactNode {
-  return <AnodizingOptionCopy enabled={value === "on"} />;
+  const on = value === "on";
+  return (
+    <span className="grid">
+      <span
+        className={cn("col-start-1 row-start-1", !on && "invisible")}
+        aria-hidden={!on}
+      >
+        <AnodizingOptionCopy enabled />
+      </span>
+      <span
+        className={cn("col-start-1 row-start-1", on && "invisible")}
+        aria-hidden={on}
+      >
+        <AnodizingOptionCopy enabled={false} />
+      </span>
+    </span>
+  );
 }
 
 type AnodizingRequestOptionProps = {
