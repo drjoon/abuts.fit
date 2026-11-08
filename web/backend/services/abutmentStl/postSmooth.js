@@ -12,6 +12,7 @@
 // 스크류홀 캡은 이 다듬기 다음에 붙인다. 먼저 붙이면 캡 테두리가 다듬기를 가로막는다.
 // - 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 고정한다. 그 때문에 포스트 전체를 건너뛰지 않는다.
 import { writeBinaryStl } from "../../utils/screwHoleFill.js";
+import { decimatePatch } from "./postDecimate.js";
 import { findFinishCrease, finishLineZByAngle, prepareCuffMesh } from "./cuffBlend.js";
 
 export const POST_SMOOTH_VERSION = "post-smooth-1";
@@ -1315,6 +1316,14 @@ function run(buffer, { finishLine }) {
     skip("포스트를 너무 깊이 깎아야 해서 적용하지 않았습니다.", { maxInwardUm: Math.round(maxInward * 1e4) / 10 });
   }
 
+  // 다듬기가 끝난 패치를 간소화한다. 고정·전환 구간·경계 꼭짓점은 건드리지 않고, 평평한 곳의 삼각형만 걷어 낸다.
+  const protect = new Uint8Array(nv);
+  for (let v = 0; v < nv; v += 1) if (isFixed(v) || !(ramp[v] > 0) || vOrig[v] < 0) protect[v] = 1;
+  const dec = decimatePatch({ X, tri, protect, sd, outsideTol: OUTSIDE_TOL_MM, maxInward: MAX_INWARD_MM });
+  const triOutList = dec.tri;
+  const tcFinal = triOutList.length / 4;
+  lap("decimate");
+
   // 영역 밖 면은 그대로, 영역 면은 나눈 면으로 바꾼다.
   const outPos = [];
   const outAttr = [];
@@ -1326,10 +1335,10 @@ function run(buffer, { finishLine }) {
     if (inRegion[f]) continue;
     pushTri(P0, faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2], faceAttr[f]);
   }
-  for (let t = 0; t < tc; t += 1) {
-    const ids = [tri[t * 4], tri[t * 4 + 1], tri[t * 4 + 2]];
+  for (let t = 0; t < tcFinal; t += 1) {
+    const ids = [triOutList[t * 4], triOutList[t * 4 + 1], triOutList[t * 4 + 2]];
     const touched = ids.some((v) => ramp[v] > 0) || ids.some((v) => v >= nv0);
-    pushTri(X, ids[0], ids[1], ids[2], touched ? POST_SMOOTH_PATCH_ATTRIBUTE : faceAttr[tri[t * 4 + 3]]);
+    pushTri(X, ids[0], ids[1], ids[2], touched ? POST_SMOOTH_PATCH_ATTRIBUTE : faceAttr[triOutList[t * 4 + 3]]);
   }
   lap("verify");
   const out = writeBinaryStl({ positions: Float64Array.from(outPos), attributes: Uint16Array.from(outAttr) });
@@ -1341,7 +1350,9 @@ function run(buffer, { finishLine }) {
     detail: {
       version: POST_SMOOTH_VERSION,
       regionTriangles: regionFaces.length,
-      patchTriangles: tc,
+      patchTriangles: tcFinal,
+      patchTrianglesRefined: tc,
+      decimatedVertices: dec.removed,
       movedVertices: movedCount,
       fixedFinishVertices: crease.loop.length,
       margin: crease.fromFinishLine ? "finish-line" : "crease",
