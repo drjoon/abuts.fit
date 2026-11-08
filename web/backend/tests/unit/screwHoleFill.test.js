@@ -118,4 +118,24 @@ describe("fillUpperScrewHole", () => {
     expect(Buffer.compare(viaWorker.buffer, direct.buffer)).toBe(0);
     expect(input.length).toBeGreaterThan(0);
   });
+
+  it("ignores inward-tilted outer post faces above a steep anterior screw hole", () => {
+    const base = buildTubeWithDetachedDisk();
+    const { positions, attributes } = parseStl(base);
+    // 전치부처럼 홀 위쪽(x > 0) 외측 포스트가 안쪽(r = 1.4 → 1.9, |nz| ≈ 0.4)으로 기울어진 삼각형을 덧붙인다.
+    const extra = [
+      [1.28, -0.15, topZ(1.28)],
+      [1.28, 0.15, topZ(1.28)],
+      [1.75, 0, topZ(1.28) + 1.1],
+    ];
+    const combined = new Float64Array(positions.length + 9);
+    combined.set(positions, 0);
+    combined.set(extra.flat(), positions.length);
+    const attrs = new Uint16Array(attributes.length + 1);
+    attrs.set(attributes, 0);
+    const result = fillUpperScrewHole(writeBinaryStl({ positions: combined, attributes: attrs }));
+    expect(result.ok).toBe(true);
+    expect(result.stats.channelDiameter).toBeCloseTo(R_IN * 2, 2);
+    expect(result.stats.rimZMax).toBeCloseTo(topZ(R_IN), 2);
+  });
 });

@@ -15,12 +15,15 @@ export const HOLE_FILL_PATCH_ATTRIBUTE = 0x4846;
 
 const WELD_EPS = 1e-5;
 const WALL_MAX_RADIUS = 2.0;
-const WALL_MIN_INWARD = 0.8;
-const WALL_MAX_ABS_NZ = 0.55;
+const WALL_MIN_INWARD = 0.85;
+/** 채널 벽은 수직 원기둥(|nz|≈0)이다. 기울어진 외측 포스트 면(0.3~0.5)이 섞이지 않게 0.2로 제한한다. */
+const WALL_MAX_ABS_NZ = 0.2;
 const WALL_MAX_RADIAL_STD = 0.25;
 const MIN_AZIMUTH_COVERAGE = 0.85;
 /** 채널 반경에서 벗어난(나팔 입구) 정점 비율 상한. */
 const WALL_MAX_FLARE_SHARE = 0.3;
+/** 포스트 다듬기 패치(0x5053)는 외측 포스트 면이므로 채널 벽 후보에서 뺀다. */
+const POST_SMOOTH_PATCH_ATTRIBUTE = 0x5053;
 /** 채널 벽 반경에서 이만큼 바깥 원기둥으로 잘라 0.01mm 모따기 띠를 걷어낸다. */
 const CUT_COLLAR_MM = 0.025;
 /** 둘레 각도 격자(2° 간격, 180열). */
@@ -226,10 +229,11 @@ function edgeKey(a, b) {
   return a < b ? `${a}_${b}` : `${b}_${a}`;
 }
 
-function findUpperRimLoop(verts, faces) {
+function findUpperRimLoop(verts, faces, attributes, kept) {
   const faceCount = faces.length / 3;
   const isWall = new Uint8Array(faceCount);
   for (let f = 0; f < faceCount; f += 1) {
+    if (kept && attributes?.[kept[f]] === POST_SMOOTH_PATCH_ATTRIBUTE) continue;
     const a = faces[f * 3] * 3;
     const b = faces[f * 3 + 1] * 3;
     const c = faces[f * 3 + 2] * 3;
@@ -249,14 +253,14 @@ function findUpperRimLoop(verts, faces) {
     const len = Math.hypot(nx, ny, nz);
     if (len < 1e-12) continue;
     const inward = -(nx * cx + ny * cy) / (len * rc);
-      if (
-        rc > 1e-6 &&
-        rc <= WALL_MAX_RADIUS &&
-        inward >= WALL_MIN_INWARD &&
-        Math.abs(nz / len) <= WALL_MAX_ABS_NZ
-      ) {
-        isWall[f] = 1;
-      }
+    if (
+      rc > 1e-6 &&
+      rc <= WALL_MAX_RADIUS &&
+      inward >= WALL_MIN_INWARD &&
+      Math.abs(nz / len) <= WALL_MAX_ABS_NZ
+    ) {
+      isWall[f] = 1;
+    }
   }
 
   const edgeFaces = new Map();
@@ -337,7 +341,10 @@ function findUpperRimLoop(verts, faces) {
   };
   for (const [key, list] of edgeFaces) {
     const inside = list.filter((f) => inChannel.has(f)).length;
-    if (inside === 0 || inside === list.length) continue;
+    if (inside === 0) continue;
+    // 이전 HF 패치를 걷어낸 자리라 바깥 비벽 면이 이미 잘려 나간 경우에도
+    // 채널 벽의 열린 테두리(inside === list.length === 1)는 상부 개구 경계다.
+    if (inside === list.length && list.length > 1) continue;
     const [a, b] = key.split("_").map(Number);
     addAdj(a, b);
     addAdj(b, a);
@@ -496,16 +503,81 @@ function zipperPointRows(outerRow, innerRow, emit) {
  * 둘레 저역 통과 + 경계 법선 기울기(G1) 맞춤 곡면으로 메운다.
  * 절단이 닫힌 루프를 만들지 못하는 합성 메시(단순 원통 튜브 등)는 림 정점 그대로 메운다.
  */
-function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
+function buildCuffStyleCap(verts, faces, attributes, kept, rim, { alreadyPatched = false } = {}) {
   const fc = faces.length / 3;
   const nv = verts.length / 3;
   const isWall = rim.isWall;
   const rimVerts = new Set(rim.loop);
   const rChan = rim.channelRadius;
 
-  // 림에서 비벽 면을 따라 표면 거리를 잰다.
+  // 이전 HF 패치를 걷어낸 자리에 바깥 절단 테두리(열린 비벽 변)가 이미 남아 있으면 그대로 쓴다.
+  let existingOuterLoop = null;
+  if (alreadyPatched) {
+    const nonWallEdgeCount = new Map();
+    const openAdj = new Map();
+    const addOpen = (a, b) => {
+      const list = openAdj.get(a);
+      if (list) list.push(b);
+      else openAdj.set(a, [b]);
+    };
+    for (let f = 0; f < fc; f += 1) {
+      if (isWall?.[f]) continue;
+      const a = faces[f * 3];
+      const b = faces[f * 3 + 1];
+      const c = faces[f * 3 + 2];
+      for (const [u, w] of [[a, b], [b, c], [c, a]]) {
+        const key = edgeKey(u, w);
+        nonWallEdgeCount.set(key, (nonWallEdgeCount.get(key) || 0) + 1);
+      }
+    }
+    for (let f = 0; f < fc; f += 1) {
+      if (isWall?.[f]) continue;
+      const a = faces[f * 3];
+      const b = faces[f * 3 + 1];
+      const c = faces[f * 3 + 2];
+      for (const [u, w] of [[a, b], [b, c], [c, a]]) {
+        if (nonWallEdgeCount.get(edgeKey(u, w)) !== 1) continue;
+        const ru = Math.hypot(verts[u * 3], verts[u * 3 + 1]);
+        const rw = Math.hypot(verts[w * 3], verts[w * 3 + 1]);
+        if (ru > 2.2 || rw > 2.2) continue;
+        if (verts[u * 3 + 2] < Math.max(3.5, rim.channelTopZ - 8)) continue;
+        addOpen(u, w);
+        addOpen(w, u);
+      }
+    }
+    const seenOpen = new Set();
+    let bestComp = null;
+    for (const start of openAdj.keys()) {
+      if (seenOpen.has(start)) continue;
+      const comp = [];
+      const stack = [start];
+      while (stack.length) {
+        const v = stack.pop();
+        if (seenOpen.has(v)) continue;
+        seenOpen.add(v);
+        comp.push(v);
+        for (const w of openAdj.get(v) || []) if (!seenOpen.has(w)) stack.push(w);
+      }
+      if (comp.length < 24) continue;
+      const bins = new Uint8Array(72);
+      for (const v of comp) {
+        const ang = Math.atan2(verts[v * 3 + 1], verts[v * 3]);
+        bins[Math.min(71, Math.floor(((ang + Math.PI) / TWO_PI) * 72))] = 1;
+      }
+      if (bins.reduce((s, v) => s + v, 0) / 72 < MIN_AZIMUTH_COVERAGE) continue;
+      if (!bestComp || comp.length > bestComp.length) bestComp = comp;
+    }
+    if (bestComp) {
+      existingOuterLoop = bestComp
+        .map((v) => ({ v, ang: Math.atan2(verts[v * 3 + 1], verts[v * 3]) }))
+        .sort((a, b) => a.ang - b.ang)
+        .map((item) => item.v);
+    }
+  }
+
+  // 림(또는 이미 잘린 바깥 테두리)에서 비벽 면을 따라 표면 거리를 잰다.
   const dist = new Float64Array(nv).fill(Infinity);
-  const queue = [...rim.loop];
+  const queue = existingOuterLoop ? [...existingOuterLoop] : [...rim.loop];
   for (const v of queue) dist[v] = 0;
   const adj = Array.from({ length: nv }, () => []);
   for (let f = 0; f < fc; f += 1) {
@@ -536,13 +608,18 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
   }
 
   // 0.01mm 모따기 정점이 있는 기공소 메시는 rCut = rChan + 0.025로 자른다.
-  let hasMicroChamfer = false;
-  for (let v = 0; v < nv; v += 1) {
-    if (rimVerts.has(v) || dist[v] > 0.05) continue;
-    const dr = Math.hypot(verts[v * 3], verts[v * 3 + 1]) - rChan;
-    if (dr > 0.002 && dr < CUT_COLLAR_MM) {
-      hasMicroChamfer = true;
-      break;
+  let hasMicroChamfer = Boolean(
+    existingOuterLoop &&
+      Math.hypot(verts[existingOuterLoop[0] * 3], verts[existingOuterLoop[0] * 3 + 1]) - rChan > 0.005,
+  );
+  if (!existingOuterLoop) {
+    for (let v = 0; v < nv; v += 1) {
+      if (rimVerts.has(v) || dist[v] > 0.05) continue;
+      const dr = Math.hypot(verts[v * 3], verts[v * 3 + 1]) - rChan;
+      if (dr > 0.002 && dr < CUT_COLLAR_MM) {
+        hasMicroChamfer = true;
+        break;
+      }
     }
   }
 
@@ -553,7 +630,23 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
   let cutLoop = null;
   let edgeFace = null;
 
-  if (hasMicroChamfer) {
+  if (existingOuterLoop) {
+    cutLoop = existingOuterLoop;
+    edgeFace = new Map();
+    for (let f = 0; f < fc; f += 1) {
+      const a = faces[f * 3];
+      const b = faces[f * 3 + 1];
+      const c = faces[f * 3 + 2];
+      const fi = outHostTris.length;
+      outHostTris.push([a, b, c]);
+      outHostAttrs.push(attributes[kept[f]] || 0);
+      if (!isWall?.[f]) {
+        edgeFace.set(`${a}_${b}`, fi);
+        edgeFace.set(`${b}_${c}`, fi);
+        edgeFace.set(`${c}_${a}`, fi);
+      }
+    }
+  } else if (hasMicroChamfer) {
     const values = new Float64Array(nv);
     for (let v = 0; v < nv; v += 1) {
       let val = rimVerts.has(v)
@@ -665,6 +758,7 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
   }
 
   if (!cutLoop) {
+    hasMicroChamfer = false;
     outHostTris.length = 0;
     outHostAttrs.length = 0;
     edgeFace = new Map();
@@ -682,6 +776,48 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
       }
     }
     cutLoop = rim.loop.slice();
+  }
+
+  const N = CAP_COLUMNS;
+  // 절단선에 닿은 작은 삼각형 하나는 현 방향으로 미세하게 기울어 반경 기울기가 튄다.
+  // 절단선 바깥 포스트 띠(rChan + 0.04 .. rChan + 0.35mm)의 면적 가중 법선으로 둘레 반경 기울기를 구한다.
+  const nxBin = new Float64Array(N);
+  const nyBin = new Float64Array(N);
+  const nzBin = new Float64Array(N);
+  for (let f = 0; f < fc; f += 1) {
+    if (isWall?.[f]) continue;
+    const a = faces[f * 3];
+    const b = faces[f * 3 + 1];
+    const c = faces[f * 3 + 2];
+    if (dist[a] > 0.45 && dist[b] > 0.45 && dist[c] > 0.45) continue;
+    const ax = verts[a * 3];
+    const ay = verts[a * 3 + 1];
+    const az = verts[a * 3 + 2];
+    const bx = verts[b * 3];
+    const by = verts[b * 3 + 1];
+    const bz = verts[b * 3 + 2];
+    const cx = verts[c * 3];
+    const cy = verts[c * 3 + 1];
+    const cz = verts[c * 3 + 2];
+    const mx = (ax + bx + cx) / 3;
+    const my = (ay + by + cy) / 3;
+    const rc = Math.hypot(mx, my);
+    if (rc < rChan + 0.04 || rc > rChan + 0.35) continue;
+    const ux = bx - ax;
+    const uy = by - ay;
+    const uz = bz - az;
+    const vx = cx - ax;
+    const vy = cy - ay;
+    const vz = cz - az;
+    const fnx = uy * vz - uz * vy;
+    const fny = uz * vx - ux * vz;
+    const fnz = ux * vy - uy * vx;
+    if (fnz <= 0) continue;
+    const th = Math.atan2(my, mx);
+    const j = ((Math.round(((th + Math.PI) / TWO_PI) * N) % N) + N) % N;
+    nxBin[j] += fnx;
+    nyBin[j] += fny;
+    nzBin[j] += fnz;
   }
 
   const pts = cutLoop
@@ -716,7 +852,6 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
     })
     .sort((p, q) => p.a - q.a);
 
-  const N = CAP_COLUMNS;
   const zCut = new Float64Array(N);
   const rLoop = new Float64Array(N);
   const sCut = new Float64Array(N);
@@ -733,7 +868,21 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
     const u = da > 1e-9 ? Math.min(1, Math.max(0, dt / da)) : 0;
     zCut[j] = p0.z + u * (p1.z - p0.z);
     rLoop[j] = p0.r + u * (p1.r - p0.r);
-    sCut[j] = p0.slope + u * (p1.slope - p0.slope);
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    for (let d = -3; d <= 3; d += 1) {
+      const m = (j + d + N) % N;
+      sx += nxBin[m];
+      sy += nyBin[m];
+      sz += nzBin[m];
+    }
+    const fl = Math.hypot(sx, sy, sz);
+    if (fl > 1e-12 && sz / fl > 0.15) {
+      sCut[j] = Math.max(-4, Math.min(4, -(sx * Math.cos(th) + sy * Math.sin(th)) / sz));
+    } else {
+      sCut[j] = p0.slope + u * (p1.slope - p0.slope);
+    }
   }
 
   const cCut = fourierCoeffs(zCut, 16);
@@ -750,7 +899,8 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
       zTarget += cCut.re[h] * Math.cos(h * p.a) + cCut.im[h] * Math.sin(h * p.a);
     }
     const dz = zTarget - p.z;
-    if (dz < -0.002) {
+    // 이미 HF 패치가 붙었던 메시를 재실행할 때는 호스트 경계 정점을 또 깎지 않는다.
+    if (!alreadyPatched && dz < -0.002) {
       const move = Math.max(-MAX_INWARD_MM, dz);
       const z1 = Math.fround(p.z + move);
       movedMax = Math.max(movedMax, Math.abs(z1 - p.z));
@@ -773,13 +923,17 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
   }
 
   const resSmooth = new Float64Array(N);
+  const dResSmooth = new Float64Array(N);
   for (let j = 0; j < N; j += 1) {
     let s = 0;
+    let ds = 0;
     for (let d = -1; d <= 1; d += 1) {
       const k = (j + d + N) % N;
       s += zCut[k] - zCutLP[k];
+      ds += dZdsRaw[k] - dLP[k];
     }
     resSmooth[j] = s / 3;
+    dResSmooth[j] = ds / 3;
   }
 
   const evalDiskBase = (s, th) => {
@@ -801,17 +955,19 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
     }
     const rS = resSmooth[j0] * (1 - frac) + resSmooth[j1] * frac;
     const dS =
-      (dZdsRaw[j0] - dLP[j0]) * (1 - frac) + (dZdsRaw[j1] - dLP[j1]) * frac;
+      (dResSmooth[j0] - 12 * resSmooth[j0]) * (1 - frac) +
+      (dResSmooth[j1] - 12 * resSmooth[j1]) * frac;
     return hVal + g1 + (s ** 12) * rS + (s ** 12) * (s - 1) * dS;
   };
 
-  // 칼라 구간(rChan .. rCut)에서 원본 꼭짓점보다 위로 나가는 곳이 있으면 안쪽으로 내린다.
+  // 칼라 구간(rChan .. rCut)에서 원본 꼭짓점보다 위로 나가는 곳이 있으면 최대 5µm 안에서만 내린다.
+  // 안쪽 채널 벽이 캡 위로 뚫고 나오지 않는 한도까지만 내린다.
   const exCol = new Float64Array(N);
   if (hasMicroChamfer) {
     for (let v = 0; v < nv; v += 1) {
-      if (dist[v] > 0.2) continue;
+      if (rimVerts.has(v) || dist[v] > 0.2) continue;
       const r = Math.hypot(verts[v * 3], verts[v * 3 + 1]);
-      if (r < rChan - 0.005 || r > rCut - 0.0005) continue;
+      if (r < rChan + 0.002 || r > rCut - 0.0005) continue;
       const s = r / rCut;
       const u = Math.max(0, Math.min(1, (r - rChan) / CUT_COLLAR_MM));
       const th = Math.atan2(verts[v * 3 + 1], verts[v * 3]);
@@ -819,7 +975,7 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
       if (ex > 0) {
         const j = ((Math.round(((th + Math.PI) / TWO_PI) * N) % N) + N) % N;
         const w = 1 - u ** 2;
-        const need = ex / Math.max(w, 0.15);
+        const need = Math.min(MAX_INWARD_MM, ex / Math.max(w, 0.15));
         if (need > exCol[j]) exCol[j] = need;
       }
     }
@@ -828,7 +984,7 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
   for (let j = 0; j < N; j += 1) {
     let m = 0;
     for (let d = -6; d <= 6; d += 1) m = Math.max(m, exCol[(j + d + N) % N]);
-    dil[j] = m > 0 ? m * 1.15 + 0.0002 : 0;
+    dil[j] = m > 0 ? Math.min(MAX_INWARD_MM, m * 1.15 + 0.0002) : 0;
   }
   const cLift = fourierCoeffs(dil, 8);
   const evalDiskSafe = (s, th) => {
@@ -840,8 +996,20 @@ function buildCuffStyleCap(verts, faces, attributes, kept, rim) {
     }
     const r = s * rCut;
     const u = Math.max(0, Math.min(1, (r - rChan) / CUT_COLLAR_MM));
-    return evalDiskBase(s, th) - Math.max(0, lft) * (1 - u ** 2);
+    return evalDiskBase(s, th) - Math.min(MAX_INWARD_MM, Math.max(0, lft)) * (1 - u ** 2);
   };
+
+  // 안쪽 채널 벽 상단 정점이 새 캡 위로 삐져나오면 캡 아래로 내린다.
+  if (hasMicroChamfer && cutLoop !== rim.loop) {
+    for (const v of rim.loop) {
+      const r = Math.hypot(vs[v * 3], vs[v * 3 + 1]);
+      const th = Math.atan2(vs[v * 3 + 1], vs[v * 3]);
+      const zCap = evalDiskSafe(Math.min(1, r / rCut), th) - 0.002;
+      if (vs[v * 3 + 2] > zCap) {
+        vs[v * 3 + 2] = Math.fround(zCap);
+      }
+    }
+  }
 
   const outerRow = angularRowFromLoop(cutLoop, vs);
   if (!outerRow) return null;
@@ -943,9 +1111,11 @@ export function fillUpperScrewHole(buffer, { dropDetached = true } = {}) {
 
   const host = selectHostTriangles(positions, attributes, { dropDetached });
   const { verts, faces } = weld(positions, host.kept);
-  const rim = findUpperRimLoop(verts, faces);
+  const rim = findUpperRimLoop(verts, faces, attributes, host.kept);
   if (!rim.ok) return { ok: false, reason: rim.reason };
-  const cap = buildCuffStyleCap(verts, faces, attributes, host.kept, rim);
+  const cap = buildCuffStyleCap(verts, faces, attributes, host.kept, rim, {
+    alreadyPatched: host.removedPatchTriangles > 0,
+  });
   if (!cap) return { ok: false, reason: "스크류홀 캡 곡면을 만들지 못했습니다." };
 
   const hostCount = cap.outHostTris.length;
