@@ -1400,6 +1400,7 @@ export const PracticeFileTransferPage = ({
   const requestSubmittingRef = useRef(false);
   const [skipJig, setSkipJig] = useState(true);
   const [rushProcessing, setRushProcessing] = useState(false);
+  const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
   const [billing402Dialog, setBilling402Dialog] =
     useState<PracticeBilling402Dialog | null>(null);
@@ -4015,6 +4016,7 @@ export const PracticeFileTransferPage = ({
           arrivalYmd: nextArrivalDate,
         }),
       );
+      setAnodizingEnabled(parsed.anodizingEnabled !== false);
       setProsthesisTypeCatalog(restoredProsthesisTypes);
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
@@ -4106,6 +4108,7 @@ export const PracticeFileTransferPage = ({
         : null,
       toothWorks,
       rushProcessing,
+      anodizingEnabled,
       activeDraftId: String(activeDraftId || "").trim() || null,
       crownFabrication,
       updatedAt,
@@ -4152,6 +4155,7 @@ export const PracticeFileTransferPage = ({
     requestMemo,
     patientName,
     rushProcessing,
+    anodizingEnabled,
     selectedLab,
     toothWorks,
     crownFabrication,
@@ -4481,6 +4485,7 @@ export const PracticeFileTransferPage = ({
       arrivalYmd: nextArrivalDate,
     });
     setRushProcessing(nextRush);
+    setAnodizingEnabled(true);
     setToothWorks([]);
     setLabRequestStagePlans([]);
     setDraftFiles([]);
@@ -4514,6 +4519,7 @@ export const PracticeFileTransferPage = ({
           selectedLab: null,
           toothWorks: [],
           rushProcessing: nextRush,
+          anodizingEnabled: true,
           activeDraftId: null,
           crownFabrication: "impression",
           updatedAt: Date.now(),
@@ -4542,6 +4548,7 @@ export const PracticeFileTransferPage = ({
           selectedLab: null,
           toothWorks: [],
           rushProcessing: nextRush,
+          anodizingEnabled: true,
           activeDraftId: null,
           crownFabrication: "impression",
           updatedAt: Date.now(),
@@ -6093,6 +6100,10 @@ export const PracticeFileTransferPage = ({
       editReturnTransferRef.current = transfer;
       setEditingSentTransfer(nextEditing);
       editingSentTransferRef.current = nextEditing;
+      setAnodizingEnabled(
+        (transfer as { production?: { anodizingEnabled?: boolean | null } })
+          .production?.anodizingEnabled !== false,
+      );
       applyDraftSummaryToForm(draft, {
         keepOrderDate: true,
         keepPastArrival: true,
@@ -9087,6 +9098,7 @@ export const PracticeFileTransferPage = ({
         skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
         rushProcessing,
+        anodizingEnabled,
       };
       const newSystemRequestBase = {
         requested: true,
@@ -9161,6 +9173,7 @@ export const PracticeFileTransferPage = ({
           skipDesignConfirm: true,
           skipJig: effectiveSkipJig,
           rushProcessing,
+          anodizingEnabled,
           crownFabrication,
           autoMatchMinLabRating,
           autoMatchMaxLabRating,
@@ -9518,6 +9531,7 @@ export const PracticeFileTransferPage = ({
         arrivalYmd: nextArrivalDate,
       }),
     );
+    setAnodizingEnabled(true);
     const nextToothWorks: ToothWorkSelection[] = [
       {
         toothNumber: "",
@@ -10995,6 +11009,8 @@ export const PracticeFileTransferPage = ({
                   skipJig,
                   onSkipJigChange: persistSkipJigSetting,
                   rushProcessing,
+                  anodizingEnabled,
+                  onAnodizingEnabledChange: setAnodizingEnabled,
                   showInlineGuideTourButton: false,
                   headerToolbar: null,
                   reserveGuideTourAside: showComposeHeaderToolbar,

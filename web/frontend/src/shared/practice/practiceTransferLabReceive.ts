@@ -195,6 +195,8 @@ export type PracticeTransferLabReceiveItem = {
     abutmentProductionStartedAt?: string | null;
     /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 도착−3영업일 기본. */
     abutmentShipYmd?: string | null;
+    /** 아노다이징. null·미설정은 On. Off면 출고 +1영업일. */
+    anodizingEnabled?: boolean | null;
     /** 연동 CA가 준비 단계를 지남(가공 등) — 생산/수락 취소 불가 */
     abutmentPastReady?: boolean;
     /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */

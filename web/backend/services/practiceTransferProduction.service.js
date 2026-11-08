@@ -669,6 +669,21 @@ export function pickLabAnodizingEnabled(labUser, labOrg) {
   return true;
 }
 
+/** 의뢰 건 → PTX 저장값 → 기공소 계정. 없으면 On. */
+export function resolvePtxCaseAnodizingEnabled(
+  transferDoc,
+  requestDoc = null,
+  labFallback = true,
+) {
+  if (typeof requestDoc?.caseInfos?.anodizingEnabled === "boolean") {
+    return requestDoc.caseInfos.anodizingEnabled;
+  }
+  if (typeof transferDoc?.production?.anodizingEnabled === "boolean") {
+    return transferDoc.production.anodizingEnabled;
+  }
+  return labFallback !== false;
+}
+
 export function pickLabRetentionGroove(labUser, labOrg) {
   return normalizeRetentionGrooveValue(
     labUser?.requestSettings?.retentionGroove ||
@@ -798,6 +813,7 @@ export async function resolvePtxAbutmentAutoShipYmd({
   weeklyBatchDays = [],
   maxDiameter = 8,
   productMode = "custom_abutment",
+  anodizingEnabled = true,
 } = {}) {
   void shippingMode;
   return resolveNormalParcelEstimatedShipYmdKst({
@@ -805,7 +821,18 @@ export async function resolvePtxAbutmentAutoShipYmd({
     maxDiameter,
     weeklyBatchDays,
     productMode,
+    anodizingEnabled,
   });
+}
+
+/** Off 출고는 auto(이미 +1영업일)보다 이르면 그 날짜로 맞춘다. */
+function alignShipYmdToAnodizing(raw, autoShipYmd, anodizingEnabled) {
+  const ymd = String(raw || "").trim();
+  if (anodizingEnabled !== false) return ymd || null;
+  const floor = String(autoShipYmd || "").trim();
+  if (!floor) return ymd || null;
+  if (!ymd || ymd < floor) return floor;
+  return ymd;
 }
 
 /**
@@ -1182,7 +1209,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
   }
   const exoCadVersion = labMeta.exoCadVersion || null;
-  const anodizingEnabled = labMeta.anodizingEnabled;
+  const anodizingEnabled = resolvePtxCaseAnodizingEnabled(
+    transferDoc,
+    null,
+    labMeta.anodizingEnabled,
+  );
   const retentionGroove = labMeta.retentionGroove;
 
   const requestedAt = new Date();
@@ -1221,6 +1252,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     requestedAt: scheduleRequestedAt,
     shippingMode,
     weeklyBatchDays,
+    anodizingEnabled,
   });
   const storedShipYmd = String(
     transferDoc?.production?.abutmentShipYmd || "",
@@ -1411,14 +1443,18 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       requestedAt: scheduleRequestedAt,
       weeklyBatchDays,
       productMode: scheduleProductMode,
+      anodizingEnabled,
     });
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
 
-    let estimatedShipYmdRaw =
-      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd;
+    let estimatedShipYmdRaw = alignShipYmdToAnodizing(
+      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd,
+      autoShipYmd,
+      anodizingEnabled,
+    );
     if (!estimatedShipYmdRaw) {
       const d =
         typeof normalizedCaseInfos?.maxDiameter === "number" &&
@@ -1433,7 +1469,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       const leadDays = leadTimes[diameterKey]?.minBusinessDays ?? 1;
       estimatedShipYmdRaw = await addKoreanBusinessDays({
         startYmd: createdYmd,
-        days: Math.max(1, leadDays),
+        days: Math.max(1, leadDays) + (anodizingEnabled === false ? 1 : 0),
       });
     }
 
@@ -3126,11 +3162,17 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
+  const anodizingEnabled = resolvePtxCaseAnodizingEnabled(
+    transferDoc,
+    requestDoc,
+    true,
+  );
   const autoShipYmd = await resolvePtxAbutmentAutoShipYmd({
     requestedAt: scheduleRequestedAt,
     shippingMode,
     weeklyBatchDays,
     maxDiameter,
+    anodizingEnabled,
   });
   const storedShipYmd = String(
     transferDoc?.production?.abutmentShipYmd || "",
@@ -3171,8 +3213,11 @@ export async function repriceAndReschedulePtxAbutmentRequest({
         requestDoc?.timeline?.nextEstimatedShipYmd ||
         "",
     ).trim();
-    const raw =
-      targetShipYmd || autoShipYmd || existingYmd || arrivalYmd || null;
+    const raw = alignShipYmdToAnodizing(
+      targetShipYmd || autoShipYmd || existingYmd || arrivalYmd || null,
+      autoShipYmd,
+      anodizingEnabled,
+    );
     estimatedShipYmd = raw
       ? await normalizeKoreanBusinessDay({ ymd: raw })
       : null;
@@ -3183,13 +3228,17 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       requestedAt: scheduleRequestedAt,
       weeklyBatchDays,
       productMode: "custom_abutment",
+      anodizingEnabled,
     });
 
     const pickupYmd = productionSchedule?.scheduledShipPickup
       ? toKstYmd(productionSchedule.scheduledShipPickup)
       : null;
-    const estimatedShipYmdRaw =
-      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd;
+    const estimatedShipYmdRaw = alignShipYmdToAnodizing(
+      pickupYmd || targetShipYmd || autoShipYmd || arrivalYmd,
+      autoShipYmd,
+      anodizingEnabled,
+    );
     estimatedShipYmd = estimatedShipYmdRaw
       ? await normalizeKoreanBusinessDay({ ymd: estimatedShipYmdRaw })
       : null;

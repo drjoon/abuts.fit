@@ -503,6 +503,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - endpoint: `PATCH /api/requests/:id/anodizing-override`
   - 변경 가능 단계: `준비`, `가공` (레거시 `CAM` 호환, 그 외 단계는 409)
   - 생성 시: 의뢰건 `caseInfos.anodizingEnabled` 우선, 미설정이면 사업체 `requestSettings.anodizingEnabled`(기본 true).
+  - 의뢰 화면 기본은 On. `false`면 출고 스케줄에 영업일 1일을 더한다(PTX `production.anodizingEnabled`도 같은 규칙).
   - 의뢰자 계정 기본값: `User.requestSettings.anodizingEnabled` (API: `requestorAnodizingEnabled`). 신규의뢰 토글 시 저장되고 업로드 시드에 사용.
   - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
     프론트가 **레거시** `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.

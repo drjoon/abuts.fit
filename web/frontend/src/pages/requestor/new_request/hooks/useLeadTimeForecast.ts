@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-08: 아노다이징 Off ETA +1영업일.
 // - 2026-08-09: 디자인+생산 ETA에 productMode(+1영업일) 전달.
 // - 2026-08-10: 묶음 ETA를 백엔드와 같이 minBusinessDays=N → N영업일 후 출고.
 // - 2026-08-08: memo/stale closure 제거 — computeEstimatedShipLabel render 시점 호출.
@@ -75,6 +76,7 @@ export function useLeadTimeForecast({
       diameter: number | null,
       shippingMode: "normal" | "express" = "normal",
       productMode: string | null = null,
+      anodizingEnabled: boolean | null = true,
     ) => {
       const label = computeEstimatedShipLabel({
         weeklyBatchDays,
@@ -82,6 +84,7 @@ export function useLeadTimeForecast({
         diameter,
         shippingMode,
         productMode,
+        anodizingEnabled,
       });
       logEstimatedShipDebug("file-eta", {
         weeklyBatchDays,

@@ -1062,6 +1062,8 @@ const toProductionApiFields = (
       const ymd = String(p.abutmentShipYmd || "").trim();
       return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
     })(),
+    anodizingEnabled:
+      typeof p.anodizingEnabled === "boolean" ? p.anodizingEnabled : null,
     /** 연동 CA Request가 준비 단계를 지남 → 생산/수락 취소 불가 */
     abutmentPastReady: pastReady,
     /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */
@@ -1137,6 +1139,25 @@ const parseSkipDesignConfirmInput = (_body, _practiceRouting) => true;
 const parseSkipJigInput = (_body, _practiceRouting) => {
   // 레거시 필드 — 신규 의뢰는 resolvePracticeTransferSkipJig()가 항상 false.
   return false;
+};
+
+/** body 아노다이징. 없으면 On. */
+const parseAnodizingEnabledInput = (body, practiceRouting) => {
+  const raw =
+    body?.anodizingEnabled !== undefined
+      ? body.anodizingEnabled
+      : practiceRouting?.anodizingEnabled;
+  if (
+    raw === false ||
+    raw === "false" ||
+    raw === 0 ||
+    raw === "0" ||
+    raw === "N" ||
+    raw === "off"
+  ) {
+    return false;
+  }
+  return true;
 };
 
 /** body에서 rushProcessing 파싱. 명시 true만 신속처리 */
@@ -3393,6 +3414,7 @@ export async function createPracticeTransfer(req, res) {
       parseSkipJigInput(req.body, practiceRouting),
     );
     const rushProcessing = parseRushProcessingInput(req.body, practiceRouting);
+    const anodizingEnabled = parseAnodizingEnabledInput(req.body, practiceRouting);
     const isRemakeRequest = Boolean(
       req.body?.isRemake === true ||
         req.body?.remake === true ||
@@ -3749,6 +3771,7 @@ export async function createPracticeTransfer(req, res) {
         skipDesignConfirm,
         skipJig,
         rushProcessing,
+        anodizingEnabled,
         shippingMode: null,
         confirmedAt: null,
         confirmedBy: null,
@@ -4577,11 +4600,26 @@ export async function updatePracticeTransferContent(req, res) {
             maxLabRating: starBand.maxStars,
           };
 
+    const hasAnodizingInBody =
+      (req.body &&
+        Object.prototype.hasOwnProperty.call(req.body, "anodizingEnabled")) ||
+      (practiceRouting &&
+        Object.prototype.hasOwnProperty.call(
+          practiceRouting,
+          "anodizingEnabled",
+        ));
+    const anodizingEnabled = hasAnodizingInBody
+      ? parseAnodizingEnabledInput(req.body, practiceRouting)
+      : typeof previousProduction?.anodizingEnabled === "boolean"
+        ? previousProduction.anodizingEnabled
+        : true;
+
     const nextProduction = {
       ...previousProduction,
       skipDesignConfirm,
       skipJig,
       rushProcessing,
+      anodizingEnabled,
     };
 
     const now = new Date();
@@ -7476,6 +7514,7 @@ export async function remakePracticeTransfers(req, res) {
           skipDesignConfirm: production?.skipDesignConfirm !== false,
           skipJig: Boolean(production?.skipJig),
           rushProcessing: false,
+          anodizingEnabled: production?.anodizingEnabled !== false,
           shippingMode: null,
           confirmedAt: null,
           confirmedBy: null,

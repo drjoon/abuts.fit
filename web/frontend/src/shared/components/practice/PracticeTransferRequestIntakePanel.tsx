@@ -167,6 +167,7 @@ import {
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
+import { AnodizingRequestOption } from "@/shared/anodizing/anodizingOptionCopy";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import {
   formatWonRange,
@@ -907,6 +908,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   onSkipJigChange?: (next: boolean) => void;
   /** 신속처리(합계≤3영업일 확인 후). 견적 할증 */
   rushProcessing?: boolean;
+  /** 아노다이징. 기본 On. Off면 어벗 출고 +1영업일. */
+  anodizingEnabled?: boolean;
+  onAnodizingEnabledChange?: (next: boolean) => void;
   /** 자동매칭 기공비(v4 고정수가 스냅샷) */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   /** 어벗츠 수가 카탈로그 — 평균×배수 견적 SSOT */
@@ -1047,6 +1051,8 @@ export const PracticeTransferRequestIntakePanel = ({
   skipJig: _skipJig = true,
   onSkipJigChange: _onSkipJigChange,
   rushProcessing = false,
+  anodizingEnabled = true,
+  onAnodizingEnabledChange,
   showInlineGuideTourButton = false,
   guideTourStartSignal = 0,
   guideTourExitSignal = 0,
@@ -4673,6 +4679,13 @@ export const PracticeTransferRequestIntakePanel = ({
                           </label>
                         ))}
                       </div>
+                    ) : null}
+                    {onAnodizingEnabledChange ? (
+                      <AnodizingRequestOption
+                        enabled={anodizingEnabled !== false}
+                        onChange={onAnodizingEnabledChange}
+                        name={crownFabricationRadioName ? `${crownFabricationRadioName}-ano` : "ptx-anodizing"}
+                      />
                     ) : null}
                     {showLiveFee ? (
                     <PracticeTransferFeeEstimate

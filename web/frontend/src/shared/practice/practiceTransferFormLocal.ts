@@ -40,6 +40,8 @@ export type PracticeTransferFormLocalDraft = {
   skipDesignConfirm?: boolean;
   /** 신속처리 확인(새로고침 복원). 납기가 신속 구간이면 hydrate 시 재유도 */
   rushProcessing?: boolean;
+  /** 아노다이징. 없으면 On. */
+  anodizingEnabled?: boolean;
   /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
   activeDraftId?: string | null;
   /** 크라운 제작. 스캔 파일 없이도 스캔일 수 있다. */

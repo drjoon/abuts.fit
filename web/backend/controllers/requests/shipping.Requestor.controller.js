@@ -190,6 +190,7 @@ export async function updateMyShippingMode(req, res) {
         weeklyBatchDays:
           shippingMode === "normal" ? weeklyBatchDaysForSchedule : [],
         productMode: requestDoc.caseInfos?.productMode ?? null,
+        anodizingEnabled: requestDoc.caseInfos?.anodizingEnabled !== false,
       });
 
       if (!newSchedule) {

@@ -382,6 +382,7 @@ export async function backfillCreatedRequestSchedule(requests, { weeklyBatchDays
       requestedAt: doc?.createdAt || new Date(),
       weeklyBatchDays: shippingMode === "normal" ? weeklyBatchDays : [],
       productMode: doc?.caseInfos?.productMode ?? null,
+      anodizingEnabled: doc?.caseInfos?.anodizingEnabled !== false,
       manufacturerLeadTimes,
     });
     doc.productionSchedule = schedule;

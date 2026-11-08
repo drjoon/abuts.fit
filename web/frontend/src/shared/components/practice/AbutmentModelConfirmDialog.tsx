@@ -65,6 +65,7 @@ import type {
 import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/components/NewRequestDesignAbutmentFields";
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
+import { anodizingPopoverNote } from "@/shared/anodizing/anodizingOptionCopy";
 import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
 import {
   isShortPostLength,
@@ -1000,6 +1001,7 @@ export function AbutmentModelConfirmDialog({
                             "h-10 w-full justify-start bg-white shadow-none",
                             anodizingOn && "border-sky-200 bg-sky-50 text-slate-900",
                           )}
+                          optionNote={anodizingPopoverNote}
                           onChange={(next) => {
                             const enabled = next === "on";
                             setDetailCaseInfos({ anodizingEnabled: enabled });

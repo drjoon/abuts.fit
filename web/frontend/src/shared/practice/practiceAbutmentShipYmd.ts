@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-11-08: 미저장 어벗 출고 미리보기는 아노다이징 Off면 +1영업일.
 // - 2026-09-21: 계정 선호 −N(abutmentShipBeforeArrivalBusinessDays) 재사용. 미설정=3.
 // - 2026-09-18: 출고 영업일 = 주말+한국 공휴일 제외(kstAddBusinessDays).
 // - 2026-09-15: 출고일=도착−n 을 영업일(월~금) 기준으로. 주말 끼면 토요일이 아닌 목요일 등.
@@ -115,15 +116,17 @@ export function resolvePracticeTransferArrivalYmd(transfer?: {
   return list.length > 0 ? list[list.length - 1]! : null;
 }
 
-/** 저장된 출고일 또는 택배 익영업일(16시 집하). */
+/** 저장된 출고일 또는 택배 익영업일(16시 집하). Off면 +1영업일. */
 export function resolveAutoAbutmentShipYmdFromParcel(
   at: Date = new Date(),
+  anodizingEnabled: boolean | null = true,
 ): string | null {
   return computeEstimatedShipYmd({
     shippingMode: "normal",
     productMode: "custom_abutment",
     requestedAt: at,
     weeklyBatchDays: [],
+    anodizingEnabled,
   });
 }
 
@@ -159,13 +162,20 @@ export function resolveEffectiveAbutmentShipYmd(
   transfer?: {
     arrivalDate?: string | null;
     arrivalDates?: string[] | null;
-    production?: { abutmentShipYmd?: string | null } | null;
+    production?: {
+      abutmentShipYmd?: string | null;
+      anodizingEnabled?: boolean | null;
+    } | null;
   } | null,
   opts?: { at?: Date | null } | null,
 ): string | null {
   const stored = String(transfer?.production?.abutmentShipYmd || "").trim();
   if (YMD_RE.test(stored)) return stored;
-  return resolveAutoAbutmentShipYmdFromParcel(opts?.at ?? new Date());
+  const anodizingEnabled = transfer?.production?.anodizingEnabled;
+  return resolveAutoAbutmentShipYmdFromParcel(
+    opts?.at ?? new Date(),
+    anodizingEnabled !== false,
+  );
 }
 
 export function resolveAbutmentShipCutoffMode(

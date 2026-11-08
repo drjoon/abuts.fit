@@ -1471,6 +1471,10 @@ export function RequestorPracticeReceivePage({
                 const ymd = String(productionRaw.abutmentShipYmd || "").trim();
                 return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
               })(),
+              anodizingEnabled:
+                typeof productionRaw.anodizingEnabled === "boolean"
+                  ? productionRaw.anodizingEnabled
+                  : null,
               abutmentPastReady: Boolean(productionRaw.abutmentPastReady),
               abutmentPastReadyTeeth: Array.isArray(
                 productionRaw.abutmentPastReadyTeeth,
@@ -10033,7 +10037,11 @@ export function RequestorPracticeReceivePage({
         initialCaseInfos={designConfirmCaseInfos}
         defaultRetentionGroove={retentionGrooveDefault}
         onRetentionGrooveAccountSave={saveRetentionGroove}
-        defaultAnodizingEnabled={anodizingEnabled}
+        defaultAnodizingEnabled={
+          typeof designConfirmTransfer?.production?.anodizingEnabled === "boolean"
+            ? designConfirmTransfer.production.anodizingEnabled
+            : anodizingEnabled !== false
+        }
         onAnodizingAccountSave={saveAnodizingEnabled}
         connections={implantCatalog}
         confirming={designConfirmBusy}

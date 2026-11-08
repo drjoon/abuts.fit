@@ -200,6 +200,7 @@ async function run() {
         weeklyBatchDays,
         shippingMode,
         productMode: row?.caseInfos?.productMode ?? null,
+        anodizingEnabled: row?.caseInfos?.anodizingEnabled !== false,
       });
 
       const nextPickupYmdRaw = nextSchedule?.scheduledShipPickup

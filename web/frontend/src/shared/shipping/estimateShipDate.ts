@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-08: 아노다이징 Off는 출고 +1영업일.
 // - 2026-10-13: 택배 배송 ETA는 요일 정렬 없이 리드타임만.
 // - 2026-08-11: 묶음 (N-1)/당일출고 금지 주석 명시.
 // - 2026-08-09: 디자인+생산(구강스캔)은 메시 최대직경을 무시하고 생산 리드타임 1일.
@@ -32,10 +33,13 @@ export type EstimateShipParams = {
   requestedAt?: Date;
   /** design_custom_abutment 이면 출고 +1영업일 (묶음/신속 공통) */
   productMode?: string | null;
+  /** false면 출고 +1영업일. 미지정은 On. */
+  anodizingEnabled?: boolean | null;
 };
 
 const EXPRESS_CUTOFF_HOUR_KST = 12;
 const DESIGN_LEAD_BUSINESS_DAYS = 1;
+const ANODIZING_OFF_LEAD_BUSINESS_DAYS = 1;
 
 function needsDesignLeadDay(productMode?: string | null): boolean {
   return String(productMode || "").trim() === "design_custom_abutment";
@@ -118,6 +122,14 @@ function applyDesignLeadDay(
   return addBusinessDaysFromKstYmd(shipYmd, DESIGN_LEAD_BUSINESS_DAYS);
 }
 
+function applyAnodizingOffLeadDay(
+  shipYmd: string,
+  anodizingEnabled?: boolean | null,
+): string {
+  if (anodizingEnabled !== false) return shipYmd;
+  return addBusinessDaysFromKstYmd(shipYmd, ANODIZING_OFF_LEAD_BUSINESS_DAYS);
+}
+
 export function computeEstimatedShipYmd({
   weeklyBatchDays,
   leadTimes,
@@ -125,6 +137,7 @@ export function computeEstimatedShipYmd({
   shippingMode = "normal",
   requestedAt = new Date(),
   productMode = null,
+  anodizingEnabled = true,
 }: EstimateShipParams): string | null {
   const requestedYmd = toKstYmd(requestedAt);
   if (!requestedYmd) return null;
@@ -134,7 +147,10 @@ export function computeEstimatedShipYmd({
     const baseYmd = beforeNoon
       ? nextBusinessDayInclusive(requestedYmd)
       : addBusinessDaysFromKstYmd(requestedYmd, 1);
-    return applyDesignLeadDay(baseYmd, productMode);
+    return applyAnodizingOffLeadDay(
+      applyDesignLeadDay(baseYmd, productMode),
+      anodizingEnabled,
+    );
   }
 
   // 구강스캔·디자인+생산: 턱스캔 메시 직경(>20mm)으로 d12 최대 리드가 잡히지 않게
@@ -156,7 +172,7 @@ export function computeEstimatedShipYmd({
   );
   // 2026-10-13: 택배 배송은 요일 선택 없음 — 접수 다음 영업일(리드타임 반영) 16:00 발송.
   void weeklyBatchDays;
-  return baseShipYmd;
+  return applyAnodizingOffLeadDay(baseShipYmd, anodizingEnabled);
 }
 
 export function computeEstimatedShipLabel(params: EstimateShipParams): string | null {

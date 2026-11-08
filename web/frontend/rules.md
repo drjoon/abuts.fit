@@ -586,7 +586,9 @@ Notes:
   - 헬퍼: `src/shared/practice/screwSupply.ts`, `web/backend/utils/labPracticeScrewSupply.js`
 
 - `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:
-  - 의뢰건 SSOT는 `caseInfos.anodizingEnabled`. 신규의뢰에서 카드 단위로 저장·생성 시 스냅샷.
+  - 의뢰건 SSOT는 `caseInfos.anodizingEnabled`. 신규의뢰에서 카드 단위로 저장·생성 시 스냅샷. 의뢰 화면 기본은 On. Off면 출고 +1영업일.
+  - On 안내(팝오버): 제조사는 낮은 전압으로 노란색 아노다이징 처리합니다. 기공소에서 높은 전압으로 다시 해도 예쁜 노란색이 됩니다.
+  - Off 안내(팝오버): 하루 더 늦게 출고됩니다.
   - 표시 우선순위는 `caseInfos.anodizingEnabled` → (레거시 미설정만) `business.requestSettings.anodizingEnabled` → 기본 ON.
   - 제조사 override 저장은 준비/가공 단계에서만 허용합니다.
   - 저장 API: `PATCH /api/requests/:id/anodizing-override`

@@ -330,6 +330,8 @@ const practiceTransferSchema = new mongoose.Schema(
        * 미설정 시 치과도착일 − 3영업일(기본). CA Request estimatedShipYmd 목표로 사용.
        */
       abutmentShipYmd: { type: String, default: null, trim: true },
+      /** 아노다이징. 미설정 레거시는 On. Off면 어벗 출고 +1영업일. */
+      anodizingEnabled: { type: Boolean, default: undefined },
       // 크라운 작업완료 후 치과 「생산 진행」또는 skip 시 자동 확정
       confirmedAt: { type: Date, default: null, index: true },
       confirmedBy: {

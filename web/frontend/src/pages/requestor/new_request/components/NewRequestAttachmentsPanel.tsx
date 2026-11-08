@@ -759,12 +759,17 @@ export function NewRequestAttachmentsPanel({
         ? "custom_abutment"
         : (fileInfo?.productMode ?? null);
     const effectiveShippingMode: ShippingMode = shippingMode;
+    const anodizingOn =
+      typeof fileInfo?.anodizingEnabled === "boolean"
+        ? fileInfo.anodizingEnabled
+        : anodizingEnabled !== false;
     const estimatedShip =
       effectiveShippingMode === "express"
         ? computeEstimatedShipLabel({
             shippingMode: "express",
             productMode,
             requestedAt: now,
+            anodizingEnabled: anodizingOn,
           })
         : (computeEstimatedShipLabel({
             weeklyBatchDays,
@@ -773,9 +778,15 @@ export function NewRequestAttachmentsPanel({
             productMode,
             shippingMode: "normal",
             requestedAt: now,
+            anodizingEnabled: anodizingOn,
           }) ??
           (getEstimatedShipForDiameter
-            ? getEstimatedShipForDiameter(diameter, "normal", productMode)
+            ? getEstimatedShipForDiameter(
+                diameter,
+                "normal",
+                productMode,
+                anodizingOn,
+              )
             : null));
     const isDesignMode =
       !productionOnly &&

@@ -253,6 +253,7 @@ export async function createRequest(req, res) {
       weeklyBatchDays:
         shippingMode === "normal" ? requestorWeeklyBatchDays : [],
       productMode: normalizedCaseInfos?.productMode ?? null,
+      anodizingEnabled: normalizedCaseInfos?.anodizingEnabled !== false,
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -1164,6 +1165,7 @@ export async function createRequestsBulk(req, res) {
             shippingMode: itemShippingMode,
             maxDiameter: normalizedCaseInfos?.maxDiameter,
             productMode: normalizedCaseInfos?.productMode ?? null,
+            anodizingEnabled: normalizedCaseInfos?.anodizingEnabled !== false,
             requestedAt: toKstYmd(requestedAt),
             weeklyBatchDays:
               itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
@@ -1177,6 +1179,7 @@ export async function createRequestsBulk(req, res) {
               weeklyBatchDays:
                 itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
               productMode: normalizedCaseInfos?.productMode ?? null,
+              anodizingEnabled: normalizedCaseInfos?.anodizingEnabled !== false,
             });
             scheduleCache.set(schedKey, productionSchedule);
           }

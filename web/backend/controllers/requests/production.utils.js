@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-08: 아노다이징 Off는 출고 +1영업일.
 // - 2026-10-02: dummyNextUpPinnedAt은 가공중 다음 맨 앞(Next Up 첫 칸).
 // - 2026-08-19: 제출 시 동일 직경/모드 생산스케줄을 memo로 재사용.
 // - 2026-08-13: manufacturerLeadTimes를 인자로 받아 제출 트랜잭션 안 재조회를 생략.
@@ -283,6 +284,7 @@ function getBulkWaitHours(diameterGroup) {
  * @param {Array} params.weeklyBatchDays - 주간 배치일 (e.g. ["mon", "wed"])
  * @param {"normal"|"express"} [params.shippingMode="normal"]
  * @param {string} [params.productMode] - design_custom_abutment 이면 출고 +1영업일
+ * @param {boolean} [params.anodizingEnabled=true] - false면 출고 +1영업일
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
@@ -291,6 +293,7 @@ export async function calculateInitialProductionSchedule({
   weeklyBatchDays,
   shippingMode = "normal",
   productMode = null,
+  anodizingEnabled = true,
   manufacturerLeadTimes: manufacturerLeadTimesOverride = null,
 }) {
   const mode = shippingMode === "express" ? "express" : "normal";
@@ -351,6 +354,12 @@ export async function calculateInitialProductionSchedule({
       shipYmd = await addKoreanBusinessDays({
         startYmd: shipYmd,
         days: designLeadDays,
+      });
+    }
+    if (anodizingEnabled === false) {
+      shipYmd = await addKoreanBusinessDays({
+        startYmd: shipYmd,
+        days: 1,
       });
     }
 
@@ -471,6 +480,12 @@ export async function calculateInitialProductionSchedule({
       days: 1,
     });
   }
+  if (anodizingEnabled === false && batchProcessingYmd) {
+    batchProcessingYmd = await addKoreanBusinessDays({
+      startYmd: batchProcessingYmd,
+      days: 1,
+    });
+  }
   const scheduledBatchProcessing = createKstDateTime(
     batchProcessingYmd,
     PACKING_CUTOFF_HOUR,
@@ -540,6 +555,7 @@ export async function resolveNormalParcelEstimatedShipYmdKst({
   maxDiameter = 8,
   weeklyBatchDays = [],
   productMode = null,
+  anodizingEnabled = true,
 } = {}) {
   const schedule = await calculateInitialProductionSchedule({
     shippingMode: "normal",
@@ -547,6 +563,7 @@ export async function resolveNormalParcelEstimatedShipYmdKst({
     requestedAt,
     weeklyBatchDays,
     productMode,
+    anodizingEnabled,
   });
   return toKstYmd(schedule.scheduledShipPickup);
 }
@@ -578,7 +595,8 @@ export function createProductionScheduleMemo() {
       params.requestedAt instanceof Date
         ? params.requestedAt.getTime()
         : Number(new Date(params.requestedAt || 0).getTime()) || 0;
-    const key = `${shippingMode}|${diameterKey}|${designMode ? 1 : 0}|${weekly}|${requestedAtMs}`;
+    const anoKey = params.anodizingEnabled === false ? 0 : 1;
+    const key = `${shippingMode}|${diameterKey}|${designMode ? 1 : 0}|${anoKey}|${weekly}|${requestedAtMs}`;
     if (!memo.has(key)) {
       memo.set(key, calculateInitialProductionSchedule(params));
     }
@@ -796,6 +814,7 @@ export async function recalculateProductionSchedule({
   weeklyBatchDays,
   shippingMode = "normal",
   productMode = null,
+  anodizingEnabled = true,
 }) {
   // 준비 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "준비") {
@@ -809,6 +828,7 @@ export async function recalculateProductionSchedule({
     weeklyBatchDays,
     shippingMode,
     productMode,
+    anodizingEnabled,
   });
 }
 

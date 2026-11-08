@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AnodizingOptionNote } from "@/shared/anodizing/anodizingOptionCopy";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -304,6 +305,7 @@ export function DesignSoftwareSettingsDialog({
                   </Label>
                 </div>
               </RadioGroup>
+              <AnodizingOptionNote enabled={anodizingEnabled !== false} />
             </div>
           ) : null}
         </div>

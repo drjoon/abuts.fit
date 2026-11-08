@@ -472,12 +472,14 @@ export async function buildShippingEstimate(req) {
 
   const { calculateInitialProductionSchedule } =
     await import("./production.utils.js");
+  const anodizingEnabled = req.query?.anodizingEnabled === "false" ? false : true;
   const schedule = await calculateInitialProductionSchedule({
     maxDiameter,
     requestedAt,
     weeklyBatchDays,
     shippingMode: mode,
     productMode,
+    anodizingEnabled,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)

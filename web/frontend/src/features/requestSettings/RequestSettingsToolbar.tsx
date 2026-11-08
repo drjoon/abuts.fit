@@ -16,6 +16,7 @@ import { useState } from "react";
 import { Droplets, Monitor, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
+import { anodizingPopoverNote } from "@/shared/anodizing/anodizingOptionCopy";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
 import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
 import type { ShortPostRetentionChoice } from "@/pages/requestor/new_request/utils/shortPostRetention";
@@ -53,7 +54,6 @@ export function RequestSettingsToolbar({
   retentionGroove = "none",
   onRetentionGrooveChange,
   className,
-  anodizingTitle = "기공소 기본값으로 저장되며, 이후 제조 주문 메타데이터에 반영됩니다",
   iconOnly = false,
   shortLabels = false,
   menu = false,
@@ -62,7 +62,6 @@ export function RequestSettingsToolbar({
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
   const anodizingFull = anodizingEnabled ? "아노다이징 On" : "아노다이징 Off";
-  const anodizingLabel = shortLabels && !menu ? "아노" : anodizingFull;
   const retentionLabel = retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음";
   const compact = shortLabels && !menu;
   const iconButton = menu || (iconOnly && !compact);
@@ -121,58 +120,47 @@ export function RequestSettingsToolbar({
           />
         </>
       ) : null}
-      {menu && onAnodizingChange ? (
-        <CaseOptionPopoverButton
-          className="h-8 w-8 px-0"
-          hideLabel
-          icon={
-            <Droplets
-              className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                anodizingEnabled ? "text-sky-600" : "opacity-50",
-              )}
-            />
-          }
-          label={anodizingEnabled ? "아노다이징 On" : "아노다이징 Off"}
-          value={anodizingEnabled ? "on" : "off"}
-          options={[
-            { value: "on", label: "아노다이징 On" },
-            { value: "off", label: "아노다이징 Off" },
-          ]}
-          disabled={anodizingSaving}
-          onChange={(next) => onAnodizingChange(next === "on")}
-        />
-      ) : (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
+      <CaseOptionPopoverButton
         className={cn(
-          "shrink-0 gap-1",
-          compact
-            ? "h-8 px-2 text-xs"
-            : iconButton
-              ? "h-8 w-8 px-0"
-              : "h-9 w-9 px-0 gap-1.5 sm:w-auto sm:px-3",
+          menu
+            ? "h-8 w-8 px-0"
+            : compact
+              ? "h-8 px-2 text-xs"
+              : iconButton
+                ? "h-8 w-8 px-0"
+                : "h-9 w-9 px-0 sm:w-auto sm:px-3",
           !anodizingEnabled && "text-muted-foreground",
         )}
+        hideLabel={menu || (iconButton && !compact)}
+        labelClassName={
+          menu || iconButton || compact ? undefined : "hidden sm:inline"
+        }
+        icon={
+          <Droplets
+            className={cn(
+              "shrink-0",
+              menu || compact ? "h-3.5 w-3.5" : "h-4 w-4",
+              anodizingEnabled ? "text-sky-600" : "opacity-50",
+            )}
+          />
+        }
+        label={anodizingFull}
+        value={anodizingEnabled ? "on" : "off"}
+        options={[
+          { value: "on", label: "아노다이징 On" },
+          { value: "off", label: "아노다이징 Off" },
+        ]}
         disabled={anodizingSaving}
-        onClick={() => onToggleAnodizing?.()}
-        aria-label={anodizingFull}
-        title={anodizingTitle}
-      >
-        <Droplets
-          className={cn(
-            "shrink-0",
-            compact ? "h-3.5 w-3.5" : "h-4 w-4",
-            anodizingEnabled ? "text-sky-600" : "opacity-50",
-          )}
-        />
-        <span className={cn(iconButton && !compact ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
-          {anodizingLabel}
-        </span>
-      </Button>
-      )}
+        optionNote={anodizingPopoverNote}
+        onChange={(next) => {
+          const enabled = next === "on";
+          if (onAnodizingChange) {
+            onAnodizingChange(enabled);
+            return;
+          }
+          if (enabled !== anodizingEnabled) onToggleAnodizing?.();
+        }}
+      />
     </>
   );
 
