@@ -3,8 +3,10 @@
 // - bg/pc1/rhino-server/compute/core/processing.py (메타 등록·connectionDiameter 덮어쓰기)
 // - web/backend/services/abutmentStl/pipeline.worker.js
 //
-// Rhino 없이 1-stl → 2-filled를 만든다. 순서는 process_abutment_stl.main과 같다:
-// import → align → 11° 커넥션 추가·짧은 원뿔을 PRC 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지 연장·원점 재정렬 → finishline → 스크류홀 패치 → 직경 → fill_steps → export → 메타.
+// Rhino 없이 1-stl → 2-filled를 만든다.
+// import → align → 11° 커넥션 추가·짧은 원뿔을 PRC 면(Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지 연장·원점 재정렬 → finishline → 직경 → fill_steps → export → 메타.
+// 스크류홀은 여기서 막지 않는다. 커프·포스트를 다듬은 뒤 상부 개구를 주변 면에 맞춰 메운다.
+// 먼저 막으면 캡이 거친 테두리를 따라 붙고, 그 모서리에서 다듬기가 멈춘다.
 // 원뿔 목표 높이는 cuffConnectionSpecs.prcConeHeightMm. 스펙 Z_a에서 멈추면 커넥션 PRC Finish 면과 단이 난다.
 // preflight는 필레 검사만 한다. 마진 코너 정점은 옮기지 않는다.
 // 커프·포스트 다듬기는 제조사 준비에서만 한다. 이미 보정된 STL(surfacePrepared)은 정렬만 한다.
@@ -12,7 +14,8 @@ import { Mesh, writeBinaryStl, parseStl, identity, multiply, translation } from 
 import { applyConnectionTaper } from "./connectionTaperFill.js";
 import { alignMeshToOrigin, ALIGN_MODULE_VERSION, JS_ALIGN_PORT_VERSION } from "./align.js";
 import { detectFinishLine, finishlineZExtrema, sanitizeFinishlinePoints } from "./finishline.js";
-import { buildScrewholePatch, SCREWHOLE_PARAMS } from "./fillScrewholes.js";
+import { SCREWHOLE_PARAMS } from "./fillScrewholes.js";
+import { HOLE_FILL_PATCH_ATTRIBUTE, fillUpperScrewHole } from "../../utils/screwHoleFill.js";
 import { buildVerticalBandSolid } from "./fillSteps.js";
 import { calculateStlMetadataFromBuffer, tiltAxisFromMesh } from "./stlMetadata.js";
 import {
@@ -25,7 +28,7 @@ import { runCuffBlendJob } from "./cuffBlendJob.js";
 import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
 import { POST_SMOOTH_PATCH_ATTRIBUTE } from "./postSmooth.js";
 
-export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-2`;
+export const ABUTMENT_STL_JS_VERSION = `abutment-stl-js-1+align-${ALIGN_MODULE_VERSION}+${JS_ALIGN_PORT_VERSION}+conn-taper-2+hole-after-smooth`;
 
 /**
  * align이 mesh.transform으로 쌓는 행렬. aligned = M * original.
@@ -212,7 +215,32 @@ function finishPreflight({
  * 날카로운 마진이 남아 있는 정렬 메시에 제조사 준비와 같은 순서로 커넥션·스크류홀·fill·커프·포스트를 적용한다.
  * 포스트 다듬기는 이 모서리를 기준으로 한다. 필레로 모서리를 없앤 뒤에 돌리면 표면이 거칠어진다.
  */
-function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, implantProfile, connection, screwholeParams, log }) {
+function bufferHasScrewCap(buffer) {
+  if (!buffer?.length || buffer.length < 84) return false;
+  const triCount = buffer.readUInt32LE(80);
+  if (84 + triCount * 50 !== buffer.length) return false;
+  for (let t = 0; t < triCount; t += 1) {
+    if (buffer.readUInt16LE(84 + t * 50 + 48) === HOLE_FILL_PATCH_ATTRIBUTE) return true;
+  }
+  return false;
+}
+
+function sealScrewHoleBuffer(buffer, log, label) {
+  if (!buffer?.length || bufferHasScrewCap(buffer)) return buffer;
+  try {
+    const sealed = fillUpperScrewHole(buffer, { dropDetached: false });
+    if (sealed.ok && sealed.buffer?.length) {
+      log(`[${label}] screw hole sealed tris=${sealed.stats?.patchTriangles}`);
+      return sealed.buffer;
+    }
+    log(`[${label}] screw hole skipped: ${sealed.reason || ""}`.trim());
+  } catch (error) {
+    log(`[${label}] screw hole failed: ${error?.message || error}`);
+  }
+  return buffer;
+}
+
+function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, implantProfile, connection, log }) {
   let matrix = alignMatrix;
   let fl = finishLine;
   try {
@@ -228,12 +256,6 @@ function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, impla
   }
 
   let soup = mesh.toTriangleSoup();
-  try {
-    const screw = buildScrewholePatch(mesh, { params: screwholeParams, log });
-    if (screw.patch) soup = appendTriangles(soup, screw.patch);
-  } catch (error) {
-    log(`[stl-correct] screwhole failed: ${error?.message || error}`);
-  }
   const combined = Mesh.fromTriangleSoup(soup);
   try {
     const res = buildVerticalBandSolid(combined, { log });
@@ -258,6 +280,8 @@ function prepareSharpMeshLikeManufacturer({ mesh, finishLine, alignMatrix, impla
   } catch (error) {
     log(`[stl-correct] cuff job failed: ${error?.message || error}`);
   }
+  // 커프 작업이 이미 막았으면 속성으로 건너뛴다. 실패해 열린 채로 남은 경우만 여기서 막는다.
+  filledBuf = sealScrewHoleBuffer(filledBuf, log, "stl-correct");
   return { filledBuf, matrix, finishLine: fl };
 }
 
@@ -272,7 +296,6 @@ function finishCorrectedDesign({
   alignMatrix,
   implantProfile,
   connection,
-  screwholeParams,
   logs,
   perf,
   mark,
@@ -305,7 +328,6 @@ function finishCorrectedDesign({
           alignMatrix,
           implantProfile,
           connection,
-          screwholeParams,
           log,
         });
         const smoothed = parseStl(prepared.filledBuf);
@@ -467,7 +489,6 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
       implantProfile,
       connection: options.connection,
       targetDiameter,
-      screwholeParams,
       logs,
       perf,
       mark,
@@ -476,16 +497,21 @@ export async function runAbutmentStlPipeline(inputBuffer, options = {}) {
     });
   }
 
-  t0 = performance.now();
-  let screw = { patch: null, result: null };
+  // 스크류홀은 면을 다듬은 뒤에 막는다. 여기 출력은 개구가 열려 있다.
+  const screw = {
+    patch: null,
+    result: {
+      filled_count: 0,
+      selected_loop_index: null,
+      candidate_count: 0,
+      loop_count: 0,
+      ok: true,
+      reason: options.surfacePrepared ? "already-prepared" : "after-surface-smooth",
+    },
+  };
+  perf.screwhole = 0;
   let soup = mesh.toTriangleSoup();
   let combined = mesh;
-  if (!options.surfacePrepared) {
-    screw = buildScrewholePatch(mesh, { params: screwholeParams, log });
-    if (screw.patch) soup = appendTriangles(soup, screw.patch);
-    combined = Mesh.fromTriangleSoup(soup);
-  }
-  mark("screwhole", t0);
 
   t0 = performance.now();
   const diameter = analyzeDiameters(combined);

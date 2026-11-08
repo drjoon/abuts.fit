@@ -2,6 +2,7 @@
 // - web/backend/services/abutmentStl/cuffBlend.worker.js (EBS 로컬 워커)
 // - web/backend/services/abutmentStl/cuffBlendLambda.handler.js (람다)
 // - web/backend/services/abutmentStl/postSmooth.js (커프 보정이 적용되면 이어서 포스트 계단 결 다듬기)
+// - web/backend/utils/screwHoleFill.js (다듬은 뒤에 상부 스크류홀을 곡면으로 막음)
 // - web/backend/services/abutmentStl/connectionTaperSmooth.js (마지막에 커넥션 11° 원뿔 면 다듬기)
 //
 // 커프 보정 한 건. 워커와 람다가 같은 함수를 쓴다.
@@ -10,6 +11,7 @@ import { blendCuffJunction, measureCuffConnection, proposeCuffRedesign, redesign
 import { smoothPostAboveFinishLine } from "./postSmooth.js";
 import { smoothConnectionTaper } from "./connectionTaperSmooth.js";
 import { parseStl, writeBinaryStl } from "./meshCore.js";
+import { fillUpperScrewHole } from "../../utils/screwHoleFill.js";
 
 /**
  * 가장 짧은 변이 1e-6mm(≈float32 정밀도 한계) 미만인 퇴화 삼각형을 뺀다.
@@ -61,6 +63,8 @@ const measure = (input) => {
 const RUNNERS = { auto: blendCuffJunction, redesign: redesignCuffBowl, propose: proposeCuffRedesign, measure };
 /** auto는 커프 보정이 안 돼도 포스트는 다듬는다. post는 커프 스펙이 없을 때 포스트만. */
 const POST_ON_INPUT_MODES = new Set(["auto", "post"]);
+/** 가공에 쓰는 모드만 홀을 막는다. 제안·측정은 메시를 가공 파일로 쓰지 않는다. */
+const SEAL_MODES = new Set(["auto", "redesign", "post"]);
 
 /** 포스트 다듬기는 실패해도 커프 보정 결과(또는 입력)를 그대로 쓴다. */
 function applyPostSmooth(result, source, finishLine) {
@@ -79,6 +83,24 @@ function applyPostSmooth(result, source, finishLine) {
     ...result,
     buffer: post.ok && post.buffer ? post.buffer : result.buffer,
     detail: { ...(result.detail || {}), postSmooth },
+  };
+}
+
+/**
+ * 포스트를 다듬은 뒤에 상부 스크류홀을 막는다.
+ * 다듬기 전에 막으면 캡이 거친 림을 따라 붙고, 그 테두리에서 다듬기가 멈춘다.
+ */
+function sealScrewHole(result, fallbackInput) {
+  const source = result.buffer?.length ? result.buffer : fallbackInput;
+  if (!source?.length) return result;
+  const filled = fillUpperScrewHole(source, { dropDetached: false });
+  const screwHole = filled.ok
+    ? { ok: true, ...(filled.stats || {}) }
+    : { ok: false, reason: filled.reason || "스크류홀을 막지 못했습니다." };
+  return {
+    ...result,
+    buffer: filled.ok && filled.buffer?.length ? filled.buffer : result.buffer,
+    detail: { ...(result.detail || {}), screwHole },
   };
 }
 
@@ -119,5 +141,6 @@ export function runCuffBlendJob(input, mode = "auto", options = {}) {
       };
     }
   }
+  if (SEAL_MODES.has(mode)) result = sealScrewHole(result, input);
   return result;
 }

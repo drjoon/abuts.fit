@@ -26,6 +26,7 @@ import { applyAutoCuffBlendSafely, isCuffBlendAutoEnabled } from "./cuffBlend.se
 import { isPersistedCorrectedDesignKey } from "./correctLambda.service.js";
 import { runFilledStlOffRequest } from "./filledLambda.service.js";
 import { describeJsPipelineFailure } from "./runPipelineInWorker.js";
+import { fillUpperScrewHoleInWorker } from "../../utils/screwHoleFill.service.js";
 
 /** 끄기: ABUTMENT_STL_JS_PRIMARY=false (Rhino만 사용) */
 export function isAbutmentStlJsPrimaryEnabled() {
@@ -176,7 +177,9 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   const outName = filledNameOf(originalName);
   const s3Key = `requests/${requestId}/2-filled/${outName}`;
   // 마진 코너는 그대로 두고, 커프·커넥션·포스트 다듬기는 제조사 준비에서만 한다.
+  // 스크류홀은 그 다듬기 다음에 막는다. 파이프라인 출력은 개구가 열려 있다.
   let output = js.outputBuffer;
+  let holeSealed = false;
   let cuffBlendResult = js.cuffBlendResult?.record
     ? {
         record: { ...js.cuffBlendResult.record, s3Key },
@@ -193,7 +196,14 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     if (blended?.record) {
       cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };
     }
-    if (blended?.buffer?.length) output = blended.buffer;
+    if (blended?.buffer?.length) {
+      output = blended.buffer;
+      holeSealed = Boolean(blended.detail?.screwHole?.ok);
+    }
+  }
+  if (!surfacePrepared && !holeSealed) {
+    const sealed = await fillUpperScrewHoleInWorker(output, { dropDetached: false });
+    if (sealed?.ok && sealed.buffer?.length) output = sealed.buffer;
   }
   lap("cuff");
   const cancelled = await Request.findOne({ requestId })

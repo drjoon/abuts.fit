@@ -7,7 +7,7 @@ import { fillUpperScrewHole } from "./screwHoleFill.js";
 
 try {
   const input = Buffer.from(workerData.input.buffer, workerData.input.byteOffset, workerData.input.byteLength);
-  const result = fillUpperScrewHole(input);
+  const result = fillUpperScrewHole(input, workerData.options || {});
   if (result.ok && result.buffer) {
     const out = result.buffer;
     const bytes = new Uint8Array(out.buffer, out.byteOffset, out.byteLength).slice();

@@ -3,6 +3,7 @@
 // - web/backend/utils/screwHoleFill.js (HF: 채널 벽 림 기반, 수동 버튼)
 //
 // fill_screwholes.py(auto 모드) 이식. 탐사 원을 -Z로 투사한 루프에 원판 패치를 덧붙인다(용접 없음).
+// 가공 STL은 이 패치를 쓰지 않는다. 포스트를 다듬은 뒤 utils/screwHoleFill.js가 개구를 곡면으로 막는다.
 // Curve.ProjectToMesh는 원 위 표본점의 수직 광선 첫 교점으로 대신한다.
 
 /** 현재 fill_screwholes.py 값. */

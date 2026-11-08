@@ -16,7 +16,7 @@ const QUEUE_TIMEOUT_MS = Number(process.env.SCREW_HOLE_FILL_QUEUE_TIMEOUT_MS || 
  * fillUpperScrewHole을 worker에서 돌린다. timeout은 슬롯을 얻은 뒤부터 센다.
  * @returns {Promise<{ ok: boolean, reason?: string, buffer?: Buffer, stats?: object, busy?: boolean }>}
  */
-export async function fillUpperScrewHoleInWorker(buffer) {
+export async function fillUpperScrewHoleInWorker(buffer, options = {}) {
   try {
     const msg = await runMeshWorker(WORKER_URL, {
       label: "screw-hole-fill",
@@ -24,7 +24,7 @@ export async function fillUpperScrewHoleInWorker(buffer) {
       queueTimeoutMs: QUEUE_TIMEOUT_MS,
       buildWorkerData: () => {
         const input = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).slice();
-        return { workerData: { input }, transferList: [input.buffer] };
+        return { workerData: { input, options }, transferList: [input.buffer] };
       },
     });
     const result = msg?.result || { ok: false, reason: "스크류홀 메우기 결과가 없습니다." };
