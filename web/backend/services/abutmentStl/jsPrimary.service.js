@@ -27,6 +27,7 @@ import { isPersistedCorrectedDesignKey } from "./correctLambda.service.js";
 import { runFilledStlOffRequest } from "./filledLambda.service.js";
 import { describeJsPipelineFailure } from "./runPipelineInWorker.js";
 import { fillUpperScrewHoleInWorker } from "../../utils/screwHoleFill.service.js";
+import { elapsedMs, jsStageTiming } from "./jsDuration.js";
 
 /** 끄기: ABUTMENT_STL_JS_PRIMARY=false (Rhino만 사용) */
 export function isAbutmentStlJsPrimaryEnabled() {
@@ -91,7 +92,7 @@ function assertJsResultUsable(js) {
   if (!(maxD > 0)) throw new JsPipelineProblem("diameter_missing", "직경을 계산하지 못했습니다.");
 }
 
-async function recordJsFailure(requestId, reason, detail) {
+async function recordJsFailure(requestId, reason, detail, jsDuration) {
   const now = new Date();
   const message = String(detail || reason).slice(0, 300);
   await Request.updateOne(
@@ -104,6 +105,7 @@ async function recordJsFailure(requestId, reason, detail) {
           updatedAt: now,
           error: message,
         },
+        ...(jsDuration ? { "caseInfos.jsDuration": jsDuration } : {}),
       },
     },
   );
@@ -123,7 +125,20 @@ async function recordJsFailure(requestId, reason, detail) {
  * 백엔드 JS 파이프라인으로 Filled STL을 만들어 Rhino 콜백과 같은 경로로 등록한다.
  * 예외는 던진다(호출부가 카드에 JS 실패를 남긴다).
  */
+function cuffTiming(blended, wallMs) {
+  if (!blended) return null;
+  return jsStageTiming({
+    engine: blended.engine,
+    wallMs,
+    computeMs: blended.durationMs,
+    postMs: blended.detail?.postSmooth?.ms ?? null,
+    status: blended.status || null,
+  });
+}
+
 export async function processRequestWithJsPipeline({ requestId, fileName }) {
+  const started = Date.now();
+  const jsDuration = { at: new Date() };
   const stages = {};
   let mark = Date.now();
   const lap = (name) => {
@@ -131,6 +146,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
     stages[name] = now - mark;
     mark = now;
   };
+  try {
   const request = await Request.findOne({ requestId }).select({ caseInfos: 1, manufacturerStage: 1 }).lean();
   if (!request) throw new JsPipelineProblem("request_not_found", "의뢰를 찾지 못했습니다.");
   if (String(request.manufacturerStage || "").trim() === "취소") return { skipped: "cancelled" };
@@ -149,13 +165,21 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   // 의뢰 STL은 원본이다. 마진 코너는 옮기지 않는다.
   // 예전에 보정본 키로 저장된 파일만 커프·포스트가 이미 들어 있어 다시 다듬지 않는다.
   const surfacePrepared = designAlreadyCorrected;
+  const filledWall0 = Date.now();
   const js = await runFilledStlOffRequest(inputBuffer, {
+    requestId,
     targetDiameter: inputs.targetDiameter,
     implantProfile: inputs.implantProfile,
     ...(inputs.connection ? { connection: inputs.connection } : {}),
     ...(storedFinishLine ? { finishLinePoints: storedFinishLine.points } : {}),
     ...(designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
     ...(surfacePrepared ? { surfacePrepared: true } : {}),
+  });
+  jsDuration.filled = jsStageTiming({
+    engine: js.engine,
+    wallMs: elapsedMs(filledWall0),
+    computeMs: js.durationMs,
+    perf: js.perf || null,
   });
   // 공구 R 필렛 보정의 동의 SSOT는 의뢰 파일이다. 보정본 키로 들어왔으면 의뢰자가 업로드 때 동의해
   // 이미 적용된 것이고, 아니면 미적용으로 기록한다. 제조사 준비에서는 보정을 새로 적용하지 않는다.
@@ -187,12 +211,15 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       }
     : null;
   if (!cuffBlendResult && isCuffBlendAutoEnabled() && !surfacePrepared) {
+    const cuffWall0 = Date.now();
     const blended = await applyAutoCuffBlendSafely({
       s3Key,
       sourceBuffer: output,
       caseInfos: { ...ci, finishLine: js.finishLine },
+      requestId,
       writeBack: false,
     });
+    jsDuration.cuff = cuffTiming(blended, elapsedMs(cuffWall0));
     if (blended?.record) {
       cuffBlendResult = { record: blended.record, fileSize: blended.fileSize || null };
     }
@@ -214,7 +241,9 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       .trim()
       .toUpperCase() === "CANCELLED"
   ) {
-    return { skipped: "cancelled" };
+    jsDuration.totalMs = elapsedMs(started);
+    await Request.updateOne({ requestId }, { $set: { "caseInfos.jsDuration": jsDuration } }).catch(() => null);
+    return { skipped: "cancelled", perf: js.perf, stages, jsDuration };
   }
   const uploaded = await uploadFileToS3(
     output,
@@ -223,6 +252,8 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   );
   lap("upload");
 
+  jsDuration.totalMs = elapsedMs(started);
+  jsDuration.stagesMs = { ...stages };
   const { registerProcessedFile } = await import("../../controllers/bg/bg.controller.js");
 
   // 메타데이터와 2-filled를 한 번에 저장한다. 문서를 두 번 읽고 쓰지 않는다.
@@ -259,10 +290,17 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       finishLine: js.finishLine,
       ...(js.hexRotation ? { hexRotation: js.hexRotation } : {}),
     },
+    jsDuration,
   });
   lap("register");
   await Request.updateOne({ requestId }, { $unset: { "productionSchedule.stlJsFallback": "" } }).catch(() => null);
-  return { ok: true, outName, perf: js.perf, stages, outBytes: output.length };
+  return { ok: true, outName, perf: js.perf, stages, outBytes: output.length, jsDuration };
+  } catch (error) {
+    jsDuration.totalMs = elapsedMs(started);
+    jsDuration.stagesMs = stages;
+    error.jsDuration = jsDuration;
+    throw error;
+  }
 }
 
 /**
@@ -294,15 +332,17 @@ export async function runJsPrimaryThenFallback({ requestId, fileName }) {
     });
     const perf = result.perf ? ` perf=${JSON.stringify(result.perf)}` : "";
     const stages = result.stages ? ` stagesMs=${JSON.stringify(result.stages)} outBytes=${result.outBytes}` : "";
+    const duration = result.jsDuration ? ` jsDuration=${JSON.stringify(result.jsDuration)}` : "";
     console.log(
-      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${stages}${perf}`}`,
+      `[abutment-stl-js] requestId=${requestId} ${result.skipped ? `skipped=${result.skipped}` : `ok ${Date.now() - started}ms${stages}${perf}`}${duration}`,
     );
   } catch (error) {
     const described = describeJsPipelineFailure(error);
     const reason = described.reason;
     const detail = described.detail;
-    console.warn(`[abutment-stl-js] failed requestId=${requestId} reason=${reason}: ${detail}`);
-    await recordJsFailure(requestId, reason, detail).catch((e) =>
+    const duration = error?.jsDuration ? ` jsDuration=${JSON.stringify(error.jsDuration)}` : "";
+    console.warn(`[abutment-stl-js] failed requestId=${requestId} reason=${reason}: ${detail}${duration}`);
+    await recordJsFailure(requestId, reason, detail, error?.jsDuration).catch((e) =>
       console.warn("[abutment-stl-js] recordJsFailure failed", e?.message || e),
     );
     const { abortDummyCamAfterFilled } = await import(

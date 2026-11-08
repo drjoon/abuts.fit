@@ -12,6 +12,7 @@ import {
   headObjectSizeInS3,
   putObjectToS3,
 } from "../../utils/s3.utils.js";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runAbutmentStlPipelineInWorker } from "./runPipelineInWorker.js";
 
 const POLL_MS = 1000;
@@ -119,7 +120,19 @@ export async function buildCorrectedDesignOffRequest(buffer, inputs, id) {
     error.reason = "correction_failed";
     throw error;
   }
-  if (shouldUseStlLambda(correctedStlLambdaName())) return buildOnLambda(buffer, inputs, id);
+  const wall0 = Date.now();
+  const engine = shouldUseStlLambda(correctedStlLambdaName()) ? "lambda" : "worker";
+  try {
+    const out = engine === "lambda" ? await buildOnLambda(buffer, inputs, id) : await buildOnWorkerLogged(buffer, inputs, id);
+    logJsDuration("correct", { engine, wallMs: elapsedMs(wall0), extra: `bytes=${out?.length || 0}` });
+    return out;
+  } catch (error) {
+    logJsDuration("correct", { engine, wallMs: elapsedMs(wall0), extra: `failed ${error?.message || error}` });
+    throw error;
+  }
+}
+
+async function buildOnWorkerLogged(buffer, inputs, id) {
   console.warn("[stl-correct] 람다를 쓰지 않아 백엔드 워커로 보정 STL을 만듭니다.");
   return buildOnWorker(buffer, inputs, id);
 }

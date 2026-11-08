@@ -602,6 +602,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     cuffBlendResult,
     // 의뢰자가 필레 다음 제조사 준비 파이프라인까지 끝낸 보정본. 여기서 커프를 다시 돌리지 않는다.
     skipCuffBlend,
+    // JS 파이프라인이 잰 filled·cuff 시간. 의뢰 메타에만 남긴다.
+    jsDuration,
   } = req.body;
 
   if (!fileName || !sourceStep) {
@@ -1159,6 +1161,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             : await applyAutoCuffBlendSafely({
               s3Key: s3Info?.s3Key,
               caseInfos: request?.caseInfos,
+              requestId: request?.requestId,
               finishLine:
                 metadataUpdates["caseInfos.finishLine"] ||
                 (isUserCapturedFinishLine(request?.caseInfos?.finishLine)
@@ -1168,6 +1171,19 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         if (cuff) {
           updateData["caseInfos.cuffBlend"] = cuff.record;
           if (cuff.fileSize) filledMeta.fileSize = cuff.fileSize;
+        }
+        if (jsDuration && typeof jsDuration === "object") {
+          updateData["caseInfos.jsDuration"] = jsDuration;
+        } else if (cuff && Number.isFinite(cuff.durationMs)) {
+          updateData["caseInfos.jsDuration"] = {
+            at: now,
+            cuff: {
+              engine: cuff.engine || null,
+              computeMs: Math.round(cuff.durationMs),
+              postMs: cuff.detail?.postSmooth?.ms ?? null,
+              status: cuff.status || null,
+            },
+          };
         }
         Object.assign(updateData, mongoSetFilledStlFile(filledMeta));
         // 준비 탭「라이노 작업중」— 생성 완료 시 GENERATING 해제

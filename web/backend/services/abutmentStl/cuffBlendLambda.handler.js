@@ -10,6 +10,7 @@
 // 테스트·프로덕션은 execution.js가 람다를 부르므로, 스펙/이음 로직을 바꾸면
 // scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh 로 이 함수도 같이 갱신한다. 백엔드만 올리면 준비 재생성에 옛 코드가 남는다.
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runCuffBlendJob } from "./cuffBlendJob.js";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || "ap-northeast-2" });
@@ -47,16 +48,38 @@ export async function handler(event) {
   assertTempKey(outKey);
   assertTempKey(resultKey);
   if (errKey) assertTempKey(errKey);
+  const started = Date.now();
+  const requestId = event?.requestId;
   try {
     const input = await readObject(bucket, inKey);
+    const compute0 = Date.now();
     const result = runCuffBlendJob(input, event?.mode || "auto", event?.options || {});
+    const durationMs = elapsedMs(compute0);
+    logJsDuration("cuff", {
+      requestId,
+      engine: "lambda",
+      computeMs: durationMs,
+      wallMs: elapsedMs(started),
+      extra: `mode=${event?.mode || "auto"} status=${result.status || ""}`,
+    });
     const { buffer, ...rest } = result;
     if (buffer?.length) await writeObject(bucket, outKey, buffer, "application/octet-stream");
     // 결과 JSON은 출력 STL을 쓴 뒤에 올린다. 웹은 결과 JSON이 보이면 출력을 읽는다.
-    await writeObject(bucket, resultKey, Buffer.from(JSON.stringify({ ...rest, hasOutput: !!buffer?.length })), "application/json");
+    await writeObject(
+      bucket,
+      resultKey,
+      Buffer.from(JSON.stringify({ ...rest, hasOutput: !!buffer?.length, engine: "lambda", durationMs })),
+      "application/json",
+    );
     return { ok: true, status: rest.status, bytes: buffer?.length || 0 };
   } catch (error) {
     const message = String(error?.message || error || "cuff_error").slice(0, 300);
+    logJsDuration("cuff", {
+      requestId,
+      engine: "lambda",
+      wallMs: elapsedMs(started),
+      extra: `failed ${message}`,
+    });
     if (errKey) await writeObject(bucket, errKey, Buffer.from(message), "text/plain").catch(() => null);
     throw error;
   }

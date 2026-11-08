@@ -53,7 +53,7 @@ async function pollResult({ outKey, resultKey, errKey }, waitMs) {
 }
 
 /** 람다 호출·S3 업로드가 실패하면 throw한다(호출 측이 로컬 워커로 돌린다). */
-export async function runCuffBlendOnLambda(buffer, mode, options, { timeoutMs }) {
+export async function runCuffBlendOnLambda(buffer, mode, options, { timeoutMs, requestId } = {}) {
   const id = crypto.randomBytes(16).toString("hex");
   const base = `temp/stl-cuff/${id}`;
   const keys = {
@@ -69,7 +69,13 @@ export async function runCuffBlendOnLambda(buffer, mode, options, { timeoutMs })
       .invoke({
         FunctionName: cuffBlendLambdaName(),
         InvocationType: "Event",
-        Payload: JSON.stringify({ bucket, ...keys, mode, options: options || {} }),
+        Payload: JSON.stringify({
+          bucket,
+          ...keys,
+          mode,
+          options: options || {},
+          ...(requestId ? { requestId: String(requestId).slice(0, 40) } : {}),
+        }),
       })
       .promise();
     return await pollResult(keys, timeoutMs + POLL_SLACK_MS);

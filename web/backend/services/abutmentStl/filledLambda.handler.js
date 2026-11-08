@@ -9,6 +9,7 @@
 // pipeline.applyConnectionTaper가 짧은 11°를 PRC 면(prcConeHeightMm, Regular RH는 덴티움 0.33·덴티스·메가젠 0.4·그 외 0.3)까지 연장한다.
 // 커프 이음은 별도 cuff 람다. 원뿔 길이·원점 규칙을 바꾸면 deploy-stl-filled-lambda.sh 도 같이 갱신한다.
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runAbutmentStlPipeline } from "./pipeline.js";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || "ap-northeast-2" });
@@ -57,8 +58,11 @@ export async function handler(event) {
   assertTempKey(outKey);
   assertTempKey(resultKey);
   if (errKey) assertTempKey(errKey);
+  const started = Date.now();
+  const requestId = event?.requestId;
   try {
     const input = await readObject(bucket, inKey);
+    const compute0 = Date.now();
     const js = await runAbutmentStlPipeline(input, {
       targetDiameter: event?.targetDiameter ?? null,
       implantProfile: event?.implantProfile || {},
@@ -67,14 +71,29 @@ export async function handler(event) {
       ...(event?.designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
       ...(event?.surfacePrepared ? { surfacePrepared: true } : {}),
     });
+    js.engine = "lambda";
+    js.durationMs = elapsedMs(compute0);
     if (!js?.outputBuffer?.length) {
       throw new Error("JS 출력 STL이 비어 있습니다.");
     }
+    logJsDuration("filled", {
+      requestId,
+      engine: "lambda",
+      computeMs: js.durationMs,
+      wallMs: elapsedMs(started),
+      extra: `perf=${JSON.stringify(js.perf || {})}`,
+    });
     await writeObject(bucket, outKey, js.outputBuffer, "application/octet-stream");
     await writeObject(bucket, resultKey, resultJson(js), "application/json");
     return { ok: true, bytes: js.outputBuffer.length };
   } catch (error) {
     const message = String(error?.message || error || "js_error").slice(0, 300);
+    logJsDuration("filled", {
+      requestId,
+      engine: "lambda",
+      wallMs: elapsedMs(started),
+      extra: `failed ${message}`,
+    });
     if (errKey) {
       await writeObject(bucket, errKey, Buffer.from(message), "text/plain").catch(() => null);
     }

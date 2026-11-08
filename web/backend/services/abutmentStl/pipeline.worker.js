@@ -3,6 +3,7 @@
 // - web/backend/services/abutmentStl/pipeline.js
 // - web/backend/services/abutmentStl/runPipelineInWorker.js
 import { parentPort, workerData } from "worker_threads";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runAbutmentStlPipeline } from "./pipeline.js";
 
 try {
@@ -11,7 +12,16 @@ try {
     workerData.input.byteOffset,
     workerData.input.byteLength,
   );
+  const compute0 = Date.now();
   const result = await runAbutmentStlPipeline(input, workerData.options || {});
+  result.engine = "worker";
+  result.durationMs = elapsedMs(compute0);
+  logJsDuration(workerData.options?.correctDesign ? "correct" : "filled", {
+    requestId: workerData.options?.requestId,
+    engine: "worker",
+    computeMs: result.durationMs,
+    extra: `perf=${JSON.stringify(result.perf || {})}`,
+  });
   const out = result.outputBuffer;
   const bytes = new Uint8Array(out.buffer, out.byteOffset, out.byteLength).slice();
   parentPort.postMessage({ ok: true, result: { ...result, outputBuffer: null }, output: bytes }, [bytes.buffer]);

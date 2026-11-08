@@ -658,6 +658,9 @@ const requestSchema = new mongoose.Schema(
       // 커넥션 상단~커프 하단 이음부 보정 결과(auto) / Re 재디자인 결과
       // related: web/backend/services/abutmentStl/cuffBlend.service.js
       // - status: applied | manual-review(준비 카드「커프 확인」) | spec-pending(빨간 테두리·개발팀 확인) | failed
+      // JS filled·cuff 실행 시간. 화면에는 쓰지 않고, 단계별 최적화 때 의뢰에서 읽는다.
+      // filled/cuff: { engine, wallMs, computeMs, perf?|postMs?|status? }  totalMs  at
+      jsDuration: mongoose.Schema.Types.Mixed,
       cuffBlend: {
         version: String,
         mode: { type: String, enum: ["auto", "redesign"] },

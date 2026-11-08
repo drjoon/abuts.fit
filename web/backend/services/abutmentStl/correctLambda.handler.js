@@ -5,6 +5,7 @@
 // 보정 STL 람다 엔트리. 메모리 2048MB(vCPU 1), 타임아웃 120초, 아키텍처 arm64.
 // 이벤트: { bucket, inKey, outKey, errKey, targetDiameter, implantProfile }
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runAbutmentStlPipeline } from "./pipeline.js";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION || "ap-northeast-2" });
@@ -38,22 +39,32 @@ export async function handler(event) {
   if (!bucket || !inKey || !outKey) {
     throw new Error("bucket, inKey, outKey가 필요합니다.");
   }
+  const started = Date.now();
   try {
     const input = await readObject(bucket, inKey);
+    const compute0 = Date.now();
     const js = await runAbutmentStlPipeline(input, {
       targetDiameter: event?.targetDiameter ?? null,
       implantProfile: event?.implantProfile || {},
       ...(event?.connection ? { connection: event.connection } : {}),
       correctDesign: true,
     });
+    const computeMs = elapsedMs(compute0);
+    logJsDuration("correct", {
+      engine: "lambda",
+      computeMs,
+      wallMs: elapsedMs(started),
+      extra: js.outputBuffer?.length ? `bytes=${js.outputBuffer.length}` : "empty",
+    });
     if (!js.outputBuffer?.length) {
       if (errKey) await writeObject(bucket, errKey, Buffer.from("no_tight_corners"));
-      return { ok: false, reason: "no_tight_corners" };
+      return { ok: false, reason: "no_tight_corners", durationMs: computeMs };
     }
     await writeObject(bucket, outKey, js.outputBuffer);
-    return { ok: true, bytes: js.outputBuffer.length };
+    return { ok: true, bytes: js.outputBuffer.length, durationMs: computeMs };
   } catch (error) {
     const message = String(error?.message || error || "correction_failed");
+    logJsDuration("correct", { engine: "lambda", wallMs: elapsedMs(started), extra: `failed ${message}` });
     if (errKey) {
       await writeObject(bucket, errKey, Buffer.from(message)).catch(() => null);
     }

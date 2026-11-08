@@ -14,6 +14,7 @@ import {
   headObjectSizeInS3,
   putObjectToS3,
 } from "../../utils/s3.utils.js";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import {
   FILLED_STL_JS_LIMIT_MS,
   filledStlJsLimitSec,
@@ -104,6 +105,7 @@ async function runOnLambda(buffer, options) {
         ...(Array.isArray(options?.finishLinePoints) ? { finishLinePoints: options.finishLinePoints } : {}),
         ...(options?.designAlreadyCorrected ? { designAlreadyCorrected: true } : {}),
         ...(options?.surfacePrepared ? { surfacePrepared: true } : {}),
+        ...(options?.requestId ? { requestId: String(options.requestId).slice(0, 40) } : {}),
       }),
     })
     .promise();
@@ -118,7 +120,32 @@ async function runOnLambda(buffer, options) {
 
 /** Filled STL JS. 로컬만 워커, 테스트·프로덕션은 람다(execution.js). */
 export async function runFilledStlOffRequest(buffer, options = {}) {
-  if (shouldUseStlLambda(filledStlLambdaName())) return runOnLambda(buffer, options);
+  const wall0 = Date.now();
+  const engine = shouldUseStlLambda(filledStlLambdaName()) ? "lambda" : "worker";
+  try {
+    const result = engine === "lambda"
+      ? await runOnLambda(buffer, options)
+      : await runOnWorker(buffer, options);
+    logJsDuration("filled", {
+      requestId: options.requestId,
+      engine: result?.engine || engine,
+      wallMs: elapsedMs(wall0),
+      computeMs: result?.durationMs,
+      extra: `perf=${JSON.stringify(result?.perf || {})}`,
+    });
+    return result;
+  } catch (error) {
+    logJsDuration("filled", {
+      requestId: options.requestId,
+      engine,
+      wallMs: elapsedMs(wall0),
+      extra: `failed ${error?.message || error}`,
+    });
+    throw error;
+  }
+}
+
+async function runOnWorker(buffer, options) {
   if (!warnedLocalWorker) {
     warnedLocalWorker = true;
     console.warn("[stl-filled] 람다를 쓰지 않아 백엔드 워커로 Filled STL을 만듭니다.");

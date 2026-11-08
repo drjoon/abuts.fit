@@ -19,6 +19,7 @@ import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
 import { MeshWorkerQueueTimeoutError, MeshWorkerTimeoutError, runMeshWorker } from "./workerSlots.js";
 import { CuffLambdaTimeoutError, cuffBlendLambdaName, runCuffBlendOnLambda } from "./cuffBlendLambda.service.js";
 import { shouldUseStlLambda } from "./execution.js";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 
 const WORKER_URL = new URL("./cuffBlend.worker.js", import.meta.url);
 /** 단독 실행도 포스트 다듬기까지 20~30초라, 여러 건이 겹치는 로컬 워커에서는 30초가 모자랐다(2026-11-09). 람다는 60초 한도. */
@@ -40,18 +41,32 @@ const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT
  * @param {{ queueTimeoutMs?: number }} [run]
  */
 export async function runCuffBlendInWorker(buffer, mode, options, run = {}) {
+  const wall0 = Date.now();
+  const finish = (result, engine) => {
+    logJsDuration("cuff", {
+      requestId: run.requestId,
+      engine: result?.engine || engine,
+      wallMs: elapsedMs(wall0),
+      computeMs: result?.durationMs,
+      extra: `status=${result?.status || ""}`,
+    });
+    return result;
+  };
   if (shouldUseStlLambda(cuffBlendLambdaName())) {
     try {
-      return await runCuffBlendOnLambda(buffer, mode, options, { timeoutMs: TIMEOUT_MS });
+      return finish(await runCuffBlendOnLambda(buffer, mode, options, { timeoutMs: TIMEOUT_MS, requestId: run.requestId }), "lambda");
     } catch (error) {
-      if (error instanceof CuffLambdaTimeoutError) return { ok: false, status: "failed", reason: error.message };
+      if (error instanceof CuffLambdaTimeoutError) {
+        return finish({ ok: false, status: "failed", reason: error.message, engine: "lambda" }, "lambda");
+      }
       console.warn(`[cuff-blend] 람다 호출 실패, 로컬 워커로 돌립니다: ${error?.message || error}`);
     }
   }
-  return runCuffBlendOnLocalWorker(buffer, mode, options, run);
+  return finish(await runCuffBlendOnLocalWorker(buffer, mode, options, run), "worker");
 }
 
-async function runCuffBlendOnLocalWorker(buffer, mode, options, { queueTimeoutMs = 0 } = {}) {
+async function runCuffBlendOnLocalWorker(buffer, mode, options, run = {}) {
+  const queueTimeoutMs = Number(run.queueTimeoutMs) || 0;
   try {
     const msg = await runMeshWorker(WORKER_URL, {
       label: `cuff-blend:${mode}`,
@@ -59,7 +74,10 @@ async function runCuffBlendOnLocalWorker(buffer, mode, options, { queueTimeoutMs
       queueTimeoutMs,
       buildWorkerData: () => {
         const input = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).slice();
-        return { workerData: { input, mode, options }, transferList: [input.buffer] };
+        return {
+        workerData: { input, mode, options, requestId: run.requestId || "" },
+        transferList: [input.buffer],
+      };
       },
     });
     const result = msg?.result || { ok: false, status: "failed", reason: "커프 보정 결과가 없습니다." };
@@ -114,6 +132,7 @@ export async function applyCuffBlendToFilledStl({
   mode = "auto",
   queueTimeoutMs = INTERACTIVE_QUEUE_TIMEOUT_MS,
   blendOptions = {},
+  requestId = "",
   /** 있으면 S3에서 다시 받지 않는다. JS 파이프라인이 방금 만든 filled 버퍼. */
   sourceBuffer = null,
   /** false면 호출부가 버퍼를 직접 업로드한다. */
@@ -133,7 +152,7 @@ export async function applyCuffBlendToFilledStl({
             sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key),
             "post",
             { finishLine },
-            { queueTimeoutMs },
+            { queueTimeoutMs, requestId },
           )
         : null;
     result = {
@@ -142,10 +161,17 @@ export async function applyCuffBlendToFilledStl({
       reason: `커넥션 스펙이 등록되지 않은 임플란트입니다(${key}). 개발팀 확인이 필요합니다.`,
       buffer: post?.buffer || null,
       detail: post?.detail || {},
+      engine: post?.engine || null,
+      durationMs: post?.durationMs,
     };
   } else {
     const source = sourceBuffer?.length ? sourceBuffer : await getObjectBufferFromS3(s3Key);
-    result = await runCuffBlendInWorker(source, mode, { ...blendOptions, spec, specKey: key, finishLine }, { queueTimeoutMs });
+    result = await runCuffBlendInWorker(
+      source,
+      mode,
+      { ...blendOptions, spec, specKey: key, finishLine },
+      { queueTimeoutMs, requestId },
+    );
   }
   // 스펙 미등록 샘플이 들어왔다. 미등록 스펙 전체를 다시 분석한다(결과는 호출부가 record를 저장한 뒤 읽히도록 워커가 지연한다).
   if (!spec && result.status === "spec-pending") {
@@ -168,6 +194,8 @@ export async function applyCuffBlendToFilledStl({
     fileSize,
     buffer: blended,
     detail: result.detail || {},
+    engine: result.engine || null,
+    durationMs: Number.isFinite(result.durationMs) ? result.durationMs : null,
   };
 }
 
@@ -220,11 +248,16 @@ export async function proposeCuffRedesignForRequest(requestMongoId) {
   if (!spec) return null;
 
   const source = await getObjectBufferFromS3(s3Key);
-  const result = await runCuffBlendInWorker(source, "propose", {
-    spec,
-    specKey: key,
-    finishLine: request.caseInfos?.finishLine || null,
-  });
+  const result = await runCuffBlendInWorker(
+    source,
+    "propose",
+    {
+      spec,
+      specKey: key,
+      finishLine: request.caseInfos?.finishLine || null,
+    },
+    { requestId: request.requestId },
+  );
   if (!result.ok) {
     console.log("[cuff-proposal] none", { requestId: request.requestId, status: result.status, reason: result.reason });
     return null;
@@ -263,6 +296,7 @@ export async function applyAutoCuffBlendSafely({
   sourceBuffer = null,
   writeBack = true,
   blendOptions = {},
+  requestId = "",
 }) {
   if (!isCuffBlendAutoEnabled() || (!s3Key && !sourceBuffer?.length)) return null;
   const ci = { ...toPlain(caseInfos), ...(finishLine ? { finishLine } : {}) };
@@ -275,6 +309,7 @@ export async function applyAutoCuffBlendSafely({
       mode: "auto",
       queueTimeoutMs: AUTO_QUEUE_TIMEOUT_MS,
       blendOptions,
+      requestId,
     });
     console.log("[cuff-blend] auto", { s3Key, status: out.status, reason: out.reason, ...out.detail });
     return out;

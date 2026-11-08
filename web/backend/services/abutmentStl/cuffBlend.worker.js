@@ -3,11 +3,21 @@
 // - web/backend/services/abutmentStl/cuffBlendJob.js (보정 한 건 — 람다와 공유)
 // - web/backend/services/abutmentStl/cuffBlend.service.js
 import { parentPort, workerData } from "worker_threads";
+import { elapsedMs, logJsDuration } from "./jsDuration.js";
 import { runCuffBlendJob } from "./cuffBlendJob.js";
 
 try {
   const input = Buffer.from(workerData.input.buffer, workerData.input.byteOffset, workerData.input.byteLength);
+  const compute0 = Date.now();
   const result = runCuffBlendJob(input, workerData.mode || "auto", workerData.options || {});
+  result.engine = "worker";
+  result.durationMs = elapsedMs(compute0);
+  logJsDuration("cuff", {
+    requestId: workerData.requestId,
+    engine: "worker",
+    computeMs: result.durationMs,
+    extra: `mode=${workerData.mode || "auto"} status=${result.status || ""}`,
+  });
   if (result.buffer) {
     const out = result.buffer;
     const bytes = new Uint8Array(out.buffer, out.byteOffset, out.byteLength).slice();
