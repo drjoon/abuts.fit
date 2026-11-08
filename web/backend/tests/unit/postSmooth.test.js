@@ -234,6 +234,70 @@ describe("smoothPostAboveFinishLine", () => {
     expect(out.detail.patchTriangles).toBeGreaterThan(0);
   });
 
+  it("smooths a rounded chamfer that has no 20° crease on the finish line", () => {
+    const z0 = 1.55;
+    const z1 = 2.35;
+    const r0 = 2.35;
+    const r1 = 2.85;
+    const rows = [[0, 0]];
+    for (let i = 0; i <= 16; i += 1) rows.push([2 + ((r0 - 2) * i) / 16, (z0 * i) / 16]);
+    const filletN = 12;
+    for (let i = 1; i <= filletN; i += 1) {
+      const ang = (i / filletN) * (Math.PI / 2);
+      rows.push([r0 + (r1 - r0) * Math.sin(ang), z0 + (z1 - z0) * (1 - Math.cos(ang))]);
+    }
+    for (let i = 1; i <= 70; i += 1) {
+      const z = z1 + i * 0.05;
+      const phase = ((z - z1) / STAIR_PERIOD_MM) % 1;
+      rows.push([2.45 + 0.25 * Math.exp(-(z - z1) / 0.3) - STAIR_MM * phase, z]);
+    }
+    rows.push([1, 6]);
+    rows.push([0, 6]);
+    const at = (i, j) => {
+      const [r, z] = rows[i];
+      const t = (2 * Math.PI * (j % SEGMENTS)) / SEGMENTS;
+      return [r * Math.cos(t), r * Math.sin(t), z];
+    };
+    const positions = [];
+    for (let i = 0; i + 1 < rows.length; i += 1) {
+      for (let j = 0; j < SEGMENTS; j += 1) {
+        const a = at(i, j);
+        const b = at(i, j + 1);
+        const c = at(i + 1, j + 1);
+        const d = at(i + 1, j);
+        if (rows[i][0] > 0) positions.push(...a, ...b, ...c);
+        if (rows[i + 1][0] > 0) positions.push(...a, ...c, ...d);
+      }
+    }
+    const rounded = writeBinaryStl({
+      positions: Float32Array.from(positions),
+      attributes: new Uint16Array(positions.length / 9),
+    });
+    const mid = Math.PI / 4;
+    const flZ = z0 + (z1 - z0) * (1 - Math.cos(mid));
+    const flR = r0 + (r1 - r0) * Math.sin(mid);
+    const roundedLine = {
+      points: Array.from({ length: SEGMENTS }, (_, j) => {
+        const t = (2 * Math.PI * j) / SEGMENTS;
+        return [flR * Math.cos(t), flR * Math.sin(t), flZ];
+      }),
+    };
+    expect(findFinishCrease(prepareCuffMesh(rounded).mesh, finishLineZByAngle(roundedLine))).toBeNull();
+    const out = smoothPostAboveFinishLine(rounded, { finishLine: roundedLine });
+    expect(out.status).toBe("applied");
+    expect(out.detail.margin).toBe("finish-line");
+    const before = new Set(readTriangles(rounded).verts.filter((p) => p[2] <= flZ + 1e-4).map(keyOf));
+    const after = new Set(readTriangles(out.buffer).verts.map(keyOf));
+    for (const k of before) expect(after.has(k)).toBe(true);
+    const base = (z) => 2.45 + 0.25 * Math.exp(-(z - z1) / 0.3);
+    const rough = (verts) => {
+      const d = verts.filter((p) => p[2] > 3 && p[2] < 5).map((p) => Math.hypot(p[0], p[1]) - base(p[2]));
+      const mean = d.reduce((s, x) => s + x, 0) / d.length;
+      return Math.sqrt(d.reduce((s, x) => s + (x - mean) ** 2, 0) / d.length);
+    };
+    expect(rough(readTriangles(out.buffer).verts)).toBeLessThan(rough(readTriangles(rounded).verts) * 0.5);
+  });
+
   it("smooths the shoulder and post across a 0.05mm vertical margin collar", () => {
     const rows = [[0, 0]];
     for (let i = 0; i <= 20; i += 1) rows.push([2 + (0.5 * i) / 20, (2 * i) / 20]);

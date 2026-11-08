@@ -5,6 +5,7 @@
 //
 // 피니시라인 위 포스트(크라운이 앉는 면)의 계단 결을 없앤다.
 // - 마진 모서리 꼭짓점과 그 아래는 하나도 옮기지 않는다.
+// - 20° 모서리가 한 바퀴로 안 붙는 둥근 챔퍼는 피니시라인 높이의 바깥 꼭짓점을 메시 변으로 이어 마진으로 쓴다.
 // - 나머지 포스트 꼭짓점은 원본 면 안쪽으로만 옮긴다. 새 면의 어느 점도 원본 면 밖으로 나가지 않는다.
 // - 삼각형을 한 번 4등분하고, 원본 면에 국소 2차 곡면을 맞춘 뒤 원본 면 안쪽에 들어갈 만큼만 함께 내린다.
 // - 슬롯·스크류홀 메움 테두리처럼 30° 넘게 꺾이는 모서리는 디자인으로 보고 그대로 둔다.
@@ -61,6 +62,190 @@ class PostSmoothSkip extends Error {
 const skip = (reason, detail) => {
   throw new PostSmoothSkip(reason, detail);
 };
+
+/** 피니시라인에 스냅할 때 이 높이 안의 바깥 꼭짓점만 본다. */
+const MARGIN_SNAP_MM = 0.3;
+/** 스냅한 점 사이를 잇는 경로는 이 높이 안에 둔다. */
+const MARGIN_PATH_MM = 0.5;
+/** 스크류 채널 안쪽 꼭짓점은 마진이 아니다. */
+const MARGIN_MIN_R_MM = 1.45;
+const MARGIN_BINS = 180;
+const MARGIN_MAX_LINKS = 28;
+
+/**
+ * 날카로운 모서리가 없는 둥근 마진. 각도마다 피니시라인에 가장 가까운 바깥 꼭짓점을 고르고,
+ * 그 점들을 피니시라인 근처의 메시 변으로 한 바퀴 잇는다. 고리가 안 닫히면 null.
+ * @returns {{ loop: number[], zOf: (theta: number) => number, fromFinishLine: true } | null}
+ */
+function traceFinishMargin(mesh, flZ) {
+  const { verts, faces, faceMain } = mesh;
+  const nv = verts.length / 3;
+  const fc = faces.length / 3;
+  const adj = Array.from({ length: nv }, () => []);
+  const on = new Uint8Array(nv);
+  const seenE = new Set();
+  for (let f = 0; f < fc; f += 1) {
+    if (!faceMain[f]) continue;
+    for (let k = 0; k < 3; k += 1) {
+      const a = faces[f * 3 + k];
+      const b = faces[f * 3 + ((k + 1) % 3)];
+      on[a] = 1;
+      on[b] = 1;
+      const key = a < b ? a * nv + b : b * nv + a;
+      if (seenE.has(key)) continue;
+      seenE.add(key);
+      adj[a].push(b);
+      adj[b].push(a);
+    }
+  }
+  const polar = (v) => {
+    const x = verts[v * 3];
+    const y = verts[v * 3 + 1];
+    return { r: Math.hypot(x, y), z: verts[v * 3 + 2], a: Math.atan2(y, x) };
+  };
+  const within = (v, win) => {
+    if (!on[v]) return false;
+    const p = polar(v);
+    return p.r >= MARGIN_MIN_R_MM && Math.abs(p.z - flZ(p.a)) <= win;
+  };
+  const pick = new Int32Array(MARGIN_BINS).fill(-1);
+  const pickDz = new Float64Array(MARGIN_BINS).fill(Infinity);
+  const pickR = new Float64Array(MARGIN_BINS).fill(-1);
+  for (let v = 0; v < nv; v += 1) {
+    if (!within(v, MARGIN_SNAP_MM)) continue;
+    const p = polar(v);
+    const dz = Math.abs(p.z - flZ(p.a));
+    const bi = Math.floor((((p.a + Math.PI) / TWO_PI) * MARGIN_BINS) % MARGIN_BINS);
+    const bucket = Math.round(dz / 0.05);
+    const bestBucket = pick[bi] < 0 ? Infinity : Math.round(pickDz[bi] / 0.05);
+    if (pick[bi] < 0 || bucket < bestBucket || (bucket === bestBucket && p.r > pickR[bi])) {
+      pick[bi] = v;
+      pickDz[bi] = dz;
+      pickR[bi] = p.r;
+    }
+  }
+  const seeds = [];
+  for (let i = 0; i < MARGIN_BINS; i += 1) {
+    if (pick[i] < 0) continue;
+    if (seeds[seeds.length - 1] !== pick[i]) seeds.push(pick[i]);
+  }
+  if (seeds.length > 1 && seeds[0] === seeds[seeds.length - 1]) seeds.pop();
+  let maxGapBins = 0;
+  let prevBin = -1;
+  let firstBin = -1;
+  for (let i = 0; i < MARGIN_BINS; i += 1) {
+    if (pick[i] < 0) continue;
+    if (firstBin < 0) firstBin = i;
+    if (prevBin >= 0) maxGapBins = Math.max(maxGapBins, i - prevBin);
+    prevBin = i;
+  }
+  if (firstBin >= 0 && prevBin >= 0) maxGapBins = Math.max(maxGapBins, firstBin + MARGIN_BINS - prevBin);
+  if (seeds.length < 24 || (maxGapBins / MARGIN_BINS) * 360 > 12) return null;
+
+  const stamp = new Int32Array(nv);
+  const prev = new Int32Array(nv);
+  const depth = new Int32Array(nv);
+  let token = 1;
+  const link = (a, b) => {
+    if (a === b) return [a];
+    token += 1;
+    if (token === 0x7fffffff) {
+      stamp.fill(0);
+      token = 1;
+    }
+    const q = [a];
+    stamp[a] = token;
+    prev[a] = -1;
+    depth[a] = 0;
+    for (let qi = 0; qi < q.length; qi += 1) {
+      const v = q[qi];
+      if (depth[v] >= MARGIN_MAX_LINKS) continue;
+      for (const w of adj[v]) {
+        if (stamp[w] === token) continue;
+        if (w !== b && !within(w, MARGIN_PATH_MM)) continue;
+        stamp[w] = token;
+        prev[w] = v;
+        depth[w] = depth[v] + 1;
+        if (w === b) {
+          const path = [b];
+          let c = b;
+          while (c !== a) {
+            c = prev[c];
+            path.push(c);
+            if (path.length > MARGIN_MAX_LINKS + 2) return null;
+          }
+          path.reverse();
+          return path;
+        }
+        q.push(w);
+      }
+    }
+    return null;
+  };
+
+  const loop = [];
+  for (let i = 0; i < seeds.length; i += 1) {
+    const path = link(seeds[i], seeds[(i + 1) % seeds.length]);
+    if (!path) return null;
+    for (let k = 0; k < path.length - 1; k += 1) loop.push(path[k]);
+  }
+  if (loop.length < 24) return null;
+
+  const angs = loop.map((v) => polar(v).a);
+  const steps = angs.map((a, i) => {
+    let d = angs[(i + 1) % angs.length] - a;
+    if (d > Math.PI) d -= TWO_PI;
+    if (d < -Math.PI) d += TWO_PI;
+    return d;
+  });
+  const turn = steps.reduce((s, d) => s + d, 0);
+  if (Math.abs(Math.abs(turn) - TWO_PI) > 0.35) return null;
+  const dir = Math.sign(turn) || 1;
+  let progress = 0;
+  let peak = 0;
+  let fold = 0;
+  for (const d of steps) {
+    progress += d * dir;
+    if (progress >= peak) peak = progress;
+    else fold = Math.max(fold, peak - progress);
+  }
+  if (fold > 0.7) return null;
+
+  const binZ = new Float64Array(360);
+  const binN = new Uint16Array(360);
+  for (const v of loop) {
+    const p = polar(v);
+    const bi = Math.floor((((p.a + Math.PI) / TWO_PI) * 360) % 360);
+    binZ[bi] += p.z;
+    binN[bi] += 1;
+  }
+  const zRing = new Float64Array(360);
+  for (let i = 0; i < 360; i += 1) {
+    if (binN[i]) {
+      zRing[i] = binZ[i] / binN[i];
+      continue;
+    }
+    for (let d = 1; d < 180; d += 1) {
+      const left = (i - d + 360) % 360;
+      const right = (i + d) % 360;
+      if (binN[left]) {
+        zRing[i] = binZ[left] / binN[left];
+        break;
+      }
+      if (binN[right]) {
+        zRing[i] = binZ[right] / binN[right];
+        break;
+      }
+    }
+  }
+  const zOf = (theta) => {
+    const t = ((((theta + Math.PI) % TWO_PI) + TWO_PI) % TWO_PI / TWO_PI) * 360;
+    const i = Math.floor(t) % 360;
+    const f = t - Math.floor(t);
+    return zRing[i] * (1 - f) + zRing[(i + 1) % 360] * f;
+  };
+  return { loop, zOf, fromFinishLine: true };
+}
 
 const smoothstep5 = (x) => {
   if (x <= 0) return 0;
@@ -392,7 +577,9 @@ function selectPostRegion(mesh, crease, fn) {
       let third = -1;
       for (let k = 0; k < 3; k += 1) if (faces[f * 3 + k] !== a && faces[f * 3 + k] !== b) third = faces[f * 3 + k];
       const z = verts[third * 3 + 2];
-      if (z > (verts[a * 3 + 2] + verts[b * 3 + 2]) / 2 && !inRegion[f]) {
+      const th = Math.atan2(verts[third * 3 + 1], verts[third * 3]);
+      // 마진이 각도마다 높이가 다르면 변의 가운데 높이보다 커프 쪽 꼭짓점이 더 높을 수 있다. 그 각도의 마진 높이로 가른다.
+      if (z > crease.zOf(th) - 0.02 && !inRegion[f]) {
         inRegion[f] = 1;
         stack.push(f);
       }
@@ -541,7 +728,8 @@ function run(buffer, { finishLine }) {
   const { mesh } = prepareCuffMesh(buffer);
   // Re 재디자인은 이미 다듬은 filled를 다시 받는다. 또 다듬으면 안쪽으로 누적해 들어간다.
   if (mesh.faceAttr.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) skip(POST_SMOOTH_ALREADY_REASON);
-  const crease = findFinishCrease(mesh, flZ);
+  const sharpCrease = findFinishCrease(mesh, flZ);
+  const crease = sharpCrease || traceFinishMargin(mesh, flZ);
   if (!crease) skip("마진 모서리를 찾지 못했습니다.");
   lap("prepare");
   const { verts, faces, faceAttr, faceMain } = mesh;
@@ -559,6 +747,12 @@ function run(buffer, { finishLine }) {
   const fixed = new Uint8Array(nv0);
   const feature = new Uint8Array(nv0);
   for (const v of crease.loop) fixed[v] = 1;
+  // 피니시라인보다 아래는 마진·커프다. 스냅 고리가 곡선보다 조금 낮아도 그 아래 꼭짓점은 움직이지 않는다.
+  for (let v = 0; v < nv0; v += 1) {
+    if (fixed[v]) continue;
+    const z = P0[v * 3 + 2];
+    if (z < flZ(Math.atan2(P0[v * 3 + 1], P0[v * 3])) - 0.005) fixed[v] = 1;
+  }
   const cosFeature = Math.cos((FEATURE_DEG * Math.PI) / 180);
   /** 원본 영역 면 이웃(디자인 모서리·경계는 -1). 국소 곡면 맞춤 범위를 넓힐 때 쓴다. */
   const nbr = new Int32Array(fc * 3).fill(-1);
@@ -1042,6 +1236,7 @@ function run(buffer, { finishLine }) {
       patchTriangles: tc,
       movedVertices: movedCount,
       fixedFinishVertices: crease.loop.length,
+      margin: sharpCrease ? "crease" : "finish-line",
       thinVertices,
       maxInwardUm: Math.round(maxInward * 1e4) / 10,
       meanInwardUm: movedCount ? Math.round((sumInward / movedCount) * 1e4) / 10 : 0,

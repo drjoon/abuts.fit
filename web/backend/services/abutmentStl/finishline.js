@@ -5,6 +5,7 @@
 //
 // finishline_detection.py의 JS 이식. 시각화·디버그 오브젝트는 옮기지 않는다.
 // Rhino 메시는 STL import 때 22.5°로 용접돼 crease edge가 unwelded다. 입력은 unweldedByAngle() 메시다.
+// 마진 위로 크라운이 목 없이 더 넓으면 최대 반경은 크라운이다. 그때는 바깥 법선이 처음 위로 돌아서는 챔퍼를 마진으로 둔다.
 import {
   Mesh,
   chainAdjacency,
@@ -46,6 +47,13 @@ const OUTLIER_DZ_ABS_MM = 1.5;
 /** 단면 입술의 잔물결. 양옆 두 점(약 9°)을 두 번 섞는다. */
 const SECTION_LOOP_SMOOTH_HALF = 2;
 const SECTION_LOOP_SMOOTH_PASSES = 2;
+/** 마진 챔퍼: 바깥 법선이 아래(nz≤−0.12)에서 위(nz≥0)로 0.8mm 안에 돌아선다. */
+const MARGIN_LIP_MIN_Z_MM = 0.9;
+const MARGIN_LIP_MIN_R_MM = 1.45;
+const MARGIN_LIP_NZ_FROM = -0.12;
+const MARGIN_LIP_NZ_JUMP = 0.22;
+const MARGIN_LIP_LOOKBACK_MM = 0.8;
+const MARGIN_LIP_SNAP_MM = 0.55;
 const EDGE_CANDIDATE_MAX_COUNT = 20;
 const EDGE_CANDIDATE_MIN_VERT_RATIO = 0.03;
 const EDGE_CANDIDATE_MIN_VERT_ABS = 40;
@@ -634,6 +642,109 @@ function dedupQuantized(points) {
   return out;
 }
 
+/**
+ * 방위각마다, 바깥 곡면 법선이 치은측(아래)에서 교합측(위)으로 처음 돌아서는 높이.
+ * 반경이 목 없이 계속 커지는 크라운(김인수 22·23)은 최대 반경이 마진이 아니다.
+ * 챔퍼에서만 법선이 한 번 뒤집히고, 그 위 플레어는 다시 아래를 본다.
+ * @returns {(az: number) => { z: number } | null}
+ */
+function marginLipLookup(mesh, axisDir) {
+  let axis = normalize(axisDir || [0, 0, 1]);
+  if (axis[2] < 0) axis = axis.map((c) => -c);
+  let helper = [0, 0, 1];
+  if (Math.abs(axis[2]) > 0.95) helper = [1, 0, 0];
+  let au = cross(axis, helper);
+  if (Math.hypot(...au) < 1e-12) au = cross(axis, [0, 1, 0]);
+  au = normalize(au);
+  const av = normalize(cross(axis, au));
+  const azimuthOf = (x, y, z) =>
+    Math.atan2(x * av[0] + y * av[1] + z * av[2], x * au[0] + y * au[1] + z * au[2]);
+  const axialOf = (x, y, z) => x * axis[0] + y * axis[1] + z * axis[2];
+  const AZ = 72;
+  const bins = Array.from({ length: AZ }, () => new Map());
+  const v = mesh.verts;
+  const f = mesh.faces;
+  const nF = mesh.faceCount;
+  for (let i = 0; i < nF; i += 1) {
+    if ((i & 4095) === 0) checkDetectDeadline();
+    const ia = f[i * 3];
+    const ib = f[i * 3 + 1];
+    const ic = f[i * 3 + 2];
+    const ax = v[ia * 3];
+    const ay = v[ia * 3 + 1];
+    const az = v[ia * 3 + 2];
+    const bx = v[ib * 3];
+    const by = v[ib * 3 + 1];
+    const bz = v[ib * 3 + 2];
+    const cx = v[ic * 3];
+    const cy = v[ic * 3 + 1];
+    const cz = v[ic * 3 + 2];
+    const ux = bx - ax;
+    const uy = by - ay;
+    const uz = bz - az;
+    const wx = cx - ax;
+    const wy = cy - ay;
+    const wz = cz - az;
+    let nx = uy * wz - uz * wy;
+    let ny = uz * wx - ux * wz;
+    let nz = ux * wy - uy * wx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-12) continue;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    const x = (ax + bx + cx) / 3;
+    const y = (ay + by + cy) / 3;
+    const z = (az + bz + cz) / 3;
+    const height = axialOf(x, y, z);
+    const rx = x - axis[0] * height;
+    const ry = y - axis[1] * height;
+    const rz = z - axis[2] * height;
+    const r = Math.hypot(rx, ry, rz);
+    if (r < MARGIN_LIP_MIN_R_MM) continue;
+    if (nx * rx + ny * ry + nz * rz < 0) {
+      nx = -nx;
+      ny = -ny;
+      nz = -nz;
+    }
+    const ang = azimuthOf(x, y, z);
+    const ai = Math.round((((ang + Math.PI) / (2 * Math.PI)) * AZ) % AZ) % AZ;
+    const key = Math.round(height / 0.2);
+    const nzAxial = nx * axis[0] + ny * axis[1] + nz * axis[2];
+    const prev = bins[ai].get(key);
+    if (!prev || r > prev.r) bins[ai].set(key, { z: height, r, nz: nzAxial });
+  }
+  const raw = bins.map((bin) => {
+    const rows = [...bin.values()].sort((a, b) => a.z - b.z);
+    for (let i = 0; i < rows.length; i += 1) {
+      const cur = rows[i];
+      if (cur.z < MARGIN_LIP_MIN_Z_MM || cur.r < MARGIN_LIP_MIN_R_MM || cur.nz < 0) continue;
+      let minNz = cur.nz;
+      for (let j = i - 1; j >= 0 && cur.z - rows[j].z <= MARGIN_LIP_LOOKBACK_MM; j -= 1) {
+        if (rows[j].nz < minNz) minNz = rows[j].nz;
+      }
+      if (minNz <= MARGIN_LIP_NZ_FROM && cur.nz - minNz >= MARGIN_LIP_NZ_JUMP) return cur;
+    }
+    return null;
+  });
+  // 한 칸만 튀면 양옆 높이로 되돌린다. 스캘럽은 5°에 0.2mm 안이라 중앙값 그대로다.
+  const lips = raw.map((lip, i) => {
+    if (!lip) return null;
+    const mates = [raw[(i + AZ - 1) % AZ], lip, raw[(i + 1) % AZ]].filter(Boolean);
+    const zs = mates.map((p) => p.z).sort((a, b) => a - b);
+    const zMed = zs[zs.length >> 1];
+    return Math.abs(lip.z - zMed) > 1.2 ? { z: zMed } : lip;
+  });
+  return (az) => {
+    const idx = Math.round((((az + Math.PI) / (2 * Math.PI)) * AZ) % AZ) % AZ;
+    for (const d of [0, 1, -1, 2, -2]) {
+      const lip = lips[(idx + d + AZ) % AZ];
+      if (lip) return lip;
+    }
+    return null;
+  };
+}
+
 function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
   let axis = normalize(axisDir);
   if (axis[2] < 0) axis = axis.map((c) => -c);
@@ -746,7 +857,8 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
   const shoulderLoop = () => {
     // 피니시라인 입력은 각도로 쪼개진 메시라 단면이 끊긴다. 입술은 이어진 곡면에서 찾는다.
     const solid = typeof mesh.positionWeldedCopy === "function" ? mesh.positionWeldedCopy() : mesh;
-    const picked = [];
+    const lipAt = marginLipLookup(solid, axis);
+    const sides = [];
     for (const normal of planes) {
       checkDetectDeadline();
       const sideDir = normalize(cross(axis, normal));
@@ -764,16 +876,39 @@ function detectMaxRadiusTrack(mesh, planes, axisDir, refPt0) {
           if (!prev || r > prev.r) buckets[side].set(key, { z: height, r, point });
         }
       }
-      for (const bucket of buckets) {
-        const profile = [...bucket.values()].sort((a, b) => a.z - b.z);
-        const lip = gingivalLip(profile);
-        if (lip) picked.push(lip.slice());
+      for (let side = 0; side < buckets.length; side += 1) {
+        const profile = [...buckets[side].values()].sort((a, b) => a.z - b.z);
+        if (!profile.length) continue;
+        const dir = side === 0 ? sideDir : sideDir.map((c) => -c);
+        sides.push({ profile, az: azimuth(dir) });
       }
     }
+    const normalPts = [];
+    for (const side of sides) {
+      const normalLip = lipAt(side.az);
+      if (!normalLip) continue;
+      let best = null;
+      for (const p of side.profile) {
+        const dz = Math.abs(p.z - normalLip.z);
+        if (dz > MARGIN_LIP_SNAP_MM) continue;
+        if (!best || dz < best.dz) best = { dz, p };
+      }
+      if (best) normalPts.push(best.p.point.slice());
+    }
+    // 법선 어깨가 한 바퀴면 반경 입술을 섞지 않는다. 넓은 크라운으로 다시 올라간다.
+    const picked =
+      normalPts.length >= 24
+        ? normalPts
+        : sides
+            .map((side) => gingivalLip(side.profile))
+            .filter(Boolean)
+            .map((p) => p.slice());
     if (picked.length < 24) return null;
     const zs = picked.map((p) => p[2]).sort((a, b) => a - b);
     const zMed = zs[zs.length >> 1];
-    const kept = picked.filter((p) => Math.abs(p[2] - zMed) <= 2.0);
+    // 법선 어깨는 스캘럽이 중앙에서 3mm까지 벌어진다. 반경 입술만 2mm로 자른다.
+    const zWindow = normalPts.length >= 24 ? 3.2 : 2.0;
+    const kept = picked.filter((p) => Math.abs(p[2] - zMed) <= zWindow);
     if (kept.length < 24) return null;
     kept.sort((a, b) => azimuth(a) - azimuth(b));
     let dzMax = 0;

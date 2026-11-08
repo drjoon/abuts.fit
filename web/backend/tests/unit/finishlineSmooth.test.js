@@ -85,6 +85,35 @@ describe("detectFinishLine timeout", () => {
   });
 });
 
+/** rAt(z, angle). 각 변화는 용접각보다 작게 두어 단면 추적으로 가게 한다. */
+function sculpted(rAt, z0, z1, step, columns) {
+  const zs = [];
+  for (let z = z0; z <= z1 + 1e-9; z += step) zs.push(z);
+  const positions = [];
+  const at = (i, j) => {
+    const a = (j / columns) * Math.PI * 2;
+    const r = rAt(zs[i], a);
+    return [r * Math.cos(a), r * Math.sin(a), zs[i]];
+  };
+  const push = (p) => positions.push(p[0], p[1], p[2]);
+  for (let i = 0; i < zs.length - 1; i += 1) {
+    for (let j = 0; j < columns; j += 1) {
+      const j2 = (j + 1) % columns;
+      const a = at(i, j);
+      const b = at(i + 1, j);
+      const c = at(i + 1, j2);
+      const d = at(i, j2);
+      push(a);
+      push(b);
+      push(c);
+      push(a);
+      push(c);
+      push(d);
+    }
+  }
+  return Mesh.fromTriangleSoup(positions);
+}
+
 describe("detectFinishLine crown wider than margin", () => {
   it("목으로 좁아진 뒤 더 넓은 크라운 봉우리는 따라가지 않는다", () => {
     // 전 구간 기울기가 연속이라 모서리 고리는 위·아래 경계뿐이다. 위는 좁아 어깨로 안 잡힌다.
@@ -102,5 +131,29 @@ describe("detectFinishLine crown wider than margin", () => {
     expect(String(fl.strategyUsed)).toContain("SECTION_");
     expect(Math.min(...zs)).toBeGreaterThan(4.05);
     expect(Math.max(...zs)).toBeLessThan(5.2);
+  });
+
+  it("챔퍼 뒤로 목이 없어도 더 넓은 크라운 플레어를 따라 올라가지 않는다", () => {
+    // 김인수 22·23: 마진 챔퍼 직후 반경이 다시 커져 최대 반경이 크라운에 있다.
+    const lipZ = (ang) => 3.05 + 0.85 * Math.cos(ang);
+    const mesh = sculpted((z, ang) => {
+      const lip = lipZ(ang);
+      const lipR = 2.2 + 0.2 * Math.cos(ang);
+      if (z <= lip) return 1.45 + ((lipR - 1.45) * z) / Math.max(lip, 0.4);
+      if (z <= lip + 0.45) return lipR - ((z - lip) / 0.45) * 0.16;
+      const buccal = Math.max(0, Math.cos(ang));
+      const rise = z - lip - 0.45;
+      const round = z > 9.2 ? (z - 9.2) * 1.15 : 0;
+      return lipR - 0.16 + buccal * 0.24 * Math.min(rise, 4.5) - (1 - buccal) * 0.14 * Math.min(rise, 3.5) - round;
+    }, 0, 11, 0.12, 72);
+    const fl = detectFinishLine(mesh.unweldedByAngle(), { axis: [0, 0, 1] });
+    const core = fl.points.slice(0, -1);
+    expect(core.length).toBeGreaterThan(20);
+    let worst = 0;
+    for (const p of core) {
+      worst = Math.max(worst, Math.abs(p[2] - lipZ(Math.atan2(p[1], p[0]))));
+    }
+    expect(worst).toBeLessThan(0.9);
+    expect(Math.max(...core.map((p) => p[2]))).toBeLessThan(4.6);
   });
 });

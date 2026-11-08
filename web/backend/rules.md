@@ -206,7 +206,7 @@
 - Re(재디자인): 70°보다 누운(접시형) 커프가 있을 때만 피니시라인-0.2mm ~ Z_a를 5차 Hermite(아래 원뿔 G2, 위는 기공소 곡면 기울기·곡률, 70° 넘으면 70°로)로 바꾼다. 결과도 70°보다 눕지 않아야 한다. 기공소 디자인 변경이라 자동 적용하지 않는다.
   - 제조사: `POST /api/requests/by-request/:requestId/stl-file/redesign-cuff`(프리뷰 Re).
   - 의뢰자: 2-filled 등록 응답 뒤 `proposeCuffRedesignForRequest`가 준비 단계·의뢰자 업로드 커스텀어벗만 분석해 `caseInfos.cuffProposal`(가장 누운 방향 옆모습 곡선 before/after)을 남기고 `request:cuff-proposal-updated`로 알린다. 수락 `POST /:id/cuff-proposal/accept`(준비만, filled 재디자인 + 기존 NC $unset), 거절 `.../decline`. 의뢰자 프리뷰는 수락 뒤 `GET /:id/filled-file-url`. 새 filled 등록 시 이전 제안은 $unset, 제조사 Re가 먼저면 `applied-by-manufacturer`.
-- 결과 `caseInfos.cuffBlend.status`: `applied` | `manual-review`(안전검사 실패 → 준비 카드「커프 확인」, Re로 처리) | `spec-pending`(스펙 미등록·형상 불일치 → 빨간 테두리 +「개발팀 확인 필요」) | `failed`.
+- 결과 `caseInfos.cuffBlend.status`: `applied` | `manual-review`(안전검사 실패 → 준비 카드「커프 확인」, Re로 처리) | `spec-pending`(스펙 미등록·형상 불일치 → 빨간 테두리 +「개발팀 확인 필요」) | `failed`. 이음부 겹침은 분리된 면의 무게중심이 띠 안·채널 밖일 때만 본다. 스크류홀 캡처럼 꼭짓점 하나만 마진 높이로 내려온 긴 삼각형은 겹친 조각이 아니다.
 - **spec-pending이 뜨면**: `node scripts/abutment-stl-js/measure-cuff-connection.js --pending`으로 테이퍼 끝 높이를 재고, `services/abutmentStl/cuffConnectionSpecs.js` `CUFF_CONNECTION_SPECS`에 추가한 뒤 파일 상단 미등록 목록에서 뺀다. 턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록한다.
 - **미니·내로우 11° 면은 아직 Regular처럼 안 맞췄다.** 스펙이 있으면 임시로 Z_a+0.1. 샘플이 spec-pending으로 들어오면 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 `prcConeTopMm`과 원뿔 복합체(원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole)를 같은 Δ로 맞춘다. 대상 목록: `.cursor/rules/cuff-connection-spec.mdc` 「미니·내로우 11° 면」.
 - 보정 곡면 삼각형 attribute는 `0x4342`. HF 패치(`0x4846`)는 유지된다.
@@ -223,6 +223,7 @@
 ### 포스트 계단 결 다듬기(postSmooth)
 
 - 커프 보정과 같은 worker에서 `smoothPostAboveFinishLine`이 피니시라인 위 포스트(크라운이 앉는 면)를 다듬는다. auto는 커프가 `manual-review`·`spec-pending`이어도 포스트는 다듬는다(스펙 없으면 worker `post` 모드). Re는 재디자인이 적용될 때만. 다듬기가 실패·건너뜀이면 커프 결과(또는 입력)를 그대로 쓴다. 결과는 `caseInfos.cuffBlend.postSmooth`. `skipped`·`failed`는 준비 카드 «다듬기 누락»이고 자동 승인에서 빠진다(`post_smooth_omitted`). `이미 다듬은 포스트입니다`는 누락이 아니다. 작업자 승인(화살표)은 그대로 가공으로 넘긴다.
+- 날카로운 모서리(20°)가 피니시라인에 한 바퀴로 안 붙는 둥근 챔퍼는, 피니시라인 높이의 바깥 꼭짓점을 메시 변으로 이은 고리를 마진으로 보고 그 위만 다듬는다(`traceFinishMargin`). 고리가 안 닫히면 그대로 건너뛴다.
 - 마진 고리에 끝점(차수 1)이 더 붙어 있으면 그 가지만 떼고 닫힌 고리를 쓴다. 가지 하나 때문에 포스트 다듬기 전체를 건너뛰지 않는다. 모서리 한 곳만 20°보다 둔해서 고리가 경로로 열리면, 양 끝이 메시 변으로 이어져 있고 한 바퀴면 그 변으로 닫는다. 열린 경로를 끝점부터 지우면 마진 전체가 사라져 포스트가 원본 폴리곤으로 남는다. 마진 모서리(`findFinishCrease`) 꼭짓점과 그 아래는 비트 단위로 그대로다. 나머지는 원본 면 **안쪽으로만** 옮긴다(꼭짓점·모서리 가운데·면 중심을 원본 면 부호거리로 검사). 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 디자인 모서리로 고정하고 0.12mm 안은 원본으로 넘긴다. 그 몇 곳 때문에 포스트 전체를 건너뛰지 않는다. 고정한 뒤에도 한계를 넘거나 움직일 꼭짓점이 없으면 적용하지 않는다. 샘플 기준 안쪽 이동 중앙값 1.4~2µm, 최대 7~20µm.
 - 30° 넘게 꺾이는 모서리(슬롯·스크류홀 메움 테두리)와 스크류 채널과 벽이 얇은 곳은 고정한다. 영역은 마진 모서리 위 면에서 시작해 이런 모서리를 넘지 않는다(열린 채널로 마진 아래까지 새지 않게).
 - 영역 삼각형을 한 번 4등분하고, 마진 위 1.2mm 숄더는 한 번 더 4등분한다(고정 꼭짓점 둘을 잇는 모서리는 나누지 않는다). 원본 면에 국소 2차 곡면(σ 0.2mm)을 맞춘 뒤 원본 밖으로 나간 양만큼 매끈하게 함께 내린다. 마진 위 0.08mm·디자인 모서리 0.12mm 안에서 원본으로 넘어간다.

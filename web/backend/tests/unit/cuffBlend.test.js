@@ -568,6 +568,25 @@ describe("blendCuffJunction", () => {
     expect(res).toMatchObject({ ok: false, status: "spec-pending" });
   });
 
+  it("does not treat a screw-cap triangle that only dips one vertex into the band as an overlap", () => {
+    const base = steppedAbutment();
+    const { positions } = parseStl(base);
+    const positions2 = new Float64Array(positions.length + 9);
+    positions2.set(positions);
+    // 무게중심은 마진 위(스크류홀 캡). 꼭짓점 하나만 이음 높이(z=2.9)에 걸친다.
+    positions2.set([1.6, 0, 2.9, 0.15, 1.55, 6.6, -0.15, 1.55, 6.7], positions.length);
+    const input = writeBinaryStl({
+      positions: positions2,
+      attributes: new Uint16Array(positions2.length / 9),
+    });
+    const res = blendCuffJunction(input, {
+      ...osstem,
+      specKey: osstem.key,
+      finishLine: ringFinishLine(2.3, 3.0),
+    });
+    expect(res.status).toBe("applied");
+  });
+
   it("sends files without a finish line to manual review", () => {
     const res = blendCuffJunction(steppedAbutment(), { ...osstem, specKey: osstem.key, finishLine: null });
     expect(res).toMatchObject({ ok: false, status: "manual-review" });

@@ -2175,15 +2175,29 @@ function prepare(buffer) {
   return { mesh: { ...welded, faceMain }, probe, triCount };
 }
 
+/**
+ * 분리된 면이 띠 안에 있는가. 무게중심이 띠 안이고 채널 밖일 때만 그렇다.
+ * 스크류홀 캡은 꼭짓점 하나가 높은 마진 높이까지 내려온 긴 삼각형이라, 꼭짓점으로 보면 이음부에 겹친 조각으로 오인한다.
+ */
+function faceSitsInBand(verts, faces, f, zLo, zHi, rCut) {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let k = 0; k < 3; k += 1) {
+    const v = faces[f * 3 + k] * 3;
+    x += verts[v];
+    y += verts[v + 1];
+    z += verts[v + 2];
+  }
+  z /= 3;
+  return z >= zLo && z <= zHi && Math.hypot(x / 3, y / 3) > rCut;
+}
+
 function detachedInBand(mesh, zLo, zHi, rCut) {
   const { verts, faces, faceMain } = mesh;
   for (let f = 0; f < faceMain.length; f += 1) {
     if (faceMain[f]) continue;
-    for (let k = 0; k < 3; k += 1) {
-      const v = faces[f * 3 + k] * 3;
-      const z = verts[v + 2];
-      if (z >= zLo && z <= zHi && Math.hypot(verts[v], verts[v + 1]) > rCut) return true;
-    }
+    if (faceSitsInBand(verts, faces, f, zLo, zHi, rCut)) return true;
   }
   return false;
 }
@@ -2223,14 +2237,7 @@ function stripDetachedFillSolid(mesh, zLo, zHi, rCut) {
   const hit = new Set();
   for (let f = 0; f < fc; f += 1) {
     if (faceMain[f]) continue;
-    for (let k = 0; k < 3; k += 1) {
-      const v = faces[f * 3 + k] * 3;
-      const z = verts[v + 2];
-      if (z >= zLo && z <= zHi && Math.hypot(verts[v], verts[v + 1]) > rCut) {
-        hit.add(find(faces[f * 3]));
-        break;
-      }
-    }
+    if (faceSitsInBand(verts, faces, f, zLo, zHi, rCut)) hit.add(find(faces[f * 3]));
   }
   if (!hit.size) return { mesh, stripped: 0 };
   const nf = [];
