@@ -194,6 +194,46 @@ describe("smoothPostAboveFinishLine", () => {
     expect(out.detail.fixedFinishVertices).toBe(SEGMENTS);
   });
 
+  it("closes the margin ring when one crease edge is under 20°", () => {
+    const rows = profile();
+    const marginRow = rows.findIndex((row) => row[1] === MARGIN.z);
+    const at = (i, j) => {
+      const [r, z] = rows[i];
+      const t = (2 * Math.PI * (j % SEGMENTS)) / SEGMENTS;
+      return [r * Math.cos(t), r * Math.sin(t), z];
+    };
+    const positions = [];
+    for (let i = 0; i + 1 < rows.length; i += 1) {
+      for (let j = 0; j < SEGMENTS; j += 1) {
+        const a = at(i, j);
+        const b = at(i, j + 1);
+        const c = at(i + 1, j + 1);
+        const d = at(i + 1, j);
+        const soften = i === marginRow && j === 0;
+        if (rows[i][0] > 0) {
+          if (!soften) positions.push(...a, ...b, ...c);
+          else {
+            // 마진 변 a–b를 아래 면과 같은 평면에 붙여 꺾임을 20° 밑으로 만든다.
+            const below = at(i - 1, j);
+            const mid = [0, 1, 2].map((k) => (a[k] + b[k]) / 2);
+            const F = [0, 1, 2].map((k) => mid[k] + 0.5 * (below[k] - mid[k]));
+            positions.push(...a, ...b, ...F, ...a, ...F, ...c, ...F, ...b, ...c);
+          }
+        }
+        if (rows[i + 1][0] > 0) positions.push(...a, ...c, ...d);
+      }
+    }
+    const gapped = writeBinaryStl({
+      positions: Float32Array.from(positions),
+      attributes: new Uint16Array(positions.length / 9),
+    });
+    const crease = findFinishCrease(prepareCuffMesh(gapped).mesh, finishLineZByAngle(finishLine));
+    expect(crease?.loop.length).toBe(SEGMENTS);
+    const out = smoothPostAboveFinishLine(gapped, { finishLine });
+    expect(out.status).toBe("applied");
+    expect(out.detail.patchTriangles).toBeGreaterThan(0);
+  });
+
   it("smooths the shoulder and post across a 0.05mm vertical margin collar", () => {
     const rows = [[0, 0]];
     for (let i = 0; i <= 20; i += 1) rows.push([2 + (0.5 * i) / 20, (2 * i) / 20]);

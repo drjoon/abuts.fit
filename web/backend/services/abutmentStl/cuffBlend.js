@@ -3100,6 +3100,7 @@ function finishLineZByAngle(finishLine) {
  * 피니시라인 점 근처에서 메시의 실제 마진 모서리(날카로운 모서리 한 바퀴)를 찾는다.
  * 피니시라인 점을 각도로 선형 보간한 곡선은 실제 모서리와 수십 µm 어긋나므로, 이음 위 끝은 이 모서리에 붙인다.
  * 고리에 꼭짓점 하나가 더 붙어 있으면(차수 1) 그 가지만 떼고 닫힌 고리는 쓴다.
+ * 모서리 한 곳만 20°보다 둔해서 고리가 경로로 열리면, 양 끝이 메시 변으로 이어진 한 바퀴는 그 변으로 닫는다.
  * @returns {{ loop: number[], edges: Set<string>, zOf: (theta: number) => number, meanOffsetMm: number } | null}
  */
 function creaseRayIntersector(loop, verts) {
@@ -3169,22 +3170,64 @@ function findFinishCrease(mesh, flZ) {
     adj.get(a).push(b);
     adj.get(b).push(a);
   }
-  // 닫힌 고리에 붙은 짧은 가지(끝점) 때문에 모서리 전체를 버리지 않는다.
+  // 닫힌 고리에 붙은 가지만 뗀다. 모서리 한 곳이 20°보다 둔해서 고리가 경로로 열린 경우는 지우지 않는다.
+  // 그 경로까지 끝점부터 걷어 내면 마진 한 바퀴가 사라지고 포스트 다듬기가 통째로 빠진다.
   const pending = [];
   for (const [v, ns] of adj) if (ns.length < 2) pending.push(v);
+  const openEnds = new Set();
   while (pending.length) {
     const v = pending.pop();
+    if (openEnds.has(v)) continue;
     const ns = adj.get(v);
-    if (!ns || ns.length >= 2) continue;
-    adj.delete(v);
-    for (const w of ns) {
-      const next = (adj.get(w) || []).filter((x) => x !== v);
-      if (next.length) adj.set(w, next);
-      else adj.delete(w);
-      if (next.length < 2) pending.push(w);
+    if (!ns || ns.length !== 1) continue;
+    let prev = v;
+    let cur = ns[0];
+    let junction = false;
+    for (let guard = 0; guard < adj.size + 2; guard += 1) {
+      const nexts = adj.get(cur);
+      if (!nexts) break;
+      if (nexts.length >= 3) {
+        junction = true;
+        break;
+      }
+      if (nexts.length <= 1) break;
+      const nxt = nexts[0] === prev ? nexts[1] : nexts[0];
+      prev = cur;
+      cur = nxt;
     }
+    if (!junction) {
+      openEnds.add(v);
+      continue;
+    }
+    adj.delete(v);
+    const w = ns[0];
+    const next = (adj.get(w) || []).filter((x) => x !== v);
+    if (next.length) adj.set(w, next);
+    else adj.delete(w);
+    if (next.length < 2) pending.push(w);
   }
   let best = null;
+  const accept = (loop) => {
+    if (loop.length < 16 || !angularRow(loop, verts)) return;
+    const meanOffsetMm =
+      loop.reduce((s, v) => s + Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]), 0) / loop.length;
+    if (!best || meanOffsetMm < best.meanOffsetMm) best = { loop, meanOffsetMm };
+  };
+  const walk = (start) => {
+    const loop = [start];
+    let prev = -1;
+    let cur = start;
+    for (;;) {
+      const ns = adj.get(cur);
+      const nxt = ns.find((w) => w !== prev);
+      if (nxt == null || nxt === start) break;
+      loop.push(nxt);
+      prev = cur;
+      cur = nxt;
+      if (loop.length > adj.size) break;
+    }
+    return loop;
+  };
   const seen = new Set();
   for (const start of adj.keys()) {
     if (seen.has(start)) continue;
@@ -3201,23 +3244,20 @@ function findFinishCrease(mesh, flZ) {
         }
       }
     }
-    if (comp.length < 16 || comp.some((v) => adj.get(v).length !== 2)) continue;
-    const loop = [start];
-    let prev = -1;
-    let cur = start;
-    for (;;) {
-      const [n0, n1] = adj.get(cur);
-      const nxt = n0 !== prev ? n0 : n1;
-      if (nxt === start) break;
-      loop.push(nxt);
-      prev = cur;
-      cur = nxt;
-      if (loop.length > comp.length) break;
+    if (comp.length < 16) continue;
+    if (comp.every((v) => adj.get(v).length === 2)) {
+      const loop = walk(start);
+      if (loop.length === comp.length) accept(loop);
+      continue;
     }
-    if (loop.length !== comp.length || !angularRow(loop, verts)) continue;
-    const meanOffsetMm =
-      loop.reduce((s, v) => s + Math.abs(flZ(angleOf(verts[v * 3], verts[v * 3 + 1])) - verts[v * 3 + 2]), 0) / loop.length;
-    if (!best || meanOffsetMm < best.meanOffsetMm) best = { loop, meanOffsetMm };
+    const ends = comp.filter((v) => adj.get(v).length === 1);
+    if (ends.length !== 2 || comp.some((v) => adj.get(v).length > 2)) continue;
+    const loop = walk(ends[0]);
+    if (loop.length !== comp.length) continue;
+    const [a, b] = [loop[0], loop[loop.length - 1]];
+    const closing = edgeFaces.get(ek(a, b));
+    // 양 끝이 메시 변으로 이어져 있으면 그 변의 꺾임이 20° 미만이어도 마진 고리로 닫는다.
+    if (closing?.length === 2) accept(loop);
   }
   if (!best) return null;
   const edges = new Set(best.loop.map((v, i) => ek(v, best.loop[(i + 1) % best.loop.length])));

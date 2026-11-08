@@ -173,4 +173,44 @@ describe("evaluateAutoMachiningGate", () => {
       evaluateAutoMachiningGate(okRequest({ stlFile: undefined })).reasons,
     ).toContain("missing_filled_stl");
   });
+  it("포스트 다듬기 누락은 보류하고, 이미 다듬은 면은 통과", () => {
+    expect(
+      evaluateAutoMachiningGate(
+        okRequest({
+          cuffBlend: {
+            status: "applied",
+            postSmooth: { status: "skipped", reason: "마진 모서리를 찾지 못했습니다." },
+          },
+        }),
+      ).reasons,
+    ).toContain("post_smooth_omitted");
+    expect(
+      evaluateAutoMachiningGate(
+        okRequest({
+          cuffBlend: {
+            status: "applied",
+            postSmooth: { status: "failed", reason: "다듬기 실패" },
+          },
+        }),
+      ).verdict,
+    ).toBe("hold");
+    const already = evaluateAutoMachiningGate(
+      okRequest({
+        cuffBlend: {
+          status: "applied",
+          postSmooth: { status: "skipped", reason: "이미 다듬은 포스트입니다." },
+        },
+      }),
+    );
+    expect(already.reasons).not.toContain("post_smooth_omitted");
+    expect(already.verdict).toBe("approved");
+    expect(
+      evaluateAutoMachiningGate(
+        okRequest({ cuffBlend: { status: "applied", postSmooth: { status: "applied" } } }),
+      ).verdict,
+    ).toBe("approved");
+    expect(
+      evaluateAutoMachiningGate(okRequest({ cuffBlend: { status: "applied" } })).verdict,
+    ).toBe("approved");
+  });
 });

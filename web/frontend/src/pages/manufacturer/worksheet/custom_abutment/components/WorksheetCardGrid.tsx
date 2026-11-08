@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-10-24: STL 생성 중 오버레이는 12초가 지나면 초 단위로 끈다.
+// - 2026-11-08: 포스트 다듬기 누락은 준비·가공 전 카드 «다듬기 누락». 자동 승인은 보류.
 // - 2026-10-24: 마진 필레만 약한 건은 불완전 뱃지에서 뺀다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
 // - 2026-10-21: 짧은 커프 경고는 50건 통과·실패 0 전까지 유지한다.
@@ -104,6 +104,7 @@ import {
   isCuffProposalPending,
   isCuffSpecPending,
   isMiniNarrowCuffFamily,
+  isPostSmoothOmitted,
   resolveCuffBlend,
 } from "../utils/cuffBlendStatus";
 import { RequestInfoSummary } from "./RequestInfoSummary";
@@ -431,6 +432,8 @@ export const WorksheetCardGrid = ({
           isPreMachiningTab && isCuffSpecPending(cuffBlend);
         const isCuffProposalWaiting =
           isPreMachiningTab && isCuffProposalPending(caseInfos);
+        const showPostSmoothOmitBadge =
+          isPreMachiningTab && isPostSmoothOmitted(cuffBlend) && !rhinoWorkPending;
         const isUnmachinableSample = Boolean(
           (request as any)?.rnd?.unmachinableAt,
         );
@@ -1519,6 +1522,19 @@ export const WorksheetCardGrid = ({
                             title={`커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`}
                           >
                             커프 확인
+                          </Badge>
+                        ) : null}
+                        {showPostSmoothOmitBadge ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                            title={
+                              cuffBlend?.postSmooth?.reason
+                                ? `포스트 다듬기를 건너뛰었습니다(${cuffBlend.postSmooth.reason}).`
+                                : "포스트 다듬기를 건너뛰었습니다."
+                            }
+                          >
+                            다듬기 누락
                           </Badge>
                         ) : null}
                         {isCuffProposalWaiting && !rhinoWorkPending ? (

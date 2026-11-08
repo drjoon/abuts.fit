@@ -5,7 +5,7 @@
 // - web/backend/models/request.model.js (autoMachiningReview)
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
-// - 2026-10-24: 마진 필레만 약한 건은 보류하지 않는다. 업로드 때 고지하고 동의 후 진행한다.
+// - 2026-11-08: 포스트 다듬기 누락(skipped/failed)은 보류. 이미 다듬은 면과 기록 없는 예전 건은 통과.
 // - 2026-10-14: 제외 의뢰자(excludedRequestorAnchorIds)는 자동 승인하지 않는다. 작업자 수동 승인은 그대로다.
 // - 2026-10-10: 자동 승인을 켠 뒤 30초 유예 동안은 준비→가공 승인을 하지 않는다.
 // - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
@@ -30,6 +30,7 @@ import {
 } from "../utils/testAccountMachining.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { isAutoStartGraceActive } from "./autoStartGrace.js";
+import { POST_SMOOTH_ALREADY_REASON } from "./abutmentStl/postSmooth.js";
 
 function anchorIdOf(request) {
   const raw = request?.businessAnchorId;
@@ -84,6 +85,13 @@ const num = (v) => {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
 };
+
+/** 포스트 다듬기가 기록됐고, 적용되지 않았다. 이미 다듬은 면을 다시 안 한 경우는 누락이 아니다. */
+export function isPostSmoothOmitted(cuffBlend) {
+  const status = String(cuffBlend?.postSmooth?.status || "").trim();
+  if (status !== "skipped" && status !== "failed") return false;
+  return String(cuffBlend?.postSmooth?.reason || "").trim() !== POST_SMOOTH_ALREADY_REASON;
+}
 
 export async function getAutoGateConfig() {
   const doc = await SystemSettings.findOne({ key: "global" })
@@ -152,6 +160,8 @@ export function evaluateAutoMachiningGate(request, cfg = AUTO_GATE_DEFAULTS) {
   if (String(ci.cuffProposal?.status || "").trim() === "proposed") {
     reasons.push("cuff_proposal_pending");
   }
+  // 포스트 다듬기가 빠지면 원본 폴리곤이 남는다. 기록 자체가 없는 예전 건은 보류하지 않는다.
+  if (isPostSmoothOmitted(ci.cuffBlend)) reasons.push("post_smooth_omitted");
 
   // NC가 이미 있으면 좌표 범위도 준비 단계 보류다. 가공으로 넘기지 않는다.
   // 가공에 들어간 뒤의 장비 오류는 가공 카드 알람으로 본다.
@@ -211,6 +221,9 @@ function needsEvaluation(request, excludedIds) {
       : 0,
     request.caseInfos?.stlMetadataUpdatedAt
       ? new Date(request.caseInfos.stlMetadataUpdatedAt).getTime()
+      : 0,
+    request.caseInfos?.cuffBlend?.updatedAt
+      ? new Date(request.caseInfos.cuffBlend.updatedAt).getTime()
       : 0,
   );
   return changed > at;

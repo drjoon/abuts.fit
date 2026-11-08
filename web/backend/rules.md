@@ -222,8 +222,8 @@
 
 ### 포스트 계단 결 다듬기(postSmooth)
 
-- 커프 보정과 같은 worker에서 `smoothPostAboveFinishLine`이 피니시라인 위 포스트(크라운이 앉는 면)를 다듬는다. auto는 커프가 `manual-review`·`spec-pending`이어도 포스트는 다듬는다(스펙 없으면 worker `post` 모드). Re는 재디자인이 적용될 때만. 다듬기가 실패·건너뜀이면 커프 결과(또는 입력)를 그대로 쓴다. 결과는 `caseInfos.cuffBlend.postSmooth`.
-- 마진 고리에 끝점(차수 1)이 더 붙어 있으면 그 가지만 떼고 닫힌 고리를 쓴다. 가지 하나 때문에 포스트 다듬기 전체를 건너뛰지 않는다. 마진 모서리(`findFinishCrease`) 꼭짓점과 그 아래는 비트 단위로 그대로다. 나머지는 원본 면 **안쪽으로만** 옮긴다(꼭짓점·모서리 가운데·면 중심을 원본 면 부호거리로 검사). 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 디자인 모서리로 고정하고 0.12mm 안은 원본으로 넘긴다. 그 몇 곳 때문에 포스트 전체를 건너뛰지 않는다. 고정한 뒤에도 한계를 넘거나 움직일 꼭짓점이 없으면 적용하지 않는다. 샘플 기준 안쪽 이동 중앙값 1.4~2µm, 최대 7~20µm.
+- 커프 보정과 같은 worker에서 `smoothPostAboveFinishLine`이 피니시라인 위 포스트(크라운이 앉는 면)를 다듬는다. auto는 커프가 `manual-review`·`spec-pending`이어도 포스트는 다듬는다(스펙 없으면 worker `post` 모드). Re는 재디자인이 적용될 때만. 다듬기가 실패·건너뜀이면 커프 결과(또는 입력)를 그대로 쓴다. 결과는 `caseInfos.cuffBlend.postSmooth`. `skipped`·`failed`는 준비 카드 «다듬기 누락»이고 자동 승인에서 빠진다(`post_smooth_omitted`). `이미 다듬은 포스트입니다`는 누락이 아니다. 작업자 승인(화살표)은 그대로 가공으로 넘긴다.
+- 마진 고리에 끝점(차수 1)이 더 붙어 있으면 그 가지만 떼고 닫힌 고리를 쓴다. 가지 하나 때문에 포스트 다듬기 전체를 건너뛰지 않는다. 모서리 한 곳만 20°보다 둔해서 고리가 경로로 열리면, 양 끝이 메시 변으로 이어져 있고 한 바퀴면 그 변으로 닫는다. 열린 경로를 끝점부터 지우면 마진 전체가 사라져 포스트가 원본 폴리곤으로 남는다. 마진 모서리(`findFinishCrease`) 꼭짓점과 그 아래는 비트 단위로 그대로다. 나머지는 원본 면 **안쪽으로만** 옮긴다(꼭짓점·모서리 가운데·면 중심을 원본 면 부호거리로 검사). 50µm보다 깊이 들어가야 하는 꼭짓점은 그 자리만 디자인 모서리로 고정하고 0.12mm 안은 원본으로 넘긴다. 그 몇 곳 때문에 포스트 전체를 건너뛰지 않는다. 고정한 뒤에도 한계를 넘거나 움직일 꼭짓점이 없으면 적용하지 않는다. 샘플 기준 안쪽 이동 중앙값 1.4~2µm, 최대 7~20µm.
 - 30° 넘게 꺾이는 모서리(슬롯·스크류홀 메움 테두리)와 스크류 채널과 벽이 얇은 곳은 고정한다. 영역은 마진 모서리 위 면에서 시작해 이런 모서리를 넘지 않는다(열린 채널로 마진 아래까지 새지 않게).
 - 영역 삼각형을 한 번 4등분하고, 마진 위 1.2mm 숄더는 한 번 더 4등분한다(고정 꼭짓점 둘을 잇는 모서리는 나누지 않는다). 원본 면에 국소 2차 곡면(σ 0.2mm)을 맞춘 뒤 원본 밖으로 나간 양만큼 매끈하게 함께 내린다. 마진 위 0.08mm·디자인 모서리 0.12mm 안에서 원본으로 넘어간다.
 - 다듬은 삼각형 attribute는 `0x5053`. 이미 있으면(Re로 다시 들어온 filled) 다시 다듬지 않는다.
@@ -477,7 +477,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
   - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF). 섀도 모드는 없다(켜면 통과 건을 바로 승인). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.
   - 통과 건을 수동 승인과 같은 `updateReviewStatusByStage`(stage=machining, nextUpCamRunGuard) 경로로 직렬 승인한다. 크레딧 차감은 수동 승인과 동일(아침에 사람이 되돌린다).
-  - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트기공소(사유 `test_account`; 테스트치과는 일반 의뢰처럼 자동 승인), 제외 의뢰자(사유 `excluded_requestor`, `autoMachiningGate.excludedRequestorAnchorIds`). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
+  - 보류 조건: 직경(>10mm·소재그룹 초과·측정오류), 피니시라인 불량·`min_z<0.6`, `cuffBlend` 비적용·제안 대기, 포스트 다듬기 누락(`postSmooth` `skipped`/`failed`, 사유 `post_smooth_omitted`. `이미 다듬은 포스트입니다`와 기록이 없는 예전 건은 통과), `ncFile.analysis.flags`, filled STL·피니시라인 누락, 테스트기공소(사유 `test_account`; 테스트치과는 일반 의뢰처럼 자동 승인), 제외 의뢰자(사유 `excluded_requestor`, `autoMachiningGate.excludedRequestorAnchorIds`). 커프 미가공은 검출하지 않는다(육안). 장비·소재·공구 상태는 작업자가 관리하므로 보지 않는다.
   - 제외 의뢰자: 준비 화면 자동 승인 카드의 «제외»가 목록을 저장한다. 그 의뢰자가 올린 준비 카드는 «제외» 뱃지. 자동 승인은 건너뛰고, 작업자 승인(화살표)은 가공으로 넘긴다.
   - 판정·HOLD 대상은 워크시트 이번 달(`createdAt`, KST `calendarMonth`) 준비 의뢰만이다. 그 밖 준비 의뢰에 남은 판정은 지운다. PTX 연결 건은 어벗츠 디자인 완료(`designCompletedAt`) 전에는 준비 큐에 없으므로 판정·HOLD에서도 뺀다(`READY_QUEUE_GUARD`).
   - HOLD 카드(가공 보드)는 가공 단계로 넘어간 뒤(CAM 생성 후·가공 후)의 문제(NC 좌표 한계·용량 초과)만 보여 준다. HOLD 건은 Next Up·대기 건수에 넣지 않는다. 준비 단계 문제(STL·피니시라인·커프·직경)와 테스트 계정은 가공으로 보내지 않고 준비에 남긴다(`autoMachiningReview` 판정만 기록). 장비별 자동 스위치는 전체 자동 승인 스위치와 독립이다(개별 OFF가 전체 스위치 표시·설정을 바꾸지 않는다).

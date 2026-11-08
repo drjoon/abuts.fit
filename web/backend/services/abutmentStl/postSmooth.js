@@ -13,6 +13,8 @@ import { writeBinaryStl } from "../../utils/screwHoleFill.js";
 import { findFinishCrease, finishLineZByAngle, prepareCuffMesh } from "./cuffBlend.js";
 
 export const POST_SMOOTH_VERSION = "post-smooth-1";
+/** 이미 다듬은 filled를 다시 받은 경우. 누락이 아니다. */
+export const POST_SMOOTH_ALREADY_REASON = "이미 다듬은 포스트입니다.";
 /** 이 attribute의 삼각형은 포스트 다듬기 곡면이다. */
 export const POST_SMOOTH_PATCH_ATTRIBUTE = 0x5053;
 
@@ -538,7 +540,7 @@ function run(buffer, { finishLine }) {
   if (!flZ) skip("피니시라인이 없습니다.");
   const { mesh } = prepareCuffMesh(buffer);
   // Re 재디자인은 이미 다듬은 filled를 다시 받는다. 또 다듬으면 안쪽으로 누적해 들어간다.
-  if (mesh.faceAttr.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) skip("이미 다듬은 포스트입니다.");
+  if (mesh.faceAttr.some((a) => a === POST_SMOOTH_PATCH_ATTRIBUTE)) skip(POST_SMOOTH_ALREADY_REASON);
   const crease = findFinishCrease(mesh, flZ);
   if (!crease) skip("마진 모서리를 찾지 못했습니다.");
   lap("prepare");

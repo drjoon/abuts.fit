@@ -27,6 +27,10 @@ export type CuffBlendRecord = {
     analyzedAt?: string | null;
   } | null;
   updatedAt?: string | null;
+  postSmooth?: {
+    status?: "applied" | "skipped" | "failed" | string;
+    reason?: string | null;
+  } | null;
 };
 
 export function resolveCuffBlend(caseInfos: unknown): CuffBlendRecord | null {
@@ -47,6 +51,16 @@ export function isCuffProposalPending(caseInfos: unknown): boolean {
 /** 커넥션 스펙 미등록·형상 불일치 — 개발팀이 스펙표를 갱신해야 한다. */
 export function isCuffSpecPending(rec: CuffBlendRecord | null): boolean {
   return rec?.status === "spec-pending";
+}
+
+/** postSmooth.js — 이미 다듬은 filled를 다시 받은 경우. 누락이 아니다. */
+const POST_SMOOTH_ALREADY_REASON = "이미 다듬은 포스트입니다.";
+
+/** 포스트 다듬기가 빠졌다. 기록이 없는 예전 건과, 이미 다듬은 면은 해당 없다. */
+export function isPostSmoothOmitted(rec: CuffBlendRecord | null): boolean {
+  const status = String(rec?.postSmooth?.status || "").trim();
+  if (status !== "skipped" && status !== "failed") return false;
+  return String(rec?.postSmooth?.reason || "").trim() !== POST_SMOOTH_ALREADY_REASON;
 }
 
 const tokenFamily = (value?: string | null) =>
