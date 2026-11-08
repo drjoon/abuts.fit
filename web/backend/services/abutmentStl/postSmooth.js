@@ -438,6 +438,11 @@ class SignedDistance {
     return this.nearest(x, y, z, this.ring(parentFace));
   }
 
+  /** 격자 칸 번호 → 숫자 키(문자열 키는 질의마다 할당이 커서 병목이었다). */
+  static cellKey(i, j, k) {
+    return ((i + 65536) * 131072 + (j + 65536)) * 131072 + (k + 65536);
+  }
+
   /** 위상과 상관없이 가까운 면 전부(얇은 벽 뒤 다른 면까지) 본다. */
   queryGlobal(x, y, z) {
     if (!this.grid) {
@@ -445,6 +450,25 @@ class SignedDistance {
       const cell = THIN_PROBE_MM.at(-1);
       this.gridCell = cell;
       this.grid = new Map();
+      this.candStamp = new Int32Array(faces.length / 3);
+      // 삼각형 AABB. nearest가 가장 가까운 후보보다 확실히 먼 면을 삼각형 계산 없이 건너뛴다.
+      const fcount = faces.length / 3;
+      const bb = new Float64Array(fcount * 6);
+      for (let f = 0; f < fcount; f += 1) {
+        const a0 = faces[f * 3] * 3;
+        const b0 = faces[f * 3 + 1] * 3;
+        const c0 = faces[f * 3 + 2] * 3;
+        for (let q = 0; q < 3; q += 1) {
+          const va = verts[a0 + q];
+          const vb = verts[b0 + q];
+          const vc = verts[c0 + q];
+          bb[f * 6 + q] = Math.min(va, vb, vc);
+          bb[f * 6 + 3 + q] = Math.max(va, vb, vc);
+        }
+      }
+      this.faceBox = bb;
+      this.candEpoch = 0;
+      this.candCache = new Map();
       for (let f = 0; f < faces.length / 3; f += 1) {
         if (!this.faceMain[f]) continue;
         const a0 = faces[f * 3] * 3;
@@ -466,7 +490,7 @@ class SignedDistance {
         for (let i = lo[0]; i <= hi[0]; i += 1) {
           for (let j = lo[1]; j <= hi[1]; j += 1) {
             for (let k = lo[2]; k <= hi[2]; k += 1) {
-              const key = `${i},${j},${k}`;
+              const key = SignedDistance.cellKey(i, j, k);
               const list = this.grid.get(key);
               if (list) list.push(f);
               else this.grid.set(key, [f]);
@@ -479,22 +503,49 @@ class SignedDistance {
     const ix = Math.floor(x / c);
     const iy = Math.floor(y / c);
     const iz = Math.floor(z / c);
-    const cand = new Set();
-    for (let dx = -1; dx <= 1; dx += 1) {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dz = -1; dz <= 1; dz += 1) {
-          for (const f of this.grid.get(`${ix + dx},${iy + dy},${iz + dz}`) || []) cand.add(f);
+    // 27칸 후보를 처음 만난 순서대로 한 번씩만 모은다(같은 면이 여러 칸에 걸려 있다).
+    // 질의점은 서로 가까워 같은 중심 칸을 자주 공유한다. 칸별로 한 번만 모아 둔다(순서 동일).
+    const centerKey = SignedDistance.cellKey(ix, iy, iz);
+    let cand = this.candCache.get(centerKey);
+    if (!cand) {
+      const list27 = [];
+      this.candEpoch += 1;
+      const epoch = this.candEpoch;
+      const stamp = this.candStamp;
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dz = -1; dz <= 1; dz += 1) {
+            const list = this.grid.get(SignedDistance.cellKey(ix + dx, iy + dy, iz + dz));
+            if (!list) continue;
+            for (let q = 0; q < list.length; q += 1) {
+              const f = list[q];
+              if (stamp[f] !== epoch) {
+                stamp[f] = epoch;
+                list27.push(f);
+              }
+            }
+          }
         }
       }
+      cand = Int32Array.from(list27);
+      this.candCache.set(centerKey, cand);
     }
-    return this.nearest(x, y, z, cand);
+    return this.nearest(x, y, z, cand, this.faceBox);
   }
 
-  nearest(x, y, z, candidates) {
-    const { verts, faces, cp, A, B, C, nv } = this;
+  nearest(x, y, z, candidates, faceBox = null) {
+    const { verts, faces, cp, A, B, C, nv, fn, vn } = this;
     let best = Infinity;
     let sign = 1;
     for (const f of candidates) {
+      if (faceBox !== null && best < Infinity) {
+        // AABB까지의 거리는 삼각형까지 거리의 하한이다. best 이상이면 아래에서도 continue 된다.
+        const o = f * 6;
+        const ex = x < faceBox[o] ? faceBox[o] - x : x > faceBox[o + 3] ? x - faceBox[o + 3] : 0;
+        const ey = y < faceBox[o + 1] ? faceBox[o + 1] - y : y > faceBox[o + 4] ? y - faceBox[o + 4] : 0;
+        const ez = z < faceBox[o + 2] ? faceBox[o + 2] - z : z > faceBox[o + 5] ? z - faceBox[o + 5] : 0;
+        if (ex * ex + ey * ey + ez * ez > best * (1 + 1e-9)) continue;
+      }
       const a = faces[f * 3];
       const b = faces[f * 3 + 1];
       const c = faces[f * 3 + 2];
@@ -510,17 +561,27 @@ class SignedDistance {
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 >= best) continue;
       best = d2;
-      let n;
-      if (region === 0) n = [this.fn[f * 3], this.fn[f * 3 + 1], this.fn[f * 3 + 2]];
-      else if (region >= 4) {
+      let n0;
+      let n1;
+      let n2;
+      if (region === 0) {
+        n0 = fn[f * 3];
+        n1 = fn[f * 3 + 1];
+        n2 = fn[f * 3 + 2];
+      } else if (region >= 4) {
         const v = [a, b, c][region - 4];
-        n = [this.vn[v * 3], this.vn[v * 3 + 1], this.vn[v * 3 + 2]];
+        n0 = vn[v * 3];
+        n1 = vn[v * 3 + 1];
+        n2 = vn[v * 3 + 2];
       } else {
         const p = [a, b, c][region - 1];
         const q = [a, b, c][region % 3];
-        n = this.edgeN.get(p < q ? p * nv + q : q * nv + p);
+        const en = this.edgeN.get(p < q ? p * nv + q : q * nv + p);
+        n0 = en[0];
+        n1 = en[1];
+        n2 = en[2];
       }
-      sign = dx * n[0] + dy * n[1] + dz * n[2] >= 0 ? 1 : -1;
+      sign = dx * n0 + dy * n1 + dz * n2 >= 0 ? 1 : -1;
     }
     return Math.sqrt(best) * sign;
   }

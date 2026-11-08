@@ -377,10 +377,30 @@ else
   fi
 fi
 
-# 커프 보정은 EBS가 아니라 람다 zip을 실행한다. 웹 배포와 같이 코드를 갱신한다.
-# node_modules 이동 전에 빌드해야 esbuild를 쓸 수 있다. 함수 이름이 이미 같으면 setenv는 하지 않는다.
-info "커프 보정 람다 배포 ($ENV_MODE)"
-"$BACKEND_DIR/scripts/abutment-stl-js/deploy-stl-cuff-lambda.sh" "$ENV_MODE" --with-eb || error "커프 보정 람다 배포 실패"
+# filled·cuff·correct STL 계산은 EBS가 아니라 각 람다 zip이 실행한다.
+# 번들 해시(핸들러가 import하는 소스 + 빌드·배포 스크립트)가 마지막 성공 배포와 다를 때만 그 람다를 배포한다.
+# node_modules 이동 전에 해야 esbuild를 쓸 수 있다. 함수 이름이 이미 같으면 setenv는 하지 않는다.
+# 강제 배포: FORCE_LAMBDA_DEPLOY=true ./eb.sh
+deploy_stl_lambdas_if_changed() {
+  local kind hash_file new_hash prev_hash
+  for kind in filled cuff correct; do
+    hash_file="$PARENT_DIR/.eb_lambda_${kind}_${ENV_MODE}_${ENV_NAME_SLUG}.sha"
+    new_hash="$(cd "$BACKEND_DIR" && node scripts/abutment-stl-js/lambda-bundle-hash.mjs "$kind")" \
+      || error "${kind} 람다 번들 해시 계산 실패"
+    prev_hash=""
+    [[ -f "$hash_file" ]] && prev_hash="$(tr -d '\n' < "$hash_file")"
+
+    if [[ "${FORCE_LAMBDA_DEPLOY:-}" != "true" && "$new_hash" == "$prev_hash" ]]; then
+      info "${kind} 람다 변경 없음 → 배포 스킵"
+      continue
+    fi
+    info "${kind} 람다 변경 감지 → 배포 ($ENV_MODE)"
+    "$BACKEND_DIR/scripts/abutment-stl-js/deploy-stl-${kind}-lambda.sh" "$ENV_MODE" --with-eb \
+      || error "${kind} 람다 배포 실패"
+    printf '%s' "$new_hash" > "$hash_file"
+  done
+}
+deploy_stl_lambdas_if_changed
 
 # 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
 ensure_immutable_deploy_options "$EB_ENV_NAME"
