@@ -21,16 +21,17 @@ import { CuffLambdaTimeoutError, cuffBlendLambdaName, runCuffBlendOnLambda } fro
 import { shouldUseStlLambda } from "./execution.js";
 
 const WORKER_URL = new URL("./cuffBlend.worker.js", import.meta.url);
-const TIMEOUT_MS = Number(process.env.CUFF_BLEND_TIMEOUT_MS || 30 * 1000);
+/** 단독 실행도 포스트 다듬기까지 20~30초라, 여러 건이 겹치는 로컬 워커에서는 30초가 모자랐다(2026-11-09). 람다는 60초 한도. */
+const TIMEOUT_MS = Number(process.env.CUFF_BLEND_TIMEOUT_MS || 55 * 1000);
 
 export function isCuffBlendAutoEnabled() {
   return String(process.env.CUFF_BLEND_AUTO_DISABLED || "").trim() !== "true";
 }
 
 /** register-file 안 auto 보정이 메시 worker 슬롯을 기다리는 한도. 넘으면 보정을 건너뛰고 등록은 계속한다. */
-const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS || 15 * 1000);
+const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS || 180 * 1000);
 /** Re·제안 수락처럼 버튼이 기다리는 경로의 슬롯 대기 한도. */
-const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 30 * 1000);
+const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 60 * 1000);
 
 /**
  * 실행 위치는 execution.js가 정한다(로컬만 워커, 테스트·프로덕션은 람다). 람다 호출 자체가 실패하면 로컬 워커.

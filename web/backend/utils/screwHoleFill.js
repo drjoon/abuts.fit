@@ -19,6 +19,8 @@ const WALL_MIN_INWARD = 0.8;
 const WALL_MAX_ABS_NZ = 0.55;
 const WALL_MAX_RADIAL_STD = 0.25;
 const MIN_AZIMUTH_COVERAGE = 0.85;
+/** 채널 반경에서 벗어난(나팔 입구) 정점 비율 상한. */
+const WALL_MAX_FLARE_SHARE = 0.3;
 /** 채널 벽 반경에서 이만큼 바깥 원기둥으로 잘라 0.01mm 모따기 띠를 걷어낸다. */
 const CUT_COLLAR_MM = 0.025;
 /** 둘레 각도 격자(2° 간격, 180열). */
@@ -292,23 +294,32 @@ function findUpperRimLoop(verts, faces) {
     }
     const covered = new Uint8Array(bins);
     let zMax = -Infinity;
-    let sum = 0;
-    let sumSq = 0;
+    const radii = [];
     for (const v of vset) {
       const x = verts[v * 3];
       const y = verts[v * 3 + 1];
-      const r = Math.hypot(x, y);
-      sum += r;
-      sumSq += r * r;
+      radii.push(Math.hypot(x, y));
       zMax = Math.max(zMax, verts[v * 3 + 2]);
       const ang = Math.atan2(y, x);
       covered[Math.min(bins - 1, Math.floor(((ang + Math.PI) / TWO_PI) * bins))] = 1;
     }
-    const n = vset.size;
+    // 입구가 나팔처럼 벌어진 채널도 있어서 중앙값 근처 정점으로 채널 반경을 잰다.
+    // 정상 반경(중앙값 ±0.25mm) 정점이 대부분이면 채널 벽이다.
+    const sortedR = radii.slice().sort((x, y) => x - y);
+    const rMed = sortedR[Math.floor(sortedR.length / 2)];
+    const inliers = radii.filter((r) => Math.abs(r - rMed) <= WALL_MAX_RADIAL_STD);
+    let sum = 0;
+    let sumSq = 0;
+    for (const r of inliers) {
+      sum += r;
+      sumSq += r * r;
+    }
+    const n = inliers.length || 1;
     const rMean = sum / n;
     const rStd = Math.sqrt(Math.max(0, sumSq / n - rMean * rMean));
+    const flareShare = 1 - inliers.length / radii.length;
     const coverage = covered.reduce((s, v) => s + v, 0) / bins;
-    if (coverage < MIN_AZIMUTH_COVERAGE || rStd > WALL_MAX_RADIAL_STD) continue;
+    if (coverage < MIN_AZIMUTH_COVERAGE || rStd > WALL_MAX_RADIAL_STD || flareShare > WALL_MAX_FLARE_SHARE) continue;
     if (!best || zMax > best.zMax) {
       best = { faces: list, zMax, rMean, rStd };
     }
@@ -347,6 +358,14 @@ function findUpperRimLoop(verts, faces) {
     }
     if (comp.length < 8) continue;
     const zMean = comp.reduce((s, v) => s + verts[v * 3 + 2], 0) / comp.length;
+    // 나팔 입구 끝에 붙은 작은 조각이 가장 높아도 둘레를 두르지 못하면 개구 후보가 아니다.
+    const compCovered = new Uint8Array(bins);
+    for (const v of comp) {
+      const ang = Math.atan2(verts[v * 3 + 1], verts[v * 3]);
+      compCovered[Math.min(bins - 1, Math.floor(((ang + Math.PI) / TWO_PI) * bins))] = 1;
+    }
+    const compCoverage = compCovered.reduce((s, v) => s + v, 0) / bins;
+    if (compCoverage < MIN_AZIMUTH_COVERAGE) continue;
     if (!upper || zMean > upper.zMean) upper = { vertices: comp, zMean };
   }
   if (!upper) return { ok: false, reason: "스크류홀 상부 개구를 찾지 못했습니다." };

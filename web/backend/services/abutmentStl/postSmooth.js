@@ -38,6 +38,8 @@ const FEATURE_RAMP_MM = 0.12;
 /** 원본 밖으로 나간 양을 덮는 내림 폭. 이 반경 안에서 매끈하게 함께 내린다. */
 const LIFT_RADIUS_MM = 0.1;
 const LIFT_ROUNDS = 5;
+/** 내림으로 안 없어지는 꼭짓점을 고정하고 다시 맞추는 최대 횟수. */
+const SETTLE_ATTEMPTS = 6;
 /** 한 번에 넘친 양보다 조금 더 내려 반복 횟수를 줄인다. */
 const LIFT_OVERSHOOT = 1.2;
 /** 한 번 내린 뒤에도 넘친 양이 이 비율 넘게 남으면 그 꼭짓점은 고정한다. */
@@ -1224,7 +1226,23 @@ function run(buffer, { finishLine }) {
   let worst = measure();
   let rounds = 0;
   let prev = Float64Array.from(excess);
+  /**
+   * 내림을 반복해도 원본 밖으로 몇 µm 남는 꼭짓점은 원본 자리에 고정하고 다시 맞춘다.
+   * 한 곳 때문에 포스트 다듬기 전체를 건너뛰지 않는다(2026-11-09 WTRQZXSQ).
+   */
+  const settle = (extraRounds) => {
+    for (let attempt = 0; attempt < SETTLE_ATTEMPTS && worst > OUTSIDE_TOL_MM / 2; attempt += 1) {
+      const stuck = moving.filter((v) => excess[v] > 0);
+      if (!stuck.length) break;
+      freeze(stuck);
+      worst = measure();
+      prev = Float64Array.from(excess);
+      const budget = rounds + extraRounds;
+      while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    }
+  };
   while (worst > OUTSIDE_TOL_MM / 2 && rounds < LIFT_ROUNDS) liftOnce();
+  settle(LIFT_ROUNDS);
   lap("lift");
   if (worst > OUTSIDE_TOL_MM / 2) {
     skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
@@ -1243,6 +1261,7 @@ function run(buffer, { finishLine }) {
     prev = Float64Array.from(excess);
     const budget = rounds + LIFT_ROUNDS;
     while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    settle(LIFT_ROUNDS);
     if (worst > OUTSIDE_TOL_MM / 2) {
       skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
     }
@@ -1298,6 +1317,7 @@ function run(buffer, { finishLine }) {
     prev = Float64Array.from(excess);
     const budget = rounds + LIFT_ROUNDS;
     while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    settle(LIFT_ROUNDS);
     if (worst > OUTSIDE_TOL_MM / 2) {
       skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
     }
