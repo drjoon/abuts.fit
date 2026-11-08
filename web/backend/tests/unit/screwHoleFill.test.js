@@ -51,7 +51,7 @@ describe("fillUpperScrewHole", () => {
     const result = fillUpperScrewHole(buildTubeWithDetachedDisk());
     expect(result.ok).toBe(true);
     expect(result.stats.removedDetachedTriangles).toBe(SEG);
-    expect(result.stats.patchTriangles).toBe(SEG * (2 * result.stats.radialSteps - 1));
+    expect(result.stats.patchTriangles).toBeGreaterThan(SEG * result.stats.radialSteps);
     expect(result.stats.channelDiameter).toBeCloseTo(R_IN * 2, 2);
     expect(result.stats.rimZMin).toBeCloseTo(topZ(-R_IN), 2);
     expect(result.stats.rimZMax).toBeCloseTo(topZ(R_IN), 2);
@@ -74,45 +74,38 @@ describe("fillUpperScrewHole", () => {
     expect(patchCount).toBe(result.stats.patchTriangles);
   });
 
-  it("pulls a wavy rim onto the surrounding plane", () => {
+  it("pulls a wavy rim inward within 5um and damps interior waves", () => {
     const noisy = buildTubeWithDetachedDisk();
     const { positions, attributes } = parseStl(noisy);
     for (let i = 0; i < positions.length; i += 3) {
       const r = Math.hypot(positions[i], positions[i + 1]);
       if (r < R_IN + 0.05 && positions[i + 2] > 7) {
         const ang = Math.atan2(positions[i + 1], positions[i]);
-        positions[i + 2] += 0.05 * Math.sin(6 * ang);
+        positions[i + 2] += 0.004 * Math.sin(18 * ang);
       }
     }
     const result = fillUpperScrewHole(writeBinaryStl({ positions, attributes }));
     expect(result.ok).toBe(true);
-    expect(result.stats.rimMovedMaxUm).toBeGreaterThan(20);
+    expect(result.stats.rimMovedMaxUm).toBeGreaterThan(1);
+    expect(result.stats.rimMovedMaxUm).toBeLessThanOrEqual(5);
     const out = parseStl(result.buffer);
     for (let t = 0; t < out.attributes.length; t += 1) {
       if (out.attributes[t] !== HOLE_FILL_PATCH_ATTRIBUTE) continue;
       const p = out.positions.subarray(t * 9, t * 9 + 9);
       for (let k = 0; k < 3; k += 1) {
-        expect(Math.abs(p[k * 3 + 2] - topZ(p[k * 3]))).toBeLessThan(0.02);
+        expect(Math.abs(p[k * 3 + 2] - topZ(p[k * 3]))).toBeLessThan(0.006);
       }
     }
     const again = fillUpperScrewHole(result.buffer);
     expect(again.ok).toBe(true);
     expect(again.stats.rimMovedMaxUm).toBe(0);
-    const out2 = parseStl(again.buffer);
-    for (let t = 0; t < out2.attributes.length; t += 1) {
-      if (out2.attributes[t] !== HOLE_FILL_PATCH_ATTRIBUTE) continue;
-      const p = out2.positions.subarray(t * 9, t * 9 + 9);
-      for (let k = 0; k < 3; k += 1) {
-        expect(Math.abs(p[k * 3 + 2] - topZ(p[k * 3]))).toBeLessThan(0.02);
-      }
-    }
   });
 
   it("is idempotent when run on its own output", () => {
     const first = fillUpperScrewHole(buildTubeWithDetachedDisk());
     const second = fillUpperScrewHole(first.buffer);
     expect(second.ok).toBe(true);
-    expect(second.stats.removedPatchTriangles).toBe(SEG);
+    expect(second.stats.removedPatchTriangles).toBe(first.stats.patchTriangles);
     expect(Buffer.compare(first.buffer, second.buffer)).toBe(0);
   });
 

@@ -45,8 +45,10 @@ const LIFT_OVERSHOOT = 1.25;
 const STUCK_RATIO = 0.5;
 /** 원본 면 밖으로 이만큼도 나가지 않는다(float32 반올림 여유 포함). */
 const OUTSIDE_TOL_MM = 2e-5;
-/** 이보다 깊이 들어가야 하는 꼭짓점은 고정한다. 포스트 전체를 건너뛰지는 않는다. */
-const MAX_INWARD_MM = 0.05;
+/** 이보다 깊이 들어가야 하는 꼭짓점은 안쪽 이동을 5µm로 묶거나 고정한다. */
+const MAX_INWARD_MM = 0.005;
+/** 스크류 채널 벽과 그 입구 띠 반경. 여기서는 거친 면을 디자인 모서리나 얇은 벽으로 고정하지 않는다. */
+const CHANNEL_COLLAR_MAX_R_MM = 1.55;
 /** 면 안쪽 이 깊이들에 다른 면(스크류 채널 등)이 먼저 나오면 얇은 벽이라 그 꼭짓점은 고정한다. */
 const THIN_PROBE_MM = [0.03, 0.06, 0.1];
 
@@ -444,6 +446,20 @@ class SignedDistance {
       this.grid = new Map();
       for (let f = 0; f < faces.length / 3; f += 1) {
         if (!this.faceMain[f]) continue;
+        const a0 = faces[f * 3] * 3;
+        const b0 = faces[f * 3 + 1] * 3;
+        const c0 = faces[f * 3 + 2] * 3;
+        const cx = (verts[a0] + verts[b0] + verts[c0]) / 3;
+        const cy = (verts[a0 + 1] + verts[b0 + 1] + verts[c0 + 1]) / 3;
+        const rc = Math.hypot(cx, cy);
+        if (
+          rc > 1e-6 &&
+          rc <= 2.0 &&
+          -(this.fn[f * 3] * cx + this.fn[f * 3 + 1] * cy) / rc >= 0.7 &&
+          Math.abs(this.fn[f * 3 + 2]) <= 0.65
+        ) {
+          continue;
+        }
         const lo = [0, 1, 2].map((q) => Math.floor(Math.min(verts[faces[f * 3] * 3 + q], verts[faces[f * 3 + 1] * 3 + q], verts[faces[f * 3 + 2] * 3 + q]) / cell));
         const hi = [0, 1, 2].map((q) => Math.floor(Math.max(verts[faces[f * 3] * 3 + q], verts[faces[f * 3 + 1] * 3 + q], verts[faces[f * 3 + 2] * 3 + q]) / cell));
         for (let i = lo[0]; i <= hi[0]; i += 1) {
@@ -772,16 +788,21 @@ function run(buffer, { finishLine }) {
     const dot = fn[f * 3] * fn[g * 3] + fn[f * 3 + 1] * fn[g * 3 + 1] + fn[f * 3 + 2] * fn[g * 3 + 2];
     regionEdges.set(key, { a, b, w: (farea[f] + farea[g]) / 3 });
     if (dot < cosFeature) {
+      const mx = (P0[a * 3] + P0[b * 3]) / 2;
+      const my = (P0[a * 3 + 1] + P0[b * 3 + 1]) / 2;
       const mz = (P0[a * 3 + 2] + P0[b * 3 + 2]) / 2;
-      const mth = Math.atan2((P0[a * 3 + 1] + P0[b * 3 + 1]) / 2, (P0[a * 3] + P0[b * 3]) / 2);
+      const mr = Math.hypot(mx, my);
+      const mth = Math.atan2(my, mx);
       const isMarginCollar = mz - crease.zOf(mth) < MARGIN_COLLAR_HEIGHT_MM;
-      if (!isMarginCollar) {
+      const isChannelOpening = mr < CHANNEL_COLLAR_MAX_R_MM && fn[f * 3 + 2] > -0.1 && fn[g * 3 + 2] > -0.1;
+      if (!isMarginCollar && !isChannelOpening) {
         fixed[a] = 1;
         fixed[b] = 1;
         feature[a] = 1;
         feature[b] = 1;
+        continue;
       }
-      continue;
+      if (!isChannelOpening) continue;
     }
     for (const [p, q] of [[f, g], [g, f]]) {
       for (let k = 0; k < 3; k += 1) {
@@ -1056,10 +1077,11 @@ function run(buffer, { finishLine }) {
   let moving = regionVerts.filter((v) => ramp[v] > 0);
   let liftGrid = new PointGrid(pos, moving, LIFT_RADIUS_MM * 2);
   const lift = new Float64Array(nv);
+  const scale = new Float64Array(nv).fill(1);
   const X = Float64Array.from(pos);
   const place = () => {
     for (const v of moving) {
-      const w = ramp[v];
+      const w = ramp[v] * scale[v];
       for (let k = 0; k < 3; k += 1) {
         X[v * 3 + k] = pos[v * 3 + k] + w * (S[v * 3 + k] - lift[v] * SN[v * 3 + k] - pos[v * 3 + k]);
       }
@@ -1075,7 +1097,7 @@ function run(buffer, { finishLine }) {
       worst = Math.max(worst, d);
       for (const v of ids) {
         if (ramp[v] <= 0) continue;
-        const need = d / Math.max(ramp[v], 0.05);
+        const need = d / Math.max(ramp[v] * scale[v], 0.05);
         if (need > excess[v]) excess[v] = need;
       }
     };
@@ -1167,7 +1189,10 @@ function run(buffer, { finishLine }) {
     place();
     worst = measure();
     rounds += 1;
-    const stuck = moving.filter((v) => excess[v] > 0 && prev[v] > 0 && excess[v] > prev[v] * STUCK_RATIO);
+    // 이미 5µm 안쪽 한계에 걸려 줄인 꼭짓점은 STUCK_RATIO로 고정하지 않는다.
+    const stuck = moving.filter(
+      (v) => scale[v] >= 0.99 && excess[v] > 0 && prev[v] > 0 && excess[v] > prev[v] * STUCK_RATIO,
+    );
     if (stuck.length) {
       freeze(stuck);
       worst = measure();
@@ -1185,14 +1210,15 @@ function run(buffer, { finishLine }) {
     skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
   }
 
-  // 한 곳이 50µm를 넘으면 포스트 전체를 포기하지 않는다. 그 꼭짓점만 디자인 모서리로 고정하고
-  // 0.12mm 안은 원본으로 넘긴 뒤, 나머지 계단은 다듬는다.
+  // 안쪽 이동이 5µm를 넘는 곳은 먼저 급한 돌기(30µm 초과)만 고정하고, 나머지는 이동량을 5µm 안으로 부드럽게 줄인다.
   let heldDeep = 0;
   let stats = inwardStats();
   let holdPasses = 0;
-  while (stats.deep.length && holdPasses < 6) {
-    heldDeep += stats.deep.length;
-    freeze(stats.deep);
+  while (stats.deep.length && holdPasses < 4) {
+    const ridge = stats.deep.filter((v) => inwardOf(v) > 0.03);
+    if (!ridge.length) break;
+    heldDeep += ridge.length;
+    freeze(ridge);
     worst = measure();
     prev = Float64Array.from(excess);
     const budget = rounds + LIFT_ROUNDS;
@@ -1203,8 +1229,34 @@ function run(buffer, { finishLine }) {
     stats = inwardStats();
     holdPasses += 1;
   }
+  for (let capPass = 0; capPass < 3 && stats.maxInward > MAX_INWARD_MM; capPass += 1) {
+    for (const v of moving) {
+      const d = Math.max(
+        inwardOf(v),
+        Math.hypot(X[v * 3] - pos[v * 3], X[v * 3 + 1] - pos[v * 3 + 1], X[v * 3 + 2] - pos[v * 3 + 2]),
+      );
+      if (d > MAX_INWARD_MM * 0.99) scale[v] *= (MAX_INWARD_MM * 0.99) / d;
+    }
+    place();
+    worst = measure();
+    prev = Float64Array.from(excess);
+    const budget = rounds + LIFT_ROUNDS;
+    while (worst > OUTSIDE_TOL_MM / 2 && rounds < budget) liftOnce();
+    if (worst > OUTSIDE_TOL_MM / 2) {
+      skip("다듬은 면이 원본 밖으로 나가는 곳을 다 없애지 못했습니다.", { outsideUm: Math.round(worst * 1e4) / 10 });
+    }
+    stats = inwardStats();
+  }
+  if (stats.maxInward > MAX_INWARD_MM) {
+    for (const v of moving) {
+      const d = inwardOf(v);
+      if (d > MAX_INWARD_MM) scale[v] *= (MAX_INWARD_MM * 0.98) / d;
+    }
+    place();
+    stats = inwardStats();
+  }
   const { maxInward, sumInward, movedCount } = stats;
-  if (maxInward > MAX_INWARD_MM || movedCount === 0) {
+  if (maxInward > MAX_INWARD_MM + OUTSIDE_TOL_MM || movedCount === 0) {
     skip("포스트를 너무 깊이 깎아야 해서 적용하지 않았습니다.", { maxInwardUm: Math.round(maxInward * 1e4) / 10 });
   }
 
