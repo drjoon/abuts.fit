@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-11-08: 장시간 아웃라이어 기준 20분 → 30분 이상.
 // - 2026-10-19: 남은 machiningQty는 process-file에 batchContinue를 실어, 완료 직후 중복 차단을 통과한다.
 // - 2026-10-17: machiningQty>1이면 완료 후 수량만 깎고 같은 의뢰를 auto-next로 이어 가공한다.
 // - 2026-10-13: 더미 가공 완료는 세척.패킹으로 넘기지 않고 대기열에서 뺀다.
@@ -334,7 +335,7 @@ const resolveMachiningDurationSeconds = (record) => {
 };
 
 const MACHINING_DURATION_OUTLIER_LOW_MAX_SECONDS = 3 * 60; // 3분 이하
-const MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS = 20 * 60; // 20분 이상
+const MACHINING_DURATION_OUTLIER_HIGH_MIN_SECONDS = 30 * 60; // 30분 이상
 
 const buildCompletedAtRangeFromQuery = (req) => {
   const fromYmd = String(req.query.from || "").trim();
