@@ -430,7 +430,7 @@ const businessAnchorSchema = new mongoose.Schema(
       accountNumber: { type: String, default: "" },
       holderName: { type: String, default: "" },
       updatedAt: { type: Date, default: null },
-      /** 사업자 통장 사본(입금 계좌 확인용). */
+      /** 사업자 통장 사본. 선택. 있으면 치과 입금 화면에 보여 준다. */
       bankbook: {
         s3Key: { type: String, default: "" },
         fileId: { type: String, default: "" },

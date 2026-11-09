@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-10: 기공료 → 내역 바로가기(?ym=&q=)는 마운트 때 한 번만 적용.
 // - 2026-09-28: 내역·통계·지급은 작업영역 폭. 탭·충전 폼만 읽기 폭 유지.
 // - 2026-10-17: 치과 「충전」 탭 제거(?tab=charge→autopay). 기공소만 충전 유지.
 // - 2026-10-17: 치과 「자동정산」(기공의뢰 후불 OB) 탭.
@@ -38,7 +39,7 @@
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BarChart3, CreditCard, HandCoins, Landmark, Wallet } from "lucide-react";
 import {
@@ -48,7 +49,10 @@ import {
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { PracticeObBillingTab } from "@/features/settings/tabs/PracticeObBillingTab";
 import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
-import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
+import {
+  CreditLedgerModal,
+  type CreditLedgerInitialFilters,
+} from "@/shared/components/CreditLedgerModal";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { coalesceRequestorKind } from "@/shared/business/requestorCapabilities";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -92,6 +96,26 @@ export default function RequestorCreditsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const ledgerKey = 0;
   const activeTab = resolveCreditsTab(searchParams.get("tab"), isLab);
+  const ledgerYmParam = searchParams.get("ym") || "";
+  const ledgerQParam = searchParams.get("q") || "";
+  const ledgerInitialFilters = useMemo<CreditLedgerInitialFilters | undefined>(() => {
+    const ym = /^\d{4}-\d{2}$/.test(ledgerYmParam) ? ledgerYmParam : "";
+    const q = ledgerQParam.trim();
+    if (!ym && !q) return undefined;
+    return {
+      ...(ym ? { customStartDate: `${ym}-01` } : {}),
+      ...(q ? { q } : {}),
+    };
+  }, [ledgerQParam, ledgerYmParam]);
+
+  useEffect(() => {
+    if (activeTab !== "ledger") return;
+    if (!searchParams.has("ym") && !searchParams.has("q")) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("ym");
+    next.delete("q");
+    setSearchParams(next, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
 
   const guideTourTarget =
     guideTour.active &&
@@ -112,6 +136,7 @@ export default function RequestorCreditsPage() {
               key={ledgerKey}
               embedded
               className="h-full"
+              initialFilters={ledgerInitialFilters}
             />
           </div>
         ),
@@ -174,7 +199,7 @@ export default function RequestorCreditsPage() {
     }
 
     return next;
-  }, [activeTab, user, ledgerKey, isLab]);
+  }, [activeTab, user, ledgerKey, isLab, ledgerInitialFilters]);
 
   // accessLoading early return은 모든 hooks 이후(Rules of Hooks).
   if (accessLoading) {

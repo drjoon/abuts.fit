@@ -37,6 +37,7 @@ import {
   findConflictingBusinessAnchor,
 } from "./business.find.util.js";
 import { grantWelcomeFreeCreditIfEligible } from "./business.freeCredit.util.js";
+import { applyTrusteeChoiceToConfirmedStatements } from "../../services/practiceLabDirectSettlement.service.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 import {
@@ -1274,6 +1275,19 @@ export async function updateMyBusiness(req, res) {
           lean: true,
         },
       );
+      if (
+        patch.taxInvoice &&
+        businessType === "requestor" &&
+        String(businessAnchor?.requestorKind || "").trim() === "lab" &&
+        String(businessAnchor?.businessType || "") !== "internalLab"
+      ) {
+        void applyTrusteeChoiceToConfirmedStatements(
+          businessAnchor._id,
+          patch.taxInvoice.trusteeIssueEnabled === true,
+        ).catch((error) => {
+          console.error("[directLabFeeInvoice] choice apply failed", error);
+        });
+      }
       console.info("[BusinessAnchor] updateMyBusiness persisted result", {
         businessAnchorId: String(
           persistedAnchor?._id || businessAnchor?._id || "",

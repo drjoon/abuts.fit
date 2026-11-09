@@ -1106,7 +1106,11 @@ export const BusinessTab = ({
                 (requestorProfile.kind === "lab" ||
                   user?.role === "internalLab") ? (
                   <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
-                    <PayoutAccountCard canEdit className="h-full lg:col-span-2" />
+                    <PayoutAccountCard
+                      canEdit
+                      bankbookOptional
+                      className="h-full lg:col-span-2"
+                    />
                     <TrusteeIssueSettingCard
                       businessTypeOverride="requestor"
                       className="h-full"

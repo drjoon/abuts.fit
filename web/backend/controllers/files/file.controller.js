@@ -27,6 +27,8 @@ import Request from "../../models/request.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import PracticeLabDirectSettlement from "../../models/practiceLabDirectSettlement.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import s3Utils from "../../utils/s3.utils.js";
 import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -767,6 +769,27 @@ const canUserAccessS3Key = async (req, key) => {
       : false;
 
     if (isParticipant) return true;
+  }
+
+  const bankbookLab = await BusinessAnchor.findOne({
+    "payoutAccount.bankbook.s3Key": key,
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (bankbookLab) {
+    const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (currentAnchorId && currentAnchorId === String(bankbookLab._id)) {
+      return true;
+    }
+    if (currentAnchorId) {
+      const linked = await PracticeLabDirectSettlement.findOne({
+        practiceAnchorId: currentAnchorId,
+        labAnchorId: bankbookLab._id,
+      })
+        .select({ _id: 1 })
+        .lean();
+      if (linked) return true;
+    }
   }
 
   return false;

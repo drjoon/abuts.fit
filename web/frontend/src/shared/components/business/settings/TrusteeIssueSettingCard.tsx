@@ -149,7 +149,7 @@ export function TrusteeIssueSettingCard({
           </>
         ) : answerOnPayout ? (
           <p className="text-sm text-slate-600">
-            지급 화면에서 한 번 선택합니다.
+            입금 확인 뒤에 선택합니다.
             <br />
             선택 전에는 계산서를 발행하지 않습니다.
           </p>

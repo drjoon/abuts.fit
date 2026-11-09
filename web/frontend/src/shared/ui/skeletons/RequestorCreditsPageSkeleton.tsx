@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-10: 기공료 스켈레톤 — 총액 카드 + 기공소 3열.
 // - 2026-11-03: dense 스켈레톤 — 3~4열·환자명/금액 밀집 열 비율.
 // - 2026-11-03: dense 스켈레톤 — 날짜/환자명/금액/치아번호 열 비율.
 // - 2026-11-03: 내역 dense — 년/월·검색만, 요약카드 없이 4칸 2~3열 스켈레톤.
@@ -38,10 +39,14 @@ type RequestorCreditsPageSkeletonProps = {
 };
 
 export const PracticeObBillingTabSkeleton = () => (
-  <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-1.5 py-2 pb-4">
-    <Skeleton className="h-44 w-full rounded-2xl" />
-    <Skeleton className="h-56 w-full rounded-2xl" />
-    <Skeleton className="h-40 w-full rounded-2xl" />
+  <div className="flex w-full flex-col gap-3 px-1.5 py-1.5 pb-2">
+    <Skeleton className="h-14 w-full max-w-md rounded-2xl" />
+    <Skeleton className="mx-auto h-28 w-full max-w-[11.5rem] rounded-2xl" />
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-4">
+      <Skeleton className="h-40 rounded-xl" />
+      <Skeleton className="h-40 rounded-xl" />
+      <Skeleton className="h-40 rounded-xl" />
+    </div>
   </div>
 );
 

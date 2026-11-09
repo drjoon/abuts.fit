@@ -4,6 +4,7 @@ import { resolveTrusteeIssueEnabled } from "../../utils/trusteeIssueConsent.js";
 import {
   isDirectPayLabAnchor,
   isEligibleDirectSettlementMonth,
+  livePayoutAccount,
   patientLabelFromTransfer,
   resolvePayableAmount,
 } from "../../utils/practiceLabDirectSettlement.util.js";
@@ -43,6 +44,30 @@ describe("direct lab settlement amounts", () => {
         toothWorks: [{ toothNumber: "21" }, { toothNumber: "22" }],
       }),
     ).toBe("김민수 · 21,22");
+  });
+
+  test("계좌가 있으면 통장 사본은 있을 때만 붙인다", () => {
+    expect(
+      livePayoutAccount({
+        payoutAccount: { bankName: "국민", accountNumber: "110", holderName: "기공소" },
+      }),
+    ).toEqual({
+      bankName: "국민",
+      accountNumber: "110",
+      holderName: "기공소",
+      bankbook: null,
+    });
+    expect(
+      livePayoutAccount({
+        payoutAccount: {
+          bankName: "국민",
+          accountNumber: "110",
+          holderName: "기공소",
+          bankbook: { s3Key: "book/a.jpg", fileId: "f1", originalName: "통장.jpg" },
+        },
+      }).bankbook,
+    ).toEqual({ s3Key: "book/a.jpg", fileId: "f1", originalName: "통장.jpg" });
+    expect(livePayoutAccount({ payoutAccount: { bankName: "국민" } })).toBeNull();
   });
 
   test("외부 기공소만 직접 입금", () => {

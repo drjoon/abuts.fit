@@ -114,5 +114,16 @@ export function livePayoutAccount(anchor) {
   const accountNumber = String(anchor?.payoutAccount?.accountNumber || "").trim();
   const holderName = String(anchor?.payoutAccount?.holderName || "").trim();
   if (!accountNumber) return null;
-  return { bankName, accountNumber, holderName };
+  const book = anchor?.payoutAccount?.bankbook || {};
+  const s3Key = String(book.s3Key || "").trim();
+  const fileId = String(book.fileId || "").trim();
+  const originalName = String(book.originalName || "").trim();
+  return {
+    bankName,
+    accountNumber,
+    holderName,
+    bankbook: s3Key
+      ? { s3Key, fileId, originalName }
+      : null,
+  };
 }

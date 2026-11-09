@@ -71,12 +71,11 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
+  LAB_PAYOUT_BANKBOOK_HINT,
   LAB_PAYOUT_SETTINGS_PATH,
-  isLabPayoutReady,
+  hasLabPayoutAccountText,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
-import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -228,10 +227,7 @@ export const LabSettlementPayoutTab = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { dialog: bankbookRemindDialog } = useLabPayoutBankbookReminder({
-    forceOnMount: true,
-  });
-  const [payoutReady, setPayoutReady] = useState(true);
+  const [accountReady, setAccountReady] = useState(true);
 
   const [view, setView] = useState<ViewMode>("all");
   const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
@@ -311,8 +307,8 @@ export const LabSettlementPayoutTab = () => {
           force: false,
         });
         if (cancelled) return;
-        setPayoutReady(
-          isLabPayoutReady(data?.payoutAccount as LabPayoutAccountSnapshot),
+        setAccountReady(
+          hasLabPayoutAccountText(data?.payoutAccount as LabPayoutAccountSnapshot),
         );
       } catch {
         // keep last
@@ -533,7 +529,6 @@ export const LabSettlementPayoutTab = () => {
 
   return (
     <div className="mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden">
-      {bankbookRemindDialog}
       <DashboardShell
         title="지급"
         subtitle=""
@@ -597,7 +592,7 @@ export const LabSettlementPayoutTab = () => {
               }
             />
             <div className="grid shrink-0 grid-cols-1 gap-1.5 self-center">
-              {!payoutReady ? (
+              {!accountReady ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -609,7 +604,11 @@ export const LabSettlementPayoutTab = () => {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                    <p>{LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}</p>
+                    <p>
+                      치과가 이 계좌로 입금합니다.
+                      <br />
+                      {LAB_PAYOUT_BANKBOOK_HINT}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               ) : null}
@@ -633,7 +632,14 @@ export const LabSettlementPayoutTab = () => {
                     받을 기공비에서 빼지 않습니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="계산서">
-                    대신 발행을 고른 경우만 입금 확인 후 면세 계산서를 발행합니다.
+                    입금 확인 뒤에 발행 방식을 고릅니다.
+                    <br />
+                    대신 발행만 면세 계산서를 만듭니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="통장 사본">
+                    선택입니다.
+                    <br />
+                    {LAB_PAYOUT_BANKBOOK_HINT}
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="이전 잔액">
                     정산서에 없는 이전 기공크레딧만 플랫폼 지급으로 남습니다.
@@ -645,7 +651,7 @@ export const LabSettlementPayoutTab = () => {
         }
         mainLeft={
           <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
-            <div className="max-h-[58%] shrink-0 overflow-y-auto px-1.5 py-1.5">
+            <div className="max-h-[min(32rem,70%)] shrink-0 overflow-y-auto px-1.5 py-1.5">
               <LabDirectFeePanel />
             </div>
             <div className="flex shrink-0 justify-start px-1">

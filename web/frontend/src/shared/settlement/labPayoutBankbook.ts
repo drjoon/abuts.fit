@@ -4,7 +4,7 @@
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
 // - 2026-10-24: 지급 안내 문구를 한 사실씩 줄임.
-// - 2026-10-24: 통장 사본 없으면 그 달 기공료 전달이 다음 달로 미뤄짐.
+// - 2026-11-10: 기공소 통장 사본은 선택. 등록하면 치과 입금 화면에 보인다.
 // - 2026-10-05: 플랫폼 사용료·하청 수수료 미부과. 안내 문구는 휴면(LabDirectPlatformFeeNotice).
 // - 2026-09-27: 플랫폼 사용료 2% 복원. 이벤트 기간 면제(0%) 평문·resolveLabFeeDisplay.
 // - 2026-09-26: 수수료 평문 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
@@ -50,7 +50,7 @@ export function hasLabPayoutBankbook(account?: LabPayoutAccountSnapshot | null) 
   );
 }
 
-/** 계좌 텍스트 + 통장 사본. */
+/** 계좌 텍스트 + 통장 사본. 딜러사 지급용. 기공소 통장 사본은 선택이다. */
 export function isLabPayoutReady(account?: LabPayoutAccountSnapshot | null) {
   return hasLabPayoutAccountText(account) && hasLabPayoutBankbook(account);
 }
@@ -96,8 +96,8 @@ export function markLabPayoutRemindShownToday(anchorId: string, now = new Date()
   }
 }
 
-export const LAB_PAYOUT_BANKBOOK_DELAY_NOTICE =
-  "없으면 그 달 기공료는 다음 달로 미뤄집니다.";
+export const LAB_PAYOUT_BANKBOOK_HINT =
+  "등록하면 치과 화면에 보여 입금이 쉬워집니다.";
 
 /** 설정 · 사업자 탭의 통장 사본·입금 계좌 카드로 스크롤. */
 export const PAYOUT_ACCOUNT_CARD_ID = "payout-account-card";

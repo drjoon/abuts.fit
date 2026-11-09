@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  CircleHelp,
   Landmark,
   Upload,
   X,
@@ -24,6 +25,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +51,7 @@ import {
 } from "@/shared/components/business/settings/business/businessMeCache";
 import {
   PAYOUT_ACCOUNT_CARD_ID,
+  LAB_PAYOUT_BANKBOOK_HINT,
   hasLabPayoutAccountText,
   hasLabPayoutBankbook,
   isLabPayoutReady,
@@ -67,6 +74,8 @@ type Props = {
   onSaved?: (account: LabPayoutAccountSnapshot | null) => void;
   /** 대표자만 true. false면 조회만. */
   canEdit?: boolean;
+  /** 기공소는 통장 사본이 선택. 치과 입금 화면에만 보여 준다. */
+  bankbookOptional?: boolean;
   className?: string;
 };
 
@@ -80,6 +89,7 @@ const isImageFile = (file: File) =>
 export function PayoutAccountCard({
   onSaved,
   canEdit = true,
+  bankbookOptional = false,
   className,
 }: Props) {
   const { token, user } = useAuthStore();
@@ -142,7 +152,9 @@ export function PayoutAccountCard({
       setHolderName(String(pa.holderName || ""));
       setBankbook(pa.bankbook || null);
       setAccountCheck(null);
-      const ready = isLabPayoutReady(pa);
+      const ready = bankbookOptional
+        ? hasLabPayoutAccountText(pa)
+        : isLabPayoutReady(pa);
       setSavedClean(ready);
       setDirty(false);
     } catch {
@@ -150,7 +162,7 @@ export function PayoutAccountCard({
     } finally {
       setLoading(false);
     }
-  }, [token, businessType]);
+  }, [token, businessType, bankbookOptional]);
 
   useEffect(() => {
     void load();
@@ -461,7 +473,7 @@ export function PayoutAccountCard({
       });
       return;
     }
-    if (!hasLabPayoutBankbook(next)) {
+    if (!bankbookOptional && !hasLabPayoutBankbook(next)) {
       toast({
         title: "통장 사본 필요",
         description: "사업자 통장 사본을 업로드해주세요.",
@@ -498,14 +510,19 @@ export function PayoutAccountCard({
         );
       }
       invalidateBusinessMeCache({ token, businessType });
-      setSavedClean(isLabPayoutReady(next));
+      const ready = bankbookOptional
+        ? hasLabPayoutAccountText(next)
+        : isLabPayoutReady(next);
+      setSavedClean(ready);
       setDirty(false);
       onSaved?.(next);
       toast({
         title: "입금 계좌 저장 완료",
-        description: isLabPayoutReady(next)
-          ? "월 정산 지급에 이 계좌를 사용합니다."
-          : undefined,
+        description: bankbookOptional
+          ? "치과가 이 계좌로 입금합니다."
+          : ready
+            ? "월 정산 지급에 이 계좌를 사용합니다."
+            : undefined,
       });
       await load();
     } catch (err: unknown) {
@@ -560,7 +577,7 @@ export function PayoutAccountCard({
         </span>
         <div>
           <p className="text-sm font-semibold text-slate-900">
-            정산 입금 계좌 · 통장 사본
+            {bankbookOptional ? "정산 입금 계좌" : "정산 입금 계좌 · 통장 사본"}
           </p>
         </div>
       </div>
@@ -652,11 +669,33 @@ export function PayoutAccountCard({
       ) : null}
 
       <div className="mt-4 space-y-2">
-        <Label>통장 사본</Label>
+        <div className="flex items-center gap-1">
+          <Label>통장 사본</Label>
+          {bankbookOptional ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-white hover:text-slate-600"
+                  aria-label="통장 사본 안내"
+                >
+                  <CircleHelp className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                <p>{LAB_PAYOUT_BANKBOOK_HINT}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant={hasLabPayoutBankbook({ bankbook }) ? "outline" : "default"}
+            variant={
+              hasLabPayoutBankbook({ bankbook }) || bankbookOptional
+                ? "outline"
+                : "default"
+            }
             size="sm"
             disabled={busy || !canEdit}
             className="relative"
@@ -701,7 +740,7 @@ export function PayoutAccountCard({
                 <X className="h-3.5 w-3.5" />
               </button>
             </span>
-          ) : (
+          ) : bankbookOptional ? null : (
             <span className="text-xs text-accent-strong">
               미등록 — 정산 지급에 필요합니다
             </span>
@@ -768,8 +807,15 @@ export function PayoutAccountCard({
           <AlertDialogHeader>
             <AlertDialogTitle>정산 입금 계좌를 삭제할까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              은행·계좌번호·예금주·통장 사본이 모두 삭제됩니다. 정산 지급 전에
-              다시 등록해야 합니다.
+              {bankbookOptional ? (
+                "계좌와 통장 사본이 삭제됩니다."
+              ) : (
+                <>
+                  은행·계좌번호·예금주·통장 사본이 모두 삭제됩니다.
+                  <br />
+                  정산 지급 전에 다시 등록해야 합니다.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

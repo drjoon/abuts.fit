@@ -263,13 +263,9 @@ export function hasPayoutAccount(account) {
   );
 }
 
-/** 기공소 월 지급: 계좌 텍스트 + 통장 사본 모두 필요. */
+/** 기공소 월 지급 준비. 통장 사본은 선택이라 계좌 텍스트만 본다. */
 export function hasLabPayoutReady(account) {
-  if (!hasPayoutAccount(account)) return false;
-  const book = account?.bankbook || {};
-  return Boolean(
-    String(book?.s3Key || "").trim() || String(book?.fileId || "").trim(),
-  );
+  return hasPayoutAccount(account);
 }
 
 /**

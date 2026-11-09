@@ -465,13 +465,11 @@ export async function confirmLabDirectSettlementDeposit({
   labAnchorId,
   actorUserId,
 }) {
-  const lab = await BusinessAnchor.findById(labAnchorId).select({ taxInvoice: 1 }).lean();
+  const lab = await BusinessAnchor.findById(labAnchorId)
+    .select({ taxInvoice: 1, payoutAccount: 1 })
+    .lean();
   const trustee = resolveTrusteeIssueEnabled(lab?.taxInvoice);
-  if (trustee === null) {
-    const err = new Error("계산서 대신 발행 여부를 먼저 선택해 주세요.");
-    err.statusCode = 409;
-    throw err;
-  }
+  const account = livePayoutAccount(lab);
   const doc = await PracticeLabDirectSettlement.findById(settlementId);
   if (!doc || String(doc.labAnchorId) !== String(labAnchorId)) {
     const err = new Error("정산서를 찾을 수 없습니다.");
@@ -479,14 +477,16 @@ export async function confirmLabDirectSettlementDeposit({
     throw err;
   }
   if (isDirectSettlementLocked(doc.status)) {
-    const account = livePayoutAccount(
-      await BusinessAnchor.findById(doc.labAnchorId).select({ payoutAccount: 1 }).lean(),
-    );
     return serializeStatement(doc.toObject(), account);
   }
   doc.depositConfirmedAt = new Date();
   doc.depositConfirmedBy = actorUserId || null;
   doc.payableAmount = resolvePayableAmount(doc.lines, doc.totalOverride);
+  if (trustee === null) {
+    doc.status = "DEPOSIT_CONFIRMED";
+    await doc.save();
+    return serializeStatement(doc.toObject(), account);
+  }
   if (trustee === true && doc.payableAmount > 0) {
     const draftId = await issueDirectLabFeeInvoice(doc);
     doc.taxInvoiceDraftId = draftId;
@@ -495,9 +495,6 @@ export async function confirmLabDirectSettlementDeposit({
     doc.status = "SELF_INVOICE";
   }
   await doc.save();
-  const account = livePayoutAccount(
-    await BusinessAnchor.findById(doc.labAnchorId).select({ payoutAccount: 1 }).lean(),
-  );
   return serializeStatement(doc.toObject(), account);
 }
 
@@ -524,7 +521,33 @@ export async function saveLabTrusteeIssueChoice({ labAnchorId, enabled }) {
   };
   lab.markModified("taxInvoice");
   await lab.save();
+  await applyTrusteeChoiceToConfirmedStatements(labAnchorId, enabled);
   return { trusteeIssueEnabled: enabled };
+}
+
+export async function applyTrusteeChoiceToConfirmedStatements(labAnchorId, enabled) {
+  const docs = await PracticeLabDirectSettlement.find({
+    labAnchorId,
+    status: "DEPOSIT_CONFIRMED",
+  });
+  await Promise.all(
+    docs.map(async (doc) => {
+      const amount = Math.round(Number(doc.payableAmount) || 0);
+      if (enabled && amount > 0) {
+        const draftId = await issueDirectLabFeeInvoice(doc);
+        if (!draftId) {
+          const err = new Error("계산서를 만들지 못했습니다.");
+          err.statusCode = 409;
+          throw err;
+        }
+        doc.taxInvoiceDraftId = draftId;
+        doc.status = "INVOICE_ISSUED";
+      } else {
+        doc.status = "SELF_INVOICE";
+      }
+      await doc.save();
+    }),
+  );
 }
 
 /** 정산서에 포함된 의뢰의 기존 기공크레딧. 월 지급액에서 뺀다. */
