@@ -2,10 +2,11 @@
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/backend/controllers/practiceLabDirectSettlement.controller.js
 // change-log:
+// - 2026-11-10: 치과 총액만. 치아 줄 대신 내역 바로가기. 내역과 같은 3열.
 // - 2026-11-10: 계산서 질문은 입금 확인 뒤. 통장 사본은 선택. 안내 문단 대신 툴팁.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import { CircleHelp, Landmark } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ChevronRight, CircleHelp, Landmark } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -96,6 +97,19 @@ function wonInput(value: number) {
   return String(Math.max(0, Math.round(value || 0)));
 }
 
+/** 내역 탭 `DENSE_PARTNER_GRID_CLASS`와 같은 열 수. */
+const PRACTICE_FEE_GRID_CLASS =
+  "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 min-[1800px]:grid-cols-4";
+
+function ledgerDetailHref(yearMonth: string, practiceName?: string) {
+  const params = new URLSearchParams();
+  params.set("tab", "ledger");
+  if (/^\d{4}-\d{2}$/.test(yearMonth)) params.set("ym", yearMonth);
+  const name = String(practiceName || "").trim();
+  if (name) params.set("q", name);
+  return `/dashboard/credits?${params.toString()}`;
+}
+
 function HelpTip({
   label,
   children,
@@ -121,13 +135,169 @@ function HelpTip({
   );
 }
 
+function PracticeFeeCard({
+  row,
+  showMonth,
+  totalDraft,
+  busy,
+  onTotalChange,
+  onSave,
+  onConfirm,
+  onInvoice,
+  onOpenBankbook,
+}: {
+  row: Statement;
+  showMonth?: boolean;
+  totalDraft: string;
+  busy: boolean;
+  onTotalChange: (value: string) => void;
+  onSave: () => void;
+  onConfirm: () => void;
+  onInvoice: () => void;
+  onOpenBankbook: () => void;
+}) {
+  const status = STATUS_LABEL[row.status] || "확인 전";
+  const hasBook = Boolean(row.account?.bankbook?.s3Key);
+  return (
+    <section className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-200/80 bg-slate-50 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <p className="min-w-0 truncate text-sm font-semibold text-slate-800">
+              {row.practiceName || "치과"}
+            </p>
+            <HelpTip label="기공비 안내">
+              <p>
+                치과가 기공소 계좌로 입금합니다.
+                <br />
+                커스텀어벗 제작비는 포함되지 않습니다.
+              </p>
+            </HelpTip>
+          </div>
+        </div>
+        <p className="shrink-0 text-sm font-bold tabular-nums text-slate-950">
+          {formatRequestorWon(row.payableAmount)}원
+        </p>
+      </div>
+      <div className="flex flex-1 flex-col gap-3 px-3 py-3">
+        <span
+          className={cn(
+            "inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+            statusTone(row.status),
+          )}
+        >
+          {showMonth ? `${row.yearMonth} · ${status}` : status}
+        </span>
+        {row.account ? (
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Landmark className="h-3.5 w-3.5 text-primary" aria-hidden />
+                입금 계좌
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant={hasBook ? "ghost" : "outline"}
+                    className={cn(
+                      "h-7 px-2 text-xs",
+                      hasBook && "text-emerald-700 hover:text-emerald-800",
+                    )}
+                    onClick={onOpenBankbook}
+                  >
+                    {hasBook ? "통장 사본 있음" : "통장 사본"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <p>{hasBook ? "치과 입금 화면에 표시됩니다." : LAB_PAYOUT_BANKBOOK_HINT}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-500">{row.account.bankName}</p>
+            <p className="break-all text-base font-semibold tracking-wide text-slate-950">
+              {row.account.accountNumber}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">예금주 {row.account.holderName}</p>
+          </div>
+        ) : null}
+        <Link
+          to={ledgerDetailHref(row.yearMonth, row.practiceName)}
+          className="inline-flex items-center gap-0.5 self-start text-sm font-medium text-primary hover:underline"
+        >
+          상세 내역
+          <ChevronRight className="h-4 w-4" aria-hidden />
+        </Link>
+        {row.locked ? (
+          row.status === "DEPOSIT_CONFIRMED" ? (
+            <div className="mt-auto flex justify-end">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button type="button" variant="outline" className="h-9" onClick={onInvoice}>
+                    계산서
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <p>발행 방식을 고릅니다.</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          ) : null
+        ) : (
+          <div className="mt-auto flex flex-col gap-2">
+            <label className="flex items-center justify-between gap-2 text-sm text-slate-600">
+              <span className="inline-flex items-center gap-1">
+                총액
+                <HelpTip label="총액 안내">
+                  <p>
+                    비우면 의뢰 합계입니다.
+                    <br />
+                    숫자를 적으면 그 금액으로 청구합니다.
+                  </p>
+                </HelpTip>
+              </span>
+              <Input
+                inputMode="numeric"
+                placeholder="합계"
+                aria-label="총액"
+                className="h-9 w-28 text-right tabular-nums"
+                value={totalDraft}
+                onChange={(event) => onTotalChange(event.target.value.replace(/[^\d]/g, ""))}
+              />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" className="h-9" disabled={busy} onClick={onSave}>
+                수정 저장
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button type="button" className="h-9" disabled={busy} onClick={onConfirm}>
+                    입금 확인
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <p>
+                    치과 입금을 기록합니다.
+                    <br />
+                    확인 뒤에 계산서 발행을 묻습니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function LabDirectFeePanel() {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [drafts, setDrafts] = useState<Record<string, { lines: Record<string, string>; total: string }>>({});
+  const [totals, setTotals] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
   const [choosing, setChoosing] = useState(false);
   const [askInvoice, setAskInvoice] = useState(false);
@@ -144,16 +314,11 @@ export function LabDirectFeePanel() {
       if (res.ok && res.data?.success && res.data.data) {
         const next = res.data.data;
         setData(next);
-        const seeded: Record<string, { lines: Record<string, string>; total: string }> = {};
+        const seeded: Record<string, string> = {};
         for (const row of next.statements) {
-          const lines: Record<string, string> = {};
-          for (const line of row.lines) lines[line.id] = wonInput(line.amount);
-          seeded[row.id] = {
-            lines,
-            total: row.totalOverride == null ? "" : wonInput(row.totalOverride),
-          };
+          seeded[row.id] = row.totalOverride == null ? "" : wonInput(row.totalOverride);
         }
-        setDrafts(seeded);
+        setTotals(seeded);
       }
     } finally {
       setLoading(false);
@@ -195,18 +360,12 @@ export function LabDirectFeePanel() {
 
   const saveStatement = async (row: Statement) => {
     if (!token) return null;
-    const draft = drafts[row.id];
-    const lines = row.lines.map((line) => ({
-      id: line.id,
-      amount: Number(String(draft?.lines[line.id] ?? line.amount).replace(/,/g, "")),
-    }));
-    const rawTotal = String(draft?.total ?? "").replace(/,/g, "").trim();
+    const rawTotal = String(totals[row.id] ?? "").replace(/,/g, "").trim();
     const res = await request<{ success: boolean; data?: Statement; message?: string }>({
       path: `/api/lab/direct-settlements/${encodeURIComponent(row.id)}`,
       method: "PATCH",
       token,
       jsonBody: {
-        lines,
         totalOverride: rawTotal === "" ? null : Number(rawTotal),
       },
     });
@@ -309,226 +468,52 @@ export function LabDirectFeePanel() {
           지난달 기공비가 없습니다.
         </section>
       ) : (
-        latest.map((row) => {
-          const draft = drafts[row.id];
-          const hasBook = Boolean(row.account?.bankbook?.s3Key);
-          return (
-            <section
+        <div className={PRACTICE_FEE_GRID_CLASS}>
+          {latest.map((row) => (
+            <PracticeFeeCard
               key={row.id}
-              className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-primary-soft/35 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1">
-                    <p className="truncate text-sm font-semibold text-slate-950">
-                      {row.practiceName || "치과"}
-                    </p>
-                    <HelpTip label="기공비 안내">
-                      <p>
-                        치과가 기공소 계좌로 입금합니다.
-                        <br />
-                        커스텀어벗 제작비는 포함되지 않습니다.
-                      </p>
-                    </HelpTip>
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500">{row.yearMonth}</p>
-                </div>
-                <div className="text-right">
-                  <span
-                    className={cn(
-                      "inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-                      statusTone(row.status),
-                    )}
-                  >
-                    {STATUS_LABEL[row.status] || "확인 전"}
-                  </span>
-                  <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-primary-strong">
-                    {formatRequestorWon(row.payableAmount)}원
-                  </p>
-                </div>
-              </div>
-
-              <div className="px-4 py-3">
-                {row.account ? (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                    <p className="flex min-w-0 items-center gap-1.5 text-xs text-slate-600">
-                      <Landmark className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      <span className="truncate">
-                        <span className="font-medium text-slate-800">{row.account.bankName}</span>{" "}
-                        {row.account.accountNumber}
-                        <span className="text-slate-400"> · {row.account.holderName}</span>
-                      </span>
-                    </p>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant={hasBook ? "ghost" : "outline"}
-                          className={cn(
-                            "h-8 px-2.5 text-xs",
-                            hasBook && "text-emerald-700 hover:text-emerald-800",
-                          )}
-                          onClick={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
-                        >
-                          {hasBook ? "통장 사본 있음" : "통장 사본"}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        <p>
-                          {hasBook ? "치과 입금 화면에 표시됩니다." : LAB_PAYOUT_BANKBOOK_HINT}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                ) : null}
-
-                <ul className="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200/80 px-1.5 py-1">
-                  {row.lines.map((line) => (
-                    <li key={line.id} className="flex items-center justify-between gap-3 px-2 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm text-slate-800">{line.patientLabel}</p>
-                        {line.originalAmount !== line.amount ? (
-                          <p className="text-[11px] text-slate-400 line-through">
-                            {formatRequestorWon(line.originalAmount)}원
-                          </p>
-                        ) : null}
-                      </div>
-                      {row.locked ? (
-                        <span className="shrink-0 text-sm tabular-nums text-slate-700">
-                          {formatRequestorWon(line.amount)}원
-                        </span>
-                      ) : (
-                        <Input
-                          inputMode="numeric"
-                          aria-label={`${line.patientLabel} 금액`}
-                          className="h-9 w-28 text-right tabular-nums"
-                          value={draft?.lines[line.id] ?? wonInput(line.amount)}
-                          onChange={(event) =>
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [row.id]: {
-                                lines: {
-                                  ...(prev[row.id]?.lines || {}),
-                                  [line.id]: event.target.value.replace(/[^\d]/g, ""),
-                                },
-                                total: prev[row.id]?.total ?? "",
-                              },
-                            }))
-                          }
-                        />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-
-                {row.locked ? (
-                  row.status === "DEPOSIT_CONFIRMED" ? (
-                    <div className="mt-3 flex justify-end">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-9"
-                            onClick={() => setAskInvoice(true)}
-                          >
-                            계산서
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                          <p>발행 방식을 고릅니다.</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  ) : null
-                ) : (
-                  <div className="mt-3 flex flex-col gap-2">
-                    <label className="flex items-center justify-between gap-3 text-sm text-slate-600">
-                      <span className="inline-flex items-center gap-1">
-                        총액
-                        <HelpTip label="총액 안내">
-                          <p>
-                            비우면 줄 합계입니다.
-                            <br />
-                            숫자를 적으면 그 금액으로 청구합니다.
-                          </p>
-                        </HelpTip>
-                      </span>
-                      <Input
-                        inputMode="numeric"
-                        placeholder="줄 합계"
-                        aria-label="총액"
-                        className="h-9 w-32 text-right tabular-nums"
-                        value={draft?.total ?? ""}
-                        onChange={(event) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [row.id]: {
-                              lines: prev[row.id]?.lines || {},
-                              total: event.target.value.replace(/[^\d]/g, ""),
-                            },
-                          }))
-                        }
-                      />
-                    </label>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9"
-                        disabled={busyId === row.id}
-                        onClick={() => void onSave(row)}
-                      >
-                        수정 저장
-                      </Button>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            className="h-9"
-                            disabled={busyId === row.id}
-                            onClick={() => void onConfirm(row)}
-                          >
-                            입금 확인
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                          <p>
-                            치과 입금을 기록합니다.
-                            <br />
-                            확인 뒤에 계산서 발행을 묻습니다.
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          );
-        })
+              row={row}
+              totalDraft={totals[row.id] ?? ""}
+              busy={busyId === row.id}
+              onTotalChange={(value) =>
+                setTotals((prev) => ({
+                  ...prev,
+                  [row.id]: value,
+                }))
+              }
+              onSave={() => void onSave(row)}
+              onConfirm={() => void onConfirm(row)}
+              onInvoice={() => setAskInvoice(true)}
+              onOpenBankbook={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
+            />
+          ))}
+        </div>
       )}
 
       {older.length > 0 ? (
-        <section className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">이전 달</h2>
-          <ul className="mt-2 divide-y divide-slate-100">
+        <section className="rounded-2xl border border-slate-200/80 bg-white px-3 py-3 shadow-sm">
+          <h2 className="px-1 text-sm font-semibold text-slate-900">이전 달</h2>
+          <div className={cn(PRACTICE_FEE_GRID_CLASS, "mt-2")}>
             {older.map((row) => (
-              <li key={row.id} className="flex items-center justify-between gap-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-800">
-                    {row.yearMonth} {row.practiceName}
-                  </p>
-                  <p className="mt-1 text-[11px] font-medium text-slate-500">
-                    {STATUS_LABEL[row.status] || "확인 전"}
-                  </p>
-                </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
-                  {formatRequestorWon(row.payableAmount)}원
-                </span>
-              </li>
+              <PracticeFeeCard
+                key={row.id}
+                row={row}
+                showMonth
+                totalDraft={totals[row.id] ?? ""}
+                busy={busyId === row.id}
+                onTotalChange={(value) =>
+                  setTotals((prev) => ({
+                    ...prev,
+                    [row.id]: value,
+                  }))
+                }
+                onSave={() => void onSave(row)}
+                onConfirm={() => void onConfirm(row)}
+                onInvoice={() => setAskInvoice(true)}
+                onOpenBankbook={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
+              />
             ))}
-          </ul>
+          </div>
         </section>
       ) : null}
     </div>

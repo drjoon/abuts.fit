@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-11-10: 정산규칙 — 입금 확인 전에는 총액만 수정.
 // - 2026-10-24: 기간 필터는 표 바로 위 왼쪽.
 // - 2026-10-24: 기간 필터는 기공크레딧 잔액 카드 왼쪽.
 // - 2026-10-24: 정산규칙은 입금 계좌 등록 버튼 아래.
@@ -624,7 +625,7 @@ export const LabSettlementPayoutTab = () => {
                     치과가 기공소 계좌로 입금합니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="수정">
-                    입금 확인 전에 내역과 총액을 고칠 수 있습니다.
+                    입금 확인 전에 총액을 고칠 수 있습니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="커스텀어벗">
                     제작비는 선결제 크레딧입니다.
