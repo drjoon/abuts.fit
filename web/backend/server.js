@@ -43,6 +43,7 @@ import { startBusinessVerificationRetryWorker } from "./jobs/businessVerificatio
 import { startEasyFinBankSyncWorker } from "./jobs/easyFinBankSyncWorker.js";
 import { startScheduledOutboundMailWorker } from "./jobs/scheduledOutboundMailWorker.js";
 import { startMonthlyPracticeObSettlementWorker } from "./jobs/monthlyPracticeObSettlementWorker.js";
+import { startMonthlyPracticeLabDirectSettlementWorker } from "./jobs/monthlyPracticeLabDirectSettlementWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
 import { startHanjinTrackingAutoSyncWorker } from "./controllers/requests/shipping.TrackingPoller.js";
 import { seedCoreShared } from "./scripts/db/_core.shared.js";
@@ -190,6 +191,7 @@ dbReady
     startScheduledOutboundMailWorker();
     startEasyFinBankSyncWorker();
     startMonthlyPracticeObSettlementWorker();
+    startMonthlyPracticeLabDirectSettlementWorker();
 
     // 의뢰/CAM 단계 승인 직렬 큐 워커 시작
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지

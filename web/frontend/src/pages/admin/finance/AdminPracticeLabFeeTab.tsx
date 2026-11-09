@@ -46,6 +46,24 @@ type WorkItem = {
   lines: LabLine[];
 };
 
+type DirectRow = {
+  id: string;
+  yearMonth: string;
+  practiceName: string;
+  labName: string;
+  payableAmount: number;
+  status: string;
+  legacyCreditWon?: number;
+};
+
+const DIRECT_STATUS: Record<string, string> = {
+  OPEN: "확인 전",
+  ADJUSTED: "수정됨",
+  DEPOSIT_CONFIRMED: "입금 확인",
+  INVOICE_ISSUED: "계산서 발행",
+  SELF_INVOICE: "직접 발행",
+};
+
 const PHASE_LABEL: Record<WorkItem["phase"], string> = {
   awaiting_first: "1차 입금",
   awaiting_second: "2차 입금",
@@ -65,6 +83,7 @@ export function AdminPracticeLabFeeTab() {
   const [searchParams, setSearchParams] = useSearchParams();
   const practiceFilter = searchParams.get("practice") || "";
   const [items, setItems] = useState<WorkItem[]>([]);
+  const [directRows, setDirectRows] = useState<DirectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [partialDraft, setPartialDraft] = useState<Record<string, string>>({});
@@ -73,18 +92,32 @@ export function AdminPracticeLabFeeTab() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await request<{
-        success: boolean;
-        data?: { items: WorkItem[] };
-        message?: string;
-      }>({
-        path: "/api/admin/practice-lab-fees",
-        method: "GET",
-        token,
-        skipCache: true,
-      });
+      const [res, directRes] = await Promise.all([
+        request<{
+          success: boolean;
+          data?: { items: WorkItem[] };
+          message?: string;
+        }>({
+          path: "/api/admin/practice-lab-fees",
+          method: "GET",
+          token,
+          skipCache: true,
+        }),
+        request<{
+          success: boolean;
+          data?: { statements: DirectRow[] };
+        }>({
+          path: "/api/admin/practice-lab-fees/direct",
+          method: "GET",
+          token,
+          skipCache: true,
+        }),
+      ]);
       if (res.ok && res.data?.success) {
         setItems(res.data.data?.items || []);
+      }
+      if (directRes.ok && directRes.data?.success) {
+        setDirectRows(directRes.data.data?.statements || []);
       }
     } finally {
       setLoading(false);
@@ -171,12 +204,32 @@ export function AdminPracticeLabFeeTab() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-1.5 py-3">
       <p className="text-xs leading-relaxed text-slate-500">
-        월 기공료 입금·안내 문자는 당분간 중단입니다.
+        외부 기공비는 치과가 기공소 계좌로 직접 입금합니다.
         <br />
-        정책이 정해지면 다시 안내합니다.
-        <br />
-        수기 확인·기공소 송금 기록은 필요할 때만 씁니다.
+        아래 직접 정산은 조회만 합니다.
       </p>
+      {directRows.length === 0 ? (
+        <p className="px-1 text-xs text-slate-500">직접 정산이 없습니다.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-200/80 bg-white px-1.5 py-1">
+          {directRows.slice(0, 30).map((row) => (
+            <li key={row.id} className="flex items-center justify-between gap-3 px-2 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm text-slate-800">
+                  {row.yearMonth} {row.practiceName} → {row.labName}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {DIRECT_STATUS[row.status] || row.status}
+                  {row.legacyCreditWon ? ` · 이전 크레딧 ${formatRequestorWon(row.legacyCreditWon)}원` : ""}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold tabular-nums">
+                {formatRequestorWon(row.payableAmount)}원
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       {practiceFilter ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
           <span>{filteredName}만 보고 있습니다.</span>
@@ -199,7 +252,7 @@ export function AdminPracticeLabFeeTab() {
         <AdminEmptyState
           icon={Landmark}
           title="확인할 기공료가 없습니다"
-          description="안내가 나간 뒤 입금 전이거나, 기공소로 아직 보내지 않은 건이 여기 모입니다."
+          description="법인 수금 기록이 없습니다."
         />
       ) : (
         <ul className="flex flex-col gap-3">

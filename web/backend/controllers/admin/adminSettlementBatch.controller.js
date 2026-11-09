@@ -23,6 +23,7 @@ import {
   resolveSettlementInvoiceDraftSpec,
 } from "../../services/settlement.service.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
+import { resolveTrusteeIssueEnabled } from "../../utils/trusteeIssueConsent.js";
 import { ABUTS_LAB_PURCHASE_BUYER_ENABLED } from "../../constants/abutsLabSettlement.js";
 import { writeDateFromPeriodEnd } from "../../utils/taxInvoicePeriod.util.js";
 import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
@@ -211,7 +212,7 @@ export async function adminConfirmSettlementBatch(req, res) {
         breakdown,
       });
       const trusteeEnabled =
-        anchor?.taxInvoice?.trusteeIssueEnabled !== false;
+        resolveTrusteeIssueEnabled(anchor?.taxInvoice) === true;
       if (invoiceSpec && trusteeEnabled) {
         const seller = buildPartySnapshotFromAnchor(anchor);
         // 기공비 매입(협력·하청)의 구매자는 어벗츠기공소(개인 개설). flag off면 기존 admin 앵커.

@@ -350,6 +350,7 @@ import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes
 import systemRoutes from "./modules/system/system.routes.js";
 import practiceTransferRoutes from "./modules/practiceTransfers/practiceTransfer.routes.js";
 import practiceBillingRoutes from "./modules/practiceBilling/practiceBilling.routes.js";
+import labDirectSettlementRoutes from "./modules/labDirectSettlement/labDirectSettlement.routes.js";
 import labTradingPartnerRoutes from "./modules/labTradingPartners/labTradingPartner.routes.js";
 import designAccessRoutes from "./modules/devops/designAccess.routes.js";
 import practiceTransferAutoMatchRoutes from "./modules/devops/practiceTransferAutoMatch.routes.js";
@@ -393,6 +394,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/practice/transfers", practiceTransferRoutes);
 app.use("/api/practice/billing", practiceBillingRoutes);
+app.use("/api/lab/direct-settlements", labDirectSettlementRoutes);
 app.use("/api/case-shares", caseShareRoutes);
 app.use("/api/lab-trading-partners", labTradingPartnerRoutes);
 app.use("/api/lab-helper", labHelperRoutes);

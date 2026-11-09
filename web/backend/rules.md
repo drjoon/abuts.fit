@@ -406,7 +406,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 자동 매칭 식별 정보: 레거시 `matchingMode=auto` 건만 마스킹 유지. **신규 의뢰 수가·할증:** 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유. 치과 평가=별점만(기공비 할인/할증 없음, 수행 기공소·하청 포함). 하한·상한 설정으로 지정 수신 게이트. 원청 하청 풀은 별점으로 거르지 않는다. 기공소「치과 평가」=할증. 자동매칭 신규 작성·별점 기공비 배수는 쓰지 않음.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
   - eventType: `PRACTICE_TRANSFER_SPEND_HOLD` / `PRACTICE_TRANSFER_HOLD_ADJUST` / `PRACTICE_TRANSFER_ESCROW_RELEASE`(레거시 `PRACTICE_TRANSFER_SPEND_COMMIT` 유지); accountCode: `PLATFORM_ESCROW`, `LAB_SETTLEMENT_CREDIT`; creditKind: `SETTLEMENT`. 치과 장부: `기공비 보류` / 기공소: `기공크레딧` 적립(완료 시). **기공소 내역**: 작업완료 전 lab-share HOLD는 잔액에 넣지 않고 「적립 보류」행으로 미러(`listPendingLabSettlementLedgerRows`). **기간 요약**(`periodSpendSummary` / `ledger/stats`): 충전·소비(HOLD 포함) + (기공소) 정산 적립(**확정만**, 적립 보류 제외 — 잔액·수식과 일치). UI 요약 카드는 「무료 충전」제외(충전 [+정산] − 소비). 기공소 통계는 `settlementOrderCount`(치과→기공)·`abutsOrderCount`(기공→어벗츠)로 의뢰건수 분리, 파트너·보철유형은 정산 적립(확정)만. 데모/실사용 `usageScope`·`byUsage` 집계는 제거(단일 장부). UI 수식 카드 SSOT는 frontend `CreditLedgerModal`·`CreditStatisticsTab`.
-  - 월 정산: 기공소 `SETTLEMENT_PAYOUT`으로 기공정산크레딧 → 계좌 이체. **다음 달 초 사용 유보 50만원(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`)을 남기고 나머지 잔액만 지급**(잔액 ≤ 유보면 해당 월 지급 0). 크레딧 페이지 탭은 내역·충전만(기공크레딧 정산 탭 없음; 내역 필터로 기공 버킷 조회).
+  - 월 정산: 외부 기공비는 `PracticeLabDirectSettlement`(익월 1일, 치과→기공소 직접 입금). 신규 외부 기공비는 `LAB_SETTLEMENT_CREDIT`에 적립하지 않는다. 정산서에 없는 이전 잔액만 `SETTLEMENT_PAYOUT`이며, 그 잔액에서 정산서 포함분을 뺀 뒤 **50만원 유보**(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`)를 적용한다. 커스텀어벗 제작비는 선결제 크레딧만 쓰고 기공비와 상계하지 않는다.
   - 장부「잔액」(`balanceAfter`): 유료+무료+기공 합산 러닝(현재 잔액과 동일 기준). 버킷별 분리 표시 금지(기공 적립 시 잔액이 리셋되어 보임).
   - 어벗의뢰(직접 커스텀 어벗 생산 의뢰, `practicePrepaid=false`)는 의뢰자가 설정된 비용을 전액 부담한다. 제조사 하청은 어벗 1개당 고정단가이며, 잔여 분배(딜러사·개발운영사·어벗츠)는 별도 확정 전까지 기존 잔여 비율을 유지한다(`controllers/requests/common.review.helpers.js`).
 
@@ -1048,8 +1048,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - 파이프라인: 월중 적립·소비 → **KST 익월 1일 초안**(PENDING_APPROVAL, writeDate=전월 말일) → 관리자 재무 콘솔 검토·발행 → 관계사 입금. 연결 draft가 있으면 **SENT 후에만** mark-paid.
   - `ABUTS_TO_CUSTOMER`: 어벗츠가 공급자(SELF). 월말=기공소·기공실 있는 치과 커스텀어벗 선결제 사용분(면세). 치과 OB 이체=스토어(과세)와, 이체액에 포함된 어벗(면세). `buyerKind=lab|practice`. 충전 시점 발행 금지.
-  - `LAB_TO_PRACTICE`(기공소→치과 기공서비스, 면세 위수탁): 치과 OB 이체 성공 라인마다 수행 기공소가 공급자. 플랫폼이 팝빌로 대행. 월 원장 재집계 생성은 하지 않는다(`LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED=false`). `taxInvoice.trusteeIssueEnabled=false`면 그 기공소 초안은 만들지 않는다.
-  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`(품목 **기공비 정산(매입)** — 협력·하청 합산). 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
+  - `LAB_TO_PRACTICE`(기공소→치과 기공서비스, 면세 위수탁): 기공소가 직접정산서 입금을 확인한 뒤, `resolveTrusteeIssueEnabled === true`일 때만 수행 기공소가 공급자. 기본값은 `null`이며 `updatedAt` 없는 옛 `true`는 미응답이다. 월 원장 재집계 생성은 하지 않는다(`LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED=false`).
+  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`. 기공소 Draft는 `trusteeIssueEnabled === true`일 때만. 그 외 역할은 명시적 `false`가 아니면 위수탁. 기본 `issuanceMode="TRUSTEE"`.
   - 정산 배치: 익월 1일 DRAFT(`monthlySettlementBatchWorker`) → 관리자 확정 시 Draft(위수탁 ON만). SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 작성연월일 헬퍼: `utils/taxInvoicePeriod.util.js` `writeDateFromPeriodEnd`. 1B 훅: `services/taxInvoiceAutoIssue.service.js`.
@@ -1253,7 +1253,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 위 항목과 충돌하는 이전 서술(자정 스냅샷 단가·할인그룹·택배 묶음 출고 박스당 배송비·딜러 10~20% 누적 구간·제조 49.5%·런칭 이벤트 단가)은 폐지된 정책이다.
   - FE: `src/shared/pricing/requestorUnitPricePolicy.ts`(검증·상수), `src/shared/sales/CustomerPriceDialog.tsx`(딜러 「거래처 가격」), `NewRequestShippingSection.tsx`(딜리버리 단일 카드). 할인그룹 페이지·`DeliverySubscribeDialog` 삭제, `/dashboard/discount-group`은 대시보드로 리다이렉트.
 - **치과 기공료 수기 후불 + 기공소 선불 + 대형 치과 보증금 SSOT (2026-10-24)**:
-  - **월 기공료 입금 수집 중단(기본)**: `utils/practiceSettlementCollection.util.js` — `PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED=true` 로만 ON. 기본 OFF면 워커 미기동·SMS 미발송·`checkPracticeSettlementLock` 통과·overview `settlementCollectionActive=false`(입금 계좌·기한 숨김). 사용분 집계·관리자 receive/pay-labs는 유지. 정책 확정 후 재개.
+  - **월 기공료**: 외부 기공비는 직접 정산서. 어벗츠 계좌 수금 워커는 `PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED=true` 로만 켠다. 기본 OFF면 법인 수금 문자·미납 정지는 없다.
   - 모델: `PracticeMonthlySettlement`(noticeAt·reminderAt·firstDueYmd·secondDueYmd·scheduledTransferAt=정지 시각·paymentReceivedAt·labPayoutMarkedAt), `PracticeLabDeposit`.
   - 달력: `utils/practiceSettlementCalendar.js`. 수집 재개 시 1일 09:00 문자, 5·10일 영업일 입금, 1차 마감일 12:00 재안내, 2차 다음 날 09:00 신규 PTX 정지. 미입금 확정건의 기한은 `confirmPracticeMonthlySettlement`가 다시 맞춘다.
   - 미납 카드: `GET /api/admin/practice-lab-fees/delinquency`. 지속·2회 이상 기록·부분 납부를 나눈다. 2회 이상과 부분 납부는 약관 제7조⑧의 선불 전환 대상이다. 주문 생성 때 자동으로 바꾸지 않고 담당자가 바꾼다. 일부 입금은 `POST .../partial`.

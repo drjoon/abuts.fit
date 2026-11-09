@@ -23,6 +23,7 @@ import {
   splitManufacturerInclusiveUnitPrice,
 } from "./creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import { sumLegacyLabCreditCoveredByDirectStatements } from "./practiceLabDirectSettlement.service.js";
 
 export { normalizeAffiliateVatRate };
 
@@ -232,10 +233,16 @@ export async function computeSettlementPayoutBreakdown({
     role,
     businessAnchorId,
   });
+  const covered =
+    role === "lab"
+      ? await sumLegacyLabCreditCoveredByDirectStatements(businessAnchorId)
+      : 0;
+  const netBalance = Math.max(0, ledgerBalance - covered);
   // 기공소만 다음달 사용 유보금(50만원)을 남기고 나머지 지급.
+  // 직접 정산서에 들어간 기공비는 이미 빠져 있다.
   const balanceAmount =
     role === "lab"
-      ? resolveLabSettlementPayableAmount(ledgerBalance)
+      ? resolveLabSettlementPayableAmount(netBalance)
       : ledgerBalance;
   const rate =
     vatRate === undefined || vatRate === null

@@ -12,6 +12,7 @@ import {
   retryPracticeSettlementApi,
   triggerCurrentMonthSettlementConfirmApi,
 } from "../../controllers/credits/practiceOpenBanking.controller.js";
+import { getPracticeDirectSettlementsApi } from "../../controllers/practiceLabDirectSettlement.controller.js";
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.use(authenticate);
 router.use(authorize(["requestor", "practice", "admin"]));
 
 router.get("/overview", getPracticeBillingOverviewApi);
+router.get("/direct-settlements", getPracticeDirectSettlementsApi);
 router.post("/consent", registerPracticeObConsentApi);
 router.post("/reauth", reauthPracticeObConsentApi);
 router.post("/retry-settlement/:settlementId", retryPracticeSettlementApi);

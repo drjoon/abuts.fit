@@ -136,6 +136,7 @@ import {
   allocateAffiliateVatAcrossSupplyParts,
 } from "./creditRevenuePolicy.service.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import { isDirectPayLabAnchor } from "../utils/practiceLabDirectSettlement.util.js";
 import { isPracticeObPostpaidActive } from "../utils/practiceObPostpaid.util.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import {
@@ -3823,6 +3824,18 @@ export async function releasePracticeTransferLabShare({
       throw err;
     }
 
+    const performingId = String(
+      resolvePerformingLabAnchorId(transfer) || labAnchorId || "",
+    );
+    let directLabFee = false;
+    if (performingId && Types.ObjectId.isValid(performingId)) {
+      const performingLab = await BusinessAnchor.findById(performingId)
+        .select({ businessType: 1, requestorKind: 1 })
+        .session(session)
+        .lean();
+      directLabFee = isDirectPayLabAnchor(performingLab);
+    }
+
     const releaseLines = [
       {
         accountCode: "PLATFORM_ESCROW",
@@ -3839,9 +3852,12 @@ export async function releasePracticeTransferLabShare({
           displayKind: "lab_share",
           displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.releaseLab,
           holdShare: "lab",
+          directLabFee,
         },
       },
-      {
+    ];
+    if (!directLabFee) {
+      releaseLines.push({
         accountCode: "LAB_SETTLEMENT_CREDIT",
         ownerRole: "requestor",
         ownerId: String(labAnchorId),
@@ -3860,10 +3876,10 @@ export async function releasePracticeTransferLabShare({
           labFee: labFeeTotal,
           abutsPrime: Boolean(parties.abutsPrime),
         },
-      },
-    ];
+      });
+    }
 
-    if (purchasePayeeId && purchaseAmount > 0) {
+    if (!directLabFee && purchasePayeeId && purchaseAmount > 0) {
       releaseLines.push(
         {
           accountCode: "LAB_SETTLEMENT_CREDIT",
@@ -3924,7 +3940,8 @@ export async function releasePracticeTransferLabShare({
         labFeeTotal,
         platformFee,
         purchaseAmount,
-        labSettlementAmount: labNet,
+        labSettlementAmount: directLabFee ? 0 : labNet,
+        directLabFee,
         feeRateApplied,
         relationshipKind: computed.relationshipKind,
         abutsPrime: Boolean(parties.abutsPrime),
@@ -3935,7 +3952,9 @@ export async function releasePracticeTransferLabShare({
       skipIdempotencyLookup: true,
     });
 
-    const platformUsageFee = resolvePlatformUsageFee({
+    const platformUsageFee = directLabFee
+      ? 0
+      : resolvePlatformUsageFee({
       transfer,
       parties,
       feeBase: labFeeTotal,

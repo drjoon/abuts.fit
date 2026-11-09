@@ -210,7 +210,7 @@
   - **(세금)계산서 마이너스 발행**: 팝빌 전송 성공 후 상계는 원본 `SENT`를 유지하고, 음수 금액의 `kind=REVERSE` draft를 **별도 문서**로 발행한다. 원본을 `CANCELLED`로 강등하거나 목록에서 지우지 않는다. `CANCELLED`는 미발행 초안 폐기에만 쓴다.
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **B2B 거래 선수금/예치금**(플랫폼 내 계약 물품·용역: 기공·커스텀어벗·스토어 기성품만). 충전 화면·FAQ·약관·입금 확인에 `크레딧(거래 선수금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`. **입금(충전) 시점에는 (세금)계산서를 발행하지 않는다.** 선결제 크레딧은 **어벗츠 커스텀어벗 주문**에만 쓴다(기공소·기공실 있는 치과).
-  - **치과 OB 결제 증빙**: 이체 성공 금액에 맞춘다. 스토어=어벗츠 법인 과세 세금계산서(`ABUTS_TO_CUSTOMER`, SELF). 어벗츠 기공사업부가 수행한 기공·커스텀어벗=법인 면세 계산서 한 장(`ABUTS_TO_CUSTOMER`, SELF). 다른 기공소가 수행한 기공=그 기공소 면세 계산서(`LAB_TO_PRACTICE`, 팝빌 위수탁 TRUSTEE). 한 장에 면세·과세를 섞지 않는다.
+  - **치과 기공비 직접 입금**: 외부 기공소 수행 기공비(`labFeeTotal`+`labAbutmentTotal`)는 KST 익월 1일 `PracticeLabDirectSettlement`로 치과·기공소에 보여 주고, 치과가 기공소 계좌로 직접 입금한다. 회사는 이 금액을 받아 다시 보내지 않는다. 기공소가 내역·총액을 고친 뒤 입금 확인을 하면, `taxInvoice.trusteeIssueEnabled === true`(기본 `null`, `updatedAt` 있는 명시 답만)일 때만 `LAB_TO_PRACTICE` 면세 위수탁을 발행한다. 커스텀어벗 제작비는 선결제 크레딧만 쓰고 이 기공비와 상계하지 않는다. 신규 외부 기공비는 `LAB_SETTLEMENT_CREDIT`에 넣지 않는다. 정산서에 들어간 기존 적립만 월 지급액에서 뺀다.
   - **월말 선결제 증빙**: 기공소·기공실 있는 치과가 커스텀어벗 의뢰하기로 올린 사용분(`REQUEST_SPEND_COMMIT`)만 어벗츠 법인 면세 계산서(`ABUTS_TO_CUSTOMER`, SELF). 스토어·기공서비스·배송은 이 월합에 넣지 않는다.
   - 의뢰자 소비·기공 `REV_ADMIN` 잔여: 공급가 기준, `vatAmount = 0`(면세). 제조사·딜러·개발운영 `REV_*`는 적립 시 공급가+VAT 기록, **잔액·미정산=포함가**.
   - 제조사·딜러사·개발운영사 장부=포함가. 지급은 잔액 그대로(`SETTLEMENT_PAYOUT`: `amount`/`amountIncludingVat`=입금=잔액 차감, `amountExcludingVat`/`vatAmount`=세금계산서 분해).
@@ -246,7 +246,7 @@
 - **치과 기공의뢰 후불(수기 입금) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-24)**:
   - **월 후불 한도 없음**: 치과 기공의뢰(PTX) 기공비·PTX 어벗·스토어는 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). 치과는 출금동의 없이 후불(`isPracticeObPostpaidActive`). 계좌 이체는 자동화하지 않는다. **기공소·기공실 있는 치과의 커스텀어벗 의뢰하기(`Request`)는 선불 크레딧**이다.
   - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy`). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. **미납으로 신규 기공의뢰를 막지 않는다.** 관리자 대시보드 「런칭 - 실사용 전환」 확인 시 `SystemSettings.practiceLaunch.status=live`로 기록하고 베타를 끈다. 그때 미납 정지와 일반 기공소 충전 크레딧 결제가 켜지고, 모달에 보인 관리자 할 일·플랫폼 할 일 목록을 그 문서에 남긴다(`practiceLaunch.service.js`). `PRACTICE_OB_LAUNCH_BETA=false`도 베타를 끈다. 치과 `Request`·PTX abutment hold는 후불. 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
-  - **월 기공료 입금 수집 중단 (기본)**: 치과→어벗츠 하나은행 월 기공료 입금·1일/5일 안내 문자·미납 정지는 **당분간 중단**. `PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED=true` 로만 재개. 중단 중에는 워커·SMS·`checkPracticeSettlementLock`·기공료 탭 입금 안내가 꺼진다. 사용분 집계·관리자 수기 receive/pay-labs API는 남긴다. 정책 확정 후 다시 켠다.
+  - **월 기공료 입금**: 외부 기공소 기공비는 어벗츠 계좌로 받지 않는다. 익월 1일 직접 정산서(`PracticeLabDirectSettlement`)를 보고 치과가 기공소 계좌로 입금한다. 어벗·스토어·기공사업부 법인 수금은 여전히 `PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED`가 꺼져 있으면 받지 않는다. 미납 문자·신규 의뢰 정지는 하지 않는다.
   - **안내·입금·정지(수집 재개 시)**: 익월 1일 09:00 KST 전월분 문자. 5일(영업일)까지 1차 입금, 그날 12:00에 미확인이면 재안내. 10일(영업일)까지 2차. 그 다음 날 09:00부터 미확인이면 **신규 PTX만** 정지(`checkPracticeSettlementLock`, `scheduledTransferAt`). **베타 중에는 이 정지를 하지 않는다.** 실사용 전환 뒤에만 적용한다. 자정이 아닌 오전 9시인 이유: 전날 입금을 담당자가 아침에 확인하기 전에 막지 않기 위해서다. 문구는 정중하게. 진행 중 의뢰는 막지 않는다. 담당자가 전액 입금 확인(`POST /api/admin/practice-lab-fees/:id/receive`)하면 즉시 해제하고, 정지 중이었으면 확인 문자를 보낸다. 문자 실패는 다음 시간 주기에 다시 보낸다. 일부 입금은 확인하지 않는다. 입금자명은 치과명. 이미 확정된 미입금 정산서의 기한은 워커가 이 달력으로 다시 맞춘다.
   - **기공소 지급**: 1차까지 확인된 금액은 다음 영업일(보통 6일), 그 이후 확인분은 확인한 다음 영업일에 담당자가 기공소 계좌로 직접 송금하고 기록한다(`pay-labs`). 입금 확인 전에는 기공소에 보내지 않는다. 0원은 문자·정지 없음.
   - **휴일**: 1일 09:00 문자는 달력 그대로. 5일·10일이 주말·공휴일이면 그 기한과 5일 낮 재안내만 다음 영업일로 민다. 정지는 민 2차 기한의 다음 날 09:00이다(`practiceSettlementCalendar.js`).
@@ -289,7 +289,7 @@
 - 정산 지급 가능 잔액 집계 원칙:
   - `SETTLEMENT_PAYOUT`은 포함
   - **제조사**: 부가세 포함가(`amountIncludingVat`) 기준, 지급=잔액 그대로·세금계산서(÷1.1). 고객 유료·무료와 무관하게 `EARN/ADJUST` 전액 지급 대상(리메이크는 remake 단가 적립). 매달 말일 일괄 지급 전까지 미정산 잔액.
-  - **어벗츠·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외). **기공소 월 지급**은 다음 달 초 사용을 위해 **50만원 유보** 후 나머지 잔액만 지급(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`).
+  - **어벗츠·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. 외부 기공비는 플랫폼이 지급하지 않고 치과가 기공소에 직접 입금한다. 정산서에 없는 이전 `LAB_SETTLEMENT_CREDIT`만 **50만원 유보** 후 잔액을 지급한다(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`).
   - **딜러사·개발운영사**: 장부 적립·미정산은 부가세 포함가. 지급은 잔액 그대로·세금계산서(÷1.1)
   - 딜러사·개발운영사·어벗츠의 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만). 제조사는 리메이크·무료 크레딧 포함 약정 단가 지급.
 - CreditLedger → GL 이관 보정 원칙:

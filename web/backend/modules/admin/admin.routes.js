@@ -229,6 +229,7 @@ import {
   adminReceivePracticeLabFee,
   adminRecordPracticeLabFeePartial,
 } from "../../controllers/admin/adminPracticeLabFee.controller.js";
+import { adminListDirectSettlementsApi } from "../../controllers/practiceLabDirectSettlement.controller.js";
 import {
   deleteBusinessAnchor,
   getBusinessAnchorLinkedUsers,
@@ -562,6 +563,7 @@ router.delete(
 );
 
 // 크레딧 관리
+router.get("/practice-lab-fees/direct", adminListDirectSettlementsApi);
 router.get("/practice-lab-fees", adminListPracticeLabFees);
 router.get("/practice-lab-fees/delinquency", adminPracticeLabFeeDelinquency);
 router.post("/practice-lab-fees/:id/partial", adminRecordPracticeLabFeePartial);

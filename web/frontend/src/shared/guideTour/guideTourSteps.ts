@@ -219,7 +219,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_autopay",
     title: "정산 · 기공료",
-    hint: "익월 1일 오전 9시 문자 후, 5일과 10일까지 입금합니다.\n기한을 두 번 넘기거나 일부만 입금하면 이후는 선불 크레딧입니다.",
+    hint: "지난달 기공비를 기공소 계좌로 입금합니다.",
     path: `${CREDITS_PATH}?tab=autopay`,
     target: "credits_autopay",
     advance: "next",

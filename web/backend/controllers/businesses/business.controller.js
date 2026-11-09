@@ -26,6 +26,7 @@ import {
 } from "./business.find.util.js";
 import { buildOrgBusinessTypeQuery } from "../../utils/orgBusinessType.util.js";
 import { getTtlMapValue, setTtlMapValue } from "../../utils/boundedTtlMap.js";
+import { resolveTrusteeIssueEnabled } from "../../utils/trusteeIssueConsent.js";
 import {
   updateMyBusiness,
   getMyAutoMatchParticipation,
@@ -665,8 +666,7 @@ export async function getMyBusiness(req, res) {
         businessLicense,
         payoutAccount: anchor?.payoutAccount || {},
         taxInvoice: {
-          trusteeIssueEnabled:
-            anchor?.taxInvoice?.trusteeIssueEnabled !== false,
+          trusteeIssueEnabled: resolveTrusteeIssueEnabled(anchor?.taxInvoice),
           updatedAt: anchor?.taxInvoice?.updatedAt || null,
         },
         shippingPolicy: anchor?.shippingPolicy || null,

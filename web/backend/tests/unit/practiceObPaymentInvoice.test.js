@@ -65,6 +65,7 @@ describe("issuePracticeObPaymentInvoices", () => {
       requestorKind: "lab",
       name: "수행기공소",
       metadata: { companyName: "수행기공소" },
+      taxInvoice: { trusteeIssueEnabled: true, updatedAt: new Date("2026-10-01T00:00:00+09:00") },
     });
     const optedOut = await BusinessAnchor.create({
       businessNumberNormalized: "6333333333",
@@ -72,7 +73,10 @@ describe("issuePracticeObPaymentInvoices", () => {
       requestorKind: "lab",
       name: "직접발행기공소",
       metadata: { companyName: "직접발행기공소" },
-      taxInvoice: { trusteeIssueEnabled: false },
+      taxInvoice: {
+        trusteeIssueEnabled: false,
+        updatedAt: new Date("2026-10-01T00:00:00+09:00"),
+      },
     });
 
     const settlementId = new Types.ObjectId();

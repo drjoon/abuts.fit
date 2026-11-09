@@ -440,11 +440,13 @@ const businessAnchorSchema = new mongoose.Schema(
     },
     /**
      * (세금)계산서 발행 선호.
-     * trusteeIssueEnabled=true(기본): 어벗츠가 위수탁으로 대신 발행.
-     * false: 상대가 직접 발행(정산 배치 확정 시 Draft 미생성).
+     * trusteeIssueEnabled=null(기본): 아직 묻지 않음. 계산서를 만들지 않는다.
+     * true: 기공소가 대신 발행에 동의. 입금 확인 후 위수탁.
+     * false: 기공소가 직접 발행.
+     * updatedAt이 없는 옛 true는 미응답(null)으로 본다.
      */
     taxInvoice: {
-      trusteeIssueEnabled: { type: Boolean, default: true },
+      trusteeIssueEnabled: { type: Boolean, default: null },
       updatedAt: { type: Date, default: null },
     },
     payoutRates: {

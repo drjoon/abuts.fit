@@ -73,8 +73,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
   LAB_PAYOUT_SETTINGS_PATH,
-  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
@@ -90,6 +88,7 @@ import {
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { LabDirectFeePanel } from "@/features/settings/tabs/LabDirectFeePanel";
 
 type InvoiceDraftRef = {
   _id?: string;
@@ -615,41 +614,29 @@ export const LabSettlementPayoutTab = () => {
                 </Tooltip>
               ) : null}
               <SettlementPolicyDialog
-                title="지급 규칙"
-                description="적립 · 입금 · 계산서"
+                title="기공비 규칙"
+                description="입금 · 계산서"
                 triggerClassName="ml-0 w-full"
               >
                 <div className={GUIDE_FACT_GRID_CLASS}>
-                  <SettlementPolicyFact label="보철 적립">
-                    작업완료되면 적립됩니다.
+                  <SettlementPolicyFact label="기공비">
+                    매월 1일에 지난달 금액을 보여 줍니다.
                     <br />
-                    파일 업로드 전에는 빠집니다.
+                    치과가 기공소 계좌로 입금합니다.
                   </SettlementPolicyFact>
-                  <SettlementPolicyFact label="보철 미수령">
-                    보철을 안 받는 건은 작업시작 때 적립됩니다.
-                    <br />
-                    커스텀어벗은 STL을 올린 때입니다.
+                  <SettlementPolicyFact label="수정">
+                    입금 확인 전에 내역과 총액을 고칠 수 있습니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="커스텀어벗">
-                    {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
-                  </SettlementPolicyFact>
-                  <SettlementPolicyFact label="취소">
-                    취소하면 적립이 삭제됩니다.
-                  </SettlementPolicyFact>
-                  <SettlementPolicyFact label="주문에 사용">
-                    주문에 쓰면 지급액에서 빠집니다.
-                  </SettlementPolicyFact>
-                  <SettlementPolicyFact label="일부 입금">
-                    전액이 확인된 뒤에 들어옵니다.
-                  </SettlementPolicyFact>
-                  <SettlementPolicyFact label="남기는 금액">
-                    {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}
-                  </SettlementPolicyFact>
-                  <SettlementPolicyFact label="통장 사본">
-                    {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
+                    제작비는 선결제 크레딧입니다.
+                    <br />
+                    받을 기공비에서 빼지 않습니다.
                   </SettlementPolicyFact>
                   <SettlementPolicyFact label="계산서">
-                    부가세 없이 발행합니다.
+                    대신 발행을 고른 경우만 입금 확인 후 면세 계산서를 발행합니다.
+                  </SettlementPolicyFact>
+                  <SettlementPolicyFact label="이전 잔액">
+                    정산서에 없는 이전 기공크레딧만 플랫폼 지급으로 남습니다.
                   </SettlementPolicyFact>
                 </div>
               </SettlementPolicyDialog>
@@ -658,7 +645,10 @@ export const LabSettlementPayoutTab = () => {
         }
         mainLeft={
           <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
-            <div className="flex shrink-0 justify-start">
+            <div className="max-h-[58%] shrink-0 overflow-y-auto px-1.5 py-1.5">
+              <LabDirectFeePanel />
+            </div>
+            <div className="flex shrink-0 justify-start px-1">
               <PeriodFilter
                 value={settlementPeriod}
                 onChange={setPeriod}

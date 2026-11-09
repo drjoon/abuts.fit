@@ -15,6 +15,7 @@ import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
 import { formatKstWriteDate } from "../utils/taxInvoicePeriod.util.js";
 import { approveAndIssueTaxInvoiceDraftById } from "./taxInvoiceAutoIssue.service.js";
+import { resolveTrusteeIssueEnabled } from "../utils/trusteeIssueConsent.js";
 
 function isDuplicateKeyError(err) {
   const code = err?.code;
@@ -194,7 +195,7 @@ export async function issuePracticeObPaymentInvoices({
     if (line.payeeKind !== "direct_lab") continue;
     const lab = labById.get(String(line.payeeAnchorId || ""));
     if (!lab) continue;
-    if (lab.taxInvoice?.trusteeIssueEnabled === false) {
+    if (resolveTrusteeIssueEnabled(lab.taxInvoice) !== true) {
       summary.skippedOptOut += 1;
       continue;
     }

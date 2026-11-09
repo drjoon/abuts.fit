@@ -39,7 +39,8 @@ export function TrusteeIssueSettingCard({
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [enabled, setEnabled] = useState(true);
+  const [answered, setAnswered] = useState(false);
+  const [enabled, setEnabled] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -53,9 +54,14 @@ export function TrusteeIssueSettingCard({
         businessType,
         force: true,
       });
-      setEnabled(data?.taxInvoice?.trusteeIssueEnabled !== false);
+      const raw = data?.taxInvoice?.trusteeIssueEnabled;
+      const isAnswered = raw === true || raw === false;
+      const isLab = businessType === "requestor";
+      setAnswered(isAnswered);
+      setEnabled(isLab ? raw === true : raw !== false);
     } catch {
-      setEnabled(true);
+      setAnswered(false);
+      setEnabled(businessType !== "requestor");
     } finally {
       setLoading(false);
     }
@@ -85,6 +91,7 @@ export function TrusteeIssueSettingCard({
         );
       }
       invalidateBusinessMeCache({ token, businessType });
+      setAnswered(true);
       toast({
         title: next
           ? "어벗츠 위수탁 발행을 사용합니다"
@@ -107,6 +114,9 @@ export function TrusteeIssueSettingCard({
     }
   };
 
+  const answerOnPayout =
+    businessType === "requestor" && user?.role !== "internalLab";
+
   return (
     <div
       className={cn(
@@ -123,18 +133,52 @@ export function TrusteeIssueSettingCard({
         </p>
       </div>
       <div className="mt-auto flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2.5">
-        <Label htmlFor="trustee-issue-enabled" className="text-sm">
-          {enabled ? "대신 발행 사용" : "직접 발행"}
-        </Label>
         {loading ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : answered ? (
+          <>
+            <Label htmlFor="trustee-issue-enabled" className="text-sm">
+              {enabled ? "대신 발행 사용" : "직접 발행"}
+            </Label>
+            <Switch
+              id="trustee-issue-enabled"
+              checked={enabled}
+              disabled={saving}
+              onCheckedChange={(v) => void onToggle(Boolean(v))}
+            />
+          </>
+        ) : answerOnPayout ? (
+          <p className="text-sm text-slate-600">
+            지급 화면에서 한 번 선택합니다.
+            <br />
+            선택 전에는 계산서를 발행하지 않습니다.
+          </p>
         ) : (
-          <Switch
-            id="trustee-issue-enabled"
-            checked={enabled}
-            disabled={saving}
-            onCheckedChange={(v) => void onToggle(Boolean(v))}
-          />
+          <div className="flex w-full flex-col gap-2">
+            <p className="text-sm text-slate-600">
+              아직 선택하지 않았습니다.
+              <br />
+              선택 전에는 계산서를 발행하지 않습니다.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700"
+                disabled={saving || loading}
+                onClick={() => void onToggle(false)}
+              >
+                직접 발행
+              </button>
+              <button
+                type="button"
+                className="h-8 rounded-lg bg-primary px-3 text-xs text-white"
+                disabled={saving || loading}
+                onClick={() => void onToggle(true)}
+              >
+                대신 발행
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
