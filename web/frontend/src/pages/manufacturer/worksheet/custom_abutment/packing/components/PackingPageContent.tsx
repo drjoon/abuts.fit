@@ -1259,6 +1259,21 @@ export const PackingPageContent = ({
     onCaptureResult: handleCaptureResult,
   });
 
+  // 확인 창은 프리뷰(모달) 밖에 뜬다. 모달이 열려 있으면 바깥 클릭에 닫히고 포커스도 갇혀 입력이 안 된다.
+  const hadPendingRef = useRef(false);
+  useEffect(() => {
+    const hasPending = pendingMatches.length > 0;
+    if (hasPending && !hadPendingRef.current && previewOpen) {
+      releasePreviewBinaries({
+        setPreviewFiles,
+        setPreviewNcText,
+        setPreviewStageUrl,
+      });
+      setPreviewOpen(false);
+    }
+    hadPendingRef.current = hasPending;
+  }, [pendingMatches.length, previewOpen]);
+
   const normalizedManualSuffix = useMemo(
     () =>
       String(manualSuffixQuery || "")
