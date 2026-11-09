@@ -5,6 +5,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-11-09: 각인 인식 실패·차단은 예외로 끊지 않고 수동 매칭 응답으로 돌린다. 이미지는 jpeg로 정규화.
 // - 2026-09-04: 자동 인식은 제안만 — requestMongoId 수동 확정 시에만 포장.발송 적용.
 // - 2026-09-04: 미매칭 시 packing:capture-unmatched 발행 + previewUrl. requestMongoId 수동 바인딩.
 // - 2026-08-20: 샘플도 각인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
@@ -149,42 +150,42 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
     sizeBytes: buffer.length,
   });
 
-  // 이미지 리사이징으로 Gemini API 비용 절감 (800px 너비로 축소)
+  // 현미경 bmp/tiff/작은 jpeg도 Gemini가 읽도록 항상 jpeg·긴 변 800 이하로 맞춘다.
   let processedBuffer = buffer;
+  let mimeType = "image/jpeg";
   try {
-    const metadata = await sharp(buffer).metadata();
+    const metadata = await sharp(buffer, { failOn: "none" }).metadata();
     console.log("[lot-capture] original image dimensions", {
       width: metadata.width,
       height: metadata.height,
       format: metadata.format,
     });
 
-    if (metadata.width && metadata.width > 800) {
-      processedBuffer = await sharp(buffer)
-        .resize(800, null, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality: 85 })
-        .toBuffer();
+    processedBuffer = await sharp(buffer, { failOn: "none" })
+      .rotate()
+      .resize(800, 800, {
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 85 })
+      .toBuffer();
 
-      const resizedSizeKB = (processedBuffer.length / 1024).toFixed(2);
-      const reduction = (
-        ((buffer.length - processedBuffer.length) / buffer.length) *
-        100
-      ).toFixed(1);
-
-      console.log("[lot-capture] image resized for cost optimization", {
-        originalSizeKB,
-        resizedSizeKB,
-        reduction: `${reduction}%`,
-      });
-    }
+    const resizedSizeKB = (processedBuffer.length / 1024).toFixed(2);
+    console.log("[lot-capture] image normalized for recognition", {
+      originalSizeKB,
+      resizedSizeKB,
+      format: metadata.format || null,
+    });
   } catch (resizeError) {
-    console.warn("[lot-capture] image resize failed, using original", {
+    console.warn("[lot-capture] image normalize failed, using original", {
       error: resizeError?.message || String(resizeError),
     });
     processedBuffer = buffer;
+    mimeType = String(originalName || "")
+      .toLowerCase()
+      .endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
   }
 
   const guardKey = `gemini-recognizeLotNumber:bg`;
@@ -205,11 +206,6 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
   });
 
   const imageBase64 = processedBuffer.toString("base64");
-  const mimeType = String(originalName || "")
-    .toLowerCase()
-    .endsWith(".png")
-    ? "image/png"
-    : "image/jpeg";
 
   const prompt =
     "너는 치과 임플란트 어벗먼트(또는 유사한 금속 부품) 생산 이미지에서 각인된 시리얼 코드를 읽어 JSON으로 추출하는 도우미야.\n" +
@@ -358,11 +354,27 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   };
 
   const packAiRecogEnabled = toBool(process.env.PACK_AI_RECOG);
+  let recognitionFailed = false;
   if (!isManualBind && !providedSuffix && packAiRecogEnabled) {
-    recognized = await recognizeLotNumberFromS3({
-      s3Key: key,
-      originalName: name,
-    });
+    try {
+      recognized = await recognizeLotNumberFromS3({
+        s3Key: key,
+        originalName: name,
+      });
+    } catch (recognizeError) {
+      // 인식 실패·과호출 차단이어도 이미지는 수동 매칭으로 남긴다.
+      recognitionFailed = true;
+      console.warn("[lot-capture] recognition failed, defer to manual match", {
+        s3Key: key,
+        originalName: name,
+        error: recognizeError?.message || String(recognizeError),
+      });
+      recognized = {
+        lotNumber: "",
+        confidence: "low",
+        provider: "gemini",
+      };
+    }
   }
 
   const finalRecognizedSuffix = extractLotSuffix3(
@@ -410,7 +422,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     }
   } else {
     // 자동 경로는 인식 제안만 하고 저장하지 않는다. (확정은 requestMongoId 수동 바인딩)
-    reason = "no_recognized_suffix";
+    reason = recognitionFailed ? "recognition_failed" : "no_recognized_suffix";
   }
 
   // 자동 인식(현미경/드롭)은 작업자 확인 전 확정하지 않는다.

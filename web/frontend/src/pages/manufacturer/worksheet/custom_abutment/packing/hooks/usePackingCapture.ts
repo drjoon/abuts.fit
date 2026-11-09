@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-11-09: 인식 API 실패·확장자 거절이어도 수동 입력 창을 연다. 다음 촬영 확정은 목록에 없는 후보도 진행.
 // - 2026-09-04: 인식 성공 건은 다음 촬영 시 자동 확정. 수동 입력/드롭은 인식값 정정용.
 // - 2026-09-04: 자동 인식은 제안만 — 작업자가 이미지·인식값 확인 후 수동 확정.
 // - 2026-09-04: AI 미매칭 시 재촬영 대신 pending 수동 매칭(3글자 필터·카드 드롭).
@@ -50,6 +51,25 @@ export type PendingPackingMatch = {
 };
 
 export const PACKING_PENDING_DRAG_MIME = "application/x-abuts-packing-pending";
+
+const PACKING_IMAGE_EXTS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".heic",
+  ".heif",
+];
+
+export const isPackingCaptureImageFile = (file: File) => {
+  const name = String(file?.name || "").toLowerCase();
+  const type = String(file?.type || "").toLowerCase();
+  if (type.startsWith("image/")) return true;
+  return PACKING_IMAGE_EXTS.some((ext) => name.endsWith(ext));
+};
 
 const makePendingId = () =>
   `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -386,7 +406,14 @@ export const usePackingCapture = ({
         .slice()
         .reverse();
       for (const pending of toConfirm) {
-        const request = findSuggestedRequest(pending);
+        const request =
+          findSuggestedRequest(pending) ||
+          (pending.suggestedRequestMongoId || pending.suggestedRequestId
+            ? ({
+                _id: pending.suggestedRequestMongoId,
+                requestId: pending.suggestedRequestId,
+              } as ManufacturerRequest)
+            : null);
         if (!request) continue;
         await bindCaptureToRequest({
           request,
@@ -418,6 +445,47 @@ export const usePackingCapture = ({
       pushPendingMatch(row);
     },
     [autoConfirmSuccessfulPendings, pushPendingMatch],
+  );
+
+  const openManualPendingFromUpload = useCallback(
+    async (params: {
+      s3Key: string;
+      s3Url?: string;
+      originalName?: string;
+      fileSize?: number;
+      sourceFile?: File | null;
+      reason?: string;
+    }) => {
+      const s3Key = String(params.s3Key || "").trim();
+      if (!s3Key) return;
+      let previewUrl = String(params.s3Url || "").trim();
+      let revokePreviewOnClear = false;
+      if (!previewUrl && params.sourceFile) {
+        try {
+          previewUrl = URL.createObjectURL(params.sourceFile);
+          revokePreviewOnClear = true;
+        } catch {
+          previewUrl = "";
+        }
+      }
+      await enqueuePendingMatch({
+        s3Key,
+        s3Url: String(params.s3Url || "").trim(),
+        previewUrl,
+        originalName:
+          params.originalName || params.sourceFile?.name || "capture.jpg",
+        fileSize: Number(params.fileSize) || params.sourceFile?.size || 0,
+        aiSuffix: "",
+        reason: params.reason || "recognition_failed",
+        candidateMatched: false,
+        suggestedRequestMongoId: "",
+        suggestedRequestId: "",
+        suggestedLotValue: "",
+        confidence: "",
+        revokePreviewOnClear,
+      });
+    },
+    [enqueuePendingMatch],
   );
 
   const matchPendingToRequest = useCallback(
@@ -483,7 +551,13 @@ export const usePackingCapture = ({
 
   const handlePackingImageDropOnRequest = useCallback(
     async (request: ManufacturerRequest, imageFiles: File[]) => {
-      if (previewOpenRef.current) return;
+      if (previewOpenRef.current) {
+        toast({
+          title: "프리뷰가 열려 있습니다",
+          description: "프리뷰를 닫은 뒤 각인 이미지를 드롭하세요.",
+        });
+        return;
+      }
       if (!token || !request?._id) return;
       if (!imageFiles.length) {
         await matchPendingToRequest(request);
@@ -491,6 +565,10 @@ export const usePackingCapture = ({
       }
       setOcrProcessing(true);
       setOcrStage("upload");
+      let uploadedKey = "";
+      let uploadedUrl = "";
+      let uploadedName = imageFiles[0]?.name || "capture.jpg";
+      let uploadedSize = imageFiles[0]?.size || 0;
       try {
         const resized = await resizeImageFile(imageFiles[0]);
         const uploadResult = await uploadToS3([resized]);
@@ -499,21 +577,46 @@ export const usePackingCapture = ({
         if (!uploaded?.key) {
           throw new Error("이미지 업로드에 실패했습니다.");
         }
+        uploadedKey = uploaded.key;
+        uploadedUrl =
+          uploadedMeta.url || uploadedMeta.s3Url || uploadedMeta.location || "";
+        uploadedName = uploaded.originalName || imageFiles[0].name;
+        uploadedSize = uploadedMeta.fileSize || imageFiles[0].size || 0;
         setOcrStage("recognize");
-        await bindCaptureToRequest({
+        const matched = await bindCaptureToRequest({
           request,
           s3Key: uploaded.key,
-          s3Url: uploadedMeta.url || uploadedMeta.s3Url || uploadedMeta.location || "",
-          originalName: uploaded.originalName || imageFiles[0].name,
-          fileSize: uploadedMeta.fileSize || imageFiles[0].size || 0,
+          s3Url: uploadedUrl,
+          originalName: uploadedName,
+          fileSize: uploadedSize,
           recognizedSuffix: extractLotSuffix3(manualSuffixQuery),
         });
+        if (!matched) {
+          await openManualPendingFromUpload({
+            s3Key: uploadedKey,
+            s3Url: uploadedUrl,
+            originalName: uploadedName,
+            fileSize: uploadedSize,
+            sourceFile: imageFiles[0],
+            reason: "manual_bind_failed",
+          });
+        }
       } catch (error) {
+        if (uploadedKey) {
+          await openManualPendingFromUpload({
+            s3Key: uploadedKey,
+            s3Url: uploadedUrl,
+            originalName: uploadedName,
+            fileSize: uploadedSize,
+            sourceFile: imageFiles[0],
+            reason: "manual_bind_failed",
+          });
+        }
         toast({
           title: "카드 매칭 실패",
           description:
             (error as Error)?.message ||
-            "이미지를 의뢰 카드에 연결하지 못했습니다.",
+            "이미지를 의뢰 카드에 연결하지 못했습니다. 3글자를 입력하세요.",
           variant: "destructive",
         });
       } finally {
@@ -525,6 +628,7 @@ export const usePackingCapture = ({
       bindCaptureToRequest,
       matchPendingToRequest,
       manualSuffixQuery,
+      openManualPendingFromUpload,
       resizeImageFile,
       toast,
       token,
@@ -548,16 +652,16 @@ export const usePackingCapture = ({
         for (let index = 0; index < uploadResult.length; index += 1) {
           const uploaded = uploadResult[index];
           const sourceFile = imageFiles[index];
+          const uploadedMeta = (uploaded || {}) as any;
+          if (!uploaded?.key) {
+            toast({
+              title: "이미지 업로드에 실패했습니다",
+              description: "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+            continue;
+          }
           try {
-            const uploadedMeta = (uploaded || {}) as any;
-            if (!uploaded?.key) {
-              toast({
-                title: "이미지 업로드에 실패했습니다",
-                description: "잠시 후 다시 시도해주세요.",
-                variant: "destructive",
-              });
-              continue;
-            }
             const captureRes = await fetch("/api/bg/lot-capture/packing", {
               method: "POST",
               headers: {
@@ -629,11 +733,20 @@ export const usePackingCapture = ({
                   : "이미지를 보고 각인 3글자를 입력하거나 카드에 드롭하세요.",
             });
           } catch (error) {
+            await openManualPendingFromUpload({
+              s3Key: uploaded.key,
+              s3Url: uploadedMeta.url || uploadedMeta.s3Url || "",
+              originalName:
+                uploaded.originalName || sourceFile?.name || "capture.jpg",
+              fileSize: uploadedMeta.fileSize || sourceFile?.size || 0,
+              sourceFile,
+              reason: "recognition_failed",
+            });
             toast({
-              title: "이미지 처리 실패",
+              title: "인식 실패 — 직접 입력",
               description:
                 (error as Error)?.message ||
-                "세척·포장 이미지 처리 중 오류가 발생했습니다.",
+                "각인 3글자를 입력하거나 카드에 드롭하세요.",
               variant: "destructive",
             });
           }
@@ -651,7 +764,14 @@ export const usePackingCapture = ({
         setOcrStage("idle");
       }
     },
-    [enqueuePendingMatch, toast, token, uploadToS3, resizeImageFile],
+    [
+      enqueuePendingMatch,
+      openManualPendingFromUpload,
+      resizeImageFile,
+      toast,
+      token,
+      uploadToS3,
+    ],
   );
 
   const handlePageDrop = useCallback(
@@ -660,24 +780,29 @@ export const usePackingCapture = ({
       e.stopPropagation();
       setIsDraggingOver(false);
 
-      if (previewOpenRef.current) return;
+      if (previewOpenRef.current) {
+        toast({
+          title: "프리뷰가 열려 있습니다",
+          description: "프리뷰를 닫은 뒤 각인 이미지를 드롭하세요.",
+        });
+        return;
+      }
       // 카드→pending 드래그는 페이지 전역 AI 경로로 다시 넣지 않는다.
       if (e.dataTransfer.types.includes(PACKING_PENDING_DRAG_MIME)) return;
 
       const files = Array.from(e.dataTransfer.files || []);
       if (!files.length) return;
-      const imageFiles = files.filter((file) => {
-        const name = file.name.toLowerCase();
-        return (
-          name.endsWith(".jpg") ||
-          name.endsWith(".jpeg") ||
-          name.endsWith(".png")
-        );
-      });
-      if (!imageFiles.length) return;
+      const imageFiles = files.filter((file) => isPackingCaptureImageFile(file));
+      if (!imageFiles.length) {
+        toast({
+          title: "이미지 파일이 아닙니다",
+          description: "jpg, png, webp, bmp, tiff 파일을 드롭하세요.",
+        });
+        return;
+      }
       void handlePackingImageDrop(imageFiles);
     },
-    [handlePackingImageDrop],
+    [handlePackingImageDrop, toast],
   );
 
   const handlePageDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {

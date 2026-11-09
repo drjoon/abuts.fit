@@ -113,7 +113,10 @@ import { WorkRegenerationOverlayButton } from "./WorkRegenerationOverlayButton";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { isPtxDesignStlMissing } from "@/shared/request/ptxDesignUploadMissing";
-import { PACKING_PENDING_DRAG_MIME } from "../packing/hooks/usePackingCapture";
+import {
+  isPackingCaptureImageFile,
+  PACKING_PENDING_DRAG_MIME,
+} from "../packing/hooks/usePackingCapture";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -846,14 +849,9 @@ export const WorksheetCardGrid = ({
               PACKING_PENDING_DRAG_MIME,
             );
             const files = Array.from(e.dataTransfer.files || []);
-            const imageFiles = files.filter((file) => {
-              const name = file.name.toLowerCase();
-              return (
-                name.endsWith(".jpg") ||
-                name.endsWith(".jpeg") ||
-                name.endsWith(".png")
-              );
-            });
+            const imageFiles = files.filter((file) =>
+              isPackingCaptureImageFile(file),
+            );
             if (hasPendingDrag || imageFiles.length > 0) {
               await onPackingImageDrop(request, imageFiles);
               return;

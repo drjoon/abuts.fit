@@ -1667,7 +1667,9 @@ export const PackingPageContent = ({
                           ? `제안 의뢰: ${activePending.suggestedRequestId || activePending.suggestedLotValue || "—"}`
                           : activePending.reason === "no_suffix_match"
                             ? "인식값은 있으나 세척.패킹 후보 없음"
-                            : "자동 후보 없음 — 수동 입력/드롭"}
+                            : activePending.reason === "recognition_failed"
+                              ? "인식 실패. 3글자를 입력하세요."
+                              : "자동 후보 없음. 3글자를 입력하세요."}
                       </div>
                     </div>
                   ) : null}
