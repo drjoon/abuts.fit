@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-11-07: worksheet·monitoring select에 ptxDesignUploadMissingVisible·designCompletedAt. STL 누락 뱃지.
+// - 2026-11-09: 제조사 헥스 변경은 계정 default에 심지 않음. 재제작 복사는 관리자·디자인SW 시드를 다시 넣음.
 // - 2026-10-22: STL/30° 헥스 변경은 의뢰 1건만. 계정 defaultManufacturerHexRotation 심기 금지.
 // - 2026-10-22: ExoCAD 3.2 이상 의뢰의 헥스 변경은 그 건만. 계정 기본값으로 심지 않음.
 // - 2026-10-21: 불완전가공 판정 뒤 짧은 커프 명단을 맞춘다(응답 전 필수 아님).
@@ -140,10 +141,10 @@ import { releaseRequestCreditHoldsOnCancel } from "../../services/requestCreditH
 import { pickFilledStlFileForClone, mongoSetStlPreloadCancelled, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
 import {
   resolveAdminVerifiedHexFromSettings,
+  resolveExoCadManufacturerHexRotation,
   normalizeHexVerificationResultHex,
   normalizeExoCadVersion,
-  EXOCAD_VERSION_GE_3_2,
-  shouldSkipPersistDefaultManufacturerHexFromManufacturerChange,
+  stampCaseInfosWithHexSeed,
 } from "../../utils/designSoftwareHex.js";
 import {
   findHexVerificationCancelSiblings,
@@ -4397,82 +4398,14 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     });
   }
 
-  // 의뢰자 헥스 기본값(defaultManufacturerHexRotation)은 플러스 모드 등 레거시 경로만.
-  // STL모델대로/헥스30도회전은 제조사 변경 시 의뢰 1건만. ExoCAD 시드는 관리자 hexByImplantManufacturer SSOT.
-  const nowForDefault = new Date();
-  let savedDefaultHexScope = null;
-  const caseDesignSoftware = String(
-    request?.caseInfos?.designSoftware || "",
-  ).trim();
-  const caseExoCadVersion = normalizeExoCadVersion(
-    request?.caseInfos?.exoCadVersion,
-  );
-  let skipAccountHexDefault =
-    shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
-      designSoftware: caseDesignSoftware,
-      exoCadVersion: caseExoCadVersion,
-      manufacturerHexRotation,
-    });
-  if (!skipAccountHexDefault && Types.ObjectId.isValid(requestorUserId)) {
-    const requestorHexUser = await User.findById(requestorUserId)
-      .select({
-        "requestSettings.designSoftware": 1,
-        "requestSettings.exoCadVersion": 1,
-      })
-      .lean();
-    const userDesignSoftware = String(
-      requestorHexUser?.requestSettings?.designSoftware || "",
-    ).trim();
-    const userExoCadVersion = normalizeExoCadVersion(
-      requestorHexUser?.requestSettings?.exoCadVersion,
-    );
-    const effectiveDesignSoftware = caseDesignSoftware || userDesignSoftware;
-    const effectiveExoCadVersion = caseExoCadVersion || userExoCadVersion;
-    skipAccountHexDefault =
-      shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
-        designSoftware: effectiveDesignSoftware,
-        exoCadVersion: effectiveExoCadVersion,
-        manufacturerHexRotation,
-      });
-  }
-  if (skipAccountHexDefault) {
-    savedDefaultHexScope = normalizeHexVerificationResultHex(manufacturerHexRotation)
-      ? "skipped-canonical-or-ge-3-2"
-      : "skipped-ge-3-2";
-  } else if (Types.ObjectId.isValid(requestorUserId)) {
-    await User.updateOne(
-      { _id: new Types.ObjectId(requestorUserId) },
-      {
-        $set: {
-          "requestSettings.defaultManufacturerHexRotation":
-            manufacturerHexRotation,
-          "requestSettings.updatedAt": nowForDefault,
-        },
-      },
-    );
-    savedDefaultHexScope = "user";
-  } else if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
-    await BusinessAnchor.updateOne(
-      { _id: new Types.ObjectId(requestorBusinessAnchorId) },
-      {
-        $set: {
-          "requestSettings.defaultManufacturerHexRotation":
-            manufacturerHexRotation,
-          "requestSettings.updatedAt": nowForDefault,
-        },
-      },
-    );
-    savedDefaultHexScope = "businessAnchor";
-  }
-  if (savedDefaultHexScope) {
-    console.info("[rnd-hex-rotation] saved requestor hex default", {
-      requestId: request.requestId,
-      scope: savedDefaultHexScope,
-      manufacturerHexRotation,
-      requestorUserId: requestorUserId || null,
-      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
-    });
-  }
+  // 제조사 준비 단계 변경은 이 의뢰만. 계정 defaultManufacturerHexRotation에 심지 않는다.
+  // 다음 시드는 관리자 hexByImplantManufacturer(ExoCAD≤3.0) 또는 디자인 SW(3.2+·비-ExoCAD=STL모델대로).
+  console.info("[rnd-hex-rotation] kept requestor hex default unchanged", {
+    requestId: request.requestId,
+    manufacturerHexRotation,
+    requestorUserId: requestorUserId || null,
+    requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+  });
 
   await request.save();
 
@@ -5465,6 +5398,54 @@ async function ensureClonedNcBelongsToRequestOrRegenerate({
   );
 }
 
+async function reseedCloneHexFromAdminSettings(caseInfos, sourceRequest) {
+  const userId = String(
+    sourceRequest?.requestor?._id || sourceRequest?.requestor || "",
+  ).trim();
+  const anchorId = String(sourceRequest?.businessAnchorId || "").trim();
+  const [user, anchor] = await Promise.all([
+    Types.ObjectId.isValid(userId)
+      ? User.findById(userId)
+          .select({
+            "requestSettings.designSoftware": 1,
+            "requestSettings.exoCadVersion": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
+            "requestSettings.hexVerificationResultHex": 1,
+          })
+          .lean()
+      : null,
+    Types.ObjectId.isValid(anchorId)
+      ? BusinessAnchor.findById(anchorId)
+          .select({
+            "requestSettings.designSoftware": 1,
+            "requestSettings.exoCadVersion": 1,
+            "requestSettings.hexByImplantManufacturer": 1,
+            "requestSettings.hexVerificationResultHex": 1,
+          })
+          .lean()
+      : null,
+  ]);
+  const designSoftware = String(
+    caseInfos?.designSoftware ||
+      user?.requestSettings?.designSoftware ||
+      anchor?.requestSettings?.designSoftware ||
+      "",
+  ).trim();
+  const exoCadVersion =
+    normalizeExoCadVersion(caseInfos?.exoCadVersion) ||
+    normalizeExoCadVersion(user?.requestSettings?.exoCadVersion) ||
+    normalizeExoCadVersion(anchor?.requestSettings?.exoCadVersion);
+  const mode = resolveExoCadManufacturerHexRotation({
+    designSoftware,
+    exoCadVersion,
+    implantManufacturer: caseInfos?.implantManufacturer || null,
+    userRequestSettings: user?.requestSettings || null,
+    anchorRequestSettings: anchor?.requestSettings || null,
+  });
+  if (!mode) return caseInfos;
+  return stampCaseInfosWithHexSeed(caseInfos, mode);
+}
+
 function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   const base = {
     ...sourceCaseInfos,
@@ -5801,9 +5782,13 @@ export async function cloneFromSampleToRequest(req, res) {
         allowMachining: true,
         defaultStage: "준비",
       });
+      const clonedCaseInfos = await reseedCloneHexFromAdminSettings(
+        buildClonedCaseInfos(sourceCaseInfos, startStage, now),
+        request,
+      );
 
       const clonedRequest = new Request({
-        caseInfos: buildClonedCaseInfos(sourceCaseInfos, startStage, now),
+        caseInfos: clonedCaseInfos,
         requestor: request.requestor,
         businessAnchorId: request.businessAnchorId,
         caManufacturer: req.user._id,
@@ -5817,6 +5802,10 @@ export async function cloneFromSampleToRequest(req, res) {
           memo: "",
           memoUpdatedAt: null,
           memoUpdatedBy: null,
+          manufacturerHexRotation:
+            clonedCaseInfos?.hexRotation?.mode ||
+            clonedCaseInfos?.manufacturerHexRotation ||
+            null,
         },
         price: {
           amount: 0,
@@ -5996,8 +5985,12 @@ export async function cloneRequestsForRecall(req, res) {
       try {
         const now = new Date();
         const sourceCaseInfos = sourceRequest.caseInfos || {};
+        const clonedCaseInfos = await reseedCloneHexFromAdminSettings(
+          buildClonedCaseInfos(sourceCaseInfos, startStage, now),
+          sourceRequest,
+        );
         const clonedRequest = new Request({
-          caseInfos: buildClonedCaseInfos(sourceCaseInfos, startStage, now),
+          caseInfos: clonedCaseInfos,
           requestor: sourceRequest.requestor,
           businessAnchorId: sourceRequest.businessAnchorId,
           caManufacturer: req.user._id,
@@ -6011,6 +6004,10 @@ export async function cloneRequestsForRecall(req, res) {
             memo: "",
             memoUpdatedAt: null,
             memoUpdatedBy: null,
+            manufacturerHexRotation:
+              clonedCaseInfos?.hexRotation?.mode ||
+              clonedCaseInfos?.manufacturerHexRotation ||
+              null,
           },
           price: {
             amount: 0,

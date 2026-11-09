@@ -550,26 +550,10 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
 
 export { resolveHexRotationByDesignSoftware };
 
-const normalizeManufacturerHexRotationOrNull = (value) => {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  if (raw === "STL모델대로" || raw === "0") return "STL모델대로";
-  if (raw === "헥스30도회전" || raw === "30") return "헥스30도회전";
-  if (raw === "STL모델+") return "STL모델+";
-  if (raw === "헥스30+") return "헥스30+";
-  if (raw === "헥스40도회전" || raw === "헥스10도회전") return "STL모델+";
-  const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-  if (!matched) return null;
-  const parsedX = Number(matched[1]);
-  if (!Number.isFinite(parsedX)) return null;
-  if (parsedX === 30) return "헥스30도회전";
-  return "STL모델+";
-};
-
 /**
  * 제조사 헥스 기본값 SSOT (ExoCAD):
  * case별 implantManufacturer → verifiedHex / applyHex30.
- * ExoCAD 3.2 이상은 STL모델대로. 계정 defaultManufacturerHexRotation으로 덮지 않음.
+ * ExoCAD 3.2+·비-ExoCAD는 STL모델대로. 계정 defaultManufacturerHexRotation은 시드에 쓰지 않음.
  * ExoCAD≤3.0 + implant 없음 → null (designSoftware 폴백 금지).
  * related: creation.from-draft.controller.js, common.requests.controller.js updateRndHexRotation
  */
@@ -580,21 +564,12 @@ export function pickLabManufacturerHexRotation(
   exoCadVersion = null,
   { implantManufacturer = null } = {},
 ) {
-  const manufacturerDefault =
-    normalizeManufacturerHexRotationOrNull(
-      labUser?.requestSettings?.defaultManufacturerHexRotation,
-    ) ||
-    normalizeManufacturerHexRotationOrNull(
-      labOrg?.requestSettings?.defaultManufacturerHexRotation,
-    );
-
   return resolveExoCadManufacturerHexRotation({
     designSoftware,
     exoCadVersion,
     implantManufacturer,
     userRequestSettings: labUser?.requestSettings,
     anchorRequestSettings: labOrg?.requestSettings,
-    manufacturerDefault,
   });
 }
 

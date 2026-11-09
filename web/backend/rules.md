@@ -538,8 +538,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   `caseInfos.implantManufacturer`를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
   - `ExoCAD` + `exoCadVersion=ge_3_2` => `STL모델대로`. 계정 `defaultManufacturerHexRotation`(제조사가 의뢰 1건을 바꿔 심은 값)으로 덮지 않는다. 그 의뢰만 바꾸고, 다음 시드·계정 기본값에는 쓰지 않는다.
-  - `STL모델대로`/`헥스30도회전`은 제조사 `updateRndHexRotation`으로 계정 default를 덮지 않는다(의뢰 1건만). ExoCAD≤3.0 신규 시드는 관리자 `hexByImplantManufacturer` SSOT.
-  - 비-ExoCAD => 플러스 모드만 `defaultManufacturerHexRotation` 시드. STL/30° canonical은 designSoftware(`STL모델대로`) SSOT (제조사별 맵·샘플·잠금 해당 없음)
+  - `STL모델대로`/`헥스30도회전`/`STL모델+`/`헥스30+`은 제조사 `updateRndHexRotation`으로 계정 default를 덮지 않는다(의뢰 1건만).
+  - ExoCAD≤3.0 신규 시드는 관리자 `hexByImplantManufacturer`(`verifiedHex` → `applyHex30`)만. 계정 `defaultManufacturerHexRotation`은 쓰지 않는다.
+  - ExoCAD 3.2+·비-ExoCAD 신규 시드는 디자인 SW `STL모델대로`. 계정 default(플러스 포함)로 덮지 않는다.
+  - 재제작 복사(`remake-clone`, R&D→준비 복사)도 원본 헥스를 복사하지 않고 같은 시드를 다시 넣는다.
   - `ExoCAD` + `exoCadVersion=le_3_0`(또는 버전 미지정 레거시):
     1) `User.requestSettings.hexByImplantManufacturer[M].verifiedHex` 있으면 확정값으로 **신규 시드**
     2) 없으면 `applyHex30`(기본 true) → 시드 (`true`=헥스30도회전 / `false`=STL모델대로)

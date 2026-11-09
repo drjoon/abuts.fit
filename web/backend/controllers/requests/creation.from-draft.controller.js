@@ -1935,7 +1935,6 @@ export async function createRequestsFromDraft(req, res) {
               implantManufacturer,
               userRequestSettings: userRs,
               anchorRequestSettings: anchorRs,
-              manufacturerDefault: requestorDefaultManufacturerHexRotation,
             });
 
           if (
@@ -1989,6 +1988,7 @@ export async function createRequestsFromDraft(req, res) {
                 typeof item.caseInfosWithFile?.anodizingEnabled === "boolean"
                   ? item.caseInfosWithFile.anodizingEnabled
                   : requestorAnodizingEnabled,
+              manufacturerHexRotation: resolvedManufacturerHexRotation,
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
               hexRotation: {

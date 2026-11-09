@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-11-09: 제조사 헥스 변경은 모드와 무관하게 의뢰 1건만. 계정 default 시드 금지(플러스 포함).
 // - 2026-10-22: STL/30°는 제조사 의뢰 변경으로 계정 default를 덮지 않음. 시드는 관리자 맵·디자인SW SSOT.
 // - 2026-10-22: ExoCAD 3.2 이상은 계정 defaultManufacturerHexRotation으로 덮지 않고 STL모델대로.
 // - 2026-10-13: 공통 적용은 제조사별 선택(0°/30°)을 직원들에게 복사. 6종을 한 회전으로 묶지 않음.
@@ -213,26 +214,11 @@ export const hexModeFromApplyHex30 = (applyHex30) =>
 
 /**
  * 제조사가 준비 단계에서 헥스를 바꿀 때 계정 defaultManufacturerHexRotation에 심지 않을지.
- * STL모델대로/헥스30도회전은 의뢰 1건만 바뀌고, ExoCAD≤3.0 시드는 관리자 applyHex30/verifiedHex SSOT.
- * ExoCAD 3.2+는 디자인SW(STL모델대로) SSOT.
+ * 어떤 모드든 의뢰 1건만 바뀐다. 다음 시드는 관리자 hexByImplantManufacturer(ExoCAD≤3.0)
+ * 또는 디자인 SW(3.2+·비-ExoCAD=STL모델대로)만 쓴다.
  */
-export const shouldSkipPersistDefaultManufacturerHexFromManufacturerChange = ({
-  designSoftware = null,
-  exoCadVersion = null,
-  manufacturerHexRotation = null,
-} = {}) => {
-  if (normalizeHexVerificationResultHex(manufacturerHexRotation)) {
-    return true;
-  }
-  const sw = String(designSoftware || "").trim();
-  if (
-    sw === "ExoCAD" &&
-    normalizeExoCadVersion(exoCadVersion) === EXOCAD_VERSION_GE_3_2
-  ) {
-    return true;
-  }
-  return false;
-};
+export const shouldSkipPersistDefaultManufacturerHexFromManufacturerChange = () =>
+  true;
 
 /**
  * 헥스 확인 pending SSOT.
@@ -270,7 +256,8 @@ export const isHexVerificationPending = ({
  *   2) applyHex30 시드 (기본 true) — 미확정 기간만
  * ExoCAD 3.0 이하 + implantManufacturer 없음: null (designSoftware/계정 폴백 금지)
  * ExoCAD 3.2+: designSoftware(STL모델대로). 계정 defaultManufacturerHexRotation으로 덮지 않음.
- * 비-ExoCAD: manufacturerDefault || designSoftware
+ * 비-ExoCAD: designSoftware(STL모델대로). 계정 default(플러스 포함)로 덮지 않음.
+ * manufacturerDefault 인자는 받지 않는다. 제조사 1회 변경값을 다음 시드에 쓰지 않음.
  *
  * @returns {string|null} canonical hex mode (미결정이면 null)
  */
@@ -280,18 +267,12 @@ export const resolveExoCadManufacturerHexRotation = ({
   implantManufacturer = null,
   userRequestSettings = null,
   anchorRequestSettings = null,
-  manufacturerDefault = null,
 } = {}) => {
   const sw = String(designSoftware || "").trim();
   const designFallback = resolveHexRotationByDesignSoftware(sw, exoCadVersion);
-  const mfg = String(manufacturerDefault || "").trim() || null;
 
   if (sw !== "ExoCAD") {
-    // 제조사가 과거에 심은 STL/30 계정 기본값은 신규 시드 SSOT가 아님(플러스 모드만 유지).
-    if (normalizeHexVerificationResultHex(mfg)) {
-      return designFallback;
-    }
-    return mfg || designFallback;
+    return designFallback;
   }
 
   if (!isExoCadLe30(sw, exoCadVersion)) {
@@ -331,6 +312,28 @@ export const resolveOppositeHexRotation = (hexRaw) => {
 
 export const isHexVerificationSampleCase = (caseInfos) =>
   Boolean(caseInfos?.hexVerificationSample === true);
+
+/**
+ * 재제작·신규 시드가 정한 헥스 모드를 caseInfos에 덮어쓴다.
+ * 측정 텔레메트리(appliedDeg 등)는 유지하고 mode만 바꾼다.
+ */
+export const stampCaseInfosWithHexSeed = (caseInfos, mode) => {
+  const nextMode = String(mode || "").trim();
+  const base =
+    caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
+  if (!nextMode) return base;
+  const prev =
+    base.hexRotation && typeof base.hexRotation === "object"
+      ? base.hexRotation
+      : {};
+  return {
+    ...base,
+    manufacturerHexRotation: nextMode,
+    requestorHexRotation: nextMode,
+    finalHexRotation: nextMode,
+    hexRotation: { ...prev, mode: nextMode },
+  };
+};
 
 /**
  * hexByImplantManufacturer 배열에서 제조사 행 upsert용 plain object.

@@ -87,25 +87,53 @@ describe("resolveExoCadManufacturerHexRotation", () => {
     assert.equal(mode, "헥스30도회전");
   });
 
-  test("3Shape는 계정 기본 플러스 모드를 유지한다", () => {
-    const mode = resolveExoCadManufacturerHexRotation({
-      designSoftware: "3Shape",
-      manufacturerDefault: "STL모델+",
-    });
-    assert.equal(mode, "STL모델+");
+  test("3Shape는 계정에 심긴 플러스·30° 기본값으로 시드하지 않는다", () => {
+    assert.equal(
+      resolveExoCadManufacturerHexRotation({
+        designSoftware: "3Shape",
+        manufacturerDefault: "STL모델+",
+      }),
+      "STL모델대로",
+    );
+    assert.equal(
+      resolveExoCadManufacturerHexRotation({
+        designSoftware: "3Shape",
+        manufacturerDefault: "헥스30도회전",
+      }),
+      "STL모델대로",
+    );
   });
 
-  test("3Shape는 제조사가 심은 STL/30 계정 기본값으로 시드하지 않는다", () => {
-    const mode = resolveExoCadManufacturerHexRotation({
-      designSoftware: "3Shape",
-      manufacturerDefault: "헥스30도회전",
+  test("ExoCAD 3.0 이하 확정값은 계정 default보다 우선한다", () => {
+    const neo = resolveExoCadManufacturerHexRotation({
+      designSoftware: "ExoCAD",
+      exoCadVersion: "le_3_0",
+      implantManufacturer: "NEOBIOTECH",
+      manufacturerDefault: "STL모델대로",
+      userRequestSettings: {
+        hexByImplantManufacturer: [
+          { manufacturer: "NEOBIOTECH", applyHex30: true, verifiedHex: "헥스30도회전" },
+        ],
+      },
     });
-    assert.equal(mode, "STL모델대로");
+    const osstem = resolveExoCadManufacturerHexRotation({
+      designSoftware: "ExoCAD",
+      exoCadVersion: "le_3_0",
+      implantManufacturer: "OSSTEM",
+      manufacturerDefault: "헥스30도회전",
+      userRequestSettings: {
+        hexByImplantManufacturer: [
+          { manufacturer: "OSSTEM", applyHex30: false, verifiedHex: "STL모델대로" },
+        ],
+      },
+    });
+    assert.equal(neo, "헥스30도회전");
+    assert.equal(osstem, "STL모델대로");
   });
 });
 
 describe("shouldSkipPersistDefaultManufacturerHexFromManufacturerChange", () => {
-  test("STL/30° canonical 변경은 계정 default 저장을 스킵한다", () => {
+  test("제조사 변경은 모드와 상관없이 계정 default에 심지 않는다", () => {
     assert.equal(
       shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
         designSoftware: "ExoCAD",
@@ -121,16 +149,20 @@ describe("shouldSkipPersistDefaultManufacturerHexFromManufacturerChange", () => 
       }),
       true,
     );
-  });
-
-  test("플러스 모드(ExoCAD 3.0 이하)는 계정 default 저장을 허용한다", () => {
     assert.equal(
       shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
         designSoftware: "ExoCAD",
         exoCadVersion: "le_3_0",
         manufacturerHexRotation: "STL모델+",
       }),
-      false,
+      true,
+    );
+    assert.equal(
+      shouldSkipPersistDefaultManufacturerHexFromManufacturerChange({
+        designSoftware: "3Shape",
+        manufacturerHexRotation: "헥스30+",
+      }),
+      true,
     );
   });
 });
