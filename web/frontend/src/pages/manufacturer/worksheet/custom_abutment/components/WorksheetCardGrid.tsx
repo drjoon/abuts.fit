@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-09: 각인 이미지 드롭은 인식이 아니라 그 카드에 수동 매칭한다.
 // - 2026-11-08: 포스트 다듬기 누락은 준비·가공 전 카드 «다듬기 누락». 자동 승인은 보류.
 // - 2026-10-24: 마진 필레만 약한 건은 불완전 뱃지에서 뺀다. 업로드 때 고지하고 동의 후 진행한다.
 // - 2026-10-23: 불완전 뱃지 툴팁을 프리뷰와 같은 사유 문장으로 맞춘다.
@@ -115,7 +116,10 @@ import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { isPtxDesignStlMissing } from "@/shared/request/ptxDesignUploadMissing";
 import {
   isPackingCaptureImageFile,
+  PACKING_IMAGE_DRAG_MIME,
   PACKING_PENDING_DRAG_MIME,
+  readPackingImageDragPayload,
+  type PackingImageDragPayload,
 } from "../packing/hooks/usePackingCapture";
 
 // related files (screw lot tracking):
@@ -158,10 +162,14 @@ type WorksheetCardGridProps = {
     memoUpdatedByName?: string | null;
   } | void>;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
-  /** 세척.패킹: 각인 이미지를 카드에 드롭해 수동 매칭 */
+  /** 세척.패킹: 각인 이미지를 카드에 드롭해 수동 매칭. 인식하지 않는다. */
   onPackingImageDrop?: (
     req: ManufacturerRequest,
     imageFiles: File[],
+    extras?: {
+      pendingId?: string;
+      existing?: PackingImageDragPayload | null;
+    },
   ) => void | Promise<void>;
   packingDropEnabled?: boolean;
   packingMatchHintIds?: Set<string>;
@@ -845,14 +853,26 @@ export const WorksheetCardGrid = ({
           e.stopPropagation();
 
           if (isPackingDropTarget && onPackingImageDrop) {
-            const hasPendingDrag = Array.from(e.dataTransfer.types || []).includes(
-              PACKING_PENDING_DRAG_MIME,
-            );
+            const dragTypes = Array.from(e.dataTransfer.types || []);
+            const pendingId = dragTypes.includes(PACKING_PENDING_DRAG_MIME)
+              ? e.dataTransfer.getData(PACKING_PENDING_DRAG_MIME)
+              : "";
+            const existing = dragTypes.includes(PACKING_IMAGE_DRAG_MIME)
+              ? readPackingImageDragPayload(e.dataTransfer)
+              : null;
             const files = Array.from(e.dataTransfer.files || []);
             const imageFiles = files.filter((file) =>
               isPackingCaptureImageFile(file),
             );
-            if (hasPendingDrag || imageFiles.length > 0) {
+            if (existing?.s3Key) {
+              await onPackingImageDrop(request, [], { existing });
+              return;
+            }
+            if (pendingId) {
+              await onPackingImageDrop(request, [], { pendingId });
+              return;
+            }
+            if (imageFiles.length > 0) {
               await onPackingImageDrop(request, imageFiles);
               return;
             }

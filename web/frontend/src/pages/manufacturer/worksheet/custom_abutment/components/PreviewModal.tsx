@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-09: 세척.패킹 각인 이미지는 카드로 끌어 그 의뢰에 매칭한다.
 // - 2026-10-27: 보정 솔리드 안내를 실제 절삭 반경 R0.5로. 호칭 Ø1.2의 예전 R0.6은 쓰지 않는다.
 // - 2026-10-25: 코너 필레 정보 카드 on/off. 그리드·안내와 같이 저장.
 // - 2026-11-03: 공구R·마진 fillet 안내는 의뢰자 StlMachiningPreflightNotice 공통. 구버전 R0 메타는 숨김.
@@ -181,6 +182,7 @@ import {
 import { UnmachinableReasonPanel } from "./UnmachinableReasonPanel";
 import { UnmachinableProcessedNotice } from "./UnmachinableProcessedNotice";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { PACKING_IMAGE_DRAG_MIME } from "../packing/hooks/usePackingCapture";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
   VIEW_GESTURE_HINT_LAYER_CLASS,
@@ -786,6 +788,23 @@ export const PreviewModal = ({
   const [trackingRightTab, setTrackingRightTab] = useState<"nc" | "engraving">(
     "nc",
   );
+  const [engravingDragActive, setEngravingDragActive] = useState(false);
+  useEffect(() => {
+    if (!open) setEngravingDragActive(false);
+  }, [open]);
+  useEffect(() => {
+    if (!engravingDragActive) return;
+    // 열린 Dialog는 body pointer-events를 끄고 밖을 inert로 둔다.
+    // 카드에 놓으려면 드래그 중에만 다시 연다.
+    const previous = document.body.style.pointerEvents;
+    document.body.style.pointerEvents = "auto";
+    const inertNodes = Array.from(document.querySelectorAll("[inert]"));
+    inertNodes.forEach((node) => node.removeAttribute("inert"));
+    return () => {
+      document.body.style.pointerEvents = previous;
+      inertNodes.forEach((node) => node.setAttribute("inert", ""));
+    };
+  }, [engravingDragActive]);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
@@ -3369,6 +3388,31 @@ export const PreviewModal = ({
 
 
 
+  const canDragPackingEngraving =
+    currentReviewStageKey === "packing" && Boolean(rightMeta?.s3Key);
+  const onPackingEngravingDragStart = (event: {
+    dataTransfer: DataTransfer;
+  }) => {
+    if (!canDragPackingEngraving || !rightMeta?.s3Key) return;
+    const fileName = String(
+      (rightMeta as { fileName?: string }).fileName ||
+        (rightMeta as { filePath?: string }).filePath ||
+        previewStageName ||
+        "engraving.jpg",
+    ).trim();
+    const payload = {
+      s3Key: String(rightMeta.s3Key),
+      s3Url: String(rightMeta.s3Url || previewStageUrl || ""),
+      fileName,
+      fileSize: Number((rightMeta as { fileSize?: number }).fileSize) || 0,
+      sourceRequestMongoId: String(activeReq?._id || ""),
+    };
+    event.dataTransfer.setData(PACKING_IMAGE_DRAG_MIME, JSON.stringify(payload));
+    event.dataTransfer.setData("text/plain", fileName);
+    event.dataTransfer.effectAllowed = "copy";
+    setEngravingDragActive(true);
+  };
+
   return (
     <>
     <Dialog
@@ -3383,6 +3427,9 @@ export const PreviewModal = ({
     >
       <DialogContent
         hideClose
+        overlayClassName={
+          engravingDragActive ? "pointer-events-none bg-transparent" : undefined
+        }
         className={cn(
           // Dialog 기본 sm:max-w-lg를 반드시 sm: 접두로 덮어쓴다(미지정 시 PC도 ~512px).
           RESPONSIVE.dialogContentPreview,
@@ -3392,9 +3439,22 @@ export const PreviewModal = ({
             isFinishLineCaptureBad
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : "",
+          engravingDragActive && "pointer-events-none opacity-0",
         )}
-        onInteractOutside={keepOpenOnToastInteract}
-        onPointerDownOutside={keepOpenOnToastInteract}
+        onInteractOutside={(event) => {
+          if (engravingDragActive) {
+            event.preventDefault();
+            return;
+          }
+          keepOpenOnToastInteract(event);
+        }}
+        onPointerDownOutside={(event) => {
+          if (engravingDragActive) {
+            event.preventDefault();
+            return;
+          }
+          keepOpenOnToastInteract(event);
+        }}
       >
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
@@ -4711,17 +4771,58 @@ export const PreviewModal = ({
                   )
                 ) : isStageFileStage ? (
                   <div className="flex-1 min-h-0 overflow-auto">
+                    {canDragPackingEngraving ? (
+                      <p className="mb-1 text-[11px] text-slate-500">
+                        이미지를 카드에 놓으면 그 의뢰에 매칭됩니다.
+                      </p>
+                    ) : null}
                     {previewStageUrl ? (
                       <img
                         src={previewStageUrl}
                         alt={previewStageName || "preview"}
-                        className="w-full rounded-md border border-slate-200"
+                        draggable={canDragPackingEngraving}
+                        onDragStart={
+                          canDragPackingEngraving
+                            ? onPackingEngravingDragStart
+                            : undefined
+                        }
+                        onDragEnd={
+                          canDragPackingEngraving
+                            ? () => setEngravingDragActive(false)
+                            : undefined
+                        }
+                        title={
+                          canDragPackingEngraving
+                            ? "카드에 놓으면 그 의뢰에 매칭됩니다."
+                            : undefined
+                        }
+                        className={`w-full rounded-md border border-slate-200 ${
+                          canDragPackingEngraving ? "cursor-grab" : ""
+                        }`}
                       />
                     ) : hasRightFile && rightMeta?.s3Url ? (
                       <img
                         src={rightMeta.s3Url}
                         alt={fileLabel}
-                        className="w-full rounded-md border border-slate-200"
+                        draggable={canDragPackingEngraving}
+                        onDragStart={
+                          canDragPackingEngraving
+                            ? onPackingEngravingDragStart
+                            : undefined
+                        }
+                        onDragEnd={
+                          canDragPackingEngraving
+                            ? () => setEngravingDragActive(false)
+                            : undefined
+                        }
+                        title={
+                          canDragPackingEngraving
+                            ? "카드에 놓으면 그 의뢰에 매칭됩니다."
+                            : undefined
+                        }
+                        className={`w-full rounded-md border border-slate-200 ${
+                          canDragPackingEngraving ? "cursor-grab" : ""
+                        }`}
                       />
                     ) : (
                       <div className="h-full min-h-[300px] flex items-center justify-center text-xs text-slate-500 border rounded-md">

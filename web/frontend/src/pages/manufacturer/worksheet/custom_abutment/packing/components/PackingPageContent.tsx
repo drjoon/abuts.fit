@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
 // - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
@@ -1440,7 +1441,7 @@ export const PackingPageContent = ({
     if (!ocrProcessing && !matchingBusy) return "세척.패킹 이미지를 드롭하세요";
     if (ocrStage === "upload") return "이미지 업로드 중...";
     if (ocrStage === "recognize") return "LOT 인식 중...";
-    if (matchingBusy) return "수동 매칭 중...";
+    if (ocrStage === "match" || matchingBusy) return "카드에 매칭 중...";
     return "처리 중...";
   }, [matchingBusy, ocrProcessing, ocrStage]);
 
@@ -1562,16 +1563,18 @@ export const PackingPageContent = ({
         {isLoading && <WorksheetLoading />}
 
         {pendingMatches.length > 0 && (
-          <div className="w-full px-4 pt-2 pb-1">
-            <div className="rounded-xl border border-accent-muted bg-accent-soft/40 p-3 shadow-sm">
+          <BodyPortal>
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-[140] flex justify-center px-3">
+            <div className="pointer-events-auto w-full max-w-3xl rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-lg">
               <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
                 <div>
                   <div className="text-xs font-semibold text-accent-strong">
                     각인 인식 확인
                   </div>
                   <div className="text-[11px] text-slate-600">
-                    인식이 맞으면 다음 촬영으로 확정됩니다. 틀리면 3글자를 수정하거나
-                    이미지를 카드에 드롭해 정정하세요.
+                    인식이 맞으면 다음 촬영으로 확정됩니다.
+                    <br />
+                    틀리거나 인식이 안 되면 3글자를 입력하거나 이미지를 카드에 놓으세요.
                   </div>
                 </div>
                 <button
@@ -1597,12 +1600,13 @@ export const PackingPageContent = ({
                             setManualSuffixQuery(item.aiSuffix);
                           }
                         }}
-                        draggable={selected}
+                        draggable
                         onDragStart={(e) => {
                           e.dataTransfer.setData(
                             PACKING_PENDING_DRAG_MIME,
                             item.id,
                           );
+                          e.dataTransfer.setData("text/plain", item.id);
                           e.dataTransfer.effectAllowed = "copy";
                           setActivePendingId(item.id);
                         }}
@@ -1669,7 +1673,9 @@ export const PackingPageContent = ({
                             ? "인식값은 있으나 세척.패킹 후보 없음"
                             : activePending.reason === "recognition_failed"
                               ? "인식 실패. 3글자를 입력하세요."
-                              : "자동 후보 없음. 3글자를 입력하세요."}
+                              : activePending.reason === "manual_bind_failed"
+                                ? "카드 매칭에 실패했습니다. 다시 놓으세요."
+                                : "자동 후보 없음. 3글자를 입력하세요."}
                       </div>
                     </div>
                   ) : null}
@@ -1736,6 +1742,7 @@ export const PackingPageContent = ({
               </div>
             </div>
           </div>
+          </BodyPortal>
         )}
 
         {captureHistory.length > 0 && (

@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-11-09: 다음 촬영 확정은 대기 목록을 바로 반영한다. 카드 드롭은 인식 없이 그 의뢰에 매칭한다.
 // - 2026-11-09: 인식 API 실패·확장자 거절이어도 수동 입력 창을 연다. 다음 촬영 확정은 목록에 없는 후보도 진행.
 // - 2026-09-04: 인식 성공 건은 다음 촬영 시 자동 확정. 수동 입력/드롭은 인식값 정정용.
 // - 2026-09-04: 자동 인식은 제안만 — 작업자가 이미지·인식값 확인 후 수동 확정.
@@ -51,6 +52,43 @@ export type PendingPackingMatch = {
 };
 
 export const PACKING_PENDING_DRAG_MIME = "application/x-abuts-packing-pending";
+/** 이미 올라간 각인 이미지(프리뷰)를 카드에 놓을 때. 인식하지 않고 그 의뢰에 붙인다. */
+export const PACKING_IMAGE_DRAG_MIME = "application/x-abuts-packing-image";
+
+export type PackingImageDragPayload = {
+  s3Key: string;
+  s3Url?: string;
+  fileName?: string;
+  fileSize?: number;
+  sourceRequestMongoId?: string;
+};
+
+export const readPackingImageDragPayload = (
+  dataTransfer: DataTransfer | null,
+): PackingImageDragPayload | null => {
+  if (!dataTransfer) return null;
+  let raw = "";
+  try {
+    raw = dataTransfer.getData(PACKING_IMAGE_DRAG_MIME);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as PackingImageDragPayload;
+    const s3Key = String(parsed?.s3Key || "").trim();
+    if (!s3Key) return null;
+    return {
+      s3Key,
+      s3Url: String(parsed?.s3Url || "").trim(),
+      fileName: String(parsed?.fileName || "").trim(),
+      fileSize: Number(parsed?.fileSize) || 0,
+      sourceRequestMongoId: String(parsed?.sourceRequestMongoId || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+};
 
 const PACKING_IMAGE_EXTS = [
   ".jpg",
@@ -73,6 +111,38 @@ export const isPackingCaptureImageFile = (file: File) => {
 
 const makePendingId = () =>
   `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const clearPackingImageLocal = (req: ManufacturerRequest): ManufacturerRequest => {
+  const caseInfos = { ...(req.caseInfos || {}) } as ManufacturerRequest["caseInfos"] & {
+    stageFiles?: Record<string, Record<string, unknown>>;
+    reviewByStage?: Record<string, Record<string, unknown>>;
+  };
+  const stageFiles = { ...(caseInfos.stageFiles || {}) };
+  const packing = { ...(stageFiles.packing || {}) };
+  stageFiles.packing = {
+    ...packing,
+    fileName: "",
+    filePath: "",
+    s3Key: "",
+    s3Url: "",
+    fileType: "",
+    fileSize: 0,
+  };
+  const reviewByStage = { ...(caseInfos.reviewByStage || {}) };
+  reviewByStage.packing = {
+    ...(reviewByStage.packing || {}),
+    status: "PENDING",
+    reason: "",
+  };
+  return {
+    ...req,
+    caseInfos: {
+      ...caseInfos,
+      stageFiles,
+      reviewByStage,
+    },
+  };
+};
 
 export const extractLotSuffix3 = (value: string | null | undefined) => {
   const s = String(value || "").toUpperCase();
@@ -145,9 +215,9 @@ export const usePackingCapture = ({
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [ocrProcessing, setOcrProcessing] = useState(false);
-  const [ocrStage, setOcrStage] = useState<"idle" | "upload" | "recognize">(
-    "idle",
-  );
+  const [ocrStage, setOcrStage] = useState<
+    "idle" | "upload" | "recognize" | "match"
+  >("idle");
   const [pendingMatches, setPendingMatches] = useState<PendingPackingMatch[]>(
     [],
   );
@@ -160,6 +230,7 @@ export const usePackingCapture = ({
   const handleOpenPreviewRef = useRef(handleOpenPreview);
   const onCaptureResultRef = useRef(onCaptureResult);
   const pendingMatchesRef = useRef(pendingMatches);
+  const confirmingKeysRef = useRef(new Set<string>());
 
   useEffect(() => {
     requestsRef.current = requests;
@@ -169,9 +240,14 @@ export const usePackingCapture = ({
     onCaptureResultRef.current = onCaptureResult;
   }, [onCaptureResult, handleOpenPreview, previewFiles, previewOpen, requests]);
 
-  useEffect(() => {
-    pendingMatchesRef.current = pendingMatches;
-  }, [pendingMatches]);
+  const commitPendingMatches = useCallback(
+    (updater: (prev: PendingPackingMatch[]) => PendingPackingMatch[]) => {
+      const next = updater(pendingMatchesRef.current);
+      pendingMatchesRef.current = next;
+      setPendingMatches(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!pendingMatches.length) {
@@ -195,7 +271,7 @@ export const usePackingCapture = ({
     (row: Omit<PendingPackingMatch, "id" | "createdAt"> & { id?: string }) => {
       const s3Key = String(row.s3Key || "").trim();
       if (!s3Key) return;
-      setPendingMatches((prev) => {
+      commitPendingMatches((prev) => {
         if (prev.some((item) => item.s3Key === s3Key)) {
           return prev.map((item) =>
             item.s3Key === s3Key
@@ -235,11 +311,11 @@ export const usePackingCapture = ({
         if (suffix) setManualSuffixQuery(suffix.slice(0, 3));
       }
     },
-    [],
+    [commitPendingMatches],
   );
 
   const clearPendingMatch = useCallback((pendingId?: string | null) => {
-    setPendingMatches((prev) => {
+    commitPendingMatches((prev) => {
       const targetId = pendingId || activePendingId || prev[0]?.id;
       const removed = prev.filter((row) => {
         if (row.id !== targetId) return true;
@@ -254,10 +330,10 @@ export const usePackingCapture = ({
       });
       return removed;
     });
-  }, [activePendingId]);
+  }, [activePendingId, commitPendingMatches]);
 
   const clearAllPendingMatches = useCallback(() => {
-    setPendingMatches((prev) => {
+    commitPendingMatches((prev) => {
       for (const row of prev) {
         if (row.revokePreviewOnClear && row.previewUrl.startsWith("blob:")) {
           try {
@@ -270,7 +346,7 @@ export const usePackingCapture = ({
       return [];
     });
     setManualSuffixQuery("");
-  }, []);
+  }, [commitPendingMatches]);
 
   // 업로드 대역폭용 다운스케일. 긴 변만 상한으로 줄이고, 이미 작은 크롭은 절대 축소하지 않는다.
   const resizeImageFile = useCallback((file: File) => {
@@ -318,11 +394,14 @@ export const usePackingCapture = ({
       pendingId?: string | null;
       /** auto: 다음 촬영으로 이전 성공건 확정. manual: 작업자 정정/확정 */
       mode?: "auto" | "manual";
+      /** 다른 의뢰에 붙어 있던 같은 각인 파일. S3는 지우지 않고 메타만 뗀다. */
+      detachFromRequestMongoId?: string;
     }) => {
       if (!token) return false;
       const requestMongoId = String(params.request._id || "").trim();
       if (!requestMongoId || !params.s3Key) return false;
       const mode = params.mode || "manual";
+      const detachFrom = String(params.detachFromRequestMongoId || "").trim();
       setMatchingBusy(true);
       try {
         const captureRes = await fetch("/api/bg/lot-capture/packing", {
@@ -339,6 +418,8 @@ export const usePackingCapture = ({
             recognizedSuffix: params.recognizedSuffix || "",
             requestMongoId,
             source: "manual",
+            detachFromRequestMongoId:
+              detachFrom && detachFrom !== requestMongoId ? detachFrom : "",
           }),
         });
         const captureData = await captureRes.json().catch(() => ({}));
@@ -354,6 +435,15 @@ export const usePackingCapture = ({
           );
         }
         if (params.pendingId) clearPendingMatch(params.pendingId);
+        setRequests((prev) =>
+          prev
+            .filter((req) => String(req._id || "").trim() !== requestMongoId)
+            .map((req) =>
+              detachFrom && String(req._id || "").trim() === detachFrom
+                ? clearPackingImageLocal(req)
+                : req,
+            ),
+        );
         toast({
           title: mode === "auto" ? "인식 확정" : "매칭 완료",
           description: `${params.request.requestId || requestMongoId} → 포장.발송`,
@@ -372,7 +462,7 @@ export const usePackingCapture = ({
         setMatchingBusy(false);
       }
     },
-    [clearPendingMatch, toast, token],
+    [clearPendingMatch, setRequests, toast, token],
   );
 
   const findSuggestedRequest = useCallback((pending: PendingPackingMatch) => {
@@ -400,31 +490,41 @@ export const usePackingCapture = ({
           (row) =>
             row.candidateMatched &&
             (row.suggestedRequestMongoId || row.suggestedRequestId) &&
-            row.s3Key !== skipKey,
+            row.s3Key !== skipKey &&
+            !confirmingKeysRef.current.has(row.s3Key),
         )
         // newest-first 배열이므로 오래된 것부터 확정
         .slice()
         .reverse();
       for (const pending of toConfirm) {
-        const request =
-          findSuggestedRequest(pending) ||
-          (pending.suggestedRequestMongoId || pending.suggestedRequestId
-            ? ({
-                _id: pending.suggestedRequestMongoId,
-                requestId: pending.suggestedRequestId,
-              } as ManufacturerRequest)
-            : null);
-        if (!request) continue;
-        await bindCaptureToRequest({
-          request,
-          s3Key: pending.s3Key,
-          s3Url: pending.s3Url,
-          originalName: pending.originalName,
-          fileSize: pending.fileSize,
-          recognizedSuffix: pending.aiSuffix,
-          pendingId: pending.id,
-          mode: "auto",
-        });
+        confirmingKeysRef.current.add(pending.s3Key);
+      }
+      try {
+        for (const pending of toConfirm) {
+          const request =
+            findSuggestedRequest(pending) ||
+            (pending.suggestedRequestMongoId || pending.suggestedRequestId
+              ? ({
+                  _id: pending.suggestedRequestMongoId,
+                  requestId: pending.suggestedRequestId,
+                } as ManufacturerRequest)
+              : null);
+          if (!request) continue;
+          await bindCaptureToRequest({
+            request,
+            s3Key: pending.s3Key,
+            s3Url: pending.s3Url,
+            originalName: pending.originalName,
+            fileSize: pending.fileSize,
+            recognizedSuffix: pending.aiSuffix,
+            pendingId: pending.id,
+            mode: "auto",
+          });
+        }
+      } finally {
+        for (const pending of toConfirm) {
+          confirmingKeysRef.current.delete(pending.s3Key);
+        }
       }
     },
     [bindCaptureToRequest, findSuggestedRequest],
@@ -439,10 +539,12 @@ export const usePackingCapture = ({
       const isUpdate = pendingMatchesRef.current.some(
         (item) => item.s3Key === s3Key,
       );
+      // 창을 먼저 연다. 이전 성공 건 확정은 그 다음이다.
+      // 확정을 기다린 뒤에 넣으면 다음 촬영이 빈 목록을 보고 넘어가지 않는다.
+      pushPendingMatch(row);
       if (!isUpdate) {
         await autoConfirmSuccessfulPendings(s3Key);
       }
-      pushPendingMatch(row);
     },
     [autoConfirmSuccessfulPendings, pushPendingMatch],
   );
@@ -525,12 +627,18 @@ export const usePackingCapture = ({
           (row) => row.id === (pendingId || activePendingId),
         ) || pendingMatchesRef.current[0];
       if (!pending) return false;
-      const suggested = findSuggestedRequest(pending);
+      const suggested =
+        findSuggestedRequest(pending) ||
+        (pending.suggestedRequestMongoId || pending.suggestedRequestId
+          ? ({
+              _id: pending.suggestedRequestMongoId,
+              requestId: pending.suggestedRequestId,
+            } as ManufacturerRequest)
+          : null);
       if (!suggested) {
         toast({
           title: "제안 의뢰를 찾을 수 없습니다",
-          description:
-            "카드 목록에서 직접 고르거나, 각인 3글자를 수정해 매칭하세요.",
+          description: "카드에 이미지를 놓거나, 각인 3글자를 입력하세요.",
           variant: "destructive",
         });
         return false;
@@ -550,17 +658,37 @@ export const usePackingCapture = ({
   );
 
   const handlePackingImageDropOnRequest = useCallback(
-    async (request: ManufacturerRequest, imageFiles: File[]) => {
-      if (previewOpenRef.current) {
-        toast({
-          title: "프리뷰가 열려 있습니다",
-          description: "프리뷰를 닫은 뒤 각인 이미지를 드롭하세요.",
-        });
+    async (
+      request: ManufacturerRequest,
+      imageFiles: File[],
+      extras?: {
+        pendingId?: string;
+        existing?: PackingImageDragPayload | null;
+      },
+    ) => {
+      if (!token || !request?._id) return;
+      const existing = extras?.existing;
+      if (existing?.s3Key) {
+        setOcrProcessing(true);
+        setOcrStage("match");
+        try {
+          await bindCaptureToRequest({
+            request,
+            s3Key: existing.s3Key,
+            s3Url: existing.s3Url,
+            originalName: existing.fileName || "engraving.jpg",
+            fileSize: existing.fileSize,
+            mode: "manual",
+            detachFromRequestMongoId: existing.sourceRequestMongoId,
+          });
+        } finally {
+          setOcrProcessing(false);
+          setOcrStage("idle");
+        }
         return;
       }
-      if (!token || !request?._id) return;
       if (!imageFiles.length) {
-        await matchPendingToRequest(request);
+        await matchPendingToRequest(request, extras?.pendingId);
         return;
       }
       setOcrProcessing(true);
@@ -582,7 +710,7 @@ export const usePackingCapture = ({
           uploadedMeta.url || uploadedMeta.s3Url || uploadedMeta.location || "";
         uploadedName = uploaded.originalName || imageFiles[0].name;
         uploadedSize = uploadedMeta.fileSize || imageFiles[0].size || 0;
-        setOcrStage("recognize");
+        setOcrStage("match");
         const matched = await bindCaptureToRequest({
           request,
           s3Key: uploaded.key,
@@ -780,6 +908,14 @@ export const usePackingCapture = ({
       e.stopPropagation();
       setIsDraggingOver(false);
 
+      const dragTypes = Array.from(e.dataTransfer.types || []);
+      // 카드 매칭용 드래그는 페이지 인식으로 넣지 않는다.
+      if (
+        dragTypes.includes(PACKING_PENDING_DRAG_MIME) ||
+        dragTypes.includes(PACKING_IMAGE_DRAG_MIME)
+      ) {
+        return;
+      }
       if (previewOpenRef.current) {
         toast({
           title: "프리뷰가 열려 있습니다",
@@ -787,8 +923,6 @@ export const usePackingCapture = ({
         });
         return;
       }
-      // 카드→pending 드래그는 페이지 전역 AI 경로로 다시 넣지 않는다.
-      if (e.dataTransfer.types.includes(PACKING_PENDING_DRAG_MIME)) return;
 
       const files = Array.from(e.dataTransfer.files || []);
       if (!files.length) return;
@@ -812,7 +946,11 @@ export const usePackingCapture = ({
       setIsDraggingOver(false);
       return;
     }
-    if (e.dataTransfer.types.includes(PACKING_PENDING_DRAG_MIME)) {
+    const dragTypes = Array.from(e.dataTransfer.types || []);
+    if (
+      dragTypes.includes(PACKING_PENDING_DRAG_MIME) ||
+      dragTypes.includes(PACKING_IMAGE_DRAG_MIME)
+    ) {
       setIsDraggingOver(false);
       return;
     }
@@ -870,7 +1008,7 @@ export const usePackingCapture = ({
           : null;
       const packingS3Key = String(packingFile?.s3Key || "").trim();
       if (packingS3Key) {
-        setPendingMatches((prev) =>
+        commitPendingMatches((prev) =>
           prev.filter((row) => {
             if (row.s3Key !== packingS3Key) return true;
             if (row.revokePreviewOnClear && row.previewUrl.startsWith("blob:")) {
@@ -886,6 +1024,9 @@ export const usePackingCapture = ({
       }
       const eventRequest = payload.request as ManufacturerRequest | undefined;
       const movedToStage = String(payload.movedToStage || "").trim();
+      const detachedFromRequestMongoId = String(
+        payload.detachedFromRequestMongoId || "",
+      ).trim();
       const mergedEventRequest = (() => {
         const currentRequest = requestsRef.current.find((req) => {
           const currentMongoId = String(req._id || "").trim();
@@ -919,14 +1060,21 @@ export const usePackingCapture = ({
       if (requestId || requestMongoId) {
         setRequests((prev) => {
           if (movedToStage && movedToStage !== "세척.패킹") {
-            return prev.filter((req) => {
-              const currentMongoId = String(req._id || "").trim();
-              const currentRequestId = String(req.requestId || "").trim();
-              return !(
-                (!!requestMongoId && currentMongoId === requestMongoId) ||
-                (!!requestId && currentRequestId === requestId)
+            return prev
+              .filter((req) => {
+                const currentMongoId = String(req._id || "").trim();
+                const currentRequestId = String(req.requestId || "").trim();
+                return !(
+                  (!!requestMongoId && currentMongoId === requestMongoId) ||
+                  (!!requestId && currentRequestId === requestId)
+                );
+              })
+              .map((req) =>
+                detachedFromRequestMongoId &&
+                String(req._id || "").trim() === detachedFromRequestMongoId
+                  ? clearPackingImageLocal(req)
+                  : req,
               );
-            });
           }
           return prev.map((req) => {
             const currentMongoId = String(req._id || "").trim();

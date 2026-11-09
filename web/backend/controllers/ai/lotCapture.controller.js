@@ -5,6 +5,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-11-09: 카드 매칭으로 옮긴 각인 파일은 원래 의뢰 메타만 떼고 S3 객체는 남긴다.
 // - 2026-11-09: 각인 인식 실패·차단은 예외로 끊지 않고 수동 매칭 응답으로 돌린다. 이미지는 jpeg로 정규화.
 // - 2026-09-04: 자동 인식은 제안만 — requestMongoId 수동 확정 시에만 포장.발송 적용.
 // - 2026-09-04: 미매칭 시 packing:capture-unmatched 발행 + previewUrl. requestMongoId 수동 바인딩.
@@ -327,6 +328,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     source,
     requestMongoId,
     requestId: bodyRequestId,
+    detachFromRequestMongoId,
   } = req.body || {};
 
   const key = String(s3Key || "").trim();
@@ -615,6 +617,38 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   await request.save();
 
+  let detachedFromRequestMongoId = "";
+  const detachFrom = String(detachFromRequestMongoId || "").trim();
+  if (
+    detachFrom &&
+    detachFrom !== String(request._id) &&
+    mongoose.Types.ObjectId.isValid(detachFrom)
+  ) {
+    // 같은 S3 객체를 다른 의뢰에 붙인 뒤다. 파일을 지우면 대상도 깨진다.
+    const detached = await Request.updateOne(
+      {
+        _id: detachFrom,
+        "caseInfos.stageFiles.packing.s3Key": key,
+      },
+      {
+        $set: {
+          "caseInfos.stageFiles.packing.fileName": "",
+          "caseInfos.stageFiles.packing.filePath": "",
+          "caseInfos.stageFiles.packing.s3Key": "",
+          "caseInfos.stageFiles.packing.s3Url": "",
+          "caseInfos.stageFiles.packing.fileType": "",
+          "caseInfos.stageFiles.packing.fileSize": 0,
+          "caseInfos.reviewByStage.packing.status": "PENDING",
+          "caseInfos.reviewByStage.packing.reason": "",
+          "caseInfos.reviewByStage.packing.updatedAt": new Date(),
+        },
+      },
+    );
+    if (detached?.modifiedCount > 0) {
+      detachedFromRequestMongoId = detachFrom;
+    }
+  }
+
   console.log("[lot-capture] after save - businessAnchorId state", {
     requestId: request.requestId,
     hasName: !!request?.businessAnchorId?.name,
@@ -648,6 +682,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     capturedBy: capturedByFrontend ? "frontend" : "worker",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
+    detachedFromRequestMongoId: detachedFromRequestMongoId || null,
     recognizedSuffix: matchedSuffix || null,
     recognized: recognized || null,
     movedToStage,
@@ -687,6 +722,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         matched: true,
         requestId: request.requestId,
         requestMongoId: String(request._id || ""),
+        detachedFromRequestMongoId: detachedFromRequestMongoId || null,
         suffix: matchedSuffix || null,
         recognized: recognized || null,
         manualBind: isManualBind,
