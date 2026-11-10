@@ -7,7 +7,6 @@ import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -47,7 +46,6 @@ export function PackingLabelPrintDialog({
   printerOptions,
   printerLoading,
   printerError,
-  onRefreshPrinters,
   packLabelDpi,
   packLabelDots,
   packLabelDesignDots,
@@ -63,7 +61,6 @@ export function PackingLabelPrintDialog({
   printerOptions: string[];
   printerLoading: boolean;
   printerError: string | null;
-  onRefreshPrinters: () => void;
   packLabelDpi: number;
   packLabelDots?: { pw: number; ll: number };
   packLabelDesignDots?: { pw: number; ll: number; dpi: number };
@@ -221,15 +218,16 @@ export function PackingLabelPrintDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         closeTabIndex={-1}
+        aria-describedby={undefined}
         className="max-h-[calc(100vh-2rem)] overflow-y-auto border-stone-200 bg-white shadow-2xl sm:max-w-2xl"
       >
         <DialogHeader>
-          <DialogTitle>패킹 라벨</DialogTitle>
-          <DialogDescription>
-            출력할 의뢰를 고르면 라벨을 미리 봅니다.
-            <br />
-            확인하면 선택한 프린터로 출력합니다.
-          </DialogDescription>
+          <DialogTitle className="flex items-baseline gap-2">
+            패킹 라벨
+            <span className="text-xs font-medium tracking-[0.12em] text-stone-400">
+              80 × 65 mm
+            </span>
+          </DialogTitle>
         </DialogHeader>
 
         <div className="rounded-2xl bg-[#efeae2] px-6 py-5">
@@ -246,35 +244,30 @@ export function PackingLabelPrintDialog({
               {previewError || "의뢰를 고르면 라벨이 보입니다."}
             </div>
           )}
-          <div className="mt-3 flex items-center justify-center gap-2">
-            <button
-              type="button"
-              aria-label="이전 라벨"
-              disabled={visible.length < 2 || focusIndex <= 0}
-              onClick={() => stepFocus(-1)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-stone-600 hover:bg-white/70 disabled:opacity-30"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <p className="min-w-0 truncate text-center text-[0.7rem] font-medium tracking-[0.08em] text-stone-500">
-              {visible.length
-                ? `${Math.min(focusIndex + 1, visible.length)} / ${visible.length}${focusCaption ? ` · ${focusCaption}` : ""}`
-                : "80 × 65 mm"}
-            </p>
-            <button
-              type="button"
-              aria-label="다음 라벨"
-              disabled={visible.length < 2 || focusIndex >= visible.length - 1}
-              onClick={() => stepFocus(1)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-stone-600 hover:bg-white/70 disabled:opacity-30"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
           {visible.length ? (
-            <p className="mt-1 text-center text-[0.7rem] font-medium tracking-[0.16em] text-stone-400">
-              80 × 65 mm
-            </p>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              <button
+                type="button"
+                aria-label="이전 라벨"
+                disabled={visible.length < 2 || focusIndex <= 0}
+                onClick={() => stepFocus(-1)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-600 hover:bg-white/70 disabled:opacity-30"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <p className="min-w-0 truncate text-center text-[0.7rem] font-medium tracking-[0.08em] text-stone-500">
+                {`${Math.min(focusIndex + 1, visible.length)} / ${visible.length}${focusCaption ? ` · ${focusCaption}` : ""}`}
+              </p>
+              <button
+                type="button"
+                aria-label="다음 라벨"
+                disabled={visible.length < 2 || focusIndex >= visible.length - 1}
+                onClick={() => stepFocus(1)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-stone-600 hover:bg-white/70 disabled:opacity-30"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -306,15 +299,15 @@ export function PackingLabelPrintDialog({
             type="button"
             onClick={() => setSelectedIds([])}
             disabled={!selectedIds.length || printing}
-            className="rounded-lg px-2 py-1 text-xs font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-40"
+            className="h-8 rounded-lg border border-stone-300 bg-white px-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-40"
           >
             해제
           </button>
         </div>
 
-        <ul className="max-h-44 overflow-y-auto rounded-2xl bg-stone-50 px-1.5 py-1.5">
+        <ul className="grid max-h-44 grid-cols-3 gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-100 px-1.5 py-1.5">
           {visible.length === 0 ? (
-            <li className="px-2 py-6 text-center text-sm text-stone-500">
+            <li className="col-span-3 px-2 py-6 text-center text-sm text-stone-500">
               {scope === "unprinted"
                 ? "미출력 의뢰가 없습니다."
                 : scope === "printed"
@@ -331,13 +324,13 @@ export function PackingLabelPrintDialog({
               const clinic = caseText(req, "clinicName");
               const suffix = lotSuffix(req);
               return (
-                <li key={id} className="py-0.5">
+                <li key={id} className="min-w-0">
                   <div
                     className={cn(
-                      "flex items-center gap-2 rounded-xl border px-2 py-1.5",
+                      "flex h-full items-center gap-1.5 rounded-xl border px-2 py-1.5",
                       focused
                         ? "border-stone-900 bg-white shadow-sm"
-                        : "border-transparent hover:bg-white",
+                        : "border-stone-200 bg-white hover:border-stone-400",
                     )}
                   >
                     <button
@@ -387,21 +380,20 @@ export function PackingLabelPrintDialog({
           )}
         </ul>
 
-        <LabelPrinterField
-          value={printer}
-          onChange={onPrinterChange}
-          options={printerOptions}
-          loading={printerLoading}
-          error={printerError}
-          onRefresh={onRefreshPrinters}
-        />
-
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <LabelPrinterField
+            value={printer}
+            onChange={onPrinterChange}
+            options={printerOptions}
+            loading={printerLoading}
+            error={printerError}
+          />
+          <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => onOpenChange(false)}
             disabled={printing}
-            className="rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-50"
+            className="h-9 shrink-0 rounded-lg px-3 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-50"
           >
             취소
           </button>
@@ -410,7 +402,7 @@ export function PackingLabelPrintDialog({
             onClick={() => void handlePrint()}
             disabled={printing || selectedRequests.length === 0 || !printer.trim()}
             className={cn(
-              "rounded-lg px-4 py-2 text-sm font-semibold",
+              "h-9 shrink-0 rounded-lg px-4 text-sm font-semibold",
               printing || selectedRequests.length === 0 || !printer.trim()
                 ? "cursor-not-allowed bg-stone-100 text-stone-400"
                 : "bg-stone-900 text-white hover:bg-stone-800",
@@ -422,6 +414,7 @@ export function PackingLabelPrintDialog({
                 ? `출력 ${selectedRequests.length}장`
                 : "출력"}
           </button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -1727,7 +1727,6 @@ export const PackingPageContent = ({
           printerOptions={printerOptions}
           printerLoading={printerLoading}
           printerError={printerError}
-          onRefreshPrinters={() => void fetchPrinters()}
           packLabelDpi={packLabelDpi}
           packLabelDots={packLabelDots}
           packLabelDesignDots={packLabelDesignDots}
@@ -1745,7 +1744,6 @@ export const PackingPageContent = ({
           printerOptions={printerOptions}
           printerLoading={printerLoading}
           printerError={printerError}
-          onRefreshPrinters={() => void fetchPrinters()}
         />
 
         <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>

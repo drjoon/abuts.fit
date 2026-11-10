@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/VialStickerPrintDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingLabelPrintDialog.tsx
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
 
 type Props = {
   value: string;
@@ -8,7 +10,7 @@ type Props = {
   options: string[];
   loading: boolean;
   error: string | null;
-  onRefresh: () => void;
+  className?: string;
 };
 
 export function LabelPrinterField({
@@ -17,29 +19,27 @@ export function LabelPrinterField({
   options,
   loading,
   error,
-  onRefresh,
+  className,
 }: Props) {
   const listed =
     value && !options.includes(value) ? [value, ...options] : options;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-xs font-medium text-stone-500">
-          프린터
-        </span>
+    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+      <div className="relative w-44 shrink-0">
         <select
           value={value}
-          title={value || "프린터 선택"}
+          title={value || "프린터"}
+          aria-label="프린터"
           disabled={loading}
           onChange={(event) => onChange(event.target.value)}
-          className="h-9 min-w-0 flex-1 rounded-xl border border-stone-200 bg-white px-3 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-stone-900/20 disabled:bg-stone-50"
+          className="h-9 w-full appearance-none truncate rounded-lg border border-stone-200 bg-stone-50 pl-3 pr-8 text-sm text-stone-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] outline-none transition focus:border-stone-400 focus:bg-white focus:ring-2 focus:ring-stone-900/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? (
-            <option value={value}>프린터 목록 불러오는 중...</option>
+            <option value={value}>{value || "프린터"}</option>
           ) : (
             <>
-              <option value="">선택</option>
+              <option value="">프린터</option>
               {listed.map((printer) => (
                 <option key={printer} value={printer} title={printer}>
                   {printer}
@@ -48,19 +48,14 @@ export function LabelPrinterField({
             </>
           )}
         </select>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="h-9 shrink-0 rounded-xl border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-600 hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-300"
-        >
-          새로고침
-        </button>
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
       </div>
       {error ? (
-        <p className="text-xs text-destructive">{error}</p>
+        <p className="shrink-0 text-xs font-medium text-destructive" title={error}>
+          프린터 조회 불가
+        </p>
       ) : !loading && options.length === 0 ? (
-        <p className="text-xs text-stone-500">사용 가능한 프린터가 없습니다.</p>
+        <p className="shrink-0 text-xs text-stone-500">프린터 없음</p>
       ) : null}
     </div>
   );

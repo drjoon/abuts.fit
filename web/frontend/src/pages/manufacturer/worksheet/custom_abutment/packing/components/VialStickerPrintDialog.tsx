@@ -3,7 +3,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/utils/vialStickerLabel.ts
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { ABUTS_PACKING_SCREW_TYPES } from "@/shared/practice/screwSupply";
@@ -27,7 +27,6 @@ export function VialStickerPrintDialog({
   printerOptions,
   printerLoading,
   printerError,
-  onRefreshPrinters,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,7 +36,6 @@ export function VialStickerPrintDialog({
   printerOptions: string[];
   printerLoading: boolean;
   printerError: string | null;
-  onRefreshPrinters: () => void;
 }) {
   const { toast } = useToast();
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -128,15 +126,16 @@ export function VialStickerPrintDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         closeTabIndex={-1}
+        aria-describedby={undefined}
         className="sm:max-w-xl border-stone-200 bg-white shadow-2xl"
       >
         <DialogHeader>
-          <DialogTitle>공병 라벨</DialogTitle>
-          <DialogDescription>
-            장수를 넣은 타입만 출력합니다.
-            <br />
-            오른쪽 끝 3mm는 겹쳐 붙입니다.
-          </DialogDescription>
+          <DialogTitle className="flex items-baseline gap-2">
+            공병 라벨
+            <span className="text-xs font-medium tracking-[0.12em] text-stone-400">
+              50 × 20 mm
+            </span>
+          </DialogTitle>
         </DialogHeader>
 
         <div className="rounded-2xl bg-[#efeae2] px-6 py-5">
@@ -145,9 +144,6 @@ export function VialStickerPrintDialog({
             className="mx-auto block aspect-[5/2] h-auto w-full max-w-[28rem] bg-white shadow-[0_12px_28px_rgba(41,37,36,0.16)]"
             aria-label={`${previewType} 공병 라벨 미리보기`}
           />
-          <p className="mt-3 text-center text-[0.7rem] font-medium tracking-[0.16em] text-stone-500">
-            50 × 20 mm
-          </p>
         </div>
 
         <div className="grid grid-cols-5 gap-2 px-0.5 py-0.5">
@@ -232,21 +228,20 @@ export function VialStickerPrintDialog({
           })}
         </div>
 
-        <LabelPrinterField
-          value={printer}
-          onChange={onPrinterChange}
-          options={printerOptions}
-          loading={printerLoading}
-          error={printerError}
-          onRefresh={onRefreshPrinters}
-        />
-
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <LabelPrinterField
+            value={printer}
+            onChange={onPrinterChange}
+            options={printerOptions}
+            loading={printerLoading}
+            error={printerError}
+          />
+          <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => onOpenChange(false)}
             disabled={printing}
-            className="rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-50"
+            className="h-9 shrink-0 rounded-lg px-3 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-50"
           >
             취소
           </button>
@@ -255,7 +250,7 @@ export function VialStickerPrintDialog({
             onClick={() => void handlePrint()}
             disabled={printing || total === 0 || !printer.trim()}
             className={cn(
-              "rounded-lg px-4 py-2 text-sm font-semibold",
+              "h-9 shrink-0 rounded-lg px-4 text-sm font-semibold",
               printing || total === 0 || !printer.trim()
                 ? "cursor-not-allowed bg-stone-100 text-stone-400"
                 : "bg-stone-900 text-white hover:bg-stone-800",
@@ -263,6 +258,7 @@ export function VialStickerPrintDialog({
           >
             {printing ? "출력 중..." : total > 0 ? `출력 ${total}장` : "출력"}
           </button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
