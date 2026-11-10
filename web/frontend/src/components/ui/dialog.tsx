@@ -45,8 +45,10 @@ const DialogContent = React.forwardRef<
     closeClassName?: string;
     /** Extra classes for the close icon. */
     closeIconClassName?: string;
+    /** 닫기 버튼을 탭 순서에서 뺄 때 -1. */
+    closeTabIndex?: number;
   }
->(({ className, children, hideClose, overlayClassName, hideOverlay, closeClassName, closeIconClassName, ...props }, ref) => (
+>(({ className, children, hideClose, overlayClassName, hideOverlay, closeClassName, closeIconClassName, closeTabIndex, ...props }, ref) => (
   <DialogPortal>
     {!hideOverlay ? <DialogOverlay className={overlayClassName} /> : null}
     <DialogPrimitive.Content
@@ -61,6 +63,7 @@ const DialogContent = React.forwardRef<
       {children}
       {!hideClose && (
         <DialogPrimitive.Close
+          tabIndex={closeTabIndex}
           className={cn(
             "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground",
             closeClassName,

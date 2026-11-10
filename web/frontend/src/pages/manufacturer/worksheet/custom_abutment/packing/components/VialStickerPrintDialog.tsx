@@ -2,8 +2,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/utils/vialStickerLabel.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { ABUTS_PACKING_SCREW_TYPES } from "@/shared/practice/screwSupply";
@@ -118,7 +118,10 @@ export function VialStickerPrintDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl border-stone-200 bg-white shadow-2xl">
+      <DialogContent
+        closeTabIndex={-1}
+        className="sm:max-w-xl border-stone-200 bg-white shadow-2xl"
+      >
         <DialogHeader>
           <DialogTitle>공병 스티커</DialogTitle>
           <DialogDescription>
@@ -157,27 +160,65 @@ export function VialStickerPrintDialog({
               >
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={() => setPreviewType(type)}
                   className="block w-full text-center text-base font-semibold tracking-tight text-stone-900"
                 >
                   {type}
                 </button>
-                <Input
-                  inputMode="numeric"
-                  value={qty[type] ?? ""}
-                  placeholder="0"
-                  maxLength={2}
-                  aria-label={`${type} 장수`}
-                  onFocus={() => setPreviewType(type)}
-                  onChange={(event) => {
-                    setPreviewType(type);
-                    setQty((prev) => ({
-                      ...prev,
-                      [type]: event.target.value.replace(/\D/g, "").slice(0, 2),
-                    }));
-                  }}
-                  className="mt-1.5 h-8 px-1 text-center tabular-nums"
-                />
+                <div className="mt-1.5 flex h-8 overflow-hidden rounded-md border border-input bg-background">
+                  <input
+                    inputMode="numeric"
+                    value={qty[type] ?? ""}
+                    placeholder="0"
+                    maxLength={2}
+                    aria-label={`${type} 장수`}
+                    onFocus={() => setPreviewType(type)}
+                    onChange={(event) => {
+                      setPreviewType(type);
+                      setQty((prev) => ({
+                        ...prev,
+                        [type]: event.target.value.replace(/\D/g, "").slice(0, 2),
+                      }));
+                    }}
+                    className="w-full min-w-0 bg-transparent px-1 text-center text-sm tabular-nums outline-none placeholder:text-slate-300"
+                  />
+                  <div className="flex w-6 shrink-0 flex-col border-l border-input">
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`${type} 장수 올리기`}
+                      onClick={() => {
+                        setPreviewType(type);
+                        setQty((prev) => ({
+                          ...prev,
+                          [type]: String(Math.min(99, parseQty(prev[type]) + 1)),
+                        }));
+                      }}
+                      className="flex flex-1 items-center justify-center text-stone-600 hover:bg-stone-100"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`${type} 장수 내리기`}
+                      onClick={() => {
+                        setPreviewType(type);
+                        setQty((prev) => {
+                          const next = Math.max(0, parseQty(prev[type]) - 1);
+                          return {
+                            ...prev,
+                            [type]: next === 0 ? "" : String(next),
+                          };
+                        });
+                      }}
+                      className="flex flex-1 items-center justify-center border-t border-input text-stone-600 hover:bg-stone-100"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })}

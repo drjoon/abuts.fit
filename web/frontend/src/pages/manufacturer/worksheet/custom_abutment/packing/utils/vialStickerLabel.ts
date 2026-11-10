@@ -61,31 +61,41 @@ export function drawVialSticker(
   const barW = Math.max(4, d(1.15));
   ctx.fillRect(0, 0, barW, height);
 
-  const padL = barW + d(1.65);
-  const right = width - d(VIAL_STICKER_OVERLAP_MM + 0.25);
+  const padL = barW + d(2.6);
+  const right = width - d(VIAL_STICKER_OVERLAP_MM + 1.4);
   const topH = d(7.7);
   const rule = Math.max(2, d(0.22));
-  ctx.fillRect(barW, topH - Math.floor(rule / 2), right - barW, rule);
+  ctx.fillRect(padL, topH - Math.floor(rule / 2), Math.max(0, right - padL), rule);
 
-  const url = "abuts.fit";
+  const url = "http://abuts.fit";
   const corp = "어벗츠 주식회사";
   const textMax = Math.max(0, right - padL);
-  const urlSize = fitSize(ctx, url, d(2.45), d(1.7), 700, textMax);
-  const corpSize = fitSize(ctx, corp, d(1.95), d(1.45), 500, textMax);
-  const lineGap = d(0.42);
+  const pairGap = d(1.6);
+  let pairSize = d(2.15);
+  const pairMin = d(1.45);
+  while (pairSize > pairMin) {
+    ctx.font = `600 ${pairSize}px ${FONT_STACK}`;
+    const urlW = ctx.measureText(url).width;
+    ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
+    const corpW = ctx.measureText(corp).width;
+    if (urlW + pairGap + corpW <= textMax) break;
+    pairSize -= 1;
+  }
 
-  ctx.font = `700 ${urlSize}px ${FONT_STACK}`;
+  ctx.font = `600 ${pairSize}px ${FONT_STACK}`;
   const urlBox = lineBox(ctx, url);
-  ctx.font = `500 ${corpSize}px ${FONT_STACK}`;
-  const corpBox = lineBox(ctx, corp);
-  const brandH = urlBox.ascent + urlBox.descent + lineGap + corpBox.ascent + corpBox.descent;
-  let y = Math.max(d(0.7), (topH - brandH) / 2);
+  const urlWidth = ctx.measureText(url).width;
+  const brandH = urlBox.ascent + urlBox.descent;
+  const baseline = Math.max(d(0.8), (topH - brandH) / 2) + urlBox.ascent;
 
-  ctx.font = `700 ${urlSize}px ${FONT_STACK}`;
-  ctx.fillText(url, padL, y + urlBox.ascent);
-  y += urlBox.ascent + urlBox.descent + lineGap;
-  ctx.font = `500 ${corpSize}px ${FONT_STACK}`;
-  ctx.fillText(corp, padL, y + corpBox.ascent);
+  ctx.fillText(url, padL, baseline);
+  const underline = Math.max(1, d(0.12));
+  ctx.fillRect(padL, baseline + d(0.28), urlWidth, underline);
+
+  ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
+  ctx.textAlign = "right";
+  ctx.fillText(corp, right, baseline);
+  ctx.textAlign = "left";
 
   const bottomTop = topH;
   const bottomH = height - bottomTop;
@@ -130,30 +140,13 @@ export function drawVialSticker(
     boxY + box / 2 + (letter.ascent - letter.descent) / 2,
   );
 
-  const product = "커스텀어벗";
-  const kind = "스크류";
-  const productMax = Math.max(0, boxX - d(1.35) - padL);
-  const productSize = fitSize(ctx, product, d(2.85), d(2), 700, productMax);
-  const kindSize = fitSize(ctx, kind, d(2.05), d(1.5), 500, productMax);
-  const productGap = d(0.35);
-
+  const product = "커스텀어벗 스크류";
+  const productMax = Math.max(0, boxX - d(2.2) - padL);
+  const productSize = fitSize(ctx, product, d(2.7), d(1.8), 700, productMax);
   ctx.font = `700 ${productSize}px ${FONT_STACK}`;
   const productBox = lineBox(ctx, product);
-  ctx.font = `500 ${kindSize}px ${FONT_STACK}`;
-  const kindBox = lineBox(ctx, kind);
-  const stackH =
-    productBox.ascent +
-    productBox.descent +
-    productGap +
-    kindBox.ascent +
-    kindBox.descent;
-  let textY = bottomTop + Math.max(d(0.45), (bottomH - stackH) / 2);
-
-  ctx.font = `700 ${productSize}px ${FONT_STACK}`;
+  const textY = bottomTop + (bottomH - (productBox.ascent + productBox.descent)) / 2;
   ctx.fillText(product, padL, textY + productBox.ascent);
-  textY += productBox.ascent + productBox.descent + productGap;
-  ctx.font = `500 ${kindSize}px ${FONT_STACK}`;
-  ctx.fillText(kind, padL, textY + kindBox.ascent);
 }
 
 export function paintVialSticker(
