@@ -17,21 +17,16 @@ const parseQty = (value: string | undefined) => {
   return Math.min(99, n);
 };
 
-const resolveTtp345 = (printers: string[]) =>
-  printers.find((name) => /TTP-?345/i.test(name)) ||
-  printers.find((name) => /\bTSC\b/i.test(name)) ||
-  "";
-
 export function VialStickerPrintDialog({
   open,
   onOpenChange,
   token,
-  printerOptions,
+  printer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token?: string | null;
-  printerOptions: string[];
+  printer: string;
 }) {
   const { toast } = useToast();
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -65,8 +60,16 @@ export function VialStickerPrintDialog({
 
   const handlePrint = async () => {
     if (!jobs.length || printing) return;
+    const target = printer.trim();
+    if (!target) {
+      toast({
+        title: "공병 스티커 출력",
+        description: "프린터 설정에서 공병 스티커 프린터를 고르세요.",
+        variant: "destructive",
+      });
+      return;
+    }
     setPrinting(true);
-    const printer = resolveTtp345(printerOptions);
     try {
       for (const job of jobs) {
         const canvas = document.createElement("canvas");
@@ -79,8 +82,7 @@ export function VialStickerPrintDialog({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            printer: printer || undefined,
-            printerQuery: printer ? undefined : "TTP-345",
+            printer: target,
             copies: 1,
             title: `Vial sticker ${job.type}`,
             rawBase64,

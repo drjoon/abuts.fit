@@ -13,6 +13,7 @@ export const usePackingPrintSettings = ({
   token?: string | null;
 }) => {
   const [printerProfile, setPrinterProfile] = useState("");
+  const [vialPrinter, setVialPrinter] = useState("");
   const [paperProfile, setPaperProfile] = useState("PACK_80x65");
   const [paperOptions, setPaperOptions] = useState<string[]>(["PACK_80x65"]);
   const [paperLoading, setPaperLoading] = useState(false);
@@ -45,6 +46,8 @@ export const usePackingPrintSettings = ({
       "worksheet:pack:printer:profile",
     );
     if (storedProfile) setPrinterProfile(storedProfile);
+    const storedVial = localStorage.getItem("worksheet:pack:vial:printer");
+    if (storedVial) setVialPrinter(storedVial);
     const storedPaper = localStorage.getItem("worksheet:pack:paper:profile");
     if (storedPaper === "PACK_80x65") {
       setPaperProfile(storedPaper);
@@ -58,6 +61,10 @@ export const usePackingPrintSettings = ({
   useEffect(() => {
     localStorage.setItem("worksheet:pack:printer:profile", printerProfile);
   }, [printerProfile]);
+
+  useEffect(() => {
+    localStorage.setItem("worksheet:pack:vial:printer", vialPrinter);
+  }, [vialPrinter]);
 
   useEffect(() => {
     localStorage.setItem("worksheet:pack:paper:profile", paperProfile);
@@ -183,6 +190,8 @@ export const usePackingPrintSettings = ({
   return {
     printerProfile,
     setPrinterProfile,
+    vialPrinter,
+    setVialPrinter,
     paperProfile,
     setPaperProfile,
     paperOptions,

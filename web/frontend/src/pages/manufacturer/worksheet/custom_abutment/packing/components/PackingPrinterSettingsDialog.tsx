@@ -19,6 +19,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   printerProfile: string;
   setPrinterProfile: (value: string) => void;
+  vialPrinter: string;
+  setVialPrinter: (value: string) => void;
   paperProfile: string;
   setPaperProfile: (value: string) => void;
   packOutputMode: "image" | "label";
@@ -37,6 +39,8 @@ export const PackingPrinterSettingsDialog = ({
   onOpenChange,
   printerProfile,
   setPrinterProfile,
+  vialPrinter,
+  setVialPrinter,
   paperProfile,
   setPaperProfile,
   packOutputMode,
@@ -63,14 +67,16 @@ export const PackingPrinterSettingsDialog = ({
             프린터 설정
           </DialogTitle>
           <DialogDescription className="text-sm text-slate-600 leading-relaxed">
-            패킹 라벨 출력은 로컬 프린터 서버의 CUPS 프린터 목록을 사용합니다.
+            패킹 라벨과 공병 스티커를 각각 고릅니다.
+            <br />
+            목록은 pack-server에 등록된 프린터입니다.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                프린터
+                패킹 라벨
               </span>
               <button
                 type="button"
@@ -109,6 +115,35 @@ export const PackingPrinterSettingsDialog = ({
             {printerError ? (
               <div className="text-xs text-destructive">{printerError}</div>
             ) : null}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+              공병 스티커
+            </span>
+            <select
+              value={vialPrinter}
+              onChange={(e) => setVialPrinter(e.target.value)}
+              title={vialPrinter}
+              className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-primary/70"
+              disabled={printerLoading}
+            >
+              {printerLoading ? (
+                <option value={vialPrinter}>프린터 목록 불러오는 중...</option>
+              ) : (
+                <>
+                  <option value="">선택</option>
+                  {(vialPrinter && !printerOptions.includes(vialPrinter)
+                    ? [vialPrinter, ...printerOptions]
+                    : printerOptions
+                  ).map((printer) => (
+                    <option key={printer} value={printer} title={printer}>
+                      {printer}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
           </div>
 
           <div className="flex flex-col gap-2">

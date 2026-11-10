@@ -223,6 +223,8 @@ export const PackingPageContent = ({
   const {
     printerProfile,
     setPrinterProfile,
+    vialPrinter,
+    setVialPrinter,
     paperProfile,
     setPaperProfile,
     paperOptions,
@@ -1884,6 +1886,8 @@ export const PackingPageContent = ({
           onOpenChange={setPrinterModalOpen}
           printerProfile={printerProfile}
           setPrinterProfile={setPrinterProfile}
+          vialPrinter={vialPrinter}
+          setVialPrinter={setVialPrinter}
           paperProfile={paperProfile}
           setPaperProfile={setPaperProfile}
           packOutputMode={packOutputMode}
@@ -1901,7 +1905,7 @@ export const PackingPageContent = ({
           open={vialStickerOpen}
           onOpenChange={setVialStickerOpen}
           token={token}
-          printerOptions={printerOptions}
+          printer={vialPrinter}
         />
 
         <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>
