@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 ZM400 50×20mm로 출력한다.
 // - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
 // - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
@@ -39,6 +40,7 @@ import {
 } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { PackingPrinterSettingsDialog } from "../components/PackingPrinterSettingsDialog";
+import { VialStickerPrintDialog } from "../components/VialStickerPrintDialog";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import {
@@ -140,6 +142,7 @@ export const PackingPageContent = ({
   const didInitPackingSelectionRef = useRef(false);
   const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
   const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
+  const [vialStickerOpen, setVialStickerOpen] = useState(false);
   const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
   const [screwLotLoading, setScrewLotLoading] = useState(false);
   const [screwLotSaving, setScrewLotSaving] = useState(false);
@@ -1489,6 +1492,13 @@ export const PackingPageContent = ({
               <>
                 <button
                   type="button"
+                  onClick={() => setVialStickerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  공병 스티커
+                </button>
+                <button
+                  type="button"
                   onClick={handleOpenScrewLotSettings}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-primary/70 bg-primary-soft px-2.5 py-1.5 text-xs font-semibold text-primary-strong hover:bg-primary-muted/50"
                 >
@@ -1885,6 +1895,15 @@ export const PackingPageContent = ({
           paperLoading={paperLoading}
           paperError={paperError}
           onRefreshPrinters={() => void fetchPrinters()}
+        />
+
+        <VialStickerPrintDialog
+          open={vialStickerOpen}
+          onOpenChange={setVialStickerOpen}
+          token={token}
+          printerProfile={printerProfile}
+          printerOptions={printerOptions}
+          dpi={packLabelDpi}
         />
 
         <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>
