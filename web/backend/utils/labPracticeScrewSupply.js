@@ -43,6 +43,13 @@ export const DEFAULT_PACKING_SCREW_TYPES = Object.freeze([
   ...ABUTS_PACKING_SCREW_TYPES,
   ...FIXTURE_MANUFACTURER_SCREW_TYPES,
 ]);
+/** 로트 설정에서 뺀 번호. 표시·인쇄 키 1–6은 그대로다. */
+export const RETIRED_PACKING_SCREW_LOT_TYPES = Object.freeze(["1", "2", "3", "4", "5", "6"]);
+const RETIRED_PACKING_SCREW_LOT_TYPE_SET = new Set(RETIRED_PACKING_SCREW_LOT_TYPES);
+/** 세척.패킹 로트 설정 기본 행. A–E. */
+export const PACKING_SCREW_LOT_SETTING_TYPES = Object.freeze(
+  DEFAULT_PACKING_SCREW_TYPES.filter((type) => !RETIRED_PACKING_SCREW_LOT_TYPE_SET.has(type)),
+);
 
 export function canonicalFixtureManufacturerName(value) {
   const key = normalizeImplantManufacturerKey(value);
@@ -115,7 +122,7 @@ export function ensureCanonicalPackingScrewLotItems(items) {
   const byType = new Map();
   for (const row of list) {
     const type = packingScrewTypeKey(row?.type);
-    if (!type) continue;
+    if (!type || RETIRED_PACKING_SCREW_LOT_TYPE_SET.has(type)) continue;
     const lotNumber = String(row?.lotNumber || "");
     const storedAsNumber = FIXTURE_MANUFACTURER_SCREW_TYPES.includes(
       String(row?.type || "")
@@ -131,7 +138,7 @@ export function ensureCanonicalPackingScrewLotItems(items) {
     else if (!prev.lotNumber && lotNumber) prev.lotNumber = lotNumber;
   }
   const ordered = [];
-  for (const type of DEFAULT_PACKING_SCREW_TYPES) {
+  for (const type of PACKING_SCREW_LOT_SETTING_TYPES) {
     ordered.push(byType.get(type) || { type, lotNumber: "" });
     byType.delete(type);
   }

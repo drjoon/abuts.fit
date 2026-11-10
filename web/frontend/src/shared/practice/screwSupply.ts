@@ -93,6 +93,19 @@ export const DEFAULT_PACKING_SCREW_TYPES: readonly string[] = [
   ...FIXTURE_MANUFACTURER_SCREW_TYPES,
 ];
 
+/** 로트 설정에서 뺀 번호. 표시·인쇄 키 1–6은 그대로다. */
+export const RETIRED_PACKING_SCREW_LOT_TYPES = ["1", "2", "3", "4", "5", "6"] as const;
+
+const RETIRED_PACKING_SCREW_LOT_TYPE_SET = new Set<string>(
+  RETIRED_PACKING_SCREW_LOT_TYPES,
+);
+
+/** 세척.패킹 로트 설정 기본 행. A–E. */
+export const PACKING_SCREW_LOT_SETTING_TYPES: readonly string[] =
+  DEFAULT_PACKING_SCREW_TYPES.filter(
+    (type) => !RETIRED_PACKING_SCREW_LOT_TYPE_SET.has(type),
+  );
+
 const FIXTURE_MANUFACTURER_ALIASES: Record<string, (typeof FIXTURE_MANUFACTURER_SCREW_ROWS)[number]["name"]> =
   {
     OSSTEM: "OSSTEM",
@@ -192,7 +205,7 @@ export function ensureCanonicalScrewLotItems<T extends { type: string; lotNumber
   const byType = new Map<string, T>();
   for (const row of items) {
     const type = toPackingScrewTypeKey(row?.type);
-    if (!type) continue;
+    if (!type || RETIRED_PACKING_SCREW_LOT_TYPE_SET.has(type)) continue;
     const prev = byType.get(type);
     const lotNumber = String(row?.lotNumber || "");
     const storedAsNumber = FIXTURE_MANUFACTURER_SCREW_TYPES.includes(
@@ -208,7 +221,7 @@ export function ensureCanonicalScrewLotItems<T extends { type: string; lotNumber
     else if (!prev.lotNumber && lotNumber) prev.lotNumber = lotNumber;
   }
   const ordered: T[] = [];
-  for (const type of DEFAULT_PACKING_SCREW_TYPES) {
+  for (const type of PACKING_SCREW_LOT_SETTING_TYPES) {
     ordered.push(byType.get(type) || ({ type, lotNumber: "" } as T));
     byType.delete(type);
   }

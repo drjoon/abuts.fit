@@ -115,9 +115,11 @@ describe("labPracticeScrewSupply", () => {
     ).toBe("");
   });
 
-  test("canonical lot rows keep saved lots and append manufacturer types", () => {
+  test("canonical lot rows keep saved lots and omit retired types 1-6", () => {
     const next = ensureCanonicalPackingScrewLotItems([
       { type: "A", lotNumber: "JUN26-04" },
+      { type: "1", lotNumber: "OLD-1" },
+      { type: "6", lotNumber: "OLD-6" },
       { type: "custom", lotNumber: "X" },
     ]);
     expect(next.map((row) => row.type)).toEqual([
@@ -126,28 +128,25 @@ describe("labPracticeScrewSupply", () => {
       "C",
       "D",
       "E",
-      "1",
-      "2",
-      "3",
-      "4",
-      "5",
-      "6",
       "CUSTOM",
     ]);
     expect(next[0].lotNumber).toBe("JUN26-04");
-    expect(next.find((row) => row.type === "4")?.lotNumber).toBe("");
+    expect(next.some((row) => row.type === "1" || row.type === "6")).toBe(false);
     expect(next.find((row) => row.type === "CUSTOM")?.lotNumber).toBe("X");
   });
 
-  test("legacy manufacturer names remap onto numbers and keep the number lot", () => {
+  test("legacy manufacturer names drop retired lot rows 1-6", () => {
     const next = ensureCanonicalPackingScrewLotItems([
       { type: "DENTIUM", lotNumber: "FROM-NAME" },
       { type: "1", lotNumber: "FROM-NUMBER" },
       { type: "OSSTEM", lotNumber: "LOT-2" },
+      { type: "DENTIS", lotNumber: "FROM-NAME-6" },
+      { type: "6", lotNumber: "FROM-NUMBER-6" },
     ]);
-    expect(next.find((row) => row.type === "1")?.lotNumber).toBe("FROM-NUMBER");
-    expect(next.find((row) => row.type === "2")?.lotNumber).toBe("LOT-2");
-    expect(next.some((row) => row.type === "DENTIUM")).toBe(false);
+    expect(next.some((row) => ["1", "2", "6", "DENTIUM", "DENTIS"].includes(row.type))).toBe(
+      false,
+    );
+    expect(next.map((row) => row.type)).toEqual(["A", "B", "C", "D", "E"]);
   });
 
   test("printed screw line keeps A-E then manufacturer numbers", () => {

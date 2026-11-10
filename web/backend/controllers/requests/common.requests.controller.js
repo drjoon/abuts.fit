@@ -64,7 +64,7 @@ import Request from "../../models/request.model.js";
 import { noteLowFinishLineRequest } from "../../services/lowFinishLineWatch.service.js";
 import Connection from "../../models/connection.model.js";
 import {
-  DEFAULT_PACKING_SCREW_TYPES,
+  PACKING_SCREW_LOT_SETTING_TYPES,
   ensureCanonicalPackingScrewLotItems,
 } from "../../utils/labPracticeScrewSupply.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -435,7 +435,7 @@ const DEFAULT_MANUAL_PICKUP_REASON_OPTIONS = ["방문 전달"];
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// 로트 타입: 어벗츠 A–E + 제조사 번호 1–6. 헬퍼 labPracticeScrewSupply.js
+// 로트 설정 기본 행: 어벗츠 A–E. 번호 1–6은 넣지 않는다. 헬퍼 labPracticeScrewSupply.js
 
 const normalizePackingScrewType = (value) =>
   String(value || "")
@@ -463,7 +463,7 @@ const normalizePackingScrewLotItems = (itemsRaw, { withDefault = false } = {}) =
 
   if (!withDefault) return items;
   if (items.length === 0) {
-    return DEFAULT_PACKING_SCREW_TYPES.map((type) => ({
+    return PACKING_SCREW_LOT_SETTING_TYPES.map((type) => ({
       type,
       lotNumber: "",
     }));

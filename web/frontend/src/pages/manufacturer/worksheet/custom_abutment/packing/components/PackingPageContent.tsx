@@ -59,7 +59,7 @@ import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 import {
-  DEFAULT_PACKING_SCREW_TYPES,
+  PACKING_SCREW_LOT_SETTING_TYPES,
   ensureCanonicalScrewLotItems,
   resolveCaseScrewType,
 } from "@/shared/practice/screwSupply";
@@ -1913,11 +1913,7 @@ export const PackingPageContent = ({
             <DialogHeader>
               <DialogTitle>스크류 로트번호 설정</DialogTitle>
               <DialogDescription>
-                전역 설정입니다. 저장 후 새로 패킹 승인되는 의뢰에는 타입별 최신 로트번호가 스냅샷으로 기록됩니다.
-                <br />
-                어벗츠는 A–E입니다.
-                <br />
-                제조사 스크류는 번호입니다.
+                저장 후 새로 패킹 승인되는 의뢰에는 타입별 최신 로트번호가 스냅샷으로 기록됩니다.
               </DialogDescription>
             </DialogHeader>
 
@@ -1935,9 +1931,9 @@ export const PackingPageContent = ({
                       }
                       placeholder="타입 (예: A)"
                       maxLength={30}
-                      readOnly={DEFAULT_PACKING_SCREW_TYPES.includes(row.type)}
+                      readOnly={PACKING_SCREW_LOT_SETTING_TYPES.includes(row.type)}
                       className={
-                        DEFAULT_PACKING_SCREW_TYPES.includes(row.type)
+                        PACKING_SCREW_LOT_SETTING_TYPES.includes(row.type)
                           ? "bg-slate-50 font-semibold"
                           : undefined
                       }
@@ -1951,7 +1947,7 @@ export const PackingPageContent = ({
                     placeholder="로트번호"
                     maxLength={120}
                   />
-                  {DEFAULT_PACKING_SCREW_TYPES.includes(row.type) ? (
+                  {PACKING_SCREW_LOT_SETTING_TYPES.includes(row.type) ? (
                     <span className="inline-flex h-9 w-9" />
                   ) : (
                     <button
