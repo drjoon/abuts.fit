@@ -1,10 +1,13 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/VialStickerPrintDialog.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/utils/packLabelRenderer.ts
-import { canvasToZplGraphic } from "./packLabelRenderer";
-
+// - bg/pc2/pack-server/app.js
 export const VIAL_STICKER_WIDTH_MM = 50;
 export const VIAL_STICKER_HEIGHT_MM = 20;
+/** TSC TTP-345. 300dpi를 1mm = 12dot 으로 센다. */
+export const VIAL_STICKER_DOTS_PER_MM = 12;
+export const VIAL_STICKER_DPI = VIAL_STICKER_DOTS_PER_MM * 25.4;
+/** 갭 라벨. 연속 용지면 0으로 둔다. */
+const VIAL_STICKER_GAP_MM = 3;
 /** 병 둘레보다 긴 끝. 글자를 넣지 않는다. */
 export const VIAL_STICKER_OVERLAP_MM = 3;
 
@@ -209,7 +212,7 @@ export function paintVialSticker(
   canvas: HTMLCanvasElement,
   opts: { screwType: string; dpi?: number },
 ) {
-  const dpi = opts.dpi && opts.dpi > 0 ? opts.dpi : 600;
+  const dpi = opts.dpi && opts.dpi > 0 ? opts.dpi : VIAL_STICKER_DPI;
   canvas.width = mmToDots(VIAL_STICKER_WIDTH_MM, dpi);
   canvas.height = mmToDots(VIAL_STICKER_HEIGHT_MM, dpi);
   const ctx = canvas.getContext("2d");
@@ -218,16 +221,65 @@ export function paintVialSticker(
   return canvas;
 }
 
-export function buildVialStickerZpl(canvas: HTMLCanvasElement, copies: number) {
-  const graphic = canvasToZplGraphic(canvas);
+const canvasToMonoBytes = (canvas: HTMLCanvasElement) => {
+  const width = canvas.width;
+  const height = canvas.height;
+  if (!width || !height) {
+    throw new Error("캔버스 크기가 올바르지 않습니다.");
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas context를 생성할 수 없습니다.");
+  const image = ctx.getImageData(0, 0, width, height);
+  const data = image.data;
+  const bytesPerRow = Math.ceil(width / 8);
+  const bytes = new Uint8Array(bytesPerRow * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let byteIndex = 0; byteIndex < bytesPerRow; byteIndex += 1) {
+      let value = 0;
+      for (let bit = 0; bit < 8; bit += 1) {
+        const x = byteIndex * 8 + bit;
+        if (x >= width) continue;
+        const idx = (y * width + x) * 4;
+        const r = data[idx] ?? 255;
+        const g = data[idx + 1] ?? 255;
+        const b = data[idx + 2] ?? 255;
+        const a = data[idx + 3] ?? 255;
+        const luminance = (r * 299 + g * 587 + b * 114) / 1000;
+        if (a > 0 && luminance < 200) value |= 1 << (7 - bit);
+      }
+      bytes[y * bytesPerRow + byteIndex] = value;
+    }
+  }
+  return { height, bytesPerRow, bytes };
+};
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
+
+/** TTP-345 TSPL. 장수는 PRINT에 넣고, 비트맵은 1mm=12dot. */
+export function buildVialStickerTspl(canvas: HTMLCanvasElement, copies: number) {
+  const graphic = canvasToMonoBytes(canvas);
   const qty = Math.max(1, Math.min(99, Math.floor(copies) || 1));
-  return [
-    "^XA",
-    `^PW${graphic.width}`,
-    `^LL${graphic.height}`,
-    "^LH0,0",
-    `^PQ${qty},0,1,Y`,
-    `^FO0,0^GFA,${graphic.totalBytes},${graphic.totalBytes},${graphic.bytesPerRow},${graphic.data}`,
-    "^XZ",
-  ].join("\n");
+  const head = [
+    `SIZE ${VIAL_STICKER_WIDTH_MM} mm, ${VIAL_STICKER_HEIGHT_MM} mm`,
+    `GAP ${VIAL_STICKER_GAP_MM} mm, 0 mm`,
+    "DIRECTION 1",
+    "CLS",
+    `BITMAP 0,0,${graphic.bytesPerRow},${graphic.height},0,`,
+  ].join("\r\n");
+  const foot = `\r\nPRINT ${qty},1\r\n`;
+  const encoder = new TextEncoder();
+  const headBytes = encoder.encode(head);
+  const footBytes = encoder.encode(foot);
+  const out = new Uint8Array(headBytes.length + graphic.bytes.length + footBytes.length);
+  out.set(headBytes, 0);
+  out.set(graphic.bytes, headBytes.length);
+  out.set(footBytes, headBytes.length + graphic.bytes.length);
+  return bytesToBase64(out);
 }

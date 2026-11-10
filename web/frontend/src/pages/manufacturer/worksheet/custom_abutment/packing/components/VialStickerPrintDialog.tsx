@@ -1,13 +1,13 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/utils/vialStickerLabel.ts
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { ABUTS_PACKING_SCREW_TYPES } from "@/shared/practice/screwSupply";
-import { buildVialStickerZpl, paintVialSticker } from "../utils/vialStickerLabel";
+import { buildVialStickerTspl, paintVialSticker, VIAL_STICKER_DPI } from "../utils/vialStickerLabel";
 
 const parseQty = (value: string | undefined) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -17,28 +17,23 @@ const parseQty = (value: string | undefined) => {
   return Math.min(99, n);
 };
 
-const resolveZm400 = (printers: string[], selected: string) => {
-  const named = printers.find((name) => /ZM-?400/i.test(name));
-  return named || selected.trim() || "";
-};
+const resolveTtp345 = (printers: string[]) =>
+  printers.find((name) => /TTP-?345/i.test(name)) ||
+  printers.find((name) => /\bTSC\b/i.test(name)) ||
+  "";
 
 export function VialStickerPrintDialog({
   open,
   onOpenChange,
   token,
-  printerProfile,
   printerOptions,
-  dpi,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token?: string | null;
-  printerProfile: string;
   printerOptions: string[];
-  dpi: number;
 }) {
   const { toast } = useToast();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [qty, setQty] = useState<Record<string, string>>({});
   const [previewType, setPreviewType] = useState<string>(ABUTS_PACKING_SCREW_TYPES[0]);
   const [printing, setPrinting] = useState(false);
@@ -52,11 +47,10 @@ export function VialStickerPrintDialog({
 
   const setPreviewCanvas = useCallback(
     (node: HTMLCanvasElement | null) => {
-      canvasRef.current = node;
       if (!node) return;
-      paintVialSticker(node, { screwType: previewType, dpi });
+      paintVialSticker(node, { screwType: previewType, dpi: VIAL_STICKER_DPI });
     },
-    [dpi, previewType],
+    [previewType],
   );
 
   const jobs = useMemo(
@@ -72,12 +66,12 @@ export function VialStickerPrintDialog({
   const handlePrint = async () => {
     if (!jobs.length || printing) return;
     setPrinting(true);
-    const printer = resolveZm400(printerOptions, printerProfile);
+    const printer = resolveTtp345(printerOptions);
     try {
       for (const job of jobs) {
         const canvas = document.createElement("canvas");
-        paintVialSticker(canvas, { screwType: job.type, dpi });
-        const zpl = buildVialStickerZpl(canvas, job.count);
+        paintVialSticker(canvas, { screwType: job.type, dpi: VIAL_STICKER_DPI });
+        const rawBase64 = buildVialStickerTspl(canvas, job.count);
         const response = await fetch("/api/requests/packing/print-zpl", {
           method: "POST",
           headers: {
@@ -86,9 +80,10 @@ export function VialStickerPrintDialog({
           },
           body: JSON.stringify({
             printer: printer || undefined,
+            printerQuery: printer ? undefined : "TTP-345",
             copies: 1,
             title: `Vial sticker ${job.type}`,
-            zpl,
+            rawBase64,
           }),
         });
         const data = await response.json().catch(() => null);

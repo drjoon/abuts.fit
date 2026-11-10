@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-10: 공병 스티커 RAW(base64)를 바이트 그대로 보낸다. printerQuery로 TTP-345를 찾는다.
 // - 2026-10-23: 폴백 ZPL 스크류 칸. 제조사 타입은 번호.
 // - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
@@ -224,9 +225,18 @@ const listPrinters = () =>
     });
   });
 
-const resolvePrinter = async ({ requestedPrinter }) => {
+const resolvePrinter = async ({ requestedPrinter, printerQuery }) => {
   const direct = String(requestedPrinter || "").trim();
   if (direct) return direct;
+
+  const query = String(printerQuery || "").trim().toUpperCase();
+  if (query) {
+    const printers = await listPrinters().catch(() => []);
+    const found = printers.find((name) =>
+      String(name || "").toUpperCase().includes(query),
+    );
+    return found || "";
+  }
 
   const fallback = String(DEFAULT_PRINTER || "").trim();
   if (fallback) return fallback;
@@ -327,6 +337,15 @@ const writeZplToTemp = async (zpl) => {
   return tempPath;
 };
 
+const writeRawToTemp = async (buffer) => {
+  const tempPath = path.join(
+    os.tmpdir(),
+    `abuts-pack-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
+  );
+  await fs.promises.writeFile(tempPath, buffer);
+  return tempPath;
+};
+
 const toPsSingleQuoted = (value) => {
   const raw = String(value ?? "");
   return `'${raw.replace(/'/g, "''")}'`;
@@ -348,7 +367,6 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         `$printerName = ${escapedPrinter}`,
         `$filePath = ${escapedFilePath}`,
         `$jobTitle = ${escapedJobTitle}`,
-        `$zplContent = [System.IO.File]::ReadAllText($filePath, [System.Text.Encoding]::UTF8)`,
         'Add-Type -TypeDefinition @"',
         "using System;",
         "using System.Runtime.InteropServices;",
@@ -375,7 +393,7 @@ const printRawZpl = ({ filePath, printer, title, copies, paperProfile }) =>
         "  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);",
         "}",
         '"@',
-        "$bytes = [System.Text.Encoding]::UTF8.GetBytes($zplContent)",
+        "$bytes = [System.IO.File]::ReadAllBytes($filePath)",
         "$docInfo = New-Object RawPrinterHelper+DOCINFOA",
         "$docInfo.pDocName = $jobTitle",
         '$docInfo.pDataType = "RAW"',
@@ -611,34 +629,49 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const payload = raw ? JSON.parse(raw) : {};
       const zpl = String(payload.zpl || "").trim();
+      const rawBase64 = String(payload.rawBase64 || "").replace(/\s/g, "");
+      const printerQuery = String(payload.printerQuery || "").trim();
       const printer = await resolvePrinter({
         requestedPrinter: payload.printer,
+        printerQuery,
       });
       const title = String(payload.title || "Packing Label").trim();
       const copiesRaw = Number(payload.copies);
       const copies =
         Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 1;
-      const paperProfile =
-        typeof payload.paperProfile === "string"
+      const paperProfile = rawBase64
+        ? ""
+        : typeof payload.paperProfile === "string"
           ? payload.paperProfile.trim()
           : "";
 
-      if (!zpl) {
+      if (!zpl && !rawBase64) {
         return jsonResponse(res, 400, {
           success: false,
-          message: "zpl 필드가 필요합니다.",
+          message: "zpl 또는 rawBase64 필드가 필요합니다.",
         });
       }
 
       if (!printer) {
         return jsonResponse(res, 400, {
           success: false,
-          message:
-            "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
+          message: printerQuery
+            ? `${printerQuery} 프린터를 찾지 못했습니다.`
+            : "사용 가능한 프린터가 없습니다. 프린터를 OS(CUPS)에 등록하거나 printer 값을 지정해주세요.",
         });
       }
 
-      const tempPath = await writeZplToTemp(zpl);
+      const rawBuffer = rawBase64 ? Buffer.from(rawBase64, "base64") : null;
+      if (rawBuffer && !rawBuffer.length) {
+        return jsonResponse(res, 400, {
+          success: false,
+          message: "rawBase64가 비어 있습니다.",
+        });
+      }
+
+      const tempPath = rawBuffer
+        ? await writeRawToTemp(rawBuffer)
+        : await writeZplToTemp(zpl);
       try {
         await printRawZpl({
           filePath: tempPath,

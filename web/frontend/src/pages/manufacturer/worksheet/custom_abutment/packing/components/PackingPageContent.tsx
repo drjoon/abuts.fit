@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 ZM400 50×20mm로 출력한다.
+// - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 TTP-345 50×20mm TSPL로 출력한다.
 // - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
 // - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
 // - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
@@ -1901,9 +1901,7 @@ export const PackingPageContent = ({
           open={vialStickerOpen}
           onOpenChange={setVialStickerOpen}
           token={token}
-          printerProfile={printerProfile}
           printerOptions={printerOptions}
-          dpi={packLabelDpi}
         />
 
         <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>
