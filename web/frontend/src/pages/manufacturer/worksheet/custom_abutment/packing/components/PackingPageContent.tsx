@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호. 프린터와 선택은 각 모달에서 출력한다.
 // - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 TTP-345 50×20mm TSPL로 출력한다.
 // - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
 // - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
@@ -39,7 +40,7 @@ import {
   usePreviewLoader,
 } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
-import { PackingPrinterSettingsDialog } from "../components/PackingPrinterSettingsDialog";
+import { PackingLabelPrintDialog } from "../components/PackingLabelPrintDialog";
 import { VialStickerPrintDialog } from "../components/VialStickerPrintDialog";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
@@ -51,11 +52,9 @@ import {
 } from "../hooks/usePackingCapture";
 import {
   buildPackLabelBitmapZpl,
-  getLotLabel,
   renderPackLabelToCanvas,
   resolveManufacturingDate,
 } from "../utils/packLabelRenderer";
-import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { ScrewTypeHover } from "@/shared/practice/ScrewTypeHover";
 import {
@@ -73,7 +72,7 @@ import {
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/backend/controllers/ai/lotCapture.controller.js
-import { Plus, Settings, Trash2, X } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -136,13 +135,10 @@ export const PackingPageContent = ({
     {},
   );
   const [isPrintingPackingLabels, setIsPrintingPackingLabels] = useState(false);
-  const [selectedPackingRequestIds, setSelectedPackingRequestIds] = useState<
-    string[]
-  >([]);
-  const didInitPackingSelectionRef = useRef(false);
   const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
   const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
   const [vialStickerOpen, setVialStickerOpen] = useState(false);
+  const [packingLabelOpen, setPackingLabelOpen] = useState(false);
   const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
   const [screwLotLoading, setScrewLotLoading] = useState(false);
   const [screwLotSaving, setScrewLotSaving] = useState(false);
@@ -181,27 +177,6 @@ export const PackingPageContent = ({
     toast,
   });
 
-  const allPackingRequestIds = useMemo(
-    () => filteredAndSorted.map((req) => String(req._id || "")).filter(Boolean),
-    [filteredAndSorted],
-  );
-
-  const paginatedPackingRequestIdSet = useMemo(
-    () =>
-      new Set(
-        paginatedRequests.map((req) => String(req._id || "")).filter(Boolean),
-      ),
-    [paginatedRequests],
-  );
-
-  const printedPackingCount = useMemo(
-    () =>
-      filteredAndSorted.filter((req) =>
-        Boolean((req as any)?.shippingLabelPrinted?.printed),
-      ).length,
-    [filteredAndSorted],
-  );
-
   const printedPackingRequestIds = useMemo(
     () =>
       filteredAndSorted
@@ -226,23 +201,21 @@ export const PackingPageContent = ({
     vialPrinter,
     setVialPrinter,
     paperProfile,
-    setPaperProfile,
-    paperOptions,
-    paperLoading,
-    paperError,
     printerOptions,
     printerLoading,
     printerError,
-    printerModalOpen,
-    setPrinterModalOpen,
-    packOutputMode,
-    setPackOutputMode,
     packLabelDpi,
     packLabelDots,
     packLabelDesignDots,
     packLabelBranding,
     fetchPrinters,
   } = usePackingPrintSettings({ token });
+
+  useEffect(() => {
+    if (!vialStickerOpen && !packingLabelOpen) return;
+    void fetchPrinters();
+  }, [fetchPrinters, packingLabelOpen, vialStickerOpen]);
+
   const { uploadFiles } = useS3TempUpload({ token });
 
   const matchesCurrentPage = useCallback(
@@ -734,42 +707,6 @@ export const PackingPageContent = ({
     [queryClient, setRequests, toast, token, uploadFiles],
   );
 
-  const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
-    const id = String(req._id || "").trim();
-    if (!id) return;
-    setSelectedPackingRequestIds((prev) =>
-      prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id],
-    );
-  }, []);
-
-  const handleSelectAllPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds(allPackingRequestIds);
-  }, [allPackingRequestIds]);
-
-  const handleSelectUnprintedPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds(unprintedPackingRequestIds);
-  }, [unprintedPackingRequestIds]);
-
-  const handleSelectPrintedPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds(printedPackingRequestIds);
-  }, [printedPackingRequestIds]);
-
-  const handleClearPackingRequests = useCallback(() => {
-    setSelectedPackingRequestIds([]);
-  }, []);
-
-  useEffect(() => {
-    setSelectedPackingRequestIds((prev) => {
-      const validIds = new Set(allPackingRequestIds);
-      const next = prev.filter((id) => validIds.has(id));
-      if (!didInitPackingSelectionRef.current) {
-        didInitPackingSelectionRef.current = true;
-        return unprintedPackingRequestIds;
-      }
-      return next;
-    });
-  }, [allPackingRequestIds, unprintedPackingRequestIds]);
-
   const normalizeScrewLotItems = useCallback((raw: unknown) => {
     const source = Array.isArray(raw) ? raw : [];
     const unique: ScrewLotSettingItem[] = [];
@@ -1223,7 +1160,6 @@ export const PackingPageContent = ({
       packLabelDesignDots,
       packLabelDots,
       packLabelDpi,
-      packOutputMode,
       paperProfile,
       printerProfile,
       toast,
@@ -1355,81 +1291,65 @@ export const PackingPageContent = ({
     normalizedManualSuffix,
   ]);
 
-  const handlePrintPackingLabels = useCallback(async () => {
-    const selectedRequests = paginatedRequests.filter((req) =>
-      selectedPackingRequestIds.includes(String(req._id || "")),
-    );
-    if (!selectedRequests.length) {
-      toast({
-        title: "출력할 의뢰 없음",
-        description: "선택된 의뢰가 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setIsPrintingPackingLabels(true);
-
-    if (packOutputMode === "image") {
-      try {
-        await savePackingLabelsAsZip({
-          requests: selectedRequests,
-          packLabelDpi,
-          packLabelDots,
-          packLabelDesignDots,
-          branding: packLabelBranding,
-        });
+  const handlePrintPackingLabels = useCallback(
+    async (selectedRequests: ManufacturerRequest[]) => {
+      if (!selectedRequests.length) {
         toast({
-          title: "패킹 라벨 저장 완료",
-          description: `${selectedRequests.length}건의 패킹 라벨을 zip으로 저장했습니다.`,
-        });
-      } catch (error) {
-        toast({
-          title: "패킹 라벨 저장 실패",
-          description:
-            error instanceof Error && error.message
-              ? error.message
-              : "패킹 라벨 zip 저장에 실패했습니다.",
+          title: "출력할 의뢰 없음",
+          description: "선택된 의뢰가 없습니다.",
           variant: "destructive",
         });
-      } finally {
-        setIsPrintingPackingLabels(false);
+        return false;
       }
-      return;
-    }
-
-    let successCount = 0;
-    let failCount = 0;
-    let firstErrorMessage = "";
-
-    try {
-      for (const req of selectedRequests) {
-        try {
-          await handlePrintSinglePackingLabel(req, {
-            silentSuccess: true,
-            silentError: true,
-          });
-          successCount += 1;
-        } catch (error) {
-          failCount += 1;
-          if (!firstErrorMessage) {
-            firstErrorMessage =
-              error instanceof Error && error.message
-                ? error.message
-                : "패킹 라벨 출력에 실패했습니다.";
-          }
-          console.error("Packing label print failed:", error);
-        }
-      }
-
-      if (successCount > 0) {
+      if (!printerProfile.trim()) {
         toast({
-          title: "패킹 라벨 출력 완료",
-          description:
-            failCount > 0
-              ? `${successCount}건 출력 성공 / ${failCount}건 실패`
-              : `${successCount}건의 패킹 라벨이 출력되었습니다.`,
+          title: "패킹 라벨 출력",
+          description: "프린터를 고르세요.",
+          variant: "destructive",
         });
-      } else {
+        return false;
+      }
+      setIsPrintingPackingLabels(true);
+
+      let successCount = 0;
+      let failCount = 0;
+      let firstErrorMessage = "";
+
+      try {
+        for (const req of selectedRequests) {
+          try {
+            await handlePrintSinglePackingLabel(req, {
+              silentSuccess: true,
+              silentError: true,
+            });
+            successCount += 1;
+          } catch (error) {
+            failCount += 1;
+            if (!firstErrorMessage) {
+              firstErrorMessage =
+                error instanceof Error && error.message
+                  ? error.message
+                  : "패킹 라벨 출력에 실패했습니다.";
+            }
+            console.error("Packing label print failed:", error);
+          }
+        }
+
+        if (successCount > 0 && failCount === 0) {
+          toast({
+            title: "패킹 라벨 출력 완료",
+            description: `${successCount}건의 패킹 라벨이 출력되었습니다.`,
+          });
+          return true;
+        }
+        if (successCount > 0) {
+          toast({
+            title: "패킹 라벨 출력",
+            description: `${successCount}건 출력 성공 / ${failCount}건 실패`,
+            variant: "destructive",
+          });
+          return false;
+        }
         toast({
           title: "패킹 라벨 출력 실패",
           description:
@@ -1437,24 +1357,13 @@ export const PackingPageContent = ({
             "출력에 실패했습니다. pack-server 로그를 확인해주세요.",
           variant: "destructive",
         });
+        return false;
+      } finally {
+        setIsPrintingPackingLabels(false);
       }
-    } finally {
-      setIsPrintingPackingLabels(false);
-    }
-  }, [
-    packLabelBranding,
-    packLabelDesignDots,
-    packLabelDots,
-    packLabelDpi,
-    packOutputMode,
-    paginatedRequests,
-    paperProfile,
-    printerProfile,
-    selectedPackingRequestIds,
-    toast,
-    token,
-    handlePrintSinglePackingLabel,
-  ]);
+    },
+    [handlePrintSinglePackingLabel, printerProfile, toast],
+  );
 
   const isEmpty = !isLoading && displayRequests.length === 0;
   const overlayText = useMemo(() => {
@@ -1491,98 +1400,34 @@ export const PackingPageContent = ({
             variant="compact"
             className="px-4 pt-2"
             toolbar={
-              <>
+              <div className="inline-flex items-center gap-1 rounded-xl bg-stone-100/90 p-1">
                 <button
                   type="button"
                   onClick={() => setVialStickerOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                  className="inline-flex h-8 items-center rounded-lg bg-white px-3 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:text-stone-950"
                 >
-                  공병 스티커
+                  공병 라벨
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPackingLabelOpen(true)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:text-stone-950"
+                >
+                  패킹 라벨
+                  {unprintedPackingRequestIds.length > 0 ? (
+                    <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-stone-900 px-1 text-[10px] font-semibold tabular-nums text-white">
+                      {unprintedPackingRequestIds.length}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
                   onClick={handleOpenScrewLotSettings}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/70 bg-primary-soft px-2.5 py-1.5 text-xs font-semibold text-primary-strong hover:bg-primary-muted/50"
+                  className="inline-flex h-8 items-center rounded-lg bg-white px-3 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:text-stone-950"
                 >
-                  스크류 로트번호 설정
+                  스크류 로트번호
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPrinterModalOpen(true)}
-                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                  aria-label="프린터 설정"
-                >
-                  <Settings className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePrintPackingLabels}
-                  disabled={
-                    isPrintingPackingLabels ||
-                    selectedPackingRequestIds.length === 0
-                  }
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    isPrintingPackingLabels ||
-                    selectedPackingRequestIds.length === 0
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-primary-soft text-primary-strong border-primary-muted hover:bg-primary-soft"
-                  }`}
-                >
-                  {isPrintingPackingLabels
-                    ? "출력 중..."
-                    : `패킹 라벨 (${selectedPackingRequestIds.length})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectUnprintedPackingRequests}
-                  disabled={!unprintedPackingRequestIds.length}
-                  title={`미출력 ${unprintedPackingRequestIds.length}건 선택`}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    !unprintedPackingRequestIds.length
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-accent-soft text-accent-strong border-accent-muted hover:bg-accent-soft"
-                  }`}
-                >
-                  미출력 ({unprintedPackingRequestIds.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectPrintedPackingRequests}
-                  disabled={!printedPackingRequestIds.length}
-                  title={`기출력 ${printedPackingRequestIds.length}건 선택 (재출력)`}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    !printedPackingRequestIds.length
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  기출력 ({printedPackingRequestIds.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectAllPackingRequests}
-                  disabled={!allPackingRequestIds.length}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    !allPackingRequestIds.length
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  전체
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearPackingRequests}
-                  disabled={!selectedPackingRequestIds.length}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    !selectedPackingRequestIds.length
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  해제
-                </button>
-              </>
+              </div>
             }
           />
         ) : null}
@@ -1839,15 +1684,7 @@ export const PackingPageContent = ({
           <>
             <WorksheetCardGrid
               requests={displayRequests}
-              selectedRequestIds={Array.from(
-                new Set(
-                  selectedPackingRequestIds.filter((id) =>
-                    paginatedPackingRequestIdSet.has(id),
-                  ),
-                ),
-              )}
               printedRequestIds={new Set(printedPackingRequestIds)}
-              onToggleSelected={handleTogglePackingRequest}
               onDownload={handleDownloadOriginalStl}
               onOpenPreview={handleOpenPreview}
               onDeleteCam={() => {}}
@@ -1881,24 +1718,22 @@ export const PackingPageContent = ({
             </div>
           </>
         ) : null}
-        <PackingPrinterSettingsDialog
-          open={printerModalOpen}
-          onOpenChange={setPrinterModalOpen}
-          printerProfile={printerProfile}
-          setPrinterProfile={setPrinterProfile}
-          vialPrinter={vialPrinter}
-          setVialPrinter={setVialPrinter}
-          paperProfile={paperProfile}
-          setPaperProfile={setPaperProfile}
-          packOutputMode={packOutputMode}
-          setPackOutputMode={setPackOutputMode}
+        <PackingLabelPrintDialog
+          open={packingLabelOpen}
+          onOpenChange={setPackingLabelOpen}
+          requests={filteredAndSorted}
+          printer={printerProfile}
+          onPrinterChange={setPrinterProfile}
           printerOptions={printerOptions}
           printerLoading={printerLoading}
           printerError={printerError}
-          paperOptions={paperOptions}
-          paperLoading={paperLoading}
-          paperError={paperError}
           onRefreshPrinters={() => void fetchPrinters()}
+          packLabelDpi={packLabelDpi}
+          packLabelDots={packLabelDots}
+          packLabelDesignDots={packLabelDesignDots}
+          branding={packLabelBranding}
+          printing={isPrintingPackingLabels}
+          onPrint={handlePrintPackingLabels}
         />
 
         <VialStickerPrintDialog
@@ -1906,6 +1741,11 @@ export const PackingPageContent = ({
           onOpenChange={setVialStickerOpen}
           token={token}
           printer={vialPrinter}
+          onPrinterChange={setVialPrinter}
+          printerOptions={printerOptions}
+          printerLoading={printerLoading}
+          printerError={printerError}
+          onRefreshPrinters={() => void fetchPrinters()}
         />
 
         <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>

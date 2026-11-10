@@ -8,6 +8,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import { ABUTS_PACKING_SCREW_TYPES } from "@/shared/practice/screwSupply";
 import { buildVialStickerTspl, paintVialSticker, VIAL_STICKER_DPI } from "../utils/vialStickerLabel";
+import { LabelPrinterField } from "./LabelPrinterField";
 
 const parseQty = (value: string | undefined) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -22,11 +23,21 @@ export function VialStickerPrintDialog({
   onOpenChange,
   token,
   printer,
+  onPrinterChange,
+  printerOptions,
+  printerLoading,
+  printerError,
+  onRefreshPrinters,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token?: string | null;
   printer: string;
+  onPrinterChange: (value: string) => void;
+  printerOptions: string[];
+  printerLoading: boolean;
+  printerError: string | null;
+  onRefreshPrinters: () => void;
 }) {
   const { toast } = useToast();
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -63,8 +74,8 @@ export function VialStickerPrintDialog({
     const target = printer.trim();
     if (!target) {
       toast({
-        title: "공병 스티커 출력",
-        description: "프린터 설정에서 공병 스티커 프린터를 고르세요.",
+        title: "공병 라벨 출력",
+        description: "프린터를 고르세요.",
         variant: "destructive",
       });
       return;
@@ -97,13 +108,13 @@ export function VialStickerPrintDialog({
       }
       const summary = jobs.map((job) => `${job.type} ${job.count}장`).join(", ");
       toast({
-        title: "공병 스티커 출력",
+        title: "공병 라벨 출력",
         description: `${summary}을 출력했습니다.`,
       });
       onOpenChange(false);
     } catch (error) {
       toast({
-        title: "공병 스티커 출력 실패",
+        title: "공병 라벨 출력 실패",
         description:
           error instanceof Error ? error.message : "출력에 실패했습니다.",
         variant: "destructive",
@@ -120,7 +131,7 @@ export function VialStickerPrintDialog({
         className="sm:max-w-xl border-stone-200 bg-white shadow-2xl"
       >
         <DialogHeader>
-          <DialogTitle>공병 스티커</DialogTitle>
+          <DialogTitle>공병 라벨</DialogTitle>
           <DialogDescription>
             장수를 넣은 타입만 출력합니다.
             <br />
@@ -132,7 +143,7 @@ export function VialStickerPrintDialog({
           <canvas
             ref={setPreviewCanvas}
             className="mx-auto block aspect-[5/2] h-auto w-full max-w-[28rem] bg-white shadow-[0_12px_28px_rgba(41,37,36,0.16)]"
-            aria-label={`${previewType} 공병 스티커 미리보기`}
+            aria-label={`${previewType} 공병 라벨 미리보기`}
           />
           <p className="mt-3 text-center text-[0.7rem] font-medium tracking-[0.16em] text-stone-500">
             50 × 20 mm
@@ -221,6 +232,15 @@ export function VialStickerPrintDialog({
           })}
         </div>
 
+        <LabelPrinterField
+          value={printer}
+          onChange={onPrinterChange}
+          options={printerOptions}
+          loading={printerLoading}
+          error={printerError}
+          onRefresh={onRefreshPrinters}
+        />
+
         <div className="flex items-center justify-end gap-2">
           <button
             type="button"
@@ -233,10 +253,10 @@ export function VialStickerPrintDialog({
           <button
             type="button"
             onClick={() => void handlePrint()}
-            disabled={printing || total === 0}
+            disabled={printing || total === 0 || !printer.trim()}
             className={cn(
               "rounded-lg px-4 py-2 text-sm font-semibold",
-              printing || total === 0
+              printing || total === 0 || !printer.trim()
                 ? "cursor-not-allowed bg-stone-100 text-stone-400"
                 : "bg-stone-900 text-white hover:bg-stone-800",
             )}

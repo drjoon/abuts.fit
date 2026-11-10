@@ -21,10 +21,6 @@ export const usePackingPrintSettings = ({
   const [printerOptions, setPrinterOptions] = useState<string[]>([]);
   const [printerLoading, setPrinterLoading] = useState(false);
   const [printerError, setPrinterError] = useState<string | null>(null);
-  const [printerModalOpen, setPrinterModalOpen] = useState(false);
-  const [packOutputMode, setPackOutputMode] = useState<"image" | "label">(
-    "image",
-  );
   const [packLabelDpi, setPackLabelDpi] = useState(600);
   const [packLabelDots, setPackLabelDots] = useState<{
     pw: number;
@@ -52,10 +48,6 @@ export const usePackingPrintSettings = ({
     if (storedPaper === "PACK_80x65") {
       setPaperProfile(storedPaper);
     }
-    const storedOutputMode = localStorage.getItem("worksheet:pack:output:mode");
-    if (storedOutputMode === "label" || storedOutputMode === "image") {
-      setPackOutputMode(storedOutputMode);
-    }
   }, []);
 
   useEffect(() => {
@@ -69,10 +61,6 @@ export const usePackingPrintSettings = ({
   useEffect(() => {
     localStorage.setItem("worksheet:pack:paper:profile", paperProfile);
   }, [paperProfile]);
-
-  useEffect(() => {
-    localStorage.setItem("worksheet:pack:output:mode", packOutputMode);
-  }, [packOutputMode]);
 
   const fetchPaperSettings = useCallback(async () => {
     setPaperLoading(true);
@@ -163,29 +151,26 @@ export const usePackingPrintSettings = ({
       }
       const printers = Array.isArray(data.printers) ? data.printers : [];
       setPrinterOptions(printers);
-      if (!printerProfile && printers.length) setPrinterProfile(printers[0]);
+      if (printers[0]) {
+        setPrinterProfile((prev) => prev || printers[0]);
+        setVialPrinter((prev) => prev || printers[0]);
+      }
     } catch (error) {
-      setPrinterError((error as Error).message);
+      const raw =
+        error instanceof Error
+          ? error.message
+          : "프린터 목록을 불러올 수 없습니다.";
+      setPrinterError(
+        /abort/i.test(raw) ? "프린터 목록을 불러오지 못했습니다." : raw,
+      );
     } finally {
       setPrinterLoading(false);
     }
-  }, [printerProfile, token]);
+  }, [token]);
 
   useEffect(() => {
     void fetchPaperSettings();
   }, [fetchPaperSettings]);
-
-  useEffect(() => {
-    if (!printerModalOpen) return;
-    void fetchPaperSettings();
-  }, [printerModalOpen, fetchPaperSettings]);
-
-  useEffect(() => {
-    if (!printerModalOpen) return;
-    if (!printerOptions.length) {
-      void fetchPrinters();
-    }
-  }, [fetchPrinters, printerModalOpen, printerOptions.length]);
 
   return {
     printerProfile,
@@ -200,10 +185,6 @@ export const usePackingPrintSettings = ({
     printerOptions,
     printerLoading,
     printerError,
-    printerModalOpen,
-    setPrinterModalOpen,
-    packOutputMode,
-    setPackOutputMode,
     packLabelDpi,
     packLabelDots,
     packLabelDesignDots,
