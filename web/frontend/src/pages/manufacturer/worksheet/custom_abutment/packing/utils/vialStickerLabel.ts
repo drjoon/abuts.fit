@@ -42,6 +42,53 @@ const lineBox = (ctx: CanvasRenderingContext2D, text: string) => {
   };
 };
 
+/** AbutsLogo 육각형. 인쇄는 흑백이라 바깥·안쪽 테두리만 그린다. */
+const drawAbutsHexMark = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+) => {
+  const scale = size / 55;
+  const ox = x + size / 2 - 32 * scale;
+  const oy = y - 4.5 * scale;
+  const trace = (points: ReadonlyArray<readonly [number, number]>) => {
+    ctx.beginPath();
+    points.forEach(([px, py], index) => {
+      const sx = ox + px * scale;
+      const sy = oy + py * scale;
+      if (index === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    });
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.strokeStyle = "#000000";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  trace([
+    [32, 4.5],
+    [56.5, 18],
+    [56.5, 46],
+    [32, 59.5],
+    [7.5, 46],
+    [7.5, 18],
+  ]);
+  ctx.lineWidth = Math.max(2, 2.5 * scale);
+  ctx.stroke();
+  trace([
+    [32, 13],
+    [48.5, 22.5],
+    [48.5, 41.5],
+    [32, 51],
+    [15.5, 41.5],
+    [15.5, 22.5],
+  ]);
+  ctx.lineWidth = Math.max(1.5, 1.4 * scale);
+  ctx.stroke();
+  ctx.restore();
+};
+
 export function drawVialSticker(
   ctx: CanvasRenderingContext2D,
   opts: { screwType: string; dpi: number },
@@ -67,8 +114,10 @@ export function drawVialSticker(
   const rule = Math.max(2, d(0.22));
   ctx.fillRect(padL, topH - Math.floor(rule / 2), Math.max(0, right - padL), rule);
 
-  const url = "http://abuts.fit";
+  const url = "https://abuts.fit";
   const corp = "어벗츠 주식회사";
+  const logoSize = d(4.6);
+  const logoGap = d(1.05);
   const textMax = Math.max(0, right - padL);
   const pairGap = d(1.6);
   let pairSize = d(2.15);
@@ -78,7 +127,7 @@ export function drawVialSticker(
     const urlW = ctx.measureText(url).width;
     ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
     const corpW = ctx.measureText(corp).width;
-    if (urlW + pairGap + corpW <= textMax) break;
+    if (urlW + pairGap + logoSize + logoGap + corpW <= textMax) break;
     pairSize -= 1;
   }
 
@@ -93,6 +142,13 @@ export function drawVialSticker(
   ctx.fillRect(padL, baseline + d(0.28), urlWidth, underline);
 
   ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
+  const corpW = ctx.measureText(corp).width;
+  drawAbutsHexMark(
+    ctx,
+    right - corpW - logoGap - logoSize,
+    (topH - logoSize) / 2,
+    logoSize,
+  );
   ctx.textAlign = "right";
   ctx.fillText(corp, right, baseline);
   ctx.textAlign = "left";
