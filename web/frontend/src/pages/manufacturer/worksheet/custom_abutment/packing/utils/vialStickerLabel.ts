@@ -90,22 +90,20 @@ export function drawVialSticker(
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const barW = Math.max(6, d(1.8));
-  ctx.fillRect(0, 0, barW, height);
-
-  const padL = barW + d(1.45);
-  const right = width - d(VIAL_STICKER_OVERLAP_MM + 0.55);
-  const topH = d(5.7);
-  const rule = Math.max(3, d(0.45));
+  const padL = d(1.6);
+  const right = width - d(VIAL_STICKER_OVERLAP_MM + 1.0);
+  // 20mm 라벨을 1행:2행 = 4.5:5.5 로 나눈다.
+  const topH = d((VIAL_STICKER_HEIGHT_MM * 4.5) / 10);
+  const rule = Math.max(2, d(0.22));
   ctx.fillRect(padL, topH - Math.floor(rule / 2), Math.max(0, right - padL), rule);
 
-  const url = "abuts.fit";
+  const url = "https://abuts.fit";
   const corp = "어벗츠 주식회사";
-  const logoSize = d(4.5);
-  const logoGap = d(0.85);
+  const logoSize = d(3.9);
+  const logoGap = d(0.7);
   const textMax = Math.max(0, right - padL);
-  const pairGap = d(1.15);
-  let pairSize = d(2.85);
+  const pairGap = d(0.9);
+  let pairSize = d(3.05);
   const pairMin = d(2.15);
   while (pairSize > pairMin) {
     ctx.font = `800 ${pairSize}px ${FONT_STACK}`;
@@ -119,11 +117,11 @@ export function drawVialSticker(
   const urlBox = lineBox(ctx, url);
   const urlWidth = ctx.measureText(url).width;
   const brandH = urlBox.ascent + urlBox.descent;
-  const baseline = Math.max(d(0.45), (topH - brandH) / 2) + urlBox.ascent;
+  const baseline = Math.max(d(0.55), (topH - brandH) / 2) + urlBox.ascent;
 
   ctx.fillText(url, padL, baseline);
-  const underline = Math.max(2, d(0.32));
-  ctx.fillRect(padL, baseline + d(0.32), urlWidth, underline);
+  const underline = Math.max(1, d(0.18));
+  ctx.fillRect(padL, baseline + d(0.24), urlWidth, underline);
 
   const corpW = ctx.measureText(corp).width;
   drawAbutsHexMark(
@@ -138,11 +136,11 @@ export function drawVialSticker(
 
   const bottomTop = topH + Math.ceil(rule / 2);
   const bottomH = height - bottomTop;
-  const box = Math.min(d(12.8), bottomH - d(0.7));
-  const stroke = Math.max(4, d(0.75));
-  const boxX = right - box;
+  const box = Math.min(d(9.6), bottomH - d(1.2));
+  const stroke = Math.max(3, d(0.48));
+  const boxX = right - d(0.55) - box;
   const boxY = bottomTop + (bottomH - box) / 2;
-  const radius = d(1.4);
+  const radius = d(1.8);
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") {
     ctx.roundRect(
@@ -159,9 +157,9 @@ export function drawVialSticker(
   ctx.strokeStyle = "#000000";
   ctx.stroke();
 
-  const letterMax = box - stroke * 2 - d(0.7);
-  let letterSize = d(8.4);
-  while (letterSize > d(5.4)) {
+  const letterMax = box - stroke * 2 - d(0.8);
+  let letterSize = d(6.2);
+  while (letterSize > d(4.2)) {
     ctx.font = `800 ${letterSize}px ${FONT_STACK}`;
     const metrics = ctx.measureText(type);
     const letterH =
@@ -179,27 +177,20 @@ export function drawVialSticker(
     boxY + box / 2 + (letter.ascent - letter.descent) / 2,
   );
 
-  const productLines = ["커스텀어벗", "스크류"];
-  const productMax = Math.max(0, boxX - d(1.4) - padL);
-  let productSize = d(5.5);
-  const productMin = d(3.8);
+  const product = "커스텀 어벗 스크류";
+  const productMax = Math.max(0, boxX - d(1.1) - padL);
+  let productSize = d(3.2);
+  const productMin = d(2.3);
   while (productSize > productMin) {
     ctx.font = `800 ${productSize}px ${FONT_STACK}`;
-    if (productLines.every((line) => ctx.measureText(line).width <= productMax)) break;
+    if (ctx.measureText(product).width <= productMax) break;
     productSize -= 1;
   }
   ctx.font = `800 ${productSize}px ${FONT_STACK}`;
-  const boxes = productLines.map((line) => lineBox(ctx, line));
-  const lineGap = d(0.45);
-  const blockH =
-    boxes.reduce((sum, box) => sum + box.ascent + box.descent, 0) +
-    lineGap * (productLines.length - 1);
-  let cursor = bottomTop + (bottomH - blockH) / 2;
-  productLines.forEach((line, index) => {
-    const box = boxes[index];
-    ctx.fillText(line, padL, cursor + box.ascent);
-    cursor += box.ascent + box.descent + lineGap;
-  });
+  const productBox = lineBox(ctx, product);
+  const productH = productBox.ascent + productBox.descent;
+  const productY = bottomTop + (bottomH - productH) / 2 + productBox.ascent;
+  ctx.fillText(product, padL, productY);
 }
 
 export function paintVialSticker(
