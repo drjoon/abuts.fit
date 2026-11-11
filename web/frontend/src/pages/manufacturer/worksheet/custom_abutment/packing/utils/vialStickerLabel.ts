@@ -19,24 +19,6 @@ export const mmToDots = (mm: number, dpi: number) => {
   return Math.max(0, Math.round((mm / 25.4) * dpi));
 };
 
-const fitSize = (
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  size: number,
-  min: number,
-  weight: number,
-  maxWidth: number,
-) => {
-  let next = size;
-  while (next > min) {
-    ctx.font = `${weight} ${next}px ${FONT_STACK}`;
-    if (ctx.measureText(text).width <= maxWidth) return next;
-    next -= 1;
-  }
-  ctx.font = `${weight} ${min}px ${FONT_STACK}`;
-  return min;
-};
-
 const lineBox = (ctx: CanvasRenderingContext2D, text: string) => {
   const metrics = ctx.measureText(text);
   return {
@@ -77,7 +59,7 @@ const drawAbutsHexMark = (
     [7.5, 46],
     [7.5, 18],
   ]);
-  ctx.lineWidth = Math.max(2, 2.5 * scale);
+  ctx.lineWidth = Math.max(2.5, 3.6 * scale);
   ctx.stroke();
   trace([
     [32, 13],
@@ -87,7 +69,7 @@ const drawAbutsHexMark = (
     [15.5, 41.5],
     [15.5, 22.5],
   ]);
-  ctx.lineWidth = Math.max(1.5, 1.4 * scale);
+  ctx.lineWidth = Math.max(2, 2.4 * scale);
   ctx.stroke();
   ctx.restore();
 };
@@ -108,43 +90,41 @@ export function drawVialSticker(
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const barW = Math.max(4, d(1.15));
+  const barW = Math.max(6, d(1.8));
   ctx.fillRect(0, 0, barW, height);
 
-  const padL = barW + d(2.6);
-  const right = width - d(VIAL_STICKER_OVERLAP_MM + 1.4);
-  const topH = d(7.7);
-  const rule = Math.max(2, d(0.22));
+  const padL = barW + d(1.45);
+  const right = width - d(VIAL_STICKER_OVERLAP_MM + 0.55);
+  const topH = d(5.7);
+  const rule = Math.max(3, d(0.45));
   ctx.fillRect(padL, topH - Math.floor(rule / 2), Math.max(0, right - padL), rule);
 
-  const url = "https://abuts.fit";
+  const url = "abuts.fit";
   const corp = "어벗츠 주식회사";
-  const logoSize = d(4.6);
-  const logoGap = d(1.05);
+  const logoSize = d(4.5);
+  const logoGap = d(0.85);
   const textMax = Math.max(0, right - padL);
-  const pairGap = d(1.6);
-  let pairSize = d(2.15);
-  const pairMin = d(1.45);
+  const pairGap = d(1.15);
+  let pairSize = d(2.85);
+  const pairMin = d(2.15);
   while (pairSize > pairMin) {
-    ctx.font = `600 ${pairSize}px ${FONT_STACK}`;
+    ctx.font = `800 ${pairSize}px ${FONT_STACK}`;
     const urlW = ctx.measureText(url).width;
-    ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
     const corpW = ctx.measureText(corp).width;
     if (urlW + pairGap + logoSize + logoGap + corpW <= textMax) break;
     pairSize -= 1;
   }
 
-  ctx.font = `600 ${pairSize}px ${FONT_STACK}`;
+  ctx.font = `800 ${pairSize}px ${FONT_STACK}`;
   const urlBox = lineBox(ctx, url);
   const urlWidth = ctx.measureText(url).width;
   const brandH = urlBox.ascent + urlBox.descent;
-  const baseline = Math.max(d(0.8), (topH - brandH) / 2) + urlBox.ascent;
+  const baseline = Math.max(d(0.45), (topH - brandH) / 2) + urlBox.ascent;
 
   ctx.fillText(url, padL, baseline);
-  const underline = Math.max(1, d(0.12));
-  ctx.fillRect(padL, baseline + d(0.28), urlWidth, underline);
+  const underline = Math.max(2, d(0.32));
+  ctx.fillRect(padL, baseline + d(0.32), urlWidth, underline);
 
-  ctx.font = `500 ${pairSize}px ${FONT_STACK}`;
   const corpW = ctx.measureText(corp).width;
   drawAbutsHexMark(
     ctx,
@@ -156,13 +136,13 @@ export function drawVialSticker(
   ctx.fillText(corp, right, baseline);
   ctx.textAlign = "left";
 
-  const bottomTop = topH;
+  const bottomTop = topH + Math.ceil(rule / 2);
   const bottomH = height - bottomTop;
-  const box = d(8.6);
-  const stroke = Math.max(2, d(0.38));
+  const box = Math.min(d(12.8), bottomH - d(0.7));
+  const stroke = Math.max(4, d(0.75));
   const boxX = right - box;
   const boxY = bottomTop + (bottomH - box) / 2;
-  const radius = d(1.25);
+  const radius = d(1.4);
   ctx.beginPath();
   if (typeof ctx.roundRect === "function") {
     ctx.roundRect(
@@ -179,10 +159,10 @@ export function drawVialSticker(
   ctx.strokeStyle = "#000000";
   ctx.stroke();
 
-  const letterMax = box - stroke * 2 - d(1.3);
-  let letterSize = d(5.1);
-  while (letterSize > d(3)) {
-    ctx.font = `700 ${letterSize}px ${FONT_STACK}`;
+  const letterMax = box - stroke * 2 - d(0.7);
+  let letterSize = d(8.4);
+  while (letterSize > d(5.4)) {
+    ctx.font = `800 ${letterSize}px ${FONT_STACK}`;
     const metrics = ctx.measureText(type);
     const letterH =
       (metrics.actualBoundingBoxAscent || 0) +
@@ -190,7 +170,7 @@ export function drawVialSticker(
     if (metrics.width <= letterMax && letterH <= letterMax) break;
     letterSize -= 1;
   }
-  ctx.font = `700 ${letterSize}px ${FONT_STACK}`;
+  ctx.font = `800 ${letterSize}px ${FONT_STACK}`;
   const letter = lineBox(ctx, type);
   const letterW = ctx.measureText(type).width;
   ctx.fillText(
@@ -199,13 +179,27 @@ export function drawVialSticker(
     boxY + box / 2 + (letter.ascent - letter.descent) / 2,
   );
 
-  const product = "커스텀어벗 스크류";
-  const productMax = Math.max(0, boxX - d(2.2) - padL);
-  const productSize = fitSize(ctx, product, d(2.7), d(1.8), 700, productMax);
-  ctx.font = `700 ${productSize}px ${FONT_STACK}`;
-  const productBox = lineBox(ctx, product);
-  const textY = bottomTop + (bottomH - (productBox.ascent + productBox.descent)) / 2;
-  ctx.fillText(product, padL, textY + productBox.ascent);
+  const productLines = ["커스텀어벗", "스크류"];
+  const productMax = Math.max(0, boxX - d(1.4) - padL);
+  let productSize = d(5.5);
+  const productMin = d(3.8);
+  while (productSize > productMin) {
+    ctx.font = `800 ${productSize}px ${FONT_STACK}`;
+    if (productLines.every((line) => ctx.measureText(line).width <= productMax)) break;
+    productSize -= 1;
+  }
+  ctx.font = `800 ${productSize}px ${FONT_STACK}`;
+  const boxes = productLines.map((line) => lineBox(ctx, line));
+  const lineGap = d(0.45);
+  const blockH =
+    boxes.reduce((sum, box) => sum + box.ascent + box.descent, 0) +
+    lineGap * (productLines.length - 1);
+  let cursor = bottomTop + (bottomH - blockH) / 2;
+  productLines.forEach((line, index) => {
+    const box = boxes[index];
+    ctx.fillText(line, padL, cursor + box.ascent);
+    cursor += box.ascent + box.descent + lineGap;
+  });
 }
 
 export function paintVialSticker(
@@ -245,7 +239,9 @@ const canvasToMonoBytes = (canvas: HTMLCanvasElement) => {
         const b = data[idx + 2] ?? 255;
         const a = data[idx + 3] ?? 255;
         const luminance = (r * 299 + g * 587 + b * 114) / 1000;
-        if (a > 0 && luminance < 200) value |= 1 << (7 - bit);
+        // TTP-345 BITMAP은 1이 흰색, 0이 검정이다. 글자만 0으로 남긴다.
+        const isInk = a > 0 && luminance < 200;
+        if (!isInk) value |= 1 << (7 - bit);
       }
       bytes[y * bytesPerRow + byteIndex] = value;
     }
