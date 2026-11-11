@@ -8894,7 +8894,13 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    if (composeRemakeMode && composeRemakePickRequired) {
+    // 원본이 이미 연결된 경우(부분 치아 리메이크 포함)는 전송 허용.
+    // pickRequired만으로 막으면 후보 2건+선택 후에도 잘못 거절된다.
+    if (
+      composeRemakeMode &&
+      composeRemakePickRequired &&
+      !linkedRemakeSource
+    ) {
       toast({
         title: "리메이크 원본을 선택해주세요",
         description: "같은 환자·기공소 의뢰 목록에서 연결할 원본을 고르세요.",
@@ -12844,6 +12850,7 @@ export const PracticeFileTransferPage = ({
             };
             setLinkedRemakeSource(selected);
             setComposeRemakeMode(true);
+            setComposeRemakePickRequired(false);
             setSimilarCasePromptOpen(false);
             if (pendingSubmitAfterSimilarRef.current) {
               pendingSubmitAfterSimilarRef.current = false;

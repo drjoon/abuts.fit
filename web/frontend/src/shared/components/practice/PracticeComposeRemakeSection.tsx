@@ -183,11 +183,14 @@ export function PracticeComposeRemakeSection({
             onLinkedSourceChange(null);
             onPickRequiredChange?.(false);
           } else {
+            // 후보가 여러 개여도 이미 고른 원본이 목록에 있으면 선택 완료.
+            // (부분 치아 리메이크: 원본이 더 많은 치아여도 동일)
             const linkedId = linkedIdRef.current;
-            const stillValid =
-              linkedId && filtered.some((t) => transferKey(t) === linkedId);
+            const stillValid = Boolean(
+              linkedId && filtered.some((t) => transferKey(t) === linkedId),
+            );
             if (!stillValid) onLinkedSourceChange(null);
-            onPickRequiredChange?.(true);
+            onPickRequiredChange?.(!stillValid);
           }
         } catch {
           if (searchGenRef.current !== gen) return;
@@ -290,9 +293,10 @@ export function PracticeComposeRemakeSection({
                     <button
                       key={key || transfer.transferId}
                       type="button"
-                      onClick={() =>
-                        onLinkedSourceChange(toSimilarCaseMatch(transfer))
-                      }
+                      onClick={() => {
+                        onLinkedSourceChange(toSimilarCaseMatch(transfer));
+                        onPickRequiredChange?.(false);
+                      }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
                         active
