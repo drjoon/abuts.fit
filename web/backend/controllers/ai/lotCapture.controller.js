@@ -5,6 +5,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-11-11: 작업자가 고른 이미지에 3글자를 확정하면(confirmBySuffix) 그 코드가 세척.패킹에 하나일 때 바로 포장.발송.
 // - 2026-11-09: 카드 매칭으로 옮긴 각인 파일은 원래 의뢰 메타만 떼고 S3 객체는 남긴다.
 // - 2026-11-09: 각인 인식 실패·차단은 예외로 끊지 않고 수동 매칭 응답으로 돌린다. 이미지는 jpeg로 정규화.
 // - 2026-09-04: 자동 인식은 제안만 — requestMongoId 수동 확정 시에만 포장.발송 적용.
@@ -113,9 +114,9 @@ function normalizeLegacyManufacturerHexRotationOnRequest(requestDoc) {
   return true;
 }
 
-async function findPackingRequestBySuffix(recognizedSuffix) {
+async function listPackingRequestsBySuffix(recognizedSuffix) {
   const suffix = extractLotSuffix3(recognizedSuffix);
-  if (!suffix) return null;
+  if (!suffix) return [];
 
   const candidates = await Request.find({
     status: { $ne: "취소" },
@@ -125,12 +126,15 @@ async function findPackingRequestBySuffix(recognizedSuffix) {
     .populate("requestor", "businessAnchorId")
     .sort({ createdAt: 1 });
 
-  return (
-    candidates.find(
-      (candidate) =>
-        extractLotSuffix3(String(candidate?.lotNumber?.value || "")) === suffix,
-    ) || null
+  return candidates.filter(
+    (candidate) =>
+      extractLotSuffix3(String(candidate?.lotNumber?.value || "")) === suffix,
   );
+}
+
+async function findPackingRequestBySuffix(recognizedSuffix) {
+  const matches = await listPackingRequestsBySuffix(recognizedSuffix);
+  return matches[0] || null;
 }
 
 async function recognizeLotNumberFromS3({ s3Key, originalName }) {
@@ -329,6 +333,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     requestMongoId,
     requestId: bodyRequestId,
     detachFromRequestMongoId,
+    confirmBySuffix: confirmBySuffixRaw,
   } = req.body || {};
 
   const key = String(s3Key || "").trim();
@@ -340,6 +345,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   const manualRequestMongoId = String(requestMongoId || "").trim();
   const manualRequestId = String(bodyRequestId || "").trim();
   const isManualBind = Boolean(manualRequestMongoId || manualRequestId);
+  // 작업자가 선택한 이미지에 3글자를 직접 넣은 확정. 현미경 자동 인식과 구분한다.
+  const confirmBySuffix = toBool(confirmBySuffixRaw);
 
   const providedLotNumber = String(lotNumber || "").trim();
   const providedSuffix = extractLotSuffix3(
@@ -349,7 +356,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     lotNumber: providedLotNumber || providedSuffix,
     confidence: providedSuffix ? "provided" : "missing",
     provider: providedSuffix
-      ? isManualBind
+      ? isManualBind || confirmBySuffix
         ? "manual"
         : "lot-server"
       : "none",
@@ -382,6 +389,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   const finalRecognizedSuffix = extractLotSuffix3(
     String(recognized?.lotNumber || ""),
   );
+  if (confirmBySuffix && !finalRecognizedSuffix) {
+    throw new ApiError(400, "각인 코드 3글자가 필요합니다.");
+  }
   console.log("[lot-capture] recognition result", {
     originalName: name,
     s3Key: key,
@@ -417,6 +427,13 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         };
       }
     }
+  } else if (confirmBySuffix) {
+    const matches = await listPackingRequestsBySuffix(finalRecognizedSuffix);
+    if (matches.length === 1) {
+      request = matches[0];
+    } else {
+      reason = matches.length > 1 ? "ambiguous_suffix" : "no_suffix_match";
+    }
   } else if (finalRecognizedSuffix) {
     request = await findPackingRequestBySuffix(finalRecognizedSuffix);
     if (!request) {
@@ -428,7 +445,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
 
   // 자동 인식(현미경/드롭)은 작업자 확인 전 확정하지 않는다.
-  if (!isManualBind) {
+  // 작업자가 고른 이미지에 코드를 넣은 경우(confirmBySuffix)는 아래에서 바로 적용한다.
+  if (!isManualBind && !confirmBySuffix) {
     const previewUrl = await resolvePackingPreviewUrl({
       s3Key: key,
       s3Url,
@@ -489,6 +507,25 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   }
 
   if (!request) {
+    if (confirmBySuffix) {
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            ok: true,
+            matched: false,
+            needsConfirm: false,
+            candidateMatched: false,
+            suffix: finalRecognizedSuffix || null,
+            reason: reason || "no_suffix_match",
+          },
+          reason === "ambiguous_suffix"
+            ? "같은 각인 코드가 여러 건입니다."
+            : "일치하는 세척.패킹 의뢰를 찾지 못했습니다.",
+        ),
+      );
+    }
+
     console.warn("[lot-capture] no matching request found", {
       recognizedSuffix: matchedSuffix || null,
       originalName: name,
@@ -725,9 +762,11 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         detachedFromRequestMongoId: detachedFromRequestMongoId || null,
         suffix: matchedSuffix || null,
         recognized: recognized || null,
-        manualBind: isManualBind,
+        manualBind: isManualBind || confirmBySuffix,
       },
-      isManualBind ? "수동 매칭 포장 캡쳐 처리 완료" : "포장 캡쳐 처리 완료",
+      isManualBind || confirmBySuffix
+        ? "수동 매칭 포장 캡쳐 처리 완료"
+        : "포장 캡쳐 처리 완료",
     ),
   );
 });

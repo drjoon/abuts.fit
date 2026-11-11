@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/ai/lotCapture.controller.js
 // change-log:
+// - 2026-11-11: 인식 실패 이미지에 3글자를 입력하면 그 이미지로 세척.패킹 의뢰를 찾아 바로 매칭한다.
 // - 2026-11-09: 다음 촬영 확정은 대기 목록을 바로 반영한다. 카드 드롭은 인식 없이 그 의뢰에 매칭한다.
 // - 2026-11-09: 인식 API 실패·확장자 거절이어도 수동 입력 창을 연다. 다음 촬영 확정은 목록에 없는 후보도 진행.
 // - 2026-09-04: 인식 성공 건은 다음 촬영 시 자동 확정. 수동 입력/드롭은 인식값 정정용.
@@ -224,6 +225,10 @@ export const usePackingCapture = ({
   const [activePendingId, setActivePendingId] = useState<string | null>(null);
   const [manualSuffixQuery, setManualSuffixQuery] = useState("");
   const [matchingBusy, setMatchingBusy] = useState(false);
+  /** miss: 코드에 해당하는 세척.패킹 의뢰 없음. ambiguous: 같은 코드가 여러 건. error: 요청 실패. */
+  const [suffixCommitNote, setSuffixCommitNote] = useState<
+    "" | "miss" | "ambiguous" | "error"
+  >("");
   const requestsRef = useRef(requests);
   const previewOpenRef = useRef(previewOpen);
   const previewFilesRef = useRef(previewFiles);
@@ -231,6 +236,7 @@ export const usePackingCapture = ({
   const onCaptureResultRef = useRef(onCaptureResult);
   const pendingMatchesRef = useRef(pendingMatches);
   const confirmingKeysRef = useRef(new Set<string>());
+  const manualSuffixQueryRef = useRef(manualSuffixQuery);
 
   useEffect(() => {
     requestsRef.current = requests;
@@ -238,7 +244,19 @@ export const usePackingCapture = ({
     previewFilesRef.current = previewFiles;
     handleOpenPreviewRef.current = handleOpenPreview;
     onCaptureResultRef.current = onCaptureResult;
-  }, [onCaptureResult, handleOpenPreview, previewFiles, previewOpen, requests]);
+    manualSuffixQueryRef.current = manualSuffixQuery;
+  }, [
+    onCaptureResult,
+    handleOpenPreview,
+    manualSuffixQuery,
+    previewFiles,
+    previewOpen,
+    requests,
+  ]);
+
+  useEffect(() => {
+    setSuffixCommitNote("");
+  }, [manualSuffixQuery]);
 
   const commitPendingMatches = useCallback(
     (updater: (prev: PendingPackingMatch[]) => PendingPackingMatch[]) => {
@@ -606,7 +624,7 @@ export const usePackingCapture = ({
       }
       // 수동 입력값이 있으면 그걸로 정정, 없으면 AI 인식값
       const corrected = extractLotSuffix3(manualSuffixQuery);
-      return bindCaptureToRequest({
+      const ok = await bindCaptureToRequest({
         request,
         s3Key: pending.s3Key,
         s3Url: pending.s3Url,
@@ -616,8 +634,128 @@ export const usePackingCapture = ({
         pendingId: pending.id,
         mode: "manual",
       });
+      if (
+        ok &&
+        extractLotSuffix3(manualSuffixQueryRef.current) ===
+          (corrected || pending.aiSuffix)
+      ) {
+        setManualSuffixQuery("");
+      }
+      return ok;
     },
     [activePendingId, bindCaptureToRequest, manualSuffixQuery, toast],
+  );
+
+  /** 선택한 대기 이미지 + 3글자. 목록에 아직 없어도 서버가 세척.패킹에서 찾는다. */
+  const matchPendingBySuffix = useCallback(
+    async (suffix: string, pendingId: string) => {
+      const code = extractLotSuffix3(suffix);
+      if (!token || code.length !== 3) return false;
+      const pending =
+        pendingMatchesRef.current.find((row) => row.id === pendingId) || null;
+      if (!pending) {
+        toast({
+          title: "매칭할 이미지가 없습니다",
+          description: "먼저 각인 이미지를 고르세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      setMatchingBusy(true);
+      setSuffixCommitNote("");
+      try {
+        const captureRes = await fetch("/api/bg/lot-capture/packing", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            s3Key: pending.s3Key,
+            s3Url: pending.s3Url || "",
+            originalName: pending.originalName || "capture.jpg",
+            fileSize: pending.fileSize || 0,
+            recognizedSuffix: code,
+            confirmBySuffix: true,
+            source: "manual",
+          }),
+        });
+        const captureData = await captureRes.json().catch(() => ({}));
+        if (!captureRes.ok || captureData?.success === false) {
+          throw new Error(captureData?.message || "매칭 처리에 실패했습니다.");
+        }
+        const data =
+          captureData?.data && typeof captureData.data === "object"
+            ? (captureData.data as Record<string, unknown>)
+            : {};
+        if (!data.matched) {
+          const suggestedMongoId = String(
+            data.suggestedRequestMongoId || "",
+          ).trim();
+          const suggestedRequestId = String(data.suggestedRequestId || "").trim();
+          if (
+            data.candidateMatched &&
+            (suggestedMongoId || suggestedRequestId)
+          ) {
+            const ok = await bindCaptureToRequest({
+              request: {
+                _id: suggestedMongoId,
+                requestId: suggestedRequestId,
+              } as ManufacturerRequest,
+              s3Key: pending.s3Key,
+              s3Url: pending.s3Url,
+              originalName: pending.originalName,
+              fileSize: pending.fileSize,
+              recognizedSuffix: code,
+              pendingId: pending.id,
+              mode: "manual",
+            });
+            if (ok) setManualSuffixQuery("");
+            return ok;
+          }
+          const reason = String(data.reason || "");
+          setSuffixCommitNote(
+            reason === "ambiguous_suffix" ? "ambiguous" : "miss",
+          );
+          return false;
+        }
+        clearPendingMatch(pending.id);
+        const requestMongoId = String(data.requestMongoId || "").trim();
+        const requestId = String(data.requestId || "").trim();
+        if (requestMongoId || requestId) {
+          setRequests((prev) =>
+            prev.filter((req) => {
+              const mongoId = String(req._id || "").trim();
+              const businessId = String(req.requestId || "").trim();
+              return !(
+                (requestMongoId && mongoId === requestMongoId) ||
+                (requestId && businessId === requestId)
+              );
+            }),
+          );
+        }
+        // 이 코드는 방금 처리한 이미지 것이다. 다음 이미지에 넘어가지 않게 비운다.
+        setManualSuffixQuery("");
+        toast({
+          title: "매칭 완료",
+          description: `${requestId || code} → 포장.발송`,
+        });
+        return true;
+      } catch (error) {
+        setSuffixCommitNote("error");
+        toast({
+          title: "매칭 실패",
+          description:
+            (error as Error)?.message ||
+            "이미지를 의뢰에 연결하는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setMatchingBusy(false);
+      }
+    },
+    [bindCaptureToRequest, clearPendingMatch, setRequests, toast, token],
   );
 
   const confirmSuggestedMatch = useCallback(
@@ -1153,7 +1291,9 @@ export const usePackingCapture = ({
     clearPendingMatch,
     clearAllPendingMatches,
     matchPendingToRequest,
+    matchPendingBySuffix,
     confirmSuggestedMatch,
     matchingBusy,
+    suffixCommitNote,
   };
 };

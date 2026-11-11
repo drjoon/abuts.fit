@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-11: 인식 실패 이미지를 고르고 3글자를 입력하면 그 이미지로 바로 매칭한다.
 // - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호. 프린터와 선택은 각 모달에서 출력한다.
 // - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 TTP-345 50×20mm TSPL로 출력한다.
 // - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
@@ -1186,9 +1187,10 @@ export const PackingPageContent = ({
     setManualSuffixQuery,
     clearPendingMatch,
     clearAllPendingMatches,
-    matchPendingToRequest,
+    matchPendingBySuffix,
     confirmSuggestedMatch,
     matchingBusy,
+    suffixCommitNote,
   } = usePackingCapture({
     token,
     requests,
@@ -1258,6 +1260,46 @@ export const PackingPageContent = ({
     return matches.length === 1 ? matches[0] : null;
   }, [filteredAndSorted, normalizedManualSuffix]);
 
+  const suffixAttemptRef = useRef("");
+  const suffixInFlightRef = useRef(false);
+  useEffect(() => {
+    if (normalizedManualSuffix.length < 3) suffixAttemptRef.current = "";
+  }, [normalizedManualSuffix]);
+
+  const commitTypedSuffix = useCallback(
+    (suffix: string, pendingId: string, force = false) => {
+      if (!pendingId || suffix.length !== 3 || suffixInFlightRef.current) return;
+      const key = `${pendingId}:${suffix}`;
+      if (!force && suffixAttemptRef.current === key) return;
+      suffixAttemptRef.current = key;
+      suffixInFlightRef.current = true;
+      void matchPendingBySuffix(suffix, pendingId).finally(() => {
+        suffixInFlightRef.current = false;
+      });
+    },
+    [matchPendingBySuffix],
+  );
+
+  useEffect(() => {
+    if (!activePending || matchingBusy) return;
+    if (normalizedManualSuffix.length !== 3) return;
+    const aiSuffix = extractLotSuffix3(activePending.aiSuffix);
+    if (
+      aiSuffix &&
+      normalizedManualSuffix === aiSuffix &&
+      (activePending.candidateMatched ||
+        activePending.reason === "no_suffix_match")
+    ) {
+      return;
+    }
+    const pendingId = activePending.id;
+    const suffix = normalizedManualSuffix;
+    const timer = window.setTimeout(() => {
+      commitTypedSuffix(suffix, pendingId);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [activePending, commitTypedSuffix, matchingBusy, normalizedManualSuffix]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Enter") return;
@@ -1266,11 +1308,19 @@ export const PackingPageContent = ({
         (e.target as HTMLElement | null)?.tagName || "",
       ).toLowerCase();
       if (tag === "textarea") return;
-      e.preventDefault();
-      if (exactManualMatchRequest) {
-        void matchPendingToRequest(exactManualMatchRequest);
-        return;
+      if (normalizedManualSuffix.length === 3) {
+        const aiSuffix = extractLotSuffix3(activePending.aiSuffix);
+        const unchangedAiCandidate =
+          activePending.candidateMatched &&
+          Boolean(aiSuffix) &&
+          normalizedManualSuffix === aiSuffix;
+        if (!unchangedAiCandidate) {
+          e.preventDefault();
+          commitTypedSuffix(normalizedManualSuffix, activePending.id, true);
+          return;
+        }
       }
+      e.preventDefault();
       if (
         activePending.candidateMatched &&
         activePending.suggestedRequestMongoId &&
@@ -1284,9 +1334,8 @@ export const PackingPageContent = ({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activePending,
+    commitTypedSuffix,
     confirmSuggestedMatch,
-    exactManualMatchRequest,
-    matchPendingToRequest,
     matchingBusy,
     normalizedManualSuffix,
   ]);
@@ -1365,6 +1414,19 @@ export const PackingPageContent = ({
     [handlePrintSinglePackingLabel, printerProfile, toast],
   );
 
+  const awaitingSuffixMatch = Boolean(
+    activePending &&
+      normalizedManualSuffix.length === 3 &&
+      suffixCommitNote !== "miss" &&
+      suffixCommitNote !== "ambiguous" &&
+      suffixCommitNote !== "error" &&
+      !(
+        extractLotSuffix3(activePending.aiSuffix) === normalizedManualSuffix &&
+        activePending.aiSuffix &&
+        (activePending.candidateMatched ||
+          activePending.reason === "no_suffix_match")
+      ),
+  );
   const isEmpty = !isLoading && displayRequests.length === 0;
   const overlayText = useMemo(() => {
     if (!ocrProcessing && !matchingBusy) return "세척.패킹 이미지를 드롭하세요";
@@ -1446,7 +1508,7 @@ export const PackingPageContent = ({
                   <div className="text-[11px] text-slate-600">
                     인식이 맞으면 다음 촬영으로 확정됩니다.
                     <br />
-                    틀리거나 인식이 안 되면 3글자를 입력하거나 이미지를 카드에 놓으세요.
+                    인식이 안 되면 이미지를 고르고 3글자를 입력하세요.
                   </div>
                 </div>
                 <button
@@ -1467,10 +1529,13 @@ export const PackingPageContent = ({
                         key={item.id}
                         type="button"
                         onClick={() => {
+                          if (item.id === activePending?.id) return;
                           setActivePendingId(item.id);
-                          if (item.aiSuffix) {
-                            setManualSuffixQuery(item.aiSuffix);
-                          }
+                          setManualSuffixQuery(
+                            item.aiSuffix
+                              ? extractLotSuffix3(item.aiSuffix)
+                              : "",
+                          );
                         }}
                         draggable
                         onDragStart={(e) => {
@@ -1571,15 +1636,25 @@ export const PackingPageContent = ({
                     aria-label="각인 코드 검색"
                   />
                   <div className="text-[11px] text-slate-500">
-                    {normalizedManualSuffix
-                      ? `필터: ${displayRequests.length}건`
-                      : "한 글자씩 입력하면 카드가 필터됩니다."}
-                    {exactManualMatchRequest ||
-                    (activePending?.candidateMatched &&
-                      (!normalizedManualSuffix ||
-                        normalizedManualSuffix === activePending.aiSuffix))
-                      ? " · Enter로 확정"
-                      : ""}
+                    {matchingBusy || awaitingSuffixMatch ? (
+                      "매칭 중…"
+                    ) : suffixCommitNote === "ambiguous" ? (
+                      <>
+                        같은 코드가 여러 건입니다.
+                        <br />
+                        카드에 이미지를 놓으세요.
+                      </>
+                    ) : suffixCommitNote === "error" ? (
+                      <>
+                        매칭에 실패했습니다.
+                        <br />
+                        코드를 다시 입력하세요.
+                      </>
+                    ) : normalizedManualSuffix ? (
+                      `필터: ${displayRequests.length}건`
+                    ) : (
+                      "3글자를 입력하면 선택한 이미지에 매칭됩니다."
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {exactManualMatchRequest && activePending ? (
@@ -1587,7 +1662,12 @@ export const PackingPageContent = ({
                         type="button"
                         disabled={matchingBusy}
                         onClick={() =>
-                          void matchPendingToRequest(exactManualMatchRequest)
+                          activePending &&
+                          commitTypedSuffix(
+                            normalizedManualSuffix,
+                            activePending.id,
+                            true,
+                          )
                         }
                         className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
                       >
@@ -1675,9 +1755,15 @@ export const PackingPageContent = ({
         {isEmpty ? (
           <div className="flex justify-center py-8">
             <div className="text-gray-500">
-              {normalizedManualSuffix
-                ? `각인 코드 "${normalizedManualSuffix}"에 맞는 의뢰가 없습니다.`
-                : "의뢰가 없습니다."}
+              {awaitingSuffixMatch || matchingBusy
+                ? "매칭 중…"
+                : suffixCommitNote === "ambiguous"
+                  ? "같은 각인 코드가 여러 건입니다."
+                  : suffixCommitNote === "error"
+                    ? "매칭에 실패했습니다."
+                    : normalizedManualSuffix
+                      ? `각인 코드 "${normalizedManualSuffix}"에 맞는 의뢰가 없습니다.`
+                      : "의뢰가 없습니다."}
             </div>
           </div>
         ) : !isLoading ? (
