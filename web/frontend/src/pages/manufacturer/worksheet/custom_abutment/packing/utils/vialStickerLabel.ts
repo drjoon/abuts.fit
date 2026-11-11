@@ -8,8 +8,8 @@ export const VIAL_STICKER_DOTS_PER_MM = 12;
 export const VIAL_STICKER_DPI = VIAL_STICKER_DOTS_PER_MM * 25.4;
 /** 갭 라벨. 연속 용지면 0으로 둔다. */
 const VIAL_STICKER_GAP_MM = 3;
-/** 병 둘레보다 긴 끝. 글자를 넣지 않는다. */
-export const VIAL_STICKER_OVERLAP_MM = 3;
+/** 병 둘레보다 긴 끝. 겹쳐 가리지 않고 남으므로 좌우 여백으로 나눈다. */
+const VIAL_STICKER_LEFTOVER_MM = 3;
 
 const FONT_STACK =
   '"Malgun Gothic", "Apple SD Gothic Neo", "Apple SD 산돌고딕 Neo", "Noto Sans KR", sans-serif';
@@ -90,8 +90,10 @@ export function drawVialSticker(
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
 
-  const padL = d(1.6);
-  const right = width - d(VIAL_STICKER_OVERLAP_MM + 1.0);
+  // 예전 왼쪽 1.6mm · 오른쪽 1mm에, 한쪽에 몰려 있던 남는 3mm를 반씩 더한다.
+  const sidePad = d((1.6 + VIAL_STICKER_LEFTOVER_MM + 1.0) / 2);
+  const padL = sidePad;
+  const right = width - sidePad;
   // 20mm 라벨을 1행:2행 = 4.5:5.5 로 나눈다.
   const topH = d((VIAL_STICKER_HEIGHT_MM * 4.5) / 10);
   const rule = Math.max(2, d(0.22));
@@ -138,7 +140,7 @@ export function drawVialSticker(
   const bottomH = height - bottomTop;
   const box = Math.min(d(9.6), bottomH - d(1.2));
   const stroke = Math.max(3, d(0.48));
-  const boxX = right - d(0.55) - box;
+  const boxX = right - box;
   const boxY = bottomTop + (bottomH - box) / 2;
   const radius = d(1.8);
   ctx.beginPath();
@@ -178,7 +180,8 @@ export function drawVialSticker(
   );
 
   const product = "커스텀 어벗 스크류";
-  const productMax = Math.max(0, boxX - d(1.1) - padL);
+  const productGap = d(2.2);
+  const productMax = Math.max(0, boxX - productGap - padL);
   let productSize = d(3.2);
   const productMin = d(2.3);
   while (productSize > productMin) {
@@ -190,7 +193,8 @@ export function drawVialSticker(
   const productBox = lineBox(ctx, product);
   const productH = productBox.ascent + productBox.descent;
   const productY = bottomTop + (bottomH - productH) / 2 + productBox.ascent;
-  ctx.fillText(product, padL, productY);
+  const productW = ctx.measureText(product).width;
+  ctx.fillText(product, Math.max(padL, boxX - productGap - productW), productY);
 }
 
 export function paintVialSticker(
