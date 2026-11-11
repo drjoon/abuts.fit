@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-11: 각인 확인 창은 의뢰 카드 위에 겹치지 않는다. 이미지는 카드로 끌어 놓는다.
 // - 2026-11-11: 인식 실패 이미지를 고르고 3글자를 입력하면 그 이미지로 바로 매칭한다.
 // - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호. 프린터와 선택은 각 모달에서 출력한다.
 // - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 TTP-345 50×20mm TSPL로 출력한다.
@@ -94,6 +95,37 @@ type ScrewLotSettingItem = {
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/models/systemSettings.model.js
 // - web/backend/models/request.model.js
+
+function EngravingConfirmFrame({
+  previewOpen,
+  children,
+}: {
+  previewOpen: boolean;
+  children: ReactNode;
+}) {
+  const card = (
+    <div
+      className={
+        previewOpen
+          ? "pointer-events-auto w-full max-w-3xl rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-lg"
+          : "w-full rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-sm"
+      }
+    >
+      {children}
+    </div>
+  );
+  // 프리뷰가 열려 있을 때만 포탈. 그 외에는 카드 목록 위에 두어 이미지가 카드에 닿게 한다.
+  if (previewOpen) {
+    return (
+      <BodyPortal>
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-[140] flex justify-center px-3">
+          {card}
+        </div>
+      </BodyPortal>
+    );
+  }
+  return <div className="px-4 pt-2">{card}</div>;
+}
 
 export const PackingPageContent = ({
   showQueueBar = true,
@@ -1497,9 +1529,7 @@ export const PackingPageContent = ({
         {isLoading && <WorksheetLoading />}
 
         {pendingMatches.length > 0 && (
-          <BodyPortal>
-          <div className="pointer-events-none fixed inset-x-0 top-3 z-[140] flex justify-center px-3">
-            <div className="pointer-events-auto w-full max-w-3xl rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-lg">
+          <EngravingConfirmFrame previewOpen={previewOpen}>
               <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
                 <div>
                   <div className="text-xs font-semibold text-accent-strong">
@@ -1508,7 +1538,7 @@ export const PackingPageContent = ({
                   <div className="text-[11px] text-slate-600">
                     인식이 맞으면 다음 촬영으로 확정됩니다.
                     <br />
-                    인식이 안 되면 이미지를 고르고 3글자를 입력하세요.
+                    인식이 안 되면 이미지를 카드에 놓거나 3글자를 입력하세요.
                   </div>
                 </div>
                 <button
@@ -1692,9 +1722,7 @@ export const PackingPageContent = ({
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          </BodyPortal>
+          </EngravingConfirmFrame>
         )}
 
         {captureHistory.length > 0 && (

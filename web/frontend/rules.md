@@ -379,7 +379,7 @@ Notes:
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - 카드 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - 상세 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
-  - **각인 이미지 매칭**: 업로드 시 AI 인식은 제안만(즉시 포장.발송 금지). **인식 성공 건은 다음 촬영이 오면 자동 확정**. 인식이 안 된 이미지는 그 이미지를 고르고 3글자를 입력하면 세척.패킹에서 코드를 찾아 바로 포장.발송(`confirmBySuffix`, 1건일 때만). 목록에 아직 없어도 된다. 같은 코드가 여러 건이면 카드에 드롭. 틀리면 3글자 수정. BE `packing:capture-needs-confirm` / `requestMongoId` 확정.
+  - **각인 이미지 매칭**: 업로드 시 AI 인식은 제안만(즉시 포장.발송 금지). **인식 성공 건은 다음 촬영이 오면 자동 확정**. 인식이 안 된 이미지는 그 이미지를 고르고 3글자를 입력하면 세척.패킹에서 코드를 찾아 바로 포장.발송(`confirmBySuffix`, 1건일 때만). 목록에 아직 없어도 된다. 확인 창은 의뢰 카드 위에 겹치지 않는다. 이미지는 보이는 카드로 끌어 놓는다. 같은 코드가 여러 건이면 카드에 드롭. 틀리면 3글자 수정. BE `packing:capture-needs-confirm` / `requestMongoId` 확정.
 
 - 제조사 워크시트 의뢰 정보 표시 SSOT (`RequestInfoSummary`):
   - 카드/프리뷰 본문의 환자·임플란트·생산 정보는 개별 JSX로 흩뿌리지 말고
