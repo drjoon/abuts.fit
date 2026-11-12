@@ -726,6 +726,98 @@ describe("blendCuffJunction", () => {
       }
     }
   });
+
+  it("connects a wide cuff smoothly without narrow convex ridges or concave grooves under finish-line V-dips/peaks and 1µm margin slivers (20261112-TYTLLDGG)", () => {
+    const seg = 120;
+    const zCreaseAt = (a) => {
+      const deg = ((a * 180) / Math.PI + 360) % 360;
+      const distDip = Math.min(Math.abs(deg - 279), 360 - Math.abs(deg - 279));
+      const distPeak = Math.min(Math.abs(deg - 90), 360 - Math.abs(deg - 90));
+      const dip = distDip < 12 ? -0.25 * Math.cos(((distDip / 12) * Math.PI) / 2) ** 2 : 0;
+      const peak = distPeak < 12 ? 0.25 * Math.cos(((distPeak / 12) * Math.PI) / 2) ** 2 : 0;
+      return 2.6 + 0.45 * Math.sin(a) + dip + peak;
+    };
+    const wideR = (z) => {
+      if (z <= 0.3) return cone(z);
+      const u = (z - 0.3) / 3.0;
+      return cone(0.3) + 0.035 * (z - 0.3) + 1.35 * (0.35 * u * u + 0.65 * u * u * u);
+    };
+    const rCreaseAt = (a) => wideR(zCreaseAt(a));
+    // 마진 최저점에도 ExoCAD가 만드는 0.0008mm 수직 림 슬리버(dz<1e-3, dr<0.02, 법선은 바깥 방사 방향)를 넣어
+    // stripSpanFins가 2-메니폴드 외벽 슬리버를 구멍으로 지우지 않는지 함께 검증한다.
+    const K = 29;
+    const pt = (i, k) => {
+      const a = (i / seg) * Math.PI * 2;
+      const zc = zCreaseAt(a);
+      const rc = rCreaseAt(a);
+      let z;
+      let r;
+      if (k <= 4) {
+        z = [-1.2, -0.5, 0, 0.15, 0.3][k];
+        r = cone(z);
+      } else if (k <= 26) {
+        const frac = (k - 4) / 22;
+        z = 0.3 + frac * (zc - 0.3);
+        r = wideR(z);
+      } else if (k === 27) {
+        z = zc + 0.0008;
+        r = rc;
+      } else {
+        z = zc + (k === 28 ? 0.8 : 2.0);
+        r = rc - 0.22 * (z - zc);
+      }
+      return [r * Math.cos(a), r * Math.sin(a), z];
+    };
+    const ch = (i, k) => {
+      const a = (i / seg) * Math.PI * 2;
+      const p = pt(i, k);
+      return [R_CHANNEL * Math.cos(a), R_CHANNEL * Math.sin(a), p[2]];
+    };
+    const tris = [];
+    for (let k = 0; k < K; k += 1) {
+      for (let i = 0; i < seg; i += 1) {
+        const j = (i + 1) % seg;
+        tris.push([pt(i, k), pt(j, k), pt(j, k + 1)], [pt(i, k), pt(j, k + 1), pt(i, k + 1)]);
+        tris.push([ch(i, k), ch(j, k + 1), ch(j, k)], [ch(i, k), ch(i, k + 1), ch(j, k + 1)]);
+      }
+    }
+    for (let i = 0; i < seg; i += 1) {
+      const j = (i + 1) % seg;
+      tris.push([pt(i, K), pt(j, K), ch(j, K)], [pt(i, K), ch(j, K), ch(i, K)]);
+      tris.push([pt(i, 0), ch(i, 0), ch(j, 0)], [pt(i, 0), ch(j, 0), pt(j, 0)]);
+    }
+    const positions = new Float64Array(tris.length * 9);
+    tris.forEach((t, idx) => positions.set(t.flat(), idx * 9));
+    const input = writeBinaryStl({ positions, attributes: new Uint16Array(tris.length) });
+    const finishLine = {
+      points: Array.from({ length: 120 }, (_, i) => {
+        const a = (i / 120) * Math.PI * 2;
+        const r = rCreaseAt(a);
+        return [r * Math.cos(a), r * Math.sin(a), zCreaseAt(a)];
+      }),
+    };
+    const neo = resolveCuffConnectionSpec({
+      implantManufacturer: "NEOBIOTECH",
+      implantBrand: "IS2",
+      implantFamily: "Regular",
+    });
+    const res = blendCuffJunction(input, { ...neo, specKey: neo.key, finishLine });
+    expect(res.ok).toBe(true);
+    expect(res.detail.strippedFinTriangles).toBe(0);
+    expect(edgeStats(res.buffer)).toEqual({ naked: 0, nonManifold: 0 });
+    const probe = _prepare(res.buffer).probe;
+    for (const z of [1.1, 1.4, 1.7]) {
+      const rs = Array.from({ length: 360 }, (_, d) => probe.rayRadius((d * Math.PI) / 180, z));
+      const bulgeAtDip = Math.abs(rs[279] - 0.5 * (rs[260] + rs[298]));
+      const dentAtPeak = Math.abs(rs[90] - 0.5 * (rs[71] + rs[109]));
+      expect(bulgeAtDip).toBeLessThan(0.03);
+      expect(dentAtPeak).toBeLessThan(0.02);
+      for (let d = 0; d < 360; d += 1) {
+        const d2 = Math.abs(rs[(d + 1) % 360] - 2 * rs[d] + rs[(d + 359) % 360]);
+        expect(d2).toBeLessThan(0.0025);
+      }
+    }
+  });
 });
 
 describe("angularRow", () => {

@@ -745,7 +745,6 @@ const TOP_RADIUS_HARMONICS = 6;
 /** 원본에서 잰 위 끝·이음 반경의 둘레 저역 통과: 32차(11°)까지 그대로, 64차(5.6°)부터 0. 원본 열 결(약 3°)은 지운다. */
 const ANGULAR_PASS_HARMONICS = 32;
 const ANGULAR_STOP_HARMONICS = 64;
-const HEIGHT_SMOOTH_OVERSHOOT_MM = 0.005;
 /** 원본 곡면은 STRIP_COLUMNS/MEASURE_STRIDE 간격(360열 기준 2°)으로 광선을 쏘아 재고, 저역 통과로 전체 열로 늘린다. */
 const MEASURE_STRIDE = 2;
 /** 끝 기울기를 2차 호(2d − m0)보다 이만큼 더 세워 늦게 벌어지게(더 오목하게) 한다. */
@@ -1224,8 +1223,8 @@ function quarticFitResidual(c, fn) {
   }
   return residual;
 }
-/** 제어점 보정량을 둘레로 고르는 이동 평균 반폭(열). 열마다 따로 메우면 이웃 열과 보정량이 달라 세로 주름이 진다. */
-const MIN_RADIUS_DELTA_SMOOTH_HALF = columnsForDeg(3);
+/** 제어점 보정량을 둘레로 고르는 이동 평균 반폭(열). 좁은 폭(±3°)으로 밀면 공구 폭보다 좁은 세로 볼록 능선이 생긴다. */
+const MIN_RADIUS_DELTA_SMOOTH_HALF = columnsForDeg(10);
 /** 보정 → 둘레 평활 → 남은 부족분 재보정 반복 횟수. 평활로 깎인 만큼을 다음 회에 다시 채운다. */
 const MIN_RADIUS_ROUNDS = 24;
 
@@ -1413,7 +1412,9 @@ function enforceMinToolRadiusOnCtrl(
       const z = zLevels[iz];
       return Array.from({ length: n }, (_, j) => {
         const botSkip = skipBotMm ? Math.max(0.05, skipBotMm[j] || 0) : 0.05;
-        const topSkip = meridianOk?.[j] ? MERIDIAN_CHECK_SKIP_TOP_MM : 0.02;
+        const topSkip = meridianOk?.[j]
+          ? Math.max(MERIDIAN_CHECK_SKIP_TOP_MM, Math.min(0.22, hs[j] * 0.1))
+          : 0.02;
         if (z < zA + botSkip - 1e-6 || z >= zTops[j] - topSkip) return null;
         const h = hs[j];
         const invH = 1 / h;
@@ -1431,7 +1432,7 @@ function enforceMinToolRadiusOnCtrl(
         const b2 = 6 * u2 * t2;
         const b3 = 4 * u * t3;
         const b4 = t4;
-        const norm = Math.max(0.05, b1 * b1 + b2 * b2 + b3 * b3);
+        const norm = Math.max(0.22, b1 * b1 + b2 * b2 + b3 * b3);
         let baseR = null;
         let baseRz = null;
         let baseRzz = null;
@@ -1574,7 +1575,7 @@ function enforceMinToolRadiusOnCtrl(
       if (!any) break;
       for (const dc of [dc1, dc2, dc3]) {
         const sm = circularSmooth(circularSmooth(dc, MIN_RADIUS_DELTA_SMOOTH_HALF), MIN_RADIUS_DELTA_SMOOTH_HALF);
-        for (let j = 0; j < n; j += 1) dc[j] = Math.max(dc[j] * 0.5, sm[j]);
+        for (let j = 0; j < n; j += 1) dc[j] = sm[j];
       }
       for (let j = 0; j < n; j += 1) {
         if (!(dc1[j] > 1e-6 || dc2[j] > 1e-6 || dc3[j] > 1e-6)) continue;
@@ -1665,27 +1666,58 @@ function smoothProfilesAcrossColumns(profiles, heights = null) {
   };
   const L = PROFILE_SMOOTH_LEVELS;
   const n = profiles.length;
-  // 위 끝 SEAM_BLEND_DEPTH_MM만 원본 모서리 반경 쪽 평활을 쓰고, 그 아래는 기준 곡선째 더 세게 고른다.
+  // 위 끝 SEAM_BLEND_DEPTH_MM만 원본 모서리 반경 쪽 평활을 쓰고, 그 아래 몸통은 같은 3D 높이(z) 기준으로 광역 저역 통과(4~10차)해
+  // 마진 높이가 좁게 오르내리는 구간 아래에 국소 볼록 능선이나 오목 골이 생기지 않게 한다.
   const topKeep = heights
     ? heights.map((h) => (Number.isFinite(h) && h > 0 ? Math.min(1, SEAM_BLEND_DEPTH_MM / h) : 1))
     : null;
-  const levels = [];
+  const rawLevels = [];
+  const fullLevels = [];
   for (let i = 0; i <= L; i += 1) {
     const t = i / L;
     const q = profiles.map((p, j) => p(t) - base(j, t));
     const lp = angularLowPass(q);
     if (!lp) return profiles;
-    if (topKeep) {
-      const full = profiles.map((p, j) => base(j, t) + lp[j]);
-      const inner = angularLowPass(full, n, PROFILE_BODY_PASS_HARMONICS, PROFILE_BODY_STOP_HARMONICS);
+    rawLevels.push(lp);
+    if (topKeep) fullLevels.push(profiles.map((_, j) => base(j, t) + lp[j]));
+  }
+  let levels = rawLevels;
+  if (topKeep) {
+    const bodyHeights = angularLowPass(heights, n, PROFILE_BODY_PASS_HARMONICS, PROFILE_BODY_STOP_HARMONICS);
+    if (!bodyHeights || bodyHeights.some((h) => !(h > 1e-4))) return profiles;
+    const evalLevelGrid = (grid, j, u) => {
+      if (u <= 0) return grid[0][j];
+      if (u >= 1) {
+        const slopeU = (grid[L][j] - grid[L - 1][j]) * L;
+        return grid[L][j] + Math.max(0, slopeU) * (u - 1);
+      }
+      const x = u * L;
+      const idx = Math.min(L - 1, Math.floor(x));
+      const f = x - idx;
+      const p0 = idx > 0 ? grid[idx - 1][j] : 2 * grid[0][j] - grid[1][j];
+      const p1 = grid[idx][j];
+      const p2 = grid[idx + 1][j];
+      const p3 = idx + 2 <= L ? grid[idx + 2][j] : 2 * grid[L][j] - grid[L - 1][j];
+      return p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
+    };
+    const bodyLevels = [];
+    for (let i = 0; i <= L; i += 1) {
+      const tau = i / L;
+      const sliceAtRefZ = heights.map((h, j) => evalLevelGrid(fullLevels, j, (tau * bodyHeights[j]) / h));
+      const inner = angularLowPass(sliceAtRefZ, n, PROFILE_BODY_PASS_HARMONICS, PROFILE_BODY_STOP_HARMONICS);
       if (!inner) return profiles;
-      for (let j = 0; j < n; j += 1) {
+      bodyLevels.push(inner);
+    }
+    levels = Array.from({ length: L + 1 }, (_, i) => {
+      const t = i / L;
+      return heights.map((h, j) => {
+        const fullVal = fullLevels[i][j];
+        const bodyVal = evalLevelGrid(bodyLevels, j, (t * h) / bodyHeights[j]);
         const x = Math.max(0, Math.min(1, (t - (1 - topKeep[j])) / topKeep[j]));
         const w = x * x * x * (10 - 15 * x + 6 * x * x);
-        lp[j] = inner[j] - base(j, t) + w * (full[j] - inner[j]);
-      }
-    }
-    levels.push(lp);
+        return bodyVal - base(j, t) + w * (fullVal - bodyVal);
+      });
+    });
   }
   return profiles.map((_, j) => (t) => {
     const x = Math.min(1, Math.max(0, t));
@@ -2284,20 +2316,30 @@ function nonManifoldInBand(mesh, zLo, zHi) {
 
 /**
  * 띠 위치에 남은 예전 fill_steps 캡 조각을 지운다: 축 둘레로 넓게 걸친 삼각형, 같은 세 꼭짓점으로 겹친 양면 면,
- * 같은 원 위 세 점으로 된 수평 삼각형(원판 캡). 곡면과 고리 턱은 그대로 남는다. 보통 곡면 삼각형은 각도 폭이 몇 도뿐이다.
+ * 같은 원 위 세 점으로 된 수평 삼각형(원판 캡). 정상 2-메니폴드 외벽(수직·경사 슬리버 포함)과 피니시라인 위는 건드리지 않는다.
  */
-function stripSpanFins(mesh, zLo, zHi, rMin) {
+function stripSpanFins(mesh, zLo, zHi, rMin, flZ = null) {
   const { verts, faces, faceAttr, faceMain } = mesh;
   const fc = faces.length / 3;
   const keep = new Uint8Array(fc);
   let stripped = 0;
   // 같은 꼭짓점 세 개로 겹쳐 앉은 면(양면 캡)은 두 장 모두 지운다.
   const triKey = (f) => [faces[f * 3], faces[f * 3 + 1], faces[f * 3 + 2]].sort((p, q) => p - q).join("_");
+  const ek = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
   const seenTri = new Map();
+  const edgeFaces = new Map();
   for (let f = 0; f < fc; f += 1) {
     const k = triKey(f);
     seenTri.set(k, (seenTri.get(k) || 0) + 1);
+    if (!faceMain[f]) continue;
+    for (let i = 0; i < 3; i += 1) {
+      const e = ek(faces[f * 3 + i], faces[f * 3 + ((i + 1) % 3)]);
+      const list = edgeFaces.get(e);
+      if (list) list.push(f);
+      else edgeFaces.set(e, [f]);
+    }
   }
+  const candidate = new Uint8Array(fc);
   for (let f = 0; f < fc; f += 1) {
     keep[f] = 1;
     let zMin = Infinity;
@@ -2315,22 +2357,61 @@ function stripSpanFins(mesh, zLo, zHi, rMin) {
       ang.push(angleOf(verts[v], verts[v + 1]));
     }
     if (zMax < zLo || zMax > zHi || rLow < rMin) continue;
-    // 수평 고리 턱은 안·바깥 원에 꼭짓점이 걸치지만, 세 꼭짓점이 같은 원 위에 놓인 수평 삼각형은 원판을 덮은 캡 조각이다.
-    const flatChordCap = zMax - zMin < 1e-3 && rHigh - rLow < 0.02;
-    if (flatChordCap || seenTri.get(triKey(f)) > 1) {
+    if (seenTri.get(triKey(f)) > 1) {
       keep[f] = 0;
       stripped += 1;
       continue;
     }
+    if (flZ && ang.some((a, k) => verts[faces[f * 3 + k] * 3 + 2] >= flZ(a) - FINISH_MIN_CLEARANCE_MM)) continue;
+    // 수평 고리 턱이 아니라 수직 법선(|nz|>0.95)을 가진 원판 캡과 넓은 현 조각만 후보로 모은다.
+    // 외벽의 얇은 수직·방사 슬리버(법선이 바깥을 향함)나 닫힌 2-메니폴드 본체 벽면을 지우면 마진 모서리가 끊기고 구멍이 난다.
+    const a3 = faces[f * 3] * 3;
+    const b3 = faces[f * 3 + 1] * 3;
+    const c3 = faces[f * 3 + 2] * 3;
+    const ux = verts[b3] - verts[a3];
+    const uy = verts[b3 + 1] - verts[a3 + 1];
+    const uz = verts[b3 + 2] - verts[a3 + 2];
+    const vx = verts[c3] - verts[a3];
+    const vy = verts[c3 + 1] - verts[a3 + 1];
+    const vz = verts[c3 + 2] - verts[a3 + 2];
+    const nz = ux * vy - uy * vx;
+    const nLen = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, nz);
+    const isHorizontalCap = nLen > 1e-12 && Math.abs(nz) / nLen > 0.95;
+    const flatChordCap = isHorizontalCap && zMax - zMin < 1e-3 && rHigh - rLow < 0.02;
     let span = 0;
     for (let k = 0; k < 3; k += 1) {
       let d = Math.abs(ang[k] - ang[(k + 1) % 3]);
       if (d > Math.PI) d = TWO_PI - d;
       span = Math.max(span, d);
     }
-    if (span > FIN_SPAN_RAD) {
-      keep[f] = 0;
-      stripped += 1;
+    if (flatChordCap || span > FIN_SPAN_RAD) candidate[f] = 1;
+  }
+  const visited = new Uint8Array(fc);
+  for (let f = 0; f < fc; f += 1) {
+    if (!candidate[f] || visited[f]) continue;
+    const comp = [f];
+    visited[f] = 1;
+    let touchesSingular = !faceMain[f];
+    for (let qi = 0; qi < comp.length; qi += 1) {
+      const cur = comp[qi];
+      for (let k = 0; k < 3; k += 1) {
+        const e = ek(faces[cur * 3 + k], faces[cur * 3 + ((k + 1) % 3)]);
+        const inc = edgeFaces.get(e);
+        if (!inc || inc.length !== 2) touchesSingular = true;
+        if (!inc) continue;
+        for (const nb of inc) {
+          if (candidate[nb] && !visited[nb]) {
+            visited[nb] = 1;
+            comp.push(nb);
+          }
+        }
+      }
+    }
+    if (touchesSingular) {
+      for (const cf of comp) {
+        keep[cf] = 0;
+        stripped += 1;
+      }
     }
   }
   if (!stripped) return { mesh, stripped: 0 };
@@ -2607,7 +2688,9 @@ function seamRows({
       const w = ws[j];
       const wCrease = wsRaw[j] * (1 - (seamBlendScale ? seamBlendScale[j] : 1));
       const drTop = rawCreaseR && Number.isFinite(rawCreaseR[j]) ? (rawCreaseR[j] - radiusAt(j, 1)) * wCrease : 0;
-      const dzTop = rawCreaseR && rawHeights ? (rawHeights[j] - heights[j]) * wCrease : 0;
+      const maxTopExcess = Math.max(0, top - SEAM_TOP_MIN_DROP_MM * 1.5);
+      const excessDrop = rawHeights ? Math.min(0, rawHeights[j] + maxTopExcess - heights[j]) * wsRaw[j] : 0;
+      const dzTop = rawCreaseR && rawHeights ? (rawHeights[j] - heights[j]) * wCrease : excessDrop;
       if (!vOrig || !(w > 0)) {
         rad[j] = (rOrig && w > 0 ? rc[j] * (1 - w) + rOrig[j] * w : rc[j]) + drTop;
         z[j] = zc[j] + dzTop;
@@ -2962,12 +3045,11 @@ function replaceBand(
 
   const thetas = thetaColumns();
   const rawHeights = thetas.map((theta) => topZOf(theta) - zA);
-  // 위 끝 높이(마진 모서리 꼭짓점을 직선으로 이은 곡선)도 원본 열마다 꺾여 있다. 띠 행은 매끈한 높이를 따르되
-  // 위 끝을 넘지 않는다. 이음 행(가장 위가 0.06mm 아래)이 있으면 HEIGHT_SMOOTH_OVERSHOOT_MM까지는 넘어도 된다.
-  const overshoot = origProbe ? HEIGHT_SMOOTH_OVERSHOOT_MM : 0;
-  const heights = (
-    angularLowPass(rawHeights, STRIP_COLUMNS, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS) || rawHeights
-  ).map((h, j) => Math.min(h, rawHeights[j] + overshoot));
+  // 위 끝 높이(마진 모서리 꼭짓점을 직선으로 이은 곡선)도 원본 열마다 꺾여 있다. 프로파일 설계와 같은 저역 통과 높이를 써서
+  // 다각형 현 꺾임이나 Math.min 절단이 커프 전체에 세로 능선·오목 줄을 만들지 않게 한다(피니시라인 여유는 seamRows 상단에서 보장).
+  const innerHeights =
+    angularLowPass(rawHeights, STRIP_COLUMNS, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS) || rawHeights;
+  const heights = origProbe ? innerHeights : innerHeights.map((h, j) => Math.min(h, rawHeights[j]));
   // 면이 쭈글하지 않도록, 아래쪽 행일수록 각도 방향으로 반경·높이를 평균한다.
   // 위쪽 행(피니시라인·원본 곡면과 만나는 곳)은 평균하지 않고 그대로 둔다.
   const smoothHeights = circularSmooth(heights, BAND_SMOOTH_HALF_COLUMNS);
@@ -3487,7 +3569,7 @@ export function blendCuffJunction(buffer, options = {}) {
     if (!flZ) fail("manual-review", "피니시라인 곡선을 읽지 못해 이음 위 끝을 정할 수 없습니다.");
     // 예전 fill_steps 캡이 남긴 얇은 부채·고리(축 둘레로 넓게 걸친 삼각형)를 먼저 걷어 낸다.
     const flMaxZ = Math.max(...thetaColumns().map(flZ));
-    const fins = stripSpanFins(mesh, zA - 0.05, flMaxZ + 0.3, taper.coneAt(zA) * 0.6);
+    const fins = stripSpanFins(mesh, zA - 0.05, flMaxZ + 0.3, taper.coneAt(zA) * 0.6, flZ);
     if (fins.stripped) {
       mesh = fins.mesh;
       const mainFaces = [];
@@ -3527,7 +3609,9 @@ export function blendCuffJunction(buffer, options = {}) {
     }
     const tops = sampleTopConditions(probe, thetas, topZ, CLEAN_WINDOW_MM);
     if (tops.some((t) => !t)) fail("manual-review", "커프 하단 곡면을 읽지 못했습니다.");
-    const hs = topZ.map((z) => z - zA);
+    const rawHs = topZ.map((z) => z - zA);
+    const hs =
+      angularLowPass(rawHs, STRIP_COLUMNS, PROFILE_INNER_PASS_HARMONICS, PROFILE_INNER_STOP_HARMONICS) || rawHs;
     // 위 끝 반경·기울기는 위 끝 바로 아래 원본 커프에서 잰다. 곡선이 위 끝에서 원본과 같은 접선으로 이어져야 꺾인 선이 안 생긴다.
     const measureCols = thetas.map((_, j) => j).filter((j) => j % MEASURE_STRIDE === 0);
     const below = sampleBelowConditions(
