@@ -299,14 +299,19 @@ export function parseFdiTooth(raw: string): {
 export function buildParametricScanbodyLibraryMesh(
   diameterMm: number,
   heightMm: number,
+  capDepthOverrideMm?: number,
 ): ScanbodyMesh {
   const r = Math.max(1.6, Math.min(4.5, diameterMm / 2));
   const hTop = Math.max(4.5, Math.min(16, heightMm));
-  // 잇몸 위로 드러나는 스캔바디 최상부 원기둥·베벨 캡 구간(상단 4.2mm)만 모델링해
-  // 짧은 스캔바디(5mm·7mm)나 깊게 식립된 스캔바디에서도 잇몸 아래 미노출부 오차를 막는다.
-  const capDepth = Math.min(4.2, Math.max(2.6, hTop - 2.0));
-  const hBot = Math.max(1.2, hTop - capDepth);
-  const bevelStart = hTop - Math.min(2.6, (hTop - hBot) * 0.55);
+  // 잇몸 위로 드러나는 스캔바디 최상부 원기둥·베벨 캡 구간만 모델링한다.
+  // 일반 노출용(3.6~4.2mm)과 치은에 깊게 묻히거나 짧은 5mm 스캔바디용 얕은 캡(1.8mm, 3Shape GMS 2.0mm 캡과 동일 원리)을 모두 지원한다.
+  const defaultCapDepth = Math.min(4.0, Math.max(2.2, hTop - 2.3));
+  const capDepth =
+    capDepthOverrideMm != null
+      ? Math.max(1.5, Math.min(hTop - 1.2, capDepthOverrideMm))
+      : defaultCapDepth;
+  const hBot = Math.max(1.1, hTop - capDepth);
+  const bevelStart = hTop - Math.min(2.2, (hTop - hBot) * 0.62);
   const bevelX = r * 0.74;
   const holeR = Math.min(1.05, r * 0.48);
   const cols = 48;
@@ -487,15 +492,16 @@ export async function loadCandidateScanbodyModels(args: {
   }
 
   libCandidates.sort((a, b) => a.err - b.err);
-  for (const cand of libCandidates.slice(0, 4)) {
+  for (const cand of libCandidates.slice(0, 6)) {
     try {
       const mesh = await loadScanbodyGeometry(cand.s3Key);
       const ext = meshExtent(mesh.positions);
       const bodySpanMm = ext.topMm - ext.bottomMm;
-      // 3Shape GMS 치은 마스크(두께 2~3mm짜리 얇은 링)는 스캔바디 기둥이 아니므로 제외한다.
-      if (bodySpanMm < 3.8) continue;
-      if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 0.8) continue;
-      if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.45) continue;
+      // 3Shape 치은 상방 캡 라이브러리(예: 지오메디 GMS 2.0mm·3.0mm 캡, AR 4.5mm 캡)도 수용하되,
+      // 캡 최상단 높이(ext.topMm)가 의뢰 스캔바디 높이(orderHeight)와 맞는 부품만 채택해 플랫폼 깊이 오차를 막는다.
+      if (bodySpanMm < 1.8) continue;
+      if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 0.85) continue;
+      if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.48) continue;
       out.push({
         key: cand.s3Key,
         label: cand.label,
@@ -521,6 +527,17 @@ export async function loadCandidateScanbodyModels(args: {
     label: paramLabel,
     isLibraryCad: false,
     mesh: paramMesh,
+    topMm: paramHeight,
+    radiusMm: paramDiam / 2,
+  });
+  // 짧은 스캔바디(5mm)나 치은 하방 심부 식립으로 상단 1.5~2.2mm만 잇몸 위로 노출된 케이스(김우중 #37, 이춘식 #33 등)를 위해
+  // 동일한 플랫폼 높이(topMm = paramHeight)를 유지한 상단 1.8mm 얕은 캡 후보를 함께 준비한다.
+  const shallowCapMesh = buildParametricScanbodyLibraryMesh(paramDiam, paramHeight, 1.8);
+  out.push({
+    key: `param-shallow:${paramDiam}x${paramHeight}`,
+    label: `${paramLabel} (상부캡)`,
+    isLibraryCad: false,
+    mesh: shallowCapMesh,
     topMm: paramHeight,
     radiusMm: paramDiam / 2,
   });
@@ -1063,7 +1080,7 @@ function evaluateScanbodyPeak(
     center = add(center, c);
   }
 
-  // 1) 상단 원기둥 중심(깊이 1.0~3.2mm 구간의 수평 중심)을 먼저 맞춰 축 편향을 없앤다.
+  // 1) 상단 원기둥 중심(깊이 0.45~2.2mm 구간의 수평 중심)을 먼저 맞춰 짧은/심부 스캔바디에서도 축 편향을 없앤다.
   const e1 = norm(Math.abs(n[2]) < 0.9 ? cross(n, [0, 0, 1]) : cross(n, [1, 0, 0]));
   const e2 = cross(n, e1);
   let cylU = 0;
@@ -1072,15 +1089,15 @@ function evaluateScanbodyPeak(
   for (let i = 0; i < target.length; i += 3) {
     const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
     const h = dot(d, n);
-    if (h > -0.6 || h < -3.2) continue;
+    if (h > -0.4 || h < -2.4) continue;
     const u = dot(d, e1);
     const v = dot(d, e2);
-    if (Math.hypot(u, v) > expectedRadiusMm + 0.9) continue;
+    if (Math.hypot(u, v) > expectedRadiusMm + 0.75) continue;
     cylU += u;
     cylV += v;
     cylN += 1;
   }
-  if (cylN >= 16) {
+  if (cylN >= 12) {
     cylU /= cylN;
     cylV /= cylN;
   } else {
@@ -1088,7 +1105,8 @@ function evaluateScanbodyPeak(
     cylV = 0;
   }
 
-  // 2) 깊이 0.6~2.8mm 구간의 원기둥 반경 분포와 외부 퍼짐(치관 비대 여부)을 함께 잰다.
+  // 2) 상부 노출 원기둥 구간(h ∈ [-2.0, -0.35])의 반경 분포와 최상단(h > -1.05) 치관 퍼짐을 함께 잰다.
+  //    잇몸에 깊게 묻혀 1.5~2.0mm만 드러난 스캔바디도 -1.05mm 아래는 둘레 치은이므로 치관 누설에서 제외한다.
   const shaftRadii: number[] = [];
   let sectors = 0;
   const sectorHit = new Uint8Array(12);
@@ -1096,13 +1114,12 @@ function evaluateScanbodyPeak(
   for (let i = 0; i < target.length; i += 3) {
     const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
     const h = dot(d, n);
-    if (h > -0.55 || h < -2.8) continue;
+    if (h > -0.35 || h < -2.3) continue;
     const u = dot(d, e1) - cylU;
     const v = dot(d, e2) - cylV;
     const r = Math.hypot(u, v);
     if (r > expectedRadiusMm + 0.65 && r < expectedRadiusMm + 2.3) {
-      // 윗면 1.7mm 아래부터는 스캔바디를 감싼 잇몸이라 치관 비대로 세지 않는다.
-      if (h > -1.7) outerLeak += 1;
+      if (h > -1.05) outerLeak += 1;
       continue;
     }
     if (r < expectedRadiusMm * 0.55 || r > expectedRadiusMm + 0.65) continue;
@@ -1113,10 +1130,9 @@ function evaluateScanbodyPeak(
       sectors += 1;
     }
   }
-  if (shaftRadii.length < 18 || sectors < 5) return null;
+  if (shaftRadii.length < 14 || sectors < 5) return null;
   const leakRatio = outerLeak / Math.max(shaftRadii.length, 1);
-  // 잇몸이 높아 조금만 드러난 스캔바디는 둘레 잇몸이 누설로 잡힌다. 둘레가 온전한 원기둥이면 더 허용한다.
-  if (leakRatio > (sectors >= 11 ? 1.1 : 0.75)) return null;
+  if (leakRatio > (sectors >= 10 ? 1.15 : 0.8)) return null;
   shaftRadii.sort((a, b) => a - b);
   const medR = shaftRadii[Math.floor(shaftRadii.length * 0.55)]!;
   const spreadR =
@@ -1299,32 +1315,63 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     evaluatedPeaks.push(row);
   }
 
-  // 정합된 스캔바디 기둥 상단(z ∈ [-1.5, 0.2])이 바깥으로 치관처럼 퍼지거나(flareRatio),
+  // 정합된 스캔바디 최상단(z ∈ [-1.05, 0.22])이 자연치 치관처럼 바깥으로 퍼지거나(flareRatio),
   // 평평한 캡 바로 위(z > 0.42, r < 0.88R)에 자연치 절단연/교두가 더 솟아 있으면 가짜 정합으로 거른다.
+  // 또한 윗면 원판 중심부(r <= 0.62R, z ∈ [-0.28, 0.28])의 평탄도를 함께 재서
+  // 치은에 깊게 묻힌 진짜 5mm·심부 스캔바디(평평한 가공 상판 + 12/12 원통 둘레)와 뾰족한 자연치 절단연을 정확히 가른다.
   const measureFittedIsolation = (fittedTopLocal: Vec3, fitAxis: Vec3, radiusMm: number) => {
     const u1 = norm(Math.abs(fitAxis[2]) < 0.9 ? cross(fitAxis, [0, 0, 1]) : cross(fitAxis, [1, 0, 0]));
     const u2 = cross(fitAxis, u1);
     let shaftCnt = 0;
     let outerTopCnt = 0;
     let capOverhangCnt = 0;
+    let capCenterCnt = 0;
+    const shaftSectors = new Uint8Array(12);
     for (let i = 0; i < target.length; i += 3) {
       const rel = sub([target[i]!, target[i + 1]!, target[i + 2]!], fittedTopLocal);
       const z = dot(rel, fitAxis);
-      if (z < -2.8 || z > 2.4) continue;
-      const r = Math.hypot(dot(rel, u1), dot(rel, u2));
+      if (z < -2.4 || z > 2.4) continue;
+      const u = dot(rel, u1);
+      const v = dot(rel, u2);
+      const r = Math.hypot(u, v);
       if (r > radiusMm + 2.5) continue;
       if (z > 0.42 && r < radiusMm * 0.88) capOverhangCnt += 1;
-      if (z >= -1.55 && z <= 0.22 && r > radiusMm + 0.48 && r < radiusMm + 2.35) outerTopCnt += 1;
-      if (z >= -2.6 && z <= -0.45 && r >= radiusMm * 0.58 && r <= radiusMm + 0.58) shaftCnt += 1;
+      if (z >= -0.28 && z <= 0.28 && r <= radiusMm * 0.65) capCenterCnt += 1;
+      if (z >= -1.05 && z <= 0.22 && r > radiusMm + 0.5 && r < radiusMm + 2.35) outerTopCnt += 1;
+      if (z >= -2.1 && z <= -0.35 && r >= radiusMm * 0.58 && r <= radiusMm + 0.58) {
+        shaftCnt += 1;
+        shaftSectors[
+          Math.min(11, Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * 12)))
+        ] = 1;
+      }
     }
     const denom = Math.max(1, shaftCnt);
+    let sectorCount = 0;
+    for (let k = 0; k < 12; k += 1) sectorCount += shaftSectors[k]!;
     return {
       flareRatio: outerTopCnt / denom,
       overhangRatio: capOverhangCnt / denom,
+      capCenterRatio: capCenterCnt / denom,
+      capCenterCnt,
+      sectorCount,
     };
   };
 
   const refHint: Vec3 = [slot.labialDir[0], slot.labialDir[1], slot.labialDir[2]];
+  // 입력 모델에 상부 1.8mm 얕은 캡 후보가 아직 없으면(단위 테스트 등) 자동으로 보강한다.
+  const candidateModels: LoadedScanbodyModel[] = [...models];
+  if (models.length > 0 && !models.some((m) => m.key.startsWith("param-shallow:"))) {
+    const refModel = models[models.length - 1]!;
+    candidateModels.push({
+      key: `param-shallow:${refModel.radiusMm * 2}x${refModel.topMm}`,
+      label: `${refModel.label} (상부캡)`,
+      isLibraryCad: false,
+      mesh: buildParametricScanbodyLibraryMesh(refModel.radiusMm * 2, refModel.topMm, 1.8),
+      topMm: refModel.topMm,
+      radiusMm: refModel.radiusMm,
+    });
+  }
+
   type PeakHit = {
     model: LoadedScanbodyModel;
     fit: IcpResult;
@@ -1335,9 +1382,9 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   };
   const peakHits: PeakHit[] = [];
 
-  for (const candPeak of evaluatedPeaks.slice(0, 10)) {
+  for (const candPeak of evaluatedPeaks.slice(0, 14)) {
     let bestHit: PeakHit | null = null;
-    for (const model of models) {
+    for (const model of candidateModels) {
       const originGuess = sub(candPeak.top, scale(candPeak.axis, model.topMm));
       const fit = registerScanbody({
         model: model.mesh.positions,
@@ -1349,23 +1396,40 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       });
       if (!fit) continue;
       if (poseTiltDeg(fit.pose, axis) > 45) continue;
-      // 자연치 절단연·교두에 비스듬히 얹힌 가짜 정합(rms ≥ 0.18, topCoverage ≤ 0.82)을 차단한다.
-      const maxAllowedRms = model.isLibraryCad ? 0.168 : 0.172;
-      if (fit.topCoverage < 0.83 || fit.rmsMm > maxAllowedRms) continue;
+      const isShallowCap = model.key.startsWith("param-shallow:");
       const fittedTop = applyPose(fit.pose, 0, model.topMm, 0);
       if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < 3.6)) continue;
       const fitAxis = norm(poseColumn(fit.pose, 1));
       const iso = measureFittedIsolation(fittedTop, fitAxis, model.radiusMm);
-      if (iso.flareRatio > 0.58 || iso.overhangRatio > 0.08) continue;
+      if (iso.overhangRatio > 0.08 || iso.flareRatio > 0.62) continue;
+      // 자연치 절단연·교두에 비스듬히 얹힌 가짜 정합을 차단하되,
+      // 치은에 깊게 묻힌 5mm 단축·심부 식립 스캔바디(360° 원통 ≥11/12 부채꼴 + 평평한 상단 중심 원판 + 돌출 0)는
+      // 베벨 위치 차이로 파라메트릭 ICP rms가 0.18~0.19mm까지 올라가더라도 정확히 인식한다.
+      const deepCleanCylinder =
+        iso.sectorCount >= 11 &&
+        iso.capCenterCnt >= 320 &&
+        iso.flareRatio <= 0.45 &&
+        iso.overhangRatio <= 0.015;
+      const ultraSharpPartialScanbody =
+        iso.sectorCount >= 9 &&
+        iso.capCenterCnt >= 320 &&
+        fit.rmsMm <= 0.135 &&
+        iso.flareRatio <= 0.12 &&
+        iso.overhangRatio <= 0.015;
+      const maxAllowedRms = model.isLibraryCad ? 0.168 : deepCleanCylinder ? 0.198 : 0.172;
+      const minAllowedTopCov = ultraSharpPartialScanbody ? 0.66 : deepCleanCylinder ? 0.72 : 0.82;
+      if (fit.topCoverage < minAllowedTopCov || fit.rmsMm > maxAllowedRms) continue;
       const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
       const libBonus = model.isLibraryCad && fit.rmsMm <= 0.11 && fit.topCoverage >= 0.85 ? -0.08 : 0;
+      const shallowPenalty = isShallowCap ? 0.035 : 0;
       const totalScore =
         fit.rmsMm * 2.4 +
-        (1 - fit.topCoverage) * 2.4 +
+        (1 - fit.topCoverage) * 2.1 +
         candPeak.cylinderScore * 0.45 +
         iso.flareRatio * 0.75 +
         distFromSlot * 0.008 +
-        libBonus;
+        libBonus +
+        shallowPenalty;
       if (!bestHit || totalScore < bestHit.totalScore) {
         bestHit = {
           model,

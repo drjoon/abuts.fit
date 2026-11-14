@@ -2972,7 +2972,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let meanRoundStartSum = 0;
     for (const c of cols) {
       const hBase = c.h0 + hPostBase;
-      const roundStart = c.hTop - topRoundMm * 0.9;
+      // 인접면 마진이 높게 올라오는 짧은 포스트(예: 5mm 단축 스캔바디 케이스)에서도 roundStart가 hBase 아래로 역전되지 않도록
+      // 최소 축벽 높이(0.45mm)를 보장한다.
+      const roundStart = Math.max(hBase + 0.45, c.hTop - topRoundMm * 0.9);
       meanHBaseSum += hBase / ANGULAR_COLS;
       meanRoundStartSum += roundStart / ANGULAR_COLS;
       meanSpanSum += Math.max(0.4, roundStart - hBase) / ANGULAR_COLS;
