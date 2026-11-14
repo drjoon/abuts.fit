@@ -393,6 +393,137 @@ function smoothCircularReduce(
 }
 
 /**
+ * 극좌표 반경 배열 radii(θ_i) 안쪽에 내접하는 매끄럽고 100% 볼록한 곡선 반경을 구한다.
+ * - 오목(reflex) 꼭짓점에서 외측 접평면(half-plane)으로 양옆 어깨만 안쪽으로 다듬어 radii 상한을 넘지 않으면서 오목을 모두 없앤다.
+ * - 이어서 볼록 다각형 코너 완화로 꺾임 없는 매끄러운 볼록 곡선으로 마감한다.
+ */
+function convexInscribedSmoothRadii(
+  radii: readonly number[],
+  minRadii: readonly number[],
+  smoothPasses = 14,
+): number[] {
+  const n = radii.length;
+  const r = [...radii];
+  const th = Array.from({ length: n }, (_, i) => (i / n) * Math.PI * 2);
+  const cosT = th.map(Math.cos);
+  const sinT = th.map(Math.sin);
+
+  const globalMinR = Math.max(0.25, Math.min(...minRadii));
+  for (let iter = 0; iter < 96; iter += 1) {
+    let worstCross = 0;
+    let worstI = -1;
+    for (let i = 0; i < n; i += 1) {
+      const i0 = (i - 1 + n) % n;
+      const i2 = (i + 1) % n;
+      const x0 = r[i0]! * cosT[i0]!;
+      const y0 = r[i0]! * sinT[i0]!;
+      const x1 = r[i]! * cosT[i]!;
+      const y1 = r[i]! * sinT[i]!;
+      const x2 = r[i2]! * cosT[i2]!;
+      const y2 = r[i2]! * sinT[i2]!;
+      const cr = (x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1);
+      if (cr < worstCross) {
+        worstCross = cr;
+        worstI = i;
+      }
+    }
+    if (worstCross >= -1e-6 || worstI < 0) break;
+    const i = worstI;
+    const i0 = (i - 1 + n) % n;
+    const i2 = (i + 1) % n;
+    const x0 = r[i0]! * cosT[i0]!;
+    const y0 = r[i0]! * sinT[i0]!;
+    const x1 = r[i]! * cosT[i]!;
+    const y1 = r[i]! * sinT[i]!;
+    const x2 = r[i2]! * cosT[i2]!;
+    const y2 = r[i2]! * sinT[i2]!;
+    const e1l = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const e2l = Math.hypot(x2 - x1, y2 - y1) || 1;
+    let nx = (y1 - y0) / e1l + (y2 - y1) / e2l;
+    let ny = -(x1 - x0) / e1l - (x2 - x1) / e2l;
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl;
+    ny /= nl;
+    const hPlane = x1 * nx + y1 * ny;
+    if (hPlane <= globalMinR) break;
+    // 어떤 열 j의 하한 minRadii[j]도 침범하지 않도록 반평면 거리를 하한 이상으로만 건다.
+    let safeH = hPlane;
+    for (let j = 0; j < n; j += 1) {
+      const denom = cosT[j]! * nx + sinT[j]! * ny;
+      if (denom > 0.2) safeH = Math.max(safeH, minRadii[j]! * denom);
+    }
+    let changed = false;
+    for (let j = 0; j < n; j += 1) {
+      const denom = cosT[j]! * nx + sinT[j]! * ny;
+      if (denom > 0.2) {
+        const rPlane = safeH / denom;
+        if (rPlane < r[j]! - 1e-6) {
+          r[j] = rPlane;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  let pts: Array<[number, number]> = r.map((rad, i) => [rad * cosT[i]!, rad * sinT[i]!]);
+  for (let pass = 0; pass < smoothPasses; pass += 1) {
+    pts = pts.map((p, i) => {
+      const p0 = pts[(i - 1 + n) % n]!;
+      const p2 = pts[(i + 1) % n]!;
+      return [p[0] * 0.5 + (p0[0] + p2[0]) * 0.25, p[1] * 0.5 + (p0[1] + p2[1]) * 0.25];
+    });
+  }
+
+  const sampled = th.map((_, i) => {
+    const dx = cosT[i]!;
+    const dy = sinT[i]!;
+    let best = r[i]!;
+    for (let off = -6; off <= 6; off += 1) {
+      const a = pts[(i + off + n) % n]!;
+      const b = pts[(i + off + 1 + n) % n]!;
+      const cr1 = dx * a[1] - dy * a[0];
+      const cr2 = dx * b[1] - dy * b[0];
+      if ((cr1 <= 1e-9 && cr2 >= -1e-9) || (cr1 >= -1e-9 && cr2 <= 1e-9)) {
+        const denom = cr2 - cr1;
+        const t = Math.abs(denom) > 1e-12 ? -cr1 / denom : 0;
+        if (t >= -1e-4 && t <= 1 + 1e-4) {
+          best = Math.hypot(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+          break;
+        }
+      }
+    }
+    return Math.max(minRadii[i]!, best);
+  });
+  // 스크류 채널 하한(minRadii) 원호와 직선 벽이 만나는 접점에서 생길 수 있는 미세 오목(0.02mm)까지 볼록 포락선으로 메운다.
+  const out = [...sampled];
+  for (let iter = 0; iter < 48; iter += 1) {
+    let fixedAny = false;
+    for (let i = 0; i < n; i += 1) {
+      const i0 = (i - 1 + n) % n;
+      const i2 = (i + 1) % n;
+      const r0 = out[i0]!;
+      const r2 = out[i2]!;
+      const x0 = r0 * cosT[i0]!;
+      const y0 = r0 * sinT[i0]!;
+      const x1 = out[i]! * cosT[i]!;
+      const y1 = out[i]! * sinT[i]!;
+      const x2 = r2 * cosT[i2]!;
+      const y2 = r2 * sinT[i2]!;
+      if ((x1 - x0) * (y2 - y1) - (y1 - y0) * (x2 - x1) < -1e-7) {
+        const chordR = (2 * r0 * r2 * Math.cos((Math.PI * 2) / n)) / Math.max(r0 + r2, 1e-6);
+        if (chordR > out[i]!) {
+          out[i] = chordR + 1e-5;
+          fixedAny = true;
+        }
+      }
+    }
+    if (!fixedAny) break;
+  }
+  return out;
+}
+
+/**
  * 치종별 커스텀어벗 템플릿(mm). 추적관리 디자인 실측 중앙값:
  * 마진 단면(순설·근원심 지름), 포스트 윗면(순측·설측 반폭, 근원심 지름), 마진 평균에서 포스트 높이.
  */
@@ -1367,6 +1498,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       smoothMarginZ = lowPassCircular(baseWithScallop, 2).map((z) => clamp(z, minMarginZ, maxMarginZ));
     }
   }
+  smoothMarginZ = lowPassCircular(smoothMarginZ, 2).map((z) => clamp(z, minMarginZ, maxMarginZ));
   const meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
   // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 치종 형태를 깨뜨리는 한쪽 왜곡을 막기 위해 대칭(짝수 조화) 평균만 참고한다.
   const tissueBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
@@ -2006,6 +2138,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
       }
     }
+    // 피니시라인 평면 윤곽의 오목·굴곡을 모두 없애고 marginCap 안쪽의 매끄러운 볼록 곡선으로 마감한다.
+    const minMarginArr = new Array<number>(ANGULAR_COLS).fill(minMarginRadius);
+    marginRadii = convexInscribedSmoothRadii(marginRadii, minMarginArr, 18);
   }
   // 평균 크라운을 옮긴 뒤에도 풍융부에서 마진 위 축벽 + 최소 두께가 들어가야 한다. 모자라면 옮긴 양을 줄인다.
   for (let iter = 0; iter < 12; iter += 1) {
@@ -2478,9 +2613,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const harmonicsPost = tpl.kind === "molar" ? 4 : 3;
       const smoothR0 = lowPassCircular(rawR0, harmonicsPost);
       const smoothSlope = lowPassCircular(rawSlope, 3).map((s) => clamp(s, taperSlope * 0.85, maxStraightSlope));
+      const baseRing: number[] = [];
+      const topRing: number[] = [];
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const hs = postH[col]!;
         const h0Base = hs[0]!;
+        const span = Math.max(0.35, hs[POST_LEVELS]! - h0Base);
         let r0Line = clamp(
           smoothR0[col]!,
           floorR[col]![0]!,
@@ -2502,9 +2640,43 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           }
           if (r0Line - sl * dh < lo) sl = Math.max(0, (r0Line - lo) / dh);
         }
+        baseRing.push(r0Line);
+        topRing.push(Math.max(floorR[col]![POST_LEVELS]!, r0Line - sl * span));
+      }
+      // 설측 등 한쪽 마진·크라운 여백이 좁아 포스트 단면이 오목하게 찌그러지지 않도록,
+      // 하단(baseRing)과 상단(topRing) 단면을 모두 내접 볼록 매끄러운 곡선으로 다듬은 뒤 직선으로 잇는다.
+      const convexBase = convexInscribedSmoothRadii(
+        baseRing,
+        cols.map((_, col) => floorR[col]![0]!),
+        14,
+      );
+      const convexTop = convexInscribedSmoothRadii(
+        topRing.map((rt, col) => Math.min(rt, convexBase[col]! - taperSlope * 0.5 * Math.max(0.35, postH[col]![POST_LEVELS]! - postH[col]![0]!))),
+        cols.map((_, col) => floorR[col]![POST_LEVELS]!),
+        14,
+      );
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const hs = postH[col]!;
+        const h0Base = hs[0]!;
+        const span = Math.max(0.35, hs[POST_LEVELS]! - h0Base);
+        const r0Conv = convexBase[col]!;
+        const rTopConv = Math.min(r0Conv, convexTop[col]!);
+        const sl = (r0Conv - rTopConv) / span;
         for (let k = 0; k <= POST_LEVELS; k += 1) {
-          postR[col]![k] = Math.max(floorR[col]![k]!, r0Line - sl * (hs[k]! - h0Base));
+          postR[col]![k] = Math.max(floorR[col]![k]!, r0Conv - sl * (hs[k]! - h0Base));
         }
+      }
+    } else {
+      for (let k = 0; k <= POST_LEVELS; k += 1) {
+        const ring = convexInscribedSmoothRadii(
+          cols.map((_, col) => postR[col]![k]!),
+          cols.map((_, col) => floorR[col]![k]!),
+          12,
+        );
+        for (let col = 0; col < ANGULAR_COLS; col += 1) postR[col]![k] = ring[col]!;
+      }
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        enforcePostProfile(postR[col]!, postH[col]!);
       }
     }
 
