@@ -10,7 +10,7 @@
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
 // - web/frontend/src/shared/practice/customAbutmentChatCommands.ts (정형 명령은 AI 없이 처리)
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentDesignTree.tsx
-// - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPaintLayer.tsx
+// - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx (페인트: AI 디자인·프리뷰 공용)
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentViewCube.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 
@@ -30,7 +30,6 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Bot,
-  Eraser,
   Eye,
   EyeOff,
   Loader2,
@@ -82,6 +81,7 @@ import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
 import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
+  CUSTOM_ABUTMENT_FIT_VERSION,
   customAbutmentDesignCacheKey,
   readCustomAbutmentDesign,
   toArrayBuffer,
@@ -117,9 +117,20 @@ import {
 import { parseLocalDesignCommand } from "@/shared/practice/customAbutmentChatCommands";
 import { PracticeCustomAbutmentDesignTree } from "@/shared/components/practice/PracticeCustomAbutmentDesignTree";
 import {
-  PracticeCustomAbutmentPaintLayer,
-  type PaintLayerHandle,
-} from "@/shared/components/practice/PracticeCustomAbutmentPaintLayer";
+  downloadBlobFile,
+  paintNoteFileName,
+  ViewPaintSurface,
+} from "@/shared/components/practice/ViewPaintSurface";
+import {
+  useViewPaint,
+  ViewPaintToolbar,
+  viewPaintSurfaceProps,
+} from "@/shared/components/practice/ViewPaintToolbar";
+import {
+  createViewPaintSpace,
+  notifyViewPaint,
+  type ViewPaintSpace,
+} from "@/shared/components/practice/viewPaintSpace";
 import {
   PracticeCustomAbutmentViewCube,
   viewCubeDirection,
@@ -137,7 +148,10 @@ import { type ScanbodyCatalog } from "@/shared/practice/scanbodyLibraryApi";
 import { toToothMemoSortNumber, type ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
-import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
+import {
+  applyExternalView,
+  ScreenSpaceOrbitControls,
+} from "@/shared/three/screenSpaceOrbitControls";
 import {
   applyOrthoHeight,
   readHostSize,
@@ -207,6 +221,7 @@ const CHAT_WIDTH_KEY = "abuts.caDesign.chatWidthRem";
 const CHAT_WIDTH_DEFAULT_REM = 22;
 const CHAT_WIDTH_MIN_REM = 16;
 const SKETCH_MAX_PX = 1024;
+const VIEW_ANIM_MS = 280;
 const CHAT_EXAMPLES = [
   "#23 포스트 0.5mm 낮춰줘",
   "마진 0.3mm 얕게",
@@ -446,11 +461,20 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [preferenceCanSave, setPreferenceCanSave] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const transferIdParam = String(transferId || "").trim();
-  const [paintMode, setPaintMode] = useState(false);
-  const [hasPaint, setHasPaint] = useState(false);
+  const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: false });
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
+  const paintListenersRef = useRef(new Set<() => void>());
+  /** 「AI에게」로 잡아 둔 화면(표시 포함). 다음 메시지와 함께 보낸다. */
+  const [sketchUrl, setSketchUrl] = useState<string | null>(null);
   const [chatWidthRem, setChatWidthRem] = useState(readChatWidthRem);
-  const paintRef = useRef<PaintLayerHandle | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const viewCubeRef = useRef<ViewCubeHandle | null>(null);
+  const viewAnimRef = useRef<{
+    from: THREE.Quaternion;
+    to: THREE.Quaternion;
+    dist: number;
+    t0: number;
+  } | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
   const badgeClickRef = useRef<(toothNumber: string) => void>(() => {});
 
@@ -640,6 +664,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const controls = controlsRef.current;
       const host = hostRef.current;
       if (!camera || !controls || !host || targets.length === 0) return;
+      viewAnimRef.current = null;
 
       const box = new THREE.Box3();
       for (const obj of targets) {
@@ -779,7 +804,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     [fitCameraToTargets],
   );
 
-  /** 지금 보이는 대상 그대로 화면에 맞춘다(방향 유지). 방향 큐브 더블클릭. */
+  /** 지금 보이는 대상 그대로 화면에 맞춘다(방향 유지). */
   const fitCurrentView = useCallback(() => {
     const targets = [
       ...jawMeshesRef.current.upperTrimmed,
@@ -793,20 +818,45 @@ export function PracticeCustomAbutmentPreviewDialog({
     fitCameraToTargets(targets, undefined, camera?.up.clone());
   }, [fitCameraToTargets]);
 
-  /** 방향 큐브 면: 회전 중심·확대는 그대로 두고 그 방향에서 본다. */
-  const jumpToFace = useCallback((face: ViewCubeFace) => {
+  /** 회전 중심·확대는 그대로 두고 카메라 자세만 `to`로 부드럽게 돌린다. 렌더 루프가 진행한다. */
+  const animateCameraTo = useCallback((to: THREE.Quaternion) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
-    const frame = frameRef.current;
-    if (!camera || !controls || !frame) return;
-    const { viewDir, upDir } = viewCubeDirection(face, frame);
-    const dist = Math.max(camera.position.distanceTo(controls.target), 60);
-    camera.position.copy(controls.target).addScaledVector(viewDir.normalize(), dist);
-    camera.up.copy(upDir.normalize());
-    camera.lookAt(controls.target);
-    camera.updateMatrixWorld();
-    controls.syncFromCamera();
+    if (!camera || !controls) return;
+    viewAnimRef.current = {
+      from: camera.quaternion.clone(),
+      to,
+      dist: camera.position.distanceTo(controls.target),
+      t0: performance.now(),
+    };
   }, []);
+
+  /** 방향 큐브 면: 그 방향에서 본다. */
+  const jumpToFace = useCallback(
+    (face: ViewCubeFace) => {
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      const frame = frameRef.current;
+      if (!camera || !controls || !frame) return;
+      const { viewDir, upDir } = viewCubeDirection(face, frame);
+      const eye = controls.target.clone().addScaledVector(viewDir.normalize(), 1);
+      const m = new THREE.Matrix4().lookAt(eye, controls.target, upDir.normalize());
+      animateCameraTo(new THREE.Quaternion().setFromRotationMatrix(m));
+    },
+    [animateCameraTo],
+  );
+
+  /** 보는 방향은 그대로, 화면만 90° 돌린다. */
+  const rollView = useCallback(
+    (dir: 1 | -1) => {
+      const camera = cameraRef.current;
+      if (!camera) return;
+      const base = viewAnimRef.current?.to ?? camera.quaternion;
+      const roll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (-dir * Math.PI) / 2);
+      animateCameraTo(base.clone().multiply(roll));
+    },
+    [animateCameraTo],
+  );
 
   const selectTooth = useCallback(
     (toothNumber: string | null) => {
@@ -838,6 +888,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     void writeCustomAbutmentDesign({
       key: ctx.cacheKey,
       version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+      fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
       savedAt: Date.now(),
       alignedScans: ctx.alignedScans,
       teeth: list.map((d) => ({
@@ -932,10 +983,29 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
     controlsRef.current = controls;
+    controls.addEventListener("start", () => {
+      viewAnimRef.current = null;
+    });
 
     let raf = 0;
     const renderLoop = () => {
       raf = window.requestAnimationFrame(renderLoop);
+      const anim = viewAnimRef.current;
+      if (anim) {
+        const t = Math.min(1, (performance.now() - anim.t0) / VIEW_ANIM_MS);
+        const k = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+        camera.quaternion.slerpQuaternions(anim.from, anim.to, k);
+        camera.position
+          .set(0, 0, anim.dist)
+          .applyQuaternion(camera.quaternion)
+          .add(controls.target);
+        camera.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        camera.updateMatrixWorld();
+        if (t >= 1) {
+          viewAnimRef.current = null;
+          controls.syncFromCamera();
+        }
+      }
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
       const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
       const fwd = camera.position.clone().sub(controls.target).normalize();
@@ -954,11 +1024,30 @@ export function PracticeCustomAbutmentPreviewDialog({
         .addScaledVector(fwd, -90)
         .addScaledVector(up, 50);
 
+      if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       viewCubeRef.current?.sync(camera, frameRef.current);
     };
+    const paintListeners = paintListenersRef.current;
     renderLoop();
+    setPaintSpace(
+      createViewPaintSpace({
+        getCamera: () => cameraRef.current,
+        getRenderer: () => rendererRef.current,
+        getParent: () => sceneRef.current,
+        getTargets: () =>
+          [
+            ...jawMeshesRef.current.upperTrimmed,
+            ...jawMeshesRef.current.upperRaw,
+            ...jawMeshesRef.current.lowerTrimmed,
+            ...jawMeshesRef.current.lowerRaw,
+            ...abutmentMeshesRef.current.values(),
+          ].filter((mesh) => mesh.visible),
+        listeners: paintListeners,
+        onView: (gesture) => applyExternalView(controls, gesture),
+      }),
+    );
 
     const onResize = () => {
       if (!host) return;
@@ -975,6 +1064,8 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     return () => {
       window.cancelAnimationFrame(raf);
+      paintListeners.clear();
+      setPaintSpace(null);
       ro.disconnect();
       controls.dispose();
       clearSceneObjects();
@@ -1234,7 +1325,41 @@ export function PracticeCustomAbutmentPreviewDialog({
         const builtAbutments: DesignedCustomAbutment[] = [];
         const overrides: Record<string, Partial<CustomAbutmentDesignParams>> = {};
 
-        if (restored && cached) {
+        let redesignedFromFit = false;
+        if (restored && cached && !cached.designFresh) {
+          // 정합은 그대로 쓰고 형상만 새 규칙으로 다시 만든다.
+          redesignedFromFit = true;
+          const curPreference = await preferencePromise;
+          if (cancelled) return;
+          const fixtures = cached.teeth.map((row) => row.fixture);
+          for (const row of cached.teeth) {
+            setStatus({
+              kind: "loading",
+              percent: 80,
+              step: `#${row.toothNumber} 커스텀어벗 디자인 중…`,
+            });
+            await new Promise<void>((r) => window.setTimeout(r, 16));
+            if (cancelled) return;
+            const jaw = row.fixture.jaw;
+            const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
+            if (!jawGeo) continue;
+            const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
+            overrides[row.toothNumber] = rowOverrides;
+            builtAbutments.push(
+              await designCustomAbutmentStl({
+                fixture: row.fixture,
+                jawGeometry: jawGeo,
+                opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
+                neighbors: fixtures.filter((f) => f.jaw === jaw),
+                params: {
+                  ...preferenceOverridesForTooth(row.toothNumber, curPreference.preference),
+                  ...rowOverrides,
+                },
+                patientName: curPatientName,
+              }),
+            );
+          }
+        } else if (restored && cached) {
           setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
           for (const row of cached.teeth) {
             overrides[row.toothNumber] = parseCustomAbutmentParamOverrides(row.overrides);
@@ -1407,7 +1532,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         setChatTurns(restoredChat);
         chatTurnsRef.current = restoredChat;
         setStatus({ kind: "ready" });
-        if (!restored) persistDesign(restoredChat);
+        if (!restored || redesignedFromFit) persistDesign(restoredChat);
 
         window.requestAnimationFrame(() => {
           fitDefaultCamera();
@@ -1609,21 +1734,23 @@ export function PracticeCustomAbutmentPreviewDialog({
     window.addEventListener("pointerup", onUp);
   }, []);
 
-  /** 지금 화면 + 펜 그림 + 치아 번호 라벨을 한 장(JPEG data URL)으로 만든다. */
-  const captureSketch = useCallback((): string | null => {
+  /** 지금 화면 + 페인트 표시 + 치아 번호 라벨을 한 장(JPEG data URL)으로 만든다. */
+  const captureSketch = useCallback(async (): Promise<string | null> => {
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
-    const paintCanvas = paintRef.current?.canvas();
-    if (!renderer || !camera || !paintCanvas) return null;
-    const src = renderer.domElement;
-    const scale = Math.min(1, SKETCH_MAX_PX / Math.max(src.width, src.height, 1));
+    const surface = paint.paintRef.current;
+    if (!renderer || !camera || !surface) return null;
+    const blob = await surface.compositePng(renderer.domElement);
+    if (!blob) return null;
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, SKETCH_MAX_PX / Math.max(bitmap.width, bitmap.height, 1));
     const out = document.createElement("canvas");
-    out.width = Math.max(1, Math.round(src.width * scale));
-    out.height = Math.max(1, Math.round(src.height * scale));
+    out.width = Math.max(1, Math.round(bitmap.width * scale));
+    out.height = Math.max(1, Math.round(bitmap.height * scale));
     const ctx = out.getContext("2d");
     if (!ctx) return null;
-    ctx.drawImage(src, 0, 0, out.width, out.height);
-    ctx.drawImage(paintCanvas, 0, 0, out.width, out.height);
+    ctx.drawImage(bitmap, 0, 0, out.width, out.height);
+    bitmap.close();
     ctx.font = `600 ${Math.round(13 * scale * (window.devicePixelRatio || 1))}px sans-serif`;
     ctx.textBaseline = "middle";
     const p = new THREE.Vector3();
@@ -1640,7 +1767,26 @@ export function PracticeCustomAbutmentPreviewDialog({
       ctx.fillText(label, x - w / 2 + 4, y);
     }
     return out.toDataURL("image/jpeg", 0.82);
-  }, []);
+  }, [paint.paintRef]);
+
+  /** 페인트 막대 「AI에게」: 지금 화면을 첨부로 잡고 대화 입력으로 간다. 보낼 때 같이 간다. */
+  const attachSketchToChat = useCallback(() => {
+    void captureSketch().then((url) => {
+      if (!url) return;
+      setSketchUrl(url);
+      setChatOpen(true);
+      window.requestAnimationFrame(() => chatInputRef.current?.focus());
+    });
+  }, [captureSketch]);
+
+  const saveViewImage = useCallback(() => {
+    const renderer = rendererRef.current;
+    const surface = paint.paintRef.current;
+    if (!renderer || !surface) return;
+    void surface.compositePng(renderer.domElement).then((blob) => {
+      if (blob) downloadBlobFile(blob, paintNoteFileName(`커스텀어벗_${patientName || "디자인"}`));
+    });
+  }, [paint.paintRef, patientName]);
 
   const savePreferenceDirect = useCallback(
     async (
@@ -1671,7 +1817,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       const history = chatTurnsRef.current
         .filter((t) => !t.pending)
         .map((t) => ({ role: t.role, text: t.text }));
-      const sketch = paintRef.current?.hasStrokes() ? captureSketch() : null;
+      const sketch =
+        sketchUrl ?? (paint.paintRef.current?.hasInk() ? await captureSketch() : null);
       const withUser: ChatTurn[] = [
         ...chatTurnsRef.current,
         { role: "user", text: sketch ? `${text}\n(화면 그림 첨부)` : text },
@@ -1774,8 +1921,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           },
         });
         if (sketch && res.ok) {
-          paintRef.current?.clear();
-          setPaintMode(false);
+          setSketchUrl(null);
+          paint.paintRef.current?.clear({ silent: true });
+          paint.setPaintOn(false);
         }
         if (!res.ok || !res.data?.data) {
           finish(res.data?.message || "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
@@ -1822,10 +1970,12 @@ export function PracticeCustomAbutmentPreviewDialog({
       authToken,
       captureSketch,
       chatBusy,
+      paint,
       persistDesign,
       savePreferenceDirect,
       selectTooth,
       selectedTooth,
+      sketchUrl,
       transferIdParam,
     ],
   );
@@ -2067,25 +2217,12 @@ export function PracticeCustomAbutmentPreviewDialog({
                   </div>
                   <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
                     <ToolbarToggle
-                      active={paintMode}
+                      active={paint.paintOn}
                       icon={<Paintbrush className="h-3.5 w-3.5" />}
-                      label="페인트"
-                      tip="고칠 부위를 화면에 그리면 다음 메시지와 함께 AI에 보냅니다."
-                      onClick={() => {
-                        if (paintMode) paintRef.current?.clear();
-                        setPaintMode((v) => !v);
-                        if (!paintMode) setChatOpen(true);
-                      }}
+                      label={!paint.paintOn && paint.count > 0 ? `페인트 ${paint.count}` : "페인트"}
+                      tip="왼쪽은 그리기, 오른쪽은 화면 회전, 휠 버튼은 이동입니다. 「AI에게」로 대화에 첨부합니다."
+                      onClick={() => paint.setPaintOn((on) => !on)}
                     />
-                    {paintMode ? (
-                      <ToolbarToggle
-                        active={false}
-                        disabled={!hasPaint}
-                        icon={<Eraser className="h-3.5 w-3.5" />}
-                        label="지우기"
-                        onClick={() => paintRef.current?.clear()}
-                      />
-                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2104,6 +2241,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                     [toothNumber]: prev[toothNumber] === false,
                   }))
                 }
+                onSetAllVisible={(visible) =>
+                  setVisibleTeeth(
+                    Object.fromEntries(designedList.map((d) => [d.toothNumber, visible])),
+                  )
+                }
                 onSelect={(toothNumber) => {
                   if (selectedTooth === toothNumber) {
                     setSelectedTooth(null);
@@ -2121,16 +2263,31 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ref={viewCubeRef}
                 className="absolute right-3 top-16 z-10"
                 onFace={jumpToFace}
+                onHome={() => {
+                  setSelectedTooth(null);
+                  fitDefaultCamera();
+                }}
                 onFit={fitCurrentView}
+                onRoll={rollView}
+                onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
               />
             ) : null}
 
-            <PracticeCustomAbutmentPaintLayer
-              ref={paintRef}
-              active={ready && paintMode}
-              onChange={setHasPaint}
-              className="absolute inset-0 z-[6]"
+            <ViewPaintSurface
+              {...viewPaintSurfaceProps(paint)}
+              enabled={ready && paint.paintOn}
+              space={paintSpace}
             />
+            {ready && paint.paintOn ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+                <ViewPaintToolbar
+                  paint={paint}
+                  twoRow
+                  onSaveImage={saveViewImage}
+                  onSendToAi={attachSketchToChat}
+                />
+              </div>
+            ) : null}
 
             {status.kind === "loading" ? (
               <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-slate-900/15">
@@ -2220,7 +2377,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       <br />
                       치아는 왼쪽 목록이나 화면의 번호 뱃지를 누르거나, #23처럼 입력해 고릅니다.
                       <br />
-                      페인트를 누르고 화면에 그린 뒤 보내면 그림도 함께 전달됩니다.
+                      페인트로 표시하고 「AI에게」를 누르면 그림이 함께 전달됩니다.
                       <br />
                       「앞으로」처럼 규칙으로 말하면 다음 케이스 기본값이 됩니다.
                     </p>
@@ -2272,10 +2429,26 @@ export function PracticeCustomAbutmentPreviewDialog({
                       전체로
                     </button>
                   ) : null}
-                  {paintMode && hasPaint ? <span className="text-rose-600">그림 첨부</span> : null}
+                  {!sketchUrl && paint.paintOn && paint.count > 0 ? (
+                    <span className="text-rose-600">보내면 그림도 함께 갑니다</span>
+                  ) : null}
                 </div>
+                {sketchUrl ? (
+                  <div className="relative h-14 w-20 overflow-hidden rounded-md border">
+                    <img src={sketchUrl} alt="첨부한 화면" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-white/95 text-slate-600 shadow-sm hover:bg-destructive hover:text-destructive-foreground"
+                      aria-label="첨부 지우기"
+                      onClick={() => setSketchUrl(null)}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex items-end gap-1.5">
                   <Textarea
+                    ref={chatInputRef}
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -2284,7 +2457,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                         void sendChat(chatInput);
                       }
                     }}
-                    placeholder={paintMode ? "그린 부위를 어떻게 바꿀지 적어 주세요" : "예: #23 마진 0.3mm 얕게"}
+                    placeholder={
+                      sketchUrl || paint.count > 0
+                        ? "표시한 부위를 어떻게 바꿀지 적어 주세요"
+                        : "예: #23 마진 0.3mm 얕게"
+                    }
                     rows={2}
                     className="min-h-[2.75rem] resize-none text-xs"
                     disabled={chatBusy}

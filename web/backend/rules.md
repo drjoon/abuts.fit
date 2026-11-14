@@ -758,6 +758,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.
   - gzip으로 저장된 객체(`ContentEncoding=gzip`)는 프록시/버퍼 조회 시 자동 해제해 원본 바이트로 내려줍니다.
+  - 256KB 이상 메시(`dcm`·`ply`·`stl`·`obj`)는 전송 압축합니다. `Accept-Encoding`에 br이 있으면 brotli q4, 없으면 gzip 1(HTTP·localhost는 br을 안 보냄). `Content-Encoding`·`Vary: Accept-Encoding`·`X-Decoded-Length`(원본 크기)를 붙입니다. DCM은 약 51%로 줄어듭니다.
   - temp 업로드:
     - `POST /api/files/temp/presign` (단건 PUT, optional `contentEncoding`)
     - `POST /api/files/temp/multipart/init|complete|abort` (8MB+ 대용량)

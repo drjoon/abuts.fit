@@ -108,7 +108,7 @@ function jacobiEigen(input: number[], n: number) {
 }
 
 /** 대응점 쌍의 최적 강체 변환(Horn 사원수). */
-export function bestRigid(model: number[], target: number[]): RigidPose {
+export function bestRigid(model: ArrayLike<number>, target: ArrayLike<number>): RigidPose {
   const count = model.length / 3;
   const mc: Vec3 = [0, 0, 0];
   const tc: Vec3 = [0, 0, 0];
@@ -154,55 +154,150 @@ export function bestRigid(model: number[], target: number[]): RigidPose {
   return { r, t: sub(tc, rm) };
 }
 
-/** 균일 격자 최근접점. 좌표는 원점 ±1000 cell 안이어야 한다(치아 주변 mm 좌표). */
+/** 칸 수가 이보다 많으면(점이 넓게 퍼짐) 해시 칸으로 둔다. */
+const DENSE_GRID_MAX_CELLS = 6_000_000;
+
+/**
+ * 균일 격자 최근접점. 점이 모인 범위는 칸별 연속 배열(CSR)로 둔다.
+ * 칸 안 점 순서는 원래 번호 순이라 같은 거리면 앞 번호가 이긴다.
+ */
 export class PointGrid {
-  private readonly cells = new Map<number, number[]>();
+  private readonly minX: number;
+  private readonly minY: number;
+  private readonly minZ: number;
+  private readonly nx: number;
+  private readonly ny: number;
+  private readonly nz: number;
+  /** 칸별 시작 위치(nx·ny·nz + 1). */
+  private readonly start: Int32Array;
+  /** 칸 순서로 늘어놓은 원래 점 번호. */
+  private readonly order: Int32Array;
+  /** order 순서의 좌표. */
+  private readonly sorted: Float32Array;
+
   constructor(
     readonly points: Float32Array,
     private readonly cell: number,
   ) {
-    for (let i = 0; i < points.length / 3; i += 1) {
-      const key = this.key(
-        Math.floor(points[i * 3]! / cell),
-        Math.floor(points[i * 3 + 1]! / cell),
-        Math.floor(points[i * 3 + 2]! / cell),
-      );
-      const list = this.cells.get(key);
-      if (list) list.push(i);
-      else this.cells.set(key, [i]);
+    const count = Math.floor(points.length / 3);
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < count; i += 1) {
+      const x = points[i * 3]!;
+      const y = points[i * 3 + 1]!;
+      const z = points[i * 3 + 2]!;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
     }
-  }
-
-  private key(cx: number, cy: number, cz: number) {
-    return (cx + 1024) * 4194304 + (cy + 1024) * 2048 + (cz + 1024);
+    if (count === 0) {
+      minX = minY = minZ = 0;
+      maxX = maxY = maxZ = 0;
+    }
+    let c = cell;
+    let nx = Math.floor((maxX - minX) / c) + 1;
+    let ny = Math.floor((maxY - minY) / c) + 1;
+    let nz = Math.floor((maxZ - minZ) / c) + 1;
+    // 너무 넓으면 칸을 키운다. 반경 검색은 이웃 칸까지 보므로 maxDist ≤ cell 조건은 그대로 성립한다.
+    while (nx * ny * nz > DENSE_GRID_MAX_CELLS) {
+      c *= 1.5;
+      nx = Math.floor((maxX - minX) / c) + 1;
+      ny = Math.floor((maxY - minY) / c) + 1;
+      nz = Math.floor((maxZ - minZ) / c) + 1;
+    }
+    this.cell = c;
+    this.minX = minX;
+    this.minY = minY;
+    this.minZ = minZ;
+    this.nx = nx;
+    this.ny = ny;
+    this.nz = nz;
+    const cellOf = new Int32Array(count);
+    const start = new Int32Array(nx * ny * nz + 1);
+    for (let i = 0; i < count; i += 1) {
+      const k =
+        (Math.floor((points[i * 3]! - minX) / c) * ny + Math.floor((points[i * 3 + 1]! - minY) / c)) * nz +
+        Math.floor((points[i * 3 + 2]! - minZ) / c);
+      cellOf[i] = k;
+      start[k + 1] += 1;
+    }
+    for (let k = 0; k < nx * ny * nz; k += 1) start[k + 1] += start[k]!;
+    const fill = start.slice(0, nx * ny * nz);
+    const order = new Int32Array(count);
+    const sorted = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      const at = fill[cellOf[i]!]!;
+      fill[cellOf[i]!] = at + 1;
+      order[at] = i;
+      sorted[at * 3] = points[i * 3]!;
+      sorted[at * 3 + 1] = points[i * 3 + 1]!;
+      sorted[at * 3 + 2] = points[i * 3 + 2]!;
+    }
+    this.start = start;
+    this.order = order;
+    this.sorted = sorted;
   }
 
   /** maxDist 안의 최근접 점 번호. 없으면 -1. maxDist는 cell 이하로 쓴다. */
   nearest(x: number, y: number, z: number, maxDist: number) {
-    const cx = Math.floor(x / this.cell);
-    const cy = Math.floor(y / this.cell);
-    const cz = Math.floor(z / this.cell);
+    const c = this.cell;
+    const cx = Math.floor((x - this.minX) / c);
+    const cy = Math.floor((y - this.minY) / c);
+    const cz = Math.floor((z - this.minZ) / c);
+    const { nx, ny, nz, start, sorted } = this;
+    if (cx < -1 || cy < -1 || cz < -1 || cx > nx || cy > ny || cz > nz) return -1;
     let best = -1;
     let bestD = maxDist * maxDist;
+    // 칸 경계까지 거리(축별). 이웃 칸은 지금 최선보다 멀면 건너뛴다.
+    const lowX = x - (this.minX + cx * c);
+    const lowY = y - (this.minY + cy * c);
+    const lowZ = z - (this.minZ + cz * c);
+    const gapX = [lowX * lowX, 0, (c - lowX) * (c - lowX)];
+    const gapY = [lowY * lowY, 0, (c - lowY) * (c - lowY)];
+    const gapZ = [lowZ * lowZ, 0, (c - lowZ) * (c - lowZ)];
+    const scan = (k: number) => {
+      const end = start[k + 1]!;
+      for (let s = start[k]!; s < end; s += 1) {
+        const ex = sorted[s * 3]! - x;
+        const ey = sorted[s * 3 + 1]! - y;
+        const ez = sorted[s * 3 + 2]! - z;
+        const d = ex * ex + ey * ey + ez * ez;
+        if (d < bestD) {
+          bestD = d;
+          best = s;
+        }
+      }
+    };
+    const inside = cx >= 0 && cy >= 0 && cz >= 0 && cx < nx && cy < ny && cz < nz;
+    if (inside) scan((cx * ny + cy) * nz + cz);
     for (let dx = -1; dx <= 1; dx += 1) {
+      const ix = cx + dx;
+      if (ix < 0 || ix >= nx) continue;
+      const gx = gapX[dx + 1]!;
+      if (gx >= bestD) continue;
       for (let dy = -1; dy <= 1; dy += 1) {
+        const iy = cy + dy;
+        if (iy < 0 || iy >= ny) continue;
+        const gxy = gx + gapY[dy + 1]!;
+        if (gxy >= bestD) continue;
+        const row = (ix * ny + iy) * nz;
         for (let dz = -1; dz <= 1; dz += 1) {
-          const list = this.cells.get(this.key(cx + dx, cy + dy, cz + dz));
-          if (!list) continue;
-          for (const i of list) {
-            const ex = this.points[i * 3]! - x;
-            const ey = this.points[i * 3 + 1]! - y;
-            const ez = this.points[i * 3 + 2]! - z;
-            const d = ex * ex + ey * ey + ez * ez;
-            if (d < bestD) {
-              bestD = d;
-              best = i;
-            }
-          }
+          if (dx === 0 && dy === 0 && dz === 0) continue;
+          const iz = cz + dz;
+          if (iz < 0 || iz >= nz) continue;
+          if (gxy + gapZ[dz + 1]! >= bestD) continue;
+          scan(row + iz);
         }
       }
     }
-    return best;
+    return best < 0 ? -1 : this.order[best]!;
   }
 }
 
@@ -281,28 +376,49 @@ export function icp(args: {
 }): IcpResult {
   let pose = args.init;
   const trim = args.trim ?? 0.85;
+  const { model, grid, maxDist } = args;
+  const gp = grid.points;
+  const n = Math.floor(model.length / 3);
+  const pairD = new Float64Array(n);
+  const pairI = new Int32Array(n);
+  const pairJ = new Int32Array(n);
+  const rank: number[] = [];
+  const m = new Float64Array(n * 3);
+  const t = new Float64Array(n * 3);
   for (let iter = 0; iter < args.iterations; iter += 1) {
-    const pairs: Array<{ d: number; i: number; j: number }> = [];
-    for (let i = 0; i < args.model.length / 3; i += 1) {
-      const p = applyPose(pose, args.model[i * 3]!, args.model[i * 3 + 1]!, args.model[i * 3 + 2]!);
-      const j = args.grid.nearest(p[0], p[1], p[2], args.maxDist);
+    const r = pose.r;
+    const [t0, t1, t2] = pose.t;
+    let count = 0;
+    for (let i = 0; i < n; i += 1) {
+      const x = model[i * 3]!;
+      const y = model[i * 3 + 1]!;
+      const z = model[i * 3 + 2]!;
+      const px = r[0] * x + r[1] * y + r[2] * z + t0;
+      const py = r[3] * x + r[4] * y + r[5] * z + t1;
+      const pz = r[6] * x + r[7] * y + r[8] * z + t2;
+      const j = grid.nearest(px, py, pz, maxDist);
       if (j < 0) continue;
-      const d =
-        (args.grid.points[j * 3]! - p[0]) ** 2 +
-        (args.grid.points[j * 3 + 1]! - p[1]) ** 2 +
-        (args.grid.points[j * 3 + 2]! - p[2]) ** 2;
-      pairs.push({ d, i, j });
+      pairD[count] = (gp[j * 3]! - px) ** 2 + (gp[j * 3 + 1]! - py) ** 2 + (gp[j * 3 + 2]! - pz) ** 2;
+      pairI[count] = i;
+      pairJ[count] = j;
+      count += 1;
     }
-    if (pairs.length < 12) break;
-    pairs.sort((a, b) => a.d - b.d);
-    const keep = pairs.slice(0, Math.max(12, Math.floor(pairs.length * trim)));
-    const m: number[] = [];
-    const t: number[] = [];
-    for (const { i, j } of keep) {
-      m.push(args.model[i * 3]!, args.model[i * 3 + 1]!, args.model[i * 3 + 2]!);
-      t.push(args.grid.points[j * 3]!, args.grid.points[j * 3 + 1]!, args.grid.points[j * 3 + 2]!);
+    if (count < 12) break;
+    rank.length = count;
+    for (let k = 0; k < count; k += 1) rank[k] = k;
+    rank.sort((a, b) => pairD[a]! - pairD[b]! || a - b);
+    const keep = Math.min(count, Math.max(12, Math.floor(count * trim)));
+    for (let k = 0; k < keep; k += 1) {
+      const i = pairI[rank[k]!]!;
+      const j = pairJ[rank[k]!]!;
+      m[k * 3] = model[i * 3]!;
+      m[k * 3 + 1] = model[i * 3 + 1]!;
+      m[k * 3 + 2] = model[i * 3 + 2]!;
+      t[k * 3] = gp[j * 3]!;
+      t[k * 3 + 1] = gp[j * 3 + 1]!;
+      t[k * 3 + 2] = gp[j * 3 + 2]!;
     }
-    const next = bestRigid(m, t);
+    const next = bestRigid(m.subarray(0, keep * 3), t.subarray(0, keep * 3));
     const moved = Math.hypot(...sub(next.t, pose.t)) + Math.abs(next.r[0] - pose.r[0]) + Math.abs(next.r[4] - pose.r[4]);
     pose = next;
     if (moved < 1e-5) break;
@@ -312,12 +428,19 @@ export function icp(args: {
 
 type TargetGrids = { coarse: PointGrid; mid: PointGrid; fine: PointGrid };
 
+/** 같은 target(한 치아 주변 스캔)을 후보·형상마다 다시 격자화하지 않는다. */
+const targetGridCache = new WeakMap<Float32Array, TargetGrids>();
+
 function targetGrids(target: Float32Array): TargetGrids {
-  return {
+  const hit = targetGridCache.get(target);
+  if (hit) return hit;
+  const grids = {
     coarse: new PointGrid(voxelDownsample(target, 0.3), 1.5),
     mid: new PointGrid(voxelDownsample(target, 0.15), 0.8),
     fine: new PointGrid(voxelDownsample(target, 0.06), 0.4),
   };
+  targetGridCache.set(target, grids);
+  return grids;
 }
 
 type PreparedModel = { coarse: Float32Array; full: Float32Array; topY: number };

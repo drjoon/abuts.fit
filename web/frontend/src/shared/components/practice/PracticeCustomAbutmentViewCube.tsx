@@ -1,11 +1,14 @@
-// 커스텀어벗 디자인 뷰어의 방향 큐브. 카메라 방향을 따라 돌고, 면을 누르면 그 방향으로 보고,
-// 두 번 누르면 전체를 맞춘다. 면은 환자 기준(정면=순측, 좌·우=환자 좌·우)이다.
+// 커스텀어벗 디자인 뷰어의 방향 큐브. 카메라 방향을 따라 돌고, 면을 누르면 그 방향으로 부드럽게 돌아간다.
+// 큐브를 끌면 화면이 같이 돈다. 아래 버튼은 기본 시점·전체 맞춤·화면 90° 돌리기다.
+// 면은 환자 기준(정면=순측, 좌·우=환자 좌·우)이다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/dentalFrame.ts
 
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { Home, Maximize2, RotateCcw, RotateCw } from "lucide-react";
 import * as THREE from "three";
+import type { ExternalViewGesture } from "@/shared/three/screenSpaceOrbitControls";
 import type { DentalFrame } from "@/shared/practice/dentalFrame";
 import { cn } from "@/shared/ui/cn";
 
@@ -49,18 +52,35 @@ export function viewCubeDirection(
   }
 }
 
+const CUBE_REM = 4.5;
+/** 큐브 1px 끌기 = 화면 몇 px 끌기. 큐브가 작아서 크게 돌린다. */
+const CUBE_DRAG_GAIN = 2.5;
+const DRAG_START_PX = 3;
+const ACTIVE_FACE_DOT = 0.985;
+
 const tmp = new THREE.Vector3();
+const back = new THREE.Vector3();
 
 export const PracticeCustomAbutmentViewCube = forwardRef<
   ViewCubeHandle,
   {
     onFace: (face: ViewCubeFace) => void;
+    onHome: () => void;
     onFit: () => void;
+    onRoll: (dir: 1 | -1) => void;
+    onOrbit: (gesture: ExternalViewGesture) => void;
     className?: string;
   }
->(function PracticeCustomAbutmentViewCube({ onFace, onFit, className }, ref) {
+>(function PracticeCustomAbutmentViewCube(
+  { onFace, onHome, onFit, onRoll, onOrbit, className },
+  ref,
+) {
   const cubeRef = useRef<HTMLDivElement | null>(null);
   const lastRef = useRef("");
+  const [activeFace, setActiveFace] = useState<ViewCubeFace | null>(null);
+  const activeRef = useRef<ViewCubeFace | null>(null);
+  const dragRef = useRef<{ id: number; x: number; y: number; moving: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
 
   useImperativeHandle(ref, () => ({
     sync: (camera, frame) => {
@@ -79,36 +99,154 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
       if (m === lastRef.current) return;
       lastRef.current = m;
       el.style.transform = `matrix3d(${m})`;
+
+      back.setFromMatrixColumn(camera.matrixWorld, 2).normalize();
+      let next: ViewCubeFace | null = null;
+      for (const f of FACES) {
+        if (viewCubeDirection(f.face, frame).viewDir.dot(back) > ACTIVE_FACE_DOT) {
+          next = f.face;
+          break;
+        }
+      }
+      if (next !== activeRef.current) {
+        activeRef.current = next;
+        setActiveFace(next);
+      }
     },
   }));
 
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.id !== e.pointerId) return;
+    dragRef.current = null;
+    if (drag.moving) {
+      suppressClickRef.current = true;
+      onOrbit({ type: "end" });
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // noop
+      }
+    }
+  };
+
   return (
     <div
-      className={cn("pointer-events-auto select-none", className)}
-      style={{ width: "4.25rem", height: "4.25rem", ["--cube-half" as string]: "2.125rem" }}
-      onDoubleClick={(e) => {
-        e.preventDefault();
-        onFit();
-      }}
+      className={cn(
+        "pointer-events-auto flex select-none flex-col items-center gap-1.5 rounded-xl border bg-background/85 p-2 shadow-sm backdrop-blur-sm",
+        className,
+      )}
     >
       <div
-        ref={cubeRef}
-        className="relative h-full w-full"
-        style={{ transformStyle: "preserve-3d" }}
+        className="relative grid cursor-grab place-items-center active:cursor-grabbing"
+        style={{ width: `${CUBE_REM + 1.5}rem`, height: `${CUBE_REM + 1.5}rem`, perspective: "22rem" }}
+        title="면을 누르면 그 방향으로 봅니다. 끌면 화면이 돕니다."
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          suppressClickRef.current = false;
+          dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moving: false };
+        }}
+        onPointerMove={(e) => {
+          const drag = dragRef.current;
+          if (!drag || drag.id !== e.pointerId) return;
+          const dx = e.clientX - drag.x;
+          const dy = e.clientY - drag.y;
+          if (!drag.moving) {
+            if (Math.hypot(dx, dy) < DRAG_START_PX) return;
+            drag.moving = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            onOrbit({ type: "start" });
+          }
+          drag.x = e.clientX;
+          drag.y = e.clientY;
+          onOrbit({ type: "move", action: "rotate", dx: dx * CUBE_DRAG_GAIN, dy: dy * CUBE_DRAG_GAIN });
+        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onClickCapture={(e) => {
+          if (!suppressClickRef.current) return;
+          suppressClickRef.current = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }}
       >
-        {FACES.map((f) => (
-          <button
-            key={f.face}
-            type="button"
-            className="absolute inset-0 flex items-center justify-center border border-slate-400/70 bg-white/90 text-[0.6875rem] font-semibold text-slate-700 hover:bg-primary/15 hover:text-primary"
-            style={{ transform: f.transform, backfaceVisibility: "hidden" }}
-            aria-label={`${f.label} 보기`}
-            onClick={() => onFace(f.face)}
-          >
-            {f.label}
-          </button>
-        ))}
+        <div
+          aria-hidden
+          className="absolute bottom-0.5 left-1/2 h-2.5 w-[70%] -translate-x-1/2 rounded-[50%] bg-slate-900/10 blur-[3px]"
+        />
+        <div
+          ref={cubeRef}
+          className="relative"
+          style={{
+            width: `${CUBE_REM}rem`,
+            height: `${CUBE_REM}rem`,
+            transformStyle: "preserve-3d",
+            ["--cube-half" as string]: `${CUBE_REM / 2}rem`,
+          }}
+        >
+          {FACES.map((f) => {
+            const active = activeFace === f.face;
+            return (
+              <button
+                key={f.face}
+                type="button"
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center rounded-[0.35rem] border text-xs font-semibold tracking-tight transition-colors",
+                  active
+                    ? "border-primary/60 bg-gradient-to-br from-primary/25 to-primary/10 text-primary"
+                    : "border-slate-300 bg-gradient-to-br from-white to-slate-100 text-slate-600 hover:border-primary/50 hover:from-sky-50 hover:to-sky-100 hover:text-primary",
+                )}
+                style={{
+                  transform: f.transform,
+                  backfaceVisibility: "hidden",
+                  boxShadow: "inset 0 0 0 0.125rem rgba(255,255,255,0.7)",
+                }}
+                aria-label={`${f.label} 보기`}
+                aria-pressed={active}
+                onClick={() => onFace(f.face)}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex items-center gap-0.5">
+        <CubeButton label="기본 시점" onClick={onHome}>
+          <Home className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="화면에 맞추기" onClick={onFit}>
+          <Maximize2 className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="왼쪽으로 90° 돌리기" onClick={() => onRoll(-1)}>
+          <RotateCcw className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="오른쪽으로 90° 돌리기" onClick={() => onRoll(1)}>
+          <RotateCw className="h-3.5 w-3.5" />
+        </CubeButton>
       </div>
     </div>
   );
 });
+
+function CubeButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}

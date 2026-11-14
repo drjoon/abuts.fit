@@ -34,7 +34,7 @@ const PARAM_SPECS = {
     max: 2,
   },
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.8, max: 1.15 },
-  marginFilletRadiusMm: { label: "가공 공구 R(마진 챔퍼 최소 곡률)", unit: "mm", min: 0.5, max: 0.8 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.5, max: 0.8 },
   marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지)", unit: "mm", min: 0.3, max: 0.8 },
   marginDepthMm: { label: "피니시라인 치은 하방 깊이(둘레 전체)", unit: "mm", min: 0, max: 1.5 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },

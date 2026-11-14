@@ -1,6 +1,7 @@
 // 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값·AI 대화)을
 // 이 브라우저 IndexedDB에 두고, 모달을 다시 열면 스캔만 읽어 그대로 보여 준다.
-// 키는 스캔 파일·치아 정보와 디자인 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
+// 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
+// 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -9,8 +10,10 @@ import type { MatchedScanbodyFixture } from "@/shared/practice/customAbutmentSca
 import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmentDesignParams";
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
 
-/** 디자인 로직이 바뀌면 올린다. 예전 저장본은 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 6;
+/** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 7;
+/** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
+export const CUSTOM_ABUTMENT_FIT_VERSION = 1;
 
 const DB_NAME = "abuts-custom-abutment-design";
 const STORE = "designs";
@@ -41,7 +44,9 @@ export type CachedAlignedScan = {
 
 export type CachedCustomAbutmentDesign = {
   key: string;
+  /** 형상 버전. 다르면 `fixture`·조정값으로 형상만 다시 만든다. */
   version: number;
+  fitVersion: number;
   savedAt: number;
   alignedScans: CachedAlignedScan[];
   teeth: CachedCustomAbutmentTooth[];
@@ -70,12 +75,12 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 export function customAbutmentDesignCacheKey(inputKey: string): string {
-  return `v${CUSTOM_ABUTMENT_DESIGN_VERSION}:${inputKey}`;
+  return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
 export async function readCustomAbutmentDesign(
   key: string,
-): Promise<CachedCustomAbutmentDesign | null> {
+): Promise<(CachedCustomAbutmentDesign & { designFresh: boolean }) | null> {
   if (!isBrowser || !key) return null;
   try {
     const db = await openDb();
@@ -83,7 +88,7 @@ export async function readCustomAbutmentDesign(
       const request = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
       request.onsuccess = () => {
         const row = request.result as CachedCustomAbutmentDesign | undefined;
-        if (!row || row.version !== CUSTOM_ABUTMENT_DESIGN_VERSION || !Array.isArray(row.teeth)) {
+        if (!row || row.fitVersion !== CUSTOM_ABUTMENT_FIT_VERSION || !Array.isArray(row.teeth)) {
           resolve(null);
           return;
         }
@@ -91,6 +96,7 @@ export async function readCustomAbutmentDesign(
           ...row,
           alignedScans: Array.isArray(row.alignedScans) ? row.alignedScans : [],
           chat: Array.isArray(row.chat) ? row.chat : [],
+          designFresh: row.version === CUSTOM_ABUTMENT_DESIGN_VERSION,
         });
       };
       request.onerror = () => reject(request.error);

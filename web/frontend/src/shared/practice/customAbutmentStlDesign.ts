@@ -45,8 +45,6 @@ const CUFF_HOLD_SLOPE = Math.tan(4 * DEG);
 const CUFF_END_SLOPE_MAX = Math.tan(65 * DEG);
 const CUFF_BONE_MM = 1.35;
 const CUFF_EASE_MM = 0.5;
-/** 실측: 피니시라인 위 축벽 쪽 오목 챔퍼는 축에서 약 45°로 시작해 1mm 위에서 0.48mm 들어간다. */
-const CHAMFER_START_DEG = 45;
 /** 크라운 두께 하한. 공간이 모자라도 이보다 얇게 두지 않는다. */
 const CROWN_THICKNESS_FLOOR_MM = 0.65;
 /** 스크류 채널 둘레 포스트 벽 최소 두께. */
@@ -78,6 +76,9 @@ const CONTACT_CLIP_FROM_MM = 2.5;
 /** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
 const GINGIVA_INSET_MM = 0.2;
 const MIN_POST_HEIGHT_MM = 4;
+/** 포스트 윗면은 예측 크라운 교합면(인접치 높이)보다 이만큼 낮다. */
+const POST_BELOW_CROWN_MM = 1.5;
+const CROWN_TOP_OCC_MAX_MM = 4.5;
 
 export type CustomAbutmentDesignMetrics = {
   connectionDiameterMm: number;
@@ -98,6 +99,10 @@ export type CustomAbutmentDesignMetrics = {
   marginFilletRadiusMm: number;
   /** opposing: 대합치 중심, arch: 악궁 교합 방향, parallel: 붙은 치아와 평행. */
   axisSource: "opposing" | "arch" | "parallel";
+  /** 인접 자연치 교합면 높이(마진 기준 mm). 인접치가 없으면 null. 예전 저장본은 없다. */
+  adjacentOcclusalMm?: number | null;
+  /** 예측 크라운 교합면 − 포스트 윗면(mm). */
+  crownOverPostMm?: number;
 };
 
 export type DesignedCustomAbutment = {
@@ -286,11 +291,9 @@ function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number)
  */
 function chamferGeometry(width: number, toolR: number, endSlope: number) {
   const th1 = Math.atan(endSlope);
-  const minCos0 = Math.cos(th1) - width / Math.max(toolR, 1e-3);
-  let th0 = CHAMFER_START_DEG * DEG;
-  if (Math.cos(th0) < minCos0) th0 = Math.acos(clamp(minCos0, -1, 1));
-  th0 = Math.max(th0, th1 + 5 * DEG);
-  const rho = width / Math.max(Math.cos(th1) - Math.cos(th0), 1e-4);
+  const rho = Math.max(toolR, 0.2);
+  // 반경 = 공구 R. 폭이 R보다 넓으면 90°에서 시작하고 나머지는 평평한 숄더다.
+  const th0 = Math.max(Math.acos(clamp(Math.cos(th1) - width / rho, 0, 1)), th1 + 5 * DEG);
   return { th0, th1, rho, height: rho * (Math.sin(th0) - Math.sin(th1)) };
 }
 
@@ -411,6 +414,44 @@ function insertionFrame(w: Vec3, labialHint: Vec3): InsertionFrame {
     uLabial = norm3(uLabial);
   }
   return { w, uLabial, vSide: norm3(cross3(w, uLabial)) };
+}
+
+/** 이보다 낮으면 그쪽은 자연치가 아니라 잇몸(무치악·이웃 스캔바디 자리)이다. 마진 기준 mm. */
+const ADJACENT_TOOTH_MIN_H_MM = 5;
+
+/**
+ * 양옆 인접 자연치의 교합면(첨두·절단연) 높이. 마진 중심 c0에서 삽입축 방향 mm.
+ * 근원심 방향 띠(순설 ±4.5mm)에서 쪽마다 97% 분위 높이를 잡고, 치아가 있는 쪽만 평균한다.
+ * 없으면 NaN.
+ */
+function adjacentOcclusalHeight(
+  pts: Float32Array,
+  c0: Vec3,
+  frame: InsertionFrame,
+  halfMdMm: number,
+  ownScanbody: { radius: number; height: number },
+): number {
+  const sides: number[][] = [[], []];
+  for (let i = 0; i < pts.length; i += 3) {
+    const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+    if (Math.hypot(p[0], p[1]) < ownScanbody.radius + 0.7 && p[2] < ownScanbody.height + 1) continue;
+    const rel = sub3(p, c0);
+    const h = dot3(rel, frame.w);
+    if (h < 0) continue;
+    if (Math.abs(dot3(rel, frame.uLabial)) > 4.5) continue;
+    const v = dot3(rel, frame.vSide);
+    const av = Math.abs(v);
+    if (av < halfMdMm + 0.4 || av > halfMdMm + 8) continue;
+    sides[v > 0 ? 0 : 1]!.push(h);
+  }
+  const tops: number[] = [];
+  for (const list of sides) {
+    if (list.length < 40) continue;
+    list.sort((a, b) => a - b);
+    const top = list[Math.floor(list.length * 0.97)]!;
+    if (top >= ADJACENT_TOOTH_MIN_H_MM) tops.push(top);
+  }
+  return tops.length ? tops.reduce((s, v) => s + v, 0) / tops.length : Number.NaN;
 }
 
 /** 픽스쳐 로컬 Z축을 따르는 닫힌 원뿔대(스크류 채널 cutter). */
@@ -718,7 +759,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const contact = params.crownContactMm;
   const clearance = params.occlusalClearanceMm;
 
-  const jawLocalAll = cropScanPointsInFixtureFrame(jawGeometry, fixture.fixturePose, 15);
+  const jawLocalAll = cropScanPointsInFixtureFrame(jawGeometry, fixture.fixturePose, 17);
   const opposingLocalPts = cropScanPointsInFixtureFrame(opposingGeometry, fixture.fixturePose, 17);
 
   const boreBotR = conn.screwLowerDiameterMm / 2;
@@ -1007,11 +1048,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const footR = Math.max(marginA, marginB) - shoulderW + 0.6;
   const oppFootH = oppField ? oppField.heightAt(0, 0, footR) : Infinity;
   const hasOpposing = Number.isFinite(oppFootH);
-  const postTopMax = tpl.postHeightMm + 3.0 + Math.min(0, params.postHeightOffsetMm);
-  let postTopH = hasOpposing
-    ? Math.min(postTopMax, oppFootH - clearance) + Math.min(0, params.postHeightOffsetMm)
-    : tpl.postHeightMm + params.postHeightOffsetMm;
+  // 크라운 교합면은 인접 자연치 교합면(첨두·절단연) 높이에 맞춘다. 포스트는 그보다 POST_BELOW_CROWN_MM 낮다.
+  const adjacentTopH = adjacentOcclusalHeight(jawLocalPts, c0, frame, marginB, {
+    radius: sbR,
+    height: sbH,
+  });
+  const offsetH = params.postHeightOffsetMm;
+  const baseCap = Math.min(
+    tpl.postHeightMm + 3.0,
+    Number.isFinite(adjacentTopH) ? adjacentTopH - POST_BELOW_CROWN_MM : Infinity,
+  );
+  const postTopMax = Math.max(MIN_POST_HEIGHT_MM, baseCap + offsetH);
+  // 대합치가 없으면 인접치 높이 − 1.5mm(없으면 템플릿 높이)까지.
+  const noOppTop = Number.isFinite(adjacentTopH) ? baseCap : Math.min(baseCap, tpl.postHeightMm);
+  let postTopH = (hasOpposing ? Math.min(baseCap, oppFootH - clearance) : noOppTop) + offsetH;
+  if (hasOpposing) postTopH = Math.min(postTopH, oppFootH - clearance);
   postTopH = Math.max(MIN_POST_HEIGHT_MM, postTopH);
+  const crownTopTarget = Number.isFinite(adjacentTopH) ? adjacentTopH : Infinity;
 
   // ── 5) 이웃 디자인 크라운 경계면, 인접치 스캔 제한
   const crownMid = add3(c0, scale3(frame.w, 3.5));
@@ -1265,7 +1318,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       c.hTop = "heightAt" in top ? top.heightAt(c.tipU, c.tipV) : top.tops[col]!;
       c.crownR = [];
       c.crownH = [];
-      c.crownTopOcc = tpl.crownOcclusalMm;
+      c.crownTopOcc = Number.isFinite(crownTopTarget)
+        ? clamp(crownTopTarget - c.hTop, 0.6, CROWN_TOP_OCC_MAX_MM)
+        : tpl.crownOcclusalMm;
     }
     const hPostBase = chamfer.height;
 
@@ -1300,7 +1355,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const tu = dot3(c.dir, frame.uLabial) * Math.max(0.5, c.crownR[c.crownR.length - 1]! * 0.6);
         const tv = dot3(c.dir, frame.vSide) * Math.max(0.5, c.crownR[c.crownR.length - 1]! * 0.6);
         const oppH = oppField.heightAt(tu, tv, 1.0);
-        if (Number.isFinite(oppH)) c.crownTopOcc = clamp(oppH + contact - c.hTop, 0.6, 3.0);
+        if (Number.isFinite(oppH)) {
+          c.crownTopOcc = clamp(
+            Math.min(oppH + contact, crownTopTarget) - c.hTop,
+            0.6,
+            CROWN_TOP_OCC_MAX_MM,
+          );
+        }
       }
     }
     for (let k = 0; k < CROWN_LEVELS; k += 1) {
@@ -1683,6 +1744,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       occlusalClearanceMm,
       marginFilletRadiusMm: round2(chamferRho),
       axisSource,
+      adjacentOcclusalMm: Number.isFinite(adjacentTopH) ? round2(adjacentTopH) : null,
+      crownOverPostMm: round2(
+        dot3(sub3(crownApex, c0), frame.w) - dot3(sub3(postApex, c0), frame.w) - 0.1,
+      ),
     },
   });
   return { kind: "design", design };

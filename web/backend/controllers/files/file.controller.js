@@ -21,6 +21,8 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
 import { buffer as streamToBuffer } from "node:stream/consumers";
+import { promisify } from "node:util";
+import zlib from "node:zlib";
 import sharp from "sharp";
 import File from "../../models/file.model.js";
 import Request from "../../models/request.model.js";
@@ -818,6 +820,11 @@ export const getS3DownloadUrl = asyncHandler(async (req, res) => {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // 인증된 사용자가 동일 오리진에서 첨부를 직접 내려받도록 프록시 다운로드 제공
+const brotliCompressAsync = promisify(zlib.brotliCompress);
+const gzipAsync = promisify(zlib.gzip);
+const MESH_COMPRESS_EXTS = new Set(["dcm", "ply", "stl", "obj"]);
+const MESH_COMPRESS_MIN_BYTES = 256 * 1024;
+
 export const downloadS3FileProxy = asyncHandler(async (req, res) => {
   const key = String(req.query?.key || "").trim();
   if (!key) {
@@ -905,6 +912,41 @@ export const downloadS3FileProxy = asyncHandler(async (req, res) => {
     "Content-Disposition",
     `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
   );
+  res.setHeader("Vary", "Accept-Encoding");
+
+  // 구강 스캔 메시(DCM·PLY·STL·OBJ)는 압축하면 절반 크기가 된다. 브라우저가 풀어서 받는다.
+  // brotli는 HTTPS에서만 광고되므로 HTTP(로컬)는 gzip.
+  const acceptEncoding = String(req.headers["accept-encoding"] || "");
+  const encoding = /\bbr\b/.test(acceptEncoding)
+    ? "br"
+    : /\bgzip\b/.test(acceptEncoding)
+      ? "gzip"
+      : "";
+  if (
+    encoding &&
+    MESH_COMPRESS_EXTS.has(ext) &&
+    Number.isFinite(contentLength) &&
+    contentLength >= MESH_COMPRESS_MIN_BYTES
+  ) {
+    const raw = await streamToBuffer(body);
+    const packed =
+      encoding === "br"
+        ? await brotliCompressAsync(raw, {
+            params: {
+              [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+              [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+            },
+          })
+        : await gzipAsync(raw, { level: 1 });
+    res.setHeader("Content-Encoding", encoding);
+    res.setHeader("Content-Length", String(packed.length));
+    res.setHeader("X-Decoded-Length", String(raw.length));
+    if (eTag) res.setHeader("ETag", eTag);
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.end(packed);
+    return;
+  }
+
   if (Number.isFinite(contentLength) && contentLength > 0) {
     res.setHeader("Content-Length", String(Math.floor(contentLength)));
   }

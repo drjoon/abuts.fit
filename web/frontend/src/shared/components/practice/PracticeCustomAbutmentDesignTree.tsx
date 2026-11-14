@@ -5,9 +5,21 @@
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Download, Eye, EyeOff, Loader2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Download,
+  Eye,
+  EyeOff,
+  Loader2,
+} from "lucide-react";
 import type { DesignedCustomAbutment } from "@/shared/practice/customAbutmentStlDesign";
 import { cn } from "@/shared/ui/cn";
+
+const headerBtn =
+  "flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground";
 
 const AXIS_SOURCE_LABEL: Record<DesignedCustomAbutment["metrics"]["axisSource"], string> = {
   opposing: "대합치 중심",
@@ -30,6 +42,7 @@ export function PracticeCustomAbutmentDesignTree({
   selectedTooth,
   redesigning,
   onToggleVisible,
+  onSetAllVisible,
   onSelect,
   onDownload,
   className,
@@ -39,11 +52,14 @@ export function PracticeCustomAbutmentDesignTree({
   selectedTooth: string | null;
   redesigning: readonly string[];
   onToggleVisible: (toothNumber: string) => void;
+  onSetAllVisible: (visible: boolean) => void;
   onSelect: (toothNumber: string) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
   className?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
+  const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
 
   return (
     <div
@@ -52,8 +68,29 @@ export function PracticeCustomAbutmentDesignTree({
         className,
       )}
     >
-      <div className="border-b px-2.5 py-1.5 text-xs font-semibold text-foreground">
-        커스텀어벗 {items.length}
+      <div className="flex items-center gap-0.5 border-b py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground">
+        <span className="min-w-0 flex-1 truncate">커스텀어벗 {items.length}</span>
+        <button
+          type="button"
+          className={headerBtn}
+          aria-label={allVisible ? "모두 숨기기" : "모두 보이기"}
+          title={allVisible ? "모두 숨기기" : "모두 보이기"}
+          onClick={() => onSetAllVisible(!allVisible)}
+        >
+          {allVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          type="button"
+          className={headerBtn}
+          aria-label={allOpen ? "모두 접기" : "모두 펼치기"}
+          title={allOpen ? "모두 접기" : "모두 펼치기"}
+          aria-expanded={allOpen}
+          onClick={() =>
+            setExpanded(allOpen ? {} : Object.fromEntries(items.map((it) => [it.toothNumber, true])))
+          }
+        >
+          {allOpen ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+        </button>
       </div>
       <ul className="min-h-0 space-y-0.5 overflow-y-auto p-1.5">
         {items.map((item) => {
@@ -111,6 +148,12 @@ export function PracticeCustomAbutmentDesignTree({
                   <DetailRow label="최대 직경" value={`Ø${m.maxDiameterMm}mm`} />
                   <DetailRow label="커프 높이" value={`${m.cuffHeightMinMm}~${m.cuffHeightMaxMm}mm`} />
                   <DetailRow label="포스트 높이" value={`${m.postHeightMm}mm`} />
+                  {m.adjacentOcclusalMm != null ? (
+                    <DetailRow label="인접치 교합면" value={`${m.adjacentOcclusalMm}mm`} />
+                  ) : null}
+                  {m.crownOverPostMm != null ? (
+                    <DetailRow label="크라운 − 포스트" value={`${m.crownOverPostMm}mm`} />
+                  ) : null}
                   <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
                   <DetailRow label="삽입축 각도" value={`${m.angulationDeg}°`} />
                   <DetailRow label="삽입축 기준" value={AXIS_SOURCE_LABEL[m.axisSource] ?? "-"} />
