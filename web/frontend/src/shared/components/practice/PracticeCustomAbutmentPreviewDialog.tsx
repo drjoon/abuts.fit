@@ -144,7 +144,11 @@ import {
 } from "@/shared/practice/labProsthesisAiDesign";
 import { apiFetch } from "@/shared/api/apiClient";
 import { type ScanbodyCatalog } from "@/shared/practice/scanbodyLibraryApi";
-import { toToothMemoSortNumber, type ToothWorkSelection } from "@/shared/practice/transferMemo";
+import {
+  resolveCustomAbutmentSelection,
+  toToothMemoSortNumber,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
 import {
@@ -208,6 +212,7 @@ type DesignContext = {
   patientName: string;
   jawGeometry: { upper: THREE.BufferGeometry | null; lower: THREE.BufferGeometry | null };
   fixtures: MatchedScanbodyFixture[];
+  allToothWorks: readonly ToothWorkSelection[];
   overrides: Record<string, Partial<CustomAbutmentDesignParams>>;
   alignedScans: CachedAlignedScan[];
 };
@@ -461,12 +466,11 @@ export function PracticeCustomAbutmentPreviewDialog({
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
 
-  const abutmentToothWorks = useMemo(() => {
+  const normalizedToothWorks = useMemo(() => {
     const seen = new Set<string>();
     const list: ToothWorkSelection[] = [];
     for (const row of toothWorks || []) {
-      if (!row?.customAbutment) continue;
-      const parsed = parseFdiTooth(row.toothNumber);
+      const parsed = parseFdiTooth(row?.toothNumber);
       if (!parsed || seen.has(parsed.digits)) continue;
       seen.add(parsed.digits);
       list.push({ ...row, toothNumber: parsed.digits });
@@ -475,6 +479,17 @@ export function PracticeCustomAbutmentPreviewDialog({
       (a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber),
     );
   }, [toothWorks]);
+
+  const abutmentToothWorks = useMemo(() => {
+    // 직접어벗(심플어벗 등 customAbutmentSelection === "abutment")은 스캔에 이미 어벗이 찍혀 크라운만 올리는 치아이므로
+    // 스캔바디 인식·커스텀어벗 디자인 대상에서 빼고, 스캔바디("scanbody") 치아만 디자인한다.
+    const scanbodyOnly = normalizedToothWorks.filter(
+      (row) => row.customAbutment && resolveCustomAbutmentSelection(row) === "scanbody",
+    );
+    return scanbodyOnly.length > 0
+      ? scanbodyOnly
+      : normalizedToothWorks.filter((row) => row.customAbutment);
+  }, [normalizedToothWorks]);
 
   const scanSources = useMemo(() => {
     const merged: PracticeDesignPreviewFileItem[] = [];
@@ -1058,6 +1073,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   const latestInputsRef = useRef({
     abutmentToothWorks,
+    normalizedToothWorks,
     scanSources,
     connections,
     patientName,
@@ -1065,6 +1081,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   });
   latestInputsRef.current = {
     abutmentToothWorks,
+    normalizedToothWorks,
     scanSources,
     connections,
     patientName,
@@ -1084,9 +1101,16 @@ export function PracticeCustomAbutmentPreviewDialog({
           t.abutmentDiameter,
           t.abutmentHeight,
         ]),
+        allWorks: normalizedToothWorks.map((t) => [
+          t.toothNumber,
+          t.prosthesisType,
+          t.customAbutment,
+          t.customAbutmentSelection,
+          t.bridgeLinkedTeeth,
+        ]),
         scans: scanSources.meshes.map((s) => [s.s3Key, s.fileName, s.scanRole]),
       }),
-    [abutmentToothWorks, scanSources.meshes],
+    [abutmentToothWorks, normalizedToothWorks, scanSources.meshes],
   );
 
   // WebGL 씬 초기화 (Radix DialogPortal이 마운트된 뒤 hostEl 콜백 ref로 실행)
@@ -1296,6 +1320,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!open || !hostEl) return;
     const {
       abutmentToothWorks: curToothWorks,
+      normalizedToothWorks: curAllToothWorks,
       scanSources: curScanSources,
       connections: curConnections,
       patientName: curPatientName,
@@ -1562,6 +1587,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 jawGeometry: jawGeo,
                 opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
                 neighbors: fixtures.filter((f) => f.jaw === jaw),
+                toothWorks: curAllToothWorks,
                 params: {
                   ...preferenceOverridesForTooth(row.toothNumber, curPreference.preference),
                   ...rowOverrides,
@@ -1650,6 +1676,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 jawGeometry: jawGeo,
                 opposingGeometry: oppGeo,
                 neighbors: jawFixtures,
+                toothWorks: curAllToothWorks,
                 params: preferenceOverridesForTooth(matched.toothNumber, curPreference.preference),
                 patientName: curPatientName,
               });
@@ -1734,6 +1761,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           patientName: String(curPatientName || ""),
           jawGeometry: { upper: upperPrimary, lower: lowerPrimary },
           fixtures: builtAbutments.map((d) => d.fixture),
+          allToothWorks: curAllToothWorks,
           overrides,
           alignedScans,
         };
@@ -1913,6 +1941,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             jawGeometry: jawGeo,
             opposingGeometry: ctx.jawGeometry[prev.jaw === "upper" ? "lower" : "upper"],
             neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
+            toothWorks: ctx.allToothWorks,
             params: { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged },
             patientName: ctx.patientName,
           });

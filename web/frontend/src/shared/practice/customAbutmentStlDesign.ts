@@ -42,6 +42,10 @@ import {
   toothFormOf,
   type ToothKind,
 } from "@/shared/practice/toothMorphology";
+import {
+  resolveCustomAbutmentSelection,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
 import type { Vec3 } from "@/shared/practice/scanbodyRegistration";
 
 const DEG = Math.PI / 180;
@@ -90,9 +94,9 @@ const POST_LEVELS = 24;
 const CROWN_LEVELS = 14;
 const CHAMFER_STEPS = 7;
 const LIMIT_PHI_BINS = 72;
-const LIMIT_H_MIN = -1;
+const LIMIT_H_MIN = -3.5;
 const LIMIT_H_STEP = 0.5;
-const LIMIT_H_BINS = 34;
+const LIMIT_H_BINS = 42;
 const OPP_CELL_MM = 0.5;
 /** 인접치 스캔으로 크라운을 자르는 높이(마진 위). 그 아래는 치간유두라 자르지 않는다. */
 const CONTACT_CLIP_FROM_MM = 2.5;
@@ -698,7 +702,7 @@ function adjacentOcclusalHeight(
   frame: InsertionFrame,
   halfMdMm: number,
   ownScanbody: { radius: number; height: number },
-  opts?: { mesialSignOnV?: 1 | -1; isWisdom?: boolean },
+  opts?: { mesialSignOnV?: 1 | -1; isWisdom?: boolean; skipPos?: boolean; skipNeg?: boolean },
 ): number {
   const sides: number[][] = [[], []];
   for (let i = 0; i < pts.length; i += 3) {
@@ -709,6 +713,8 @@ function adjacentOcclusalHeight(
     if (h < 0 || h > 11.5) continue;
     if (Math.abs(dot3(rel, frame.uLabial)) > 4.5) continue;
     const v = dot3(rel, frame.vSide);
+    if (v > 0 && opts?.skipPos) continue;
+    if (v < 0 && opts?.skipNeg) continue;
     if (opts?.isWisdom && v * (opts.mesialSignOnV ?? 1) < 0) continue;
     const av = Math.abs(v);
     if (av < halfMdMm + 0.4 || av > halfMdMm + 8) continue;
@@ -1026,6 +1032,8 @@ type DesignArgs = {
   jawGeometry: THREE.BufferGeometry;
   opposingGeometry: THREE.BufferGeometry | null;
   neighbors?: readonly MatchedScanbodyFixture[];
+  /** 의뢰 전체 치아 목록 — 인접 직접어벗(심플어벗)·지대치 크라운 두께 및 브리지 연결 판단용. */
+  toothWorks?: readonly ToothWorkSelection[];
   params?: Partial<CustomAbutmentDesignParams> | null;
   patientName?: string;
 };
@@ -1170,6 +1178,52 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (dot3(mesXY, mesInFix) < 0) mesXY = scale3(mesXY, -1);
   }
   const labialAngleFix = Math.atan2(labXY[1], labXY[0]);
+
+  // 의뢰 내역(toothWorks)에서 바로 옆 근심·원심 치아가 스캔에 찍힌 직접어벗(심플어벗 등 customAbutmentSelection="abutment")이거나
+  // 프렙 지대치(크라운·브리지 보철 대상)인지, 그리고 브리지로 연결되는지 읽어 인접 크라운 벽 두께 여유를 계산한다.
+  const ownFdi = parseFdiTooth(fixture.toothNumber);
+  const allWorks = args.toothWorks ?? [];
+  const ownWork = allWorks.find((tw) => parseFdiTooth(tw.toothNumber)?.digits === ownFdi?.digits);
+  const neighborScannedCrownAllowance = (adjFdiDigits: string | null): { wallMm: number; bridged: boolean } => {
+    if (!adjFdiDigits) return { wallMm: 0, bridged: false };
+    // 이미 스캔바디 이웃(neighbors)으로 매칭된 치아는 중간면(planeLimitAt)이 처리한다.
+    if ((args.neighbors ?? []).some((nb) => nb.toothNumber === adjFdiDigits)) {
+      return { wallMm: 0, bridged: false };
+    }
+    const adjWork = allWorks.find((tw) => parseFdiTooth(tw.toothNumber)?.digits === adjFdiDigits);
+    if (!adjWork) return { wallMm: 0, bridged: false };
+    const pType = String(adjWork.prosthesisType || "").trim();
+    if (!pType || pType === "결손" || pType === "자연치" || /가철/i.test(pType)) {
+      return { wallMm: 0, bridged: false };
+    }
+    const linkedFromOwn = (ownWork?.bridgeLinkedTeeth ?? []).some(
+      (t) => parseFdiTooth(t)?.digits === adjFdiDigits,
+    );
+    const linkedFromAdj = (adjWork.bridgeLinkedTeeth ?? []).some(
+      (t) => parseFdiTooth(t)?.digits === ownFdi?.digits,
+    );
+    const bridged =
+      linkedFromOwn ||
+      linkedFromAdj ||
+      (String(ownWork?.prosthesisType || "").trim() === "브리지" && pType === "브리지");
+    const isDirectAbutment =
+      adjWork.customAbutment && resolveCustomAbutmentSelection(adjWork) === "abutment";
+    const adjTpl = abutmentTemplateForTooth(adjFdiDigits);
+    const baseWall = isDirectAbutment
+      ? Math.max(1.05, (adjTpl.crownLabialMm + adjTpl.crownLingualMm) * 0.5)
+      : /인레이/i.test(pType)
+        ? 0
+        : 0.95;
+    return { wallMm: baseWall, bridged };
+  };
+  const mesialAdjDigits = ownFdi
+    ? ownFdi.pos > 1
+      ? `${ownFdi.digits[0]}${ownFdi.pos - 1}`
+      : `${ownFdi.digits[0] === "1" ? "2" : ownFdi.digits[0] === "2" ? "1" : ownFdi.digits[0] === "3" ? "4" : "3"}1`
+    : null;
+  const distalAdjDigits = ownFdi && ownFdi.pos < 8 ? `${ownFdi.digits[0]}${ownFdi.pos + 1}` : null;
+  const mesialAllowance = neighborScannedCrownAllowance(mesialAdjDigits);
+  const distalAllowance = neighborScannedCrownAllowance(distalAdjDigits);
   // ── 1) 픽스쳐 둘레 치은연 높이 → 스캘럽 마진 높이
   const rawGingivaZ = new Array<number>(SECTORS).fill(Number.NaN);
   const gingivaBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
@@ -1433,8 +1487,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     return vals.length ? Math.min(...vals) : Number.NaN;
   };
-  const reachPos = sideReach(Math.PI / 2);
-  const reachNeg = sideReach((3 * Math.PI) / 2);
+  const mesSign0 = dot3(frame0.vSide, mesXY) >= 0 ? 1 : -1;
+  const posAllowance0 = mesSign0 > 0 ? mesialAllowance : distalAllowance;
+  const negAllowance0 = mesSign0 > 0 ? distalAllowance : mesialAllowance;
+  const rawReachPos = sideReach(Math.PI / 2);
+  const rawReachNeg = sideReach((3 * Math.PI) / 2);
+  // 옆 치아가 직접어벗(심플어벗)·지대치면 스캔 표면에서 그 치아의 크라운 인접면 두께만큼 안쪽이 내 예측 크라운의 경계다.
+  const reachPos = Number.isFinite(rawReachPos)
+    ? Math.max(2.6, rawReachPos - posAllowance0.wallMm)
+    : Number.NaN;
+  const reachNeg = Number.isFinite(rawReachNeg)
+    ? Math.max(2.6, rawReachNeg - negAllowance0.wallMm)
+    : Number.NaN;
   let mdScale = 1;
   let sideShiftMm = 0;
   if (Number.isFinite(reachPos) && Number.isFinite(reachNeg)) {
@@ -1446,10 +1510,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   } else if (contraMirror) {
     mdScale = clamp(refNaturalMdMm / tpl.naturalMdMm, 0.92, 1.1);
   }
-  const sideHasTooth = (list: number[], reach: number) =>
-    Number.isFinite(reach) && list.filter((r) => r <= reach + 3).length >= 15;
-  const toothPos = sideHasTooth(tallSide[0], reachPos);
-  const toothNeg = sideHasTooth(tallSide[1], reachNeg);
+  const sideHasTooth = (list: number[], rawReach: number) =>
+    Number.isFinite(rawReach) && list.filter((r) => r <= rawReach + 3).length >= 15;
+  const toothPos = sideHasTooth(tallSide[0], rawReachPos);
+  const toothNeg = sideHasTooth(tallSide[1], rawReachNeg);
   // 가상 치아 근원심: 치종 평균(+거울상) 폭. 양옆 자연치가 있으면 그 사이(±15%), 한쪽만 있으면 그쪽에 닿게 둔다.
   const natHalfMd = refNaturalMdMm / 2;
   let crownHalfMd = natHalfMd;
@@ -1626,23 +1690,37 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     return r0 + ((Number.isFinite(t) ? t : r0) - r0) * emerge;
   };
 
-  // ── 4) 가상 치아 교합면 높이 → 포스트 높이(지르코니아 두께 최소 0.7mm, 목표 1.0~1.5mm 확보)
+  // ── 4) 가상 치아 교합면 높이 → 포스트 높이(대합치와 교합 접촉, 지르코니아 두께 최소 0.7mm, 목표 1.0~1.5mm 확보)
   const oppField =
     opposingLocalPts.length > 0 ? buildOpposingHeightField(opposingLocalPts, c0, frame, 9) : null;
   const footR = Math.max(marginA, marginB) - shoulderW + 0.6;
   const oppFootH = oppField ? oppField.heightAt(0, 0, footR) : Infinity;
+  // 중심부(포스트 상단 면) 대합치 높이. footR 바깥(인접치 상방)으로 내려온 대합 교두 때문에 내 포스트 전체가 짧아지지 않게 구분한다.
+  const oppCoreH = oppField ? oppField.heightAt(0, 0, Math.min(2.2, footR * 0.6)) : Infinity;
+  const oppRefH = Number.isFinite(oppCoreH) ? oppCoreH : oppFootH;
   const hasOpposing = Number.isFinite(oppFootH);
   // 대합치가 가깝더라도 지르코니아 최소 두께(0.7mm)와 목표(clearance 기본 1.3mm, 1.0~1.5mm)를 확보하기 위해
   // MIN_POST_HEIGHT_MM 때문에 대합치를 파고드는 일을 절대 허용하지 않는다.
   const minSafePostHeightMm = hasOpposing ? 2.2 : MIN_POST_HEIGHT_MM;
-  const adjacentTopH = adjacentOcclusalHeight(
-    jawLocalPts,
-    c0,
-    frame,
-    marginB,
-    { radius: sbR, height: sbH },
-    { mesialSignOnV, isWisdom: parseFdiTooth(fixture.toothNumber)?.pos === 8 },
-  );
+  // 인접한 치아가 직접어벗·프렙 지대치면 그 치아 높이는 아직 크라운이 올라가기 전이므로 인접 완성 치관 높이에서 뺀다.
+  const posHasFinishedNeighbor = (mesialSignOnV > 0 ? mesialAllowance : distalAllowance).wallMm === 0;
+  const negHasFinishedNeighbor = (mesialSignOnV > 0 ? distalAllowance : mesialAllowance).wallMm === 0;
+  const adjacentTopH =
+    posHasFinishedNeighbor || negHasFinishedNeighbor
+      ? adjacentOcclusalHeight(
+          jawLocalPts,
+          c0,
+          frame,
+          marginB,
+          { radius: sbR, height: sbH },
+          {
+            mesialSignOnV,
+            isWisdom: parseFdiTooth(fixture.toothNumber)?.pos === 8,
+            skipPos: !posHasFinishedNeighbor,
+            skipNeg: !negHasFinishedNeighbor,
+          },
+        )
+      : Number.NaN;
   const mirrorTopH = contraMirror ? clamp(contraMirror.crownHeightMm, 5.0, 10.5) : Number.NaN;
   const archCrownTopH = Number.isFinite(adjacentTopH)
     ? Number.isFinite(mirrorTopH)
@@ -1651,23 +1729,30 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     : mirrorTopH;
   const offsetH = params.postHeightOffsetMm;
   const desiredOccThickness = clamp(Math.max(clearance, params.minCrownThicknessMm + 0.15), 1.0, 1.5);
-  const baseCap = Math.min(
-    tpl.postHeightMm + 3.0,
-    Number.isFinite(archCrownTopH) ? archCrownTopH - desiredOccThickness : Infinity,
-  );
+  // 대합치가 있으면 대합치와 실제로 교합되도록 대합치 높이에서 크라운 교합면 두께를 뺀 높이를 우선한다.
+  const baseCap = hasOpposing
+    ? tpl.postHeightMm + 4.5
+    : Math.min(
+        tpl.postHeightMm + 3.0,
+        Number.isFinite(archCrownTopH) ? archCrownTopH - desiredOccThickness : Infinity,
+      );
   const postTopMax = Math.max(
     minSafePostHeightMm,
-    hasOpposing ? Math.min(baseCap + offsetH, oppFootH - clearance) : baseCap + offsetH,
+    hasOpposing ? Math.min(baseCap + offsetH, oppRefH - clearance + 0.8) : baseCap + offsetH,
   );
   const noOppTop = Number.isFinite(archCrownTopH) ? baseCap : Math.min(baseCap, tpl.postHeightMm);
-  let postTopH = (hasOpposing ? Math.min(baseCap, oppFootH - clearance) : noOppTop) + offsetH;
-  if (hasOpposing) postTopH = Math.min(postTopH, oppFootH - clearance);
+  let postTopH = (hasOpposing ? Math.min(baseCap, oppRefH - clearance) : noOppTop) + offsetH;
+  if (hasOpposing) postTopH = Math.min(postTopH, oppRefH - clearance);
   postTopH = Math.max(minSafePostHeightMm, postTopH);
   if (hasOpposing) {
     // 뼈대 최소 높이(2.2mm)에서도 최소 지르코니아 두께(0.7mm)는 반드시 남긴다.
-    postTopH = Math.min(postTopH, Math.max(1.8, oppFootH - CROWN_THICKNESS_FLOOR_MM));
+    postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - CROWN_THICKNESS_FLOOR_MM));
   }
-  const crownTopTarget = Number.isFinite(archCrownTopH) ? archCrownTopH : Infinity;
+  const crownTopTarget = hasOpposing
+    ? Infinity
+    : Number.isFinite(archCrownTopH)
+      ? archCrownTopH
+      : Infinity;
 
   // ── 5) 이웃 디자인 크라운 경계면, 인접치 스캔 제한
   const crownMid = add3(c0, scale3(frame.w, 3.5));
@@ -1723,11 +1808,65 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     return lim;
   };
 
+  /**
+   * 스캔에 찍힌 옆 치아/어벗 표면(scanLimit)에서 이 치아 예측 크라운 외면까지의 거리 한도.
+   * 옆 치아가 직접어벗(심플어벗)·지대치면 그 기둥 높이 위로도 크라운 외벽이 수직으로 이어지므로
+   * 기둥 상단의 최소 반경까지 함께 보고, 그 위에 올라갈 인접 크라운 인접면 두께(wallMm)를 빼서 자리를 남긴다.
+   */
   // ── 6) 열(픽스쳐 원통 각 θ)마다 마진·포스트 원하는 형상과 예측 크라운
   const topB = (tpl.topMdMm / 2) * mdScale * params.postWidthScale;
   const minMarginRadius = coneTopR + 0.5;
   const convergeFrom = tpl.anterior ? 0.5 : 0.7;
   const topRoundMm = tpl.anterior ? TOP_ROUND_ANTERIOR_MM : TOP_ROUND_POSTERIOR_MM;
+
+  const sideAllowanceOf = (phi: number) =>
+    Math.sin(phi) * mesialSignOnV >= 0 ? mesialAllowance : distalAllowance;
+  // 옆 치아가 직접어벗(심플어벗)·프렙 지대치면 스캔에 찍힌 그 기둥의 최근접 축방향 평면에서
+  // 인접 크라운 인접면 두께(wallMm)만큼 안쪽 평면을 브리지 커넥터/인접 접촉 경계로 삼는다.
+  const computeScannedAbutmentPlane = (signOnV: 1 | -1, wallMm: number): number => {
+    if (wallMm <= 0) return Infinity;
+    const dists: number[] = [];
+    for (let i = 0; i < jawLocalPts.length; i += 3) {
+      const p: Vec3 = [jawLocalPts[i]!, jawLocalPts[i + 1]!, jawLocalPts[i + 2]!];
+      if (Math.hypot(p[0], p[1]) < sbR + 0.7 && p[2] < sbH + 1) continue;
+      const rel = sub3(p, c0);
+      const h = dot3(rel, frame.w);
+      if (h < 2.4 || h > 9.5) continue;
+      const u = dot3(rel, frame.uLabial);
+      const sv = dot3(rel, frame.vSide) * signOnV;
+      if (sv < 2.8 || sv > 9.5 || Math.abs(u) > 3.8) continue;
+      dists.push(sv);
+    }
+    if (dists.length < 15) return Infinity;
+    dists.sort((a, b) => a - b);
+    const frontV = dists[Math.floor(dists.length * 0.05)]!;
+    return Math.max(minMarginRadius + 0.5, frontV - wallMm);
+  };
+  const mesialPlaneLimitV = computeScannedAbutmentPlane(mesialSignOnV, mesialAllowance.wallMm);
+  const distalPlaneLimitV = computeScannedAbutmentPlane(
+    (mesialSignOnV * -1) as 1 | -1,
+    distalAllowance.wallMm,
+  );
+  const adjacentScanCrownLimitAt = (phi: number, h: number) => {
+    const sideAllowance = sideAllowanceOf(phi);
+    const s = Math.sin(phi);
+    if (sideAllowance.wallMm <= 0) {
+      const raw = scanLimitAt(phi, h);
+      return Number.isFinite(raw) ? raw + contact : Infinity;
+    }
+    let lim = Infinity;
+    const planeV = s * mesialSignOnV >= 0 ? mesialPlaneLimitV : distalPlaneLimitV;
+    if (Number.isFinite(planeV) && Math.abs(s) > 0.15) {
+      lim = Math.min(lim, planeV / Math.abs(s));
+    }
+    const raw = scanLimitAt(phi, h);
+    if (Number.isFinite(raw)) {
+      const dirWeight = smootherstep(clamp((Math.abs(s) - 0.18) / 0.35, 0, 1));
+      const cosOblique = Math.max(0.55, Math.abs(s));
+      lim = Math.min(lim, Math.max(minMarginRadius + 0.45, raw - (sideAllowance.wallMm / cosOblique) * dirWeight));
+    }
+    return lim;
+  };
 
   type ColumnPlan = {
     marginPt: Vec3;
@@ -1958,12 +2097,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const rel = sub3(q, c0);
     const h = dot3(rel, frame.w);
     if (h < 2 || h > postTopMax + clearance + 3) continue;
-    if (Math.hypot(dot3(rel, frame.uLabial), dot3(rel, frame.vSide)) > footR + 3) continue;
+    // 포스트 자체 수평 반경 + 여유(0.9mm) 안의 대합치만 본다. 인접치(#37 등) 상방으로 내려온 옆 치아 대합 교두에 걸려 내 포스트가 낮아지지 않게 한다.
+    if (Math.hypot(dot3(rel, frame.uLabial), dot3(rel, frame.vSide)) > footR + 0.9) continue;
     oppNear.push(q);
   }
   const nearestOpp = (p: Vec3) => {
+    const relP = sub3(p, c0);
+    const pu = dot3(relP, frame.uLabial);
+    const pv = dot3(relP, frame.vSide);
     let best = Infinity;
     for (const q of oppNear) {
+      const relQ = sub3(q, c0);
+      if (Math.hypot(dot3(relQ, frame.uLabial) - pu, dot3(relQ, frame.vSide) - pv) > 1.35) continue;
       const d = Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
       if (d < best) best = d;
     }
@@ -2004,8 +2149,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const minPostWall = hasOpposing ? 1.15 : 2.2;
       const minTop = Math.max(...cols.map((c) => c.h0 + chamfer.height + minPostWall - gu * c.tipU - gv * c.tipV));
       a = Math.max(a, minTop);
-      if (hasOpposing && Number.isFinite(oppFootH)) {
-        a = Math.min(a, oppFootH - CROWN_THICKNESS_FLOOR_MM);
+      if (hasOpposing && Number.isFinite(oppRefH)) {
+        a = Math.min(a, oppRefH - CROWN_THICKNESS_FLOOR_MM);
       }
       return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a };
     }
@@ -2084,12 +2229,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             0.25 * ramp * Math.sin(Math.PI * frac),
         );
         let adjacentBound = planeLimitAt(c.dir, h) + contact / 2;
-        if (h >= c.h0 + CONTACT_CLIP_FROM_MM) {
-          const lim = scanLimitAt(c.phi, h);
+        const clipStartAboveMargin =
+          sideAllowanceOf(c.phi).wallMm > 0 ? 0.8 : CONTACT_CLIP_FROM_MM;
+        if (h >= c.h0 + clipStartAboveMargin) {
+          const lim = adjacentScanCrownLimitAt(c.phi, h);
           if (Number.isFinite(lim)) {
-            // 인접면은 1.2mm 안쪽이면 접촉까지 넓혀 열린 접촉을 막는다.
-            if (Math.abs(sSide) > 0.6 && lim + contact > r && lim + contact - r <= 1.2) r = lim + contact;
-            adjacentBound = Math.min(adjacentBound, lim + contact);
+            // 인접면(또는 브리지 커넥터 경계)은 1.4mm 안쪽이면 경계까지 넓혀 열린 접촉을 막는다.
+            if (Math.abs(sSide) > 0.6 && lim > r && lim - r <= 1.4) r = lim;
+            adjacentBound = Math.min(adjacentBound, lim);
           }
         }
         // 가상 치아 외형은 자신의 포스트 + 최소 두께보다 안쪽으로 꺼지지 않되, 인접치·인접 어벗 경계는 넘지 않는다.
@@ -2124,8 +2271,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           planeLimitAt(c.dir, c.crownH[k]!) + contact / 2,
           Math.max(c.crownNat[k]!, labialLimitAt(c.dir, c.crownH[k]!)),
         );
-        if (c.crownH[k]! >= c.h0 + CONTACT_CLIP_FROM_MM) {
-          lim = Math.min(lim, scanLimitAt(c.phi, c.crownH[k]!) + contact);
+        const clipStartAboveMargin =
+          sideAllowanceOf(c.phi).wallMm > 0 ? 0.8 : CONTACT_CLIP_FROM_MM;
+        if (c.crownH[k]! >= c.h0 + clipStartAboveMargin) {
+          lim = Math.min(lim, adjacentScanCrownLimitAt(c.phi, c.crownH[k]!));
         }
         return lim;
       });
@@ -2427,16 +2576,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const reliefAmp = posterior ? 1.8 : 1.1;
       const lift1 = crownOcclusalReliefRatio(fixture.toothNumber, uNorm1, vNorm1) * reliefAmp;
       const lift2 = crownOcclusalReliefRatio(fixture.toothNumber, uNorm2, vNorm2) * reliefAmp;
-      const occCap = oppField
-        ? oppField.heightAt(du * cuspR1, dot3(c.dir, frame.vSide) * cuspR1, 0.8) + contact
+      const occCapEdge = oppField
+        ? oppField.heightAt(du * rCrownTop, dot3(c.dir, frame.vSide) * rCrownTop, 1.0) + contact
         : Infinity;
+      // 가장자리 링(crownR[CROWN_LEVELS - 1])도 대합치를 뚫지 않게 맞춘다.
+      if (Number.isFinite(occCapEdge) && crown[crown.length - 1]!) {
+        const lastH = Math.min(c.crownH[CROWN_LEVELS - 1]!, occCapEdge - 0.12);
+        crown[crown.length - 1] = at(Math.max(c.h0 + 0.5, lastH), rCrownTop);
+      }
+      const occCap1 = oppField
+        ? oppField.heightAt(du * cuspR1, dot3(c.dir, frame.vSide) * cuspR1, 1.0) + contact
+        : Infinity;
+      const occCap2 = oppField
+        ? oppField.heightAt(du * cuspR2, dot3(c.dir, frame.vSide) * cuspR2, 1.0) + contact
+        : occCap1;
+      // 대합치가 있으면 예측 크라운 교합면이 대합치와 교합(가벼운 접촉, 침투 없음)하도록 맞춘다.
+      const wantOcc1 = Number.isFinite(occCap1)
+        ? Math.max(c.hTop + c.crownTopOcc * 0.72 + lift1 * 0.55, occCap1 - 0.22 + lift1 * 0.2)
+        : c.hTop + c.crownTopOcc * 0.65 + lift1 * 0.7;
+      const wantOcc2 = Number.isFinite(occCap2)
+        ? Math.max(c.hTop + c.crownTopOcc + lift2 * 0.55, occCap2 - 0.08 + lift2 * 0.2)
+        : c.hTop + c.crownTopOcc + lift2;
       const hOcc1 = Math.min(
-        occCap,
-        Math.max(c.hTop + CROWN_THICKNESS_FLOOR_MM * 0.8, c.hTop + c.crownTopOcc * 0.65 + lift1 * 0.7),
+        occCap1 - 0.04,
+        Math.max(c.hTop + CROWN_THICKNESS_FLOOR_MM * 0.85, wantOcc1),
       );
       const hOcc2 = Math.min(
-        occCap,
-        Math.max(c.hTop + CROWN_THICKNESS_FLOOR_MM, c.hTop + c.crownTopOcc + lift2),
+        occCap2,
+        Math.max(c.hTop + CROWN_THICKNESS_FLOOR_MM, wantOcc2),
       );
       crown.push(at(hOcc1, cuspR1));
       crown.push(at(hOcc2, cuspR2));
@@ -2449,9 +2616,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const postApex = add3(c0, scale3(frame.w, apexH));
     const fossaDrop = crownOcclusalReliefRatio(fixture.toothNumber, 0, 0) * (posterior ? 1.8 : 1.1);
     const meanCrownCuspH = crownTopSum / ANGULAR_COLS;
-    const crownCenterH = Math.max(
-      apexH + Math.min(desiredOccThickness, 1.05),
-      meanCrownCuspH + fossaDrop,
+    const oppApexCap = oppField ? oppField.heightAt(0, 0, 1.4) + contact : Infinity;
+    const crownCenterH = Math.min(
+      oppApexCap,
+      Math.max(
+        apexH + Math.min(desiredOccThickness, 1.05),
+        Number.isFinite(oppApexCap) ? oppApexCap - 0.25 : meanCrownCuspH + fossaDrop,
+      ),
     );
     const crownApex = add3(c0, scale3(frame.w, crownCenterH));
     return {
