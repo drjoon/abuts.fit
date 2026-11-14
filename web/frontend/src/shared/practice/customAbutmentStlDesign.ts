@@ -270,8 +270,35 @@ function superellipseRadius(a: number, b: number, phi: number, n = SUPERELLIPSE_
 }
 
 /**
+ * 변이 축에 수직인 둥근 사각형의 φ 방향 반경.
+ * 초타원은 n을 올려도 긴 축 끝이 먼저 뾰족해져 마름모로 보인다.
+ * 평평한 변을 먼저 두고, 모서리만 원호로 잇는다.
+ */
+function roundedRectRadius(halfBl: number, halfMd: number, phi: number): number {
+  const a = Math.max(halfBl, 0.4);
+  const b = Math.max(halfMd, 0.4);
+  const cr = Math.min(a, b) * 0.42;
+  const ax = a - cr;
+  const ay = b - cr;
+  const c = Math.abs(Math.cos(phi));
+  const s = Math.abs(Math.sin(phi));
+  if (c > 1e-8) {
+    const tx = a / c;
+    if (tx * s <= ay + 1e-6) return tx;
+  }
+  if (s > 1e-8) {
+    const ty = b / s;
+    if (ty * c <= ax + 1e-6) return ty;
+  }
+  const B = -2 * (c * ax + s * ay);
+  const C = ax * ax + ay * ay - cr * cr;
+  const disc = Math.max(0, B * B - 4 * C);
+  return (-B + Math.sqrt(disc)) / 2;
+}
+
+/**
  * 교합면에서 본 치종별 해부 단면 반경(우리치과기공소·알토란치과기공소 STL 실측 기반).
- * - 대구치(molar): 근원심으로 길고 협설로 짧은 둥근 모서리 사각형 (superellipse n ≈ 3.5)
+ * - 대구치(molar): 근원심으로 길고 협설로 짧은 둥근 모서리 직사각형(변은 평평, 모서리만 원호)
  * - 소구치(premolar): 계란형 타원 (n ≈ 2.08, 협측 완만·설측 약간 좁아짐)
  * - 견치(canine): 둥근 모서리 삼각형 (순측 호 + 근·원심 우각 + 설측 결절로 좁아짐)
  * - 전치(incisor): 납작한 타원체 (순설 방향으로 납작하고 근원심으로 퍼진 타원, n ≈ 2.15)
@@ -280,7 +307,7 @@ function toothOcclusalSectionRadius(kind: ToothKind, aBl: number, bMd: number, p
   const cp = Math.cos(phi);
   const sp = Math.sin(phi);
   if (kind === "molar") {
-    return superellipseRadius(aBl, bMd, phi, 3.5);
+    return roundedRectRadius(aBl, bMd, phi);
   }
   if (kind === "premolar") {
     const eggWidth = 1 + 0.055 * cp;
@@ -2218,9 +2245,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       enforcePostProfile(rs, hs);
     }
 
-    // 단면을 치종 해부 조화로 고르고(전치 2=납작한 타원, 견치 3=둥근 삼각형, 소구치 3=계란형 타원, 대구치 4=둥근 4각형)
+    // 단면을 치종 해부 조화로 고르고(전치 2=납작한 타원, 견치 3=둥근 삼각형, 소구치 3=계란형 타원, 대구치 16=평평한 변의 직사각형)
     // 높이 방향으로 펴서 굴곡·턱 없이 잇는다.
-    const harmonics = tpl.kind === "incisor" ? 2 : tpl.kind === "molar" ? 4 : 3;
+    const harmonics = tpl.kind === "incisor" ? 2 : tpl.kind === "molar" ? 16 : 3;
     const blendLevels = Math.max(2, Math.round(POST_LEVELS * 0.35));
     for (let k = 1; k <= POST_LEVELS; k += 1) {
       const ring = cols.map((_, col) => postR[col]![k]!);
@@ -2295,7 +2322,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         rawR0.push(r0Line);
         rawSlope.push(slopeNeed);
       }
-      const harmonicsPost = tpl.kind === "molar" ? 4 : 3;
+      const harmonicsPost = tpl.kind === "molar" ? 16 : 3;
       const smoothR0 = lowPassCircular(rawR0, harmonicsPost);
       const smoothSlope = lowPassCircular(rawSlope, 3).map((s) => clamp(s, taperSlope * 0.85, maxStraightSlope));
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
