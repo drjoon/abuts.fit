@@ -2495,47 +2495,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
-            {ready && designedList.length > 0 ? (
-              <PracticeCustomAbutmentDesignTree
-                className="absolute left-3 top-16 z-10 max-h-[calc(100%-5rem)]"
-                items={designedList}
-                visibleTeeth={visibleTeeth}
-                selectedTooth={selectedTooth}
-                redesigning={redesigning}
-                onToggleVisible={(toothNumber) =>
-                  setVisibleTeeth((prev) => ({
-                    ...prev,
-                    [toothNumber]: prev[toothNumber] === false,
-                  }))
-                }
-                onSetAllVisible={(visible) =>
-                  setVisibleTeeth(
-                    Object.fromEntries(designedList.map((d) => [d.toothNumber, visible])),
-                  )
-                }
-                shownScanbodies={shownScanbodies}
-                onToggleScanbody={(toothNumber) =>
-                  setShownScanbodies((prev) => ({ ...prev, [toothNumber]: !prev[toothNumber] }))
-                }
-                onSetAllScanbodies={(shown) =>
-                  setShownScanbodies(
-                    Object.fromEntries(designedList.map((d) => [d.toothNumber, shown])),
-                  )
-                }
-                onSelect={(toothNumber) => {
-                  if (selectedTooth === toothNumber) {
-                    setSelectedTooth(null);
-                    fitDefaultCamera();
-                    return;
-                  }
-                  focusSingleTooth(toothNumber);
-                }}
-                onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
-              />
-            ) : null}
-
             {ready ? (
-              <div className="pointer-events-none absolute bottom-3 right-3 top-16 z-10 flex flex-col items-end gap-2">
+              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex flex-col items-start gap-2">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -2559,7 +2520,50 @@ export function PracticeCustomAbutmentPreviewDialog({
                   }}
                   onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
                 />
-                {chatOpen ? renderChatPanel() : null}
+                {designedList.length > 0 ? (
+                  <PracticeCustomAbutmentDesignTree
+                    className="min-h-0 flex-1"
+                    items={designedList}
+                    visibleTeeth={visibleTeeth}
+                    selectedTooth={selectedTooth}
+                    redesigning={redesigning}
+                    onToggleVisible={(toothNumber) =>
+                      setVisibleTeeth((prev) => ({
+                        ...prev,
+                        [toothNumber]: prev[toothNumber] === false,
+                      }))
+                    }
+                    onSetAllVisible={(visible) =>
+                      setVisibleTeeth(
+                        Object.fromEntries(designedList.map((d) => [d.toothNumber, visible])),
+                      )
+                    }
+                    shownScanbodies={shownScanbodies}
+                    onToggleScanbody={(toothNumber) =>
+                      setShownScanbodies((prev) => ({ ...prev, [toothNumber]: !prev[toothNumber] }))
+                    }
+                    onSetAllScanbodies={(shown) =>
+                      setShownScanbodies(
+                        Object.fromEntries(designedList.map((d) => [d.toothNumber, shown])),
+                      )
+                    }
+                    onSelect={(toothNumber) => {
+                      if (selectedTooth === toothNumber) {
+                        setSelectedTooth(null);
+                        fitDefaultCamera();
+                        return;
+                      }
+                      focusSingleTooth(toothNumber);
+                    }}
+                    onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {ready && chatOpen ? (
+              <div className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex flex-col items-end">
+                {renderChatPanel()}
               </div>
             ) : null}
 

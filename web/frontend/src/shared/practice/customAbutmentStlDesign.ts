@@ -96,6 +96,10 @@ const LIMIT_H_BINS = 34;
 const OPP_CELL_MM = 0.5;
 /** 인접치 스캔으로 크라운을 자르는 높이(마진 위). 그 아래는 치간유두라 자르지 않는다. */
 const CONTACT_CLIP_FROM_MM = 2.5;
+/** 인접치·인접 기성 어벗과 마진 사이의 최소 유격(크라운 장착 시 간섭 방지: 내 크라운 출현 두께 + 인접 크라운 출현 두께 + 장착 여유). */
+const ADJACENT_MARGIN_CLEARANCE_MM = 1.6;
+/** 인접 디자인 크라운 중간 경계면에서 각 마진까지 띄우는 반유격(양쪽 합 최소 1.8mm). */
+const NEIGHBOR_PLANE_MARGIN_GAP_MM = 0.9;
 /** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
 const GINGIVA_INSET_MM = 0.2;
 /** 마진은 치은선(크라운이 올라갈 잇몸 테두리) 아래 marginDepthMm(기본 0.5), 매끄럽게 할 때도 1.0mm보다 깊지 않다. */
@@ -266,6 +270,35 @@ function superellipseRadius(a: number, b: number, phi: number, n = SUPERELLIPSE_
 }
 
 /**
+ * 교합면에서 본 치종별 해부 단면 반경(우리치과기공소·알토란치과기공소 STL 실측 기반).
+ * - 대구치(molar): 둥근 모서리 사각형 (superellipse n ≈ 2.95)
+ * - 소구치(premolar): 계란형 타원 (n ≈ 2.08, 협측 완만·설측 약간 좁아짐)
+ * - 견치(canine): 둥근 모서리 삼각형 (순측 호 + 근·원심 우각 + 설측 결절로 좁아짐)
+ * - 전치(incisor): 납작한 타원체 (순설 방향으로 납작하고 근원심으로 퍼진 타원, n ≈ 2.15)
+ */
+function toothOcclusalSectionRadius(kind: ToothKind, aBl: number, bMd: number, phi: number): number {
+  const cp = Math.cos(phi);
+  const sp = Math.sin(phi);
+  if (kind === "molar") {
+    return superellipseRadius(aBl, bMd, phi, 2.95);
+  }
+  if (kind === "premolar") {
+    const eggWidth = 1 + 0.055 * cp;
+    return superellipseRadius(aBl, bMd * eggWidth, phi, 2.08);
+  }
+  if (kind === "canine") {
+    // 순측(cp > 0)에서는 근원심이 넓게 퍼져 두 우각을 이루고, 설측(cp < 0)으로 갈수록 설측 결절 하나로 모이는 둥근 삼각형.
+    const triWidth = 1 + 0.16 * cp;
+    const base = superellipseRadius(aBl, bMd * triWidth, phi, 2.35);
+    const corner3 = 1 - 0.045 * Math.cos(3 * phi);
+    return base * corner3;
+  }
+  // incisor: 납작한 타원체 (순측은 살짝 더 평평하고 설측은 부드러운 타원)
+  const incisorWidth = 1 + 0.05 * cp;
+  return superellipseRadius(aBl, bMd * incisorWidth, phi, 2.15);
+}
+
+/**
  * cuffBlend 커프 단면 r(z). PRC 면에서 2°(곡률 0)로 시작해 골 높이까지 4°를 유지하고,
  * 오목하게 기울기를 올린 뒤(r'' ≥ 0, 볼록 없음) 같은 기울기로 피니시라인에 닿는다.
  * 끝 기울기는 필요한 만큼만 둔다(실측 25~30°). 칼날 마진을 만드는 65° 플레어는 피한다.
@@ -391,8 +424,8 @@ function abutmentTemplateForTooth(toothNumber: string): AbutmentTemplate {
     if (!upper) {
       return {
         kind, anterior: true,
-        marginBlMm: 4.9, marginMdMm: 4.6,
-        topLabialHalfMm: 0.8, topLingualHalfMm: 0.6, topMdMm: 3.2,
+        marginBlMm: 4.5, marginMdMm: 4.9,
+        topLabialHalfMm: 0.95, topLingualHalfMm: 0.85, topMdMm: 3.4,
         postHeightMm: 7.2, naturalMdMm: 5.6, naturalBlMm: 6.2, lingualTopDropMm: 0.8,
         crownLabialMm: 1.1, crownLingualMm: 0.9, crownOcclusalMm: 1.6,
       };
@@ -400,8 +433,8 @@ function abutmentTemplateForTooth(toothNumber: string): AbutmentTemplate {
     const lateral = pos === 2;
     return {
       kind, anterior: true,
-      marginBlMm: lateral ? 4.7 : 5.0, marginMdMm: lateral ? 4.8 : 5.2,
-      topLabialHalfMm: 0.85, topLingualHalfMm: 0.65, topMdMm: lateral ? 3.2 : 3.6,
+      marginBlMm: lateral ? 4.5 : 4.8, marginMdMm: lateral ? 5.0 : 5.5,
+      topLabialHalfMm: 1.0, topLingualHalfMm: 0.9, topMdMm: lateral ? 3.5 : 4.0,
       postHeightMm: lateral ? 6.8 : 7.3, naturalMdMm: lateral ? 6.6 : 8.5, naturalBlMm: lateral ? 6.0 : 7.0,
       lingualTopDropMm: 1.0,
       crownLabialMm: 1.2, crownLingualMm: 1.0, crownOcclusalMm: 1.7,
@@ -410,8 +443,8 @@ function abutmentTemplateForTooth(toothNumber: string): AbutmentTemplate {
   if (kind === "canine") {
     return {
       kind, anterior: true,
-      marginBlMm: upper ? 5.5 : 5.0, marginMdMm: upper ? 5.1 : 4.9,
-      topLabialHalfMm: 1.0, topLingualHalfMm: 0.85, topMdMm: 3.4,
+      marginBlMm: upper ? 5.4 : 4.95, marginMdMm: upper ? 5.35 : 4.95,
+      topLabialHalfMm: upper ? 1.45 : 1.35, topLingualHalfMm: upper ? 1.25 : 1.15, topMdMm: upper ? 3.8 : 3.5,
       postHeightMm: upper ? 7.6 : 7.4, naturalMdMm: upper ? 7.6 : 6.9, naturalBlMm: upper ? 8.0 : 7.5,
       lingualTopDropMm: 0.8,
       crownLabialMm: 1.2, crownLingualMm: 1.0, crownOcclusalMm: 1.8,
@@ -420,23 +453,23 @@ function abutmentTemplateForTooth(toothNumber: string): AbutmentTemplate {
   if (kind === "premolar") {
     return {
       kind, anterior: false,
-      marginBlMm: upper ? 6.1 : 5.4, marginMdMm: upper ? 5.1 : 5.1,
-      topLabialHalfMm: upper ? 2.15 : 1.95, topLingualHalfMm: upper ? 2.15 : 1.95,
-      topMdMm: upper ? 3.55 : 3.2,
+      marginBlMm: upper ? 5.95 : 5.45, marginMdMm: upper ? 4.95 : 4.85,
+      topLabialHalfMm: upper ? 2.25 : 2.05, topLingualHalfMm: upper ? 2.15 : 1.95,
+      topMdMm: upper ? 3.65 : 3.5,
       postHeightMm: upper ? 5.6 : 6.0, naturalMdMm: 7.0,
       naturalBlMm: upper ? 9.0 : pos === 4 ? 7.5 : 8.0,
       lingualTopDropMm: 0.2,
       crownLabialMm: 1.2, crownLingualMm: 1.1, crownOcclusalMm: 1.8,
     };
   }
-  const second = pos === 7;
+  const second = pos === 7 || pos === 8;
   return {
     kind: "molar", anterior: false,
-    marginBlMm: upper ? 7.05 : 6.35, marginMdMm: upper ? 6.45 : 6.7,
-    topLabialHalfMm: upper ? 2.72 : 2.3, topLingualHalfMm: upper ? 2.72 : 2.3,
-    topMdMm: upper ? 4.8 : 5.25,
+    marginBlMm: upper ? 6.95 : 6.55, marginMdMm: upper ? 6.65 : 6.65,
+    topLabialHalfMm: upper ? 2.75 : 2.55, topLingualHalfMm: upper ? 2.75 : 2.55,
+    topMdMm: upper ? 5.1 : 5.25,
     postHeightMm: upper ? 5.5 : 5.3,
-    naturalMdMm: upper ? (second ? 9.0 : 10.0) : second ? 10.5 : 11.0,
+    naturalMdMm: upper ? (second ? 9.5 : 10.2) : second ? 10.5 : 11.0,
     naturalBlMm: upper ? 11.0 : second ? 10.0 : 10.5,
     lingualTopDropMm: 0.15,
     crownLabialMm: 1.3, crownLingualMm: 1.2, crownOcclusalMm: 1.9,
@@ -1279,49 +1312,52 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   }
   const meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
-  // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 넓게 벌어진 잇몸 터널은 마진을 키워 지지한다.
+  // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 치종 형태를 깨뜨리는 한쪽 왜곡을 막기 위해 대칭(짝수 조화) 평균만 참고한다.
   const tissueBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
-  // 치은정 부근(마진 위 0.3~1.3mm) 잇몸 안쪽 면. 마진은 이보다 GINGIVA_INSET_MM 안에 둬서 잇몸을 누르지 않는다.
+  // 치은정 부근(마진 위 0.3~1.1mm) 잇몸 안쪽 면. 스캔바디 기둥 표면(r <= sbR+0.55)을 잇몸 내벽으로 오인해
+  // 마진이 스캔바디 지름으로 쪼그라들지 않도록 sbR+0.55mm 바깥의 연조직 깔때기 벽만 모은다.
   const innerBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+  const sectorMaxNearZ = new Array<number>(SECTORS).fill(-Infinity);
   for (let i = 0; i < jawLocalPts.length; i += 3) {
     const x = jawLocalPts[i]!;
     const y = jawLocalPts[i + 1]!;
     const z = jawLocalPts[i + 2]!;
     const r = Math.hypot(x, y);
-    if (r < sbR + 0.25 || r > sbR + 3.2) continue;
+    if (r < sbR + 0.55 || r > sbR + 3.4) continue;
     const b = Math.min(SECTORS - 1, Math.floor((wrapAngle(Math.atan2(y, x)) / (Math.PI * 2)) * SECTORS));
     const zm = smoothMarginZ[b]!;
-    if (z >= zm + 0.3 && z <= zm + 1.3) innerBuckets[b]!.push(r);
+    if (r <= sbR + 2.4 && z > sectorMaxNearZ[b]!) sectorMaxNearZ[b] = z;
+    if (z >= zm + 0.3 && z <= zm + 1.1) innerBuckets[b]!.push(r);
     if (z < zm + 0.6 || z > zm + 1.8) continue;
     tissueBuckets[b]!.push(r);
   }
-  const innerRaw = innerBuckets.map((list) => {
-    if (list.length < 3) return Number.NaN;
+  const innerRaw = innerBuckets.map((list, b) => {
+    if (list.length < 4) return Number.NaN;
+    if (sectorMaxNearZ[b]! > smoothMarginZ[b]! + 2.4) return Number.NaN;
     list.sort((a, c) => a - c);
-    return list[Math.floor(list.length * 0.15)]!;
+    return list[Math.floor(list.length * 0.25)]!;
   });
-  const gingivaInnerR = innerRaw.some(Number.isFinite)
-    ? lowPassCircular(
-        innerRaw.map((r, _, all) => {
-          if (Number.isFinite(r)) return r;
-          const ok = all.filter(Number.isFinite);
-          return ok.reduce((s, v) => s + v, 0) / ok.length;
-        }),
-        3,
-      )
-    : null;
-  const tissueR = lowPassCircular(
-    tissueBuckets.map((list) => {
-      if (list.length < 3) return Number.NaN;
-      list.sort((a, c) => a - c);
-      return list[Math.floor(list.length * 0.5)]!;
-    }).map((r, _, all) => {
-      if (Number.isFinite(r)) return r;
-      const ok = all.filter(Number.isFinite);
-      return ok.length ? ok.reduce((s, v) => s + v, 0) / ok.length : sbR + 0.3;
-    }),
-    2,
-  );
+  const validInnerCount = innerRaw.filter(Number.isFinite).length;
+  const gingivaInnerR =
+    validInnerCount >= Math.round(SECTORS * 0.5)
+      ? lowPassCircular(
+          innerRaw.map((r, _, all) => {
+            if (Number.isFinite(r)) return r;
+            const ok = all.filter(Number.isFinite);
+            return ok.reduce((s, v) => s + v, 0) / ok.length;
+          }),
+          2,
+        )
+      : null;
+  const tissueAll: number[] = [];
+  for (let b = 0; b < SECTORS; b += 1) {
+    const list = tissueBuckets[b]!;
+    if (list.length < 3 || sectorMaxNearZ[b]! > smoothMarginZ[b]! + 2.6) continue;
+    list.sort((a, c) => a - c);
+    tissueAll.push(list[Math.floor(list.length * 0.5)]!);
+  }
+  tissueAll.sort((a, c) => a - c);
+  const medianTissueR = tissueAll.length > 0 ? tissueAll[Math.floor(tissueAll.length * 0.5)]! : Number.NaN;
   const c0: Vec3 = [0, 0, meanMarginZ];
 
   // ── 2) 가상 치아(평균 크기 + 인접치 간격/순측선 + 반대측 동일치 거울상 + 대합치 중심) 구성
@@ -1701,28 +1737,106 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const cols: ColumnPlan[] = [];
   const topRaw: number[] = [];
 
-  // 마진 반경: 템플릿·연조직 → 이웃 크라운 경계면에서 0.5mm. 줄이는 양은 둘레로 퍼뜨려 매끄럽게.
+  // 인접 자연치·기성 어벗(스캔에 이미 찍힌 기둥)이 마진·크라운 장착 경로와 간섭하지 않도록
+  // 근심·원심 방향(±48° 부채꼴)에서 그 방향의 실제 피니시라인 높이(zMargin) 위로 2.2mm 이상 우뚝 솟은
+  // 인접 치아·기성 어벗 외벽까지의 반경을 구한다. 평균 마진 높이(meanMarginZ) 대신 각도별 피니시라인 높이를
+  // 기준으로 써야 후구치 삼각 융기처럼 경사진 원심 잇몸을 인접 치아로 오인하지 않고, 근심의 인접 기성 어벗은 정확히 잡는다.
+  const adjCoreMaxAboveMargin = new Float32Array(LIMIT_PHI_BINS).fill(-Infinity);
+  const adjStructureWallR = new Float32Array(LIMIT_PHI_BINS).fill(Infinity);
+  for (let i = 0; i < jawLocalPts.length; i += 3) {
+    const p: Vec3 = [jawLocalPts[i]!, jawLocalPts[i + 1]!, jawLocalPts[i + 2]!];
+    const cylR = Math.hypot(p[0], p[1]);
+    if (cylR < sbR + 0.85 && p[2] < sbH + 1.2) continue;
+    const rel = sub3(p, c0);
+    const u = dot3(rel, frame.uLabial);
+    const v = dot3(rel, frame.vSide);
+    const r = Math.hypot(u, v);
+    if (r < sbR + 0.85 || r > 7.5) continue;
+    const phi = Math.atan2(v, u);
+    const thetaFix = Math.atan2(p[1], p[0]);
+    const localMarginZ = evalPeriodicLinear(smoothMarginZ, thetaFix);
+    const hAboveMargin = p[2] - localMarginZ;
+    if (hAboveMargin < 0.8 || hAboveMargin > 10.5) continue;
+    // 인접치·인접 어벗이 놓일 수 있는 근심·원심(±42°) 중에서도, 실제로 옆 치아/어벗이 감지된 쪽만 건다.
+    // 최후방 사랑니(#18,#28,#38,#48)의 원심은 해부학적으로 항상 후구치 삼각 융기(무치악)이므로 제외한다.
+    const vSigned = v * crownSideSign;
+    const isDistalOfWisdom =
+      parseFdiTooth(fixture.toothNumber)?.pos === 8 && v * mesialSignOnV < 0;
+    const inMesialOrDistalSide =
+      !isDistalOfWisdom && ((vSigned > 0 && toothPos) || (vSigned < 0 && toothNeg));
+    if (!inMesialOrDistalSide || Math.abs(Math.sin(phi)) < Math.sin(42 * DEG)) continue;
+    const pb = Math.min(
+      LIMIT_PHI_BINS - 1,
+      Math.floor((wrapAngle(phi) / (Math.PI * 2)) * LIMIT_PHI_BINS),
+    );
+    if (r <= 6.5 && hAboveMargin > adjCoreMaxAboveMargin[pb]!) {
+      adjCoreMaxAboveMargin[pb] = hAboveMargin;
+    }
+    if (hAboveMargin >= 1.8 && hAboveMargin <= 8.5 && r < adjStructureWallR[pb]!) {
+      adjStructureWallR[pb] = r;
+    }
+  }
+  const adjacentStructureWallAt = (phi: number) => {
+    const pb = Math.floor((wrapAngle(phi) / (Math.PI * 2)) * LIMIT_PHI_BINS);
+    let best = Infinity;
+    for (let dp = -2; dp <= 2; dp += 1) {
+      const pp = (pb + dp + LIMIT_PHI_BINS) % LIMIT_PHI_BINS;
+      if (adjCoreMaxAboveMargin[pp]! < 2.4) continue;
+      if (adjStructureWallR[pp]! < best) best = adjStructureWallR[pp]!;
+    }
+    return best;
+  };
+
+  // 마진 반경: 치종 해부 단면(대구치 둥근 4각형, 소구치 계란형 타원, 견치 둥근 삼각형, 전치 납작한 타원체)을 기본으로 하고,
+  // 인접 디자인 어벗 경계면(NEIGHBOR_PLANE_MARGIN_GAP_MM)과 인접 자연치/기성어벗 측벽(ADJACENT_MARGIN_CLEARANCE_MM)에서 충분히 띄운다.
+  const meanTemplateR = (marginA + marginB) / 2;
+  const uniformTissueScale = Number.isFinite(medianTissueR)
+    ? clamp(1 + 0.35 * (medianTissueR / Math.max(meanTemplateR, 1) - 1), 0.96, 1.14)
+    : 1;
   const marginWant: number[] = [];
   const marginCap: number[] = [];
   for (let col = 0; col < ANGULAR_COLS; col += 1) {
     const theta = (col / ANGULAR_COLS) * Math.PI * 2;
-    const rTemplate = superellipseRadius(marginA, marginB, theta - labialAngleFix);
-    const tissueRatio = evalPeriodicLinear(tissueR, theta) / rTemplate;
-    marginWant.push(
-      Math.max(minMarginRadius, rTemplate * clamp(1 + 0.5 * (tissueRatio - 1), 0.95, 1.22)),
-    );
+    const rTemplate = toothOcclusalSectionRadius(tpl.kind, marginA, marginB, theta - labialAngleFix);
+    marginWant.push(Math.max(minMarginRadius, rTemplate * uniformTissueScale));
     const radialFix: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
-    const lim = planeLimitAt(
-      norm3(sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)))),
+    const dirInFrame = norm3(sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w))));
+    const phiInFrame = Math.atan2(dot3(dirInFrame, frame.vSide), dot3(dirInFrame, frame.uLabial));
+    const limPlane = planeLimitAt(
+      dirInFrame,
       evalPeriodicLinear(smoothMarginZ, theta) - meanMarginZ,
     );
-    let limR = Number.isFinite(lim) ? lim - 0.5 : Infinity;
+    let limR = Number.isFinite(limPlane) ? limPlane - NEIGHBOR_PLANE_MARGIN_GAP_MM : Infinity;
+    const adjWall = adjacentStructureWallAt(phiInFrame);
+    if (Number.isFinite(adjWall)) {
+      limR = Math.min(limR, adjWall - ADJACENT_MARGIN_CLEARANCE_MM);
+    }
     if (gingivaInnerR) limR = Math.min(limR, evalPeriodicLinear(gingivaInnerR, theta) - GINGIVA_INSET_MM);
     marginCap.push(Number.isFinite(limR) ? Math.max(minMarginRadius, limR) : Infinity);
   }
-  const marginRadii = smoothCircularReduce(marginWant, marginCap, 4, 6).map((r) =>
+  let marginRadii = smoothCircularReduce(marginWant, marginCap, 5, 8).map((r) =>
     Math.max(minMarginRadius, r),
   );
+  // 치종 고유의 대칭 형태(대구치 둥근 4각형, 소구치 계란형 등)가 한쪽만 눌려 삼각형으로 보이지 않도록,
+  // 인접 유격으로 근·원심 중 한쪽 반경이 줄어들면 반대쪽 근·원심도 최대 절반까지 균형 있게 줄인다.
+  {
+    let sideShort = 0;
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      const phi = (col / ANGULAR_COLS) * Math.PI * 2 - labialAngleFix;
+      if (Math.abs(Math.sin(phi)) > 0.7) {
+        sideShort = Math.max(sideShort, marginWant[col]! - marginRadii[col]!);
+      }
+    }
+    if (sideShort > 0.15) {
+      const symReduce = Math.min(0.45, sideShort * 0.5);
+      marginRadii = marginRadii.map((r, col) => {
+        const phi = (col / ANGULAR_COLS) * Math.PI * 2 - labialAngleFix;
+        const wSide = Math.sin(phi) ** 2;
+        const symWant = marginWant[col]! - symReduce * wSide;
+        return Math.max(minMarginRadius, Math.min(r, symWant));
+      });
+    }
+  }
   // 평균 크라운을 옮긴 뒤에도 풍융부에서 마진 위 축벽 + 최소 두께가 들어가야 한다. 모자라면 옮긴 양을 줄인다.
   for (let iter = 0; iter < 12; iter += 1) {
     let short = 0;
@@ -1777,7 +1891,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const rBase0 = r0 - shoulderW;
     const hBase = h0 + chamfer.height;
     const topA = (cLab >= 0 ? tpl.topLabialHalfMm : tpl.topLingualHalfMm) * blScale * params.postWidthScale;
-    const rTpl = superellipseRadius(topA, topB, phi);
+    const rTpl = toothOcclusalSectionRadius(tpl.kind, topA, topB, phi);
     const linW = smootherstep(clamp((-cLab - 0.2) / 0.6, 0, 1));
     const plan: ColumnPlan = {
       marginPt,
@@ -1938,20 +2052,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             Math.min(thick, params.minCrownThicknessMm + 0.2) * ramp +
             0.25 * ramp * Math.sin(Math.PI * frac),
         );
+        let adjacentBound = planeLimitAt(c.dir, h) + contact / 2;
         if (h >= c.h0 + CONTACT_CLIP_FROM_MM) {
           const lim = scanLimitAt(c.phi, h);
           if (Number.isFinite(lim)) {
             // 인접면은 1.2mm 안쪽이면 접촉까지 넓혀 열린 접촉을 막는다.
             if (Math.abs(sSide) > 0.6 && lim + contact > r && lim + contact - r <= 1.2) r = lim + contact;
-            r = Math.min(r, lim + contact);
+            adjacentBound = Math.min(adjacentBound, lim + contact);
           }
         }
-        // 가상 치아 외형은 자신의 포스트 + 최소 지르코니아 두께(0.7mm)보다 안쪽으로 꺼지지 않는다.
-        const postFloor =
-          c.postDesired(Math.max(h, c.h0 + hPostBase)) + CROWN_THICKNESS_FLOOR_MM * ramp;
+        // 가상 치아 외형은 자신의 포스트 + 최소 두께보다 안쪽으로 꺼지지 않되, 인접치·인접 어벗 경계는 넘지 않는다.
+        const postFloor = Math.min(
+          adjacentBound,
+          c.postDesired(Math.max(h, c.h0 + hPostBase)) + CROWN_THICKNESS_FLOOR_MM * ramp,
+        );
         r = Math.max(
           postFloor,
-          Math.min(r, planeLimitAt(c.dir, h) + contact / 2, Math.max(nat, labialLimitAt(c.dir, h))),
+          Math.min(r, adjacentBound, Math.max(nat, labialLimitAt(c.dir, h))),
         );
         c.crownH.push(h);
         c.crownR.push(r);
@@ -1986,8 +2103,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const c = cols[col]!;
         const h = c.crownH[k]!;
         const ramp = smootherstep((h - c.h0) / 1.8);
-        const postFloor =
-          c.postDesired(Math.max(h, c.h0 + hPostBase)) + CROWN_THICKNESS_FLOOR_MM * ramp;
+        const postFloor = Math.min(
+          cap[col]!,
+          c.postDesired(Math.max(h, c.h0 + hPostBase)) + CROWN_THICKNESS_FLOOR_MM * ramp,
+        );
         c.crownR[k] = Math.max(c.r0 * 0.9, postFloor, ring[col]!);
       }
     }
@@ -2099,9 +2218,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       enforcePostProfile(rs, hs);
     }
 
-    // 단면을 저차 조화로 고르고(전치는 타원) 높이 방향으로 펴서 굴곡·턱 없이 잇는다.
-    // 아래쪽은 마진 단면을 따르고 높이 35%까지 서서히 넘어간다.
-    const harmonics = tpl.anterior ? 2 : tpl.kind === "molar" ? 4 : 3;
+    // 단면을 치종 해부 조화로 고르고(전치 2=납작한 타원, 견치 3=둥근 삼각형, 소구치 3=계란형 타원, 대구치 4=둥근 4각형)
+    // 높이 방향으로 펴서 굴곡·턱 없이 잇는다.
+    const harmonics = tpl.kind === "incisor" ? 2 : tpl.kind === "molar" ? 4 : 3;
     const blendLevels = Math.max(2, Math.round(POST_LEVELS * 0.35));
     for (let k = 1; k <= POST_LEVELS; k += 1) {
       const ring = cols.map((_, col) => postR[col]![k]!);
@@ -2165,7 +2284,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const hc = Math.max(floorR[col]![k]!, hardCapR[col]![k]!);
           if (Number.isFinite(hc)) extraIn = Math.max(extraIn, r0Line - slopeNeed * dh - hc);
         }
-        r0Line = Math.max(floorR[col]![0]!, r0Line - Math.min(0.22, extraIn));
+        r0Line = Math.max(floorR[col]![0]!, r0Line - Math.min(0.6, extraIn));
         // 스크류 채널 벽 침범 방지
         for (let k = 1; k <= POST_LEVELS; k += 1) {
           const dh = Math.max(0.1, hs[k]! - h0Base);
@@ -2182,7 +2301,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const hs = postH[col]!;
         const h0Base = hs[0]!;
-        const r0Line = clamp(
+        let r0Line = clamp(
           smoothR0[col]!,
           floorR[col]![0]!,
           Math.max(floorR[col]![0]!, cols[col]!.r0 - 0.12),
@@ -2192,7 +2311,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const dh = Math.max(0.1, hs[k]! - h0Base);
           const lo = floorR[col]![k]!;
           const hi = Math.max(lo, hardCapR[col]![k]!);
-          if (r0Line - sl * dh > hi) sl = Math.min(maxStraightSlope, (r0Line - hi) / dh);
+          if (r0Line - sl * dh > hi) {
+            const needSlope = (r0Line - hi) / dh;
+            if (needSlope <= maxStraightSlope) {
+              sl = needSlope;
+            } else {
+              sl = maxStraightSlope;
+              r0Line = Math.max(floorR[col]![0]!, hi + sl * dh);
+            }
+          }
           if (r0Line - sl * dh < lo) sl = Math.max(0, (r0Line - lo) / dh);
         }
         for (let k = 0; k <= POST_LEVELS; k += 1) {

@@ -587,6 +587,116 @@ function computeJawOcclusalAxes(
   return { occlusalDir: occ, archRight, archAnterior, mean };
 }
 
+/**
+ * 매칭된 픽스쳐 주변 치열궁(치관·인접 어벗 능선)의 실제 접선으로 순(협)측·근심 방향을 보정한다.
+ * 전체 메시 평균(넓은 협측 전정·설측 잇몸 치마 포함) 때문에 악궁 전방 축이 기울어져 있어도,
+ * 픽스쳐 주변 2.5~14mm 구간 치관 능선의 수직 방향을 찾고 악궁 안쪽(나머지 치열 중심 반대쪽)으로
+ * 부호를 정해 실제 협측·근심을 정확히 맞춘다.
+ */
+function refineMatchedFixtureDirections(
+  jawGeometry: THREE.BufferGeometry,
+  fixture: MatchedScanbodyFixture,
+  side: 1 | -1,
+): { labialDir: Vec3; mesialDir: Vec3 } {
+  const pts = samplePositions(jawGeometry, 6000);
+  const occ = fixture.archOcclusalDir;
+  const isUpper = fixture.jaw === "upper";
+  const cranialUp = isUpper ? scale(occ, -1) : occ;
+  const fallbackMesial = norm(scale(cross(cranialUp, fixture.labialDir), side));
+  if (pts.length < 80) {
+    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
+  }
+
+  const fixAx = fixture.fixturePose.axis;
+  const orig = fixture.fixturePose.origin;
+  const localCrest: Vec3[] = [];
+  for (const p of pts) {
+    const rel = sub(p, orig);
+    const hh = dot(rel, fixAx);
+    if (hh < 2.4 || hh > 12.0) continue;
+    const lat = sub(rel, scale(fixAx, hh));
+    const r = Math.hypot(...lat);
+    if (r >= fixture.scanbodyRadiusMm + 0.6 && r <= 14.0) localCrest.push(lat);
+  }
+  if (localCrest.length < 25) {
+    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
+  }
+
+  const e1 =
+    Math.abs(fixAx[2]) < 0.9 ? norm(cross(fixAx, [0, 0, 1])) : norm(cross(fixAx, [1, 0, 0]));
+  const e2 = norm(cross(fixAx, e1));
+  let lx = 0;
+  let ly = 0;
+  for (const lat of localCrest) {
+    lx += dot(lat, e1);
+    ly += dot(lat, e2);
+  }
+  lx /= localCrest.length;
+  ly /= localCrest.length;
+  let lxx = 0;
+  let lxy = 0;
+  let lyy = 0;
+  for (const lat of localCrest) {
+    const x = dot(lat, e1) - lx;
+    const y = dot(lat, e2) - ly;
+    lxx += x * x;
+    lxy += x * y;
+    lyy += y * y;
+  }
+  const th = 0.5 * Math.atan2(2 * lxy, lxx - lyy);
+  const c = Math.cos(th);
+  const s = Math.sin(th);
+  const v1 = lxx * c * c + 2 * lxy * c * s + lyy * s * s;
+  const v2 = lxx * s * s - 2 * lxy * c * s + lyy * c * c;
+  const aniso = Math.max(v1, v2) / Math.max(1e-6, Math.min(v1, v2));
+  if (aniso < 1.7) {
+    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
+  }
+
+  const minor2D: [number, number] = v1 >= v2 ? [-s, c] : [c, s];
+  let perp = norm(add(scale(e1, minor2D[0]), scale(e2, minor2D[1])));
+  const perpInOcc = sub(perp, scale(occ, dot(perp, occ)));
+  if (Math.hypot(...perpInOcc) < 1e-4) {
+    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
+  }
+  perp = norm(perpInOcc);
+
+  // 악궁은 혀·구개 쪽으로 오목하므로, 이 치아에서 12mm 이상 떨어진 나머지 치관 점들의 중심은
+  // 항상 악궁 안쪽(설측/근원심)에 놓인다. 그 반대쪽이 외측(순·협측)이다.
+  const hsAll = pts.map((p) => dot(p, occ));
+  const cut = quantile([...hsAll].sort((a, b) => a - b), 0.65);
+  let farX = 0;
+  let farY = 0;
+  let farZ = 0;
+  let farN = 0;
+  for (let i = 0; i < pts.length; i += 1) {
+    if ((hsAll[i] ?? -Infinity) < cut) continue;
+    const p = pts[i]!;
+    if (Math.hypot(p[0] - orig[0], p[1] - orig[1], p[2] - orig[2]) < 12) continue;
+    farX += p[0];
+    farY += p[1];
+    farZ += p[2];
+    farN += 1;
+  }
+  let outwardRef = fixture.labialDir;
+  if (farN >= 20) {
+    const fromFar = sub(orig, [farX / farN, farY / farN, farZ / farN]);
+    const inOcc = sub(fromFar, scale(occ, dot(fromFar, occ)));
+    if (Math.hypot(...inOcc) > 3) {
+      const chordOut = norm(inOcc);
+      // 현 방향이 법선과 너무 평행하지 않을 때 외측 부호 기준으로 쓰고, 애매하면 슬롯 방향을 함께 본다.
+      outwardRef =
+        Math.abs(dot(perp, chordOut)) >= 0.22
+          ? chordOut
+          : norm(add(scale(chordOut, 0.5), scale(fixture.labialDir, 0.5)));
+    }
+  }
+  if (dot(perp, outwardRef) < 0) perp = scale(perp, -1);
+
+  const mesialDir = norm(scale(cross(cranialUp, perp), side));
+  return { labialDir: perp, mesialDir };
+}
+
 /** 교합면 안에서 순측에 수직인 방향 중 정중선(근심) 쪽. */
 function mesialDirOf(slot: {
   occlusalDir: Vec3;
@@ -1126,7 +1236,13 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
 
   peakHits.sort((a, b) => a.totalScore - b.totalScore);
   return peakHits.slice(0, Math.max(1, maxHits)).map((hit) => {
-    const fixture = buildMatchedFixture(hit);
+    const baseFixture = buildMatchedFixture(hit);
+    const refined = refineMatchedFixtureDirections(jawGeometry, baseFixture, slot.side);
+    const fixture: MatchedScanbodyFixture = {
+      ...baseFixture,
+      labialDir: refined.labialDir,
+      mesialDir: refined.mesialDir,
+    };
     return {
       fixture,
       totalScore: hit.totalScore,

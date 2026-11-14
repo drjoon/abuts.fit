@@ -76,9 +76,8 @@ export function toothViewCube(
   anterior.addScaledVector(up, -anterior.dot(up));
   if (anterior.lengthSq() < 1e-6) return null;
   anterior.normalize();
-  const right = new THREE.Vector3().crossVectors(up, anterior);
-  const refRight = new THREE.Vector3().crossVectors(frame.up, frame.anterior);
-  if (refRight.dot(frame.right) < 0) right.negate();
+  // 오른손 좌표계: 환자를 정면(+anterior)에서 바라볼 때 오른쪽은 +right = anterior × up (위쪽 화면 우측 = -right).
+  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
 
   let left = "좌";
   let rightLabel = "우";
