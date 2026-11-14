@@ -68,8 +68,8 @@
   - `services/labHelperAlarmWs.js` — `WS /api/lab-helper/alarms/ws` (Bearer, internalLab·requestor lab/practice)
   - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait` 구버전 호환
 - 커스텀어벗 디자인 AI 대화
-  - `controllers/ai/customAbutmentDesignChat.controller.js` — `POST /api/ai/custom-abutment-design-chat`. Gemini `gemini-2.5-flash` JSON 응답을 파라미터 변경으로만 받고 `PARAM_SPECS` 범위로 자른다. 범위는 프론트 `customAbutmentDesignParams.ts`와 같아야 한다. 402(크레딧 소진)는 503으로 안내한다.
-  - 치과 기본값: Gemini가 1회성이 아닌 요청을 `preference {scope: all|anterior|posterior, params, note}`로 돌려주면 `BusinessAnchor.customAbutmentDesignPreference`에 저장한다. 저장은 대화 사용자의 사업자가 `PracticeTransfer.practiceBusinessAnchorId`일 때만이다(기공소·관리자는 읽기만). `scope=all` 저장 시 같은 키의 전치/구치 값은 지운다. `GET`/`DELETE /api/ai/custom-abutment-design-preference?transferId=`.
+  - `controllers/ai/customAbutmentDesignChat.controller.js` — `POST /api/ai/custom-abutment-design-chat`. Gemini `gemini-2.5-flash-lite`(출력 600토큰, 대화 6턴×300자, 지표 4개만 전달). 선택 `image`(JPEG/PNG/WebP data URL, 2MB 이하)는 페인트 그림이다. 정형 명령은 프론트 `customAbutmentChatCommands.ts`가 먼저 처리해 여기로 오지 않는다. JSON 응답을 파라미터 변경으로만 받고 `PARAM_SPECS` 범위로 자른다. 범위는 프론트 `customAbutmentDesignParams.ts`와 같아야 한다. 402(크레딧 소진)는 503으로 안내한다.
+  - 치과 기본값: Gemini가 1회성이 아닌 요청을 `preference {scope: all|anterior|posterior, params, note}`로 돌려주면 `BusinessAnchor.customAbutmentDesignPreference`에 저장한다. 저장은 대화 사용자의 사업자가 `PracticeTransfer.practiceBusinessAnchorId`일 때만이다(기공소·관리자는 읽기만). `scope=all` 저장 시 같은 키의 전치/구치 값은 지운다. `GET`/`DELETE /api/ai/custom-abutment-design-preference?transferId=`. `PUT`(body `{transferId, scope, params, note}`)은 AI 없이 바로 저장한다(프론트 로컬 파서용, 같은 권한 규칙).
 
 ## 1. 구조
 

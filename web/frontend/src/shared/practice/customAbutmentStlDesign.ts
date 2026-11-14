@@ -51,8 +51,12 @@ const CHAMFER_START_DEG = 45;
 const CROWN_THICKNESS_FLOOR_MM = 0.65;
 /** 스크류 채널 둘레 포스트 벽 최소 두께. */
 const SCREW_WALL_MM = 0.35;
-const TOP_ROUND_MM = 0.5;
-const TOP_ROUND_STEPS = 7;
+/** 윗면 라운드 반경. 축벽에 접선으로 이어진다(턱 없음). */
+const TOP_ROUND_POSTERIOR_MM = 0.6;
+const TOP_ROUND_ANTERIOR_MM = 0.8;
+const TOP_ROUND_STEPS = 10;
+/** 픽스쳐 사이가 이 안이면 붙은 치아로 보고 삽입축을 평행하게 맞춘다. */
+const PARALLEL_GROUP_MM = 13;
 /** 소·대구치 평평한 윗면의 최대 기울기. */
 const FLAT_TOP_MAX_TILT = Math.tan(12 * DEG);
 /** 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
@@ -71,6 +75,8 @@ const LIMIT_H_BINS = 34;
 const OPP_CELL_MM = 0.5;
 /** 인접치 스캔으로 크라운을 자르는 높이(마진 위). 그 아래는 치간유두라 자르지 않는다. */
 const CONTACT_CLIP_FROM_MM = 2.5;
+/** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
+const GINGIVA_INSET_MM = 0.2;
 const MIN_POST_HEIGHT_MM = 4;
 
 export type CustomAbutmentDesignMetrics = {
@@ -90,7 +96,8 @@ export type CustomAbutmentDesignMetrics = {
   /** 포스트 윗면 → 대합치 최소 거리(mm). 대합치가 없으면 null. */
   occlusalClearanceMm: number | null;
   marginFilletRadiusMm: number;
-  axisSource: "opposing" | "arch";
+  /** opposing: 대합치 중심, arch: 악궁 교합 방향, parallel: 붙은 치아와 평행. */
+  axisSource: "opposing" | "arch" | "parallel";
 };
 
 export type DesignedCustomAbutment = {
@@ -133,6 +140,12 @@ const wrapAngle = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI 
 
 function worldDirToFixtureLocal(dir: Vec3, pose: FixtureWorldPose): Vec3 {
   return norm3([dot3(dir, pose.hexX), dot3(dir, pose.hexY), dot3(dir, pose.axis)]);
+}
+
+function fixtureLocalDirToWorld(dir: Vec3, pose: FixtureWorldPose): Vec3 {
+  return norm3(
+    add3(add3(scale3(pose.hexX, dir[0]), scale3(pose.hexY, dir[1])), scale3(pose.axis, dir[2])),
+  );
 }
 
 function worldPointToFixtureLocal(p: Vec3, pose: FixtureWorldPose): Vec3 {
@@ -604,18 +617,95 @@ export function buildDesignedCustomAbutment(input: {
   };
 }
 
-/**
- * 구강스캔(잇몸·인접치·대합치)과 치종 템플릿으로 커스텀어벗과 예측 크라운 외형을 설계한다.
- * neighbors: 같은 악의 다른 디자인 대상 픽스쳐. 두 크라운 경계면으로 서로 떨어뜨린다.
- */
-export async function designCustomAbutmentStl(args: {
+type DesignArgs = {
   fixture: MatchedScanbodyFixture;
   jawGeometry: THREE.BufferGeometry;
   opposingGeometry: THREE.BufferGeometry | null;
   neighbors?: readonly MatchedScanbodyFixture[];
   params?: Partial<CustomAbutmentDesignParams> | null;
   patientName?: string;
-}): Promise<DesignedCustomAbutment> {
+};
+
+type DesignMode = { probeAxis?: boolean; groupAxisWorld?: Vec3 | null };
+type DesignResult =
+  | { kind: "axis"; axisWorld: Vec3 }
+  | { kind: "design"; design: DesignedCustomAbutment };
+
+/** 자동 삽입축(윗면 이동 전) 캐시. 붙은 치아 평행 축을 구할 때 이웃마다 다시 계산하지 않는다. */
+const autoAxisCache = new WeakMap<THREE.BufferGeometry, Map<string, Vec3>>();
+
+async function autoAxisWorld(args: DesignArgs): Promise<Vec3> {
+  const p = resolveCustomAbutmentParams(args.fixture.toothNumber, args.params);
+  const key = JSON.stringify([
+    args.fixture.toothNumber,
+    args.fixture.fixturePose.origin,
+    args.fixture.fixturePose.axis,
+    args.opposingGeometry?.uuid ?? null,
+    p.marginDepthMm,
+    p.axisToOpposing,
+    p.axisMaxDeg,
+  ]);
+  let byKey = autoAxisCache.get(args.jawGeometry);
+  if (!byKey) {
+    byKey = new Map();
+    autoAxisCache.set(args.jawGeometry, byKey);
+  }
+  const hit = byKey.get(key);
+  if (hit) return hit;
+  const res = await designImpl(args, { probeAxis: true });
+  const axis = res.kind === "axis" ? res.axisWorld : args.fixture.fixturePose.axis;
+  byKey.set(key, axis);
+  return axis;
+}
+
+/** 같은 악에서 픽스쳐 사이가 PARALLEL_GROUP_MM 안으로 이어진 치아 묶음(자신 포함). */
+function parallelGroupOf(
+  fixture: MatchedScanbodyFixture,
+  all: readonly MatchedScanbodyFixture[],
+): MatchedScanbodyFixture[] {
+  const pool = [fixture, ...all.filter((f) => f.toothNumber !== fixture.toothNumber && f.jaw === fixture.jaw)];
+  const group = [fixture];
+  const seen = new Set([fixture.toothNumber]);
+  for (let i = 0; i < group.length; i += 1) {
+    for (const f of pool) {
+      if (seen.has(f.toothNumber)) continue;
+      const d = Math.hypot(...sub3(f.fixturePose.origin, group[i]!.fixturePose.origin));
+      if (d > PARALLEL_GROUP_MM) continue;
+      seen.add(f.toothNumber);
+      group.push(f);
+    }
+  }
+  return group;
+}
+
+/**
+ * 구강스캔(잇몸·인접치·대합치)과 치종 템플릿으로 커스텀어벗과 예측 크라운 외형을 설계한다.
+ * neighbors: 같은 악의 다른 디자인 대상 픽스쳐. 두 크라운 경계면으로 서로 떨어뜨리고,
+ * 붙은 치아끼리는 삽입축(포스트 패쓰)을 평행하게 맞춘다. 각 치아 각도 상한은 그대로 지킨다.
+ */
+export async function designCustomAbutmentStl(args: DesignArgs): Promise<DesignedCustomAbutment> {
+  const group = parallelGroupOf(args.fixture, args.neighbors ?? []);
+  let groupAxisWorld: Vec3 | null = null;
+  if (group.length > 1) {
+    const autoParams = { ...(args.params ?? {}), axisShiftLabialMm: 0, axisShiftMesialMm: 0 };
+    let sum: Vec3 = [0, 0, 0];
+    for (const f of group) {
+      const axis = await autoAxisWorld({
+        ...args,
+        fixture: f,
+        neighbors: [args.fixture, ...(args.neighbors ?? [])].filter((n) => n.toothNumber !== f.toothNumber),
+        params: autoParams,
+      });
+      sum = add3(sum, axis);
+    }
+    groupAxisWorld = norm3(sum);
+  }
+  const res = await designImpl(args, { groupAxisWorld });
+  if (res.kind !== "design") throw new Error("커스텀어벗 디자인을 만들지 못했습니다.");
+  return res.design;
+}
+
+async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignResult> {
   const { fixture, jawGeometry, opposingGeometry } = args;
   const params = resolveCustomAbutmentParams(fixture.toothNumber, args.params);
   const conn = fixture.connectionSpec;
@@ -743,6 +833,8 @@ export async function designCustomAbutmentStl(args: {
 
   // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 넓게 벌어진 잇몸 터널은 마진을 키워 지지한다.
   const tissueBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+  // 치은정 부근(마진 위 0.3~1.3mm) 잇몸 안쪽 면. 마진은 이보다 GINGIVA_INSET_MM 안에 둬서 잇몸을 누르지 않는다.
+  const innerBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
   for (let i = 0; i < jawLocalPts.length; i += 3) {
     const x = jawLocalPts[i]!;
     const y = jawLocalPts[i + 1]!;
@@ -751,9 +843,25 @@ export async function designCustomAbutmentStl(args: {
     if (r < sbR + 0.25 || r > sbR + 3.2) continue;
     const b = Math.min(SECTORS - 1, Math.floor((wrapAngle(Math.atan2(y, x)) / (Math.PI * 2)) * SECTORS));
     const zm = smoothMarginZ[b]!;
+    if (z >= zm + 0.3 && z <= zm + 1.3) innerBuckets[b]!.push(r);
     if (z < zm + 0.6 || z > zm + 1.8) continue;
     tissueBuckets[b]!.push(r);
   }
+  const innerRaw = innerBuckets.map((list) => {
+    if (list.length < 3) return Number.NaN;
+    list.sort((a, c) => a - c);
+    return list[Math.floor(list.length * 0.15)]!;
+  });
+  const gingivaInnerR = innerRaw.some(Number.isFinite)
+    ? lowPassCircular(
+        innerRaw.map((r, _, all) => {
+          if (Number.isFinite(r)) return r;
+          const ok = all.filter(Number.isFinite);
+          return ok.reduce((s, v) => s + v, 0) / ok.length;
+        }),
+        3,
+      )
+    : null;
   const tissueR = lowPassCircular(
     tissueBuckets.map((list) => {
       if (list.length < 3) return Number.NaN;
@@ -860,6 +968,11 @@ export async function designCustomAbutmentStl(args: {
     }
     w = norm3([offX / H, offY / H, 1]);
   }
+  if (mode.probeAxis) return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
+  if (mode.groupAxisWorld) {
+    w = worldDirToFixtureLocal(mode.groupAxisWorld, fixture.fixturePose);
+    axisSource = "parallel";
+  }
   if (params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0) {
     const H = tpl.postHeightMm;
     const top = add3(
@@ -870,14 +983,15 @@ export async function designCustomAbutmentStl(args: {
   }
   w = capTilt(w, tiltCapRad);
   {
-    // 포스트 윗면이 마진 한쪽으로 너무 나가면(마진 반경의 55% 초과) 기울기를 줄인다.
+    // 포스트 윗면이 마진 한쪽으로 너무 나가면(마진 반경의 55%, 평행 맞춤은 70% 초과) 기울기를 줄인다.
     const H = tpl.postHeightMm;
+    const allowRatio = mode.groupAxisWorld ? 0.7 : 0.55;
     const offX = (w[0] / w[2]) * H;
     const offY = (w[1] / w[2]) * H;
     const off = Math.hypot(offX, offY);
     if (off > 1e-6) {
       const phi = Math.atan2(offY, offX) - labialAngleFix;
-      const allow = superellipseRadius(marginA, marginB, phi) * 0.55;
+      const allow = superellipseRadius(marginA, marginB, phi) * allowRatio;
       if (off > allow) {
         const k = allow / off;
         w = norm3([(w[0] / w[2]) * k, (w[1] / w[2]) * k, 1]);
@@ -952,7 +1066,8 @@ export async function designCustomAbutmentStl(args: {
   // ── 6) 열(픽스쳐 원통 각 θ)마다 마진·포스트 원하는 형상과 예측 크라운
   const topB = (tpl.topMdMm / 2) * mdScale * params.postWidthScale;
   const minMarginRadius = coneTopR + 0.5;
-  const convergeFrom = tpl.anterior ? 0.7 : 0.8;
+  const convergeFrom = tpl.anterior ? 0.5 : 0.7;
+  const topRoundMm = tpl.anterior ? TOP_ROUND_ANTERIOR_MM : TOP_ROUND_POSTERIOR_MM;
 
   type ColumnPlan = {
     marginPt: Vec3;
@@ -987,7 +1102,9 @@ export async function designCustomAbutmentStl(args: {
       norm3(sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)))),
       evalPeriodicLinear(smoothMarginZ, theta) - meanMarginZ,
     );
-    marginCap.push(Number.isFinite(lim) ? Math.max(minMarginRadius, lim - 0.5) : Infinity);
+    let limR = Number.isFinite(lim) ? lim - 0.5 : Infinity;
+    if (gingivaInnerR) limR = Math.min(limR, evalPeriodicLinear(gingivaInnerR, theta) - GINGIVA_INSET_MM);
+    marginCap.push(Number.isFinite(limR) ? Math.max(minMarginRadius, limR) : Infinity);
   }
   const marginRadii = smoothCircularReduce(marginWant, marginCap, 4, 6).map((r) =>
     Math.max(minMarginRadius, r),
@@ -1034,13 +1151,13 @@ export async function designCustomAbutmentStl(args: {
       hTop,
       tipU: tu,
       tipV: tv,
+      // 곧은 테이퍼 → 윗부분에서 템플릿 윗면 크기로 볼록하게 좁힌다(기울기가 0부터 서서히 커져 턱이 없다).
       postDesired: (h: number) => {
         const straight =
           rBase0 * Math.min(1, params.postWidthScale) - taperSlope * Math.max(0, h - hBase);
-        const span = Math.max(0.5, plan.hTop - hBase);
-        const t = (h - hBase) / span;
-        if (t <= convergeFrom || rTpl >= straight) return straight;
-        return straight + (rTpl - straight) * smootherstep((t - convergeFrom) / (1 - convergeFrom));
+        const span = Math.max(0.5, plan.hTop - topRoundMm - hBase);
+        const u = clamp(((h - hBase) / span - convergeFrom) / (1 - convergeFrom), 0, 1);
+        return straight - Math.max(0, straight - rTpl) * u * u;
       },
       crownR: [],
       crownH: [],
@@ -1223,25 +1340,33 @@ export async function designCustomAbutmentStl(args: {
     const postH: number[][] = [];
     const deficit: number[][] = [];
     const floorR: number[][] = [];
+    const capR: number[][] = [];
+    const hardCapR: number[][] = [];
     for (const c of cols) {
       const hBase = c.h0 + hPostBase;
-      const roundStart = c.hTop - TOP_ROUND_MM - 0.15;
+      const roundStart = c.hTop - topRoundMm * 0.9;
       const hs: number[] = [];
       const rs: number[] = [];
       const ds: number[] = [];
       const fs: number[] = [];
+      const cs: number[] = [];
+      const hc: number[] = [];
       for (let k = 0; k <= POST_LEVELS; k += 1) {
         const h = hBase + ((roundStart - hBase) * k) / POST_LEVELS;
         const want = k === 0 ? Math.min(c.postDesired(h), c.r0 - shoulderW) : c.postDesired(h);
         const screwFloor = Math.max(minPostR, (h / Math.max(frame.w[2], 0.2)) * c.dir[2] + boreTopR + SCREW_WALL_MM);
         let cap = Infinity;
+        let hardCap = Infinity;
         if (h >= c.h0 + hPostBase + 0.3) {
           const crown = crownRadiusAt(c, h);
           cap = crown - params.minCrownThicknessMm;
-          if (cap < screwFloor) cap = Math.max(cap, Math.min(screwFloor, crown - CROWN_THICKNESS_FLOOR_MM));
+          hardCap = crown - CROWN_THICKNESS_FLOOR_MM;
+          if (cap < screwFloor) cap = Math.max(cap, Math.min(screwFloor, hardCap));
         }
         hs.push(h);
         rs.push(want);
+        cs.push(cap);
+        hc.push(hardCap);
         ds.push(Math.max(0, want - cap));
         fs.push(
           Number.isFinite(cap)
@@ -1259,6 +1384,8 @@ export async function designCustomAbutmentStl(args: {
       postR.push(rs);
       deficit.push(ds);
       floorR.push(fs);
+      capR.push(cs);
+      hardCapR.push(hc);
     }
     const spread: number[][] = deficit.map((ds) => [...ds]);
     for (let k = 0; k <= POST_LEVELS; k += 1) {
@@ -1293,6 +1420,36 @@ export async function designCustomAbutmentStl(args: {
       enforcePostProfile(rs, hs);
     }
 
+    // 단면을 저차 조화로 고르고(전치는 타원) 높이 방향으로 펴서 굴곡·턱 없이 잇는다.
+    // 아래쪽은 마진 단면을 따르고 높이 35%까지 서서히 넘어간다.
+    const harmonics = tpl.anterior ? 2 : tpl.kind === "molar" ? 4 : 3;
+    const blendLevels = Math.max(2, Math.round(POST_LEVELS * 0.35));
+    for (let k = 1; k <= POST_LEVELS; k += 1) {
+      const ring = cols.map((_, col) => postR[col]![k]!);
+      const fitted = smoothCircularReduce(
+        lowPassCircular(ring, harmonics),
+        cols.map((_, col) => capR[col]![k]!),
+        6,
+        12,
+      );
+      const wgt = smootherstep(k / blendLevels);
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        postR[col]![k] = ring[col]! + (fitted[col]! - ring[col]!) * wgt;
+      }
+    }
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      const rs = postR[col]!;
+      for (let pass = 0; pass < 6; pass += 1) {
+        const prev = [...rs];
+        for (let k = 1; k < POST_LEVELS; k += 1) rs[k] = (prev[k - 1]! + prev[k]! * 2 + prev[k + 1]!) / 4;
+        rs[POST_LEVELS] = (prev[POST_LEVELS - 1]! + prev[POST_LEVELS]! * 3) / 4;
+      }
+      for (let k = 1; k <= POST_LEVELS; k += 1) {
+        rs[k] = clamp(rs[k]!, floorR[col]![k]!, Math.max(floorR[col]![k]!, hardCapR[col]![k]!));
+      }
+      enforcePostProfile(rs, postH[col]!);
+    }
+
     // ── 7) 열 점: 피니시라인 → 오목 챔퍼 → 축벽 → 윗면 라운드 / 예측 크라운
     const postByCol: Vec3[][] = [];
     const crownByCol: Vec3[][] = [];
@@ -1310,17 +1467,33 @@ export async function designCustomAbutmentStl(args: {
       rhoSum += ch.rho;
       for (const [r, h] of ch.pts) post.push(at(h, r));
       for (let k = 1; k <= POST_LEVELS; k += 1) post.push(at(hs[k]!, rs[k]!));
+      // 윗면 라운드: 축벽 끝 기울기에서 접선으로 시작해 윗면에서 수평으로 끝난다.
+      // 모자란 높이는 같은 기울기로 축벽을 늘려 채운다(점 개수는 열마다 같다).
       const rEnd = rs[POST_LEVELS]!;
-      const rho = Math.min(TOP_ROUND_MM, Math.max(0.15, rEnd - 0.3));
-      const rEdge = Math.max(0.2, rEnd - rho);
-      let hEdge = c.hTop;
-      if ("heightAt" in top) {
-        hEdge = top.heightAt(dot3(c.dir, frame.uLabial) * rEdge, dot3(c.dir, frame.vSide) * rEdge);
-      }
-      const hArc = Math.max(hEdge - rho, hs[POST_LEVELS]! + 0.05);
-      for (let s = 0; s <= TOP_ROUND_STEPS; s += 1) {
-        const t = (s / TOP_ROUND_STEPS) * (Math.PI / 2);
-        post.push(at(hArc + rho * Math.sin(t), rEdge + rho * Math.cos(t)));
+      const hEnd = hs[POST_LEVELS]!;
+      const wallSlope = Math.max(
+        0,
+        (rs[POST_LEVELS - 1]! - rEnd) / Math.max(hEnd - hs[POST_LEVELS - 1]!, 1e-4),
+      );
+      const t0 = Math.min(Math.atan(wallSlope), 60 * DEG);
+      const sin0 = Math.sin(t0);
+      const cos0 = Math.cos(t0);
+      const edgeHeight = (rFlat: number) =>
+        "heightAt" in top
+          ? top.heightAt(dot3(c.dir, frame.uLabial) * rFlat, dot3(c.dir, frame.vSide) * rFlat)
+          : c.hTop;
+      const rhoMax = Math.max(0.15, Math.min(topRoundMm, (rEnd - 0.3) / cos0));
+      const rise = Math.max(1 - sin0, 1e-3);
+      const rho = clamp((edgeHeight(rEnd - rhoMax * cos0) - hEnd) / rise, 0.15, rhoMax);
+      const ext = Math.max(0.02, edgeHeight(rEnd - rho * cos0) - hEnd - rho * rise);
+      const h1 = hEnd + ext;
+      const r1 = Math.max(rho * cos0 + 0.2, rEnd - Math.tan(t0) * ext);
+      post.push(at(h1, r1));
+      const arcR = r1 - rho * cos0;
+      const arcH = h1 - rho * sin0;
+      for (let s = 1; s <= TOP_ROUND_STEPS; s += 1) {
+        const t = t0 + ((Math.PI / 2 - t0) * s) / TOP_ROUND_STEPS;
+        post.push(at(arcH + rho * Math.sin(t), arcR + rho * Math.cos(t)));
       }
       postByCol.push(post);
 
@@ -1383,7 +1556,6 @@ export async function designCustomAbutmentStl(args: {
     }
   }
   const { postByCol, crownByCol, cutbackSum, taperSum, postApex, crownApex, chamferRho } = shape;
-
   // ── 8) 커넥션(헥스 + 11° 원뿔) + cuffBlend 커프 + 포스트를 닫힌 외형으로 잇고 스크류 채널을 뺀다
   const l2 = conn.l2Mm;
   const zBot = -l2;
@@ -1490,7 +1662,7 @@ export async function designCustomAbutmentStl(args: {
     : `custom_abutment_${fixture.toothNumber}.stl`;
 
   const round2 = (v: number) => Math.round(v * 100) / 100;
-  return buildDesignedCustomAbutment({
+  const design = buildDesignedCustomAbutment({
     fixture,
     fileName,
     localPositions,
@@ -1513,4 +1685,5 @@ export async function designCustomAbutmentStl(args: {
       axisSource,
     },
   });
+  return { kind: "design", design };
 }

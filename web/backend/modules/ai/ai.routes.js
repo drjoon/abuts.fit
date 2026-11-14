@@ -9,6 +9,7 @@ import {
   clearCustomAbutmentDesignPreference,
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
+  saveCustomAbutmentDesignPreference,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
@@ -40,6 +41,11 @@ router.get(
   "/custom-abutment-design-preference",
   authenticate,
   getCustomAbutmentDesignPreference
+);
+router.put(
+  "/custom-abutment-design-preference",
+  authenticate,
+  saveCustomAbutmentDesignPreference
 );
 router.delete(
   "/custom-abutment-design-preference",

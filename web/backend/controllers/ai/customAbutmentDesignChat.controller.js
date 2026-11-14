@@ -2,6 +2,8 @@
 // 형상은 프론트가 이 조정값으로 다시 만든다. 범위는 프론트 customAbutmentDesignParams.ts와 같아야 한다.
 // 1회성이 아닌 요청(「항상」「우리는」, 치종 전반 규칙 등)은 의뢰 치과 사업자의 디자인 취향으로 저장해
 // 다음 케이스 기본값으로 쓴다. 저장은 의뢰 치과 본인 계정의 대화만 한다.
+// 비용: 「마진 0.5mm 얕게」처럼 정형 명령은 프론트(customAbutmentChatCommands.ts)가 AI 없이 처리하고,
+// 취향 저장도 PUT으로 바로 한다. 여기는 해석이 필요한 말·그림만 오고 flash-lite + 짧은 프롬프트를 쓴다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -13,7 +15,14 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-2.5-flash-lite";
+const MAX_OUTPUT_TOKENS = 600;
+const HISTORY_TURNS = 6;
+/** AI에 넘기는 측정값. 나머지는 답에 쓰지 않아 토큰만 든다. */
+const METRIC_KEYS = ["postHeightMm", "angulationDeg", "occlusalClearanceMm", "maxDiameterMm"];
+/** 화면 그림(JPEG/PNG data URL) 최대 길이. 프론트는 긴 변 1024px JPEG로 보낸다. */
+const MAX_IMAGE_CHARS = 2_000_000;
+const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
   occlusalClearanceMm: { label: "포스트 최정점 → 대합치 거리", unit: "mm", min: 0.8, max: 2.5 },
@@ -74,12 +83,12 @@ function sanitizeTeeth(raw) {
     const params = {};
     for (const key of PARAM_KEYS) {
       const v = toFiniteOrNull(row?.params?.[key]);
-      if (v != null) params[key] = v;
+      if (v != null) params[key] = Math.round(v * 100) / 100;
     }
     const metrics = {};
-    for (const [key, value] of Object.entries(row?.metrics || {})) {
+    for (const key of METRIC_KEYS) {
+      const value = row?.metrics?.[key];
       if (typeof value === "number" && Number.isFinite(value)) metrics[key] = value;
-      else if (value == null || typeof value === "string") metrics[key] = value ?? null;
     }
     out.push({ toothNumber, params, metrics });
   }
@@ -89,12 +98,19 @@ function sanitizeTeeth(raw) {
 function sanitizeHistory(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
-    .slice(-12)
+    .slice(-HISTORY_TURNS)
     .map((row) => ({
       role: row?.role === "assistant" ? "assistant" : "user",
-      text: String(row?.text || "").trim().slice(0, 800),
+      text: String(row?.text || "").trim().slice(0, 300),
     }))
     .filter((row) => row.text);
+}
+
+function sanitizeImage(raw) {
+  const s = String(raw || "");
+  if (!s || s.length > MAX_IMAGE_CHARS) return null;
+  const m = IMAGE_RE.exec(s);
+  return m ? { mimeType: m[1], data: m[2] } : null;
 }
 
 function parseJsonObject(text) {
@@ -215,52 +231,37 @@ async function savePreferenceUpdate(anchorId, update) {
   return loadPreference(anchorId);
 }
 
-function buildPrompt({ message, history, teeth, selectedTooth, preference }) {
+function buildPrompt({ message, history, teeth, selectedTooth, preference, hasImage }) {
   const specLines = PARAM_KEYS.map((key) => {
     const s = PARAM_SPECS[key];
-    return `- ${key}: ${s.label} (${s.min}~${s.max}${s.unit})`;
+    return `${key}: ${s.label} ${s.min}~${s.max}${s.unit}`;
   }).join("\n");
   return (
-    "너는 치과 기공 커스텀어벗(임플란트 어벗먼트) 디자인 도우미다.\n" +
-    "치과 사용자가 미리보기 화면에서 말로 수정을 요청하면, 아래 조정값만 바꿔 디자인을 다시 만들게 한다.\n" +
-    "형상을 직접 그리지 않는다. 조정값 밖의 요청(예: 재질, 색, 납기)은 바꿀 수 없다고 짧게 답한다.\n" +
-    "\n" +
-    "조정값(키: 의미, 범위):\n" +
+    "커스텀어벗 디자인 조정값만 바꾸는 도우미. 조정값 밖 요청(재질·색·납기)은 못 한다고 짧게 답한다.\n" +
+    "조정값:\n" +
     specLines +
-    "\n\n" +
-    "규칙:\n" +
-    "- 사용자가 치아를 말하지 않으면 selectedTooth, 그것도 없으면 모든 치아(toothNumber: \"all\")에 적용한다.\n" +
-    "- 「조금」은 범위의 10~15%, 「많이」는 25~35% 정도로 현재 값에서 바꾼다. 숫자를 주면 그 숫자를 쓴다.\n" +
-    "- 「낮춰」「짧게」(포스트)는 occlusalClearanceMm을 키우거나 postHeightOffsetMm을 음수로 한다.\n" +
-    "- 「얇게」「가늘게」(포스트)는 postWidthScale을 줄이거나 minCrownThicknessMm을 키운다.\n" +
-    "- 「더 수직으로」는 postTaperDeg를 줄인다. 「기울기 줄여」는 axisMaxDeg를 줄이거나 axisToOpposing을 낮춘다.\n" +
-    "- 「마진 더 깊게」「치은 하방 0.8mm」는 marginDepthMm. 「마진 넓게/좁게」는 marginShoulderMm.\n" +
-    "- 바꿀 필요가 없거나 질문이면 changes는 빈 배열이다.\n" +
-    "\n" +
-    "치과 취향(preference):\n" +
-    "- 요청이 이 케이스만이 아니라 앞으로도 그렇게 해 달라는 뜻이면 preference에 넣는다.\n" +
-    "  예: 「항상」「앞으로」「우리 치과는」「보통」「~로 해 주세요」처럼 규칙으로 말할 때,\n" +
-    "  치아 번호 없이 수치를 정할 때(「마진은 치은 하방 0.8mm」「테이퍼 3도」),\n" +
-    "  치종 전반을 말할 때(「전치는 …」 → anterior, 「어금니/구치는 …」 → posterior).\n" +
-    "- 1회성이면 preference는 null이다.\n" +
-    "  예: 화면을 보고 상대적으로 고치는 말(「조금 낮춰」「23번 더 얇게」), 특정 치아만 말할 때,\n" +
-    "  「이번만」「이 케이스」.\n" +
-    "- preference.params는 절대값이다(현재 값에서 바꾼 결과). scope는 all, anterior, posterior 중 하나.\n" +
-    "- preference.note는 취향을 한국어 한 문장(30자 안)으로 쓴다.\n" +
-    "- preference가 있으면 지금 케이스에도 같은 값을 changes에 넣는다(scope에 맞는 치아만).\n" +
-    "- reply는 한국어 1~3문장. 무엇을 얼마로 바꿨는지, 취향으로 저장했으면 「다음 케이스부터 기본값으로 씁니다」를 쓴다.\n" +
-    "\n" +
-    "반환(JSON만, 설명 금지):\n" +
-    '{ "reply": string, "changes": [ { "toothNumber": string, "params": { "<키>": number } } ],' +
-    ' "preference": null | { "scope": "all"|"anterior"|"posterior", "params": { "<키>": number }, "note": string } }\n' +
-    "\n" +
-    "현재 치과 취향:\n" +
-    JSON.stringify(preference) +
-    "\n\n현재 디자인(params는 현재 값, metrics는 측정값):\n" +
+    "\n규칙:\n" +
+    "- 치아를 안 말하면 selectedTooth, 없으면 toothNumber \"all\".\n" +
+    "- 「조금」 범위 10~15%, 「많이」 25~35%. 숫자가 있으면 그 값.\n" +
+    "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓.\n" +
+    "- 마진 깊게/치은 하방=marginDepthMm. 마진 넓게/좁게=marginShoulderMm.\n" +
+    "- 질문이거나 바꿀 게 없으면 changes [].\n" +
+    (hasImage
+      ? "- 첨부 그림은 현재 화면에 사용자가 빨간 펜으로 표시한 것이다. 표시 위치와 #번호 라벨로 치아·부위를 읽는다.\n"
+      : "") +
+    "- 앞으로도 적용할 규칙(「항상」「앞으로」「우리 치과는」, 번호 없는 수치, 전치/구치 전반)이면 preference," +
+    " 1회성(상대 수정·특정 치아·「이번만」)이면 null.\n" +
+    "- preference.params는 절대값, scope는 all|anterior|posterior, note는 30자 안 한 문장. 지금 케이스 changes에도 넣는다.\n" +
+    "- reply 한국어 1~2문장.\n" +
+    'JSON만: {"reply":string,"changes":[{"toothNumber":string,"params":{}}],' +
+    '"preference":null|{"scope":string,"params":{},"note":string}}\n' +
+    "취향:" +
+    JSON.stringify(preference.scopes) +
+    "\n디자인:" +
     JSON.stringify({ selectedTooth: selectedTooth || null, teeth }) +
-    "\n\n대화 기록:\n" +
+    "\n기록:" +
     JSON.stringify(history) +
-    "\n\n사용자 요청:\n" +
+    "\n요청:" +
     message
   );
 }
@@ -276,6 +277,29 @@ export async function getCustomAbutmentDesignPreference(req, res) {
   } catch (error) {
     console.error("[AI] getCustomAbutmentDesignPreference error", error);
     return res.status(500).json({ success: false, message: "디자인 취향을 불러오지 못했습니다." });
+  }
+}
+
+/**
+ * 프론트가 AI 없이 알아들은 「앞으로 …」 규칙을 바로 저장한다.
+ * @route PUT /api/ai/custom-abutment-design-preference
+ * body: { transferId?, scope, params, note }
+ */
+export async function saveCustomAbutmentDesignPreference(req, res) {
+  try {
+    const update = sanitizePreferenceUpdate(req.body);
+    if (!update) {
+      return res.status(400).json({ success: false, message: "저장할 값이 없습니다." });
+    }
+    const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    if (!anchorId || !canSave) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
+    }
+    const preference = await savePreferenceUpdate(anchorId, update);
+    return res.json({ success: true, data: { preference, preferenceSaved: update, canSave } });
+  } catch (error) {
+    console.error("[AI] saveCustomAbutmentDesignPreference error", error);
+    return res.status(500).json({ success: false, message: "디자인 취향을 저장하지 못했습니다." });
   }
 }
 
@@ -301,7 +325,8 @@ export async function clearCustomAbutmentDesignPreference(req, res) {
 
 /**
  * @route POST /api/ai/custom-abutment-design-chat
- * body: { message, history?, teeth: [{ toothNumber, params, metrics }], selectedTooth?, transferId? }
+ * body: { message, history?, teeth: [{ toothNumber, params, metrics }], selectedTooth?, transferId?, image? }
+ * image: 화면 + 사용자가 그린 표시(data URL). 있으면 같이 본다.
  */
 export async function customAbutmentDesignChat(req, res) {
   try {
@@ -339,12 +364,25 @@ export async function customAbutmentDesignChat(req, res) {
     const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.body?.transferId);
     let preference = await loadPreference(anchorId);
 
+    const image = sanitizeImage(req.body?.image);
     const model = genAI.getGenerativeModel({
       model: MODEL,
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+      },
+    });
+    const prompt = buildPrompt({
+      message,
+      history,
+      teeth,
+      selectedTooth,
+      preference,
+      hasImage: Boolean(image),
     });
     const result = await model.generateContent(
-      buildPrompt({ message, history, teeth, selectedTooth, preference }),
+      image ? [{ text: prompt }, { inlineData: image }] : prompt,
     );
     const parsed = parseJsonObject(result?.response?.text?.() || "");
     if (!parsed || typeof parsed !== "object") {
@@ -398,5 +436,6 @@ export async function customAbutmentDesignChat(req, res) {
 export default {
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
+  saveCustomAbutmentDesignPreference,
   clearCustomAbutmentDesignPreference,
 };
