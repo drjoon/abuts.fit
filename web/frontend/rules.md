@@ -198,6 +198,9 @@ Notes:
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
   - `src/shared/practice/toothWorkDraft.ts`
   - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
+  - `src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx` (치과 채팅 헤더「커스텀어벗 공정」왼쪽「디자인」버튼 → 전체 화면 뷰어 모달. 구강 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 정하고(`customAbutmentScanbodyMatch.ts`), 상방 커스텀어벗 STL을 디자인해(`customAbutmentStlDesign.ts`) 스캔 치아 데이터 위에 표시)
+  - `src/shared/practice/customAbutmentScanbodyMatch.ts`
+  - `src/shared/practice/customAbutmentStlDesign.ts`
 - 관리자 작업영역 가로: `AdminPageShell`은 `max-w-none`(레이아웃 여백 안의 전폭). 목록·표·허브에 `max-w-7xl`을 다시 두지 않는다. 세그먼트 탭은 문구 너비. 재무 「요금」은 수가·분배·요율이고, 사이드바 「설정」은 계정·사업자·임직원·알림이다.
 - 관리자 사용자/사업자
   - `src/pages/admin/users/AdminUserManagement.tsx`

@@ -31,6 +31,7 @@
  * - web/frontend/src/shared/realtime/socket.ts
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
@@ -370,6 +371,7 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import { parseLabTechnician } from "@/shared/practice/labTechnician";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
+import { PracticeCustomAbutmentPreviewButton } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
   resolvePracticeTransferAlertAccountId,
@@ -12300,14 +12302,32 @@ export const PracticeFileTransferPage = ({
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
           summaryBanner={null}
           headerActionLeading={
-            selectedTransferDetailModel?.abutmentStageLabel ? (
-              <p className="truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
-                <span className="font-medium">커스텀어벗 공정</span>
-                {" — "}
-                <span className="font-medium">
-                  {selectedTransferDetailModel.abutmentStageLabel}
-                </span>
-              </p>
+            selectedTransferDetailModel?.abutmentStageLabel ||
+            (selectedTransfer?.hasCustomAbutment &&
+              (selectedTransferDetailModel?.toothWorks || []).some((row) => row.customAbutment)) ? (
+              <div
+                className="flex min-w-0 items-center gap-2"
+                data-no-drag
+              >
+                <PracticeCustomAbutmentPreviewButton
+                  authToken={authToken}
+                  caseTitle={selectedTransferCaseIdentity?.primary}
+                  caseDatesLabel={selectedTransferCaseIdentity?.secondary}
+                  patientName={selectedTransferDetailModel?.patientName}
+                  toothWorks={selectedTransferDetailModel?.toothWorks || []}
+                  files={selectedTransferDetailModel?.files || []}
+                  workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
+                />
+                {selectedTransferDetailModel?.abutmentStageLabel ? (
+                  <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
+                    <span className="font-medium">커스텀어벗 공정</span>
+                    {" — "}
+                    <span className="font-medium">
+                      {selectedTransferDetailModel.abutmentStageLabel}
+                    </span>
+                  </p>
+                ) : null}
+              </div>
             ) : null
           }
           memo={selectedTransferDetailModel?.memo || "-"}
