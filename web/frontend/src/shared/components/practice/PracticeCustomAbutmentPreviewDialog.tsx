@@ -76,7 +76,8 @@ import {
   preferWorkingOralScanFiles,
   resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
-import { useScanbodyCatalog } from "@/shared/practice/scanbodyLibraryApi";
+import { apiFetch } from "@/shared/api/apiClient";
+import { type ScanbodyCatalog } from "@/shared/practice/scanbodyLibraryApi";
 import { toToothMemoSortNumber, type ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
@@ -195,8 +196,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   files,
   workScanFiles = [],
 }: PracticeCustomAbutmentPreviewDialogProps) {
-  const { catalog: scanbodyCatalog, loaded: scanbodyCatalogLoaded } = useScanbodyCatalog(open);
-  const { connections } = useImplantConnectionCatalog(open);
+  const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
 
   const abutmentToothWorks = useMemo(() => {
     const seen = new Set<string>();
@@ -251,10 +251,19 @@ export function PracticeCustomAbutmentPreviewDialog({
     upper: true,
     lower: true,
   });
+  const [availableJaws, setAvailableJaws] = useState<{ upper: boolean; lower: boolean }>({
+    upper: false,
+    lower: false,
+  });
   const [visibleTeeth, setVisibleTeeth] = useState<Record<string, boolean>>({});
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
+  const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const bindHostRef = useCallback((node: HTMLDivElement | null) => {
+    hostRef.current = node;
+    setHostEl(node);
+  }, []);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -477,11 +486,43 @@ export function PracticeCustomAbutmentPreviewDialog({
     [designedList, fitCameraToTargets],
   );
 
-  // WebGL 씬 초기화
+  const latestInputsRef = useRef({
+    abutmentToothWorks,
+    scanSources,
+    connections,
+    patientName,
+    workScanFiles,
+  });
+  latestInputsRef.current = {
+    abutmentToothWorks,
+    scanSources,
+    connections,
+    patientName,
+    workScanFiles,
+  };
+
+  const pipelineKey = useMemo(
+    () =>
+      JSON.stringify({
+        teeth: abutmentToothWorks.map((t) => [
+          t.toothNumber,
+          t.implantManufacturer,
+          t.implantBrand,
+          t.implantFamily,
+          t.implantType,
+          t.abutmentManufacturer,
+          t.abutmentDiameter,
+          t.abutmentHeight,
+        ]),
+        scans: scanSources.meshes.map((s) => [s.s3Key, s.fileName, s.scanRole]),
+      }),
+    [abutmentToothWorks, scanSources.meshes],
+  );
+
+  // WebGL 씬 초기화 (Radix DialogPortal이 마운트된 뒤 hostEl 콜백 ref로 실행)
   useEffect(() => {
-    if (!open) return;
-    const host = hostRef.current;
-    if (!host) return;
+    if (!open || !hostEl) return;
+    const host = hostEl;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(SCAN_COLOR_PREVIEW_BACKGROUND);
@@ -573,21 +614,28 @@ export function PracticeCustomAbutmentPreviewDialog({
       labelRendererRef.current = null;
       controlsRef.current = null;
     };
-  }, [clearSceneObjects, open]);
+  }, [clearSceneObjects, hostEl, open]);
 
   // 스캔 로드 → 스캔바디 인식·정합 → 픽스쳐 결정 → 커스텀어벗 STL 디자인 → 씬 배치
   useEffect(() => {
-    if (!open || !scanbodyCatalogLoaded) return;
+    if (!open || !hostEl) return;
+    const {
+      abutmentToothWorks: curToothWorks,
+      scanSources: curScanSources,
+      connections: curConnections,
+      patientName: curPatientName,
+      workScanFiles: curWorkScanFiles,
+    } = latestInputsRef.current;
     const token = String(authToken || "").trim();
     if (!token) {
       setStatus({ kind: "error", message: "로그인이 필요합니다." });
       return;
     }
-    if (abutmentToothWorks.length === 0) {
+    if (curToothWorks.length === 0) {
       setStatus({ kind: "error", message: "커스텀어벗 디자인 대상 치아가 없습니다." });
       return;
     }
-    if (scanSources.meshes.length === 0) {
+    if (curScanSources.meshes.length === 0) {
       setStatus({
         kind: "error",
         message: "구강 스캔 파일(DCM·PLY·STL·OBJ)이 없어 디자인 프리뷰를 만들 수 없습니다.",
@@ -621,7 +669,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const modelFile = fileFromModelBlob(blob, item.fileName);
       const companionFiles: File[] = [];
       const ext = getModelExtLower(item.fileName);
-      if ((ext === ".ply" || ext === ".obj") && scanSources.companions.length > 0) {
+      if ((ext === ".ply" || ext === ".obj") && curScanSources.companions.length > 0) {
         const preferredTex =
           ext === ".ply"
             ? peekPlyHeaderInfo(await blob.arrayBuffer()).textureFileName
@@ -629,10 +677,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         const texName = resolveCompanionTextureFileName(
           item.fileName,
           preferredTex,
-          scanSources.companions.map((c) => c.fileName),
+          curScanSources.companions.map((c) => c.fileName),
         );
         const hitComp = texName
-          ? scanSources.companions.find((c) => c.fileName === texName)
+          ? curScanSources.companions.find((c) => c.fileName === texName)
           : null;
         if (hitComp?.s3Key) {
           const texBlob = await fetchS3BlobCached({
@@ -658,14 +706,15 @@ export function PracticeCustomAbutmentPreviewDialog({
       try {
         clearSceneObjects();
         setDesignedList([]);
+        setAvailableJaws({ upper: false, lower: false });
         setSelectedTooth(null);
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
 
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
-        const hasWorkScans = workScanFiles.some((f) => isOralScanMeshName(f.fileName));
+        const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
         if (!hasWorkScans) targetRoles.add("bite");
 
-        const toLoad = scanSources.meshes.filter((f) => {
+        const toLoad = curScanSources.meshes.filter((f) => {
           const r = resolveOralScanRole({
             fileName: f.fileName,
             scanRole: f.scanRole ?? undefined,
@@ -673,9 +722,32 @@ export function PracticeCustomAbutmentPreviewDialog({
           return r === "upper" || r === "lower" || (targetRoles.has("bite") && r === "bite");
         });
 
+        const emptyCatalog: ScanbodyCatalog = {
+          libraries: [],
+          templates: [],
+          templateUploads: [],
+          labUploadRequestKeys: [],
+        };
+        const catalogPromise = apiFetch<{ data?: ScanbodyCatalog }>({
+          path: "/api/scanbody-libraries",
+          token,
+          cacheTtlMs: 30_000,
+        })
+          .then((res) =>
+            res.ok && res.data?.data
+              ? {
+                  ...emptyCatalog,
+                  ...res.data.data,
+                  templateUploads: res.data.data.templateUploads ?? [],
+                  labUploadRequestKeys: res.data.data.labUploadRequestKeys ?? [],
+                }
+              : emptyCatalog,
+          )
+          .catch(() => emptyCatalog);
+
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
-        const loadedScans = (
-          await Promise.all(
+        const [rawLoadedScans, curCatalog] = await Promise.all([
+          Promise.all(
             toLoad.map((item, idx) =>
               loadSingleScan(item, (pct) => {
                 progressByIdx[idx] = pct;
@@ -690,8 +762,12 @@ export function PracticeCustomAbutmentPreviewDialog({
                 }
               }),
             ),
-          )
-        ).filter((row): row is LoadedJawScan => row != null);
+          ),
+          catalogPromise,
+        ]);
+        const loadedScans = rawLoadedScans.filter(
+          (row): row is LoadedJawScan => row != null,
+        );
 
         if (cancelled) return;
 
@@ -755,8 +831,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           lower: [],
         };
 
-        for (let i = 0; i < abutmentToothWorks.length; i += 1) {
-          const tw = abutmentToothWorks[i]!;
+        for (let i = 0; i < curToothWorks.length; i += 1) {
+          const tw = curToothWorks[i]!;
           const parsed = parseFdiTooth(tw.toothNumber);
           if (!parsed) continue;
           const jawGeo = parsed.jaw === "upper" ? upperPrimary : lowerPrimary;
@@ -765,7 +841,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           setStatus({
             kind: "loading",
-            percent: Math.round(68 + ((i + 0.4) / abutmentToothWorks.length) * 24),
+            percent: Math.round(68 + ((i + 0.4) / curToothWorks.length) * 24),
             step: `#${tw.toothNumber} 스캔바디 매칭 및 커스텀어벗 디자인 중…`,
           });
           await new Promise<void>((r) => window.setTimeout(r, 16));
@@ -773,8 +849,8 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           const models = await loadCandidateScanbodyModels({
             toothWork: tw,
-            catalog: scanbodyCatalog,
-            connections,
+            catalog: curCatalog,
+            connections: curConnections,
           });
           if (cancelled) return;
 
@@ -783,7 +859,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             frame,
             toothWork: tw,
             models,
-            connections,
+            connections: curConnections,
             excludeTops: excludedByJaw[parsed.jaw],
           });
           if (!matched) continue;
@@ -793,7 +869,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             fixture: matched,
             jawGeometry: jawGeo,
             opposingGeometry: oppGeo,
-            patientName,
+            patientName: curPatientName,
           });
           builtAbutments.push(designed);
           matchedByJaw[parsed.jaw].push(designed);
@@ -827,7 +903,9 @@ export function PracticeCustomAbutmentPreviewDialog({
 
         // 스캔 메시(원본 + 스캔바디 숨김본)와 어벗·픽스쳐·마진선 씬 등록
         const scene = sceneRef.current;
-        if (!scene) return;
+        if (!scene) {
+          throw new Error("3D 뷰어 캔버스를 준비하지 못했습니다.");
+        }
 
         const makeScanMesh = (
           geo: THREE.BufferGeometry,
@@ -933,9 +1011,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
 
         setVisibleTeeth(nextVisibleTeeth);
+        const hasUpper = upperScans.length > 0;
+        const hasLower = lowerScans.length > 0;
+        setAvailableJaws({ upper: hasUpper, lower: hasLower });
         setVisibleJaws({
-          upper: upperScans.length > 0,
-          lower: lowerScans.length > 0,
+          upper: hasUpper,
+          lower: hasLower,
         });
         setDesignedList(builtAbutments);
         setStatus({ kind: "ready" });
@@ -961,17 +1042,12 @@ export function PracticeCustomAbutmentPreviewDialog({
       abort.abort();
     };
   }, [
-    abutmentToothWorks,
     authToken,
     clearSceneObjects,
-    connections,
     fitDefaultCamera,
+    hostEl,
     open,
-    patientName,
-    scanSources,
-    scanbodyCatalog,
-    scanbodyCatalogLoaded,
-    workScanFiles,
+    pipelineKey,
   ]);
 
   // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 대합 투명도, 픽스쳐, 마진선, 악·치아 토글)
@@ -1027,6 +1103,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         mat.depthWrite = !seeThrough;
         mesh.renderOrder = seeThrough ? 4 : 1;
         mat.needsUpdate = true;
+        syncBackFaceShell(mesh);
       };
 
       for (const m of rawList) applyMat(m, roleVisible && !hideScanbodyOnScan);
@@ -1062,8 +1139,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   ]);
 
   const hasOpposingJaw =
-    (prepJaws.has("upper") && jawMeshesRef.current.lowerRaw.length > 0) ||
-    (prepJaws.has("lower") && jawMeshesRef.current.upperRaw.length > 0);
+    (prepJaws.has("upper") && availableJaws.lower) ||
+    (prepJaws.has("lower") && availableJaws.upper);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1120,7 +1197,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         </DialogHeader>
 
         <div className="relative min-h-0 min-w-0 flex-1">
-          <div ref={hostRef} className="relative h-full w-full overflow-hidden" />
+          <div ref={bindHostRef} className="relative h-full w-full overflow-hidden" />
 
           {/* 중앙선 · 모눈종이 오버레이 */}
           {centerGuide !== "off" ? (
@@ -1222,7 +1299,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                     구강 스캔
                   </div>
                   <div className="flex flex-wrap items-center gap-4">
-                    {jawMeshesRef.current.upperRaw.length > 0 ? (
+                    {availableJaws.upper ? (
                       <label className="flex cursor-pointer items-center gap-2">
                         <Checkbox
                           checked={visibleJaws.upper}
@@ -1233,7 +1310,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                         <span>상악 스캔</span>
                       </label>
                     ) : null}
-                    {jawMeshesRef.current.lowerRaw.length > 0 ? (
+                    {availableJaws.lower ? (
                       <label className="flex cursor-pointer items-center gap-2">
                         <Checkbox
                           checked={visibleJaws.lower}
