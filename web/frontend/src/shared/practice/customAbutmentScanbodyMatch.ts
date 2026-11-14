@@ -597,8 +597,9 @@ function refineMatchedFixtureDirections(
   jawGeometry: THREE.BufferGeometry,
   fixture: MatchedScanbodyFixture,
   side: 1 | -1,
+  jawFixtures?: readonly MatchedScanbodyFixture[],
 ): { labialDir: Vec3; mesialDir: Vec3 } {
-  const pts = samplePositions(jawGeometry, 10000);
+  const pts = samplePositions(jawGeometry, 12000);
   const occ = fixture.archOcclusalDir;
   const isUpper = fixture.jaw === "upper";
   const cranialUp = isUpper ? scale(occ, -1) : occ;
@@ -611,6 +612,19 @@ function refineMatchedFixtureDirections(
   const e1 =
     Math.abs(occ[2]) < 0.9 ? norm(cross(occ, [0, 0, 1])) : norm(cross(occ, [1, 0, 0]));
   const e2 = norm(cross(occ, e1));
+  const ownFdi = parseFdiTooth(fixture.toothNumber);
+  const allSbs = jawFixtures && jawFixtures.length > 0 ? jawFixtures : [fixture];
+  const isOnAnyScanbody = (p: Vec3) => {
+    for (const sb of allSbs) {
+      const rSb = sub(p, sb.fixturePose.origin);
+      const tSb = dot(rSb, sb.fixturePose.axis);
+      if (tSb < -0.5 || tSb > sb.scanbodyHeightMm + 1.2) continue;
+      if (Math.hypot(...sub(rSb, scale(sb.fixturePose.axis, tSb))) < sb.scanbodyRadiusMm + 0.9) {
+        return true;
+      }
+    }
+    return false;
+  };
 
   const step = 1.5;
   const halfCells = 22;
@@ -652,6 +666,35 @@ function refineMatchedFixtureDirections(
     }
   }
 
+  // 악궁은 혀·구개 쪽으로 오목하므로, 12mm 이상 떨어진 나머지 치관 격자의 중심 반대쪽이 외측(순·협측)이다.
+  let fx = 0;
+  let fy = 0;
+  let fn = 0;
+  for (let y = 2; y < nSide - 2; y += 1) {
+    for (let x = 2; x < nSide - 2; x += 1) {
+      const v = smooth[y * nSide + x]!;
+      if (!Number.isFinite(v) || v < baseOcc + 1.2 || v > baseOcc + 13.5) continue;
+      const px = (x - halfCells) * step;
+      const py = (y - halfCells) * step;
+      if (Math.hypot(px, py) < 12) continue;
+      fx += px;
+      fy += py;
+      fn += 1;
+    }
+  }
+  let outwardRef = norm(sub(fixture.labialDir, scale(occ, dot(fixture.labialDir, occ))));
+  if (fn >= 10) {
+    fx /= fn;
+    fy /= fn;
+    if (Math.hypot(fx, fy) > 3) {
+      const chordOut = norm(add(scale(e1, -fx), scale(e2, -fy)));
+      outwardRef =
+        dot(outwardRef, chordOut) >= 0.2
+          ? chordOut
+          : norm(add(scale(chordOut, 0.5), scale(outwardRef, 0.5)));
+    }
+  }
+
   const rawPeaks: Array<{ x: number; y: number; r: number; prom: number }> = [];
   for (let y = 3; y < nSide - 3; y += 1) {
     for (let x = 3; x < nSide - 3; x += 1) {
@@ -660,7 +703,7 @@ function refineMatchedFixtureDirections(
       const px = (x - halfCells) * step;
       const py = (y - halfCells) * step;
       const r = Math.hypot(px, py);
-      if (r < 4.5 || r > 25) continue;
+      if (r < 4.5 || r > 24) continue;
       let isMax = true;
       let minNear = v;
       let filled = 0;
@@ -687,70 +730,130 @@ function refineMatchedFixtureDirections(
     if (i < 0) peaks.push(p);
     else if (p.prom > peaks[i]!.prom) peaks[i] = p;
   }
-  const near = peaks.filter((p) => p.r <= 18);
-  if (near.length === 0) {
-    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
-  }
 
-  let sw = 1.2;
-  let mx = 0;
-  let my = 0;
-  for (const p of near) {
-    const w = 10 / (p.r + 3);
-    sw += w;
-    mx += p.x * w;
-    my += p.y * w;
-  }
-  mx /= sw;
-  my /= sw;
-  let lxx = 1.2 * mx * mx;
-  let lxy = 1.2 * mx * my;
-  let lyy = 1.2 * my * my;
-  for (const p of near) {
-    const w = 10 / (p.r + 3);
-    const dx = p.x - mx;
-    const dy = p.y - my;
-    lxx += w * dx * dx;
-    lxy += w * dx * dy;
-    lyy += w * dy * dy;
-  }
-  const th = 0.5 * Math.atan2(2 * lxy, lxx - lyy);
-  const cs = Math.cos(th);
-  const sn = Math.sin(th);
-  const v1 = lxx * cs * cs + 2 * lxy * cs * sn + lyy * sn * sn;
-  const v2 = lxx * sn * sn - 2 * lxy * cs * sn + lyy * cs * cs;
-  const min2: [number, number] = v1 >= v2 ? [-sn, cs] : [cs, sn];
-  let perp = norm(add(scale(e1, min2[0]), scale(e2, min2[1])));
-
-  // 악궁은 혀·구개 쪽으로 오목하므로, 12mm 이상 떨어진 나머지 치관 격자의 중심 반대쪽이 외측(순·협측)이다.
-  let fx = 0;
-  let fy = 0;
-  let fn = 0;
-  for (let y = 2; y < nSide - 2; y += 1) {
-    for (let x = 2; x < nSide - 2; x += 1) {
-      const v = smooth[y * nSide + x]!;
-      if (!Number.isFinite(v) || v < baseOcc + 1.2 || v > baseOcc + 13.5) continue;
-      const px = (x - halfCells) * step;
-      const py = (y - halfCells) * step;
-      if (Math.hypot(px, py) < 12) continue;
-      fx += px;
-      fy += py;
-      fn += 1;
+  // 같은 사분면 인접 임플란트 픽스쳐(예: #47↔#46) 원점도 치조정·중심구 악궁선 위의 기준점으로 넣는다.
+  const nbAnchors: Array<{ x: number; y: number; r: number; w: number }> = [];
+  if (ownFdi && jawFixtures) {
+    for (const other of jawFixtures) {
+      if (other.toothNumber === fixture.toothNumber) continue;
+      const ofdi = parseFdiTooth(other.toothNumber);
+      if (!ofdi || ofdi.digits[0] !== ownFdi.digits[0]) continue;
+      if (Math.abs(ofdi.pos - ownFdi.pos) > 2) continue;
+      const rel = sub(other.fixturePose.origin, orig);
+      const ox = dot(rel, e1);
+      const oy = dot(rel, e2);
+      const r = Math.hypot(ox, oy);
+      if (r >= 4.0 && r <= 18.0) {
+        nbAnchors.push({ x: ox, y: oy, r, w: 18 / (r + 2.5) });
+      }
     }
   }
-  let outwardRef = fixture.labialDir;
-  if (fn >= 10) {
-    fx /= fn;
-    fy /= fn;
-    if (Math.hypot(fx, fy) > 3) {
-      const chordOut = norm(add(scale(e1, -fx), scale(e2, -fy)));
-      outwardRef =
-        Math.abs(dot(perp, chordOut)) >= 0.25
-          ? chordOut
-          : norm(add(scale(chordOut, 0.5), scale(fixture.labialDir, 0.5)));
+
+  const near = peaks.filter((p) => p.r <= (ownFdi && ownFdi.pos >= 6 ? 15.5 : 18));
+  let perp = outwardRef;
+  if (near.length > 0 || nbAnchors.length > 0) {
+    let sw = 1.5;
+    let mx = 0;
+    let my = 0;
+    for (const p of near) {
+      const w = 10 / (p.r + 3);
+      sw += w;
+      mx += p.x * w;
+      my += p.y * w;
     }
+    for (const nb of nbAnchors) {
+      sw += nb.w;
+      mx += nb.x * nb.w;
+      my += nb.y * nb.w;
+    }
+    mx /= sw;
+    my /= sw;
+    let lxx = 1.5 * mx * mx;
+    let lxy = 1.5 * mx * my;
+    let lyy = 1.5 * my * my;
+    for (const p of near) {
+      const w = 10 / (p.r + 3);
+      lxx += w * (p.x - mx) ** 2;
+      lxy += w * (p.x - mx) * (p.y - my);
+      lyy += w * (p.y - my) ** 2;
+    }
+    for (const nb of nbAnchors) {
+      lxx += nb.w * (nb.x - mx) ** 2;
+      lxy += nb.w * (nb.x - mx) * (nb.y - my);
+      lyy += nb.w * (nb.y - my) ** 2;
+    }
+    const th = 0.5 * Math.atan2(2 * lxy, lxx - lyy);
+    const cs = Math.cos(th);
+    const sn = Math.sin(th);
+    const v1 = lxx * cs * cs + 2 * lxy * cs * sn + lyy * sn * sn;
+    const v2 = lxx * sn * sn - 2 * lxy * cs * sn + lyy * cs * cs;
+    const min2: [number, number] = v1 >= v2 ? [-sn, cs] : [cs, sn];
+    perp = norm(add(scale(e1, min2[0]), scale(e2, min2[1])));
+    if (dot(perp, outwardRef) < 0) perp = scale(perp, -1);
   }
-  if (dot(perp, outwardRef) < 0) perp = scale(perp, -1);
+
+  // 협측 교두나 설측 교두 중 한쪽 봉우리만 잡혀 접선이 10~15° 돌아가는 현상을 막기 위해,
+  // 초기 접선(t0) 방향 구간마다 교합면 상단 띠의 협설 양끝 중앙(= central groove 연결선)을 추적해 보정한다.
+  const t0 = norm(scale(cross(cranialUp, perp), side));
+  const maxStationMm = ownFdi && ownFdi.pos >= 6 ? 14.5 : 16.0;
+  const binMm = 2.4;
+  const binCount = Math.floor((maxStationMm * 2) / binMm) + 1;
+  const bins: Array<Array<{ u: number; z: number }>> = Array.from({ length: binCount }, () => []);
+  for (const p of pts) {
+    if (isOnAnyScanbody(p)) continue;
+    const rel = sub(p, orig);
+    const z = dot(rel, occ);
+    if (z < baseOcc + 2.0 || z > baseOcc + 13.0) continue;
+    const s = dot(rel, t0);
+    const u = dot(rel, perp);
+    if (Math.abs(s) < 3.6 || Math.abs(s) > maxStationMm || Math.abs(u) > 6.5) continue;
+    const bi = Math.min(binCount - 1, Math.max(0, Math.floor((s + maxStationMm) / binMm)));
+    bins[bi]!.push({ u, z });
+  }
+  const groovePts: Array<{ s: number; u: number; w: number }> = [];
+  for (let bi = 0; bi < binCount; bi += 1) {
+    const list = bins[bi]!;
+    if (list.length < 10) continue;
+    const zs = list.map((q) => q.z).sort((a, b) => a - b);
+    const zTop = zs[Math.floor(zs.length * 0.92)]!;
+    if (zTop < baseOcc + 3.0) continue;
+    const occBand = list
+      .filter((q) => q.z >= zTop - 2.3)
+      .map((q) => q.u)
+      .sort((a, b) => a - b);
+    if (occBand.length < 6) continue;
+    const uLo = occBand[Math.floor(occBand.length * 0.14)]!;
+    const uHi = occBand[Math.floor(occBand.length * 0.86)]!;
+    if (uHi - uLo < 2.2 || uHi - uLo > 12.0) continue;
+    const sMid = -maxStationMm + (bi + 0.5) * binMm;
+    groovePts.push({
+      s: sMid,
+      u: (uLo + uHi) * 0.5,
+      w: 12 / (Math.abs(sMid) + 2.5),
+    });
+  }
+  for (const nb of nbAnchors) {
+    const vecWorld = add(scale(e1, nb.x), scale(e2, nb.y));
+    groovePts.push({
+      s: dot(vecWorld, t0),
+      u: dot(vecWorld, perp),
+      w: nb.w * 1.25,
+    });
+  }
+  if (groovePts.length >= 2) {
+    // 원점(내 픽스쳐)을 부드럽게 지나는 central groove 직선 기울기 du/ds로 회전 보정한다.
+    let s2Sum = 12;
+    let suSum = 0;
+    for (const g of groovePts) {
+      s2Sum += g.w * g.s * g.s;
+      suSum += g.w * g.s * g.u;
+    }
+    const maxCorr = Math.tan((22 * Math.PI) / 180);
+    const slope = Math.max(-maxCorr, Math.min(maxCorr, suSum / Math.max(s2Sum, 1e-4)));
+    const nextMesial = norm(add(t0, scale(perp, slope)));
+    perp = norm(scale(cross(nextMesial, cranialUp), side));
+    if (dot(perp, outwardRef) < 0) perp = scale(perp, -1);
+  }
 
   const mesialDir = norm(scale(cross(cranialUp, perp), side));
   return { labialDir: perp, mesialDir };
@@ -1423,10 +1526,20 @@ export function detectAndMatchScanbodiesOnJaw(args: {
   };
   visit(0, 0);
 
-  const out = new Map<string, MatchedScanbodyFixture>();
+  const rawOut = new Map<string, MatchedScanbodyFixture>();
   bestPick.forEach((h, i) => {
-    if (h) out.set(perTooth[i]!.toothNumber, h.fixture);
+    if (h) rawOut.set(perTooth[i]!.toothNumber, h.fixture);
   });
+  if (rawOut.size <= 1) return rawOut;
+
+  const allMatched = [...rawOut.values()];
+  const out = new Map<string, MatchedScanbodyFixture>();
+  for (const [toothNumber, fx] of rawOut.entries()) {
+    const fdi = parseFdiTooth(toothNumber);
+    const side: 1 | -1 = fdi ? fdi.side : 1;
+    const dirs = refineMatchedFixtureDirections(args.jawGeometry, fx, side, allMatched);
+    out.set(toothNumber, { ...fx, labialDir: dirs.labialDir, mesialDir: dirs.mesialDir });
+  }
   return out;
 }
 
