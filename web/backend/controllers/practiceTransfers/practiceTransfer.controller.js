@@ -1430,6 +1430,149 @@ const toOwnedListRequestRows = (transferDoc) => {
 /** @deprecated alias — 캘린더·목록 모두 toOwnedListRequestRows */
 const toCalendarOwnedRequestRows = toOwnedListRequestRows;
 
+/**
+ * 캘린더 첫 화면 1행. 환자·치아·날짜·단계·기공소만.
+ * 파일 본문·수가·배송은 행을 열 때(transferId) 다시 읽는다.
+ */
+const toCalendarIndexRequestRow = (transferDoc) => {
+  const transferId = String(transferDoc?.transferId || "").trim();
+  const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
+  const assigneeKind = resolveAssigneeKind(transferDoc);
+  const handledByCertifiedPartner =
+    isSubcontractPoolOpen(transferDoc) || isSubcontractAssignee(transferDoc);
+  const labIdentity = redactAutoMatchLabIdentity(
+    matchingMode,
+    {
+      targetLabName: String(transferDoc?.targetLabName || "").trim(),
+      targetLabAnchorId: transferDoc?.targetLabAnchorId || null,
+    },
+    { transfer: transferDoc },
+  );
+  const targetLabName = formatAbutsCooperationLabLabel(labIdentity.targetLabName);
+  const exposeAssignee = isCooperationAssignee(transferDoc);
+  const rawAssigneeLabName = exposeAssignee
+    ? String(transferDoc?.assigneeLabName || "").trim()
+    : "";
+  const assigneeLabName = rawAssigneeLabName
+    ? formatAbutsCooperationLabLabel(rawAssigneeLabName)
+    : "";
+  const assigneeLabAnchorId = exposeAssignee
+    ? transferDoc?.assigneeLabAnchorId || null
+    : null;
+  const transferMemo = String(transferDoc?.transferMemo || "").trim();
+  const files = Array.isArray(transferDoc?.files) ? transferDoc.files : [];
+  const toothWorks = Array.isArray(transferDoc?.toothWorks)
+    ? transferDoc.toothWorks
+    : [];
+  const production =
+    transferDoc?.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {};
+  const designFiles = Array.isArray(production.designFiles)
+    ? production.designFiles
+    : [];
+  const arrivalDates = resolvePracticeArrivalDates(transferDoc);
+  const currentArrivalYmd = resolveCurrentArrivalYmd(arrivalDates);
+  const orderDates = resolvePracticeOrderDates(transferDoc);
+  const orderYmd =
+    resolveCurrentOrderYmd(orderDates) || parseOrderYmdFromMemo(transferMemo);
+  const manufacturerStage = resolvePracticeTransferManufacturerStage(transferDoc);
+  const remakeFields = toRemakeApiFields(transferDoc);
+  const performingLabAnchorId = resolvePerformingLabAnchorId(transferDoc);
+
+  const patients = [];
+  const teeth = [];
+  const seenPatient = new Set();
+  const seenTooth = new Set();
+  const pushTooth = (raw) => {
+    const parts = String(raw || "")
+      .split(/[,/\s]+/)
+      .map((part) => String(part || "").trim())
+      .filter((n) => /^[1-4][1-8]$/.test(n));
+    for (const tooth of parts) {
+      if (seenTooth.has(tooth)) continue;
+      seenTooth.add(tooth);
+      teeth.push(tooth);
+    }
+  };
+  const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
+  const memoPatientName = String(memoPatientMatch?.[1] || "").trim();
+  if (memoPatientName && memoPatientName !== "-") {
+    seenPatient.add(memoPatientName);
+    patients.push(memoPatientName);
+  }
+  for (const file of files) {
+    const patient = String(file?.patientName || "").trim();
+    if (patient && patient !== "-" && !seenPatient.has(patient)) {
+      seenPatient.add(patient);
+      patients.push(patient);
+    }
+    pushTooth(file?.tooth);
+  }
+  for (const work of toothWorks) {
+    pushTooth(work?.toothNumber);
+  }
+
+  const followUps = serializeProsthesisFollowUpsForApi(
+    transferDoc?.prosthesisFollowUps,
+  ).map((row) => ({
+    ...row,
+    billingDelta: null,
+  }));
+
+  return {
+    _id: String(transferDoc?._id || ""),
+    requestId: `${transferId}-1`,
+    transferId,
+    manufacturerStage,
+    ...remakeFields,
+    createdAt: transferDoc?.createdAt,
+    practiceTransferId: String(transferDoc?._id || ""),
+    matchingMode,
+    toothWorks: teeth.map((toothNumber) => ({ toothNumber })),
+    crownFabrication: parseCrownFabrication(transferDoc?.crownFabrication),
+    hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
+    prosthesisFollowUps: followUps,
+    requestorDownloadedAt: transferDoc?.requestorDownloadedAt || null,
+    requestorAcceptedAt: transferDoc?.requestorDownloadedAt || null,
+    arrivalDeadlineExpiredAt: transferDoc?.arrivalDeadlineExpiredAt || null,
+    arrivalDates,
+    arrivalDate: currentArrivalYmd || null,
+    orderDates,
+    orderDate: orderYmd || null,
+    files: [],
+    resultFiles: [],
+    production: {
+      designFileCount: designFiles.length,
+      designReadyAt: production.designReadyAt || null,
+      confirmedAt: production.confirmedAt || null,
+      skipDesignConfirm: production.skipDesignConfirm !== false,
+      skipJig: production.skipJig !== false,
+    },
+    performingLabAnchorId: performingLabAnchorId || null,
+    handledByCertifiedPartner,
+    assigneeKind,
+    assigneeLabName: assigneeLabName || "",
+    assigneeLabAnchorId: assigneeLabAnchorId || null,
+    caseInfos: {
+      patientName: patients.join(", "),
+      tooth: teeth.join(","),
+      newSystemRequest: {
+        message: transferMemo,
+      },
+      practiceRouting: {
+        targetLabAnchorId: labIdentity.targetLabAnchorId,
+        targetLabName,
+        matchingMode,
+        handledByCertifiedPartner,
+        assigneeKind,
+        assigneeLabName: assigneeLabName || "",
+        assigneeLabAnchorId: assigneeLabAnchorId || null,
+      },
+    },
+  };
+};
+
 const isLabReceiveUnreadDoc = (doc, labAnchorId) => {
   const status = String(doc?.status || "").trim();
   if (status === "deleted" || status === "canceled") return false;
@@ -7758,7 +7901,25 @@ export async function getMyPracticeTransfers(req, res) {
         ? fetched.slice(0, limit)
         : fetched;
 
-    // 캘린더 첫 응답은 문서의 단계·디자인 파일만. 배송 조회는 건을 열 때(transferId) 한다. fee/별점은 생략.
+    // 캘린더 첫 화면은 칸 필드만. 파일·수가·배송·담당 기사 조회는 건을 열 때.
+    if (calendarRange) {
+      const requests = docs.map((doc) => toCalendarIndexRequestRow(doc));
+      return res.status(200).json({
+        success: true,
+        data: {
+          requests,
+          pagination: {
+            page,
+            limit,
+            count: requests.length,
+            total: requests.length,
+            hasMore: false,
+          },
+        },
+      });
+    }
+
+    // 목록·단건은 문서의 단계·디자인 파일. 배송 조회는 건을 열 때(transferId) 한다. fee/별점은 생략.
     const practiceAnchorForRatings = String(
       req.user?.businessAnchorId || "",
     ).trim();

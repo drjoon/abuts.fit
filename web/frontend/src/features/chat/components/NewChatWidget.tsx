@@ -28,6 +28,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useToast } from "@/shared/hooks/use-toast";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
@@ -265,11 +266,15 @@ export const NewChatWidget = () => {
   useEffect(() => {
     if (!user || !isAuthenticated || !token) return;
     const onTransfers = String(location.pathname || "").includes("practice-transfers");
-    const timer = window.setTimeout(() => {
+    if (!onTransfers) {
       void loadSupportUnread();
       void loadCounterparts();
-    }, onTransfers ? 700 : 0);
-    return () => window.clearTimeout(timer);
+      return;
+    }
+    return whenPracticeCalendarPainted(() => {
+      void loadSupportUnread();
+      void loadCounterparts();
+    });
   }, [user?.id, isAuthenticated, token, canUsePartnerChat, supportRoomDisabled, location.pathname]);
 
   useEffect(() => {

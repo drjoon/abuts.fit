@@ -226,6 +226,7 @@ import { resolveDashboardHubHref } from "@/shared/dashboard/dashboardHubNavigati
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import { LabDemoConversionConfirmModal } from "@/shared/demo/LabDemoConversionConfirmModal";
 import { AdminDemoConversionConfirmModal } from "@/shared/demo/AdminDemoConversionConfirmModal";
@@ -708,10 +709,9 @@ export const DashboardLayout = () => {
   });
   useEffect(() => {
     if (!deferPracticeTransferChat) return;
-    const timer = window.setTimeout(() => {
+    return whenPracticeCalendarPainted(() => {
       void fetchChatRooms();
-    }, 600);
-    return () => window.clearTimeout(timer);
+    });
   }, [deferPracticeTransferChat, fetchChatRooms]);
   const {
     canUsePaid: requestorCanUsePaid,

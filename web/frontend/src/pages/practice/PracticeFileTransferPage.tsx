@@ -470,6 +470,7 @@ import {
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 import {
   ROUND_BAR_REQUEST_UPDATED_EVENT,
   applyRoundBarRequestUpdate,
@@ -1610,6 +1611,7 @@ export const PracticeFileTransferPage = ({
     starBandEligibleLabIds,
     ownOneStarBlockedLabIds,
     onScanModelFilesAdded: () => onScanModelFilesAddedRef.current(),
+    deferUntilCalendarPaint: true,
   });
   const scanDataAttached = useMemo(
     () =>
@@ -1858,9 +1860,13 @@ export const PracticeFileTransferPage = ({
     name: string;
     url: string;
   } | null>(null);
+  const [calendarFirstPainted, setCalendarFirstPainted] = useState(false);
+  useEffect(
+    () => whenPracticeCalendarPainted(() => setCalendarFirstPainted(true)),
+    [],
+  );
   const { connections: implantConnections } = useImplantConnectionCatalog(
-    authToken,
-    1200,
+    calendarFirstPainted ? authToken : null,
   );
   const platformGuideTour = useGuideTour();
   const isMobile =
@@ -2266,14 +2272,11 @@ export const PracticeFileTransferPage = ({
     autoFetch: false,
   });
 
-  // 캘린더 인덱스가 먼저 나가게 채팅방 목록은 그다음에 읽는다.
+  // 캘린더 칸이 그려진 뒤에 채팅방 목록을 읽는다.
   useEffect(() => {
-    if (!authToken) return;
-    const timer = window.setTimeout(() => {
-      void fetchRooms();
-    }, 600);
-    return () => window.clearTimeout(timer);
-  }, [authToken, fetchRooms]);
+    if (!authToken || !calendarFirstPainted) return;
+    void fetchRooms();
+  }, [authToken, calendarFirstPainted, fetchRooms]);
 
   const resolveUploadedTempFiles = useCallback(
     async (targetFiles: File[]) => {
@@ -3925,20 +3928,18 @@ export const PracticeFileTransferPage = ({
   }, [applyPracticeTransferSettings]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadPracticeTransferSettingsFromServer();
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [loadPracticeTransferSettingsFromServer]);
+    if (!calendarFirstPainted) return;
+    void loadPracticeTransferSettingsFromServer();
+  }, [calendarFirstPainted, loadPracticeTransferSettingsFromServer]);
 
-  // 캘린더가 메인 — page=1 fat 목록은 상세/휴지통/전송 이후에만(초기 병렬 조회 제거)
+  // 캘린더 칸이 그려진 뒤에 1페이지 목록. 첫 화면은 캘린더 구간만 쓴다.
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken || !calendarFirstPainted) return;
     const timer = window.setTimeout(() => {
       void loadRecentRequests({ silent: true });
-    }, 2500);
+    }, 1500);
     return () => window.clearTimeout(timer);
-  }, [authToken, loadRecentRequests]);
+  }, [authToken, calendarFirstPainted, loadRecentRequests]);
 
   useEffect(() => {
     const state = location.state as { practiceTransferSubmittedToast?: boolean } | null;
@@ -4467,13 +4468,14 @@ export const PracticeFileTransferPage = ({
     if (resumeDraftId) {
       void loadPracticeTransferDraft({ draftId: resumeDraftId, forceResync: true });
     }
-    const timer = window.setTimeout(() => {
-      void loadPracticeTransferDraftList();
-    }, 800);
-    return () => window.clearTimeout(timer);
     // hydrate 직후 1회. 콜백 identity 변경으로 다른 임시저장을 폼에 넣지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot after local hydrate
   }, [localFormHydrated]);
+
+  useEffect(() => {
+    if (!localFormHydrated || !calendarFirstPainted) return;
+    void loadPracticeTransferDraftList();
+  }, [calendarFirstPainted, localFormHydrated]);
 
   /** 기공소 전송 성공 후 작성자·동료 모두 폼/로컬캐시를 비운다 */
   const resetIntakeFormAfterTransfer = useCallback(async () => {
@@ -6475,11 +6477,9 @@ export const PracticeFileTransferPage = ({
   }, [authToken, chatRooms]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshPracticeBookmarks();
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [refreshPracticeBookmarks]);
+    if (!calendarFirstPainted) return;
+    void refreshPracticeBookmarks();
+  }, [calendarFirstPainted, refreshPracticeBookmarks]);
 
   const handleBookmarkChanged = useCallback(
     (transfer: RecentTransferItem, bookmarked: boolean) => {

@@ -5,6 +5,7 @@
 // - 2026-08-15: internalLab(어벗츠기공소) — lab 수신 + 사업자 me, 디자인 큐는 기공의뢰수신.
 // - 2026-08-11: 초기 1회만 loading=true — 이후 refresh는 silent(페이지 스켈레톤 플리커 방지).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import {
@@ -24,6 +25,7 @@ import {
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 
 const emptyProfile = (): RequestorProfile => ({
   kind: null,
@@ -48,6 +50,7 @@ const requestorAccessKnownOnUser = (user: {
 
 export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
+  const location = useLocation();
   const [loading, setLoading] = useState(
     () => Boolean(token) && !requestorAccessKnownOnUser(user),
   );
@@ -197,12 +200,19 @@ export const useRequestorBusinessAccess = () => {
   ]);
 
   const delayAccessRefresh = requestorAccessKnownOnUser(user);
+  const holdForCalendar =
+    delayAccessRefresh && location.pathname.includes("/practice-transfers");
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    if (!holdForCalendar) {
+      const timer = window.setTimeout(() => {
+        void refresh();
+      }, delayAccessRefresh ? 700 : 0);
+      return () => window.clearTimeout(timer);
+    }
+    return whenPracticeCalendarPainted(() => {
       void refresh();
-    }, delayAccessRefresh ? 700 : 0);
-    return () => window.clearTimeout(timer);
-  }, [delayAccessRefresh, refresh]);
+    });
+  }, [delayAccessRefresh, holdForCalendar, refresh]);
 
   useEffect(() => {
     const onUpdated = () => {

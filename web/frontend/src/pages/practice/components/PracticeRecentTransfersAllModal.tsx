@@ -109,6 +109,7 @@ import {
   buildLabReceiveCalendarFetchYmdRange,
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
+import { markPracticeCalendarFirstPaint } from "@/shared/practice/practiceCalendarFirstPaint";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   isPracticeStatusBadgeQueueTransfer,
@@ -489,6 +490,9 @@ export function PracticeRecentTransfersAllModal({
 
         setCalendarRequests(mapMyPracticeTransferApiRows(list));
         if (!silent) setCalendarError("");
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => markPracticeCalendarFirstPaint());
+        });
       } catch {
         if (!silent) {
           setCalendarRequests([]);

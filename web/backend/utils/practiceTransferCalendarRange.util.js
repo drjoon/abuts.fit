@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-14: 캘린더 projection은 환자·치아·날짜·단계 판정용 개수만. 파일 본문은 열 때.
 // - 2026-11-14: 캘린더 조회는 일자 인덱스 두 갈래(elemMatch·레거시 createdAt). 파일 본문 제외 인덱스 projection.
 // - 2026-09-23: CALENDAR_LIST_SELECT에 assigneeLab*·assigneeKind — 협력 표시「어벗츠 · 파트너」.
 // - 2026-09-15: CALENDAR_LIST_SELECT에 prosthesisFeeStages — 단계별 견적 스냅샷.
@@ -220,7 +221,7 @@ export async function findPracticeTransferDocsInCalendarRange(Model, options = {
 
 /**
  * 캘린더 첫 화면용 projection.
- * 환자·치아·상태·날짜만. 스캔 마진·디자인 STL 본문·작업스캔·수가 라인은 열 때 다시 읽는다.
+ * 환자·치아·날짜·단계 판정(디자인/보철 개수)만. 파일 이름·키·수가 라인은 열 때 다시 읽는다.
  */
 export const PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT = {
   transferId: 1,
@@ -248,53 +249,21 @@ export const PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT = {
   crownFabrication: 1,
   "files.patientName": 1,
   "files.tooth": 1,
-  "files.prosthesisType": 1,
-  "files.scanRole": 1,
-  "files.scanRoleSetBy": 1,
-  "files.file.originalName": 1,
-  "files.file.mimetype": 1,
-  "files.file.size": 1,
-  "files.file.s3Key": 1,
-  "resultFiles.patientName": 1,
-  "resultFiles.tooth": 1,
-  "resultFiles.prosthesisType": 1,
-  "resultFiles.file.originalName": 1,
-  "resultFiles.file.mimetype": 1,
-  "resultFiles.file.size": 1,
   "resultFiles.file.s3Key": 1,
-  "production.shippingMode": 1,
-  "production.rushProcessing": 1,
   "production.skipDesignConfirm": 1,
   "production.skipJig": 1,
   "production.designReadyAt": 1,
-  "production.designFiles.patientName": 1,
-  "production.designFiles.tooth": 1,
-  "production.designFiles.file.originalName": 1,
-  "production.designFiles.file.size": 1,
   "production.designFiles.file.s3Key": 1,
-  "production.labDesignConfirmedAt": 1,
-  "production.labDesignConfirmedBy": 1,
-  "production.practiceDesignConfirmedAt": 1,
-  "production.practiceDesignConfirmedBy": 1,
-  "production.abutmentProductionStartedAt": 1,
-  "production.abutmentShipYmd": 1,
   "production.confirmedAt": 1,
-  "production.confirmedBy": 1,
-  "production.relatedRequestIds": 1,
   isRemake: 1,
   remake: 1,
   remakeSourceTransferId: 1,
   requestorReadAt: 1,
   requestorDownloadedAt: 1,
-  requestorDownloadedBy: 1,
-  labTechnicianUserId: 1,
-  labTechnicianName: 1,
   workCanceledAt: 1,
   labRejectedAt: 1,
   labRejectedByLabAnchorId: 1,
-  labBasketTag: 1,
   createdAt: 1,
-  updatedAt: 1,
 };
 
 /** 캘린더·목록 Mongo projection — 파일·치식·생산·과금 메타(전체 Mixed 제외) */

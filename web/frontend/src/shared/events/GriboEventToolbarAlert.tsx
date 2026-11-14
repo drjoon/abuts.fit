@@ -11,6 +11,7 @@ import {
 } from "@/shared/events/simplewaySampleCampaign";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 
 /**
  * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 어벗츠 출시 행사 CTA.
@@ -63,7 +64,7 @@ export function GriboEventToolbarAlert({
       return;
     }
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    const cancelWait = whenPracticeCalendarPainted(() => {
       void eventsApi
       .myApplication(SIMPLEWAY_SAMPLE_SLUG, token)
       .then((res) => {
@@ -93,10 +94,10 @@ export function GriboEventToolbarAlert({
       .catch(() => {
         if (!cancelled) setVisible(false);
       });
-    }, 900);
+    });
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      cancelWait();
     };
   }, [token]);
 

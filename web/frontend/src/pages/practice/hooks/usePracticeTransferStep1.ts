@@ -26,6 +26,7 @@ import {
   PRACTICE_TRANSFER_MODEL_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
 import { formatPracticeTargetLabLabel } from "@/shared/practice/practiceLabRating";
+import { whenPracticeCalendarPainted } from "@/shared/practice/practiceCalendarFirstPaint";
 
 export { PRACTICE_ACCEPTED_HINT };
 
@@ -129,6 +130,8 @@ type Options = {
   ownOneStarBlockedLabIds?: string[] | null;
   /** 3D 스캔 모델이 새로 붙으면 제작 방식을 스캔으로 맞춘다. */
   onScanModelFilesAdded?: () => void;
+  /** 기공의뢰 캘린더가 그려진 뒤에 기공소 검색·차단 목록을 읽는다. */
+  deferUntilCalendarPaint?: boolean;
 };
 
 const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
@@ -603,6 +606,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     options?.fileCacheMetaKey?.trim() || DEFAULT_FILE_CACHE_META_KEY;
   const fileCacheMaxTotalBytes =
     options?.fileCacheMaxTotalBytes ?? DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES;
+  const deferUntilCalendarPaint = options?.deferUntilCalendarPaint === true;
 
   const [files, setFiles] = useState<File[]>([]);
   const [selectedLab, setSelectedLabState] = useState<SearchBusinessResult | null>(null);
@@ -771,31 +775,37 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-    void (async () => {
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/subcontract-direct-blocked-labs",
-        method: "GET",
-      });
-      if (cancelled || !res.ok) return;
-      const body = res.data;
-      const data =
-        body && typeof body === "object" && "data" in (body as Record<string, unknown>)
-          ? (body as { data?: { labAnchorIds?: unknown } }).data
-          : body;
-      const ids = Array.isArray((data as { labAnchorIds?: unknown })?.labAnchorIds)
-        ? ((data as { labAnchorIds: unknown[] }).labAnchorIds)
-            .map((id) => String(id || "").trim())
-            .filter((id) => OBJECT_ID_RE.test(id))
-        : [];
-      setBlockedDirectLabIds(ids);
-    })();
-    }, 900);
+    const load = () => {
+      void (async () => {
+        const res = await apiFetch<unknown>({
+          path: "/api/practice/transfers/subcontract-direct-blocked-labs",
+          method: "GET",
+        });
+        if (cancelled || !res.ok) return;
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+            ? (body as { data?: { labAnchorIds?: unknown } }).data
+            : body;
+        const ids = Array.isArray((data as { labAnchorIds?: unknown })?.labAnchorIds)
+          ? ((data as { labAnchorIds: unknown[] }).labAnchorIds)
+              .map((id) => String(id || "").trim())
+              .filter((id) => OBJECT_ID_RE.test(id))
+          : [];
+        setBlockedDirectLabIds(ids);
+      })();
+    };
+    const cancelWait = deferUntilCalendarPaint
+      ? whenPracticeCalendarPainted(load)
+      : (() => {
+          const timer = window.setTimeout(load, 900);
+          return () => window.clearTimeout(timer);
+        })();
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      cancelWait();
     };
-  }, []);
+  }, [deferUntilCalendarPaint]);
 
   useEffect(() => {
     setSelectedLabState((prev) =>
@@ -1194,7 +1204,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     writePinnedLabs(loadedPins);
 
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    const load = () => {
     void (async () => {
       const resolved = await resolveAbutsPinnedRecentLab();
       if (!cancelled && resolved) {
@@ -1232,13 +1242,19 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return next;
       });
     })();
-    }, 900);
+    };
+    const cancelWait = deferUntilCalendarPaint
+      ? whenPracticeCalendarPainted(load)
+      : (() => {
+          const timer = window.setTimeout(load, 900);
+          return () => window.clearTimeout(timer);
+        })();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      cancelWait();
     };
-  }, []);
+  }, [deferUntilCalendarPaint]);
 
   // 드롭다운을 열 때마다 어벗츠기공소를 「최근」맨 위에 고정
   useEffect(() => {

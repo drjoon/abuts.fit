@@ -59,6 +59,7 @@ export const useImplantConnectionCatalog = (
   });
 
   useEffect(() => {
+    if (!token) return;
     let cancelled = false;
 
     const load = async () => {
