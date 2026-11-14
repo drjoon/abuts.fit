@@ -813,7 +813,8 @@ function evaluateScanbodyPeak(
     const v = dot(d, e2) - cylV;
     const r = Math.hypot(u, v);
     if (r > expectedRadiusMm + 0.65 && r < expectedRadiusMm + 2.3) {
-      outerLeak += 1;
+      // 윗면 1.7mm 아래부터는 스캔바디를 감싼 잇몸이라 치관 비대로 세지 않는다.
+      if (h > -1.7) outerLeak += 1;
       continue;
     }
     if (r < expectedRadiusMm * 0.55 || r > expectedRadiusMm + 0.65) continue;
@@ -826,7 +827,8 @@ function evaluateScanbodyPeak(
   }
   if (shaftRadii.length < 18 || sectors < 5) return null;
   const leakRatio = outerLeak / Math.max(shaftRadii.length, 1);
-  if (leakRatio > 0.75) return null;
+  // 잇몸이 높아 조금만 드러난 스캔바디는 둘레 잇몸이 누설로 잡힌다. 둘레가 온전한 원기둥이면 더 허용한다.
+  if (leakRatio > (sectors >= 11 ? 1.1 : 0.75)) return null;
   shaftRadii.sort((a, b) => a - b);
   const medR = shaftRadii[Math.floor(shaftRadii.length * 0.55)]!;
   const spreadR =
@@ -874,28 +876,37 @@ function estimateGingivaFloorMm(
   return Math.max(1.2, Math.min(scanbodyHeightMm - 1.5, quantile(floorBySector, 0.35)));
 }
 
-/**
- * 구강스캔에서 해당 치아의 스캔바디를 찾아 라이브러리를 ICP 정합하고 픽스쳐 월드 자세를 구한다.
- */
-export function detectAndMatchScanbodyOnScan(args: {
+type DetectScanbodyArgs = {
   jawGeometry: THREE.BufferGeometry;
   frame: DentalFrame;
   toothWork: ToothWorkSelection;
   models: readonly LoadedScanbodyModel[];
   connections: readonly ImplantConnection[];
   excludeTops?: readonly Vec3[];
-}): MatchedScanbodyFixture | null {
+};
+
+type ScanbodyHit = {
+  fixture: MatchedScanbodyFixture;
+  totalScore: number;
+  /** 교합 평면에서 슬롯 중심과 스캔바디 윗면 사이 거리(mm). */
+  distFromSlotMm: number;
+  /** 같은 사분면 안에서 원심으로 갈수록 커지는 악궁 위치 값. */
+  archKey: number;
+};
+
+/** 슬롯 주변 봉우리마다 가장 잘 맞는 정합을 모아 점수순으로 돌려준다(스캔바디당 1개). */
+function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): ScanbodyHit[] {
   const { jawGeometry, frame, toothWork, models, connections } = args;
-  if (models.length === 0) return null;
+  if (models.length === 0) return [];
   const slot = locateNominalToothSlot({
     geometry: jawGeometry,
     frame,
     toothNumber: toothWork.toothNumber,
   });
-  if (!slot) return null;
+  if (!slot) return [];
 
   const posAttr = jawGeometry.getAttribute("position");
-  if (!posAttr || posAttr.count < 90) return null;
+  if (!posAttr || posAttr.count < 90) return [];
 
   const searchRadiusMm = 22.5;
   const r2 = searchRadiusMm * searchRadiusMm;
@@ -920,7 +931,7 @@ export function detectAndMatchScanbodyOnScan(args: {
     seen.add(voxelKey);
     localPts.push(dx, dy, dz);
   }
-  if (localPts.length < 180) return null;
+  if (localPts.length < 180) return [];
   const target = new Float32Array(localPts);
 
   const axis = slot.occlusalDir;
@@ -1001,14 +1012,18 @@ export function detectAndMatchScanbodyOnScan(args: {
   }
 
   const refHint: Vec3 = [slot.labialDir[0], slot.labialDir[1], slot.labialDir[2]];
-  let bestHit: {
+  type PeakHit = {
     model: LoadedScanbodyModel;
     fit: IcpResult;
     cylinderScore: number;
     totalScore: number;
-  } | null = null;
+    fittedTop: Vec3;
+    distFromSlot: number;
+  };
+  const peakHits: PeakHit[] = [];
 
   for (const candPeak of evaluatedPeaks.slice(0, 6)) {
+    let bestHit: PeakHit | null = null;
     for (const model of models) {
       const originGuess = sub(candPeak.top, scale(candPeak.axis, model.topMm));
       const fit = registerScanbody({
@@ -1034,50 +1049,146 @@ export function detectAndMatchScanbodyOnScan(args: {
         distFromSlot * 0.015 +
         libBonus;
       if (!bestHit || totalScore < bestHit.totalScore) {
-        bestHit = { model, fit, cylinderScore: candPeak.cylinderScore, totalScore };
+        bestHit = {
+          model,
+          fit,
+          cylinderScore: candPeak.cylinderScore,
+          totalScore,
+          fittedTop,
+          distFromSlot,
+        };
       }
     }
+    if (!bestHit) continue;
+    const dup = peakHits.findIndex(
+      (h) => Math.hypot(...sub(h.fittedTop, bestHit!.fittedTop)) < 3.0,
+    );
+    if (dup < 0) peakHits.push(bestHit);
+    else if (bestHit.totalScore < peakHits[dup]!.totalScore) peakHits[dup] = bestHit;
   }
 
-  if (!bestHit) return null;
+  const buildMatchedFixture = (bestHit: PeakHit): MatchedScanbodyFixture => {
+    const pose = bestHit.fit.pose;
+    const fitAxis = norm(poseColumn(pose, 1));
+    const rawX = norm(poseColumn(pose, 0));
+    const hexX = norm(sub(rawX, scale(fitAxis, dot(rawX, fitAxis))));
+    const hexY = norm(cross(fitAxis, hexX));
+    const originLocal = pose.t;
+    const originWorld = add(slot.center, originLocal);
+    const topLocal = applyPose(pose, 0, bestHit.model.topMm, 0);
+    const scanbodyTop = add(slot.center, topLocal);
+    const gingivaFloorMm = estimateGingivaFloorMm(
+      target,
+      originLocal,
+      fitAxis,
+      bestHit.model.radiusMm,
+      bestHit.model.topMm,
+    );
 
-  const pose = bestHit.fit.pose;
-  const fitAxis = norm(poseColumn(pose, 1));
-  const rawX = norm(poseColumn(pose, 0));
-  const hexX = norm(sub(rawX, scale(fitAxis, dot(rawX, fitAxis))));
-  const hexY = norm(cross(fitAxis, hexX));
-  const originLocal = pose.t;
-  const originWorld = add(slot.center, originLocal);
-  const topLocal = applyPose(pose, 0, bestHit.model.topMm, 0);
-  const scanbodyTop = add(slot.center, topLocal);
-  const gingivaFloorMm = estimateGingivaFloorMm(
-    target,
-    originLocal,
-    fitAxis,
-    bestHit.model.radiusMm,
-    bestHit.model.topMm,
-  );
-
-  return {
-    toothNumber: toothWork.toothNumber,
-    jaw: slot.jaw,
-    fixturePose: {
-      origin: originWorld,
-      axis: fitAxis,
-      hexX,
-      hexY,
-    },
-    scanbodyTop,
-    scanbodyRadiusMm: bestHit.model.radiusMm,
-    scanbodyHeightMm: bestHit.model.topMm,
-    gingivaFloorMm,
-    rmsMm: Math.round(bestHit.fit.rmsMm * 1000) / 1000,
-    topCoverage: Math.round(bestHit.fit.topCoverage * 1000) / 1000,
-    matchedLibraryLabel: bestHit.model.label,
-    connectionSpec: resolveCustomAbutmentConnectionSpec(toothWork, connections),
-    archOcclusalDir: slot.occlusalDir,
-    labialDir: slot.labialDir,
+    return {
+      toothNumber: toothWork.toothNumber,
+      jaw: slot.jaw,
+      fixturePose: {
+        origin: originWorld,
+        axis: fitAxis,
+        hexX,
+        hexY,
+      },
+      scanbodyTop,
+      scanbodyRadiusMm: bestHit.model.radiusMm,
+      scanbodyHeightMm: bestHit.model.topMm,
+      gingivaFloorMm,
+      rmsMm: Math.round(bestHit.fit.rmsMm * 1000) / 1000,
+      topCoverage: Math.round(bestHit.fit.topCoverage * 1000) / 1000,
+      matchedLibraryLabel: bestHit.model.label,
+      connectionSpec: resolveCustomAbutmentConnectionSpec(toothWork, connections),
+      archOcclusalDir: slot.occlusalDir,
+      labialDir: slot.labialDir,
+    };
   };
+
+  peakHits.sort((a, b) => a.totalScore - b.totalScore);
+  return peakHits.slice(0, Math.max(1, maxHits)).map((hit) => {
+    const fixture = buildMatchedFixture(hit);
+    return {
+      fixture,
+      totalScore: hit.totalScore,
+      distFromSlotMm: hit.distFromSlot,
+      archKey:
+        slot.side * dot(fixture.scanbodyTop, slot.archRight) -
+        dot(fixture.scanbodyTop, slot.archAnterior),
+    };
+  });
+}
+
+/**
+ * 한 악궁의 여러 치아를 함께 배정한다. 치아별로 먼저 매칭하면 앞 치아가 옆 스캔바디를 가져가므로,
+ * 후보를 모두 모은 뒤 (정합 점수 + 슬롯 거리) 합이 최소인 1:1 배정을 고른다.
+ */
+export function detectAndMatchScanbodiesOnJaw(args: {
+  jawGeometry: THREE.BufferGeometry;
+  frame: DentalFrame;
+  teeth: ReadonlyArray<{ toothWork: ToothWorkSelection; models: readonly LoadedScanbodyModel[] }>;
+  connections: readonly ImplantConnection[];
+}): Map<string, MatchedScanbodyFixture> {
+  const perTooth = args.teeth.map((t) => ({
+    toothNumber: t.toothWork.toothNumber,
+    fdi: parseFdiTooth(t.toothWork.toothNumber),
+    hits: collectScanbodyHits(
+      {
+        jawGeometry: args.jawGeometry,
+        frame: args.frame,
+        toothWork: t.toothWork,
+        models: t.models,
+        connections: args.connections,
+      },
+      6,
+    ),
+  }));
+
+  const sameScanbody = (a: MatchedScanbodyFixture, b: MatchedScanbodyFixture) =>
+    Math.hypot(...sub(a.scanbodyTop, b.scanbodyTop)) < 3.0;
+  const hitCost = (h: ScanbodyHit) => h.totalScore + h.distFromSlotMm * 0.09;
+  // 게이트를 통과한 정합은 슬롯이 멀어도 미배정보다 낫다.
+  const MISS_COST = 8;
+  // 같은 사분면에서 치아 번호가 크면 악궁에서 더 원심이어야 한다(슬롯 추정이 겹쳐도 순서는 지킨다).
+  const orderOk = (i: number, h: ScanbodyHit) =>
+    pick.every((p, j) => {
+      if (!p) return true;
+      const a = perTooth[i]!.fdi;
+      const b = perTooth[j]!.fdi;
+      if (!a || !b || a.digits[0] !== b.digits[0] || a.pos === b.pos) return true;
+      return a.pos > b.pos ? h.archKey > p.archKey : h.archKey < p.archKey;
+    });
+
+  let bestCost = Infinity;
+  let bestPick: Array<ScanbodyHit | null> = [];
+  const pick: Array<ScanbodyHit | null> = [];
+  const visit = (i: number, cost: number) => {
+    if (cost >= bestCost) return;
+    if (i === perTooth.length) {
+      bestCost = cost;
+      bestPick = [...pick];
+      return;
+    }
+    for (const h of perTooth[i]!.hits) {
+      if (pick.some((p) => p && sameScanbody(p.fixture, h.fixture))) continue;
+      if (!orderOk(i, h)) continue;
+      pick.push(h);
+      visit(i + 1, cost + hitCost(h));
+      pick.pop();
+    }
+    pick.push(null);
+    visit(i + 1, cost + MISS_COST);
+    pick.pop();
+  };
+  visit(0, 0);
+
+  const out = new Map<string, MatchedScanbodyFixture>();
+  bestPick.forEach((h, i) => {
+    if (h) out.set(perTooth[i]!.toothNumber, h.fixture);
+  });
+  return out;
 }
 
 /** 픽스쳐 로컬(플랫폼 원점, +Z 임플란트 축, +X 헥스) → 스캔 월드 4×4 행렬. */

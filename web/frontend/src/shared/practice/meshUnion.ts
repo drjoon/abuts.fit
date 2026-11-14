@@ -96,6 +96,49 @@ export async function unionTriangleSoups(
   }
 }
 
+/** 닫힌 입체 body에서 닫힌 cutter들을 뺀다(스크류 채널 등). 결과가 비면 MeshUnionError. */
+export async function subtractTriangleSoups(
+  body: Float32Array,
+  cutters: readonly Float32Array[],
+  label: string,
+): Promise<Float32Array> {
+  const wasm = await loadManifold();
+  const owned: Manifold[] = [];
+  const toSolid = (soup: Float32Array) => {
+    const mesh = new wasm.Mesh(weld(soup));
+    mesh.merge();
+    try {
+      const solid = new wasm.Manifold(mesh);
+      owned.push(solid);
+      return solid;
+    } catch {
+      throw new MeshUnionError("open", label);
+    }
+  };
+  try {
+    let result = toSolid(body);
+    for (const soup of cutters) {
+      if (soup.length < 9) continue;
+      result = result.subtract(toSolid(soup));
+      owned.push(result);
+    }
+    if (result.status() !== "NoError" || result.isEmpty()) {
+      throw new MeshUnionError("failed", label);
+    }
+    const { vertProperties, triVerts, numProp } = result.getMesh();
+    const out = new Float32Array(triVerts.length * 3);
+    for (let i = 0; i < triVerts.length; i += 1) {
+      const v = triVerts[i]! * numProp;
+      out[i * 3] = vertProperties[v]!;
+      out[i * 3 + 1] = vertProperties[v + 1]!;
+      out[i * 3 + 2] = vertProperties[v + 2]!;
+    }
+    return out;
+  } finally {
+    for (const solid of owned) solid.delete();
+  }
+}
+
 export function meshUnionErrorMessage(error: MeshUnionError): string {
   if (error.reason === "open") return `${error.label}: 닫히지 않은 메시가 있어 합칠 수 없습니다.`;
   if (error.reason === "separate") return `${error.label}: 커넥터가 치아에 닿지 않아 한 덩어리가 되지 않습니다.`;

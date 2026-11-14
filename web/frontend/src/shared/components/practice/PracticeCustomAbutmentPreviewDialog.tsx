@@ -58,10 +58,10 @@ import {
 } from "@/shared/files/modelPreviewFile";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
-import { registerJawsToBiteResult, applyBiteFitPoses } from "@/shared/practice/biteRegistration";
+import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
 import {
   buildScanGeometryWithoutScanbodies,
-  detectAndMatchScanbodyOnScan,
+  detectAndMatchScanbodiesOnJaw,
   fixturePoseToMatrix4,
   loadCandidateScanbodyModels,
   parseFdiTooth,
@@ -302,8 +302,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     const disposeMesh = (mesh: THREE.Mesh) => {
       scene?.remove(mesh);
       mesh.children.slice().forEach((ch) => {
-        if ((ch as CSS2DObject).isCSS2DObject) {
-          (ch as CSS2DObject).element.remove();
+        if (ch instanceof CSS2DObject) {
+          ch.element.remove();
           mesh.remove(ch);
         }
       });
@@ -783,18 +783,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!hasWorkScans && biteScans.length > 0 && (upperScans.length > 0 || lowerScans.length > 0)) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
           await new Promise<void>((r) => window.setTimeout(r, 0));
-          const fit = registerJawsToBiteResult({
-            upper: upperScans.map((s) => s.geometry),
-            lower: lowerScans.map((s) => s.geometry),
-            bites: biteScans.map((s) => s.geometry),
-          });
-          applyBiteFitPoses(
-            {
-              upper: upperScans.map((s) => s.geometry),
-              lower: lowerScans.map((s) => s.geometry),
-            },
-            fit,
+          await registerJawsToBiteResult(
+            loadedScans.map((s) => ({ role: s.role, geometry: s.geometry })),
+            { sweepPoses: true, cancelled: () => cancelled },
           );
+          if (cancelled) return;
         }
 
         const frame = estimateDentalFrame(
@@ -831,53 +824,64 @@ export function PracticeCustomAbutmentPreviewDialog({
           lower: [],
         };
         const builtAbutments: DesignedCustomAbutment[] = [];
-        const excludedByJaw: Record<"upper" | "lower", Array<[number, number, number]>> = {
-          upper: [],
-          lower: [],
-        };
-
-        for (let i = 0; i < curToothWorks.length; i += 1) {
-          const tw = curToothWorks[i]!;
+        const jaws: Array<"upper" | "lower"> = ["upper", "lower"];
+        const teethByJaw = { upper: [] as ToothWorkSelection[], lower: [] as ToothWorkSelection[] };
+        for (const tw of curToothWorks) {
           const parsed = parseFdiTooth(tw.toothNumber);
-          if (!parsed) continue;
-          const jawGeo = parsed.jaw === "upper" ? upperPrimary : lowerPrimary;
-          const oppGeo = parsed.jaw === "upper" ? lowerPrimary : upperPrimary;
-          if (!jawGeo) continue;
+          if (parsed) teethByJaw[parsed.jaw].push(tw);
+        }
+
+        for (const jaw of jaws) {
+          const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
+          const oppGeo = jaw === "upper" ? lowerPrimary : upperPrimary;
+          const teeth = teethByJaw[jaw];
+          if (!jawGeo || teeth.length === 0) continue;
 
           setStatus({
             kind: "loading",
-            percent: Math.round(68 + ((i + 0.4) / curToothWorks.length) * 24),
-            step: `#${tw.toothNumber} 스캔바디 매칭 및 커스텀어벗 디자인 중…`,
+            percent: jaw === "upper" ? 72 : 82,
+            step: `${teeth.map((t) => `#${t.toothNumber}`).join(" ")} 스캔바디 매칭 중…`,
           });
           await new Promise<void>((r) => window.setTimeout(r, 16));
           if (cancelled) return;
 
-          const models = await loadCandidateScanbodyModels({
-            toothWork: tw,
-            catalog: curCatalog,
-            connections: curConnections,
-          });
+          const withModels = await Promise.all(
+            teeth.map(async (tw) => ({
+              toothWork: tw,
+              models: await loadCandidateScanbodyModels({
+                toothWork: tw,
+                catalog: curCatalog,
+                connections: curConnections,
+              }),
+            })),
+          );
           if (cancelled) return;
 
-          const matched = detectAndMatchScanbodyOnScan({
+          const matchedTeeth = detectAndMatchScanbodiesOnJaw({
             jawGeometry: jawGeo,
             frame,
-            toothWork: tw,
-            models,
+            teeth: withModels,
             connections: curConnections,
-            excludeTops: excludedByJaw[parsed.jaw],
           });
-          if (!matched) continue;
 
-          excludedByJaw[parsed.jaw].push(matched.scanbodyTop);
-          const designed = designCustomAbutmentStl({
-            fixture: matched,
-            jawGeometry: jawGeo,
-            opposingGeometry: oppGeo,
-            patientName: curPatientName,
-          });
-          builtAbutments.push(designed);
-          matchedByJaw[parsed.jaw].push(designed);
+          for (const tw of teeth) {
+            const matched = matchedTeeth.get(tw.toothNumber);
+            if (!matched) continue;
+            setStatus({
+              kind: "loading",
+              percent: jaw === "upper" ? 78 : 90,
+              step: `#${tw.toothNumber} 커스텀어벗 디자인 중…`,
+            });
+            const designed = await designCustomAbutmentStl({
+              fixture: matched,
+              jawGeometry: jawGeo,
+              opposingGeometry: oppGeo,
+              patientName: curPatientName,
+            });
+            if (cancelled) return;
+            builtAbutments.push(designed);
+            matchedByJaw[jaw].push(designed);
+          }
         }
 
         for (const bite of biteScans) {
