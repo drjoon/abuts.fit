@@ -5,7 +5,11 @@
 // - 2026-09-16: POST /parse-bankbook 통장 사본 OCR.
 import { Router } from "express";
 import aiController from "../../controllers/ai/ai.controller.js";
-import { customAbutmentDesignChat } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
+import {
+  clearCustomAbutmentDesignPreference,
+  customAbutmentDesignChat,
+  getCustomAbutmentDesignPreference,
+} from "../../controllers/ai/customAbutmentDesignChat.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -31,6 +35,16 @@ router.post(
   "/custom-abutment-design-chat",
   authenticate,
   customAbutmentDesignChat
+);
+router.get(
+  "/custom-abutment-design-preference",
+  authenticate,
+  getCustomAbutmentDesignPreference
+);
+router.delete(
+  "/custom-abutment-design-preference",
+  authenticate,
+  clearCustomAbutmentDesignPreference
 );
 
 export default router;

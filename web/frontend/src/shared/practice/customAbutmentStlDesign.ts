@@ -1,11 +1,12 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
-// 1) 마진 높이 = 픽스쳐 둘레 치은연(순측 서브진지발), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
+// 1) 피니시라인 = 둘레 치은연 아래 marginDepth(기본 0.5mm), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
 // 2) 삽입축 = 대합치 중심 방향(없으면 악궁 교합 방향). 치종별 상한, 한쪽으로 쏠리면 줄인다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
-// 4) 포스트 = R 라운드 숄더 → 편측 테이퍼 축벽(언더컷 없음) → 최정점은 대합치에서 occlusalClearance만큼 아래.
-//    예측 크라운 안쪽 최소 두께를 지키고, 이웃 어벗과는 두 크라운 경계면 기준으로 떨어진다.
-// 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 마진, 볼록 없음).
+// 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
+//    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
+// 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
 // 6) 닫힌 외형에서 스크류 채널을 빼서(manifold) 하나의 닫힌 STL을 만든다.
 // 로컬 좌표계(제조사 STL SSOT): 플랫폼 원점(0,0,0), +Z 임플란트 장축, +X 헥스 평면 법선.
 // related files:
@@ -35,22 +36,34 @@ import type { Vec3 } from "@/shared/practice/scanbodyRegistration";
 
 const DEG = Math.PI / 180;
 const TAPER_11_SLOPE = Math.tan(11 * DEG);
-/** cuffBlend: PRC 면 위 시작 기울기 2°, 골 높이까지 4° 유지, 끝 기울기 65°(최대 75°). */
+/**
+ * cuffBlend: PRC 면 위 2°로 시작해 골 높이까지 4°를 유지한 뒤 오목하게 벌어진다.
+ * 추적관리 실측 마진 직하방 커프는 약 25~30°로 피니시라인에 닿는다(마진 모서리 약 110°).
+ */
 const CUFF_START_SLOPE = Math.tan(2 * DEG);
 const CUFF_HOLD_SLOPE = Math.tan(4 * DEG);
-const CUFF_END_SLOPE = Math.tan(65 * DEG);
-const CUFF_END_SLOPE_CAP = Math.tan(75 * DEG);
+const CUFF_END_SLOPE_MAX = Math.tan(65 * DEG);
 const CUFF_BONE_MM = 1.35;
 const CUFF_EASE_MM = 0.5;
+/** 실측: 피니시라인 위 축벽 쪽 오목 챔퍼는 축에서 약 45°로 시작해 1mm 위에서 0.48mm 들어간다. */
+const CHAMFER_START_DEG = 45;
+/** 크라운 두께 하한. 공간이 모자라도 이보다 얇게 두지 않는다. */
+const CROWN_THICKNESS_FLOOR_MM = 0.65;
+/** 스크류 채널 둘레 포스트 벽 최소 두께. */
+const SCREW_WALL_MM = 0.35;
+const TOP_ROUND_MM = 0.5;
+const TOP_ROUND_STEPS = 7;
+/** 소·대구치 평평한 윗면의 최대 기울기. */
+const FLAT_TOP_MAX_TILT = Math.tan(12 * DEG);
 /** 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
 /** 2.5° 간격(144열) — 6각 헥스 모서리(30°+60°k)가 격자 위에 놓인다. */
 const ANGULAR_COLS = 144;
 const SECTORS = 36;
 const SUPERELLIPSE_N = 2.4;
-const POST_LEVELS = 18;
+const POST_LEVELS = 24;
 const CROWN_LEVELS = 14;
-const FILLET_STEPS = 6;
+const CHAMFER_STEPS = 7;
 const LIMIT_PHI_BINS = 72;
 const LIMIT_H_MIN = -1;
 const LIMIT_H_STEP = 0.5;
@@ -206,7 +219,8 @@ function superellipseRadius(a: number, b: number, phi: number, n = SUPERELLIPSE_
 
 /**
  * cuffBlend 커프 단면 r(z). PRC 면에서 2°(곡률 0)로 시작해 골 높이까지 4°를 유지하고,
- * 그 위는 기울기만 커지며(r'' ≥ 0, 볼록 없음) 마진에 65° 안쪽으로 닿는다.
+ * 오목하게 기울기를 올린 뒤(r'' ≥ 0, 볼록 없음) 같은 기울기로 피니시라인에 닿는다.
+ * 끝 기울기는 필요한 만큼만 둔다(실측 25~30°). 칼날 마진을 만드는 65° 플레어는 피한다.
  */
 function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number) {
   const span = Math.max(0.35, zEnd - zStart);
@@ -216,9 +230,9 @@ function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number)
   }
   const s0 = CUFF_START_SLOPE;
   const s1 = CUFF_HOLD_SLOPE;
-  type Plan = { e: number; zh: number; lead: number; scale: number; sEnd: number; p: number };
+  type Plan = { e: number; zh: number; lead: number; lr: number; sEnd: number; scale: number };
   const planFor = (holdMm: number): Plan => {
-    const zh = Math.min(holdMm, span * 0.5);
+    const zh = Math.min(holdMm, span * 0.25);
     const e = Math.min(CUFF_EASE_MM, zh * 0.6);
     const lead = (e * (s0 + s1)) / 2 + (zh - e) * s1;
     const L = span - zh;
@@ -226,26 +240,16 @@ function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number)
     if (L <= 1e-6 || need <= L * s1) {
       // 마진이 가까워 벌어질 필요가 없다. 같은 모양을 비례로 줄인다.
       const full = lead + L * s1;
-      return { e, zh, lead, scale: full > 0 ? delta / full : 1, sEnd: s1, p: 1 };
+      return { e, zh, lead, lr: 0, sEnd: s1, scale: full > 0 ? delta / full : 1 };
     }
-    const avg = need / L;
-    let p = 2;
-    let sEnd = s1 + (avg - s1) * (p + 1);
-    if (sEnd > CUFF_END_SLOPE) {
-      p = (L * (CUFF_END_SLOPE - s1)) / (need - L * s1) - 1;
-      sEnd = CUFF_END_SLOPE;
-      if (p < 1) {
-        p = 1;
-        sEnd = s1 + (avg - s1) * 2;
-      }
-    }
-    return { e, zh, lead, scale: 1, sEnd, p };
+    const lr = Math.min(L, Math.max(0.4, L * 0.3));
+    const sEnd = (need - (lr * s1) / 2) / (L - lr / 2);
+    return { e, zh, lead, lr, sEnd, scale: 1 };
   };
   let plan = planFor(CUFF_BONE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_CAP) plan = planFor(CUFF_EASE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_CAP) plan = planFor(0);
-  const { e, zh, lead, scale, sEnd, p } = plan;
-  const L = span - zh;
+  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(CUFF_EASE_MM);
+  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(0);
+  const { e, zh, lead, lr, sEnd, scale } = plan;
   return (z: number) => {
     const u = clamp(z - zStart, 0, span);
     let r: number;
@@ -254,11 +258,46 @@ function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number)
     } else if (u <= zh) {
       r = (e * (s0 + s1)) / 2 + s1 * (u - e);
     } else {
-      const t = L > 0 ? (u - zh) / L : 1;
-      r = lead + L * (s1 * t + ((sEnd - s1) * t ** (p + 1)) / (p + 1));
+      const x = u - zh;
+      if (lr <= 0) r = lead + s1 * x;
+      else if (x <= lr) r = lead + s1 * x + (sEnd - s1) * lr * smootherstepIntegral(x / lr);
+      else r = lead + s1 * lr + (sEnd - s1) * lr * 0.5 + sEnd * (x - lr);
     }
     return rStart + r * scale;
   };
+}
+
+/**
+ * 피니시라인 위 오목 챔퍼. 축에서 startDeg로 시작해 축벽 기울기(endSlope)에 접한다.
+ * 폭 width·높이를 돌려준다. 곡률 반경은 공구 R보다 작아지지 않게 시작 각을 줄인다.
+ */
+function chamferGeometry(width: number, toolR: number, endSlope: number) {
+  const th1 = Math.atan(endSlope);
+  const minCos0 = Math.cos(th1) - width / Math.max(toolR, 1e-3);
+  let th0 = CHAMFER_START_DEG * DEG;
+  if (Math.cos(th0) < minCos0) th0 = Math.acos(clamp(minCos0, -1, 1));
+  th0 = Math.max(th0, th1 + 5 * DEG);
+  const rho = width / Math.max(Math.cos(th1) - Math.cos(th0), 1e-4);
+  return { th0, th1, rho, height: rho * (Math.sin(th0) - Math.sin(th1)) };
+}
+
+/** 둘레 배열에서 cap을 넘는 양만 매끄럽게 퍼뜨려 뺀다(열마다 꺾이지 않게). */
+function smoothCircularReduce(
+  want: readonly number[],
+  cap: readonly number[],
+  halfWidth: number,
+  passes: number,
+): number[] {
+  const n = want.length;
+  const deficit = want.map((v, i) => Math.max(0, v - cap[i]!));
+  if (!deficit.some((d) => d > 1e-6)) return [...want];
+  const dilated = deficit.map((_, i) => {
+    let m = 0;
+    for (let k = -halfWidth; k <= halfWidth; k += 1) m = Math.max(m, deficit[(i + k + n) % n]!);
+    return m;
+  });
+  const spread = smoothCircular(dilated, passes);
+  return want.map((v, i) => v - Math.max(spread[i]!, deficit[i]!));
 }
 
 /**
@@ -582,6 +621,10 @@ export async function designCustomAbutmentStl(args: {
   const conn = fixture.connectionSpec;
   const tpl = abutmentTemplateForTooth(fixture.toothNumber);
   const R = params.marginFilletRadiusMm;
+  const shoulderW = params.marginShoulderMm;
+  const taperSlope = Math.tan(params.postTaperDeg * DEG);
+  const chamfer = chamferGeometry(shoulderW, R, taperSlope);
+  const posterior = !abutmentTemplateForTooth(fixture.toothNumber).anterior;
   const contact = params.crownContactMm;
   const clearance = params.occlusalClearanceMm;
 
@@ -687,21 +730,12 @@ export async function designCustomAbutmentStl(args: {
     rawGingivaZ[b] = (prev * dNext + next * dPrev) / Math.max(dPrev + dNext, 1);
   }
 
-  // 순측 marginDepth, 설측 그 57%, 인접 0.2mm 치은연 아래(실측 마진 z 2~6mm).
-  const depthLab = params.marginDepthMm;
-  const depthLing = params.marginDepthMm * 0.57;
-  const depthProx = Math.min(0.2, params.marginDepthMm);
+  // 피니시라인 = 둘레 전체 치은연 아래 marginDepth(기본 0.5mm).
   const minMarginZ = Math.max(1.5, coneTopZ + 1.1);
   const maxMarginZ = Math.min(8.0, medianGingivaZ + 1.4);
-  const marginTargetSamples = rawGingivaZ.map((gz, b) => {
-    const theta = (b / SECTORS) * Math.PI * 2;
-    const cLab = Math.cos(theta - labialAngleFix);
-    const sub =
-      cLab >= 0
-        ? depthProx + (depthLab - depthProx) * cLab
-        : depthProx + (depthLing - depthProx) * -cLab;
-    return clamp(gz - sub, minMarginZ, maxMarginZ);
-  });
+  const marginTargetSamples = rawGingivaZ.map((gz) =>
+    clamp(gz - params.marginDepthMm, minMarginZ, maxMarginZ),
+  );
   const smoothMarginZ = lowPassCircular(marginTargetSamples, 2).map((z) =>
     clamp(z, minMarginZ, maxMarginZ),
   );
@@ -856,7 +890,7 @@ export async function designCustomAbutmentStl(args: {
   // ── 4) 포스트 높이: 대합치 최정점 거리
   const oppField =
     opposingLocalPts.length > 0 ? buildOpposingHeightField(opposingLocalPts, c0, frame, 8) : null;
-  const footR = Math.max(marginA, marginB) - R + 0.6;
+  const footR = Math.max(marginA, marginB) - shoulderW + 0.6;
   const oppFootH = oppField ? oppField.heightAt(0, 0, footR) : Infinity;
   const hasOpposing = Number.isFinite(oppFootH);
   const postTopMax = tpl.postHeightMm + 3.0 + Math.min(0, params.postHeightOffsetMm);
@@ -918,7 +952,6 @@ export async function designCustomAbutmentStl(args: {
   // ── 6) 열(픽스쳐 원통 각 θ)마다 마진·포스트 원하는 형상과 예측 크라운
   const topB = (tpl.topMdMm / 2) * mdScale * params.postWidthScale;
   const minMarginRadius = coneTopR + 0.5;
-  const taperSlope = Math.tan(params.postTaperDeg * DEG);
   const convergeFrom = tpl.anterior ? 0.7 : 0.8;
 
   type ColumnPlan = {
@@ -928,6 +961,9 @@ export async function designCustomAbutmentStl(args: {
     h0: number;
     r0: number;
     hTop: number;
+    /** 윗면 가장자리 대략 위치(삽입축 평면 u, v). 평평한 윗면 맞춤용. */
+    tipU: number;
+    tipV: number;
     postDesired: (h: number) => number;
     crownR: number[];
     crownH: number[];
@@ -936,26 +972,33 @@ export async function designCustomAbutmentStl(args: {
   const cols: ColumnPlan[] = [];
   const topRaw: number[] = [];
 
+  // 마진 반경: 템플릿·연조직 → 이웃 크라운 경계면에서 0.5mm. 줄이는 양은 둘레로 퍼뜨려 매끄럽게.
+  const marginWant: number[] = [];
+  const marginCap: number[] = [];
+  for (let col = 0; col < ANGULAR_COLS; col += 1) {
+    const theta = (col / ANGULAR_COLS) * Math.PI * 2;
+    const rTemplate = superellipseRadius(marginA, marginB, theta - labialAngleFix);
+    const tissueRatio = evalPeriodicLinear(tissueR, theta) / rTemplate;
+    marginWant.push(
+      Math.max(minMarginRadius, rTemplate * clamp(1 + 0.5 * (tissueRatio - 1), 0.95, 1.22)),
+    );
+    const radialFix: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
+    const lim = planeLimitAt(
+      norm3(sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)))),
+      evalPeriodicLinear(smoothMarginZ, theta) - meanMarginZ,
+    );
+    marginCap.push(Number.isFinite(lim) ? Math.max(minMarginRadius, lim - 0.5) : Infinity);
+  }
+  const marginRadii = smoothCircularReduce(marginWant, marginCap, 4, 6).map((r) =>
+    Math.max(minMarginRadius, r),
+  );
+
   for (let col = 0; col < ANGULAR_COLS; col += 1) {
     const theta = (col / ANGULAR_COLS) * Math.PI * 2;
     const ct = Math.cos(theta);
     const st = Math.sin(theta);
-    const phiFix = theta - labialAngleFix;
-    const rTemplate = superellipseRadius(marginA, marginB, phiFix);
-    const tissueRatio = evalPeriodicLinear(tissueR, theta) / rTemplate;
-    let rMargin = Math.max(
-      minMarginRadius,
-      rTemplate * clamp(1 + 0.5 * (tissueRatio - 1), 0.95, 1.22),
-    );
+    const rMargin = marginRadii[col]!;
     const zMargin = evalPeriodicLinear(smoothMarginZ, theta);
-    const radialFix: Vec3 = [ct, st, 0];
-    {
-      const lim = planeLimitAt(
-        norm3(sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)))),
-        zMargin - meanMarginZ,
-      );
-      if (Number.isFinite(lim)) rMargin = Math.max(minMarginRadius, Math.min(rMargin, lim - 0.5));
-    }
     const marginPt: Vec3 = [rMargin * ct, rMargin * st, zMargin];
 
     const relM = sub3(marginPt, c0);
@@ -968,18 +1011,18 @@ export async function designCustomAbutmentStl(args: {
 
     const topDrop = cLab < 0 ? tpl.lingualTopDropMm * -cLab : 0;
     let hTop = postTopH;
+    const tipR = Math.max(0.6, r0 - shoulderW - 0.8);
+    const tu = dot3(dir, frame.uLabial) * tipR;
+    const tv = dot3(dir, frame.vSide) * tipR;
     if (oppField) {
-      const tipR = Math.max(0.6, r0 - R - 0.8);
-      const tu = dot3(dir, frame.uLabial) * tipR;
-      const tv = dot3(dir, frame.vSide) * tipR;
       const oppH = oppField.heightAt(tu, tv, 1.0);
       if (Number.isFinite(oppH)) hTop = Math.max(postTopH, oppH - clearance);
     }
     hTop = Math.min(hTop, postTopMax) - topDrop;
     topRaw.push(hTop);
 
-    const rBase0 = r0 - R;
-    const hBase = h0 + R;
+    const rBase0 = r0 - shoulderW;
+    const hBase = h0 + chamfer.height;
     const topA = (cLab >= 0 ? tpl.topLabialHalfMm : tpl.topLingualHalfMm) * blScale * params.postWidthScale;
     const rTpl = superellipseRadius(topA, topB, phi);
     const plan: ColumnPlan = {
@@ -989,6 +1032,8 @@ export async function designCustomAbutmentStl(args: {
       h0,
       r0,
       hTop,
+      tipU: tu,
+      tipV: tv,
       postDesired: (h: number) => {
         const straight =
           rBase0 * Math.min(1, params.postWidthScale) - taperSlope * Math.max(0, h - hBase);
@@ -1023,16 +1068,89 @@ export async function designCustomAbutmentStl(args: {
   };
   let apexDrop = 0;
 
+  /** 윗면 높이. 소·대구치는 한 평면(평평한 교합면), 전치는 저차 조화함수로 매끄럽게. 둘 다 대합치 제한 아래. */
+  const fitTopSurface = () => {
+    if (posterior) {
+      let s1 = 0, su = 0, sv = 0, suu = 0, svv = 0, suv = 0, sh = 0, suh = 0, svh = 0;
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const c = cols[col]!;
+        const h = topRaw[col]!;
+        s1 += 1; su += c.tipU; sv += c.tipV;
+        suu += c.tipU * c.tipU; svv += c.tipV * c.tipV; suv += c.tipU * c.tipV;
+        sh += h; suh += c.tipU * h; svh += c.tipV * h;
+      }
+      // 중심화한 2×2로 기울기만 푼다.
+      const mu = su / s1, mv = sv / s1, mh = sh / s1;
+      const cuu = suu / s1 - mu * mu, cvv = svv / s1 - mv * mv, cuv = suv / s1 - mu * mv;
+      const cuh = suh / s1 - mu * mh, cvh = svh / s1 - mv * mh;
+      const det = cuu * cvv - cuv * cuv;
+      let gu = det > 1e-9 ? (cuh * cvv - cvh * cuv) / det : 0;
+      let gv = det > 1e-9 ? (cvh * cuu - cuh * cuv) / det : 0;
+      const g = Math.hypot(gu, gv);
+      if (g > FLAT_TOP_MAX_TILT) {
+        gu *= FLAT_TOP_MAX_TILT / g;
+        gv *= FLAT_TOP_MAX_TILT / g;
+      }
+      let a = Infinity;
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const c = cols[col]!;
+        a = Math.min(a, topRaw[col]! - gu * c.tipU - gv * c.tipV);
+      }
+      a -= apexDrop;
+      const minTop = Math.max(...cols.map((c) => c.h0 + chamfer.height + 2.2 - gu * c.tipU - gv * c.tipV));
+      a = Math.max(a, minTop);
+      return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a };
+    }
+    const lp = lowPassCircular(topRaw, 3);
+    let off = Infinity;
+    for (let col = 0; col < ANGULAR_COLS; col += 1) off = Math.min(off, topRaw[col]! - lp[col]!);
+    const tops = lp.map((v, col) => Math.max(cols[col]!.h0 + chamfer.height + 2.2, v + off));
+    return { tops, center: tops.reduce((s, v) => s + v, 0) / ANGULAR_COLS + 0.05 - apexDrop };
+  };
+
+  /** 피니시라인 위 오목 챔퍼 점(열마다 같은 개수). 폭 width·높이 height, 축벽 기울기에 접한다. */
+  const th1 = Math.atan(taperSlope);
+  const chamferPoints = (r0: number, h0: number, width: number, height: number) => {
+    const ratio = width / Math.max(height, 1e-4);
+    const ratioAt = (t0: number) => (Math.cos(th1) - Math.cos(t0)) / (Math.sin(t0) - Math.sin(th1));
+    const pts: Array<[number, number]> = [];
+    let th0 = Math.PI / 2;
+    let flat = 0;
+    if (ratio >= ratioAt(Math.PI / 2)) {
+      flat = width - height * ratioAt(Math.PI / 2);
+    } else {
+      let lo = th1 + 1e-3;
+      let hi = Math.PI / 2;
+      for (let it = 0; it < 40; it += 1) {
+        const mid = (lo + hi) / 2;
+        if (ratioAt(mid) < ratio) lo = mid;
+        else hi = mid;
+      }
+      th0 = (lo + hi) / 2;
+    }
+    const rho = height / Math.max(Math.sin(th0) - Math.sin(th1), 1e-4);
+    const rs0 = r0 - flat;
+    const cr = rs0 + rho * Math.cos(th0);
+    const ch = h0 + rho * Math.sin(th0);
+    const arcAt = (s: number): [number, number] => {
+      const th = th0 + (th1 - th0) * s;
+      return [cr - rho * Math.cos(th), ch - rho * Math.sin(th)];
+    };
+    pts.push(flat > 0.02 ? [rs0, h0] : arcAt(0.5 / CHAMFER_STEPS));
+    for (let s = 1; s <= CHAMFER_STEPS; s += 1) pts.push(arcAt(s / CHAMFER_STEPS));
+    return { pts, rho };
+  };
+
   const buildShape = () => {
-    // 윗면 높이는 열 사이를 매끄럽게 하되 대합치 제한은 다시 지킨다.
-    const topSmooth = smoothCircular(topRaw, 3);
+    const top = fitTopSurface();
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const c = cols[col]!;
-      c.hTop = Math.max(c.h0 + R + 2.6, Math.min(topSmooth[col]!, topRaw[col]!));
+      c.hTop = "heightAt" in top ? top.heightAt(c.tipU, c.tipV) : top.tops[col]!;
       c.crownR = [];
       c.crownH = [];
       c.crownTopOcc = tpl.crownOcclusalMm;
     }
+    const hPostBase = chamfer.height;
 
     // 예측 크라운: 원하는 포스트 + 축벽 두께, 인접면은 접촉까지. 이웃 크라운·인접치·대합치와 접촉량만 겹친다.
     for (const c of cols) {
@@ -1045,7 +1163,10 @@ export async function designCustomAbutmentStl(args: {
         const h = c.h0 + ((c.hTop - c.h0) * k) / CROWN_LEVELS;
         const ramp = smootherstep((h - c.h0) / 1.8);
         const frac = clamp((h - c.h0) / (c.hTop - c.h0), 0, 1);
-        let r = c.postDesired(Math.max(h, c.h0 + R)) + thick * ramp + 0.25 * ramp * Math.sin(Math.PI * frac);
+        let r =
+          c.postDesired(Math.max(h, c.h0 + hPostBase)) +
+          thick * ramp +
+          0.25 * ramp * Math.sin(Math.PI * frac);
         if (h >= c.h0 + CONTACT_CLIP_FROM_MM) {
           const lim = scanLimitAt(c.phi, h);
           if (Number.isFinite(lim)) {
@@ -1066,14 +1187,18 @@ export async function designCustomAbutmentStl(args: {
       }
     }
     for (let k = 0; k < CROWN_LEVELS; k += 1) {
-      const ring = smoothCircular(cols.map((c) => c.crownR[k]!), 2);
+      const want = cols.map((c) => c.crownR[k]!);
+      const cap = cols.map((c) => {
+        let lim = planeLimitAt(c.dir, c.crownH[k]!) + contact / 2;
+        if (c.crownH[k]! >= c.h0 + CONTACT_CLIP_FROM_MM) {
+          lim = Math.min(lim, scanLimitAt(c.phi, c.crownH[k]!) + contact);
+        }
+        return lim;
+      });
+      const ring = smoothCircularReduce(smoothCircular(want, 2), cap, 2, 3);
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const c = cols[col]!;
-        let cap = planeLimitAt(c.dir, c.crownH[k]!) + contact / 2;
-        if (c.crownH[k]! >= c.h0 + CONTACT_CLIP_FROM_MM) {
-          cap = Math.min(cap, scanLimitAt(c.phi, c.crownH[k]!) + contact);
-        }
-        c.crownR[k] = Math.max(c.r0 * 0.9, Math.min(ring[col]!, cap));
+        c.crownR[k] = Math.max(c.r0 * 0.9, ring[col]!);
       }
     }
     const crownRadiusAt = (c: ColumnPlan, h: number) => {
@@ -1084,78 +1209,119 @@ export async function designCustomAbutmentStl(args: {
       return c.crownR[i - 1]! * (1 - t) + c.crownR[Math.min(i, CROWN_LEVELS - 1)]! * t;
     };
 
-    // 포스트 단면: 원하는 형상 → 크라운 최소 두께 → 열 사이 평활 → 언더컷 없음(위로 갈수록 작거나 같다)
-    const postR: number[][] = [];
-    const postH: number[][] = [];
+    // 포스트 단면: 원하는 형상 → 크라운 두께(목표, 공간 없으면 0.65mm까지) → 스크류 채널 벽
+    // → 줄이는 양을 둘레·높이로 퍼뜨림(매끄러운 면) → 언더컷 없음(위로 갈수록 작거나 같다)
     const minPostR = 0.9;
-    for (const c of cols) {
-      const hBase = c.h0 + R;
-      const roundStart = c.hTop - 0.5;
-      const hs: number[] = [];
-      const rs: number[] = [];
-      for (let k = 0; k <= POST_LEVELS; k += 1) {
-        const h = hBase + ((roundStart - hBase) * k) / POST_LEVELS;
-        hs.push(h);
-        rs.push(c.postDesired(h));
-      }
-      postH.push(hs);
-      postR.push(rs);
-    }
-    const postCapAt = (col: number, k: number) => {
-      const c = cols[col]!;
-      const h = postH[col]![k]!;
-      if (h < c.h0 + 1.5) return Infinity;
-      return crownRadiusAt(c, h) - params.minCrownThicknessMm;
-    };
-    for (let k = 0; k <= POST_LEVELS; k += 1) {
-      const ring = smoothCircular(
-        postR.map((rs, col) => Math.min(rs[k]!, postCapAt(col, k))),
-        2,
-      );
-      for (let col = 0; col < ANGULAR_COLS; col += 1) {
-        postR[col]![k] = Math.max(minPostR, Math.min(ring[col]!, postCapAt(col, k), postR[col]![k]!));
-      }
-    }
-    for (let col = 0; col < ANGULAR_COLS; col += 1) {
-      const rs = postR[col]!;
-      const hs = postH[col]!;
-      rs[0] = Math.min(rs[0]!, cols[col]!.r0 - R);
+    /** 아래로 벌어지는 기울기 한도 → 위로 갈수록 작거나 같다(언더컷 없음). */
+    const enforcePostProfile = (rs: number[], hs: readonly number[]) => {
       for (let k = POST_LEVELS - 1; k >= 0; k -= 1) {
         rs[k] = Math.min(rs[k]!, rs[k + 1]! + POST_STEP_SLOPE * (hs[k + 1]! - hs[k]!));
       }
       for (let k = 1; k <= POST_LEVELS; k += 1) rs[k] = Math.min(rs[k]!, rs[k - 1]!);
+    };
+    const postR: number[][] = [];
+    const postH: number[][] = [];
+    const deficit: number[][] = [];
+    const floorR: number[][] = [];
+    for (const c of cols) {
+      const hBase = c.h0 + hPostBase;
+      const roundStart = c.hTop - TOP_ROUND_MM - 0.15;
+      const hs: number[] = [];
+      const rs: number[] = [];
+      const ds: number[] = [];
+      const fs: number[] = [];
+      for (let k = 0; k <= POST_LEVELS; k += 1) {
+        const h = hBase + ((roundStart - hBase) * k) / POST_LEVELS;
+        const want = k === 0 ? Math.min(c.postDesired(h), c.r0 - shoulderW) : c.postDesired(h);
+        const screwFloor = Math.max(minPostR, (h / Math.max(frame.w[2], 0.2)) * c.dir[2] + boreTopR + SCREW_WALL_MM);
+        let cap = Infinity;
+        if (h >= c.h0 + hPostBase + 0.3) {
+          const crown = crownRadiusAt(c, h);
+          cap = crown - params.minCrownThicknessMm;
+          if (cap < screwFloor) cap = Math.max(cap, Math.min(screwFloor, crown - CROWN_THICKNESS_FLOOR_MM));
+        }
+        hs.push(h);
+        rs.push(want);
+        ds.push(Math.max(0, want - cap));
+        fs.push(
+          Number.isFinite(cap)
+            ? Math.min(screwFloor, crownRadiusAt(c, h) - CROWN_THICKNESS_FLOOR_MM)
+            : screwFloor,
+        );
+      }
+      // 제한 높이 아래 축벽은 같은 양만큼 안으로 옮긴다(잘록한 허리 없이 곧은 테이퍼).
+      // 그 단면에 언더컷 없음을 걸어 위로 번지는 감소량까지 deficit에 넣는다.
+      for (let k = POST_LEVELS - 1; k >= 0; k -= 1) ds[k] = Math.max(ds[k]!, ds[k + 1]!);
+      const hard = rs.map((w, k) => Math.max(fs[k]!, w - ds[k]!));
+      enforcePostProfile(hard, hs);
+      for (let k = 0; k <= POST_LEVELS; k += 1) ds[k] = Math.max(0, rs[k]! - hard[k]!);
+      postH.push(hs);
+      postR.push(rs);
+      deficit.push(ds);
+      floorR.push(fs);
+    }
+    const spread: number[][] = deficit.map((ds) => [...ds]);
+    for (let k = 0; k <= POST_LEVELS; k += 1) {
+      const dil = cols.map((_, col) => {
+        let m = 0;
+        for (let dc = -8; dc <= 8; dc += 1) {
+          const ds = deficit[(col + dc + ANGULAR_COLS) % ANGULAR_COLS]!;
+          for (let dk = -1; dk <= 1; dk += 1) {
+            const kk = k + dk;
+            if (kk >= 0 && kk <= POST_LEVELS) m = Math.max(m, ds[kk]!);
+          }
+        }
+        return m;
+      });
+      const ring = smoothCircular(dil, 24);
+      for (let col = 0; col < ANGULAR_COLS; col += 1) spread[col]![k] = ring[col]!;
+    }
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      const sp = spread[col]!;
+      for (let pass = 0; pass < 4; pass += 1) {
+        const prev = [...sp];
+        for (let k = 1; k < POST_LEVELS; k += 1) sp[k] = (prev[k - 1]! + prev[k]! * 2 + prev[k + 1]!) / 4;
+      }
+      const rs = postR[col]!;
+      const hs = postH[col]!;
+      const ds = deficit[col]!;
+      const fs = floorR[col]!;
+      for (let k = 0; k <= POST_LEVELS; k += 1) {
+        rs[k] = Math.max(fs[k]!, rs[k]! - Math.max(sp[k]!, ds[k]!));
+      }
+      rs[0] = Math.min(rs[0]!, cols[col]!.r0 - 0.05);
+      enforcePostProfile(rs, hs);
     }
 
-    // ── 7) 열 점: 마진 → (평평한 숄더) → R 라운드 → 축벽 → 윗면 라운드 / 예측 크라운
+    // ── 7) 열 점: 피니시라인 → 오목 챔퍼 → 축벽 → 윗면 라운드 / 예측 크라운
     const postByCol: Vec3[][] = [];
     const crownByCol: Vec3[][] = [];
     let cutbackSum = 0;
     let taperSum = 0;
     let crownTopSum = 0;
+    let rhoSum = 0;
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const c = cols[col]!;
       const at = (h: number, r: number): Vec3 => add3(c0, add3(scale3(frame.w, h), scale3(c.dir, r)));
       const rs = postR[col]!;
       const hs = postH[col]!;
-      const rBase = rs[0]!;
       const post: Vec3[] = [];
-      // 오목 1/4원(중심 = 숄더 안쪽 끝 바로 위 R). 마진에서 축에 수직으로 들어가 축벽에 접한다.
-      const arcR = R;
-      const arcOuter = rBase + arcR;
-      // 열마다 점 수가 같아야 한다. 평평한 숄더가 없으면 첫 점을 1/4원 반 칸 위치에 둔다.
-      if (c.r0 - arcOuter > 0.02) post.push(at(c.h0, arcOuter));
-      else {
-        const t = (0.5 / FILLET_STEPS) * (Math.PI / 2);
-        post.push(at(c.h0 + arcR - arcR * Math.cos(t), arcOuter - arcR * Math.sin(t)));
-      }
-      for (let s = 1; s <= FILLET_STEPS; s += 1) {
-        const t = (s / FILLET_STEPS) * (Math.PI / 2);
-        post.push(at(c.h0 + arcR - arcR * Math.cos(t), arcOuter - arcR * Math.sin(t)));
-      }
+      const ch = chamferPoints(c.r0, c.h0, Math.max(0.02, c.r0 - rs[0]!), hs[0]! - c.h0);
+      rhoSum += ch.rho;
+      for (const [r, h] of ch.pts) post.push(at(h, r));
       for (let k = 1; k <= POST_LEVELS; k += 1) post.push(at(hs[k]!, rs[k]!));
       const rEnd = rs[POST_LEVELS]!;
-      post.push(at(c.hTop - 0.17, Math.max(0.3, rEnd - 0.16)));
-      post.push(at(c.hTop, Math.max(0.2, rEnd - 0.5)));
+      const rho = Math.min(TOP_ROUND_MM, Math.max(0.15, rEnd - 0.3));
+      const rEdge = Math.max(0.2, rEnd - rho);
+      let hEdge = c.hTop;
+      if ("heightAt" in top) {
+        hEdge = top.heightAt(dot3(c.dir, frame.uLabial) * rEdge, dot3(c.dir, frame.vSide) * rEdge);
+      }
+      const hArc = Math.max(hEdge - rho, hs[POST_LEVELS]! + 0.05);
+      for (let s = 0; s <= TOP_ROUND_STEPS; s += 1) {
+        const t = (s / TOP_ROUND_STEPS) * (Math.PI / 2);
+        post.push(at(hArc + rho * Math.sin(t), rEdge + rho * Math.cos(t)));
+      }
       postByCol.push(post);
 
       const k20 = Math.round(POST_LEVELS * 0.2);
@@ -1174,19 +1340,26 @@ export async function designCustomAbutmentStl(args: {
       crownByCol.push(crown);
     }
 
-    const meanTopH = cols.reduce((s, c) => s + c.hTop, 0) / ANGULAR_COLS;
-    let apexH = meanTopH + 0.05 - apexDrop;
-    apexH = Math.max(apexH, Math.min(...cols.map((c) => c.hTop)) - 0.3);
+    let apexH = top.center;
+    if (!posterior) apexH = Math.max(apexH, Math.min(...cols.map((c) => c.hTop)) - 0.3);
     const postApex = add3(c0, scale3(frame.w, apexH));
     const crownApex = add3(c0, scale3(frame.w, crownTopSum / ANGULAR_COLS + 0.1));
-    return { postByCol, crownByCol, cutbackSum, taperSum, postApex, crownApex };
+    return {
+      postByCol,
+      crownByCol,
+      cutbackSum,
+      taperSum,
+      postApex,
+      crownApex,
+      chamferRho: rhoSum / ANGULAR_COLS,
+    };
   };
 
   // 축 방향 높이만으로는 비스듬한 대합 교두가 옆에서 더 가깝거나 멀다.
   // 실제 윗면 점(마지막 라운드 두 점)에서 대합치까지 거리를 재서 열마다 올리고 내린다.
   let shape = buildShape();
   if (oppNear.length > 0) {
-    for (let pass = 0; pass < 4; pass += 1) {
+    for (let pass = 0; pass < 5; pass += 1) {
       let changed = false;
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const post = shape.postByCol[col]!;
@@ -1209,7 +1382,7 @@ export async function designCustomAbutmentStl(args: {
       shape = buildShape();
     }
   }
-  const { postByCol, crownByCol, cutbackSum, taperSum, postApex, crownApex } = shape;
+  const { postByCol, crownByCol, cutbackSum, taperSum, postApex, crownApex, chamferRho } = shape;
 
   // ── 8) 커넥션(헥스 + 11° 원뿔) + cuffBlend 커프 + 포스트를 닫힌 외형으로 잇고 스크류 채널을 뺀다
   const l2 = conn.l2Mm;
@@ -1336,7 +1509,7 @@ export async function designCustomAbutmentStl(args: {
       rmsMm: fixture.rmsMm,
       postTaperDeg: Math.round((taperSum / ANGULAR_COLS / DEG) * 10) / 10,
       occlusalClearanceMm,
-      marginFilletRadiusMm: R,
+      marginFilletRadiusMm: round2(chamferRho),
       axisSource,
     },
   });

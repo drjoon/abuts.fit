@@ -75,8 +75,14 @@ import {
 } from "@/shared/practice/customAbutmentDesignCache";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
+  EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
+  describeCustomAbutmentPreference,
+  hasCustomAbutmentPreference,
   parseCustomAbutmentParamOverrides,
+  parseCustomAbutmentPreference,
+  preferenceOverridesForTooth,
   type CustomAbutmentDesignParams,
+  type CustomAbutmentDesignPreference,
   type CustomAbutmentParamKey,
 } from "@/shared/practice/customAbutmentDesignParams";
 import {
@@ -133,6 +139,8 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   toothWorks: readonly ToothWorkSelection[];
   files: readonly PracticeDesignPreviewFileItem[];
   workScanFiles?: readonly PracticeDesignPreviewFileItem[];
+  /** 기공의뢰 id. 의뢰 치과의 디자인 취향을 읽고 저장할 때 쓴다. */
+  transferId?: string;
 };
 
 type CenterGuideMode = "off" | "center" | "grid";
@@ -168,8 +176,8 @@ const FIT_MARGIN = 1.06;
 const CHAT_EXAMPLES = [
   "포스트를 0.5mm 낮춰줘",
   "삽입축을 순측으로 조금 기울여줘",
-  "마진을 0.3mm 더 깊게",
   "포스트를 더 수직으로",
+  "앞으로 마진은 치은 하방 0.8mm로",
 ];
 
 function nextCenterGuide(mode: CenterGuideMode): CenterGuideMode {
@@ -321,6 +329,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   toothWorks,
   files,
   workScanFiles = [],
+  transferId,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
 
@@ -391,6 +400,12 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [redesigning, setRedesigning] = useState<string[]>([]);
+  const [preference, setPreference] = useState<CustomAbutmentDesignPreference>(
+    EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
+  );
+  const [preferenceCanSave, setPreferenceCanSave] = useState(false);
+  const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
+  const transferIdParam = String(transferId || "").trim();
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
@@ -993,6 +1008,25 @@ export function PracticeCustomAbutmentPreviewDialog({
               : emptyCatalog,
           )
           .catch(() => emptyCatalog);
+        const preferencePromise = apiFetch<{
+          data?: { preference?: unknown; canSave?: boolean };
+        }>({
+          path: `/api/ai/custom-abutment-design-preference${
+            transferIdParam ? `?transferId=${encodeURIComponent(transferIdParam)}` : ""
+          }`,
+          token,
+        })
+          .then((res) => ({
+            preference: parseCustomAbutmentPreference(res.ok ? res.data?.data?.preference : null),
+            canSave: Boolean(res.ok && res.data?.data?.canSave),
+          }))
+          .catch(() => ({ preference: EMPTY_CUSTOM_ABUTMENT_PREFERENCE, canSave: false }));
+        void preferencePromise.then((p) => {
+          if (cancelled) return;
+          preferenceRef.current = p.preference;
+          setPreference(p.preference);
+          setPreferenceCanSave(p.canSave);
+        });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
         const [rawLoadedScans, cached] = await Promise.all([
@@ -1111,7 +1145,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           await new Promise<void>((r) => window.setTimeout(r, 16));
           if (cancelled) return;
-          const curCatalog = await catalogPromise;
+          const [curCatalog, curPreference] = await Promise.all([catalogPromise, preferencePromise]);
+          if (cancelled) return;
 
           const teethByJaw = { upper: [] as ToothWorkSelection[], lower: [] as ToothWorkSelection[] };
           for (const tw of curToothWorks) {
@@ -1166,6 +1201,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 jawGeometry: jawGeo,
                 opposingGeometry: oppGeo,
                 neighbors: jawFixtures,
+                params: preferenceOverridesForTooth(matched.toothNumber, curPreference.preference),
                 patientName: curPatientName,
               });
               if (cancelled) {
@@ -1289,6 +1325,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     open,
     persistDesign,
     pipelineKey,
+    transferIdParam,
   ]);
 
   // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 대합 투명도, 픽스쳐, 마진선, 악·치아 토글)
@@ -1411,7 +1448,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             jawGeometry: jawGeo,
             opposingGeometry: ctx.jawGeometry[prev.jaw === "upper" ? "lower" : "upper"],
             neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
-            params: merged,
+            params: { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged },
             patientName: ctx.patientName,
           });
           ctx.overrides[tooth] = merged;
@@ -1462,7 +1499,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         const res = await apiFetch<{
           success?: boolean;
           message?: string;
-          data?: { reply?: string; changes?: DesignChange[] };
+          data?: {
+            reply?: string;
+            changes?: DesignChange[];
+            preference?: unknown;
+            preferenceSaved?: { note?: string } | null;
+          };
         }>({
           path: "/api/ai/custom-abutment-design-chat",
           method: "POST",
@@ -1471,6 +1513,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             message: text,
             history,
             selectedTooth,
+            transferId: transferIdParam || undefined,
             teeth: designedListRef.current.map((d) => ({
               toothNumber: d.toothNumber,
               params: d.params,
@@ -1482,7 +1525,20 @@ export function PracticeCustomAbutmentPreviewDialog({
           finish(res.data?.message || "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
           return;
         }
-        const reply = String(res.data.data.reply || "").trim();
+        if (res.data.data.preference) {
+          const nextPref = parseCustomAbutmentPreference(res.data.data.preference);
+          preferenceRef.current = nextPref;
+          setPreference(nextPref);
+        }
+        const savedNote = res.data.data.preferenceSaved
+          ? String(res.data.data.preferenceSaved.note || "").trim() || "요청한 값"
+          : "";
+        const reply = [
+          String(res.data.data.reply || "").trim(),
+          savedNote ? `치과 기본값으로 저장: ${savedNote}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
         const changes = (res.data.data.changes ?? [])
           .map((c) => ({
             toothNumber: String(c.toothNumber || ""),
@@ -1510,8 +1566,35 @@ export function PracticeCustomAbutmentPreviewDialog({
         setChatBusy(false);
       }
     },
-    [applyDesignChanges, authToken, chatBusy, persistDesign, selectedTooth],
+    [applyDesignChanges, authToken, chatBusy, persistDesign, selectedTooth, transferIdParam],
   );
+
+  const clearPreference = useCallback(async () => {
+    const token = String(authToken || "").trim();
+    if (!token || chatBusy) return;
+    setChatBusy(true);
+    try {
+      const res = await apiFetch<{ data?: { preference?: unknown } }>({
+        path: `/api/ai/custom-abutment-design-preference${
+          transferIdParam ? `?transferId=${encodeURIComponent(transferIdParam)}` : ""
+        }`,
+        method: "DELETE",
+        token,
+      });
+      if (!res.ok) return;
+      preferenceRef.current = EMPTY_CUSTOM_ABUTMENT_PREFERENCE;
+      setPreference(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
+      const next: ChatTurn[] = [
+        ...chatTurnsRef.current,
+        { role: "assistant", text: "치과 기본값을 지웠습니다. 다음 케이스부터 표준 디자인으로 만듭니다." },
+      ];
+      chatTurnsRef.current = next;
+      setChatTurns(next);
+      persistDesign(next);
+    } finally {
+      setChatBusy(false);
+    }
+  }, [authToken, chatBusy, persistDesign, transferIdParam]);
 
   const resetAllDesigns = useCallback(async () => {
     const ctx = designContextRef.current;
@@ -1857,6 +1940,25 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </Button>
               </div>
 
+              {hasCustomAbutmentPreference(preference) ? (
+                <div className="flex items-start gap-2 border-b bg-amber-50/70 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-semibold">치과 기본값</span>
+                    <span className="ml-1.5">{describeCustomAbutmentPreference(preference)}</span>
+                  </div>
+                  {preferenceCanSave ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50 dark:hover:bg-amber-900/40"
+                      disabled={chatBusy}
+                      onClick={() => void clearPreference()}
+                    >
+                      지우기
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
                 {chatTurns.length === 0 ? (
                   <div className="space-y-2 text-xs text-muted-foreground">
@@ -1864,6 +1966,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                       바꾸고 싶은 점을 말로 적으면 디자인을 다시 만듭니다.
                       <br />
                       치아를 고르면 그 치아에만 적용합니다.
+                      <br />
+                      「앞으로」처럼 규칙으로 말하면 다음 케이스 기본값이 됩니다.
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {CHAT_EXAMPLES.map((ex) => (

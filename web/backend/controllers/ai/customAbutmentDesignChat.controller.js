@@ -1,9 +1,15 @@
 // 치과 커스텀어벗 디자인 프리뷰의 AI 대화. 말로 받은 수정 요청을 디자인 조정값으로 바꿔 돌려준다.
 // 형상은 프론트가 이 조정값으로 다시 만든다. 범위는 프론트 customAbutmentDesignParams.ts와 같아야 한다.
+// 1회성이 아닌 요청(「항상」「우리는」, 치종 전반 규칙 등)은 의뢰 치과 사업자의 디자인 취향으로 저장해
+// 다음 케이스 기본값으로 쓴다. 저장은 의뢰 치과 본인 계정의 대화만 한다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/backend/modules/ai/ai.routes.js
+// - web/backend/models/businessAnchor.model.js (customAbutmentDesignPreference)
+import { Types } from "mongoose";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
@@ -19,11 +25,12 @@ const PARAM_SPECS = {
     max: 2,
   },
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.8, max: 1.15 },
-  marginFilletRadiusMm: { label: "마진 라운드 숄더 반경(볼 공구 R 이상)", unit: "mm", min: 0.5, max: 0.8 },
-  marginDepthMm: { label: "순측 치은연 아래 마진 깊이(설측·인접은 비례)", unit: "mm", min: 0, max: 1.5 },
+  marginFilletRadiusMm: { label: "가공 공구 R(마진 챔퍼 최소 곡률)", unit: "mm", min: 0.5, max: 0.8 },
+  marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지)", unit: "mm", min: 0.3, max: 0.8 },
+  marginDepthMm: { label: "피니시라인 치은 하방 깊이(둘레 전체)", unit: "mm", min: 0, max: 1.5 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },
-  minCrownThicknessMm: { label: "크라운 최소 두께(포스트 컷백)", unit: "mm", min: 0.5, max: 1.5 },
+  minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 공간 없으면 0.65까지 자동)", unit: "mm", min: 0.65, max: 1.5 },
   axisToOpposing: { label: "삽입축 대합치 중심 반영(0=악궁 교합 방향, 1=대합치 중심)", unit: "", min: 0, max: 1 },
   axisMaxDeg: { label: "픽스쳐 장축 대비 삽입축 최대 각도", unit: "°", min: 0, max: 25 },
   axisShiftLabialMm: { label: "포스트 윗면 순측(+)/설측(-) 이동", unit: "mm", min: -2, max: 2 },
@@ -31,12 +38,32 @@ const PARAM_SPECS = {
 };
 
 const PARAM_KEYS = Object.keys(PARAM_SPECS);
+/** 케이스마다 다른 윗면 이동은 취향으로 저장하지 않는다. */
+const PREFERENCE_KEYS = PARAM_KEYS.filter(
+  (k) => k !== "axisShiftLabialMm" && k !== "axisShiftMesialMm",
+);
+const SCOPES = ["all", "anterior", "posterior"];
 const TOOTH_RE = /^[1-4][1-8]$/;
+const MAX_NOTES = 20;
 
 const toFiniteOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
+
+const clampParam = (key, v) => {
+  const spec = PARAM_SPECS[key];
+  return Math.min(spec.max, Math.max(spec.min, v));
+};
+
+function sanitizeParamMap(raw, keys) {
+  const out = {};
+  for (const key of keys) {
+    const v = toFiniteOrNull(raw?.[key]);
+    if (v != null) out[key] = clampParam(key, v);
+  }
+  return out;
+}
 
 function sanitizeTeeth(raw) {
   if (!Array.isArray(raw)) return [];
@@ -100,20 +127,95 @@ function sanitizeChanges(raw, teeth) {
     const tooth = String(row?.toothNumber || "").trim();
     const targets = tooth === "all" ? [...allowed] : allowed.has(tooth) ? [tooth] : [];
     if (targets.length === 0) continue;
-    const params = {};
-    for (const key of PARAM_KEYS) {
-      const v = toFiniteOrNull(row?.params?.[key]);
-      if (v == null) continue;
-      const spec = PARAM_SPECS[key];
-      params[key] = Math.min(spec.max, Math.max(spec.min, v));
-    }
+    const params = sanitizeParamMap(row?.params, PARAM_KEYS);
     if (Object.keys(params).length === 0) continue;
     for (const t of targets) out.push({ toothNumber: t, params });
   }
   return out;
 }
 
-function buildPrompt({ message, history, teeth, selectedTooth }) {
+function sanitizePreferenceUpdate(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const scope = SCOPES.includes(raw.scope) ? raw.scope : "all";
+  const params = sanitizeParamMap(raw.params, PREFERENCE_KEYS);
+  if (Object.keys(params).length === 0) return null;
+  const note = String(raw.note || "").trim().slice(0, 120);
+  return { scope, params, note };
+}
+
+function preferenceView(stored) {
+  const scopes = {};
+  for (const scope of SCOPES) {
+    const values = sanitizeParamMap(stored?.scopes?.[scope], PREFERENCE_KEYS);
+    if (Object.keys(values).length > 0) scopes[scope] = values;
+  }
+  return {
+    scopes,
+    notes: Array.isArray(stored?.notes) ? stored.notes.slice(-MAX_NOTES) : [],
+    updatedAt: stored?.updatedAt ?? null,
+  };
+}
+
+/**
+ * 취향을 둘 치과 사업자. 의뢰(transferId)가 있으면 그 의뢰의 치과, 없으면 로그인 사업자.
+ * canSave: 의뢰 치과 본인 계정일 때만 대화 내용을 취향으로 저장한다(기공소 대화는 읽기만).
+ */
+async function resolvePreferenceAnchor(req, rawTransferId) {
+  const own = String(req.user?.businessAnchorId || "").trim();
+  const transferId = String(rawTransferId || "").trim();
+  if (Types.ObjectId.isValid(transferId)) {
+    const t = await PracticeTransfer.findById(transferId)
+      .select({ practiceBusinessAnchorId: 1, targetLabAnchorId: 1, assigneeLabAnchorId: 1 })
+      .lean();
+    if (t?.practiceBusinessAnchorId) {
+      const practiceId = String(t.practiceBusinessAnchorId);
+      const parties = [practiceId, String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")];
+      const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+      if (parties.includes(own) || privileged) {
+        return { anchorId: practiceId, canSave: own === practiceId };
+      }
+    }
+  }
+  if (Types.ObjectId.isValid(own)) return { anchorId: own, canSave: true };
+  return { anchorId: null, canSave: false };
+}
+
+async function loadPreference(anchorId) {
+  if (!anchorId) return preferenceView(null);
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ customAbutmentDesignPreference: 1 })
+    .lean();
+  return preferenceView(anchor?.customAbutmentDesignPreference);
+}
+
+async function savePreferenceUpdate(anchorId, update) {
+  const set = { "customAbutmentDesignPreference.updatedAt": new Date() };
+  const unset = {};
+  for (const [key, value] of Object.entries(update.params)) {
+    set[`customAbutmentDesignPreference.scopes.${update.scope}.${key}`] = value;
+    // 전체에 정한 값은 전치·구치 개별 값보다 나중 말이므로 개별 값을 지운다.
+    if (update.scope === "all") {
+      unset[`customAbutmentDesignPreference.scopes.anterior.${key}`] = "";
+      unset[`customAbutmentDesignPreference.scopes.posterior.${key}`] = "";
+    }
+  }
+  const ops = { $set: set };
+  if (Object.keys(unset).length > 0) ops.$unset = unset;
+  await BusinessAnchor.updateOne({ _id: anchorId }, ops);
+  if (update.note) {
+    await BusinessAnchor.updateOne(
+      { _id: anchorId },
+      {
+        $push: {
+          "customAbutmentDesignPreference.notes": { $each: [update.note], $slice: -MAX_NOTES },
+        },
+      },
+    );
+  }
+  return loadPreference(anchorId);
+}
+
+function buildPrompt({ message, history, teeth, selectedTooth, preference }) {
   const specLines = PARAM_KEYS.map((key) => {
     const s = PARAM_SPECS[key];
     return `- ${key}: ${s.label} (${s.min}~${s.max}${s.unit})`;
@@ -132,14 +234,29 @@ function buildPrompt({ message, history, teeth, selectedTooth }) {
     "- 「낮춰」「짧게」(포스트)는 occlusalClearanceMm을 키우거나 postHeightOffsetMm을 음수로 한다.\n" +
     "- 「얇게」「가늘게」(포스트)는 postWidthScale을 줄이거나 minCrownThicknessMm을 키운다.\n" +
     "- 「더 수직으로」는 postTaperDeg를 줄인다. 「기울기 줄여」는 axisMaxDeg를 줄이거나 axisToOpposing을 낮춘다.\n" +
-    "- 「마진 더 깊게」는 marginDepthMm을 키운다.\n" +
+    "- 「마진 더 깊게」「치은 하방 0.8mm」는 marginDepthMm. 「마진 넓게/좁게」는 marginShoulderMm.\n" +
     "- 바꿀 필요가 없거나 질문이면 changes는 빈 배열이다.\n" +
-    "- reply는 한국어 1~3문장. 무엇을 얼마로 바꿨는지 쓴다. 숫자는 단위와 함께.\n" +
+    "\n" +
+    "치과 취향(preference):\n" +
+    "- 요청이 이 케이스만이 아니라 앞으로도 그렇게 해 달라는 뜻이면 preference에 넣는다.\n" +
+    "  예: 「항상」「앞으로」「우리 치과는」「보통」「~로 해 주세요」처럼 규칙으로 말할 때,\n" +
+    "  치아 번호 없이 수치를 정할 때(「마진은 치은 하방 0.8mm」「테이퍼 3도」),\n" +
+    "  치종 전반을 말할 때(「전치는 …」 → anterior, 「어금니/구치는 …」 → posterior).\n" +
+    "- 1회성이면 preference는 null이다.\n" +
+    "  예: 화면을 보고 상대적으로 고치는 말(「조금 낮춰」「23번 더 얇게」), 특정 치아만 말할 때,\n" +
+    "  「이번만」「이 케이스」.\n" +
+    "- preference.params는 절대값이다(현재 값에서 바꾼 결과). scope는 all, anterior, posterior 중 하나.\n" +
+    "- preference.note는 취향을 한국어 한 문장(30자 안)으로 쓴다.\n" +
+    "- preference가 있으면 지금 케이스에도 같은 값을 changes에 넣는다(scope에 맞는 치아만).\n" +
+    "- reply는 한국어 1~3문장. 무엇을 얼마로 바꿨는지, 취향으로 저장했으면 「다음 케이스부터 기본값으로 씁니다」를 쓴다.\n" +
     "\n" +
     "반환(JSON만, 설명 금지):\n" +
-    '{ "reply": string, "changes": [ { "toothNumber": string, "params": { "<키>": number } } ] }\n' +
+    '{ "reply": string, "changes": [ { "toothNumber": string, "params": { "<키>": number } } ],' +
+    ' "preference": null | { "scope": "all"|"anterior"|"posterior", "params": { "<키>": number }, "note": string } }\n' +
     "\n" +
-    "현재 디자인(params는 현재 값, metrics는 측정값):\n" +
+    "현재 치과 취향:\n" +
+    JSON.stringify(preference) +
+    "\n\n현재 디자인(params는 현재 값, metrics는 측정값):\n" +
     JSON.stringify({ selectedTooth: selectedTooth || null, teeth }) +
     "\n\n대화 기록:\n" +
     JSON.stringify(history) +
@@ -149,8 +266,42 @@ function buildPrompt({ message, history, teeth, selectedTooth }) {
 }
 
 /**
+ * @route GET /api/ai/custom-abutment-design-preference?transferId=
+ */
+export async function getCustomAbutmentDesignPreference(req, res) {
+  try {
+    const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.query?.transferId);
+    const preference = await loadPreference(anchorId);
+    return res.json({ success: true, data: { preference, canSave } });
+  } catch (error) {
+    console.error("[AI] getCustomAbutmentDesignPreference error", error);
+    return res.status(500).json({ success: false, message: "디자인 취향을 불러오지 못했습니다." });
+  }
+}
+
+/**
+ * @route DELETE /api/ai/custom-abutment-design-preference?transferId=
+ */
+export async function clearCustomAbutmentDesignPreference(req, res) {
+  try {
+    const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.query?.transferId);
+    if (!anchorId || !canSave) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 지울 수 있습니다." });
+    }
+    await BusinessAnchor.updateOne(
+      { _id: anchorId },
+      { $unset: { customAbutmentDesignPreference: "" } },
+    );
+    return res.json({ success: true, data: { preference: preferenceView(null), canSave } });
+  } catch (error) {
+    console.error("[AI] clearCustomAbutmentDesignPreference error", error);
+    return res.status(500).json({ success: false, message: "디자인 취향을 지우지 못했습니다." });
+  }
+}
+
+/**
  * @route POST /api/ai/custom-abutment-design-chat
- * body: { message, history?, teeth: [{ toothNumber, params, metrics }], selectedTooth? }
+ * body: { message, history?, teeth: [{ toothNumber, params, metrics }], selectedTooth?, transferId? }
  */
 export async function customAbutmentDesignChat(req, res) {
   try {
@@ -185,26 +336,44 @@ export async function customAbutmentDesignChat(req, res) {
       });
     }
 
+    const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    let preference = await loadPreference(anchorId);
+
     const model = genAI.getGenerativeModel({
       model: MODEL,
       generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
     });
     const result = await model.generateContent(
-      buildPrompt({ message, history, teeth, selectedTooth }),
+      buildPrompt({ message, history, teeth, selectedTooth, preference }),
     );
     const parsed = parseJsonObject(result?.response?.text?.() || "");
     if (!parsed || typeof parsed !== "object") {
       return res.json({
         success: true,
-        data: { reply: "요청을 이해하지 못했습니다. 다시 말씀해 주세요.", changes: [], model: MODEL },
+        data: {
+          reply: "요청을 이해하지 못했습니다. 다시 말씀해 주세요.",
+          changes: [],
+          preference,
+          preferenceSaved: null,
+          model: MODEL,
+        },
       });
     }
 
     const changes = sanitizeChanges(parsed.changes, teeth);
+    const update = sanitizePreferenceUpdate(parsed.preference);
+    let preferenceSaved = null;
+    if (update && anchorId && canSave) {
+      preference = await savePreferenceUpdate(anchorId, update);
+      preferenceSaved = update;
+    }
     const reply =
       String(parsed.reply || "").trim().slice(0, 600) ||
       (changes.length > 0 ? "디자인 값을 바꿨습니다." : "바꿀 내용이 없습니다.");
-    return res.json({ success: true, data: { reply, changes, model: MODEL } });
+    return res.json({
+      success: true,
+      data: { reply, changes, preference, preferenceSaved, model: MODEL },
+    });
   } catch (error) {
     console.error("[AI] customAbutmentDesignChat error", error);
     if (error?.status === 402) {
@@ -226,4 +395,8 @@ export async function customAbutmentDesignChat(req, res) {
   }
 }
 
-export default { customAbutmentDesignChat };
+export default {
+  customAbutmentDesignChat,
+  getCustomAbutmentDesignPreference,
+  clearCustomAbutmentDesignPreference,
+};

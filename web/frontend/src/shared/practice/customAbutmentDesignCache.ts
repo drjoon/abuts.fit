@@ -10,7 +10,7 @@ import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmen
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
 
 /** 디자인 로직이 바뀌면 올린다. 예전 저장본은 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 4;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 5;
 
 const DB_NAME = "abuts-custom-abutment-design";
 const STORE = "designs";

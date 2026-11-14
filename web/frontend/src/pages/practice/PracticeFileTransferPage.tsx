@@ -12317,6 +12317,7 @@ export const PracticeFileTransferPage = ({
                   toothWorks={selectedTransferDetailModel?.toothWorks || []}
                   files={selectedTransferDetailModel?.files || []}
                   workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
+                  transferId={String(selectedTransfer?.transferId || selectedTransfer?.id || "")}
                 />
                 {selectedTransferDetailModel?.abutmentStageLabel ? (
                   <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">

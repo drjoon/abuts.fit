@@ -69,6 +69,7 @@
   - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait` 구버전 호환
 - 커스텀어벗 디자인 AI 대화
   - `controllers/ai/customAbutmentDesignChat.controller.js` — `POST /api/ai/custom-abutment-design-chat`. Gemini `gemini-2.5-flash` JSON 응답을 파라미터 변경으로만 받고 `PARAM_SPECS` 범위로 자른다. 범위는 프론트 `customAbutmentDesignParams.ts`와 같아야 한다. 402(크레딧 소진)는 503으로 안내한다.
+  - 치과 기본값: Gemini가 1회성이 아닌 요청을 `preference {scope: all|anterior|posterior, params, note}`로 돌려주면 `BusinessAnchor.customAbutmentDesignPreference`에 저장한다. 저장은 대화 사용자의 사업자가 `PracticeTransfer.practiceBusinessAnchorId`일 때만이다(기공소·관리자는 읽기만). `scope=all` 저장 시 같은 키의 전치/구치 값은 지운다. `GET`/`DELETE /api/ai/custom-abutment-design-preference?transferId=`.
 
 ## 1. 구조
 

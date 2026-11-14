@@ -751,6 +751,14 @@ const businessAnchorSchema = new mongoose.Schema(
       defaultId: { type: String, default: "" },
       updatedAt: { type: Date, default: null },
     },
+    // 치과(의뢰자) 커스텀어벗 디자인 취향. AI 대화에서 1회성이 아닌 요청을 기본값으로 쌓는다. practice only.
+    // scopes: { all, anterior, posterior } 각각 { <조정값 키>: number }
+    // related: web/backend/controllers/ai/customAbutmentDesignChat.controller.js
+    customAbutmentDesignPreference: {
+      scopes: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      notes: { type: [String], default: undefined },
+      updatedAt: { type: Date, default: null },
+    },
     // 기공소→치과별 기공수가 할증(배수). 현재값 + history(변경·1x 해제 이력).
     // as-of: 의뢰 createdAt 기준 당시 배수. 이후 변경분은 다음 건부터.
     // related: web/backend/utils/labFeeSchedule.js (resolveLabPracticeFeeMultiplierAsOf)
