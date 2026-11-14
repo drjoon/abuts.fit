@@ -60,7 +60,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
   minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 1.5, step: 0.05 },
   axisToOpposing: { label: "대합치 중심 반영", unit: "", min: 0, max: 1, step: 0.05 },
-  axisMaxDeg: { label: "삽입축 최대 각도", unit: "°", min: 0, max: 25, step: 0.5 },
+  axisMaxDeg: { label: "삽입축 최대 각도", unit: "°", min: 0, max: 32, step: 0.5 },
   axisShiftLabialMm: { label: "윗면 순측 이동", unit: "mm", min: -2, max: 2, step: 0.1 },
   axisShiftMesialMm: { label: "윗면 근심 이동", unit: "mm", min: -2, max: 2, step: 0.1 },
 };
@@ -89,10 +89,11 @@ export const EMPTY_CUSTOM_ABUTMENT_PREFERENCE: CustomAbutmentDesignPreference = 
   updatedAt: null,
 };
 
-/** 치종별 기본 삽입축 상한. 추적관리 tilt p75(전치 9~10°, 소구치 8°, 대구치 7.5°)보다 여유를 둔다. */
+/** 치종별 기본 삽입축 상한. 전치부 순측 경사 식립 보정(우리·알토란 16건 실측: 최대 ~25~28°)까지 수용하도록 전치는 24°로 둔다. */
 function defaultAxisMaxDeg(toothNumber: string): number {
   const kind = toothFormOf(toothNumber)?.kind ?? "molar";
-  if (kind === "incisor" || kind === "canine") return 18;
+  // 치종별 기본 삽입축 상한. 전치부 심한 순측 경사 식립 보정(정성윤 #22 38° → 알토란 기공소 31° 등)까지 수용하도록 전치는 30°로 둔다.
+  if (kind === "incisor" || kind === "canine") return 30;
   if (kind === "premolar") return 15;
   return 12;
 }

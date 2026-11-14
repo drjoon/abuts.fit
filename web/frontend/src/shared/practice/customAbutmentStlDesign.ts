@@ -1351,7 +1351,7 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
     // 그룹 내 모든 픽스쳐 장축에서 브리지 최대 허용 각도(구치 14°, 전치 18°) 안에 들어오도록 공통 축 자체를 조정한다.
     // 개별 치아에서 따로 capTilt를 걸지 않아 모든 브리지 지대주의 포스트 각도가 0.00° 오차로 완전히 평행해진다.
     const anyAnterior = sortedGroup.some((f) => abutmentTemplateForTooth(f.toothNumber).anterior);
-    const maxGroupTilt = (anyAnterior ? 18 : 14) * DEG;
+    const maxGroupTilt = (anyAnterior ? 30 : 14) * DEG;
     for (let iter = 0; iter < 8; iter += 1) {
       let moved = false;
       for (const f of sortedGroup) {
@@ -1913,57 +1913,105 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const marginA = (tpl.marginBlMm / 2) * blScale * params.marginSizeScale;
   const marginB = (tpl.marginMdMm / 2) * mdScale * params.marginSizeScale;
 
-  // ── 3) 삽입축: 임플란트 수직축(+Z)을 기본으로 지키고, 대합치·가상치아에서 많이 벗어난 만큼만 최소한 기울인다.
+  // ── 3) 삽입축:
+  // - 구치부: 임플란트 수직축(+Z)을 기본으로 지키고 대합치 중앙에서 많이 벗어난 만큼만 완만히 반영한다.
+  // - 전치부(1·2·3번, 우리·알토란기공소 남정헌 #13·#23, 정성윤 #22·#23 등 16건 실측):
+  //   임플란트가 순측(전방)으로 15~35° 경사지게 식립된 경우 +Z를 따라가거나 상악 전치 대합치(하악 전치 절단연이 상악 설측 와에 물림)를
+  //   따라가면 포스트가 인접치보다 전방으로 뻐드러진다. 전치부는 악궁 교합 방향(archOcclusalDir + 인접치 순측 치축 기울기)을 기본으로 세워
+  //   인접 자연치 치축·순측 아치 라인 안쪽으로 단정하게 정렬한다(스크류 홀은 기공소 디자인처럼 설측 경사면으로 자연스럽게 열린다).
   let w: Vec3 = [0, 0, 1];
   let axisSource: CustomAbutmentDesignMetrics["axisSource"] = "arch";
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
-  if (opposingLocalPts.length > 0 && params.axisToOpposing > 0) {
-    // 임플란트 수직축(+Z) 기준으로 대합치 교합면 중심이 어디에 있는지 먼저 본다.
-    let center = opposingCenterPoint(opposingLocalPts, c0, frameFix);
-    if (center) {
-      const rel0 = sub3(center, c0);
-      const lat0 = Math.hypot(rel0[0], rel0[1]);
-      if (lat0 > deadzoneMm * 1.4) {
-        const wSeed = norm3(rel0);
-        center = opposingCenterPoint(opposingLocalPts, c0, insertionFrame(wSeed, labXY)) ?? center;
-      }
-      const rel = sub3(center, c0);
-      // 대합치 중심과 가상 치아 근원심 중심을 함께 본 목표점.
-      const sideSignFix = dot3(frameFix.vSide, frame0.vSide) >= 0 ? 1 : -1;
-      const targetLatX = rel[0] * 0.75 + frameFix.vSide[0] * crownCenterV * sideSignFix * 0.25;
-      const targetLatY = rel[1] * 0.75 + frameFix.vSide[1] * crownCenterV * sideSignFix * 0.25;
-      const lat = Math.hypot(targetLatX, targetLatY);
-      const refZ = Math.max(rel[2], tpl.postHeightMm + 1.5);
-      // 데드존 안(임플란트 수직축이 대합치 중앙을 지남)이면 수직(0°) 유지, 밖이면 초과분만 완만히 반영한다.
-      const excess = Math.max(0, lat - deadzoneMm) * (posterior ? 0.65 : 0.8) * params.axisToOpposing;
-      const wOpp: Vec3 =
-        excess > 1e-4 && lat > 1e-6
-          ? norm3([(targetLatX / lat) * excess, (targetLatY / lat) * excess, refZ])
-          : [0, 0, 1];
-      w = slerpDir([0, 0, 1], wOpp, params.axisToOpposing);
-      axisSource = "opposing";
-    }
-  }
-  if (axisSource === "arch") {
+
+  if (!posterior) {
     const H = tpl.postHeightMm;
-    // 대합치가 없을 때도 수직축을 우선하고, 악궁 축과 많이 어긋날 때만 절반 이하로 따라간다.
-    const archLatMm = Math.tan(archTilt) * H;
-    const archExcess = Math.max(0, archLatMm - deadzoneMm) * 0.55;
-    let offX = occLat > 1e-5 ? (occInFix[0] / occLat) * archExcess : 0;
-    let offY = occLat > 1e-5 ? (occInFix[1] / occLat) * archExcess : 0;
-    const shiftExcess = Math.sign(sideShiftMm) * Math.max(0, Math.abs(sideShiftMm) - 0.35) * 0.5;
-    offX -= labXY[1] * shiftExcess;
-    offY += labXY[0] * shiftExcess;
-    if (tpl.anterior) {
-      // 대합치를 못 찾은 전치: 스크류홀이 절단연 순측으로 뚫리지 않을 만큼만 순측 기울기를 허용한다.
-      const labComp = offX * labXY[0] + offY * labXY[1];
-      const want = Math.min(0.9, Math.tan(tiltCapRad) * H * 0.6);
-      if (labComp < want) {
-        offX += labXY[0] * (want - labComp);
-        offY += labXY[1] * (want - labComp);
+    // 인접 자연치 순측면(labialLimit)의 치경부(z0+1.5mm)→절단부(z0+5.5mm) 기울기를 읽어 악궁 교합축에 반영한다.
+    let wAntTarget = norm3(occInFix);
+    if (labialLimit) {
+      const zLo = meanMarginZ + 1.5;
+      const zHi = meanMarginZ + 5.5;
+      const uLo = labialLimit(zLo);
+      const uHi = labialLimit(zHi);
+      if (Number.isFinite(uLo) && Number.isFinite(uHi)) {
+        const adjLabSlope = clamp((uHi - uLo) / (zHi - zLo), -Math.tan(26 * DEG), Math.tan(10 * DEG));
+        const occLabSlope = dot3(wAntTarget, labXY) / Math.max(wAntTarget[2], 0.25);
+        // 인접치 순측면이 설측으로 기울어 들어가는 양과 악궁 교합 방향을 함께 반영해 전방 돌출(뻐드러짐)을 막는다.
+        const blendedLabSlope = occLabSlope * 0.65 + adjLabSlope * 0.35;
+        const mesSlope = clamp(
+          dot3(wAntTarget, mesXY) / Math.max(wAntTarget[2], 0.25) + (sideShiftMm * 0.35) / H,
+          -Math.tan(12 * DEG),
+          Math.tan(12 * DEG),
+        );
+        wAntTarget = norm3([
+          labXY[0] * blendedLabSlope + mesXY[0] * mesSlope,
+          labXY[1] * blendedLabSlope + mesXY[1] * mesSlope,
+          1,
+        ]);
       }
     }
-    w = norm3([offX / H, offY / H, 1]);
+    // 임플란트(+Z)가 악궁 교합축보다 순측으로 기울어진 전치(dot(occInFix, labXY) < -0.05)는 설측으로 충분히 세우고,
+    // 이미 수직으로 심긴 전치(각도차 ≤ 5°)만 완만히 보정한다.
+    const rawAntAng = Math.acos(clamp(wAntTarget[2], -1, 1));
+    const antFollow = smootherstep(clamp((rawAntAng / DEG - 3.0) / 8.0, 0.35, 1.0)) * 0.9;
+    w = capTilt(slerpDir([0, 0, 1], wAntTarget, antFollow), tiltCapRad);
+    axisSource = "arch";
+
+    // 인접치 순측 아치 라인(labialLimit) 안쪽으로 포스트 순측 벽 + 크라운 두께가 들어오도록 삽입축을 설측으로 추가 보정한다.
+    if (labialLimit) {
+      const hRef = H * 0.78;
+      const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.25;
+      let moved = 0;
+      const maxLabShiftMm = 2.6;
+      for (let iter = 0; iter < 4 && moved < maxLabShiftMm; iter += 1) {
+        const fr = insertionFrame(w, labXY);
+        const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
+        if (!Number.isFinite(lim)) break;
+        const need = Math.min(postLab + params.minCrownThicknessMm - lim, maxLabShiftMm - moved);
+        if (need <= 0.04) break;
+        w = capTilt(
+          norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
+          tiltCapRad,
+        );
+        moved += need;
+      }
+    }
+  } else {
+    if (opposingLocalPts.length > 0 && params.axisToOpposing > 0) {
+      // 임플란트 수직축(+Z) 기준으로 대합치 교합면 중심이 어디에 있는지 먼저 본다.
+      let center = opposingCenterPoint(opposingLocalPts, c0, frameFix);
+      if (center) {
+        const rel0 = sub3(center, c0);
+        const lat0 = Math.hypot(rel0[0], rel0[1]);
+        if (lat0 > deadzoneMm * 1.4) {
+          const wSeed = norm3(rel0);
+          center = opposingCenterPoint(opposingLocalPts, c0, insertionFrame(wSeed, labXY)) ?? center;
+        }
+        const rel = sub3(center, c0);
+        const sideSignFix = dot3(frameFix.vSide, frame0.vSide) >= 0 ? 1 : -1;
+        const targetLatX = rel[0] * 0.75 + frameFix.vSide[0] * crownCenterV * sideSignFix * 0.25;
+        const targetLatY = rel[1] * 0.75 + frameFix.vSide[1] * crownCenterV * sideSignFix * 0.25;
+        const lat = Math.hypot(targetLatX, targetLatY);
+        const refZ = Math.max(rel[2], tpl.postHeightMm + 1.5);
+        const excess = Math.max(0, lat - deadzoneMm) * 0.65 * params.axisToOpposing;
+        const wOpp: Vec3 =
+          excess > 1e-4 && lat > 1e-6
+            ? norm3([(targetLatX / lat) * excess, (targetLatY / lat) * excess, refZ])
+            : [0, 0, 1];
+        w = slerpDir([0, 0, 1], wOpp, params.axisToOpposing);
+        axisSource = "opposing";
+      }
+    }
+    if (axisSource === "arch") {
+      const H = tpl.postHeightMm;
+      const archLatMm = Math.tan(archTilt) * H;
+      const archExcess = Math.max(0, archLatMm - deadzoneMm) * 0.55;
+      let offX = occLat > 1e-5 ? (occInFix[0] / occLat) * archExcess : 0;
+      let offY = occLat > 1e-5 ? (occInFix[1] / occLat) * archExcess : 0;
+      const shiftExcess = Math.sign(sideShiftMm) * Math.max(0, Math.abs(sideShiftMm) - 0.35) * 0.5;
+      offX -= labXY[1] * shiftExcess;
+      offY += labXY[0] * shiftExcess;
+      w = norm3([offX / H, offY / H, 1]);
+    }
   }
   if (mode.probeAxis) return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
   const hasManualAxisShift = params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0;
@@ -1984,45 +2032,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 치아마다 따로 capTilt·allowRatio로 꺾지 않아 모든 지대주 포스트가 완전히 같은 각도로 평행해진다.
   if (!mode.groupAxisWorld || hasManualAxisShift) {
     w = capTilt(w, hasManualAxisShift ? tiltCapRad : effectiveTiltCapRad);
-    const H = tpl.postHeightMm;
-    const allowRatio = posterior ? 0.42 : 0.52;
-    const offX = (w[0] / w[2]) * H;
-    const offY = (w[1] / w[2]) * H;
-    const off = Math.hypot(offX, offY);
-    if (off > 1e-6) {
-      const phi = Math.atan2(offY, offX) - labialAngleFix;
-      const allow = superellipseRadius(marginA, marginB, phi) * allowRatio;
-      if (off > allow) {
-        const k = allow / off;
-        w = norm3([(w[0] / w[2]) * k, (w[1] / w[2]) * k, 1]);
+    if (posterior) {
+      const H = tpl.postHeightMm;
+      const allowRatio = 0.42;
+      const offX = (w[0] / w[2]) * H;
+      const offY = (w[1] / w[2]) * H;
+      const off = Math.hypot(offX, offY);
+      if (off > 1e-6) {
+        const phi = Math.atan2(offY, offX) - labialAngleFix;
+        const allow = superellipseRadius(marginA, marginB, phi) * allowRatio;
+        if (off > allow) {
+          const k = allow / off;
+          w = norm3([(w[0] / w[2]) * k, (w[1] / w[2]) * k, 1]);
+        }
       }
-    }
-  }
-  // 전치에서 포스트가 가상 크라운(인접치 순측선) 밖으로 나가면 설측으로 살짝 옮기되,
-  // +Z 스크류 채널이 포스트 순측 벽을 뚫고 길쭉하게 깎여 나가지 않도록(uScrew <= 0.12mm) 제한한다.
-  if (labialLimit && !posterior && !mode.groupAxisWorld) {
-    const H = tpl.postHeightMm;
-    const hRef = H * 0.75;
-    const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.3;
-    let moved = 0;
-    for (let iter = 0; iter < 3 && moved < AXIS_LINGUAL_SHIFT_MAX_MM; iter += 1) {
-      const fr = insertionFrame(w, labXY);
-      const uScrewAtRef = (hRef / Math.max(fr.w[2], 0.2)) * fr.uLabial[2];
-      const maxMoreLingual = Math.max(0, 0.12 - uScrewAtRef);
-      if (maxMoreLingual <= 0.02) break;
-      const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
-      if (!Number.isFinite(lim)) break;
-      const need = Math.min(
-        postLab + params.minCrownThicknessMm - lim,
-        AXIS_LINGUAL_SHIFT_MAX_MM - moved,
-        maxMoreLingual,
-      );
-      if (need <= 0.04) break;
-      w = capTilt(
-        norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
-        effectiveTiltCapRad,
-      );
-      moved += need;
     }
   }
   const frame = insertionFrame(w, labXY);
@@ -2520,19 +2543,37 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
 
   const marginRadii = Array.from({ length: ANGULAR_COLS }, (_, col) => {
-    const rInFrame = analyticSectionRay(
-      tpl.kind,
-      "margin",
-      mHalfBl,
-      mHalfBl,
-      mHalfMd,
-      mCu,
-      mCv,
-      colDuFix[col]!,
-      colDvFix[col]!,
-    );
-    const rFix = Number.isFinite(rInFrame) ? rInFrame / colProjScale[col]! : minMarginRadius;
-    return Math.max(minMarginRadius, rFix);
+    const theta = (col / ANGULAR_COLS) * Math.PI * 2;
+    const ct = Math.cos(theta);
+    const st = Math.sin(theta);
+    const radialFix: Vec3 = [ct, st, 0];
+    const dz0 = evalPeriodicLinear(smoothMarginZ, theta) - meanMarginZ;
+    // 마진 점 [rFix*ct, rFix*st, zMargin]을 삽입축 평면(uLabial, vSide)에 실제로 정사영했을 때
+    // (u(rFix), v(rFix))가 해석 해부 단면 위에 정확히 놓이는 rFix를 직접 푼다.
+    // 경사진 전치 삽입축(15~28°)에서 dz0 * uLabial[2] 수직 이동항을 빼먹으면 설측 마진이 불룩 튀어나오므로 정사영 방정식을 그대로 푼다.
+    const u0Off = dz0 * frame.uLabial[2];
+    const v0Off = dz0 * frame.vSide[2];
+    const gu = dot3(radialFix, frame.uLabial);
+    const gv = dot3(radialFix, frame.vSide);
+    const evalMarginNorm = (rFix: number) => {
+      const u = u0Off + rFix * gu - mCu;
+      const v = v0Off + rFix * gv - mCv;
+      const len = Math.hypot(u, v);
+      if (len < 1e-7) return 0;
+      const phi = Math.atan2(v, u);
+      const secR = toothSectionRadius(tpl.kind, "margin", Math.max(0.35, mHalfBl), Math.max(0.35, mHalfMd), phi);
+      return len / Math.max(secR, 1e-4);
+    };
+    if (evalMarginNorm(minMarginRadius) >= 1) return minMarginRadius;
+    let lo = minMarginRadius;
+    let hi = minMarginRadius + Math.max(mHalfBl, mHalfMd) * 2.2;
+    while (evalMarginNorm(hi) < 1 && hi < 12) hi *= 1.4;
+    for (let it = 0; it < 16; it += 1) {
+      const mid = (lo + hi) * 0.5;
+      if (evalMarginNorm(mid) < 1) lo = mid;
+      else hi = mid;
+    }
+    return Math.max(minMarginRadius, (lo + hi) * 0.5);
   });
 
   // 마진 반경(marginRadii)이 확정된 뒤, 멀리 떨어진 인접치 치간유두가 아니라 실제 마진이 놓이는 반경(r ≈ marginRadii)
@@ -2656,13 +2697,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const rBase0 = r0 - shoulderW;
     const hBase = h0 + chamfer.height;
     const labBlend = smootherstep((cLab + 1) * 0.5);
-    // 전치부도 상단에서 스크류 채널(boreTopR) 둘레 최소 금속 벽 두께(순·근·원심 0.52mm, 설측 0.44mm)를 확보해
-    // 스크류 홀 양옆이 포크처럼 얇아지거나 옆벽에 길쭉하게 깎여 나가지 않게 예측 크라운과 포스트 목표 폭을 함께 넓힌다.
+    // 전치부: 상단에서 스크류 채널이 절단연 근처로 올라오는 경우(|uScrewEst| <= 0.7mm)에만 둘레 칼라를 넓히고,
+    // 순측으로 12° 이상 경사진 식립을 구개측으로 꺾어 세운 경우(uScrewEst > 0.7mm, 기공소 디자인 남정헌 #13·#23, 정성윤 #22·#23)에는
+    // 포스트 외형을 자연 타원으로 유지하고 스크류 홀은 설측 경사면으로 자연스럽게 열리게 둔다.
     const uScrewEst = ((hTop - topRoundMm) / Math.max(frame.w[2], 0.2)) * frame.uLabial[2];
     const vScrewEst = ((hTop - topRoundMm) / Math.max(frame.w[2], 0.2)) * frame.vSide[2];
-    const antLabCollar = !posterior ? Math.max(0, uScrewEst) + boreTopR + ANTERIOR_SCREW_WALL_MM : 0;
-    const antLinCollar = !posterior ? Math.max(0, -uScrewEst) + boreTopR + ANTERIOR_SCREW_LINGUAL_WALL_MM : 0;
-    const antMdCollar = !posterior ? Math.abs(vScrewEst) + boreTopR + ANTERIOR_SCREW_WALL_MM : 0;
+    const collarBlend = !posterior
+      ? 1 - smootherstep(clamp((Math.abs(uScrewEst) - 0.55) / 0.85, 0, 1))
+      : 0;
+    const antLabCollar = collarBlend * (Math.max(0, uScrewEst) + boreTopR + ANTERIOR_SCREW_WALL_MM);
+    const antLinCollar = collarBlend * (Math.max(0, -uScrewEst) + boreTopR + ANTERIOR_SCREW_LINGUAL_WALL_MM);
+    const antMdCollar = !posterior
+      ? Math.min(2.1, Math.abs(vScrewEst) * 0.5 + boreTopR + ANTERIOR_SCREW_WALL_MM) * Math.max(0.55, collarBlend)
+      : 0;
     const effLabHalf = Math.max(tpl.topLabialHalfMm * blScale * params.postWidthScale, antLabCollar);
     const effLinHalf = Math.max(tpl.topLingualHalfMm * blScale * params.postWidthScale, antLinCollar);
     const effTopB = Math.max(topB, antMdCollar);
@@ -3137,20 +3184,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
       }
     } else {
-      // 전치부(1·2·3번, 우리치과기공소 남덕순 #42·#43, 남정헌 #13·#23 실측):
-      // 스크류 채널(boreTopR) 주변 벽이 포크처럼 얇아지거나 순측·인접 측벽을 비스듬히 스쳐 길쭉한 구멍이 나지 않도록
-      // 순·근·원심 최소 벽 두께(ANTERIOR_SCREW_WALL_MM=0.52mm)와 설측 칼라 두께(0.44mm, 대합·크라운 최소 두께 한도 내)를 지킨다.
-      pTopCu = clamp(mCu * 0.75, -0.4, 0.45);
-      pTopCv = clamp(mCv * 0.85, -0.55, 0.55);
-      const minLabCollar = () => Math.max(1.05, uScrewTop - pTopCu + boreTopR + ANTERIOR_SCREW_WALL_MM);
-      const minMdCollar = () => Math.max(1.55, Math.abs(vScrewTop - pTopCv) + boreTopR + ANTERIOR_SCREW_WALL_MM);
+      // 전치부(1·2·3번, 우리·알토란기공소 남정헌 #13·#23, 정성윤 #22·#23, 남덕순 #42·#43 실측):
+      // 1) 단면은 어떤 열도 튀어나오지 않는 100% 매끈한 해석 타원(analyticSectionRay)만 사용한다(개별 열 collar 돌출 금지).
+      // 2) 임플란트가 거의 수직이라 스크류 채널이 상단 중앙 근처로 나올 때(|uScrewTop| <= 0.7mm, 예: 남덕순 #42·#43)는
+      //    타원 자체의 순·설·근·원심 반축을 키워 스크류 홀 둘레 금속 벽 두께(~0.48~0.52mm)를 확보한다.
+      // 3) 순측 경사 식립을 설측으로 꺾어 세운 전치(|uScrewTop| > 0.7mm, 예: 남정헌 #13·#23, 정성윤 #22·#23)는
+      //    기공소 디자인(첨4)처럼 매끈한 타원형 포스트를 유지하고 스크류 홀이 설측 사면으로 깔끔하게 열리게 한다.
+      pTopCu = clamp(mCu * 0.75, -0.4, 0.4);
+      pTopCv = clamp(mCv * 0.85, -0.5, 0.5);
+      const screwAxialExitW =
+        1 - smootherstep(clamp((Math.abs(uScrewTop - pTopCu) - 0.55) / 0.85, 0, 1));
+      const minLabCollar = () =>
+        Math.max(
+          1.12,
+          1.12 +
+            screwAxialExitW *
+              Math.max(0, uScrewTop - pTopCu + boreTopR + ANTERIOR_SCREW_WALL_MM - 1.12),
+        );
       const minLinCollar = () =>
-        uScrewTop >= -0.85
-          ? Math.max(0.95, -(uScrewTop - pTopCu) + boreTopR + ANTERIOR_SCREW_LINGUAL_WALL_MM)
-          : 0.9;
+        Math.max(
+          0.95,
+          0.95 +
+            screwAxialExitW *
+              Math.max(0, -(uScrewTop - pTopCu) + boreTopR + ANTERIOR_SCREW_LINGUAL_WALL_MM - 0.95),
+        );
+      const minMdCollar = () =>
+        Math.max(
+          1.62,
+          Math.min(2.05, Math.abs(vScrewTop - pTopCv) * 0.5 + boreTopR + ANTERIOR_SCREW_WALL_MM),
+        );
 
       let pBaseBl = Math.max(
-        Math.max(minLabCollar(), minLinCollar()) + 0.16,
+        Math.max(minLabCollar(), minLinCollar()) + 0.18,
         (mHalfBl - shoulderW) * Math.min(1, params.postWidthScale),
       );
       let pBaseMd = Math.max(
@@ -3161,14 +3226,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const tplLabHalf = Math.max(tpl.topLabialHalfMm * blScale * params.postWidthScale, minLabCollar());
       const tplLinHalf = Math.max(tpl.topLingualHalfMm * blScale * params.postWidthScale, minLinCollar());
       const tplMdHalf = Math.max(topB, minMdCollar());
-      const keepBl = Math.max(1.1, pBaseBl - taperSlope * meanSpanSum);
-      const keepMd = Math.max(1.55, pBaseMd - taperSlope * meanSpanSum);
+      const keepBl = Math.max(1.15, pBaseBl - taperSlope * meanSpanSum);
+      const keepMd = Math.max(1.62, pBaseMd - taperSlope * meanSpanSum);
       let topLabHalf = Math.max(minLabCollar(), keepBl - Math.max(0, keepBl - tplLabHalf) * (0.35 + 0.65 * tallScale));
       let topLinHalf = Math.max(minLinCollar(), keepBl - Math.max(0, keepBl - tplLinHalf) * (0.55 + 0.45 * tallScale));
       let topMdHalf = Math.max(minMdCollar(), keepMd - Math.max(0, keepMd - tplMdHalf) * (0.3 + 0.6 * tallScale));
 
-      for (let iter = 0; iter < 14; iter += 1) {
-        const limShift = Math.max(0.08, Math.min(topLabHalf, topLinHalf, topMdHalf) * 0.5);
+      // 하단·상단 모두 크라운 최소 지르코니아 두께(hardCapR)를 침범해도 타원 한쪽이 꺾여 튀어나오지 않도록
+      // 반복 루프 안에서 타원 반축과 중심만 부드럽게 조정한다(루프 밖 열별 클리핑 금지).
+      for (let iter = 0; iter < 16; iter += 1) {
+        const limShift = Math.max(0.08, Math.min(topLabHalf, topLinHalf, topMdHalf) * 0.48);
         if (Math.hypot(pTopCu, pTopCv) > limShift) {
           const sc = limShift / Math.hypot(pTopCu, pTopCv);
           pTopCu *= sc;
@@ -3177,8 +3244,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         let worstTopLab = 0;
         let worstTopLin = 0;
         let worstTopMd = 0;
-        let worstBase = 0;
-        const useSoft = iter < 8;
+        let worstBaseBl = 0;
+        let worstBaseMd = 0;
+        const useSoft = iter < 9;
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const du = colPostDu[col]!;
           const dv = colPostDv[col]!;
@@ -3198,11 +3266,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           );
           if (Number.isFinite(rTopRay) && rTopRay > boundTop + 1e-4) {
             const ex = rTopRay - boundTop;
-            if (Math.abs(dv) >= 0.88) worstTopMd = Math.max(worstTopMd, ex * Math.abs(dv));
+            if (Math.abs(dv) >= 0.86) worstTopMd = Math.max(worstTopMd, ex * Math.abs(dv));
             else if (du >= 0) worstTopLab = Math.max(worstTopLab, ex * Math.max(0.55, du));
             else worstTopLin = Math.max(worstTopLin, ex * Math.max(0.55, -du));
           }
-          const boundBase = Math.min(cols[col]!.r0 - 0.16, hardCapR[col]![0]!);
+          const boundBase = Math.max(0.95, Math.min(cols[col]!.r0 - 0.16, hardCapR[col]![0]!));
           const rBaseRay = analyticSectionRay(
             tpl.kind,
             "post",
@@ -3215,28 +3283,27 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             dv,
           );
           if (Number.isFinite(rBaseRay) && rBaseRay > boundBase + 1e-4) {
-            worstBase = Math.max(worstBase, rBaseRay - boundBase);
+            const ex = rBaseRay - boundBase;
+            worstBaseBl = Math.max(worstBaseBl, ex * (0.35 + 0.65 * du * du));
+            worstBaseMd = Math.max(worstBaseMd, ex * (0.35 + 0.65 * dv * dv));
           }
         }
-        if (Math.max(worstTopLab, worstTopLin, worstTopMd, worstBase) <= 1e-3) break;
-        if (worstBase > 0) {
-          pBaseBl = Math.max(1.2, pBaseBl - worstBase * 0.5);
-          pBaseMd = Math.max(1.55, pBaseMd - worstBase * 0.35);
-        }
-        if (worstTopLab > 0) {
-          // 순측은 스크류 홀 최소 벽 두께(minLabCollar) 아래로 절대 깎지 않아 순측 벽 관통·길쭉한 구멍을 막는다.
-          topLabHalf = Math.max(minLabCollar(), topLabHalf - worstTopLab * 0.8);
-        }
-        if (worstTopLin > 0) {
-          // 설측은 목표 두께 단계(useSoft)에서는 스크류 칼라를 지키고, 대합치 최소 지르코니아 두께(hardCapR)에 걸릴 때만 허용한다.
-          const linFloor = useSoft ? minLinCollar() : Math.max(0.85, minLinCollar() - 0.28);
-          topLinHalf = Math.max(linFloor, topLinHalf - worstTopLin * 0.8);
-        }
-        if (worstTopMd > 0) {
-          topMdHalf = Math.max(minMdCollar(), topMdHalf - worstTopMd * 0.8);
-        }
+        if (Math.max(worstTopLab, worstTopLin, worstTopMd, worstBaseBl, worstBaseMd) <= 1e-3) break;
+        if (worstBaseBl > 0) pBaseBl = Math.max(1.05, pBaseBl - worstBaseBl * 0.8);
+        if (worstBaseMd > 0) pBaseMd = Math.max(1.25, pBaseMd - worstBaseMd * 0.8);
+        const labFloor = useSoft ? minLabCollar() : Math.max(0.95, minLabCollar() - 0.22);
+        const linFloor = useSoft ? minLinCollar() : Math.max(0.85, minLinCollar() - 0.25);
+        const mdFloor = useSoft ? minMdCollar() : Math.max(1.3, minMdCollar() - 0.25);
+        if (worstTopLab > 0) topLabHalf = Math.max(labFloor, topLabHalf - worstTopLab * 0.8);
+        if (worstTopLin > 0) topLinHalf = Math.max(linFloor, topLinHalf - worstTopLin * 0.8);
+        if (worstTopMd > 0) topMdHalf = Math.max(mdFloor, topMdHalf - worstTopMd * 0.8);
+        topLabHalf = Math.min(topLabHalf, pBaseBl - 0.04);
+        topLinHalf = Math.min(topLinHalf, pBaseBl - 0.04);
+        topMdHalf = Math.min(topMdHalf, pBaseMd - 0.04);
       }
 
+      // 열별 collarFloor 돌출이나 개별 hardCap 절단을 하지 않고 순수 해석 타원 반경 그대로 직선 모선을 세워
+      // 설측·순측 어디에도 불룩 튀어나오는 혹 없이 전체 단면이 매끈한 타원형을 유지한다.
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const c = cols[col]!;
         const du = colPostDu[col]!;
@@ -3263,21 +3330,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           du,
           dv,
         );
-        // 순·근·원심(du >= -0.35) 방향은 상단에서도 스크류 채널 최소 금속 벽(0.48mm)을 하드 하한으로 보장한다.
-        const screwProjTop = uScrewTop * du + vScrewTop * dv;
-        const collarFloorTop =
-          du >= -0.35 ? Math.max(0.95, screwProjTop + boreTopR + 0.48) : 0.85;
-        const rBaseSafe = clamp(
-          Number.isFinite(r0Ray) ? r0Ray : c.r0 - shoulderW,
-          Math.max(1.05, collarFloorTop),
-          Math.max(1.05, collarFloorTop, Math.min(c.r0 - 0.14, hardCapR[col]![0]!)),
-        );
-        const rTopCap = Math.max(collarFloorTop, Math.min(rBaseSafe - 0.03, hardCapR[col]![POST_LEVELS]!));
-        const rTopSafe = clamp(
-          Number.isFinite(rTopRay) ? rTopRay : rBaseSafe * 0.78,
-          collarFloorTop,
-          rTopCap,
-        );
+        const rBaseSafe = Number.isFinite(r0Ray) ? Math.min(r0Ray, c.r0 - 0.14) : c.r0 - shoulderW;
+        const rTopSafe = Number.isFinite(rTopRay) ? Math.min(rTopRay, rBaseSafe - 0.03) : rBaseSafe * 0.78;
         for (let k = 0; k <= POST_LEVELS; k += 1) {
           const u = k / POST_LEVELS;
           postR[col]![k] = rBaseSafe + (rTopSafe - rBaseSafe) * u;
