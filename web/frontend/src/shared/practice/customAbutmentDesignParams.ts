@@ -105,7 +105,7 @@ export function isAnteriorTooth(toothNumber: string): boolean {
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   return {
     occlusalClearanceMm: 1.3,
-    postTaperDeg: 2.5,
+    postTaperDeg: 2,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
     marginFilletRadiusMm: 0.6,
@@ -113,7 +113,7 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     marginDepthMm: 0.5,
     marginSizeScale: 1,
     crownContactMm: 0.05,
-    minCrownThicknessMm: 1.1,
+    minCrownThicknessMm: 1.0,
     axisToOpposing: 1,
     axisMaxDeg: defaultAxisMaxDeg(toothNumber),
     axisShiftLabialMm: 0,
