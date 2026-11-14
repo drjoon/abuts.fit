@@ -5,6 +5,7 @@
 // - 2026-09-16: POST /parse-bankbook 통장 사본 OCR.
 import { Router } from "express";
 import aiController from "../../controllers/ai/ai.controller.js";
+import { customAbutmentDesignChat } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -25,6 +26,11 @@ router.post(
   "/recognize-lot-number",
   authenticate,
   aiController.recognizeLotNumber
+);
+router.post(
+  "/custom-abutment-design-chat",
+  authenticate,
+  customAbutmentDesignChat
 );
 
 export default router;

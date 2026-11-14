@@ -67,6 +67,8 @@
   - `services/labHelperAlarm.service.js` — `emitAppEventToUser`에서 enqueue → WS 구독자 push(우선), 없으면 레거시 wait 큐
   - `services/labHelperAlarmWs.js` — `WS /api/lab-helper/alarms/ws` (Bearer, internalLab·requestor lab/practice)
   - `modules/labHelper/labHelper.routes.js` — `GET /api/lab-helper/alarms/wait` 구버전 호환
+- 커스텀어벗 디자인 AI 대화
+  - `controllers/ai/customAbutmentDesignChat.controller.js` — `POST /api/ai/custom-abutment-design-chat`. Gemini `gemini-2.5-flash` JSON 응답을 파라미터 변경으로만 받고 `PARAM_SPECS` 범위로 자른다. 범위는 프론트 `customAbutmentDesignParams.ts`와 같아야 한다. 402(크레딧 소진)는 503으로 안내한다.
 
 ## 1. 구조
 

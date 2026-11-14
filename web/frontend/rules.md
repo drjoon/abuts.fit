@@ -201,6 +201,10 @@ Notes:
   - `src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx` (치과 채팅 헤더「커스텀어벗 공정」왼쪽「디자인」버튼 → 전체 화면 뷰어 모달. 구강 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 정하고(`customAbutmentScanbodyMatch.ts`), 상방 커스텀어벗 STL을 디자인해(`customAbutmentStlDesign.ts`) 스캔 치아 데이터 위에 표시)
   - `src/shared/practice/customAbutmentScanbodyMatch.ts` (한 악궁 치아를 함께 배정 `detectAndMatchScanbodiesOnJaw` — 같은 사분면은 치아 번호 순서 = 악궁 원심 순서)
   - `src/shared/practice/customAbutmentStlDesign.ts` (추적관리 커스텀어벗 실측 266건 치종별 중앙값 템플릿 → 잇몸·인접치·대합치로 보정. 스크류 채널은 `meshUnion.ts` `subtractTriangleSoups`로 뺀다)
+    - 규칙: 예상 크라운은 인접치와 접촉면(`crownContactMm`)만 겹친다. 마진·커프는 인접 크라운 중간면에서 0.5mm 띄운다. 포스트는 면당 `postTaperDeg`(기본 2.5°) 직선 테이퍼이고 언더컷이 없다. 마진은 공구 R(`marginFilletRadiusMm` 0.5~0.8) 오목 필렛, 커프는 `CuffBlend.js` 방식(완만히 시작해 마진 쪽으로 플레어). 포스트 최정점–대합치는 `occlusalClearanceMm`(기본 1.25)이다. 삽입축은 대합치 중심 쪽(`axisToOpposing`)으로 기울이되 `axisMaxDeg`와 편측 한도로 막는다. 대합치를 못 찾으면 악궁 기준이다.
+  - `src/shared/practice/customAbutmentDesignParams.ts` (디자인 파라미터 SSOT: 기본값·범위. 백엔드 `customAbutmentDesignChat.controller.js` `PARAM_SPECS`와 범위를 같이 고친다)
+  - `src/shared/practice/customAbutmentDesignCache.ts` (IndexedDB에 정렬 스캔 좌표·디자인 메시·대화를 저장해 모달을 다시 열면 재계산 없이 보여준다. 디자인 로직이 바뀌면 `CUSTOM_ABUTMENT_DESIGN_VERSION`을 올린다. 브라우저별 저장이다)
+  - 디자인 모달 AI 대화: `POST /api/ai/custom-abutment-design-chat`(Gemini `gemini-2.5-flash`)이 파라미터 변경만 돌려주고, 프론트가 해당 치아를 다시 디자인한다.
 - 관리자 작업영역 가로: `AdminPageShell`은 `max-w-none`(레이아웃 여백 안의 전폭). 목록·표·허브에 `max-w-7xl`을 다시 두지 않는다. 세그먼트 탭은 문구 너비. 재무 「요금」은 수가·분배·요율이고, 사이드바 「설정」은 계정·사업자·임직원·알림이다.
 - 관리자 사용자/사업자
   - `src/pages/admin/users/AdminUserManagement.tsx`

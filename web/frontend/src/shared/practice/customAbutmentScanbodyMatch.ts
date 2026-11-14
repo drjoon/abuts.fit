@@ -73,6 +73,8 @@ export type MatchedScanbodyFixture = {
   connectionSpec: CustomAbutmentConnectionSpec;
   archOcclusalDir: Vec3;
   labialDir: Vec3;
+  /** 교합면 안에서 순측에 수직, 정중선 쪽(근심). */
+  mesialDir: Vec3;
 };
 
 type CanonicalSeedSpec = {
@@ -583,6 +585,20 @@ function computeJawOcclusalAxes(
   if (dot(archAnterior, wantAnt) < 0) archAnterior = scale(archAnterior, -1);
 
   return { occlusalDir: occ, archRight, archAnterior, mean };
+}
+
+/** 교합면 안에서 순측에 수직인 방향 중 정중선(근심) 쪽. */
+function mesialDirOf(slot: {
+  occlusalDir: Vec3;
+  archRight: Vec3;
+  archAnterior: Vec3;
+  labialDir: Vec3;
+  side: 1 | -1;
+}): Vec3 {
+  let mesial = norm(cross(slot.occlusalDir, slot.labialDir));
+  const hint = add(scale(slot.archRight, -slot.side), slot.archAnterior);
+  if (dot(mesial, hint) < 0) mesial = scale(mesial, -1);
+  return mesial;
 }
 
 /** 악궁 말굽 형태에서 FDI 치아의 기준 슬롯 중심과 법선·순측 방향을 찾는다. */
@@ -1104,6 +1120,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       connectionSpec: resolveCustomAbutmentConnectionSpec(toothWork, connections),
       archOcclusalDir: slot.occlusalDir,
       labialDir: slot.labialDir,
+      mesialDir: mesialDirOf(slot),
     };
   };
 
