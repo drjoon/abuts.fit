@@ -59,6 +59,13 @@ const PARALLEL_GROUP_MM = 13;
 const FLAT_TOP_MAX_TILT = Math.tan(12 * DEG);
 /** 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
+/** 크라운 공간 때문에 깎은 축벽이 아래 원래 벽으로 돌아가는 사선(기공소 샘플 설측 윗벽 8~13°). */
+const POST_CUT_SLOPE = Math.tan(12 * DEG);
+/** 깎더라도 숄더 바로 위에서 더 들이는 양과, 그 위로 안쪽으로 기우는 기울기(숄더 폭 유지). */
+const POST_BASE_KEEP_MM = 0.12;
+const POST_BASE_LEAN = Math.tan(35 * DEG);
+/** 설측 축벽이 모이기 시작하는 높이를 순측보다 이만큼(포스트 높이 비율) 낮춘다. */
+const LINGUAL_CONVERGE_EARLIER = 0.2;
 /** 2.5° 간격(144열) — 6각 헥스 모서리(30°+60°k)가 격자 위에 놓인다. */
 const ANGULAR_COLS = 144;
 const SECTORS = 36;
@@ -75,6 +82,11 @@ const OPP_CELL_MM = 0.5;
 const CONTACT_CLIP_FROM_MM = 2.5;
 /** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
 const GINGIVA_INSET_MM = 0.2;
+/** 순측 마진은 치은연 아래 0.5~1.0mm(목표 0.75). 다른 면도 치은연 위 0.3mm 안으로는 올라가지 않는다. */
+const LABIAL_SUBG_MM = 0.75;
+const LABIAL_SUBG_MIN_MM = 0.5;
+const LABIAL_SUBG_MAX_MM = 1.0;
+const MARGIN_SUBG_MIN_MM = 0.3;
 const MIN_POST_HEIGHT_MM = 4;
 /** 포스트 윗면은 예측 크라운 교합면(인접치 높이)보다 이만큼 낮다. */
 const POST_BELOW_CROWN_MM = 1.5;
@@ -455,6 +467,97 @@ function adjacentOcclusalHeight(
 }
 
 /** 픽스쳐 로컬 Z축을 따르는 닫힌 원뿔대(스크류 채널 cutter). */
+/** 악궁 곡률 때문에 양옆 인접치 순측면을 이은 선보다 이만큼 더 나온다(치종별). */
+const ARCH_LABIAL_BULGE_MM: Record<ToothKind, number> = {
+  incisor: 0.35,
+  canine: 0.5,
+  premolar: 0.25,
+  molar: 0.2,
+};
+const ADJ_LABIAL_BAND_MM = 2.5;
+/** 가상 크라운 안으로 넣으려고 포스트 윗면을 설측으로 옮기는 최대량. */
+const AXIS_LINGUAL_SHIFT_MAX_MM = 2;
+const ADJ_LABIAL_BIN_MM = 1;
+
+/**
+ * 양옆 인접 자연치 순측면(접촉점 쪽 띠의 순측 끝)을 이은 선. 픽스쳐 높이 z → 순측 방향(labXY) 한계.
+ * 정상 위치의 가상 크라운은 이보다 순측으로 나오지 않는다. 자연치가 없으면 null.
+ */
+function adjacentLabialLimit(
+  pts: Float32Array,
+  o: {
+    labXY: Vec3;
+    ownRadius: number;
+    ownHeight: number;
+    reachPos: number;
+    reachNeg: number;
+    zFrom: number;
+    zTo: number;
+    bulgeMm: number;
+  },
+): ((z: number) => number) | null {
+  const bins = Math.max(1, Math.ceil((o.zTo - o.zFrom) / ADJ_LABIAL_BIN_MM));
+  const lx = o.labXY[0];
+  const ly = o.labXY[1];
+  const sides = [
+    { sign: 1, reach: o.reachPos },
+    { sign: -1, reach: o.reachNeg },
+  ].map((s) => ({ ...s, buckets: Array.from({ length: bins }, () => [] as number[]), tall: 0 }));
+  for (let i = 0; i < pts.length; i += 3) {
+    const x = pts[i]!;
+    const y = pts[i + 1]!;
+    const z = pts[i + 2]!;
+    if (z < o.zFrom || z >= o.zTo) continue;
+    if (Math.hypot(x, y) < o.ownRadius + 0.4 && z < o.ownHeight + 1) continue;
+    const u = x * lx + y * ly;
+    const v = -x * ly + y * lx;
+    const b = Math.floor((z - o.zFrom) / ADJ_LABIAL_BIN_MM);
+    for (const s of sides) {
+      if (!Number.isFinite(s.reach)) continue;
+      const sv = v * s.sign;
+      if (sv < s.reach || sv > s.reach + ADJ_LABIAL_BAND_MM) continue;
+      s.buckets[b]!.push(u);
+      if (z > o.zFrom + 4) s.tall += 1;
+    }
+  }
+  const perSide = sides.map((s) =>
+    s.tall < 10
+      ? null
+      : s.buckets.map((list) => {
+          if (list.length < 6) return Number.NaN;
+          list.sort((a, c) => a - c);
+          return list[Math.floor(list.length * 0.95)]!;
+        }),
+  );
+  const [pos, neg] = perSide;
+  if (!pos && !neg) return null;
+  const vp = o.reachPos + ADJ_LABIAL_BAND_MM / 2;
+  const vn = o.reachNeg + ADJ_LABIAL_BAND_MM / 2;
+  const line = Array.from({ length: bins }, (_, b) => {
+    const a = pos?.[b] ?? Number.NaN;
+    const c = neg?.[b] ?? Number.NaN;
+    if (Number.isFinite(a) && Number.isFinite(c)) return (a * vn + c * vp) / (vp + vn);
+    return Number.isFinite(a) ? a : c;
+  });
+  if (!line.some(Number.isFinite)) return null;
+  for (let b = 0; b < bins; b += 1) {
+    if (Number.isFinite(line[b]!)) continue;
+    let best = Number.NaN;
+    for (let d = 1; d < bins && !Number.isFinite(best); d += 1) {
+      if (b - d >= 0 && Number.isFinite(line[b - d]!)) best = line[b - d]!;
+      else if (b + d < bins && Number.isFinite(line[b + d]!)) best = line[b + d]!;
+    }
+    line[b] = best;
+  }
+  return (z: number) => {
+    const f = clamp((z - o.zFrom) / ADJ_LABIAL_BIN_MM - 0.5, 0, bins - 1);
+    const i = Math.min(bins - 2, Math.floor(f));
+    if (bins === 1) return line[0]! + o.bulgeMm;
+    const t = f - Math.max(0, i);
+    return line[Math.max(0, i)]! * (1 - t) + line[Math.max(0, i) + 1]! * t + o.bulgeMm;
+  };
+}
+
 function frustumSoup(r0: number, r1: number, z0: number, z1: number, segments = 64): Float32Array {
   const out = new Float32Array(segments * 4 * 9);
   let o = 0;
@@ -811,6 +914,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // ── 1) 픽스쳐 둘레 치은연 높이 → 스캘럽 마진 높이
   const rawGingivaZ = new Array<number>(SECTORS).fill(Number.NaN);
   const gingivaBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+  // 스캔바디에 닿는 치은연(바로 옆 0.35~1.2mm 고리). 순측 마진 깊이의 기준이다.
+  const crestBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
   for (let i = 0; i < jawLocalPts.length; i += 3) {
     const x = jawLocalPts[i]!;
     const y = jawLocalPts[i + 1]!;
@@ -820,7 +925,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (r < sbR + 0.35 || r > sbR + 2.4) continue;
     const b = Math.min(SECTORS - 1, Math.floor((wrapAngle(Math.atan2(y, x)) / (Math.PI * 2)) * SECTORS));
     gingivaBuckets[b]!.push(z);
+    if (r <= sbR + 1.2) crestBuckets[b]!.push(z);
   }
+  const crestZ = crestBuckets.map((list) => {
+    if (list.length < 3) return Number.NaN;
+    list.sort((a, c) => a - c);
+    return list[Math.floor(list.length * 0.75)]!;
+  });
   const validGingiva: number[] = [];
   for (let b = 0; b < SECTORS; b += 1) {
     const list = gingivaBuckets[b]!;
@@ -864,14 +975,36 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 피니시라인 = 둘레 전체 치은연 아래 marginDepth(기본 0.5mm).
   const minMarginZ = Math.max(1.5, coneTopZ + 1.1);
   const maxMarginZ = Math.min(8.0, medianGingivaZ + 1.4);
-  const marginTargetSamples = rawGingivaZ.map((gz) =>
-    clamp(gz - params.marginDepthMm, minMarginZ, maxMarginZ),
+  // 순측(±70°)은 치은연에서 LABIAL_SUBG_MM 아래(최소 LABIAL_SUBG_MIN_MM). 순측 잇몸이 다른 면보다
+  // 몇 mm 낮아도 중앙값 쪽으로 끌어올리지 않는다. 고른 뒤 어느 면도 치은연 위로 나오지 않게 깎는다.
+  const labialWeight = (b: number) => {
+    const phi = ((b + 0.5) / SECTORS) * Math.PI * 2 - labialAngleFix;
+    return smootherstep(clamp((Math.cos(phi) - 0.34) / 0.3, 0, 1));
+  };
+  const marginTargetSamples = rawGingivaZ.map((gz, b) => {
+    const base = gz - params.marginDepthMm;
+    const crest = crestZ[b]!;
+    const wl = labialWeight(b);
+    const want = Number.isFinite(crest) && wl > 0 ? base + (crest - LABIAL_SUBG_MM - base) * wl : base;
+    return clamp(want, minMarginZ, maxMarginZ);
+  });
+  const marginCapZ = rawGingivaZ.map((gz, b) => {
+    const crest = crestZ[b]!;
+    const wl = labialWeight(b);
+    if (!Number.isFinite(crest)) return Infinity;
+    if (wl > 0.5) return Math.max(minMarginZ, crest - LABIAL_SUBG_MIN_MM);
+    return Math.max(minMarginZ, Math.min(gz, crest) - MARGIN_SUBG_MIN_MM);
+  });
+  const marginFloorZ = crestZ.map((crest, b) =>
+    Number.isFinite(crest) && labialWeight(b) > 0.5 ? crest - LABIAL_SUBG_MAX_MM : -Infinity,
   );
-  const smoothMarginZ = lowPassCircular(marginTargetSamples, 2).map((z) =>
-    clamp(z, minMarginZ, maxMarginZ),
-  );
+  const smoothMarginZ = smoothCircular(
+    smoothCircularReduce(lowPassCircular(marginTargetSamples, 2), marginCapZ, 2, 3).map((z, b) =>
+      Math.min(marginCapZ[b]!, Math.max(marginFloorZ[b]!, z)),
+    ),
+    2,
+  ).map((z) => clamp(z, minMarginZ, maxMarginZ));
   const meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
-
   // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 넓게 벌어진 잇몸 터널은 마진을 키워 지지한다.
   const tissueBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
   // 치은정 부근(마진 위 0.3~1.3mm) 잇몸 안쪽 면. 마진은 이보다 GINGIVA_INSET_MM 안에 둬서 잇몸을 누르지 않는다.
@@ -973,6 +1106,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const one = Number.isFinite(reachPos) ? reachPos : reachNeg;
     mdScale = clamp((one * 2) / tpl.naturalMdMm, 0.95, 1.06);
   }
+  const labialLimit = adjacentLabialLimit(jawLocalPts, {
+    labXY,
+    ownRadius: sbR,
+    ownHeight: sbH,
+    reachPos: Number.isFinite(reachPos) ? reachPos : (tpl.naturalMdMm / 2) * mdScale,
+    reachNeg: Number.isFinite(reachNeg) ? reachNeg : (tpl.naturalMdMm / 2) * mdScale,
+    zFrom: meanMarginZ + 0.5,
+    zTo: meanMarginZ + 11,
+    bulgeMm: ARCH_LABIAL_BULGE_MM[tpl.kind],
+  });
+  /** 가상 크라운 순측 한계(인접치 순측선)까지 dir 방향 반경. 순측을 향하지 않는 열은 제한 없음. */
+  const labialLimitAt = (dir: Vec3, h: number, axis: Vec3 = frame.w) => {
+    if (!labialLimit) return Infinity;
+    const dl = dir[0] * labXY[0] + dir[1] * labXY[1];
+    if (dl < 0.25) return Infinity;
+    const base = add3(c0, scale3(axis, h));
+    const ub = base[0] * labXY[0] + base[1] * labXY[1];
+    return (labialLimit(base[2]) - ub) / dl;
+  };
   const blScale = 1 + (mdScale - 1) * 0.5;
   const marginA = (tpl.marginBlMm / 2) * blScale * params.marginSizeScale;
   const marginB = (tpl.marginMdMm / 2) * mdScale * params.marginSizeScale;
@@ -1037,6 +1189,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const k = allow / off;
         w = norm3([(w[0] / w[2]) * k, (w[1] / w[2]) * k, 1]);
       }
+    }
+  }
+  // 포스트가 가상 크라운(인접치 순측선) 밖으로 나가면 크라운 두께만큼 들어오도록 윗면을 설측으로 옮긴다.
+  if (labialLimit && !mode.groupAxisWorld) {
+    const H = tpl.postHeightMm;
+    const hRef = H * 0.75;
+    const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.3;
+    let moved = 0;
+    for (let iter = 0; iter < 3 && moved < AXIS_LINGUAL_SHIFT_MAX_MM; iter += 1) {
+      const fr = insertionFrame(w, labXY);
+      const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
+      if (!Number.isFinite(lim)) break;
+      const need = Math.min(postLab + params.minCrownThicknessMm - lim, AXIS_LINGUAL_SHIFT_MAX_MM - moved);
+      if (need <= 0.05) break;
+      w = capTilt(norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))), tiltCapRad);
+      moved += need;
     }
   }
   const frame = insertionFrame(w, labXY);
@@ -1195,6 +1363,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const hBase = h0 + chamfer.height;
     const topA = (cLab >= 0 ? tpl.topLabialHalfMm : tpl.topLingualHalfMm) * blScale * params.postWidthScale;
     const rTpl = superellipseRadius(topA, topB, phi);
+    const linW = smootherstep(clamp((-cLab - 0.2) / 0.6, 0, 1));
     const plan: ColumnPlan = {
       marginPt,
       dir,
@@ -1204,13 +1373,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       hTop,
       tipU: tu,
       tipV: tv,
-      // 곧은 테이퍼 → 윗부분에서 템플릿 윗면 크기로 볼록하게 좁힌다(기울기가 0부터 서서히 커져 턱이 없다).
+      // 곧은 테이퍼 → 윗부분에서 템플릿 윗면 크기로 좁힌다. 순측은 볼록하게(기울기가 0부터 서서히),
+      // 설측은 기공소 샘플처럼 수직으로 올라가다 사선으로 곧게 모인다(가운데가 불룩하지 않다).
       postDesired: (h: number) => {
         const straight =
           rBase0 * Math.min(1, params.postWidthScale) - taperSlope * Math.max(0, h - hBase);
         const span = Math.max(0.5, plan.hTop - topRoundMm - hBase);
-        const u = clamp(((h - hBase) / span - convergeFrom) / (1 - convergeFrom), 0, 1);
-        return straight - Math.max(0, straight - rTpl) * u * u;
+        const from = convergeFrom - LINGUAL_CONVERGE_EARLIER * linW;
+        const u = clamp(((h - hBase) / span - from) / (1 - from), 0, 1);
+        return straight - Math.max(0, straight - rTpl) * u ** (2 - linW);
       },
       crownR: [],
       crownH: [],
@@ -1347,7 +1518,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             r = Math.min(r, lim + contact);
           }
         }
-        r = Math.min(r, planeLimitAt(c.dir, h) + contact / 2);
+        r = Math.min(r, planeLimitAt(c.dir, h) + contact / 2, labialLimitAt(c.dir, h));
         c.crownH.push(h);
         c.crownR.push(r);
       }
@@ -1367,7 +1538,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     for (let k = 0; k < CROWN_LEVELS; k += 1) {
       const want = cols.map((c) => c.crownR[k]!);
       const cap = cols.map((c) => {
-        let lim = planeLimitAt(c.dir, c.crownH[k]!) + contact / 2;
+        let lim = Math.min(planeLimitAt(c.dir, c.crownH[k]!) + contact / 2, labialLimitAt(c.dir, c.crownH[k]!));
         if (c.crownH[k]! >= c.h0 + CONTACT_CLIP_FROM_MM) {
           lim = Math.min(lim, scanLimitAt(c.phi, c.crownH[k]!) + contact);
         }
@@ -1419,9 +1590,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         let cap = Infinity;
         let hardCap = Infinity;
         if (h >= c.h0 + hPostBase + 0.3) {
+          // 크라운 벽은 마진에서 0으로 시작해 1.8mm 위에서 제 두께가 된다. 요구 두께도 같이 올린다.
           const crown = crownRadiusAt(c, h);
-          cap = crown - params.minCrownThicknessMm;
-          hardCap = crown - CROWN_THICKNESS_FLOOR_MM;
+          const ramp = smootherstep((h - c.h0) / 1.8);
+          cap = crown - params.minCrownThicknessMm * ramp;
+          hardCap = crown - CROWN_THICKNESS_FLOOR_MM * ramp;
           if (cap < screwFloor) cap = Math.max(cap, Math.min(screwFloor, hardCap));
         }
         hs.push(h);
@@ -1435,9 +1608,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             : screwFloor,
         );
       }
-      // 제한 높이 아래 축벽은 같은 양만큼 안으로 옮긴다(잘록한 허리 없이 곧은 테이퍼).
-      // 그 단면에 언더컷 없음을 걸어 위로 번지는 감소량까지 deficit에 넣는다.
-      for (let k = POST_LEVELS - 1; k >= 0; k -= 1) ds[k] = Math.max(ds[k]!, ds[k + 1]!);
+      // 깎는 곳 아래는 사선(POST_CUT_SLOPE)으로 원래 축벽까지 내려가고, 그 아래는 그대로 수직이다.
+      // 마진 위 숄더가 넓어지지 않는다(기공소 샘플: 숄더 0.3~0.4mm). 언더컷 없음은 아래에서 다시 건다.
+      for (let k = POST_LEVELS - 1; k >= 0; k -= 1) {
+        ds[k] = Math.max(ds[k]!, ds[k + 1]! - POST_CUT_SLOPE * (hs[k + 1]! - hs[k]!));
+      }
+      // 숄더 바로 위는 거의 그대로 두고 POST_BASE_LEAN 기울기로 안쪽으로 들어간다(숄더가 넓어지지 않게).
+      for (let k = 0; k <= POST_LEVELS; k += 1) {
+        ds[k] = Math.min(ds[k]!, POST_BASE_KEEP_MM + POST_BASE_LEAN * (hs[k]! - hs[0]!));
+      }
       const hard = rs.map((w, k) => Math.max(fs[k]!, w - ds[k]!));
       enforcePostProfile(hard, hs);
       for (let k = 0; k <= POST_LEVELS; k += 1) ds[k] = Math.max(0, rs[k]! - hard[k]!);

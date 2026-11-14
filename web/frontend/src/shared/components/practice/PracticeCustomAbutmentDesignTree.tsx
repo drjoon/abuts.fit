@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Cylinder,
   Download,
   Eye,
   EyeOff,
@@ -20,6 +21,42 @@ import { cn } from "@/shared/ui/cn";
 
 const headerBtn =
   "flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground";
+
+/** 스캔바디 표시 토글. 보일 때만 강조한다(기본은 가림). */
+function ScanbodyButton({
+  shown,
+  label,
+  onClick,
+}: {
+  shown: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  const text = `${label} 스캔바디 ${shown ? "가리기" : "보이기"}`;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "relative flex h-6 w-6 shrink-0 items-center justify-center rounded",
+        shown
+          ? "bg-primary/10 text-primary hover:bg-primary/15"
+          : "text-muted-foreground/70 hover:bg-muted hover:text-foreground",
+      )}
+      aria-label={text}
+      aria-pressed={shown}
+      title={text}
+      onClick={onClick}
+    >
+      <Cylinder className="h-3.5 w-3.5" />
+      {shown ? null : (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute h-px w-4 rotate-45 rounded bg-current"
+        />
+      )}
+    </button>
+  );
+}
 
 const AXIS_SOURCE_LABEL: Record<DesignedCustomAbutment["metrics"]["axisSource"], string> = {
   opposing: "대합치 중심",
@@ -43,10 +80,16 @@ export function PracticeCustomAbutmentDesignTree({
   redesigning,
   onToggleVisible,
   onSetAllVisible,
+  shownScanbodies,
+  onToggleScanbody,
+  onSetAllScanbodies,
   onSelect,
   onDownload,
   className,
 }: {
+  shownScanbodies: Record<string, boolean>;
+  onToggleScanbody: (toothNumber: string) => void;
+  onSetAllScanbodies: (shown: boolean) => void;
   items: readonly DesignedCustomAbutment[];
   visibleTeeth: Record<string, boolean>;
   selectedTooth: string | null;
@@ -60,6 +103,7 @@ export function PracticeCustomAbutmentDesignTree({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
   const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
+  const anyScanbody = items.some((it) => shownScanbodies[it.toothNumber]);
 
   return (
     <div
@@ -70,6 +114,11 @@ export function PracticeCustomAbutmentDesignTree({
     >
       <div className="flex items-center gap-0.5 border-b py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground">
         <span className="min-w-0 flex-1 truncate">커스텀어벗 {items.length}</span>
+        <ScanbodyButton
+          shown={anyScanbody}
+          label="모든"
+          onClick={() => onSetAllScanbodies(!anyScanbody)}
+        />
         <button
           type="button"
           className={headerBtn}
@@ -134,6 +183,11 @@ export function PracticeCustomAbutmentDesignTree({
                   #{tooth}
                   {busy ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : null}
                 </button>
+                <ScanbodyButton
+                  shown={Boolean(shownScanbodies[tooth])}
+                  label={`#${tooth}`}
+                  onClick={() => onToggleScanbody(tooth)}
+                />
                 <button
                   type="button"
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"

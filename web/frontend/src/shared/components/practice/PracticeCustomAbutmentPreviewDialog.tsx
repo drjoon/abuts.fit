@@ -30,8 +30,6 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Bot,
-  Eye,
-  EyeOff,
   Loader2,
   Paintbrush,
   RotateCcw,
@@ -102,8 +100,8 @@ import {
   type CustomAbutmentParamKey,
 } from "@/shared/practice/customAbutmentDesignParams";
 import {
-  buildScanGeometryWithoutScanbodies,
   detectAndMatchScanbodiesOnJaw,
+  splitScanByScanbodies,
   fixturePoseToMatrix4,
   loadCandidateScanbodyModels,
   parseFdiTooth,
@@ -434,7 +432,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [restoredFromCache, setRestoredFromCache] = useState(false);
   const [colorMapping, setColorMapping] = useState(true);
   const [centerGuide, setCenterGuide] = useState<CenterGuideMode>("off");
-  const [hideScanbodyOnScan, setHideScanbodyOnScan] = useState(true);
+  /** 치아별 스캔바디 표시. 기본은 가린다. */
+  const [shownScanbodies, setShownScanbodies] = useState<Record<string, boolean>>({});
   const [showPredictedCrown, setShowPredictedCrown] = useState(false);
   const [showFixtureAnalog, setShowFixtureAnalog] = useState(true);
   const [showFinishLine, setShowFinishLine] = useState(true);
@@ -497,14 +496,14 @@ export function PracticeCustomAbutmentPreviewDialog({
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const jawMeshesRef = useRef<{
-    upperRaw: THREE.Mesh[];
+    upperScanbody: THREE.Mesh[];
     upperTrimmed: THREE.Mesh[];
-    lowerRaw: THREE.Mesh[];
+    lowerScanbody: THREE.Mesh[];
     lowerTrimmed: THREE.Mesh[];
   }>({
-    upperRaw: [],
+    upperScanbody: [],
     upperTrimmed: [],
-    lowerRaw: [],
+    lowerScanbody: [],
     lowerTrimmed: [],
   });
   const abutmentMeshesRef = useRef(new Map<string, THREE.Mesh>());
@@ -650,9 +649,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       for (const m of list) disposeMesh(m);
     }
     jawMeshesRef.current = {
-      upperRaw: [],
+      upperScanbody: [],
       upperTrimmed: [],
-      lowerRaw: [],
+      lowerScanbody: [],
       lowerTrimmed: [],
     };
     for (const tooth of [...abutmentMeshesRef.current.keys()]) removeDesignFromScene(tooth);
@@ -750,9 +749,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     const abutMeshes = [...abutmentMeshesRef.current.values()].filter((m) => m.visible);
     const jawMeshes = [
       ...jawMeshesRef.current.upperTrimmed,
-      ...jawMeshesRef.current.upperRaw,
+      ...jawMeshesRef.current.upperScanbody,
       ...jawMeshesRef.current.lowerTrimmed,
-      ...jawMeshesRef.current.lowerRaw,
+      ...jawMeshesRef.current.lowerScanbody,
     ].filter((m) => m.visible);
     const targets = jawMeshes.length > 0 ? [...jawMeshes, ...abutMeshes] : abutMeshes;
     if (targets.length === 0) return;
@@ -808,9 +807,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   const fitCurrentView = useCallback(() => {
     const targets = [
       ...jawMeshesRef.current.upperTrimmed,
-      ...jawMeshesRef.current.upperRaw,
+      ...jawMeshesRef.current.upperScanbody,
       ...jawMeshesRef.current.lowerTrimmed,
-      ...jawMeshesRef.current.lowerRaw,
+      ...jawMeshesRef.current.lowerScanbody,
       ...abutmentMeshesRef.current.values(),
     ].filter((m) => m.visible);
     if (targets.length === 0) return;
@@ -1039,9 +1038,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         getTargets: () =>
           [
             ...jawMeshesRef.current.upperTrimmed,
-            ...jawMeshesRef.current.upperRaw,
+            ...jawMeshesRef.current.upperScanbody,
             ...jawMeshesRef.current.lowerTrimmed,
-            ...jawMeshesRef.current.lowerRaw,
+            ...jawMeshesRef.current.lowerScanbody,
             ...abutmentMeshesRef.current.values(),
           ].filter((mesh) => mesh.visible),
         listeners: paintListeners,
@@ -1490,6 +1489,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           mat.side = THREE.DoubleSide;
           const mesh = new THREE.Mesh(geo, mat);
           if (!shareTex && tex) mesh.userData.previewTexture = tex;
+          mesh.userData.scanTexture = tex;
           mesh.userData.scanColorCapable = isScanColorPreview(geo, tex);
           syncBackFaceShell(mesh);
           scene.add(mesh);
@@ -1500,11 +1500,15 @@ export function PracticeCustomAbutmentPreviewDialog({
           builtAbutments.filter((d) => d.jaw === jaw).map((d) => d.fixture);
         for (const scan of jawScans) {
           const jaw = scan.role as "upper" | "lower";
-          const rawMesh = makeScanMesh(scan.geometry, scan.texture, false);
-          const trimmedGeo = buildScanGeometryWithoutScanbodies(scan.geometry, fixturesOf(jaw));
-          const trimmedMesh = makeScanMesh(trimmedGeo, scan.texture, true);
-          jawMeshesRef.current[jaw === "upper" ? "upperRaw" : "lowerRaw"].push(rawMesh);
-          jawMeshesRef.current[jaw === "upper" ? "upperTrimmed" : "lowerTrimmed"].push(trimmedMesh);
+          if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
+          const split = splitScanByScanbodies(scan.geometry, fixturesOf(jaw));
+          const restMesh = makeScanMesh(split.rest, scan.texture, false);
+          jawMeshesRef.current[jaw === "upper" ? "upperTrimmed" : "lowerTrimmed"].push(restMesh);
+          for (const [tooth, geo] of split.scanbodies) {
+            const sbMesh = makeScanMesh(geo, scan.texture, true);
+            sbMesh.userData.scanbodyTooth = tooth;
+            jawMeshesRef.current[jaw === "upper" ? "upperScanbody" : "lowerScanbody"].push(sbMesh);
+          }
         }
 
         const nextVisibleTeeth: Record<string, boolean> = {};
@@ -1524,6 +1528,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         designedListRef.current = builtAbutments;
 
         setVisibleTeeth(nextVisibleTeeth);
+        setShownScanbodies({});
         setAvailableJaws({ upper: upperScans.length > 0, lower: lowerScans.length > 0 });
         setVisibleJaws({ upper: upperScans.length > 0, lower: lowerScans.length > 0 });
         setDesignedList(builtAbutments);
@@ -1583,8 +1588,8 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const syncJawRole = (
       role: "upper" | "lower",
-      rawList: THREE.Mesh[],
-      trimmedList: THREE.Mesh[],
+      scanbodyList: THREE.Mesh[],
+      restList: THREE.Mesh[],
     ) => {
       const roleVisible = visibleJaws[role];
       const isOpposing =
@@ -1598,7 +1603,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         mesh.visible = show;
         const mat = mesh.material as THREE.MeshStandardMaterial;
         const tex =
-          (mesh.userData.previewTexture as THREE.Texture | undefined) ?? mat.map ?? null;
+          (mesh.userData.scanTexture as THREE.Texture | null | undefined) ??
+          (mesh.userData.previewTexture as THREE.Texture | undefined) ??
+          mat.map ??
+          null;
         const hasVertexColors = Boolean(mesh.geometry.getAttribute("color"));
         if (colorMapping && (tex || hasVertexColors)) {
           mat.map = tex;
@@ -1622,12 +1630,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         syncBackFaceShell(mesh);
       };
 
-      for (const m of rawList) applyMat(m, roleVisible && !hideScanbodyOnScan);
-      for (const m of trimmedList) applyMat(m, roleVisible && hideScanbodyOnScan);
+      for (const m of scanbodyList) {
+        applyMat(m, roleVisible && shownScanbodies[String(m.userData.scanbodyTooth)] === true);
+      }
+      for (const m of restList) applyMat(m, roleVisible);
     };
 
-    syncJawRole("upper", jawMeshesRef.current.upperRaw, jawMeshesRef.current.upperTrimmed);
-    syncJawRole("lower", jawMeshesRef.current.lowerRaw, jawMeshesRef.current.lowerTrimmed);
+    syncJawRole("upper", jawMeshesRef.current.upperScanbody, jawMeshesRef.current.upperTrimmed);
+    syncJawRole("lower", jawMeshesRef.current.lowerScanbody, jawMeshesRef.current.lowerTrimmed);
 
     for (const [tooth, mesh] of abutmentMeshesRef.current.entries()) {
       mesh.visible = visibleTeeth[tooth] !== false;
@@ -1646,7 +1656,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [
     colorMapping,
     designedList,
-    hideScanbodyOnScan,
+    shownScanbodies,
     opposingTransparency,
     prepJaws,
     selectedTooth,
@@ -2192,13 +2202,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                   </div>
                   <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
                     <ToolbarToggle
-                      active={hideScanbodyOnScan}
-                      icon={hideScanbodyOnScan ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      label="스캔바디 가리기"
-                      tip="스캔에 찍힌 스캔바디를 가립니다."
-                      onClick={() => setHideScanbodyOnScan((v) => !v)}
-                    />
-                    <ToolbarToggle
                       active={showPredictedCrown}
                       label="예측 크라운"
                       tip="컷백 기준인 예측 크라운을 반투명으로 겹칩니다."
@@ -2244,6 +2247,15 @@ export function PracticeCustomAbutmentPreviewDialog({
                 onSetAllVisible={(visible) =>
                   setVisibleTeeth(
                     Object.fromEntries(designedList.map((d) => [d.toothNumber, visible])),
+                  )
+                }
+                shownScanbodies={shownScanbodies}
+                onToggleScanbody={(toothNumber) =>
+                  setShownScanbodies((prev) => ({ ...prev, [toothNumber]: !prev[toothNumber] }))
+                }
+                onSetAllScanbodies={(shown) =>
+                  setShownScanbodies(
+                    Object.fromEntries(designedList.map((d) => [d.toothNumber, shown])),
                   )
                 }
                 onSelect={(toothNumber) => {

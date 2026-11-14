@@ -137,6 +137,20 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
         className,
       )}
     >
+      <div className="flex items-center gap-0.5">
+        <CubeButton label="기본 시점" onClick={onHome}>
+          <Home className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="화면에 맞추기" onClick={onFit}>
+          <Maximize2 className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="왼쪽으로 90° 돌리기" onClick={() => onRoll(-1)}>
+          <RotateCcw className="h-3.5 w-3.5" />
+        </CubeButton>
+        <CubeButton label="오른쪽으로 90° 돌리기" onClick={() => onRoll(1)}>
+          <RotateCw className="h-3.5 w-3.5" />
+        </CubeButton>
+      </div>
       <div
         className="relative grid cursor-grab place-items-center active:cursor-grabbing"
         style={{ width: `${CUBE_REM + 1.5}rem`, height: `${CUBE_REM + 1.5}rem`, perspective: "22rem" }}
@@ -210,20 +224,6 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
             );
           })}
         </div>
-      </div>
-      <div className="flex items-center gap-0.5">
-        <CubeButton label="기본 시점" onClick={onHome}>
-          <Home className="h-3.5 w-3.5" />
-        </CubeButton>
-        <CubeButton label="화면에 맞추기" onClick={onFit}>
-          <Maximize2 className="h-3.5 w-3.5" />
-        </CubeButton>
-        <CubeButton label="왼쪽으로 90° 돌리기" onClick={() => onRoll(-1)}>
-          <RotateCcw className="h-3.5 w-3.5" />
-        </CubeButton>
-        <CubeButton label="오른쪽으로 90° 돌리기" onClick={() => onRoll(1)}>
-          <RotateCw className="h-3.5 w-3.5" />
-        </CubeButton>
       </div>
     </div>
   );

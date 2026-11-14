@@ -1255,69 +1255,65 @@ export function cropScanPointsInFixtureFrame(
 }
 
 /**
- * 스캔 메시에서 잇몸 위로 솟은 스캔바디 기둥 면만 가려 커스텀어벗과 겹치지 않게 한다.
- * 원본 BufferGeometry는 건드리지 않고 새 지오메트리를 돌려준다.
+ * 스캔을 잇몸 위로 솟은 스캔바디 기둥(치아별 조각)과 나머지로 나눈다. 원본 지오메트리는 건드리지 않는다.
+ * 나머지 + 보이려는 치아 조각 = 그 치아만 스캔바디를 보인다. 조각은 같은 정점 버퍼를 쓰고 인덱스만 다르다.
  */
-export function buildScanGeometryWithoutScanbodies(
+export function splitScanByScanbodies(
   source: THREE.BufferGeometry,
   fixtures: readonly MatchedScanbodyFixture[],
-): THREE.BufferGeometry {
-  if (fixtures.length === 0) return source.clone();
+): { rest: THREE.BufferGeometry; scanbodies: Map<string, THREE.BufferGeometry> } {
+  const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
-  if (!pos || pos.count < 3) return source.clone();
-
-  const trimZones = fixtures.map((f) => ({
+  if (fixtures.length === 0 || !pos || pos.count < 3) return { rest: source.clone(), scanbodies };
+  const zones = fixtures.map((f) => ({
+    tooth: f.toothNumber,
     origin: f.fixturePose.origin,
     axis: f.fixturePose.axis,
-    maxR: f.scanbodyRadiusMm + 0.28,
+    maxR2: (f.scanbodyRadiusMm + 0.28) ** 2,
     minZ: Math.max(0.8, f.gingivaFloorMm + 0.15),
     maxZ: f.scanbodyHeightMm + 1.2,
   }));
-
-  const isInsideScanbody = (vi: number) => {
-    const x = pos.getX(vi);
-    const y = pos.getY(vi);
-    const z = pos.getZ(vi);
-    for (const zone of trimZones) {
-      const dx = x - zone.origin[0];
-      const dy = y - zone.origin[1];
-      const dz = z - zone.origin[2];
-      const hz = dx * zone.axis[0] + dy * zone.axis[1] + dz * zone.axis[2];
+  const zoneOf = (vi: number) => {
+    const dx = pos.getX(vi);
+    const dy = pos.getY(vi);
+    const dz = pos.getZ(vi);
+    for (let k = 0; k < zones.length; k += 1) {
+      const zone = zones[k]!;
+      const rx0 = dx - zone.origin[0];
+      const ry0 = dy - zone.origin[1];
+      const rz0 = dz - zone.origin[2];
+      const hz = rx0 * zone.axis[0] + ry0 * zone.axis[1] + rz0 * zone.axis[2];
       if (hz < zone.minZ || hz > zone.maxZ) continue;
-      const rx = dx - zone.axis[0] * hz;
-      const ry = dy - zone.axis[1] * hz;
-      const rz = dz - zone.axis[2] * hz;
-      if (rx * rx + ry * ry + rz * rz <= zone.maxR * zone.maxR) return true;
+      const rx = rx0 - zone.axis[0] * hz;
+      const ry = ry0 - zone.axis[1] * hz;
+      const rz = rz0 - zone.axis[2] * hz;
+      if (rx * rx + ry * ry + rz * rz <= zone.maxR2) return k;
     }
-    return false;
+    return -1;
   };
-
-  const cloned = source.clone();
-  const index = cloned.getIndex();
-  if (index) {
-    const kept: number[] = [];
-    for (let t = 0; t + 2 < index.count; t += 3) {
-      const a = index.getX(t);
-      const b = index.getX(t + 1);
-      const c = index.getX(t + 2);
-      if (isInsideScanbody(a) && isInsideScanbody(b) && isInsideScanbody(c)) continue;
-      kept.push(a, b, c);
-    }
-    cloned.setIndex(kept);
-    return cloned;
-  }
-
-  const triCount = Math.floor(pos.count / 3);
-  const keepIndices: number[] = [];
+  const index = source.getIndex();
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  const vert = (t: number, c: number) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+  const rest: number[] = [];
+  const parts: number[][] = zones.map(() => []);
   for (let t = 0; t < triCount; t += 1) {
-    const a = t * 3;
-    const b = a + 1;
-    const c = a + 2;
-    if (isInsideScanbody(a) && isInsideScanbody(b) && isInsideScanbody(c)) continue;
-    keepIndices.push(a, b, c);
+    const a = vert(t, 0);
+    const b = vert(t, 1);
+    const c = vert(t, 2);
+    const za = zoneOf(a);
+    if (za >= 0 && zoneOf(b) === za && zoneOf(c) === za) parts[za]!.push(a, b, c);
+    else rest.push(a, b, c);
   }
-  cloned.setIndex(keepIndices);
-  return cloned;
+  const withIndex = (ids: number[]) => {
+    const g = new THREE.BufferGeometry();
+    for (const [name, attr] of Object.entries(source.attributes)) g.setAttribute(name, attr);
+    g.setIndex(ids);
+    return g;
+  };
+  zones.forEach((zone, k) => {
+    if (parts[k]!.length > 0) scanbodies.set(zone.tooth, withIndex(parts[k]!));
+  });
+  return { rest: withIndex(rest), scanbodies };
 }
 
 export { basisRotation, type Mat3 };
