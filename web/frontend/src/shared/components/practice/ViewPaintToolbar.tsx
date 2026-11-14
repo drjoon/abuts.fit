@@ -8,10 +8,13 @@
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   Circle,
   CircleDot,
   ImageDown,
   MoveUpRight,
+  Paintbrush,
   Paperclip,
   Pencil,
   Square,
@@ -224,6 +227,7 @@ export function ViewPaintToolbar({
   onReorderChatFiles,
   onSendToAi,
   twoRow,
+  collapsible,
   className,
 }: {
   paint: ViewPaintState;
@@ -241,9 +245,11 @@ export function ViewPaintToolbar({
   onSendToAi?: () => void;
   /** 되돌리기부터 아래 줄. 중앙 하단 페인트 막대. */
   twoRow?: boolean;
+  /** 항상 하단에 떠 있는 접기/펼치기 패널. 접히면(`!paintOn`) 헤더만 보이고 화면 조작은 그대로다. */
+  collapsible?: boolean;
   className?: string;
 }) {
-  const { paintRef, tool, setTool, color, setColor, width, setWidth, count, setPaintOn } = paint;
+  const { paintRef, paintOn, tool, setTool, color, setColor, width, setWidth, count, setPaintOn } = paint;
   const [shots, setShots] = useState<PaintShot[]>([]);
   const shotsRef = useRef(shots);
   shotsRef.current = shots;
@@ -393,18 +399,78 @@ export function ViewPaintToolbar({
           </div>
         </>
       ) : null}
-      <PaintDivider />
-      <button
-        type="button"
-        className={toolBtn}
-        aria-label="페인트 끄기"
-        title="페인트 끄기 (Esc) — 그린 표시는 남습니다"
-        onClick={() => setPaintOn(false)}
-      >
-        <X />
-      </button>
+      {collapsible ? null : (
+        <>
+          <PaintDivider />
+          <button
+            type="button"
+            className={toolBtn}
+            aria-label="페인트 끄기"
+            title="페인트 끄기 (Esc) — 그린 표시는 남습니다"
+            onClick={() => setPaintOn(false)}
+          >
+            <X />
+          </button>
+        </>
+      )}
     </>
   );
+
+  if (collapsible) {
+    return (
+      <div className={cn("pointer-events-none flex w-full max-w-[calc(100%-1.5rem)] flex-col items-center gap-2", className)}>
+        {shots.length > 0 ? (
+          <PaintShotStrip
+            shots={shots}
+            onShots={setShots}
+            onRemove={removeShot}
+            onCommitOrder={(next) => onReorderChatFiles?.(next.map((shot) => shot.file))}
+          />
+        ) : null}
+        <div
+          role="region"
+          aria-label="페인트 패널"
+          className="pointer-events-auto flex max-w-full flex-col rounded-lg border bg-background/95 shadow-sm backdrop-blur"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-1.5 py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground",
+              paintOn ? "border-b" : null,
+            )}
+          >
+            <Paintbrush className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <button
+              type="button"
+              className="min-w-0 flex-1 truncate text-left"
+              onClick={() => setPaintOn((on) => !on)}
+            >
+              {count > 0 ? `페인트 ${count}` : "페인트"}
+            </button>
+            <button
+              type="button"
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label={paintOn ? "페인트 접기" : "페인트 펼치기"}
+              title={paintOn ? "페인트 접기 (Esc) — 그린 표시는 남습니다" : "페인트 펼치기"}
+              aria-expanded={paintOn}
+              onClick={() => setPaintOn((on) => !on)}
+            >
+              {paintOn ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          {paintOn ? (
+            <div className={cn("flex max-w-full items-center justify-center p-1", twoRow ? "flex-col gap-1" : "flex-wrap gap-y-1")}>
+              <div className="flex flex-wrap items-center justify-center">{drawRow}</div>
+              <div className="flex flex-wrap items-center justify-center">
+                {twoRow ? null : <PaintDivider />}
+                {actionRow}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("pointer-events-none flex w-full max-w-[calc(100%-1.5rem)] flex-col items-center gap-2", className)}>

@@ -33,7 +33,6 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Loader2,
-  Paintbrush,
   Send,
   Settings,
   Sparkles,
@@ -540,7 +539,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   transferIdRef.current = transferIdParam;
   /** 디자인 배치 후 맞춤·복원이 끝난 뒤에만 카메라 뷰를 저장한다. */
   const viewReadyRef = useRef(false);
-  const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: false });
+  const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: true });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const paintListenersRef = useRef(new Set<() => void>());
   /** 「AI에게」로 잡아 둔 화면(표시 포함). 다음 메시지와 함께 보낸다. */
@@ -2614,15 +2613,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                       onClick={() => setShowFixtureAnalog((v) => !v)}
                     />
                   </div>
-                  <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
-                    <ToolbarToggle
-                      active={paint.paintOn}
-                      icon={<Paintbrush className="h-3.5 w-3.5" />}
-                      label={!paint.paintOn && paint.count > 0 ? `페인트 ${paint.count}` : "페인트"}
-                      tip="왼쪽은 그리기, 오른쪽은 화면 회전, 휠 버튼은 이동입니다. 「AI에게」로 대화에 첨부합니다."
-                      onClick={() => paint.setPaintOn((on) => !on)}
-                    />
-                  </div>
                 </div>
               </div>
             ) : null}
@@ -2705,11 +2695,11 @@ export function PracticeCustomAbutmentPreviewDialog({
               enabled={ready && paint.paintOn}
               space={paintSpace}
             />
-            {ready && paint.paintOn ? (
+            {ready ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
                 <ViewPaintToolbar
                   paint={paint}
-                  twoRow
+                  collapsible
                   onSaveImage={saveViewImage}
                   onSendToAi={attachSketchToChat}
                 />

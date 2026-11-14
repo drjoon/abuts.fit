@@ -588,17 +588,17 @@ function computeJawOcclusalAxes(
 }
 
 /**
- * 매칭된 픽스쳐 주변 치열궁(치관·인접 어벗 능선)의 실제 접선으로 순(협)측·근심 방향을 보정한다.
- * 전체 메시 평균(넓은 협측 전정·설측 잇몸 치마 포함) 때문에 악궁 전방 축이 기울어져 있어도,
- * 픽스쳐 주변 2.5~14mm 구간 치관 능선의 수직 방향을 찾고 악궁 안쪽(나머지 치열 중심 반대쪽)으로
- * 부호를 정해 실제 협측·근심을 정확히 맞춘다.
+ * 매칭된 픽스쳐 주변 인접 치관·인접 어벗 봉우리(local maxima)를 찾아 실제 치열 접선으로 순(협)측·근심 방향을 보정한다.
+ * 점 구름 전체 공분산을 쓰면 협측 스캔 경계 플랜지나 원심 후구치 삼각 융기(경사 점막)가 섞여 축이 40~50° 돌아간다.
+ * 교합 평면 1.5mm 격자에서 주변 잇몸보다 2.2mm 이상 우뚝 솟고 주변 면이 채워진 실제 치관·어벗 봉우리만 추려
+ * 픽스쳐 원점(0, 0)과 잇는 치열 접선을 구하고, 악궁 내측 반대쪽으로 외측(순·협측) 부호를 정한다.
  */
 function refineMatchedFixtureDirections(
   jawGeometry: THREE.BufferGeometry,
   fixture: MatchedScanbodyFixture,
   side: 1 | -1,
 ): { labialDir: Vec3; mesialDir: Vec3 } {
-  const pts = samplePositions(jawGeometry, 6000);
+  const pts = samplePositions(jawGeometry, 10000);
   const occ = fixture.archOcclusalDir;
   const isUpper = fixture.jaw === "upper";
   const cranialUp = isUpper ? scale(occ, -1) : occ;
@@ -607,86 +607,145 @@ function refineMatchedFixtureDirections(
     return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
   }
 
-  const fixAx = fixture.fixturePose.axis;
   const orig = fixture.fixturePose.origin;
-  const localCrest: Vec3[] = [];
+  const e1 =
+    Math.abs(occ[2]) < 0.9 ? norm(cross(occ, [0, 0, 1])) : norm(cross(occ, [1, 0, 0]));
+  const e2 = norm(cross(occ, e1));
+
+  const step = 1.5;
+  const halfCells = 22;
+  const nSide = halfCells * 2 + 1;
+  const grid = new Float64Array(nSide * nSide).fill(-Infinity);
+  const gingH: number[] = [];
   for (const p of pts) {
     const rel = sub(p, orig);
-    const hh = dot(rel, fixAx);
-    if (hh < 2.4 || hh > 12.0) continue;
-    const lat = sub(rel, scale(fixAx, hh));
-    const r = Math.hypot(...lat);
-    if (r >= fixture.scanbodyRadiusMm + 0.6 && r <= 14.0) localCrest.push(lat);
+    const x = dot(rel, e1);
+    const y = dot(rel, e2);
+    const z = dot(rel, occ);
+    const r = Math.hypot(x, y);
+    if (r >= fixture.scanbodyRadiusMm + 0.8 && r <= 5.5) gingH.push(z);
+    const gx = Math.round(x / step) + halfCells;
+    const gy = Math.round(y / step) + halfCells;
+    if (gx >= 0 && gx < nSide && gy >= 0 && gy < nSide && z > grid[gy * nSide + gx]!) {
+      grid[gy * nSide + gx] = z;
+    }
   }
-  if (localCrest.length < 25) {
+  gingH.sort((a, b) => a - b);
+  const baseOcc = gingH.length > 0 ? gingH[Math.floor(gingH.length * 0.45)]! : 0;
+
+  const smooth = new Float64Array(nSide * nSide).fill(-Infinity);
+  for (let y = 1; y < nSide - 1; y += 1) {
+    for (let x = 1; x < nSide - 1; x += 1) {
+      if (!Number.isFinite(grid[y * nSide + x]!)) continue;
+      let sum = 0;
+      let cnt = 0;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const v = grid[(y + dy) * nSide + (x + dx)]!;
+          if (Number.isFinite(v)) {
+            sum += v;
+            cnt += 1;
+          }
+        }
+      }
+      smooth[y * nSide + x] = sum / cnt;
+    }
+  }
+
+  const rawPeaks: Array<{ x: number; y: number; r: number; prom: number }> = [];
+  for (let y = 3; y < nSide - 3; y += 1) {
+    for (let x = 3; x < nSide - 3; x += 1) {
+      const v = smooth[y * nSide + x]!;
+      if (!Number.isFinite(v) || v < baseOcc + 1.5 || v > baseOcc + 13.5) continue;
+      const px = (x - halfCells) * step;
+      const py = (y - halfCells) * step;
+      const r = Math.hypot(px, py);
+      if (r < 4.5 || r > 25) continue;
+      let isMax = true;
+      let minNear = v;
+      let filled = 0;
+      for (let dy = -3; dy <= 3; dy += 1) {
+        for (let dx = -3; dx <= 3; dx += 1) {
+          const nv = smooth[(y + dy) * nSide + (x + dx)]!;
+          if (!Number.isFinite(nv)) continue;
+          if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) {
+            filled += 1;
+            if ((dx !== 0 || dy !== 0) && nv > v) isMax = false;
+          }
+          if (nv < minNear) minNear = nv;
+        }
+      }
+      if (isMax && filled >= 15 && v - minNear >= 2.0) {
+        rawPeaks.push({ x: px, y: py, r, prom: v - minNear });
+      }
+    }
+  }
+  rawPeaks.sort((a, b) => a.r - b.r);
+  const peaks: Array<{ x: number; y: number; r: number; prom: number }> = [];
+  for (const p of rawPeaks) {
+    const i = peaks.findIndex((q) => Math.hypot(p.x - q.x, p.y - q.y) < 5.0);
+    if (i < 0) peaks.push(p);
+    else if (p.prom > peaks[i]!.prom) peaks[i] = p;
+  }
+  const near = peaks.filter((p) => p.r <= 18);
+  if (near.length === 0) {
     return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
   }
 
-  const e1 =
-    Math.abs(fixAx[2]) < 0.9 ? norm(cross(fixAx, [0, 0, 1])) : norm(cross(fixAx, [1, 0, 0]));
-  const e2 = norm(cross(fixAx, e1));
-  let lx = 0;
-  let ly = 0;
-  for (const lat of localCrest) {
-    lx += dot(lat, e1);
-    ly += dot(lat, e2);
+  let sw = 1.2;
+  let mx = 0;
+  let my = 0;
+  for (const p of near) {
+    const w = 10 / (p.r + 3);
+    sw += w;
+    mx += p.x * w;
+    my += p.y * w;
   }
-  lx /= localCrest.length;
-  ly /= localCrest.length;
-  let lxx = 0;
-  let lxy = 0;
-  let lyy = 0;
-  for (const lat of localCrest) {
-    const x = dot(lat, e1) - lx;
-    const y = dot(lat, e2) - ly;
-    lxx += x * x;
-    lxy += x * y;
-    lyy += y * y;
+  mx /= sw;
+  my /= sw;
+  let lxx = 1.2 * mx * mx;
+  let lxy = 1.2 * mx * my;
+  let lyy = 1.2 * my * my;
+  for (const p of near) {
+    const w = 10 / (p.r + 3);
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    lxx += w * dx * dx;
+    lxy += w * dx * dy;
+    lyy += w * dy * dy;
   }
   const th = 0.5 * Math.atan2(2 * lxy, lxx - lyy);
-  const c = Math.cos(th);
-  const s = Math.sin(th);
-  const v1 = lxx * c * c + 2 * lxy * c * s + lyy * s * s;
-  const v2 = lxx * s * s - 2 * lxy * c * s + lyy * c * c;
-  const aniso = Math.max(v1, v2) / Math.max(1e-6, Math.min(v1, v2));
-  if (aniso < 1.7) {
-    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
-  }
+  const cs = Math.cos(th);
+  const sn = Math.sin(th);
+  const v1 = lxx * cs * cs + 2 * lxy * cs * sn + lyy * sn * sn;
+  const v2 = lxx * sn * sn - 2 * lxy * cs * sn + lyy * cs * cs;
+  const min2: [number, number] = v1 >= v2 ? [-sn, cs] : [cs, sn];
+  let perp = norm(add(scale(e1, min2[0]), scale(e2, min2[1])));
 
-  const minor2D: [number, number] = v1 >= v2 ? [-s, c] : [c, s];
-  let perp = norm(add(scale(e1, minor2D[0]), scale(e2, minor2D[1])));
-  const perpInOcc = sub(perp, scale(occ, dot(perp, occ)));
-  if (Math.hypot(...perpInOcc) < 1e-4) {
-    return { labialDir: fixture.labialDir, mesialDir: fallbackMesial };
-  }
-  perp = norm(perpInOcc);
-
-  // 악궁은 혀·구개 쪽으로 오목하므로, 이 치아에서 12mm 이상 떨어진 나머지 치관 점들의 중심은
-  // 항상 악궁 안쪽(설측/근원심)에 놓인다. 그 반대쪽이 외측(순·협측)이다.
-  const hsAll = pts.map((p) => dot(p, occ));
-  const cut = quantile([...hsAll].sort((a, b) => a - b), 0.65);
-  let farX = 0;
-  let farY = 0;
-  let farZ = 0;
-  let farN = 0;
-  for (let i = 0; i < pts.length; i += 1) {
-    if ((hsAll[i] ?? -Infinity) < cut) continue;
-    const p = pts[i]!;
-    if (Math.hypot(p[0] - orig[0], p[1] - orig[1], p[2] - orig[2]) < 12) continue;
-    farX += p[0];
-    farY += p[1];
-    farZ += p[2];
-    farN += 1;
+  // 악궁은 혀·구개 쪽으로 오목하므로, 12mm 이상 떨어진 나머지 치관 격자의 중심 반대쪽이 외측(순·협측)이다.
+  let fx = 0;
+  let fy = 0;
+  let fn = 0;
+  for (let y = 2; y < nSide - 2; y += 1) {
+    for (let x = 2; x < nSide - 2; x += 1) {
+      const v = smooth[y * nSide + x]!;
+      if (!Number.isFinite(v) || v < baseOcc + 1.2 || v > baseOcc + 13.5) continue;
+      const px = (x - halfCells) * step;
+      const py = (y - halfCells) * step;
+      if (Math.hypot(px, py) < 12) continue;
+      fx += px;
+      fy += py;
+      fn += 1;
+    }
   }
   let outwardRef = fixture.labialDir;
-  if (farN >= 20) {
-    const fromFar = sub(orig, [farX / farN, farY / farN, farZ / farN]);
-    const inOcc = sub(fromFar, scale(occ, dot(fromFar, occ)));
-    if (Math.hypot(...inOcc) > 3) {
-      const chordOut = norm(inOcc);
-      // 현 방향이 법선과 너무 평행하지 않을 때 외측 부호 기준으로 쓰고, 애매하면 슬롯 방향을 함께 본다.
+  if (fn >= 10) {
+    fx /= fn;
+    fy /= fn;
+    if (Math.hypot(fx, fy) > 3) {
+      const chordOut = norm(add(scale(e1, -fx), scale(e2, -fy)));
       outwardRef =
-        Math.abs(dot(perp, chordOut)) >= 0.22
+        Math.abs(dot(perp, chordOut)) >= 0.25
           ? chordOut
           : norm(add(scale(chordOut, 0.5), scale(fixture.labialDir, 0.5)));
     }
