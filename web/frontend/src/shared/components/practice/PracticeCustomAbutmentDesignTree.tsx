@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import type { DesignedCustomAbutment } from "@/shared/practice/customAbutmentStlDesign";
 import { cn } from "@/shared/ui/cn";
@@ -85,6 +86,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllScanbodies,
   onSelect,
   onDownload,
+  onRegenerate,
   className,
 }: {
   shownScanbodies: Record<string, boolean>;
@@ -98,6 +100,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllVisible: (visible: boolean) => void;
   onSelect: (toothNumber: string) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
+  onRegenerate: () => void;
   className?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -108,12 +111,22 @@ export function PracticeCustomAbutmentDesignTree({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex max-h-full w-[14.5rem] flex-col rounded-lg border bg-background/95 shadow-sm",
+        "pointer-events-auto flex min-h-0 w-[14.5rem] shrink flex-col overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
     >
-      <div className="flex items-center gap-0.5 border-b py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground">
+      <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground">
         <span className="min-w-0 flex-1 truncate">커스텀어벗 {items.length}</span>
+        <button
+          type="button"
+          className={headerBtn}
+          aria-label="커스텀어벗 재생성"
+          title="지금 값으로 커스텀어벗을 다시 만듭니다."
+          disabled={redesigning.length > 0}
+          onClick={onRegenerate}
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", redesigning.length > 0 && "animate-spin")} />
+        </button>
         <ScanbodyButton
           shown={anyScanbody}
           label="모든"
@@ -141,7 +154,7 @@ export function PracticeCustomAbutmentDesignTree({
           {allOpen ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
         </button>
       </div>
-      <ul className="min-h-0 space-y-0.5 overflow-y-auto p-1.5">
+      <ul className="space-y-0.5 p-1.5">
         {items.map((item) => {
           const tooth = item.toothNumber;
           const open = Boolean(expanded[tooth]);

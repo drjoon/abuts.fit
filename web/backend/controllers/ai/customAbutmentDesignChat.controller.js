@@ -3,7 +3,7 @@
 // 1회성이 아닌 요청(「항상」「우리는」, 치종 전반 규칙 등)은 의뢰 치과 사업자의 디자인 취향으로 저장해
 // 다음 케이스 기본값으로 쓴다. 저장은 의뢰 치과 본인 계정의 대화만 한다.
 // 비용: 「마진 0.5mm 얕게」처럼 정형 명령은 프론트(customAbutmentChatCommands.ts)가 AI 없이 처리하고,
-// 취향 저장도 PUT으로 바로 한다. 여기는 해석이 필요한 말·그림만 오고 flash-lite + 짧은 프롬프트를 쓴다.
+// 취향 저장도 PUT으로 바로 한다. 여기는 해석이 필요한 말·그림만 오고 gemini-3.5-flash-lite + 짧은 프롬프트를 쓴다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -15,7 +15,7 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
-const MODEL = "gemini-2.5-flash-lite";
+const MODEL = "gemini-3.5-flash-lite";
 const MAX_OUTPUT_TOKENS = 600;
 const HISTORY_TURNS = 6;
 /** AI에 넘기는 측정값. 나머지는 답에 쓰지 않아 토큰만 든다. */

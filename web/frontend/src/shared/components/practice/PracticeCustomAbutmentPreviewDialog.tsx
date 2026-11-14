@@ -221,6 +221,79 @@ const PIVOT_MARKER_COLOR = 0xf59e0b;
 const CHAT_WIDTH_KEY = "abuts.caDesign.chatWidthRem";
 const CHAT_WIDTH_DEFAULT_REM = 22;
 const CHAT_WIDTH_MIN_REM = 16;
+const VIEW_KEY = "abuts.caDesign.view.v1";
+/** 맞춤 화면 기준 이 배율까지만. 그 이상이면 메쉬가 픽셀 단위로 깨지고, 핀치는 브라우저 배율로 넘어간다. */
+const VIEW_MAX_ZOOM = 8;
+
+type SavedCaView = {
+  transferId: string;
+  pos: [number, number, number];
+  quat: [number, number, number, number];
+  up: [number, number, number];
+  target: [number, number, number];
+  zoom: number;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
+function readSavedView(transferId: string): SavedCaView | null {
+  if (!transferId) return null;
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(VIEW_KEY) || "null") as SavedCaView | null;
+    if (!raw || raw.transferId !== transferId) return null;
+    if (!Array.isArray(raw.pos) || raw.pos.length !== 3) return null;
+    if (!Number.isFinite(raw.zoom) || !Number.isFinite(raw.top)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedView(
+  transferId: string,
+  camera: THREE.OrthographicCamera,
+  target: THREE.Vector3,
+) {
+  if (!transferId) return;
+  const payload: SavedCaView = {
+    transferId,
+    pos: camera.position.toArray() as [number, number, number],
+    quat: camera.quaternion.toArray() as [number, number, number, number],
+    up: camera.up.toArray() as [number, number, number],
+    target: target.toArray() as [number, number, number],
+    zoom: camera.zoom,
+    top: camera.top,
+    bottom: camera.bottom,
+    left: camera.left,
+    right: camera.right,
+  };
+  try {
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify(payload));
+  } catch {
+    // 저장 실패해도 이번 화면은 유지
+  }
+}
+
+function applySavedView(
+  camera: THREE.OrthographicCamera,
+  controls: ScreenSpaceOrbitControls,
+  saved: SavedCaView,
+) {
+  camera.position.fromArray(saved.pos);
+  camera.quaternion.fromArray(saved.quat);
+  camera.up.fromArray(saved.up);
+  controls.target.fromArray(saved.target);
+  camera.zoom = THREE.MathUtils.clamp(saved.zoom, 0.2, VIEW_MAX_ZOOM);
+  camera.top = saved.top;
+  camera.bottom = saved.bottom;
+  camera.left = saved.left;
+  camera.right = saved.right;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  controls.syncFromCamera();
+}
 const SKETCH_MAX_PX = 1024;
 const VIEW_ANIM_MS = 280;
 const CHAT_EXAMPLES = [
@@ -463,6 +536,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [preferenceCanSave, setPreferenceCanSave] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const transferIdParam = String(transferId || "").trim();
+  const transferIdRef = useRef(transferIdParam);
+  transferIdRef.current = transferIdParam;
+  /** 디자인 배치 후 맞춤·복원이 끝난 뒤에만 카메라 뷰를 저장한다. */
+  const viewReadyRef = useRef(false);
   const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: false });
   const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const paintListenersRef = useRef(new Set<() => void>());
@@ -1055,11 +1132,31 @@ export function PracticeCustomAbutmentPreviewDialog({
     const rimLight = new THREE.DirectionalLight(0xe2e8f0, 0.42);
     scene.add(keyLight, fillLight, rimLight);
 
-    const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
+    viewReadyRef.current = false;
+    const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement, {
+      minZoom: 0.35,
+      maxZoom: VIEW_MAX_ZOOM,
+    });
     controlsRef.current = controls;
+    const persistView = () => {
+      if (!viewReadyRef.current) return;
+      writeSavedView(transferIdRef.current, camera, controls.target);
+    };
     controls.addEventListener("start", () => {
       viewAnimRef.current = null;
     });
+    controls.addEventListener("change", persistView);
+    const blockBrowserZoom = (event: WheelEvent) => {
+      // 트랙패드 핀치는 ctrl+휠로 온다. 막지 않으면 Chrome이 페이지 배율을 바꾼다.
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+    };
+    const blockGesture = (event: Event) => {
+      event.preventDefault();
+    };
+    host.addEventListener("wheel", blockBrowserZoom, { capture: true, passive: false });
+    host.addEventListener("gesturestart", blockGesture, { capture: true, passive: false });
+    host.addEventListener("gesturechange", blockGesture, { capture: true, passive: false });
 
     const pivotMarker = new THREE.Mesh(
       new THREE.SphereGeometry(1, 16, 12),
@@ -1167,7 +1264,11 @@ export function PracticeCustomAbutmentPreviewDialog({
     ro.observe(host);
 
     return () => {
+      persistView();
       window.cancelAnimationFrame(raf);
+      host.removeEventListener("wheel", blockBrowserZoom, { capture: true });
+      host.removeEventListener("gesturestart", blockGesture, { capture: true });
+      host.removeEventListener("gesturechange", blockGesture, { capture: true });
       paintListeners.clear();
       setPaintSpace(null);
       ro.disconnect();
@@ -1652,7 +1753,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!restored || redesignedFromFit) persistDesign(restoredChat);
 
         window.requestAnimationFrame(() => {
-          fitDefaultCamera();
+          const saved = readSavedView(transferIdParam);
+          const cam = cameraRef.current;
+          const controls = controlsRef.current;
+          if (saved && cam && controls) applySavedView(cam, controls, saved);
+          else fitDefaultCamera();
+          viewReadyRef.current = true;
         });
       } catch (err) {
         if (cancelled || (err as { name?: string } | null)?.name === "AbortError") return;
@@ -1827,6 +1933,27 @@ export function PracticeCustomAbutmentPreviewDialog({
     [addDesignToScene, removeDesignFromScene],
   );
 
+  /** 저장본이 아니라 지금 조정값으로 형상을 다시 만든다. 선택된 말이 있으면 그 치아만. */
+  const regenerateDesigns = useCallback(
+    async (teeth?: readonly string[]) => {
+      const ctx = designContextRef.current;
+      const list = designedListRef.current;
+      const targets = (teeth && teeth.length > 0 ? teeth : list.map((d) => d.toothNumber)).filter((tooth) =>
+        list.some((d) => d.toothNumber === tooth),
+      );
+      if (!ctx || targets.length === 0) return;
+      await applyDesignChanges(
+        targets.map((toothNumber) => ({
+          toothNumber,
+          params: { ...(ctx.overrides[toothNumber] ?? {}) },
+        })),
+        "replace",
+      );
+      persistDesign();
+    },
+    [applyDesignChanges, persistDesign],
+  );
+
   const startChatResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     const aside = asideRef.current;
     if (!aside || e.button !== 0) return;
@@ -1998,6 +2125,10 @@ export function PracticeCustomAbutmentPreviewDialog({
               "replace",
             );
             finish(`기본 디자인으로 되돌렸습니다: ${local.teeth.map((t) => `#${t}`).join(" ")}`);
+          } else if (local.kind === "regenerate") {
+            showApplying();
+            await regenerateDesigns(local.teeth);
+            finish(`다시 만들었습니다: ${local.teeth.map((t) => `#${t}`).join(" ")}`);
           } else {
             const before = new Map(designedListRef.current.map((d) => [d.toothNumber, d.params]));
             showApplying();
@@ -2089,6 +2220,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [
       applyDesignChanges,
+      regenerateDesigns,
       authToken,
       captureSketch,
       chatBusy,
@@ -2400,7 +2532,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
         <div className="flex min-h-0 min-w-0 flex-1">
           <div className="relative min-h-0 min-w-0 flex-1">
-            <div ref={bindHostRef} className="relative h-full w-full overflow-hidden" />
+            <div ref={bindHostRef} className="relative h-full w-full touch-none overflow-hidden" />
 
             {centerGuide !== "off" ? (
               <div
@@ -2496,7 +2628,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {ready ? (
-              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex flex-col items-start gap-2">
+              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex min-h-0 flex-col items-start gap-2 overflow-hidden">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -2522,7 +2654,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {designedList.length > 0 ? (
                   <PracticeCustomAbutmentDesignTree
-                    className="min-h-0 flex-1"
+                    className="min-h-0"
                     items={designedList}
                     visibleTeeth={visibleTeeth}
                     selectedTooth={selectedTooth}
@@ -2556,6 +2688,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       focusSingleTooth(toothNumber);
                     }}
                     onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
+                    onRegenerate={() => void regenerateDesigns()}
                   />
                 ) : null}
               </div>

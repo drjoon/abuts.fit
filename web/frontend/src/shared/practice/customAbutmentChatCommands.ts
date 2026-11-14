@@ -22,6 +22,7 @@ export type LocalDesignCommand =
   | { kind: "select"; toothNumber: string | null }
   | { kind: "reply"; text: string }
   | { kind: "reset"; teeth: string[] }
+  | { kind: "regenerate"; teeth: string[] }
   | {
       kind: "apply";
       changes: LocalDesignChange[];
@@ -275,6 +276,14 @@ export function parseLocalDesignCommand(
 
   if (/^(원래대로|초기화|되돌려|처음\s*디자인으로)/.test(withoutTeeth.trim())) {
     return { kind: "reset", teeth: targets };
+  }
+
+  const bare = withoutTeeth
+    .replace(FILLER_RE, " ")
+    .replace(/커스텀\s*어벗|어벗/g, " ")
+    .replace(/[\s.,!?~·]+/g, "");
+  if (/^(재생성|다시만들기|다시그리기|다시디자인|다시생성)$/.test(bare)) {
+    return { kind: "regenerate", teeth: targets };
   }
 
   const clauses = withoutTeeth
