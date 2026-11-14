@@ -1093,7 +1093,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   const posAttr = jawGeometry.getAttribute("position");
   if (!posAttr || posAttr.count < 90) return [];
 
-  const searchRadiusMm = 22.5;
+  const searchRadiusMm = 26.0;
   const r2 = searchRadiusMm * searchRadiusMm;
   const seen = new Set<number>();
   const localPts: number[] = [];
@@ -1188,13 +1188,38 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   }
 
   evaluatedPeaksRaw.sort(
-    (a, b) => a.cylinderScore + a.distMm * 0.045 - (b.cylinderScore + b.distMm * 0.045),
+    (a, b) => a.cylinderScore + a.distMm * 0.025 - (b.cylinderScore + b.distMm * 0.025),
   );
   const evaluatedPeaks: typeof evaluatedPeaksRaw = [];
   for (const row of evaluatedPeaksRaw) {
     if (evaluatedPeaks.some((p) => Math.hypot(...sub(p.top, row.top)) < 2.2)) continue;
     evaluatedPeaks.push(row);
   }
+
+  // 정합된 스캔바디 기둥 상단(z ∈ [-1.5, 0.2])이 바깥으로 치관처럼 퍼지거나(flareRatio),
+  // 평평한 캡 바로 위(z > 0.42, r < 0.88R)에 자연치 절단연/교두가 더 솟아 있으면 가짜 정합으로 거른다.
+  const measureFittedIsolation = (fittedTopLocal: Vec3, fitAxis: Vec3, radiusMm: number) => {
+    const u1 = norm(Math.abs(fitAxis[2]) < 0.9 ? cross(fitAxis, [0, 0, 1]) : cross(fitAxis, [1, 0, 0]));
+    const u2 = cross(fitAxis, u1);
+    let shaftCnt = 0;
+    let outerTopCnt = 0;
+    let capOverhangCnt = 0;
+    for (let i = 0; i < target.length; i += 3) {
+      const rel = sub([target[i]!, target[i + 1]!, target[i + 2]!], fittedTopLocal);
+      const z = dot(rel, fitAxis);
+      if (z < -2.8 || z > 2.4) continue;
+      const r = Math.hypot(dot(rel, u1), dot(rel, u2));
+      if (r > radiusMm + 2.5) continue;
+      if (z > 0.42 && r < radiusMm * 0.88) capOverhangCnt += 1;
+      if (z >= -1.55 && z <= 0.22 && r > radiusMm + 0.48 && r < radiusMm + 2.35) outerTopCnt += 1;
+      if (z >= -2.6 && z <= -0.45 && r >= radiusMm * 0.58 && r <= radiusMm + 0.58) shaftCnt += 1;
+    }
+    const denom = Math.max(1, shaftCnt);
+    return {
+      flareRatio: outerTopCnt / denom,
+      overhangRatio: capOverhangCnt / denom,
+    };
+  };
 
   const refHint: Vec3 = [slot.labialDir[0], slot.labialDir[1], slot.labialDir[2]];
   type PeakHit = {
@@ -1207,7 +1232,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   };
   const peakHits: PeakHit[] = [];
 
-  for (const candPeak of evaluatedPeaks.slice(0, 6)) {
+  for (const candPeak of evaluatedPeaks.slice(0, 10)) {
     let bestHit: PeakHit | null = null;
     for (const model of models) {
       const originGuess = sub(candPeak.top, scale(candPeak.axis, model.topMm));
@@ -1221,17 +1246,22 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       });
       if (!fit) continue;
       if (poseTiltDeg(fit.pose, axis) > 45) continue;
-      // 윗면(topCoverage)이 75% 미만이면 인접 자연치 옆면에 비스듬히 붙은 가짜 정합이므로 제외한다.
-      if (fit.topCoverage < 0.72) continue;
+      // 자연치 절단연·교두에 비스듬히 얹힌 가짜 정합(rms ≥ 0.18, topCoverage ≤ 0.82)을 차단한다.
+      const maxAllowedRms = model.isLibraryCad ? 0.168 : 0.172;
+      if (fit.topCoverage < 0.83 || fit.rmsMm > maxAllowedRms) continue;
       const fittedTop = applyPose(fit.pose, 0, model.topMm, 0);
       if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < 3.6)) continue;
+      const fitAxis = norm(poseColumn(fit.pose, 1));
+      const iso = measureFittedIsolation(fittedTop, fitAxis, model.radiusMm);
+      if (iso.flareRatio > 0.58 || iso.overhangRatio > 0.08) continue;
       const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
-      const libBonus = model.isLibraryCad && fit.rmsMm <= 0.11 && fit.topCoverage >= 0.78 ? -0.06 : 0;
+      const libBonus = model.isLibraryCad && fit.rmsMm <= 0.11 && fit.topCoverage >= 0.85 ? -0.08 : 0;
       const totalScore =
-        fit.rmsMm * 1.4 +
-        (1 - fit.topCoverage) * 1.8 +
-        candPeak.cylinderScore * 0.55 +
-        distFromSlot * 0.015 +
+        fit.rmsMm * 2.4 +
+        (1 - fit.topCoverage) * 2.4 +
+        candPeak.cylinderScore * 0.45 +
+        iso.flareRatio * 0.75 +
+        distFromSlot * 0.008 +
         libBonus;
       if (!bestHit || totalScore < bestHit.totalScore) {
         bestHit = {
@@ -1340,7 +1370,8 @@ export function detectAndMatchScanbodiesOnJaw(args: {
 
   const sameScanbody = (a: MatchedScanbodyFixture, b: MatchedScanbodyFixture) =>
     Math.hypot(...sub(a.scanbodyTop, b.scanbodyTop)) < 3.0;
-  const hitCost = (h: ScanbodyHit) => h.totalScore + h.distFromSlotMm * 0.09;
+  // 슬롯 위치 추정 오차(편측·비대칭 스캔 등)가 진짜 스캔바디 정합 점수를 뒤집지 않도록 거리 가중은 작게 둔다.
+  const hitCost = (h: ScanbodyHit) => h.totalScore + h.distFromSlotMm * 0.025;
   // 게이트를 통과한 정합은 슬롯이 멀어도 미배정보다 낫다.
   const MISS_COST = 8;
   // 같은 사분면에서 치아 번호가 크면 악궁에서 더 원심이어야 한다(슬롯 추정이 겹쳐도 순서는 지킨다).
@@ -1352,6 +1383,21 @@ export function detectAndMatchScanbodiesOnJaw(args: {
       if (!a || !b || a.digits[0] !== b.digits[0] || a.pos === b.pos) return true;
       return a.pos > b.pos ? h.archKey > p.archKey : h.archKey < p.archKey;
     });
+  const pairSpacingPenalty = (i: number, h: ScanbodyHit) => {
+    let pen = 0;
+    const a = perTooth[i]!.fdi;
+    if (!a) return 0;
+    for (let j = 0; j < pick.length; j += 1) {
+      const p = pick[j];
+      const b = perTooth[j]?.fdi;
+      if (!p || !b || a.digits[0] !== b.digits[0]) continue;
+      const dPos = Math.abs(a.pos - b.pos);
+      const dist = Math.hypot(...sub(h.fixture.scanbodyTop, p.fixture.scanbodyTop));
+      const expected = dPos * 6.8;
+      pen += Math.max(0, Math.abs(dist - expected) - 2.6) * 0.04;
+    }
+    return pen;
+  };
 
   let bestCost = Infinity;
   let bestPick: Array<ScanbodyHit | null> = [];
@@ -1366,8 +1412,9 @@ export function detectAndMatchScanbodiesOnJaw(args: {
     for (const h of perTooth[i]!.hits) {
       if (pick.some((p) => p && sameScanbody(p.fixture, h.fixture))) continue;
       if (!orderOk(i, h)) continue;
+      const extra = hitCost(h) + pairSpacingPenalty(i, h);
       pick.push(h);
-      visit(i + 1, cost + hitCost(h));
+      visit(i + 1, cost + extra);
       pick.pop();
     }
     pick.push(null);
