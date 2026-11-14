@@ -271,7 +271,7 @@ function superellipseRadius(a: number, b: number, phi: number, n = SUPERELLIPSE_
 
 /**
  * 교합면에서 본 치종별 해부 단면 반경(우리치과기공소·알토란치과기공소 STL 실측 기반).
- * - 대구치(molar): 둥근 모서리 사각형 (superellipse n ≈ 2.95)
+ * - 대구치(molar): 근원심으로 길고 협설로 짧은 둥근 모서리 사각형 (superellipse n ≈ 3.5)
  * - 소구치(premolar): 계란형 타원 (n ≈ 2.08, 협측 완만·설측 약간 좁아짐)
  * - 견치(canine): 둥근 모서리 삼각형 (순측 호 + 근·원심 우각 + 설측 결절로 좁아짐)
  * - 전치(incisor): 납작한 타원체 (순설 방향으로 납작하고 근원심으로 퍼진 타원, n ≈ 2.15)
@@ -280,7 +280,7 @@ function toothOcclusalSectionRadius(kind: ToothKind, aBl: number, bMd: number, p
   const cp = Math.cos(phi);
   const sp = Math.sin(phi);
   if (kind === "molar") {
-    return superellipseRadius(aBl, bMd, phi, 2.95);
+    return superellipseRadius(aBl, bMd, phi, 3.5);
   }
   if (kind === "premolar") {
     const eggWidth = 1 + 0.055 * cp;
@@ -465,9 +465,9 @@ function abutmentTemplateForTooth(toothNumber: string): AbutmentTemplate {
   const second = pos === 7 || pos === 8;
   return {
     kind: "molar", anterior: false,
-    marginBlMm: upper ? 6.95 : 6.55, marginMdMm: upper ? 6.65 : 6.65,
-    topLabialHalfMm: upper ? 2.75 : 2.55, topLingualHalfMm: upper ? 2.75 : 2.55,
-    topMdMm: upper ? 5.1 : 5.25,
+    marginBlMm: upper ? 6.0 : 5.55, marginMdMm: upper ? 7.85 : 7.4,
+    topLabialHalfMm: upper ? 2.25 : 2.05, topLingualHalfMm: upper ? 2.25 : 2.05,
+    topMdMm: upper ? 6.05 : 5.7,
     postHeightMm: upper ? 5.5 : 5.3,
     naturalMdMm: upper ? (second ? 9.5 : 10.2) : second ? 10.5 : 11.0,
     naturalBlMm: upper ? 11.0 : second ? 10.0 : 10.5,

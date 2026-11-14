@@ -11,7 +11,7 @@ import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmen
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
 
 /** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 11;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 12;
 /** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
 export const CUSTOM_ABUTMENT_FIT_VERSION = 2;
 
