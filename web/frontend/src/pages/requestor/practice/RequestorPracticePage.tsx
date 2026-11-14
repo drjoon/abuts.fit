@@ -906,7 +906,16 @@ export function RequestorPracticeReceivePage({
       });
     },
   });
-  const { rooms, clearUnreadForTransferIds } = useChatRooms();
+  const { rooms, fetchRooms, clearUnreadForTransferIds } = useChatRooms({
+    autoFetch: false,
+  });
+  useEffect(() => {
+    if (!token) return;
+    const timer = window.setTimeout(() => {
+      void fetchRooms();
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [fetchRooms, token]);
   const {
     ensureFilesUploaded,
     peekCachedUploadedFiles,
@@ -1186,7 +1195,7 @@ export function RequestorPracticeReceivePage({
   const [workUploadTrackedFiles, setWorkUploadTrackedFiles] = useState<File[]>(
     [],
   );
-  const { connections: implantCatalog } = useImplantConnectionCatalog(token);
+  const { connections: implantCatalog } = useImplantConnectionCatalog(token, 1200);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");

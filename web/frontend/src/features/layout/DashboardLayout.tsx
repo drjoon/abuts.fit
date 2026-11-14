@@ -700,7 +700,19 @@ export const DashboardLayout = () => {
   );
   const bumpAbutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.bump);
   const [storeActionCount, setStoreActionCount] = useState(0);
-  const { rooms: chatRooms } = useChatRooms();
+  const deferPracticeTransferChat = location.pathname.includes(
+    "/practice-transfers",
+  );
+  const { rooms: chatRooms, fetchRooms: fetchChatRooms } = useChatRooms({
+    autoFetch: !deferPracticeTransferChat,
+  });
+  useEffect(() => {
+    if (!deferPracticeTransferChat) return;
+    const timer = window.setTimeout(() => {
+      void fetchChatRooms();
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [deferPracticeTransferChat, fetchChatRooms]);
   const {
     canUsePaid: requestorCanUsePaid,
     kind: requestorKind,

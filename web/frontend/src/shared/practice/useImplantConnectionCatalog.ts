@@ -40,7 +40,10 @@ export type ImplantConnection = {
   isPublic?: boolean;
 };
 
-export const useImplantConnectionCatalog = (token: string | null) => {
+export const useImplantConnectionCatalog = (
+  token: string | null,
+  deferMs = 0,
+) => {
   const [connections, setConnections] = useState<ImplantConnection[]>([]);
   const [reloadNonce, setReloadNonce] = useState(0);
 
@@ -96,11 +99,15 @@ export const useImplantConnectionCatalog = (token: string | null) => {
       }
     };
 
-    void load();
+    const delay = Math.max(0, Number(deferMs) || 0);
+    const timer = window.setTimeout(() => {
+      void load();
+    }, delay);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [token, reloadNonce]);
+  }, [deferMs, token, reloadNonce]);
 
   return { connections };
 };

@@ -63,7 +63,8 @@ export function GriboEventToolbarAlert({
       return;
     }
     let cancelled = false;
-    void eventsApi
+    const timer = window.setTimeout(() => {
+      void eventsApi
       .myApplication(SIMPLEWAY_SAMPLE_SLUG, token)
       .then((res) => {
         if (cancelled) return;
@@ -92,8 +93,10 @@ export function GriboEventToolbarAlert({
       .catch(() => {
         if (!cancelled) setVisible(false);
       });
+    }, 900);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [token]);
 

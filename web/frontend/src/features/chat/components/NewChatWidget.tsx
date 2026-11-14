@@ -261,12 +261,16 @@ export const NewChatWidget = () => {
     await run;
   };
 
-  // 배지용 — 마운트 1회 + 60s 폴링. 닫을 때마다 강제 재조회하지 않음.
+  // 배지용 — 마운트 1회 + 60s 폴링. 기공의뢰 캘린더가 먼저 나가게 이 페이지에선 늦춘다.
   useEffect(() => {
     if (!user || !isAuthenticated || !token) return;
-    void loadSupportUnread();
-    void loadCounterparts();
-  }, [user?.id, isAuthenticated, token, canUsePartnerChat, supportRoomDisabled]);
+    const onTransfers = String(location.pathname || "").includes("practice-transfers");
+    const timer = window.setTimeout(() => {
+      void loadSupportUnread();
+      void loadCounterparts();
+    }, onTransfers ? 700 : 0);
+    return () => window.clearTimeout(timer);
+  }, [user?.id, isAuthenticated, token, canUsePartnerChat, supportRoomDisabled, location.pathname]);
 
   useEffect(() => {
     if (!token || !isAuthenticated) return;

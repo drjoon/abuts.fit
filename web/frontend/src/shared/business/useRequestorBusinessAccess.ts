@@ -20,6 +20,7 @@ import {
   hasRequestorProfile,
   requiresBusinessLicense,
   normalizePracticeHasInHouseLabFlag,
+  normalizeRequestorKind,
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
@@ -34,12 +35,37 @@ const INTERNAL_LAB_PROFILE: RequestorProfile = {
   services: { free: false, paid: true },
 };
 
+const requestorAccessKnownOnUser = (user: {
+  role?: string | null;
+  requestorKind?: string | null;
+} | null | undefined) =>
+  Boolean(
+    user?.role === "internalLab" ||
+      user?.role === "practice" ||
+      (user?.role && user.role !== "requestor") ||
+      normalizeRequestorKind(user?.requestorKind),
+  );
+
 export const useRequestorBusinessAccess = () => {
   const { token, user } = useAuthStore();
-  const [loading, setLoading] = useState(true);
-  const [businessVerified, setBusinessVerified] = useState(false);
+  const [loading, setLoading] = useState(
+    () => Boolean(token) && !requestorAccessKnownOnUser(user),
+  );
+  const [businessVerified, setBusinessVerified] = useState(() =>
+    Boolean(user?.businessVerified),
+  );
   const [verificationPending, setVerificationPending] = useState(false);
-  const [profile, setProfile] = useState<RequestorProfile>(emptyProfile);
+  const [profile, setProfile] = useState<RequestorProfile>(() =>
+    user?.role === "internalLab"
+      ? INTERNAL_LAB_PROFILE
+      : resolveRequestorProfile({
+          userKind: user?.requestorKind,
+          userServices: user?.requestorServices,
+          userCaps: user?.requestorCapabilities,
+          userRole: user?.role,
+          businessVerified: Boolean(user?.businessVerified),
+        }),
+  );
   const [membership, setMembership] = useState<string>("none");
   const [designAccessEnabled, setDesignAccessEnabled] = useState(false);
   const [practiceHasInHouseLab, setPracticeHasInHouseLab] = useState<
@@ -67,14 +93,13 @@ export const useRequestorBusinessAccess = () => {
 
     // 어벗츠기공소: 기공의뢰수신용 lab 수신. 디자인 큐는 LabWorkPage에서 직접 켠다.
     if (isInternalLab) {
-      if (!hasLoadedOnceRef.current) {
+      if (!hasLoadedOnceRef.current && !requestorAccessKnownOnUser(user)) {
         setLoading(true);
       }
       try {
         const data = await loadBusinessMeCached({
           token,
           businessType: "internalLab",
-          force: true,
         });
         setBusinessVerified(Boolean(data?.businessVerified));
         setMembership(String(data?.membership || "none"));
@@ -111,15 +136,14 @@ export const useRequestorBusinessAccess = () => {
       return;
     }
 
-    // 초기 진입 1회만 스켈레톤용 loading. 이후 이벤트/캐시 refresh는 silent.
-    if (!hasLoadedOnceRef.current) {
+    // 로그인 사용자에 역할이 있으면 스켈레톤으로 사업자 조회를 기다리지 않는다.
+    if (!hasLoadedOnceRef.current && !requestorAccessKnownOnUser(user)) {
       setLoading(true);
     }
     try {
       const data = await loadBusinessMeCached({
         token,
         businessType: businessType || "requestor",
-        force: true,
       });
       const verified = Boolean(data?.businessVerified);
       setBusinessVerified(verified);
@@ -172,19 +196,27 @@ export const useRequestorBusinessAccess = () => {
     user?.role,
   ]);
 
+  const delayAccessRefresh = requestorAccessKnownOnUser(user);
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    const timer = window.setTimeout(() => {
+      void refresh();
+    }, delayAccessRefresh ? 700 : 0);
+    return () => window.clearTimeout(timer);
+  }, [delayAccessRefresh, refresh]);
 
   useEffect(() => {
     const onUpdated = () => {
+      invalidateBusinessMeCache({
+        token: token || undefined,
+        businessType: businessType || "requestor",
+      });
       void refresh();
     };
     window.addEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
     return () => {
       window.removeEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
     };
-  }, [refresh]);
+  }, [businessType, refresh, token]);
 
   return {
     loading,

@@ -201,9 +201,10 @@ import {
 import {
   buildPracticeTransferCalendarDateRangeFilter,
   filterTransferDocsToCalendarRange,
+  findPracticeTransferDocsInCalendarRange,
   mergeCalendarRangeWithAttentionFilter,
   parsePracticeTransferCalendarRangeQuery,
-  PRACTICE_TRANSFER_CALENDAR_LIST_SELECT,
+  PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
   PRACTICE_TRANSFER_MY_LIST_SELECT,
   PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
 } from "../../utils/practiceTransferCalendarRange.util.js";
@@ -2166,12 +2167,7 @@ const fetchOwnedPracticeTransfersPage = async ({
   const calendarFilter = calendarRange
     ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
     : null;
-  const calendarSelect = calendarRange
-    ? PRACTICE_TRANSFER_CALENDAR_LIST_SELECT
-    : null;
-  const listSelect = calendarRange
-    ? null
-    : PRACTICE_TRANSFER_MY_LIST_SELECT;
+  const listSelect = calendarRange ? null : PRACTICE_TRANSFER_MY_LIST_SELECT;
 
   if (calendarRange && calendarFilter) {
     const take = PRACTICE_TRANSFER_CALENDAR_RANGE_MAX;
@@ -2182,47 +2178,33 @@ const fetchOwnedPracticeTransfersPage = async ({
       scope &&
       typeof scope === "object" &&
       Array.isArray(scope.$or);
-
-    const applyCalendarSelect = (query) =>
-      calendarSelect ? query.select(calendarSelect) : query;
+    const indexed = (baseFilter) =>
+      findPracticeTransferDocsInCalendarRange(PracticeTransfer, {
+        baseFilter,
+        range: calendarRange,
+        select: PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
+        limit: take,
+      });
 
     if (canSplit) {
       const ownerIds = Array.isArray(practiceUserObjectIds)
         ? practiceUserObjectIds
         : [];
       const [byAnchor, byLegacy] = await Promise.all([
-        applyCalendarSelect(
-          PracticeTransfer.find({
-            practiceBusinessAnchorId: new Types.ObjectId(anchorId),
-            ...calendarFilter,
-          })
-            .sort(sort)
-            .limit(take),
-        ).lean(),
+        indexed({
+          practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+        }),
         ownerIds.length
-          ? applyCalendarSelect(
-              PracticeTransfer.find({
-                practiceBusinessAnchorId: null,
-                practiceUserId: { $in: ownerIds },
-                ...calendarFilter,
-              })
-                .sort(sort)
-                .limit(take),
-            ).lean()
+          ? indexed({
+              practiceBusinessAnchorId: null,
+              practiceUserId: { $in: ownerIds },
+            })
           : Promise.resolve([]),
       ]);
-      return filterTransferDocsToCalendarRange(
-        mergeNewestTransferDocs(byAnchor, byLegacy, take),
-        calendarRange,
-      );
+      return mergeNewestTransferDocs(byAnchor, byLegacy, take);
     }
 
-    const docs = await applyCalendarSelect(
-      PracticeTransfer.find({ ...scope, ...calendarFilter })
-        .sort(sort)
-        .limit(take),
-    ).lean();
-    return filterTransferDocsToCalendarRange(docs, calendarRange);
+    return indexed(scope);
   }
 
   const pageSize = Math.max(1, Number(limit) || 1);
@@ -7681,15 +7663,64 @@ export async function getMyPracticeTransfers(req, res) {
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
 
-    const {
-      scope: baseFilter,
-      practiceUserObjectIds,
-    } = await buildPracticeOwnedScope(req);
     const practiceBusinessAnchorId = String(
       req.user?.businessAnchorId || "",
     ).trim();
+    const calendarAnchorId =
+      role !== "admin" &&
+      calendarRange &&
+      !transferMongoIds &&
+      !transferIdFilter &&
+      Types.ObjectId.isValid(practiceBusinessAnchorId)
+        ? practiceBusinessAnchorId
+        : "";
 
+    let baseFilter;
+    let practiceUserObjectIds;
     let fetched;
+    if (calendarAnchorId) {
+      const selfId = req.user?._id;
+      const cachedPeerIds = getRequestPerfCacheValue(
+        `practice-peer-users:${calendarAnchorId}`,
+      );
+      const legacyUserIds = (
+        Array.isArray(cachedPeerIds) && cachedPeerIds.length
+          ? cachedPeerIds
+          : selfId
+            ? [String(selfId)]
+            : []
+      )
+        .filter((id) => Types.ObjectId.isValid(String(id)))
+        .map((id) => new Types.ObjectId(String(id)));
+      const indexed = (base) =>
+        findPracticeTransferDocsInCalendarRange(PracticeTransfer, {
+          baseFilter: base,
+          range: calendarRange,
+          select: PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
+        });
+      const [byAnchor, byLegacy, owned] = await Promise.all([
+        indexed({
+          practiceBusinessAnchorId: new Types.ObjectId(calendarAnchorId),
+        }),
+        legacyUserIds.length
+          ? indexed({
+              practiceBusinessAnchorId: null,
+              practiceUserId: { $in: legacyUserIds },
+            })
+          : Promise.resolve([]),
+        buildPracticeOwnedScope(req),
+      ]);
+      baseFilter = owned.scope;
+      practiceUserObjectIds = owned.practiceUserObjectIds;
+      fetched = mergeNewestTransferDocs(
+        byAnchor,
+        byLegacy,
+        PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
+      );
+    } else {
+    const owned = await buildPracticeOwnedScope(req);
+    baseFilter = owned.scope;
+    practiceUserObjectIds = owned.practiceUserObjectIds;
     if (transferMongoIds) {
       fetched = await PracticeTransfer.find({
         $and: [baseFilter, { _id: { $in: transferMongoIds } }],
@@ -7719,6 +7750,7 @@ export async function getMyPracticeTransfers(req, res) {
         calendarRange,
       });
     }
+    }
     const hasMore = calendarRange || transferMongoIds || transferIdFilter ? false : fetched.length > limit;
     const docs = calendarRange || transferMongoIds || transferIdFilter
       ? fetched
@@ -7726,7 +7758,7 @@ export async function getMyPracticeTransfers(req, res) {
         ? fetched.slice(0, limit)
         : fetched;
 
-    // 캘린더도 배송 요약 필요 — 출고(포장.발송·택배) 뱃지 판정에 사용. fee/별점은 생략.
+    // 캘린더 첫 응답은 문서의 단계·디자인 파일만. 배송 조회는 건을 열 때(transferId) 한다. fee/별점은 생략.
     const practiceAnchorForRatings = String(
       req.user?.businessAnchorId || "",
     ).trim();
@@ -7737,15 +7769,19 @@ export async function getMyPracticeTransfers(req, res) {
     const [quotesById, abutmentDeliveryById, ownPracticeDoc, abutmentStagesById] =
       await Promise.all([
         calendarRange ? new Map() : buildFeeQuotesForTransferDocs({ docs }),
-        mapAbutmentDeliveryByTransferDocs(docs),
+        calendarRange
+          ? Promise.resolve(new Map())
+          : mapAbutmentDeliveryByTransferDocs(docs),
         loadOwnRatings
           ? BusinessAnchor.findById(practiceAnchorForRatings)
               .select({ practiceLabRatings: 1 })
               .lean()
           : null,
-        mapAbutmentPastReadyByTransferDocs(
-          docs.filter((doc) => hasCustomAbutmentToothWorks(doc?.toothWorks)),
-        ),
+        calendarRange
+          ? Promise.resolve(new Map())
+          : mapAbutmentPastReadyByTransferDocs(
+              docs.filter((doc) => hasCustomAbutmentToothWorks(doc?.toothWorks)),
+            ),
       ]);
     // 치과 상세 — 커스텀어벗 치아별 제조사 공정(기공소 채팅과 동일)
     const withAbutmentToothStages = (row, doc) => {
@@ -8530,16 +8566,58 @@ export async function getReceivedPracticeTransfers(req, res) {
           }
         : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
 
+    const useCalendarIndex =
+      Boolean(calendarRange) && !transferMongoIds && !transferIdFilter;
+    let rawDocs;
+    let totalCount;
+    let unreadCount;
+    if (useCalendarIndex) {
+      const notDeleted = practiceTransferNotDeletedMongoFilter();
+      const [ranged, attentionDocs, unread] = await Promise.all([
+        findPracticeTransferDocsInCalendarRange(PracticeTransfer, {
+          baseFilter: { $and: [scope, notDeleted] },
+          range: calendarRange,
+          select: PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
+        }),
+        PracticeTransfer.find({
+          $and: [scope, notDeleted, attentionFilter],
+        })
+          .select(PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT)
+          .limit(500)
+          .lean(),
+        PracticeTransfer.countDocuments({
+          $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
+        }),
+      ]);
+      const seen = new Set(ranged.map((doc) => String(doc?._id || "")));
+      const merged = ranged.slice();
+      for (const doc of attentionDocs) {
+        const id = String(doc?._id || "");
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        merged.push(doc);
+      }
+      rawDocs = await PracticeTransfer.populate(merged, [
+        {
+          path: "practiceBusinessAnchorId",
+          select:
+            "name metadata.address metadata.addressDetail metadata.zipCode metadata.phoneNumber",
+        },
+        {
+          path: "practiceUserId",
+          select:
+            "name practiceProfile.clinicName practiceProfile.staffName practiceProfile.address practiceProfile.addressDetail practiceProfile.zipCode practiceProfile.phone practiceProfile.clinicPhone",
+        },
+      ]);
+      totalCount = null;
+      unreadCount = unread;
+    } else {
     const listQuery = PracticeTransfer.find(listScope).sort({
       createdAt: -1,
       _id: -1,
     });
     if (transferMongoIds || transferIdFilter) {
       // full fields for bookmark·알림 보기 hydrate
-    } else if (calendarRange) {
-      listQuery
-        .select(PRACTICE_TRANSFER_CALENDAR_LIST_SELECT)
-        .limit(PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
     } else {
       listQuery.skip(skip).limit(limit);
     }
@@ -8553,7 +8631,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         "name practiceProfile.clinicName practiceProfile.staffName practiceProfile.address practiceProfile.addressDetail practiceProfile.zipCode practiceProfile.phone practiceProfile.clinicPhone",
       );
 
-    const [rawDocs, totalCount, unreadCount] = await Promise.all([
+    const listed = await Promise.all([
       listQuery.lean(),
       calendarRange || transferMongoIds
         ? Promise.resolve(null)
@@ -8564,6 +8642,10 @@ export async function getReceivedPracticeTransfers(req, res) {
             $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
           }),
     ]);
+    rawDocs = listed[0];
+    totalCount = listed[1];
+    unreadCount = listed[2];
+    }
 
     const docs = calendarRange
       ? filterTransferDocsToCalendarRange(rawDocs, calendarRange, {
@@ -8600,7 +8682,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       !calendarRange && labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? loadGlobalLabRatingAggregates({ labAnchorIds: [labAnchorId] })
         : Promise.resolve(new Map()),
-      mapAbutmentPastReadyByTransferDocs(docs),
+      mapAbutmentPastReadyByTransferDocs(docs, { skipHeal: Boolean(calendarRange) }),
       calendarRange
         ? Promise.resolve(new Map())
         : mapAbutmentDeliveryByTransferDocs(docs),

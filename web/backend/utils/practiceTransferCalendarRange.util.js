@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-14: 캘린더 조회는 일자 인덱스 두 갈래(elemMatch·레거시 createdAt). 파일 본문 제외 인덱스 projection.
 // - 2026-09-23: CALENDAR_LIST_SELECT에 assigneeLab*·assigneeKind — 협력 표시「어벗츠 · 파트너」.
 // - 2026-09-15: CALENDAR_LIST_SELECT에 prosthesisFeeStages — 단계별 견적 스냅샷.
 // - 2026-09-12: CALENDAR_LIST_SELECT에 trashedFiles — 상세 모달 휴지통 타일 유지.
@@ -161,6 +162,140 @@ export function filterTransferDocsToCalendarRange(docs, range, options = {}) {
     return practiceTransferIntersectsCalendarRange(doc, range);
   });
 }
+
+/**
+ * 캘린더 창을 정렬 스캔 없이 읽는다.
+ * arrivalDates/orderDates 인덱스와 createdAt 인덱스를 각각 타고, 합친 뒤 정밀 필터.
+ * @param {import("mongoose").Model} Model
+ * @param {{ baseFilter?: object, range: { fromYmd: string, toYmd: string, dateKey?: string }, select?: object, limit?: number }} options
+ */
+export async function findPracticeTransferDocsInCalendarRange(Model, options = {}) {
+  const range = options.range;
+  const fromYmd = String(range?.fromYmd || "").trim();
+  const toYmd = String(range?.toYmd || "").trim();
+  if (!YMD_RE.test(fromYmd) || !YMD_RE.test(toYmd) || fromYmd > toYmd) return [];
+
+  const dateKey = normalizeLabReceiveCalendarDateKey(range?.dateKey);
+  const linkedField = dateKey === "orderDate" ? "orderDates" : "arrivalDates";
+  const legacyFromYmd =
+    addCivilDaysYmd(fromYmd, -LEGACY_CREATED_AT_PAD_DAYS) || fromYmd;
+  const legacyToYmd = addCivilDaysYmd(toYmd, LEGACY_CREATED_AT_PAD_DAYS) || toYmd;
+  const legacyFromDate = new Date(`${legacyFromYmd}T00:00:00.000+09:00`);
+  const legacyToDate = new Date(`${legacyToYmd}T23:59:59.999+09:00`);
+  const limit = Math.max(1, Number(options.limit) || PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
+  const baseFilter =
+    options.baseFilter && typeof options.baseFilter === "object"
+      ? options.baseFilter
+      : {};
+  const select = options.select && typeof options.select === "object" ? options.select : null;
+
+  const run = (extra) => {
+    let query = Model.find({ $and: [baseFilter, extra] });
+    if (select) query = query.select(select);
+    return query.limit(limit).lean();
+  };
+
+  const [dated, legacy] = await Promise.all([
+    run({ [linkedField]: { $elemMatch: { $gte: fromYmd, $lte: toYmd } } }),
+    run({
+      $or: [
+        { [linkedField]: { $exists: false } },
+        { [linkedField]: null },
+        { [linkedField]: [] },
+      ],
+      createdAt: { $gte: legacyFromDate, $lte: legacyToDate },
+    }),
+  ]);
+
+  const seen = new Set();
+  const merged = [];
+  for (const doc of [...dated, ...legacy]) {
+    const id = String(doc?._id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    merged.push(doc);
+  }
+  return filterTransferDocsToCalendarRange(merged, { fromYmd, toYmd, dateKey });
+}
+
+/**
+ * 캘린더 첫 화면용 projection.
+ * 환자·치아·상태·날짜만. 스캔 마진·디자인 STL 본문·작업스캔·수가 라인은 열 때 다시 읽는다.
+ */
+export const PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT = {
+  transferId: 1,
+  transferMemo: 1,
+  tag: 1,
+  status: 1,
+  matchingMode: 1,
+  "autoMatch.completedAt": 1,
+  "autoMatch.deadlineAt": 1,
+  "autoMatch.claimedAt": 1,
+  "autoMatch.declinedLabAnchorIds": 1,
+  "autoMatch.subcontractPoolOpen": 1,
+  targetLabAnchorId: 1,
+  targetLabName: 1,
+  assigneeLabAnchorId: 1,
+  assigneeLabName: 1,
+  assigneeKind: 1,
+  practiceBusinessAnchorId: 1,
+  practiceUserId: 1,
+  orderDates: 1,
+  arrivalDates: 1,
+  arrivalDeadlineExpiredAt: 1,
+  toothWorks: 1,
+  prosthesisFollowUps: 1,
+  crownFabrication: 1,
+  "files.patientName": 1,
+  "files.tooth": 1,
+  "files.prosthesisType": 1,
+  "files.scanRole": 1,
+  "files.scanRoleSetBy": 1,
+  "files.file.originalName": 1,
+  "files.file.mimetype": 1,
+  "files.file.size": 1,
+  "files.file.s3Key": 1,
+  "resultFiles.patientName": 1,
+  "resultFiles.tooth": 1,
+  "resultFiles.prosthesisType": 1,
+  "resultFiles.file.originalName": 1,
+  "resultFiles.file.mimetype": 1,
+  "resultFiles.file.size": 1,
+  "resultFiles.file.s3Key": 1,
+  "production.shippingMode": 1,
+  "production.rushProcessing": 1,
+  "production.skipDesignConfirm": 1,
+  "production.skipJig": 1,
+  "production.designReadyAt": 1,
+  "production.designFiles.patientName": 1,
+  "production.designFiles.tooth": 1,
+  "production.designFiles.file.originalName": 1,
+  "production.designFiles.file.size": 1,
+  "production.designFiles.file.s3Key": 1,
+  "production.labDesignConfirmedAt": 1,
+  "production.labDesignConfirmedBy": 1,
+  "production.practiceDesignConfirmedAt": 1,
+  "production.practiceDesignConfirmedBy": 1,
+  "production.abutmentProductionStartedAt": 1,
+  "production.abutmentShipYmd": 1,
+  "production.confirmedAt": 1,
+  "production.confirmedBy": 1,
+  "production.relatedRequestIds": 1,
+  isRemake: 1,
+  remake: 1,
+  remakeSourceTransferId: 1,
+  requestorReadAt: 1,
+  requestorDownloadedAt: 1,
+  requestorDownloadedBy: 1,
+  labTechnicianUserId: 1,
+  labTechnicianName: 1,
+  workCanceledAt: 1,
+  labRejectedAt: 1,
+  labRejectedByLabAnchorId: 1,
+  labBasketTag: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
 
 /** 캘린더·목록 Mongo projection — 파일·치식·생산·과금 메타(전체 Mixed 제외) */
 export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {

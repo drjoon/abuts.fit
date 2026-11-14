@@ -2154,7 +2154,7 @@ export async function hasRelatedAbutmentPastReady(transferDoc) {
 /**
  * 수신 목록용 — transfer Mongo _id → { pastReady, pastReadyTeeth }.
  */
-export async function mapAbutmentPastReadyByTransferDocs(docs) {
+export async function mapAbutmentPastReadyByTransferDocs(docs, options = {}) {
   const result = new Map();
   const list = Array.isArray(docs) ? docs : [];
   const transferMongoIds = [];
@@ -2264,7 +2264,7 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
       rows: ids.length === 0 ? [] : rows,
     }).shouldClearSticky;
   });
-  if (healIds.length > 0) {
+  if (!options.skipHeal && healIds.length > 0) {
     await PracticeTransfer.updateMany(
       { _id: { $in: healIds.map((id) => new Types.ObjectId(id)) } },
       { $unset: { "production.abutmentProductionStartedAt": "" } },
@@ -3291,7 +3291,10 @@ const slimDeliveryInfo = (di) => {
  * @param {object[]} transferDocs
  * @returns {Promise<Map<string, object|null>>} transferMongoId → summary
  */
-export async function mapAbutmentDeliveryByTransferDocs(transferDocs = []) {
+export async function mapAbutmentDeliveryByTransferDocs(
+  transferDocs = [],
+  options = {},
+) {
   const docs = Array.isArray(transferDocs) ? transferDocs : [];
   const transferIds = [];
   const transferToRequestIds = new Map();
@@ -3329,13 +3332,16 @@ export async function mapAbutmentDeliveryByTransferDocs(transferDocs = []) {
     });
   }
 
+  const deliverySelect = options.includeEvents === false
+    ? "shippedAt pickedUpAt deliveredAt carrier tracking"
+    : DELIVERY_POPULATE_SELECT;
   const linkedRequests = await Request.find({ $or: orClauses })
     .select({
       deliveryInfoRef: 1,
       manufacturerStage: 1,
       "partnerBilling.relatedPracticeTransferId": 1,
     })
-    .populate("deliveryInfoRef", DELIVERY_POPULATE_SELECT)
+    .populate("deliveryInfoRef", deliverySelect)
     .lean();
 
   for (const req of linkedRequests) {

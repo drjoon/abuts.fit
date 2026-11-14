@@ -203,7 +203,8 @@ const dropRoomsForTransferKeys = (
   });
 };
 
-export const useChatRooms = () => {
+export const useChatRooms = (options?: { autoFetch?: boolean }) => {
+  const autoFetch = options?.autoFetch !== false;
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
@@ -301,8 +302,9 @@ export const useChatRooms = () => {
   );
 
   useEffect(() => {
+    if (!autoFetch) return;
     void fetchRooms();
-  }, [fetchRooms]);
+  }, [autoFetch, fetchRooms]);
 
   useEffect(() => {
     roomsRef.current = rooms;

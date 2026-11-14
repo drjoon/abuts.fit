@@ -771,6 +771,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
   useEffect(() => {
     let cancelled = false;
+    const timer = window.setTimeout(() => {
     void (async () => {
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/subcontract-direct-blocked-labs",
@@ -789,8 +790,10 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         : [];
       setBlockedDirectLabIds(ids);
     })();
+    }, 900);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -1191,6 +1194,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     writePinnedLabs(loadedPins);
 
     let cancelled = false;
+    const timer = window.setTimeout(() => {
     void (async () => {
       const resolved = await resolveAbutsPinnedRecentLab();
       if (!cancelled && resolved) {
@@ -1228,9 +1232,11 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return next;
       });
     })();
+    }, 900);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, []);
 

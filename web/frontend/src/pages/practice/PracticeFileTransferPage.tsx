@@ -1858,7 +1858,10 @@ export const PracticeFileTransferPage = ({
     name: string;
     url: string;
   } | null>(null);
-  const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
+  const { connections: implantConnections } = useImplantConnectionCatalog(
+    authToken,
+    1200,
+  );
   const platformGuideTour = useGuideTour();
   const isMobile =
     isMobileViewport ||
@@ -2259,12 +2262,17 @@ export const PracticeFileTransferPage = ({
     clearPreUploadCache,
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
-  const { rooms: chatRooms, fetchRooms, clearUnreadForTransferIds } = useChatRooms();
+  const { rooms: chatRooms, fetchRooms, clearUnreadForTransferIds } = useChatRooms({
+    autoFetch: false,
+  });
 
-  // 삭제된 의뢰 채팅 잔상(유령 unread) 정리 — 캘린더 메인 진입 시 rooms 재조회.
+  // 캘린더 인덱스가 먼저 나가게 채팅방 목록은 그다음에 읽는다.
   useEffect(() => {
     if (!authToken) return;
-    void fetchRooms();
+    const timer = window.setTimeout(() => {
+      void fetchRooms();
+    }, 600);
+    return () => window.clearTimeout(timer);
   }, [authToken, fetchRooms]);
 
   const resolveUploadedTempFiles = useCallback(
@@ -3917,7 +3925,10 @@ export const PracticeFileTransferPage = ({
   }, [applyPracticeTransferSettings]);
 
   useEffect(() => {
-    void loadPracticeTransferSettingsFromServer();
+    const timer = window.setTimeout(() => {
+      void loadPracticeTransferSettingsFromServer();
+    }, 700);
+    return () => window.clearTimeout(timer);
   }, [loadPracticeTransferSettingsFromServer]);
 
   // 캘린더가 메인 — page=1 fat 목록은 상세/휴지통/전송 이후에만(초기 병렬 조회 제거)
@@ -4456,7 +4467,10 @@ export const PracticeFileTransferPage = ({
     if (resumeDraftId) {
       void loadPracticeTransferDraft({ draftId: resumeDraftId, forceResync: true });
     }
-    void loadPracticeTransferDraftList();
+    const timer = window.setTimeout(() => {
+      void loadPracticeTransferDraftList();
+    }, 800);
+    return () => window.clearTimeout(timer);
     // hydrate 직후 1회. 콜백 identity 변경으로 다른 임시저장을 폼에 넣지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot after local hydrate
   }, [localFormHydrated]);
@@ -6240,8 +6254,43 @@ export const PracticeFileTransferPage = ({
       requestChatRoomsClearUnread({ transferIds: [openedTransferId] });
     }
 
-    // 어벗 디자인·컨펌 CTA는 목록 production 메타 기준. 열 때 최신으로 맞춤.
-    void loadRecentRequests({ silent: true });
+    // 캘린더 행은 파일 본문이 없다. 패널은 바로 열고, 상세·채팅은 이어서 받는다.
+    const hydrateId = String(transfer.transferId || "").trim();
+    if (hydrateId && hydrateId !== "-") {
+      void (async () => {
+        const qs = new URLSearchParams({ transferId: hydrateId, limit: "8" });
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/my?${qs.toString()}`,
+          method: "GET",
+          token: authToken,
+        });
+        if (!res.ok) return;
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as object)
+            ? (body as { data?: unknown }).data
+            : body;
+        const list =
+          data &&
+          typeof data === "object" &&
+          Array.isArray((data as { requests?: unknown[] }).requests)
+            ? ((data as { requests: unknown[] }).requests ?? [])
+            : [];
+        const mapped = mapMyPracticeTransferApiRows(list);
+        const [full] = groupPracticeRecentRequests(mapped, chatRooms);
+        if (!full || String(full.transferId || "").trim() !== hydrateId) return;
+        setSelectedTransfer((prev) => {
+          if (!prev || String(prev.transferId || "").trim() !== hydrateId) return prev;
+          return {
+            ...full,
+            arrivalDate: prev.arrivalDate || full.arrivalDate,
+            orderDate: prev.orderDate || full.orderDate,
+            focusFollowUpIndex: prev.focusFollowUpIndex,
+            prosthesisStageKey: prev.prosthesisStageKey ?? null,
+          };
+        });
+      })();
+    }
 
     await resolvePracticeTransferChatRoom(String(transfer.transferId || "").trim(), resolveSeq);
   };
@@ -6426,7 +6475,10 @@ export const PracticeFileTransferPage = ({
   }, [authToken, chatRooms]);
 
   useEffect(() => {
-    void refreshPracticeBookmarks();
+    const timer = window.setTimeout(() => {
+      void refreshPracticeBookmarks();
+    }, 800);
+    return () => window.clearTimeout(timer);
   }, [refreshPracticeBookmarks]);
 
   const handleBookmarkChanged = useCallback(
