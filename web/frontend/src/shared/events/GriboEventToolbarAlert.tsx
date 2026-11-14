@@ -16,18 +16,50 @@ import { cn } from "@/shared/ui/cn";
  * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 어벗츠 출시 행사 CTA.
  * 클릭 시 이벤트 신청 페이지를 새 탭으로 연다.
  */
+let griboApplicationCache: {
+  token: string;
+  applied: boolean;
+  visible: boolean;
+  savedAt: number;
+} | null = null;
+const GRIBO_CACHE_TTL_MS = 60 * 1000;
+
 export function GriboEventToolbarAlert({
   className,
 }: {
   className?: string;
 }) {
   const token = useAuthStore((s) => s.token);
-  const [applied, setApplied] = useState<boolean | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [applied, setApplied] = useState<boolean | null>(() =>
+    token &&
+    griboApplicationCache &&
+    griboApplicationCache.token === token &&
+    Date.now() - griboApplicationCache.savedAt < GRIBO_CACHE_TTL_MS
+      ? griboApplicationCache.applied
+      : null,
+  );
+  const [visible, setVisible] = useState(() =>
+    Boolean(
+      token &&
+        griboApplicationCache &&
+        griboApplicationCache.token === token &&
+        Date.now() - griboApplicationCache.savedAt < GRIBO_CACHE_TTL_MS &&
+        griboApplicationCache.visible,
+    ),
+  );
 
   useEffect(() => {
     if (!token) {
       setVisible(false);
+      return;
+    }
+    if (
+      griboApplicationCache &&
+      griboApplicationCache.token === token &&
+      Date.now() - griboApplicationCache.savedAt < GRIBO_CACHE_TTL_MS
+    ) {
+      setApplied(griboApplicationCache.applied);
+      setVisible(griboApplicationCache.visible);
       return;
     }
     let cancelled = false;
@@ -38,10 +70,23 @@ export function GriboEventToolbarAlert({
         const status = res.event?.status;
         // 초안은 미공개. 마감은 이미 신청한 치과만 「신청 완료」를 남긴다.
         if (status === "draft" || (status === "closed" && !res.applied)) {
+          griboApplicationCache = {
+            token,
+            applied: false,
+            visible: false,
+            savedAt: Date.now(),
+          };
           setVisible(false);
           return;
         }
-        setApplied(Boolean(res.applied));
+        const nextApplied = Boolean(res.applied);
+        griboApplicationCache = {
+          token,
+          applied: nextApplied,
+          visible: true,
+          savedAt: Date.now(),
+        };
+        setApplied(nextApplied);
         setVisible(true);
       })
       .catch(() => {

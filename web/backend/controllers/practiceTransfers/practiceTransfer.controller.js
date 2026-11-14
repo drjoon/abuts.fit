@@ -2013,7 +2013,7 @@ const resolveRequestorUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
-const PRACTICE_PEER_USER_CACHE_TTL_MS = 30 * 1000;
+const PRACTICE_PEER_USER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();

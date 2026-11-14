@@ -61,6 +61,34 @@ function cuspsOf(form: ToothForm): Cusp[] {
 const smooth = (x: number, a: number, b: number) => THREE.MathUtils.smoothstep(x, a, b);
 
 /**
+ * 단위 반경 정규화 좌표(u=순/협측 -1..1, v=근/원심 -1..1)에서 교합면 형태 기복(-0.2..+0.25 비율).
+ * 가상 크라운 교합면의 교두·변연융선·중심와 높이를 만들 때 같이 쓴다.
+ */
+export function crownOcclusalReliefRatio(tooth: string, uNorm: number, vNorm: number): number {
+  const form = toothFormOf(tooth);
+  if (!form) return 0;
+  const u = THREE.MathUtils.clamp(uNorm, -1, 1);
+  const v = THREE.MathUtils.clamp(vNorm, -1, 1);
+  let lift = 0;
+  for (const cusp of cuspsOf(form)) lift += gauss(u, v, cusp);
+  if (form.kind === "incisor") {
+    lift -= 0.07 * Math.exp(-((u + 0.3) ** 2) / 0.1 - (v * v) / 0.35);
+  } else if (form.kind === "canine") {
+    lift -= 0.05 * Math.exp(-((u + 0.35) ** 2) / 0.09 - (v * v) / 0.3);
+  } else if (form.kind === "premolar") {
+    lift -= 0.13 * Math.exp(-(u * u) / 0.025 - (v * v) / 0.5);
+    lift += 0.07 * Math.exp(-((Math.abs(v) - 0.66) ** 2) / 0.03 - (u * u) / 0.3);
+  } else {
+    lift -= 0.12 * Math.exp(-(u * u) / 0.02 - (v * v) / 0.6);
+    lift -= 0.11 * Math.exp(-(v * v) / 0.02 - (u * u) / 0.6);
+    lift -= 0.05 * Math.exp(-(u * u + v * v) / 0.05);
+    lift += 0.06 * Math.exp(-((Math.abs(v) - 0.72) ** 2) / 0.03 - (u * u) / 0.3);
+    if (form.upper) lift += 0.06 * Math.exp(-((u + v * 0.9) ** 2) / 0.02 - (v * v) / 0.25);
+  }
+  return lift;
+}
+
+/**
  * 치아 종류별 형태를 지오메트리에 입힌다. 위치(x,z)와 높이(y)를 교합 쪽 가중치로만 민다.
  * `dirs`가 없으면 로컬 x=협설, z=근원심으로 본다.
  */

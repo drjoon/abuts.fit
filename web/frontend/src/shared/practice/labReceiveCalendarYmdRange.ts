@@ -84,11 +84,12 @@ export const buildLabReceiveCalendarYmdRange = (
 };
 
 /**
- * 목록(일정) 조회 창 — 커서 월 앞·뒤로 패딩.
- * 스크롤로 커서가 한 달씩 밀리면 창이 따라가 월 경계를 넘긴다.
+ * 목록(일정) 조회 창 — 커서 월 앞·뒤로 1달 패딩(약 3개월).
+ * 5개월 전체를 초기 진입에 한꺼번에 읽으면 수백 건 응답(1.7MB+)으로 스켈레톤이 길어진다.
+ * 스크롤로 커서가 한 달씩 밀리면 창이 따라가 월 경계를 연속으로 넘긴다.
  */
-export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_BEFORE = 2;
-export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_AFTER = 2;
+export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_BEFORE = 1;
+export const LAB_RECEIVE_CALENDAR_LIST_MONTHS_AFTER = 1;
 
 /** 목록(일정) 보기 — 커서일이 속한 KST 월 ±패딩. */
 export const buildLabReceiveCalendarListYmdRange = (

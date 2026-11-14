@@ -2179,17 +2179,34 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
   const pendingKeys = [...relatedIdsByTransfer.keys()];
   if (pendingKeys.length === 0) return result;
 
-  const partnerRows =
-    transferMongoIds.length > 0
-      ? await Request.find({
-          "partnerBilling.relatedPracticeTransferId": {
-            $in: transferMongoIds.map((id) => new Types.ObjectId(id)),
-          },
-        })
+  const partnerIdsByTransfer = new Map();
+  const explicitRequestIds = new Set();
+  for (const [transferKey, relatedIds] of relatedIdsByTransfer) {
+    for (const id of relatedIds) {
+      if (Types.ObjectId.isValid(id)) explicitRequestIds.add(id);
+    }
+    partnerIdsByTransfer.set(transferKey, []);
+  }
+  const orLookup = [];
+  if (transferMongoIds.length > 0) {
+    orLookup.push({
+      "partnerBilling.relatedPracticeTransferId": {
+        $in: transferMongoIds.map((id) => new Types.ObjectId(id)),
+      },
+    });
+  }
+  if (explicitRequestIds.size > 0) {
+    orLookup.push({
+      _id: { $in: [...explicitRequestIds].map((id) => new Types.ObjectId(id)) },
+    });
+  }
+  const stageRows =
+    orLookup.length > 0
+      ? await Request.find(orLookup.length === 1 ? orLookup[0] : { $or: orLookup })
           .select({
             _id: 1,
             manufacturerStage: 1,
-            partnerBilling: 1,
+            "partnerBilling.relatedPracticeTransferId": 1,
             "productionSchedule.actualCamStart": 1,
             "caseInfos.tooth": 1,
             "caseInfos.hexVerificationSample": 1,
@@ -2197,49 +2214,17 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
           .lean()
       : [];
 
-  const partnerIdsByTransfer = new Map();
-  const allRequestIds = new Set();
-  for (const [transferKey, relatedIds] of relatedIdsByTransfer) {
-    for (const id of relatedIds) allRequestIds.add(id);
-    partnerIdsByTransfer.set(transferKey, []);
-  }
-  for (const row of partnerRows) {
+  const requestById = new Map();
+  for (const row of stageRows) {
+    const reqId = String(row?._id || "").trim();
+    if (!reqId) continue;
+    requestById.set(reqId, row);
     const transferKey = String(
       row?.partnerBilling?.relatedPracticeTransferId || "",
     ).trim();
-    if (!transferKey) continue;
-    const reqId = String(row?._id || "").trim();
-    if (!reqId) continue;
-    const bucket = partnerIdsByTransfer.get(transferKey) || [];
-    bucket.push(reqId);
-    partnerIdsByTransfer.set(transferKey, bucket);
-    allRequestIds.add(reqId);
-  }
-
-  const needStageLookup = [...allRequestIds].filter((id) =>
-    Types.ObjectId.isValid(id),
-  );
-
-  const stageRows =
-    needStageLookup.length > 0
-      ? await Request.find({
-          _id: { $in: needStageLookup.map((id) => new Types.ObjectId(id)) },
-        })
-          .select({
-            manufacturerStage: 1,
-            "productionSchedule.actualCamStart": 1,
-            "caseInfos.tooth": 1,
-            "caseInfos.hexVerificationSample": 1,
-          })
-          .lean()
-      : [];
-  const requestById = new Map(
-    stageRows.map((row) => [String(row?._id || ""), row]),
-  );
-  // partnerRows may have stage already — merge without losing tooth
-  for (const row of partnerRows) {
-    const id = String(row?._id || "").trim();
-    if (id && !requestById.has(id)) requestById.set(id, row);
+    if (transferKey && partnerIdsByTransfer.has(transferKey)) {
+      partnerIdsByTransfer.get(transferKey).push(reqId);
+    }
   }
 
   for (const transferKey of pendingKeys) {

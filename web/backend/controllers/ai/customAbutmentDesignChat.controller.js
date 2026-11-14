@@ -25,7 +25,7 @@ const MAX_IMAGE_CHARS = 2_000_000;
 const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
-  occlusalClearanceMm: { label: "포스트 최정점 → 대합치 거리", unit: "mm", min: 0.8, max: 2.5 },
+  occlusalClearanceMm: { label: "포스트 최정점 → 대합치 거리", unit: "mm", min: 0.7, max: 2.5 },
   postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 1, max: 8 },
   postHeightOffsetMm: {
     label: "포스트 높이 보정(대합치가 있으면 음수만 효과)",
@@ -39,7 +39,7 @@ const PARAM_SPECS = {
   marginDepthMm: { label: "피니시라인 치은 하방 깊이(둘레 전체)", unit: "mm", min: 0, max: 1.5 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },
-  minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 공간 없으면 0.65까지 자동)", unit: "mm", min: 0.65, max: 1.5 },
+  minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 공간 없으면 0.7까지 자동)", unit: "mm", min: 0.7, max: 1.5 },
   axisToOpposing: { label: "삽입축 대합치 중심 반영(0=악궁 교합 방향, 1=대합치 중심)", unit: "", min: 0, max: 1 },
   axisMaxDeg: { label: "픽스쳐 장축 대비 삽입축 최대 각도", unit: "°", min: 0, max: 25 },
   axisShiftLabialMm: { label: "포스트 윗면 순측(+)/설측(-) 이동", unit: "mm", min: -2, max: 2 },

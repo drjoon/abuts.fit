@@ -1,18 +1,20 @@
 // 커스텀어벗 디자인 뷰어의 방향 큐브. 카메라 방향을 따라 돌고, 면을 누르면 그 방향으로 부드럽게 돌아간다.
-// 큐브를 끌면 화면이 같이 돈다. 아래 버튼은 기본 시점·전체 맞춤·화면 90° 돌리기다.
-// 면은 환자 기준(정면=순측, 좌·우=환자 좌·우)이다.
+// 큐브를 끌면 화면이 같이 돈다. 위 버튼은 기본 시점·전체 맞춤·화면 90° 돌리기·회전 중심이다.
+// 면 방향은 `sync`에 넘긴 frame(디자인한 치아 기준이면 순·설·교합·치은·근심·원심)이고, 이름은 `faceLabels`가 정한다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/dentalFrame.ts
 
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
-import { Home, Maximize2, RotateCcw, RotateCw } from "lucide-react";
+import { Crosshair, Home, Maximize2, RotateCcw, RotateCw } from "lucide-react";
 import * as THREE from "three";
 import type { ExternalViewGesture } from "@/shared/three/screenSpaceOrbitControls";
 import type { DentalFrame } from "@/shared/practice/dentalFrame";
 import { cn } from "@/shared/ui/cn";
 
 export type ViewCubeFace = "front" | "back" | "left" | "right" | "top" | "bottom";
+
+export type ViewCubeFaceLabels = Record<ViewCubeFace, string>;
 
 export type ViewCubeHandle = {
   /** 렌더 루프에서 매 프레임 부른다. */
@@ -52,6 +54,52 @@ export function viewCubeDirection(
   }
 }
 
+type Vec3 = readonly [number, number, number];
+
+/**
+ * 디자인한 치아 기준 큐브. 정면=순(협)측, 위=환자 위쪽(상악은 치은, 하악은 교합),
+ * 좌·우=근심·원심. FDI 번호와 픽스처 방향이 맞지 않으면 null.
+ */
+export function toothViewCube(
+  toothNumber: string,
+  fixture: { labialDir: Vec3; archOcclusalDir: Vec3; mesialDir?: Vec3 | null },
+  frame: DentalFrame,
+): { frame: DentalFrame; labels: ViewCubeFaceLabels } | null {
+  const m = /^([1-4])([1-8])$/.exec(String(toothNumber).trim());
+  if (!m) return null;
+  const upper = m[1] === "1" || m[1] === "2";
+  const anteriorTooth = Number(m[2]) <= 3;
+  const up = new THREE.Vector3(...fixture.archOcclusalDir).normalize();
+  if (upper) up.negate();
+  if (up.dot(frame.up) < 0) return null;
+  const anterior = new THREE.Vector3(...fixture.labialDir);
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-6) return null;
+  anterior.normalize();
+  const right = new THREE.Vector3().crossVectors(up, anterior);
+  const refRight = new THREE.Vector3().crossVectors(frame.up, frame.anterior);
+  if (refRight.dot(frame.right) < 0) right.negate();
+
+  let left = "좌";
+  let rightLabel = "우";
+  if (fixture.mesialDir) {
+    const mesialRight = new THREE.Vector3(...fixture.mesialDir).dot(right) > 0;
+    rightLabel = mesialRight ? "근심" : "원심";
+    left = mesialRight ? "원심" : "근심";
+  }
+  return {
+    frame: { up, anterior, right },
+    labels: {
+      front: anteriorTooth ? "순측" : "협측",
+      back: upper ? "구개측" : "설측",
+      top: upper ? "치은" : "교합",
+      bottom: upper ? "교합" : "치은",
+      left,
+      right: rightLabel,
+    },
+  };
+}
+
 const CUBE_REM = 4.5;
 /** 큐브 1px 끌기 = 화면 몇 px 끌기. 큐브가 작아서 크게 돌린다. */
 const CUBE_DRAG_GAIN = 2.5;
@@ -69,10 +117,29 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
     onFit: () => void;
     onRoll: (dir: 1 | -1) => void;
     onOrbit: (gesture: ExternalViewGesture) => void;
+    onPivot: () => void;
+    /** 면 이름. 없으면 환자 기준(정면·후면·좌·우·상·하). */
+    faceLabels?: ViewCubeFaceLabels | null;
+    /** 큐브 아래 한 줄. 예: 「#36 기준」 */
+    caption?: string | null;
+    pivotActive: boolean;
+    pivotArmed: boolean;
     className?: string;
   }
 >(function PracticeCustomAbutmentViewCube(
-  { onFace, onHome, onFit, onRoll, onOrbit, className },
+  {
+    onFace,
+    onHome,
+    onFit,
+    onRoll,
+    onOrbit,
+    onPivot,
+    faceLabels,
+    caption,
+    pivotActive,
+    pivotArmed,
+    className,
+  },
   ref,
 ) {
   const cubeRef = useRef<HTMLDivElement | null>(null);
@@ -150,6 +217,19 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
         <CubeButton label="오른쪽으로 90° 돌리기" onClick={() => onRoll(1)}>
           <RotateCw className="h-3.5 w-3.5" />
         </CubeButton>
+        <CubeButton
+          label={
+            pivotActive
+              ? "회전 중심 지우기"
+              : pivotArmed
+                ? "회전 중심 고르기 취소"
+                : "회전 중심 지정 (누른 뒤 면을 클릭, 또는 면을 더블클릭)"
+          }
+          active={pivotActive || pivotArmed}
+          onClick={onPivot}
+        >
+          <Crosshair className="h-3.5 w-3.5" />
+        </CubeButton>
       </div>
       <div
         className="relative grid cursor-grab place-items-center active:cursor-grabbing"
@@ -200,6 +280,7 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
         >
           {FACES.map((f) => {
             const active = activeFace === f.face;
+            const label = faceLabels?.[f.face] ?? f.label;
             return (
               <button
                 key={f.face}
@@ -215,16 +296,17 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
                   backfaceVisibility: "hidden",
                   boxShadow: "inset 0 0 0 0.125rem rgba(255,255,255,0.7)",
                 }}
-                aria-label={`${f.label} 보기`}
+                aria-label={`${label} 보기`}
                 aria-pressed={active}
                 onClick={() => onFace(f.face)}
               >
-                {f.label}
+                {label}
               </button>
             );
           })}
         </div>
       </div>
+      {caption ? <div className="text-[0.625rem] font-medium leading-none text-muted-foreground">{caption}</div> : null}
     </div>
   );
 });
@@ -232,17 +314,25 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
 function CubeButton({
   label,
   onClick,
+  active = false,
   children,
 }: {
   label: string;
   onClick: () => void;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      className={cn(
+        "flex h-6 w-6 items-center justify-center rounded-md",
+        active
+          ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
       aria-label={label}
+      aria-pressed={active}
       title={label}
       onClick={onClick}
     >

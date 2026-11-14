@@ -373,8 +373,16 @@ function buildApplicationStats(items) {
   };
 }
 
+let defaultEventsEnsuredAt = 0;
+const DEFAULT_EVENTS_ENSURE_TTL_MS = 5 * 60 * 1000;
+
 /** 첫 이벤트(어벗츠 출시 행사)와 기공소 소개 행사를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
+  const now = Date.now();
+  if (now - defaultEventsEnsuredAt < DEFAULT_EVENTS_ENSURE_TTL_MS) {
+    return;
+  }
+  defaultEventsEnsuredAt = now;
   await ensureAbutsLabMarketingEvent();
   let existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,

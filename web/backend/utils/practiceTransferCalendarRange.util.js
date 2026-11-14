@@ -169,7 +169,8 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   tag: 1,
   status: 1,
   matchingMode: 1,
-  autoMatch: 1,
+  "autoMatch.completedAt": 1,
+  "autoMatch.deadlineAt": 1,
   targetLabAnchorId: 1,
   targetLabName: 1,
   // 협력/하청 표시·수수료 — 누락 시 redact가 원청「어벗츠기공소」만 반환
@@ -207,7 +208,20 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   "production.confirmedAt": 1,
   "production.confirmedBy": 1,
   "production.relatedRequestIds": 1,
-  billing: 1,
+  "billing.heldAt": 1,
+  "billing.billedAt": 1,
+  "billing.settledAt": 1,
+  "billing.labSettledAt": 1,
+  "billing.abutmentSettledAt": 1,
+  "billing.total": 1,
+  "billing.labFeeTotal": 1,
+  "billing.labAbutmentTotal": 1,
+  "billing.abutmentRetailTotal": 1,
+  "billing.tempCreditLabFeeTotal": 1,
+  "billing.finalLabFeeTotal": 1,
+  "billing.feeRateApplied": 1,
+  "billing.relationshipKind": 1,
+  "billing.lines": 1,
   remake: 1,
   remakeCharges: 1,
   remakeSourceTransferId: 1,
@@ -226,5 +240,11 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   updatedAt: 1,
 };
 
-/** GET /my page 목록 — 캘린더와 동일 projection */
-export const PRACTICE_TRANSFER_MY_LIST_SELECT = PRACTICE_TRANSFER_CALENDAR_LIST_SELECT;
+/** GET /my page 목록 — autoMatch·billing 전체 포함(subpath와 상위 경로 혼용 금지) */
+export const PRACTICE_TRANSFER_MY_LIST_SELECT = (() => {
+  const out = { ...PRACTICE_TRANSFER_CALENDAR_LIST_SELECT, autoMatch: 1, billing: 1 };
+  for (const k of Object.keys(out)) {
+    if (k.startsWith("autoMatch.") || k.startsWith("billing.")) delete out[k];
+  }
+  return out;
+})();

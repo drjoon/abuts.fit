@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 // change-log:
+// - 2026-11-14: `pivot` — 지정한 점을 축으로 회전(화면 가운데로 옮기지 않음).
 // - 2026-10-02: 트랙패드 두 손가락 스크롤은 이동. 핀치·마우스 휠은 확대·축소.
 // - 2026-09-14: OrthographicCamera 지원 — 줌은 camera.zoom, 패닝 스케일 ortho 분기.
 // - 2026-10-01: beginExternal·dragBy·zoomByWheel — 페인트가 왼쪽을 쓰는 동안 화면 조작.
@@ -176,6 +177,8 @@ export class ScreenSpaceOrbitControls {
   maxZoom: number;
   /** 회전 중심 클릭에서 화면 아래 면 좌표. 없으면 회전 중심 클릭을 무시한다. */
   pickPivot: ((event: PointerEvent) => THREE.Vector3 | null) | null = null;
+  /** 지정한 회전 중심. 있으면 화면을 옮기지 않고 이 점을 축으로 돈다. 없으면 target(화면 가운데). */
+  pivot: THREE.Vector3 | null = null;
 
   /**
    * True if the last completed pointer gesture moved the camera (rotate/pan).
@@ -495,6 +498,18 @@ export class ScreenSpaceOrbitControls {
     // Camera basis = screen axes (column 0 = right/X, column 1 = up/Y).
     this.screenRight.setFromMatrixColumn(this.camera.matrixWorld, 0).normalize();
     this.screenUp.setFromMatrixColumn(this.camera.matrixWorld, 1).normalize();
+
+    if (this.pivot) {
+      const q = new THREE.Quaternion()
+        .setFromAxisAngle(this.screenRight, -deltaY * rotateScale)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(this.screenUp, -deltaX * rotateScale));
+      const p = this.pivot;
+      this.camera.position.sub(p).applyQuaternion(q).add(p);
+      this.target.sub(p).applyQuaternion(q).add(p);
+      this.camera.up.applyQuaternion(q);
+      this.camera.lookAt(this.target);
+      return;
+    }
 
     if (deltaX !== 0) {
       // Left/right → yaw around screen Y (keeps current horizon).

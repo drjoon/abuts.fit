@@ -531,6 +531,13 @@ export function PracticeRecentTransfersAllModal({
   }, [calendarRefreshNonce, fetchCalendarTransfers, open, token]);
 
   const recentRequests = useMemo(() => {
+    // 캘린더 범위 응답 전에는 시드(1페이지)를 먼저 그려 15칸 빈 스켈레톤 대기 시간을 없앤다.
+    if (calendarRequests.length === 0) {
+      return initialRequests
+        .filter((row) => !isPracticeTransferTrashStatus(row.status))
+        .slice()
+        .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+    }
     // 시드(1페이지)에서 휴지통으로 바뀐 transferId는 캘린더 목록에도 반영
     const trashStatusByTransferId = new Map<string, string>();
     for (const row of initialRequests) {

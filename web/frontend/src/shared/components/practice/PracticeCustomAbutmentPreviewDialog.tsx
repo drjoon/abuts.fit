@@ -30,9 +30,10 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Bot,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Loader2,
   Paintbrush,
-  RotateCcw,
   Send,
   Settings,
   Sparkles,
@@ -131,6 +132,7 @@ import {
 } from "@/shared/components/practice/viewPaintSpace";
 import {
   PracticeCustomAbutmentViewCube,
+  toothViewCube,
   viewCubeDirection,
   type ViewCubeFace,
   type ViewCubeHandle,
@@ -215,6 +217,7 @@ const VIEWER_PLAIN_BG = 0xe6e9ec;
 const FIT_MARGIN = 1.06;
 const MARGIN_LINE_COLOR = 0x0891b2;
 const MARGIN_LINE_PX = 3.5;
+const PIVOT_MARKER_COLOR = 0xf59e0b;
 const CHAT_WIDTH_KEY = "abuts.caDesign.chatWidthRem";
 const CHAT_WIDTH_DEFAULT_REM = 22;
 const CHAT_WIDTH_MIN_REM = 16;
@@ -466,12 +469,21 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 「AI에게」로 잡아 둔 화면(표시 포함). 다음 메시지와 함께 보낸다. */
   const [sketchUrl, setSketchUrl] = useState<string | null>(null);
   const [chatWidthRem, setChatWidthRem] = useState(readChatWidthRem);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [pivotSet, setPivotSet] = useState(false);
+  const [pivotArmed, setPivotArmed] = useState(false);
+  const pivotArmedRef = useRef(false);
+  pivotArmedRef.current = pivotArmed;
+  const pivotMarkerRef = useRef<THREE.Mesh | null>(null);
+  const cubeFrameRef = useRef<DentalFrame | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const viewCubeRef = useRef<ViewCubeHandle | null>(null);
   const viewAnimRef = useRef<{
     from: THREE.Quaternion;
     to: THREE.Quaternion;
-    dist: number;
+    fromPos: THREE.Vector3;
+    fromTarget: THREE.Vector3;
+    pivot: THREE.Vector3;
     t0: number;
   } | null>(null);
   const asideRef = useRef<HTMLElement | null>(null);
@@ -657,6 +669,55 @@ export function PracticeCustomAbutmentPreviewDialog({
     for (const tooth of [...abutmentMeshesRef.current.keys()]) removeDesignFromScene(tooth);
   }, [disposeMesh, removeDesignFromScene]);
 
+  const clearPivot = useCallback(() => {
+    if (controlsRef.current) controlsRef.current.pivot = null;
+    if (pivotMarkerRef.current) pivotMarkerRef.current.visible = false;
+    setPivotSet(false);
+    setPivotArmed(false);
+  }, []);
+
+  /** 화면 좌표 아래 보이는 면을 회전 중심으로. 빈 곳이면 false. */
+  const pickPivotAt = useCallback((clientX: number, clientY: number): boolean => {
+    const camera = cameraRef.current;
+    const renderer = rendererRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !renderer || !controls) return false;
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, camera);
+    const targets = [
+      ...jawMeshesRef.current.upperTrimmed,
+      ...jawMeshesRef.current.upperScanbody,
+      ...jawMeshesRef.current.lowerTrimmed,
+      ...jawMeshesRef.current.lowerScanbody,
+      ...abutmentMeshesRef.current.values(),
+      ...predictedCrownMeshesRef.current.values(),
+      ...fixtureMeshesRef.current.values(),
+    ].filter((m) => m.visible && m.parent?.visible !== false);
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit) return false;
+    controls.pivot = hit.point.clone();
+    const marker = pivotMarkerRef.current;
+    if (marker) {
+      marker.position.copy(hit.point);
+      marker.visible = true;
+    }
+    setPivotSet(true);
+    setPivotArmed(false);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    const el = rendererRef.current?.domElement;
+    if (!el) return;
+    el.style.cursor = pivotArmed ? "crosshair" : "";
+  }, [pivotArmed]);
+
   const fitCameraToTargets = useCallback(
     (targets: THREE.Object3D[], viewDir?: THREE.Vector3, upDir?: THREE.Vector3) => {
       const camera = cameraRef.current;
@@ -664,6 +725,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const host = hostRef.current;
       if (!camera || !controls || !host || targets.length === 0) return;
       viewAnimRef.current = null;
+      clearPivot();
 
       const box = new THREE.Box3();
       for (const obj of targets) {
@@ -741,7 +803,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       camera.lookAt(mid);
       controls.syncFromCamera();
     },
-    [],
+    [clearPivot],
   );
 
   const fitDefaultCamera = useCallback(() => {
@@ -825,7 +887,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     viewAnimRef.current = {
       from: camera.quaternion.clone(),
       to,
-      dist: camera.position.distanceTo(controls.target),
+      fromPos: camera.position.clone(),
+      fromTarget: controls.target.clone(),
+      pivot: (controls.pivot ?? controls.target).clone(),
       t0: performance.now(),
     };
   }, []);
@@ -835,7 +899,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     (face: ViewCubeFace) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
-      const frame = frameRef.current;
+      const frame = cubeFrameRef.current ?? frameRef.current;
       if (!camera || !controls || !frame) return;
       const { viewDir, upDir } = viewCubeDirection(face, frame);
       const eye = controls.target.clone().addScaledVector(viewDir.normalize(), 1);
@@ -856,6 +920,17 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [animateCameraTo],
   );
+
+  const cubeView = useMemo(() => {
+    const frame = frameRef.current;
+    if (!frame || designedList.length === 0) return null;
+    const designed =
+      designedList.find((d) => d.toothNumber === selectedTooth) ?? designedList[0];
+    const view = toothViewCube(designed.toothNumber, designed.fixture, frame);
+    return view ? { ...view, toothNumber: designed.toothNumber } : null;
+  }, [designedList, selectedTooth]);
+  cubeFrameRef.current = cubeView?.frame ?? null;
+  const cubeFaceLabels = cubeView?.labels ?? null;
 
   const selectTooth = useCallback(
     (toothNumber: string | null) => {
@@ -986,6 +1061,33 @@ export function PracticeCustomAbutmentPreviewDialog({
       viewAnimRef.current = null;
     });
 
+    const pivotMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 16, 12),
+      new THREE.MeshBasicMaterial({ color: PIVOT_MARKER_COLOR, depthTest: false, transparent: true, opacity: 0.9 }),
+    );
+    pivotMarker.renderOrder = 1000;
+    pivotMarker.visible = false;
+    scene.add(pivotMarker);
+    pivotMarkerRef.current = pivotMarker;
+
+    let pickDown: { x: number; y: number } | null = null;
+    const onPickDown = (e: PointerEvent) => {
+      pickDown = pivotArmedRef.current && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+    };
+    const onPickUp = (e: PointerEvent) => {
+      const down = pickDown;
+      pickDown = null;
+      if (!down || !pivotArmedRef.current) return;
+      if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) return;
+      pickPivotAt(e.clientX, e.clientY);
+    };
+    const onPickDouble = (e: MouseEvent) => {
+      if (!pickPivotAt(e.clientX, e.clientY)) clearPivot();
+    };
+    renderer.domElement.addEventListener("pointerdown", onPickDown);
+    renderer.domElement.addEventListener("pointerup", onPickUp);
+    renderer.domElement.addEventListener("dblclick", onPickDouble);
+
     let raf = 0;
     const renderLoop = () => {
       raf = window.requestAnimationFrame(renderLoop);
@@ -994,10 +1096,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         const t = Math.min(1, (performance.now() - anim.t0) / VIEW_ANIM_MS);
         const k = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
         camera.quaternion.slerpQuaternions(anim.from, anim.to, k);
-        camera.position
-          .set(0, 0, anim.dist)
-          .applyQuaternion(camera.quaternion)
-          .add(controls.target);
+        const delta = camera.quaternion.clone().multiply(anim.from.clone().invert());
+        camera.position.copy(anim.fromPos).sub(anim.pivot).applyQuaternion(delta).add(anim.pivot);
+        controls.target.copy(anim.fromTarget).sub(anim.pivot).applyQuaternion(delta).add(anim.pivot);
         camera.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
         camera.updateMatrixWorld();
         if (t >= 1) {
@@ -1023,10 +1124,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         .addScaledVector(fwd, -90)
         .addScaledVector(up, 50);
 
+      if (pivotMarker.visible) {
+        const viewH = (camera.top - camera.bottom) / camera.zoom;
+        pivotMarker.scale.setScalar((viewH / Math.max(host.clientHeight, 1)) * 5);
+      }
       if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
-      viewCubeRef.current?.sync(camera, frameRef.current);
+      viewCubeRef.current?.sync(camera, cubeFrameRef.current ?? frameRef.current);
     };
     const paintListeners = paintListenersRef.current;
     renderLoop();
@@ -1069,6 +1174,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       controls.dispose();
       clearSceneObjects();
       renderer.dispose();
+      renderer.domElement.removeEventListener("pointerdown", onPickDown);
+      renderer.domElement.removeEventListener("pointerup", onPickUp);
+      renderer.domElement.removeEventListener("dblclick", onPickDouble);
+      scene.remove(pivotMarker);
+      pivotMarker.geometry.dispose();
+      (pivotMarker.material as THREE.Material).dispose();
+      pivotMarkerRef.current = null;
       renderer.domElement.remove();
       labelRenderer.domElement.remove();
       sceneRef.current = null;
@@ -1077,7 +1189,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       labelRendererRef.current = null;
       controlsRef.current = null;
     };
-  }, [clearSceneObjects, hostEl, open]);
+  }, [clearPivot, clearSceneObjects, hostEl, open, pickPivotAt]);
 
   // 스캔 로드 → (저장본 복원 | 스캔바디 인식·정합 → 커스텀어벗 디자인) → 씬 배치
   useEffect(() => {
@@ -2017,35 +2129,187 @@ export function PracticeCustomAbutmentPreviewDialog({
     }
   }, [authToken, chatBusy, persistDesign, transferIdParam]);
 
-  const resetAllDesigns = useCallback(async () => {
-    const ctx = designContextRef.current;
-    if (!ctx || chatBusy) return;
-    const changed = Object.entries(ctx.overrides)
-      .filter(([, v]) => Object.keys(v).length > 0)
-      .map(([toothNumber]) => ({ toothNumber, params: {} }));
-    if (changed.length === 0) return;
-    setChatBusy(true);
-    try {
-      await applyDesignChanges(changed, "replace");
-      const next: ChatTurn[] = [
-        ...chatTurnsRef.current,
-        { role: "assistant", text: "모든 치아를 기본 디자인으로 되돌렸습니다." },
-      ];
-      chatTurnsRef.current = next;
-      setChatTurns(next);
-      persistDesign(next);
-    } finally {
-      setChatBusy(false);
-    }
-  }, [applyDesignChanges, chatBusy, persistDesign]);
+  const renderChatPanel = () => (
+    <aside
+      ref={asideRef}
+      className={cn(
+        "pointer-events-auto relative flex max-w-[60vw] flex-col rounded-lg border bg-background/95 shadow-sm",
+        chatCollapsed ? "shrink-0" : "min-h-0 flex-1",
+      )}
+      style={{ width: `${chatWidthRem}rem` }}
+    >
+      {chatCollapsed ? null : (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="대화 패널 너비"
+          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize rounded-l-lg hover:bg-primary/20"
+          onPointerDown={startChatResize}
+        />
+      )}
+      <div
+        className={cn(
+          "flex items-center gap-1.5 py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground",
+          chatCollapsed ? null : "border-b",
+        )}
+      >
+        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate">AI 디자인 대화</span>
+        {chatBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" /> : null}
+        <button
+          type="button"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={chatCollapsed ? "대화 펼치기" : "대화 접기"}
+          title={chatCollapsed ? "대화 펼치기" : "대화 접기"}
+          aria-expanded={!chatCollapsed}
+          onClick={() => setChatCollapsed((v) => !v)}
+        >
+          {chatCollapsed ? (
+            <ChevronsUpDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronsDownUp className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+      {chatCollapsed ? null : (
+        <>
+          {hasCustomAbutmentPreference(preference) ? (
+            <div className="flex items-start gap-2 border-b bg-amber-50/70 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <div className="min-w-0 flex-1">
+                <span className="font-semibold">치과 기본값</span>
+                <span className="ml-1.5">{describeCustomAbutmentPreference(preference)}</span>
+              </div>
+              {preferenceCanSave ? (
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50 dark:hover:bg-amber-900/40"
+                  disabled={chatBusy}
+                  onClick={() => void clearPreference()}
+                >
+                  지우기
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+            {chatTurns.length === 0 ? (
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <p className="leading-relaxed">
+                  바꾸고 싶은 점을 말이나 그림으로 알려 주면 디자인을 다시 만듭니다.
+                  <br />
+                  치아는 왼쪽 목록이나 화면의 번호 뱃지를 누르거나, #23처럼 입력해 고릅니다.
+                  <br />
+                  페인트로 표시하고 「AI에게」를 누르면 그림이 함께 전달됩니다.
+                  <br />
+                  「앞으로」처럼 규칙으로 말하면 다음 케이스 기본값이 됩니다.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {CHAT_EXAMPLES.map((ex) => (
+                    <button
+                      key={ex}
+                      type="button"
+                      className="rounded-full border px-2.5 py-1 text-foreground hover:bg-muted"
+                      onClick={() => void sendChat(ex)}
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {chatTurns.map((turn, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "max-w-[92%] whitespace-pre-line rounded-lg px-3 py-2 text-xs leading-relaxed",
+                  turn.role === "user"
+                    ? "ml-auto bg-primary text-primary-foreground"
+                    : "mr-auto border bg-muted/40 text-foreground",
+                )}
+              >
+                {turn.pending ? (
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {turn.text}
+                  </span>
+                ) : (
+                  turn.text
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-1.5 border-t px-3 py-2.5">
+            <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
+              <span>대상 {selectedTooth ? `#${selectedTooth}` : "전체 치아"}</span>
+              {selectedTooth ? (
+                <button
+                  type="button"
+                  className="rounded px-1 font-medium text-primary hover:bg-muted"
+                  onClick={() => setSelectedTooth(null)}
+                >
+                  전체로
+                </button>
+              ) : null}
+              {!sketchUrl && paint.paintOn && paint.count > 0 ? (
+                <span className="text-rose-600">보내면 그림도 함께 갑니다</span>
+              ) : null}
+            </div>
+            {sketchUrl ? (
+              <div className="relative h-14 w-20 overflow-hidden rounded-md border">
+                <img src={sketchUrl} alt="첨부한 화면" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-white/95 text-slate-600 shadow-sm hover:bg-destructive hover:text-destructive-foreground"
+                  aria-label="첨부 지우기"
+                  onClick={() => setSketchUrl(null)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : null}
+            <div className="flex items-end gap-1.5">
+              <Textarea
+                ref={chatInputRef}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void sendChat(chatInput);
+                  }
+                }}
+                placeholder={
+                  sketchUrl || paint.count > 0
+                    ? "표시한 부위를 어떻게 바꿀지 적어 주세요"
+                    : "예: #23 마진 0.3mm 얕게"
+                }
+                rows={2}
+                className="min-h-[2.75rem] resize-none text-xs"
+                disabled={chatBusy}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 w-9 shrink-0 px-0"
+                aria-label="보내기"
+                disabled={chatBusy || !chatInput.trim()}
+                onClick={() => void sendChat(chatInput)}
+              >
+                {chatBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </aside>
+  );
 
   const hasOpposingJaw =
     (prepJaws.has("upper") && availableJaws.lower) ||
     (prepJaws.has("lower") && availableJaws.upper);
   const ready = status.kind === "ready" && designedList.length > 0;
-  const hasOverrides = designedList.some(
-    (d) => Object.keys(designContextRef.current?.overrides[d.toothNumber] ?? {}).length > 0,
-  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2271,18 +2535,32 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {ready ? (
-              <PracticeCustomAbutmentViewCube
-                ref={viewCubeRef}
-                className="absolute right-3 top-16 z-10"
-                onFace={jumpToFace}
-                onHome={() => {
-                  setSelectedTooth(null);
-                  fitDefaultCamera();
-                }}
-                onFit={fitCurrentView}
-                onRoll={rollView}
-                onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
-              />
+              <div className="pointer-events-none absolute bottom-3 right-3 top-16 z-10 flex flex-col items-end gap-2">
+                <PracticeCustomAbutmentViewCube
+                  ref={viewCubeRef}
+                  className="shrink-0"
+                  faceLabels={cubeFaceLabels}
+                  caption={cubeView ? `#${cubeView.toothNumber} 기준` : null}
+                  pivotActive={pivotSet}
+                  pivotArmed={pivotArmed}
+                  onFace={jumpToFace}
+                  onHome={() => {
+                    setSelectedTooth(null);
+                    fitDefaultCamera();
+                  }}
+                  onFit={fitCurrentView}
+                  onRoll={rollView}
+                  onPivot={() => {
+                    if (pivotSet || pivotArmed) {
+                      clearPivot();
+                      return;
+                    }
+                    setPivotArmed(true);
+                  }}
+                  onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
+                />
+                {chatOpen ? renderChatPanel() : null}
+              </div>
             ) : null}
 
             <ViewPaintSurface
@@ -2331,167 +2609,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             </div>
           </div>
 
-          {ready && chatOpen ? (
-            <aside
-              ref={asideRef}
-              className="relative flex max-w-[60vw] shrink-0 flex-col border-l bg-background"
-              style={{ width: `${chatWidthRem}rem` }}
-            >
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="대화 패널 너비"
-                className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-primary/20"
-                onPointerDown={startChatResize}
-              />
-              <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <Bot className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="text-sm font-semibold">AI 디자인 대화</span>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1 px-2 text-xs"
-                  disabled={chatBusy || !hasOverrides}
-                  onClick={() => void resetAllDesigns()}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  기본값
-                </Button>
-              </div>
-
-              {hasCustomAbutmentPreference(preference) ? (
-                <div className="flex items-start gap-2 border-b bg-amber-50/70 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-                  <div className="min-w-0 flex-1">
-                    <span className="font-semibold">치과 기본값</span>
-                    <span className="ml-1.5">{describeCustomAbutmentPreference(preference)}</span>
-                  </div>
-                  {preferenceCanSave ? (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50 dark:hover:bg-amber-900/40"
-                      disabled={chatBusy}
-                      onClick={() => void clearPreference()}
-                    >
-                      지우기
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
-                {chatTurns.length === 0 ? (
-                  <div className="space-y-2 text-xs text-muted-foreground">
-                    <p className="leading-relaxed">
-                      바꾸고 싶은 점을 말이나 그림으로 알려 주면 디자인을 다시 만듭니다.
-                      <br />
-                      치아는 왼쪽 목록이나 화면의 번호 뱃지를 누르거나, #23처럼 입력해 고릅니다.
-                      <br />
-                      페인트로 표시하고 「AI에게」를 누르면 그림이 함께 전달됩니다.
-                      <br />
-                      「앞으로」처럼 규칙으로 말하면 다음 케이스 기본값이 됩니다.
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CHAT_EXAMPLES.map((ex) => (
-                        <button
-                          key={ex}
-                          type="button"
-                          className="rounded-full border px-2.5 py-1 text-foreground hover:bg-muted"
-                          onClick={() => void sendChat(ex)}
-                        >
-                          {ex}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {chatTurns.map((turn, idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "max-w-[92%] whitespace-pre-line rounded-lg px-3 py-2 text-xs leading-relaxed",
-                      turn.role === "user"
-                        ? "ml-auto bg-primary text-primary-foreground"
-                        : "mr-auto border bg-muted/40 text-foreground",
-                    )}
-                  >
-                    {turn.pending ? (
-                      <span className="flex items-center gap-1.5 text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        {turn.text}
-                      </span>
-                    ) : (
-                      turn.text
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-1.5 border-t px-3 py-2.5">
-                <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
-                  <span>대상 {selectedTooth ? `#${selectedTooth}` : "전체 치아"}</span>
-                  {selectedTooth ? (
-                    <button
-                      type="button"
-                      className="rounded px-1 font-medium text-primary hover:bg-muted"
-                      onClick={() => setSelectedTooth(null)}
-                    >
-                      전체로
-                    </button>
-                  ) : null}
-                  {!sketchUrl && paint.paintOn && paint.count > 0 ? (
-                    <span className="text-rose-600">보내면 그림도 함께 갑니다</span>
-                  ) : null}
-                </div>
-                {sketchUrl ? (
-                  <div className="relative h-14 w-20 overflow-hidden rounded-md border">
-                    <img src={sketchUrl} alt="첨부한 화면" className="h-full w-full object-cover" />
-                    <button
-                      type="button"
-                      className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-white/95 text-slate-600 shadow-sm hover:bg-destructive hover:text-destructive-foreground"
-                      aria-label="첨부 지우기"
-                      onClick={() => setSketchUrl(null)}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : null}
-                <div className="flex items-end gap-1.5">
-                  <Textarea
-                    ref={chatInputRef}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        void sendChat(chatInput);
-                      }
-                    }}
-                    placeholder={
-                      sketchUrl || paint.count > 0
-                        ? "표시한 부위를 어떻게 바꿀지 적어 주세요"
-                        : "예: #23 마진 0.3mm 얕게"
-                    }
-                    rows={2}
-                    className="min-h-[2.75rem] resize-none text-xs"
-                    disabled={chatBusy}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-9 w-9 shrink-0 px-0"
-                    aria-label="보내기"
-                    disabled={chatBusy || !chatInput.trim()}
-                    onClick={() => void sendChat(chatInput)}
-                  >
-                    {chatBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-            </aside>
-          ) : null}
         </div>
       </DialogContent>
     </Dialog>

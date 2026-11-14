@@ -1606,6 +1606,12 @@ requestSchema.index({
   createdAt: -1,
 });
 
+// PTX 연동 CA 단계·배송 조회(mapAbutmentDeliveryByTransferDocs / mapAbutmentPastReadyByTransferDocs)
+requestSchema.index(
+  { "partnerBilling.relatedPracticeTransferId": 1 },
+  { sparse: true },
+);
+
 // S3 프록시 다운로드 권한 조회(canUserAccessS3Key) — s3Key exact match
 requestSchema.index({ "caseInfos.file.s3Key": 1 }, { sparse: true });
 requestSchema.index({ "caseInfos.files.s3Key": 1 }, { sparse: true });

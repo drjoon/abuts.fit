@@ -49,7 +49,7 @@ export type CustomAbutmentParamSpec = {
 };
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
-  occlusalClearanceMm: { label: "대합치 거리", unit: "mm", min: 0.8, max: 2.5, step: 0.05 },
+  occlusalClearanceMm: { label: "대합치 거리", unit: "mm", min: 0.7, max: 2.5, step: 0.05 },
   postTaperDeg: { label: "포스트 테이퍼(편측)", unit: "°", min: 1, max: 8, step: 0.5 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -2, max: 2, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.8, max: 1.15, step: 0.01 },
@@ -58,7 +58,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: 0, max: 1.5, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.85, max: 1.2, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
-  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.65, max: 1.5, step: 0.05 },
+  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 1.5, step: 0.05 },
   axisToOpposing: { label: "대합치 중심 반영", unit: "", min: 0, max: 1, step: 0.05 },
   axisMaxDeg: { label: "삽입축 최대 각도", unit: "°", min: 0, max: 25, step: 0.5 },
   axisShiftLabialMm: { label: "윗면 순측 이동", unit: "mm", min: -2, max: 2, step: 0.1 },
@@ -104,7 +104,7 @@ export function isAnteriorTooth(toothNumber: string): boolean {
 
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   return {
-    occlusalClearanceMm: 1.25,
+    occlusalClearanceMm: 1.3,
     postTaperDeg: 2.5,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
@@ -113,7 +113,7 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     marginDepthMm: 0.5,
     marginSizeScale: 1,
     crownContactMm: 0.05,
-    minCrownThicknessMm: 1,
+    minCrownThicknessMm: 1.1,
     axisToOpposing: 1,
     axisMaxDeg: defaultAxisMaxDeg(toothNumber),
     axisShiftLabialMm: 0,
