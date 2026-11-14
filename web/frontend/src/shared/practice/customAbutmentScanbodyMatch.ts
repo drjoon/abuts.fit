@@ -300,8 +300,10 @@ export function buildParametricScanbodyLibraryMesh(
 ): ScanbodyMesh {
   const r = Math.max(1.6, Math.min(4.5, diameterMm / 2));
   const hTop = Math.max(4.5, Math.min(16, heightMm));
-  // 잇몸 위로 드러나는 상부 원기둥·베벨 구간만 모델링해 잇몸 아래 미노출부 오차를 막는다.
-  const hBot = Math.max(1.8, hTop - 6.2);
+  // 잇몸 위로 드러나는 스캔바디 최상부 원기둥·베벨 캡 구간(상단 4.2mm)만 모델링해
+  // 짧은 스캔바디(5mm·7mm)나 깊게 식립된 스캔바디에서도 잇몸 아래 미노출부 오차를 막는다.
+  const capDepth = Math.min(4.2, Math.max(2.6, hTop - 2.0));
+  const hBot = Math.max(1.2, hTop - capDepth);
   const bevelStart = hTop - Math.min(2.6, (hTop - hBot) * 0.55);
   const bevelX = r * 0.74;
   const holeR = Math.min(1.05, r * 0.48);
@@ -451,32 +453,35 @@ export async function loadCandidateScanbodyModels(args: {
     }
   }
 
-  // 2) 임플란트 카탈로그에 연결된 라이브러리 후보
-  const libs = buildImplantLibraries(connections);
-  const matchedImplant = matchImplantLibrary(libs, {
-    manufacturer: String(toothWork.implantManufacturer || "").trim(),
-    brand: String(toothWork.implantBrand || "").trim(),
-    family: String(toothWork.implantFamily || "").trim(),
-    type: String(toothWork.implantType || "").trim(),
-  });
-  const linked = scanbodyCandidatesFor(
-    catalog.libraries,
-    matchedImplant?.id ?? null,
-    matchedImplant ?? {
+  // 2) 의뢰에 스캔바디 제조사가 지정되지 않았거나 제조사 일치 라이브러리에서 못 찾았을 때만 임플란트 연결 후보를 본다.
+  //    치과가 스캔바디 제조사·직경·높이를 명시한 경우에는 다른 시스템(예: 2020 3Shape GMS 치은마스크 링)이 잘못 선택되지 않게 막는다.
+  if (!maker) {
+    const libs = buildImplantLibraries(connections);
+    const matchedImplant = matchImplantLibrary(libs, {
       manufacturer: String(toothWork.implantManufacturer || "").trim(),
       brand: String(toothWork.implantBrand || "").trim(),
       family: String(toothWork.implantFamily || "").trim(),
       type: String(toothWork.implantType || "").trim(),
-    },
-  );
-  for (const row of linked) {
-    if (seenKeys.has(row.s3Key)) continue;
-    seenKeys.add(row.s3Key);
-    libCandidates.push({
-      s3Key: row.s3Key,
-      label: `${row.systemName} · ${row.name}`,
-      err: 0.6,
     });
+    const linked = scanbodyCandidatesFor(
+      catalog.libraries,
+      matchedImplant?.id ?? null,
+      matchedImplant ?? {
+        manufacturer: String(toothWork.implantManufacturer || "").trim(),
+        brand: String(toothWork.implantBrand || "").trim(),
+        family: String(toothWork.implantFamily || "").trim(),
+        type: String(toothWork.implantType || "").trim(),
+      },
+    );
+    for (const row of linked) {
+      if (seenKeys.has(row.s3Key)) continue;
+      seenKeys.add(row.s3Key);
+      libCandidates.push({
+        s3Key: row.s3Key,
+        label: `${row.systemName} · ${row.name}`,
+        err: 0.6,
+      });
+    }
   }
 
   libCandidates.sort((a, b) => a.err - b.err);
@@ -484,8 +489,11 @@ export async function loadCandidateScanbodyModels(args: {
     try {
       const mesh = await loadScanbodyGeometry(cand.s3Key);
       const ext = meshExtent(mesh.positions);
-      if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 1.2) continue;
-      if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.65) continue;
+      const bodySpanMm = ext.topMm - ext.bottomMm;
+      // 3Shape GMS 치은 마스크(두께 2~3mm짜리 얇은 링)는 스캔바디 기둥이 아니므로 제외한다.
+      if (bodySpanMm < 3.8) continue;
+      if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 0.8) continue;
+      if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.45) continue;
       out.push({
         key: cand.s3Key,
         label: cand.label,
@@ -792,7 +800,7 @@ function evaluateScanbodyPeak(
     cylV = 0;
   }
 
-  // 2) 깊이 0.8~3.6mm 구간의 원기둥 반경 분포와 외부 퍼짐(치관 비대 여부)을 함께 잰다.
+  // 2) 깊이 0.6~2.8mm 구간의 원기둥 반경 분포와 외부 퍼짐(치관 비대 여부)을 함께 잰다.
   const shaftRadii: number[] = [];
   let sectors = 0;
   const sectorHit = new Uint8Array(12);
@@ -800,7 +808,7 @@ function evaluateScanbodyPeak(
   for (let i = 0; i < target.length; i += 3) {
     const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
     const h = dot(d, n);
-    if (h > -0.7 || h < -3.6) continue;
+    if (h > -0.55 || h < -2.8) continue;
     const u = dot(d, e1) - cylU;
     const v = dot(d, e2) - cylV;
     const r = Math.hypot(u, v);

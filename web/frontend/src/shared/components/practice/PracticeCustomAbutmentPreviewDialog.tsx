@@ -244,6 +244,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [colorMapping, setColorMapping] = useState(true);
   const [centerGuide, setCenterGuide] = useState<CenterGuideMode>("grid");
   const [hideScanbodyOnScan, setHideScanbodyOnScan] = useState(true);
+  const [showPredictedCrown, setShowPredictedCrown] = useState(false);
   const [showFixtureAnalog, setShowFixtureAnalog] = useState(true);
   const [showFinishLine, setShowFinishLine] = useState(true);
   const [opposingTransparency, setOpposingTransparency] = useState(55);
@@ -283,6 +284,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     lowerTrimmed: [],
   });
   const abutmentMeshesRef = useRef(new Map<string, THREE.Mesh>());
+  const predictedCrownMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const fixtureMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const marginLinesRef = useRef(new Map<string, THREE.LineLoop>());
 
@@ -326,6 +328,9 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     for (const m of abutmentMeshesRef.current.values()) disposeMesh(m);
     abutmentMeshesRef.current.clear();
+
+    for (const m of predictedCrownMeshesRef.current.values()) disposeMesh(m);
+    predictedCrownMeshesRef.current.clear();
 
     for (const m of fixtureMeshesRef.current.values()) disposeMesh(m);
     fixtureMeshesRef.current.clear();
@@ -881,7 +886,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
 
         if (cancelled) {
-          for (const d of builtAbutments) d.worldGeometry.dispose();
+          for (const d of builtAbutments) {
+            d.worldGeometry.dispose();
+            d.predictedCrownWorldGeometry.dispose();
+          }
           for (const s of [...upperScans, ...lowerScans]) {
             s.geometry.dispose();
             s.texture?.dispose();
@@ -960,7 +968,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           abutMesh.renderOrder = 2;
           syncBackFaceShell(abutMesh);
 
-          // 치아 번호 CSS2D 배지
+          // 치아 번호 CSS2D 배지 (커스텀어벗 상단 중심에 배치)
           if (!d.worldGeometry.boundingBox) d.worldGeometry.computeBoundingBox();
           const tagEl = document.createElement("div");
           tagEl.textContent = `#${d.toothNumber}`;
@@ -969,12 +977,30 @@ export function PracticeCustomAbutmentPreviewDialog({
             "background:rgba(15,23,42,0.82);color:#fff;font:600 11px/1.2 ui-sans-serif,system-ui,sans-serif;" +
             "padding:0.18rem 0.42rem;white-space:nowrap;";
           const badge = new CSS2DObject(tagEl);
-          const topWorld = d.fixture.scanbodyTop;
-          badge.position.set(topWorld[0], topWorld[1], topWorld[2]);
+          const abutCenter = d.worldGeometry.boundingBox
+            ? d.worldGeometry.boundingBox.getCenter(new THREE.Vector3())
+            : new THREE.Vector3(...d.fixture.scanbodyTop);
+          badge.position.copy(abutCenter);
           abutMesh.add(badge);
 
           scene.add(abutMesh);
           abutmentMeshesRef.current.set(d.toothNumber, abutMesh);
+
+          // 예측 해부학 크라운 외형(컷백 전 목표 크라운 볼륨, 반투명 아이보리 셸)
+          const crownMat = new THREE.MeshStandardMaterial({
+            color: 0xf5f0e1,
+            metalness: 0.04,
+            roughness: 0.36,
+            transparent: true,
+            opacity: 0.36,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          });
+          const crownMesh = new THREE.Mesh(d.predictedCrownWorldGeometry, crownMat);
+          crownMesh.renderOrder = 4;
+          crownMesh.visible = false;
+          scene.add(crownMesh);
+          predictedCrownMeshesRef.current.set(d.toothNumber, crownMesh);
 
           // 잇몸 아래 식립된 픽스쳐 아날로그(반투명 청회색)
           const fixGeo = createFixtureAnalogGeometry(d.fixture.connectionSpec.originDiameterMm);
@@ -1119,6 +1145,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       const mat = mesh.material as THREE.MeshStandardMaterial;
       mat.emissive.setHex(selectedTooth === tooth ? 0x332800 : 0x000000);
     }
+    for (const [tooth, mesh] of predictedCrownMeshesRef.current.entries()) {
+      mesh.visible = showPredictedCrown && visibleTeeth[tooth] !== false;
+    }
     for (const [tooth, mesh] of fixtureMeshesRef.current.entries()) {
       mesh.visible = showFixtureAnalog && visibleTeeth[tooth] !== false;
     }
@@ -1134,6 +1163,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     selectedTooth,
     showFinishLine,
     showFixtureAnalog,
+    showPredictedCrown,
     visibleJaws,
     visibleTeeth,
   ]);
@@ -1264,6 +1294,22 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
                   스캔에 찍힌 스캔바디 기둥을 가려 디자인된 커스텀어벗이 또렷하게 보이게 합니다.
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={showPredictedCrown ? "default" : "outline"}
+                    className="h-8 px-2.5 text-xs"
+                    onClick={() => setShowPredictedCrown((v) => !v)}
+                  >
+                    예측 크라운
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="z-[520]">
+                  컷백 기준이 된 목표 해부학 크라운 외형을 반투명으로 겹쳐 확인합니다.
                 </TooltipContent>
               </Tooltip>
               <Button
@@ -1424,11 +1470,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                             <dd className="truncate text-foreground">
                               {item.fixture.matchedLibraryLabel} (오차 {item.metrics.rmsMm}mm)
                             </dd>
-                            <dt className="text-muted-foreground">외경·길이</dt>
+                            <dt className="text-muted-foreground">외경·컷백</dt>
                             <dd className="tabular-nums text-foreground">
-                              Ø{item.metrics.maxDiameterMm}mm · 총 {item.metrics.totalLengthMm}mm
+                              Ø{item.metrics.maxDiameterMm}mm · 컷백 {item.metrics.cutbackMm}mm
                             </dd>
-                            <dt className="text-muted-foreground">커프·기울기</dt>
+                            <dt className="text-muted-foreground">커프·삽입각</dt>
                             <dd className="tabular-nums text-foreground">
                               커프 {item.metrics.cuffHeightMinMm}~{item.metrics.cuffHeightMaxMm}mm ·{" "}
                               {item.metrics.angulationDeg}°
