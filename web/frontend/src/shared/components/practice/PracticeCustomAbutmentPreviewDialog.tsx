@@ -3,6 +3,8 @@
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
+// 번호 뱃지의 검볼로 어벗 전체의 위치·각도·크기를 바꾸고, 부위 도구로 표면 일부만 끌어 옮긴다.
+// 페인트는 아래에 접힌 채로 둔다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -104,7 +106,23 @@ import {
   designCustomAbutmentStl,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
+import { AbutmentDirectEditSession, type AbutmentEditBridge } from "@/shared/components/practice/abutmentDirectEdit";
 import { PracticeCustomAbutmentDesignTree } from "@/shared/components/practice/PracticeCustomAbutmentDesignTree";
+import {
+  downloadBlobFile,
+  paintNoteFileName,
+  ViewPaintSurface,
+} from "@/shared/components/practice/ViewPaintSurface";
+import {
+  useViewPaint,
+  ViewPaintToolbar,
+  viewPaintSurfaceProps,
+} from "@/shared/components/practice/ViewPaintToolbar";
+import {
+  createViewPaintSpace,
+  notifyViewPaint,
+  type ViewPaintSpace,
+} from "@/shared/components/practice/viewPaintSpace";
 import {
   PracticeCustomAbutmentViewCube,
   toothViewCube,
@@ -357,7 +375,7 @@ function ToolbarToggle({
   onClick: () => void;
   icon?: ReactNode;
   label: string;
-  tip?: string;
+  tip?: ReactNode;
   disabled?: boolean;
 }) {
   const button = (
@@ -484,6 +502,11 @@ export function PracticeCustomAbutmentPreviewDialog({
   const viewReadyRef = useRef(false);
   const [pivotSet, setPivotSet] = useState(false);
   const [pivotArmed, setPivotArmed] = useState(false);
+  const [gumballOn, setGumballOn] = useState(true);
+  const [sculptOn, setSculptOn] = useState(false);
+  const [sculptRadiusMm, setSculptRadiusMm] = useState(2.4);
+  const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: false });
+  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
   const scanbodyPickRef = useRef<ScanbodyPickSession | null>(null);
@@ -501,6 +524,10 @@ export function PracticeCustomAbutmentPreviewDialog({
     t0: number;
   } | null>(null);
   const badgeClickRef = useRef<(toothNumber: string) => void>(() => {});
+  const paintListenersRef = useRef(new Set<() => void>());
+  const directEditRef = useRef<AbutmentDirectEditSession | null>(null);
+  const editCommitTimerRef = useRef(0);
+  const editBridgeRef = useRef<AbutmentEditBridge | null>(null);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
@@ -541,6 +568,29 @@ export function PracticeCustomAbutmentPreviewDialog({
   const predictedCrownMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const fixtureMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const marginLinesRef = useRef(new Map<string, Line2>());
+  if (!editBridgeRef.current) {
+    editBridgeRef.current = {
+      getScene: () => sceneRef.current,
+      getCamera: () => cameraRef.current,
+      getRenderer: () => rendererRef.current,
+      getHost: () => hostRef.current,
+      getDesigns: () => designedListRef.current,
+      getAbutment: (tooth) => abutmentMeshesRef.current.get(tooth),
+      getCrown: (tooth) => predictedCrownMeshesRef.current.get(tooth),
+      getMargin: (tooth) => marginLinesRef.current.get(tooth),
+      ui: {
+        gumballOn: true,
+        sculptOn: false,
+        radiusMm: 2.4,
+        readOnly: false,
+        paintOn: false,
+        selected: null,
+        visible: {},
+      },
+      onBadge: (tooth) => badgeClickRef.current(tooth),
+      onCommit: () => {},
+    };
+  }
 
   const prepJaws = useMemo(() => {
     const set = new Set<"upper" | "lower">();
@@ -1088,6 +1138,31 @@ export function PracticeCustomAbutmentPreviewDialog({
     })().catch((err) => console.warn("[custom-abutment] design cache write failed", err));
   }, [authToken, persistChat]);
 
+  const bridge = editBridgeRef.current;
+  if (bridge) {
+    bridge.ui.gumballOn = gumballOn;
+    bridge.ui.sculptOn = sculptOn;
+    bridge.ui.radiusMm = sculptRadiusMm;
+    bridge.ui.readOnly = readOnly;
+    bridge.ui.paintOn = paint.paintOn;
+    bridge.ui.selected = selectedTooth;
+    bridge.ui.visible = visibleTeeth;
+    bridge.onCommit = () => {
+      if (readOnlyRef.current) return;
+      window.clearTimeout(editCommitTimerRef.current);
+      editCommitTimerRef.current = window.setTimeout(() => persistDesign(), 400);
+    };
+  }
+
+  const saveViewImage = useCallback(() => {
+    const renderer = rendererRef.current;
+    const surface = paint.paintRef.current;
+    if (!renderer || !surface) return;
+    void surface.compositePng(renderer.domElement).then((blob) => {
+      if (blob) downloadBlobFile(blob, paintNoteFileName(`커스텀어벗_${patientName || "디자인"}`));
+    });
+  }, [paint.paintRef, patientName]);
+
   const jawsForJobs = useCallback((jobs: readonly { jaw: "upper" | "lower" }[]) => {
     const has = {
       upper:
@@ -1481,11 +1556,34 @@ export function PracticeCustomAbutmentPreviewDialog({
         const viewH = (camera.top - camera.bottom) / camera.zoom;
         pivotMarker.scale.setScalar((viewH / Math.max(host.clientHeight, 1)) * 5);
       }
+      directEditRef.current?.tick();
+      if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       viewCubeRef.current?.sync(camera, cubeFrameRef.current ?? frameRef.current);
     };
+    const paintListeners = paintListenersRef.current;
+    const editSession = new AbutmentDirectEditSession(editBridgeRef.current!);
+    directEditRef.current = editSession;
+    editSession.attach(renderer.domElement);
     renderLoop();
+    setPaintSpace(
+      createViewPaintSpace({
+        getCamera: () => cameraRef.current,
+        getRenderer: () => rendererRef.current,
+        getParent: () => sceneRef.current,
+        getTargets: () =>
+          [
+            ...jawMeshesRef.current.upperTrimmed,
+            ...jawMeshesRef.current.upperScanbody,
+            ...jawMeshesRef.current.lowerTrimmed,
+            ...jawMeshesRef.current.lowerScanbody,
+            ...abutmentMeshesRef.current.values(),
+          ].filter((mesh) => mesh.visible),
+        listeners: paintListeners,
+        onView: (gesture) => applyExternalView(controls, gesture),
+      }),
+    );
 
     const onResize = () => {
       if (!host) return;
@@ -1506,6 +1604,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       host.removeEventListener("wheel", blockBrowserZoom, { capture: true });
       host.removeEventListener("gesturestart", blockGesture, { capture: true });
       host.removeEventListener("gesturechange", blockGesture, { capture: true });
+      paintListeners.clear();
+      setPaintSpace(null);
+      editSession.dispose();
+      directEditRef.current = null;
       ro.disconnect();
       controls.dispose();
       clearSceneObjects();
@@ -1526,6 +1628,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       controlsRef.current = null;
     };
   }, [clearPivot, clearSceneObjects, hostEl, open, pickPivotAt]);
+
+  useEffect(() => {
+    directEditRef.current?.sync();
+  }, [designedList]);
 
   // 스캔 로드 → (저장본 복원 | 스캔바디 인식·정합 → 커스텀어벗 디자인) → 씬 배치
   useEffect(() => {
@@ -2310,6 +2416,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             patientName: ctx.patientName,
           });
           ctx.overrides[tooth] = merged;
+          if (mode === "replace") directEditRef.current?.clear([tooth]);
           removeDesignFromScene(tooth);
           prev.worldGeometry.dispose();
           prev.predictedCrownWorldGeometry.dispose();
@@ -2318,6 +2425,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           designedListRef.current = list;
           setDesignedList(list);
         }
+        directEditRef.current?.sync();
       } finally {
         setRedesigning([]);
       }
@@ -2516,6 +2624,53 @@ export function PracticeCustomAbutmentPreviewDialog({
                       onClick={() => setShowFixtureAnalog((v) => !v)}
                     />
                   </div>
+                  {readOnly ? null : (
+                    <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
+                      <ToolbarToggle
+                        active={gumballOn}
+                        label="검볼"
+                        tip={
+                          <>
+                            중심축으로 위치·각도·크기를 바꿉니다.
+                            <br />
+                            화살표는 이동, 호는 회전, 상자는 크기입니다.
+                          </>
+                        }
+                        onClick={() => setGumballOn((on) => !on)}
+                      />
+                      <ToolbarToggle
+                        active={sculptOn}
+                        label="부위"
+                        tip={
+                          <>
+                            표면을 끌면 그 부위만 움직입니다.
+                            <br />
+                            Shift는 면 방향으로 밀고 당깁니다.
+                          </>
+                        }
+                        onClick={() => setSculptOn((on) => !on)}
+                      />
+                      {sculptOn ? (
+                        <div className="flex items-center gap-2 px-1.5">
+                          <span className="whitespace-nowrap text-[0.6875rem] text-muted-foreground">
+                            범위
+                          </span>
+                          <Slider
+                            className="w-20"
+                            min={0.6}
+                            max={6}
+                            step={0.2}
+                            value={[sculptRadiusMm]}
+                            onValueChange={([val]) => setSculptRadiusMm(val ?? 2.4)}
+                            aria-label="부위 범위"
+                          />
+                          <span className="w-10 text-right text-[0.6875rem] tabular-nums text-muted-foreground">
+                            {sculptRadiusMm.toFixed(1)}mm
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -2602,6 +2757,17 @@ export function PracticeCustomAbutmentPreviewDialog({
                     onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
                     onRegenerate={readOnly ? undefined : () => void regenerateDesigns()}
                   />
+              </div>
+            ) : null}
+
+            <ViewPaintSurface
+              {...viewPaintSurfaceProps(paint)}
+              enabled={ready && paint.paintOn}
+              space={paintSpace}
+            />
+            {ready ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+                <ViewPaintToolbar paint={paint} collapsible onSaveImage={saveViewImage} />
               </div>
             ) : null}
 
