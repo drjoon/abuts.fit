@@ -13,6 +13,8 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import Request from "../../models/request.model.js";
+import User from "../../models/user.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { recordAiDesignChatUsage } from "../../services/aiDesignChatUsage.service.js";
 import { quoteAiDesignChatUsage } from "../../services/aiDesignChatUsageCost.js";
@@ -23,8 +25,25 @@ import {
   setAiDesignGapChoice,
 } from "../../services/aiDesignGap.service.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
+import {
+  claimAbutmentDesignHandoffLock,
+  ensureAbutmentRequestsForHandoff,
+  normalizeResultFiles,
+  releaseAbutmentDesignHandoffLock,
+} from "../../services/practiceTransferProduction.service.js";
+import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
 import { getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
+import {
+  assertWorkFilePaintSize,
+  sanitizeWorkFilePaintShapes,
+  sanitizeWorkFilePaintView,
+} from "../../utils/workFilePaint.js";
+import { resolvePrcFileNames } from "../requests/prcMapping.utils.js";
+import { ensureLotNumberOnReadyEnter } from "../requests/utils.js";
+import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 
 const MODEL = "gemini-3.5-flash-lite";
 const MAX_OUTPUT_TOKENS = 600;
@@ -36,8 +55,8 @@ const MAX_IMAGE_CHARS = 2_000_000;
 const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
-  occlusalClearanceMm: { label: "포스트 최정점 → 대합치 거리", unit: "mm", min: 0.7, max: 2.5 },
-  postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 1, max: 8 },
+  occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리", unit: "mm", min: 0.5, max: 3.5 },
+  postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 0.5, max: 8 },
   postYawDeg: {
     label: "포스트 수평 회전 보정(교합면 시점 +=반시계, -=시계, 기본 0=악궁·중심구 평행)",
     unit: "°",
@@ -45,21 +64,23 @@ const PARAM_SPECS = {
     max: 30,
   },
   postHeightOffsetMm: {
-    label: "포스트 높이 보정(대합치가 있으면 음수만 효과)",
+    label: "포스트 높이 보정",
     unit: "mm",
-    min: -2,
-    max: 2,
+    min: -3,
+    max: 3,
   },
-  postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.8, max: 1.15 },
-  marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.5, max: 0.8 },
-  marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 구치 기본 0.5·전치 기본 0.4)", unit: "mm", min: 0.2, max: 0.8 },
-  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준)", unit: "mm", min: 0, max: 2.0 },
+  postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.7, max: 1.3 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.3, max: 1.0 },
+  marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 구치 기본 0.5·전치 기본 0.4)", unit: "mm", min: 0.2, max: 0.9 },
+  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준)", unit: "mm", min: -1.5, max: 2.5 },
   marginScallopMm: { label: "근·원심 마진 스캘럽(치관측 상승·치은 라인 추종, 전치 기본 0.75·구치 기본 0.55)", unit: "mm", min: 0, max: 1.6 },
-  marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },
+  marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.7, max: 1.4 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },
-  minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 기본 1.0, 공간 없으면 0.7까지 자동)", unit: "mm", min: 0.7, max: 1.5 },
+  minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 기본 1.0, 공간 없으면 0.7까지 자동)", unit: "mm", min: 0.7, max: 2.5 },
   axisToOpposing: { label: "삽입축 대합치 중심 반영(0=악궁 교합 방향, 1=대합치 중심)", unit: "", min: 0, max: 1 },
   axisMaxDeg: { label: "픽스쳐 장축 대비 삽입축 최대 각도", unit: "°", min: 0, max: 32 },
+  axisTargetDeg: { label: "삽입축 각도(-1=자동)", unit: "°", min: -1, max: 32 },
+  axisSourceCode: { label: "삽입축 기준(-1=자동, 0=악궁, 1=대합치, 2=인접 평행)", unit: "", min: -1, max: 2 },
   axisShiftLabialMm: { label: "포스트 윗면 순측(+)/설측(-) 이동", unit: "mm", min: -2, max: 2 },
   axisShiftMesialMm: { label: "포스트 윗면 근심(+)/원심(-) 이동", unit: "mm", min: -2, max: 2 },
 };
@@ -512,9 +533,14 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       return res.status(403).json({ success: false, message: "이 의뢰를 볼 수 없습니다." });
     }
     const transfer = await PracticeTransfer.findOne({ transferId })
-      .select({ "production.customAbutmentPreview": 1 })
+      .select({
+        "production.customAbutmentPreview": 1,
+        "production.customAbutmentManualDesign": 1,
+        "production.practiceDesignConfirmedAt": 1,
+      })
       .lean();
     const stored = transfer?.production?.customAbutmentPreview;
+    const manualDesign = transfer?.production?.customAbutmentManualDesign || null;
     const gaps = await AiDesignGap.find({ transferId })
       .sort({ createdAt: 1 })
       .select({ message: 1, reply: 1, manualChoice: 1 })
@@ -523,6 +549,20 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     const storedChat = snapshotChat(stored?.chat);
     const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
     const teeth = snapshotTeeth(stored?.teeth, transferId);
+    const rawPaint = stored?.paint && typeof stored.paint === "object" ? stored.paint : null;
+    const paint = rawPaint
+      ? {
+          shapes: sanitizeWorkFilePaintShapes(rawPaint.shapes),
+          view: sanitizeWorkFilePaintView(rawPaint.view),
+          updatedAt: rawPaint.updatedAt || null,
+          updatedSide: rawPaint.updatedSide || null,
+        }
+      : null;
+    const mode = stored?.confirmedAt
+      ? "confirmed"
+      : manualDesign
+        ? "manual"
+        : null;
     const design =
       teeth.length > 0
         ? {
@@ -533,7 +573,10 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
             teeth,
           }
         : null;
-    return res.json({ success: true, data: { design, chat } });
+    return res.json({
+      success: true,
+      data: { design, chat, paint, mode, manualDesign },
+    });
   } catch (error) {
     console.error("[AI] getCustomAbutmentDesignSnapshot error", error);
     return res.status(500).json({ success: false, message: "저장된 디자인을 불러오지 못했습니다." });
@@ -552,21 +595,20 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
     }
     const chat = snapshotChat(req.body?.chat);
     const incoming = snapshotTeeth(req.body?.teeth, transferId);
-    const teeth = [];
-    for (const row of incoming) {
-      if (!row.s3Key) {
-        teeth.push(row);
-        continue;
-      }
-      const size = await headObjectSizeInS3(row.s3Key);
-      if (!size || size > PREVIEW_STL_MAX) continue;
-      let crownS3Key = "";
-      if (row.crownS3Key) {
-        const crownSize = await headObjectSizeInS3(row.crownS3Key);
-        if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
-      }
-      teeth.push({ ...row, size, crownS3Key });
-    }
+    const validated = await Promise.all(
+      incoming.map(async (row) => {
+        if (!row.s3Key) return row;
+        const size = await headObjectSizeInS3(row.s3Key);
+        if (!size || size > PREVIEW_STL_MAX) return null;
+        let crownS3Key = "";
+        if (row.crownS3Key) {
+          const crownSize = await headObjectSizeInS3(row.crownS3Key);
+          if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
+        }
+        return { ...row, size, crownS3Key };
+      }),
+    );
+    const teeth = validated.filter(Boolean);
     const transfer = await PracticeTransfer.findOne({ transferId })
       .select({ "production.customAbutmentPreview": 1 })
       .lean();
@@ -576,6 +618,18 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       savedAt: Date.now(),
       chat: chat.length > 0 ? chat : snapshotChat(prev.chat),
     };
+    if (req.body?.paint && typeof req.body.paint === "object") {
+      const shapes = sanitizeWorkFilePaintShapes(req.body.paint.shapes);
+      const view = sanitizeWorkFilePaintView(req.body.paint.view);
+      assertWorkFilePaintSize({ shapes, view });
+      next.paint = {
+        shapes,
+        view: view || null,
+        updatedAt: new Date(),
+        updatedBy: req.user?._id || null,
+        updatedSide: "practice",
+      };
+    }
     if (teeth.length > 0) {
       next.version = Number(req.body?.version) || 0;
       next.fitVersion = Number(req.body?.fitVersion) || 0;
@@ -589,6 +643,528 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
   } catch (error) {
     console.error("[AI] saveCustomAbutmentDesignSnapshot error", error);
     return res.status(500).json({ success: false, message: "디자인을 저장하지 못했습니다." });
+  }
+}
+
+async function emitCustomAbutmentTransferEvent(transferDoc, action) {
+  if (!transferDoc?._id) return;
+  const anchorIds = [
+    String(transferDoc.practiceBusinessAnchorId || "").trim(),
+    String(transferDoc.targetLabAnchorId || "").trim(),
+    String(transferDoc.assigneeLabAnchorId || "").trim(),
+  ].filter((id) => Types.ObjectId.isValid(id));
+  const userIdSet = new Set();
+  if (transferDoc.practiceUserId && Types.ObjectId.isValid(String(transferDoc.practiceUserId))) {
+    userIdSet.add(String(transferDoc.practiceUserId));
+  }
+  if (anchorIds.length > 0) {
+    const peers = await User.find({
+      businessAnchorId: { $in: anchorIds.map((id) => new Types.ObjectId(id)) },
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    for (const peer of peers) {
+      if (peer?._id) userIdSet.add(String(peer._id));
+    }
+  }
+  const payload = {
+    action,
+    transferId: String(transferDoc.transferId || "").trim(),
+    transferMongoId: String(transferDoc._id),
+    updatedAt: new Date(),
+  };
+  for (const uid of userIdSet) {
+    emitAppEventToUser(uid, "practice:transfer-updated", payload);
+  }
+}
+
+/**
+ * 커스텀어벗 디자인 뷰어 3D 페인트 저장(치과·기공소 공유).
+ * @route PUT /api/ai/custom-abutment-design-paint
+ * body: { transferId, shapes, view? }
+ */
+export async function saveCustomAbutmentDesignPaint(req, res) {
+  try {
+    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    if (!transferId || (!anchorId && !privileged)) {
+      return res.status(403).json({ success: false, message: "이 의뢰에 표시를 남길 수 없습니다." });
+    }
+    const shapes = sanitizeWorkFilePaintShapes(req.body?.shapes);
+    const view = sanitizeWorkFilePaintView(req.body?.view);
+    try {
+      assertWorkFilePaintSize({ shapes, view });
+    } catch (err) {
+      if (err?.code === "too_large") {
+        return res.status(413).json({ success: false, message: err.message });
+      }
+      throw err;
+    }
+    const side = canSave ? "practice" : "lab";
+    const paint = {
+      shapes,
+      view: view || null,
+      updatedAt: new Date(),
+      updatedBy: req.user?._id || null,
+      updatedSide: side,
+    };
+    const transferDoc = await PracticeTransfer.findOneAndUpdate(
+      { transferId },
+      { $set: { "production.customAbutmentPreview.paint": paint } },
+      {
+        new: true,
+        projection: {
+          transferId: 1,
+          practiceUserId: 1,
+          practiceBusinessAnchorId: 1,
+          targetLabAnchorId: 1,
+          assigneeLabAnchorId: 1,
+        },
+      },
+    ).lean();
+    res.json({ success: true, data: { paint } });
+    void (async () => {
+      if (!transferDoc?._id) return;
+      const anchorIds = [
+        String(transferDoc.practiceBusinessAnchorId || "").trim(),
+        String(transferDoc.targetLabAnchorId || "").trim(),
+        String(transferDoc.assigneeLabAnchorId || "").trim(),
+      ].filter((id) => Types.ObjectId.isValid(id));
+      const userIdSet = new Set();
+      if (
+        transferDoc.practiceUserId &&
+        Types.ObjectId.isValid(String(transferDoc.practiceUserId))
+      ) {
+        userIdSet.add(String(transferDoc.practiceUserId));
+      }
+      if (anchorIds.length > 0) {
+        const peers = await User.find({
+          businessAnchorId: { $in: anchorIds.map((id) => new Types.ObjectId(id)) },
+          active: true,
+        })
+          .select({ _id: 1 })
+          .lean();
+        for (const peer of peers) {
+          if (peer?._id) userIdSet.add(String(peer._id));
+        }
+      }
+      const payload = {
+        transferId: String(transferDoc.transferId || "").trim(),
+        shapes,
+        view: view || null,
+        updatedBy: req.user?._id ? String(req.user._id) : "",
+        updatedSide: side,
+      };
+      for (const uid of userIdSet) {
+        emitAppEventToUser(uid, "practice:custom-abutment-paint", payload);
+      }
+    })().catch((err) => console.warn("[AI] paint event emit failed", err));
+  } catch (error) {
+    console.error("[AI] saveCustomAbutmentDesignPaint error", error);
+    return res.status(500).json({ success: false, message: "페인트 표시를 저장하지 못했습니다." });
+  }
+}
+
+function buildConfirmedRhinoFileName(requestDoc) {
+  const requestId = String(requestDoc?.requestId || "").trim();
+  const ci = requestDoc?.caseInfos || {};
+  const original = String(ci?.file?.filePath || ci?.file?.originalName || "").trim();
+  const ext = original.includes(".")
+    ? `.${original.split(".").pop()?.toLowerCase() || "stl"}`
+    : ".stl";
+  if (!requestId) return original || "";
+  return `${requestId}-${String(ci.clinicName || "").trim()}-${String(ci.patientName || "").trim()}-${String(ci.tooth || "").trim()}${ext}`;
+}
+
+/**
+ * 치과 「확정 & 의뢰」: 현재 커스텀어벗 디자인 STL을 확정하여
+ * 제조사 준비 큐(Request)를 즉시 등록하고 기공소 PTX(designFiles)에 미러한다.
+ * (과금/정산 hold는 유예)
+ * @route POST /api/ai/custom-abutment-design-confirm
+ */
+export async function confirmCustomAbutmentDesign(req, res) {
+  try {
+    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    if (!transferId || (!canSave && !privileged) || !anchorId) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
+    }
+    const userId = String(req.user?._id || "").trim();
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return res.status(401).json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    const incoming = snapshotTeeth(req.body?.teeth, transferId);
+    if (incoming.length === 0) {
+      return res.status(400).json({ success: false, message: "확정할 커스텀어벗 디자인이 없습니다." });
+    }
+
+    const checkedTeeth = await Promise.all(
+      incoming.map(async (row) => {
+        if (!row.s3Key) return null;
+        const size = await headObjectSizeInS3(row.s3Key);
+        if (!size || size > PREVIEW_STL_MAX) return null;
+        let crownS3Key = "";
+        if (row.crownS3Key) {
+          const crownSize = await headObjectSizeInS3(row.crownS3Key);
+          if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
+        }
+        return { ...row, size, crownS3Key };
+      }),
+    );
+    const validTeeth = checkedTeeth.filter(Boolean);
+    if (validTeeth.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "커스텀어벗 STL 파일을 확인하지 못했습니다. 다시 시도해 주세요.",
+      });
+    }
+
+    const transferDoc = await PracticeTransfer.findOne({ transferId });
+    if (!transferDoc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const now = new Date();
+    const userOid = new Types.ObjectId(userId);
+    const updatedRequests = [];
+
+    await claimAbutmentDesignHandoffLock(transferDoc._id);
+    try {
+      const ensure = await ensureAbutmentRequestsForHandoff({
+        transferDoc,
+        actorUserId: userId,
+        allowPracticeConfirmed: true,
+      });
+      const relatedIds = (Array.isArray(ensure?.requestIds) ? ensure.requestIds : [])
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+
+      const requestDocs =
+        relatedIds.length > 0 ? await Request.find({ _id: { $in: relatedIds } }) : [];
+
+      for (const toothRow of validTeeth) {
+        const reqDoc = requestDocs.find(
+          (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothRow.toothNumber,
+        );
+        if (!reqDoc) continue;
+        if (!reqDoc.caseInfos) reqDoc.caseInfos = {};
+        if (!reqDoc.rnd) reqDoc.rnd = {};
+
+        const prevPrimary = reqDoc.caseInfos.file?.s3Key ? reqDoc.caseInfos.file : null;
+        const prevSources = Array.isArray(reqDoc.caseInfos.designSourceFiles)
+          ? reqDoc.caseInfos.designSourceFiles
+          : [];
+        const seenKeys = new Set();
+        const sourceFiles = [];
+        for (const src of [...prevSources, prevPrimary]) {
+          const k = String(src?.s3Key || "").trim();
+          if (!k || k === toothRow.s3Key || seenKeys.has(k)) continue;
+          seenKeys.add(k);
+          sourceFiles.push(src);
+        }
+        const fileName = toothRow.fileName || `custom_abutment_${toothRow.toothNumber}.stl`;
+        reqDoc.caseInfos.designSourceFiles = sourceFiles;
+        reqDoc.caseInfos.files = sourceFiles;
+        reqDoc.caseInfos.file = {
+          originalName: fileName,
+          fileType: "model/stl",
+          fileSize: toothRow.size,
+          s3Key: toothRow.s3Key,
+        };
+        reqDoc.caseInfos.productMode = "custom_abutment";
+        if (!String(reqDoc.caseInfos.designSoftware || "").trim()) {
+          reqDoc.caseInfos.designSoftware = "3Shape";
+        }
+        reqDoc.caseInfos.requestorHexRotation = "STL모델대로";
+        reqDoc.caseInfos.manufacturerHexRotation = "STL모델대로";
+        reqDoc.caseInfos.finalHexRotation = "STL모델대로";
+        reqDoc.caseInfos.hexRotation = { mode: "STL모델대로" };
+        reqDoc.rnd.manufacturerHexRotation = "STL모델대로";
+
+        const maxD = Number(toothRow.metrics?.maxDiameterMm);
+        if (Number.isFinite(maxD) && maxD > 0) {
+          reqDoc.caseInfos.maxDiameter = maxD;
+        }
+        clearFilledStlFileOnCaseInfos(reqDoc.caseInfos);
+        reqDoc.caseInfos.ncFile = undefined;
+
+        const rhinoName = buildConfirmedRhinoFileName(reqDoc);
+        if (rhinoName && reqDoc.caseInfos.file) {
+          reqDoc.caseInfos.file.filePath = rhinoName;
+        }
+
+        reqDoc.designCompletedBy = userOid;
+        reqDoc.designCompletedAt = now;
+        reqDoc.manufacturerStage = "준비";
+        reqDoc.partnerBilling = {
+          ...(reqDoc.partnerBilling && typeof reqDoc.partnerBilling === "object"
+            ? reqDoc.partnerBilling.toObject?.() || reqDoc.partnerBilling
+            : {}),
+          practiceConfirmedAiDesign: true,
+          billingDeferred: true,
+        };
+        await ensureLotNumberOnReadyEnter(reqDoc);
+        if (rhinoName) {
+          if (!reqDoc.productionSchedule) reqDoc.productionSchedule = {};
+          reqDoc.productionSchedule.stlPreload = {
+            status: "GENERATING",
+            updatedAt: now,
+          };
+        }
+        await reqDoc.save();
+        updatedRequests.push({ reqDoc, rhinoName });
+      }
+
+      const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)
+        ? transferDoc.production.designFiles
+        : [];
+      const confirmedToothSet = new Set(validTeeth.map((t) => t.toothNumber));
+      const keptDesignFiles = prevDesignFiles.filter(
+        (entry) => !confirmedToothSet.has(String(entry?.tooth || "").trim()),
+      );
+      const patientName = String(req.body?.patientName || "").trim();
+      const newMirrored = normalizeResultFiles(
+        validTeeth.map((t) => ({
+          patientName,
+          tooth: t.toothNumber,
+          file: {
+            originalName: t.fileName || `custom_abutment_${t.toothNumber}.stl`,
+            mimetype: "model/stl",
+            size: t.size,
+            s3Key: t.s3Key,
+          },
+        })),
+      );
+      const mergedDesignFiles = [...keptDesignFiles, ...newMirrored];
+      const prevPreview =
+        transferDoc.production?.customAbutmentPreview &&
+        typeof transferDoc.production.customAbutmentPreview === "object"
+          ? transferDoc.production.customAbutmentPreview
+          : {};
+      const nextPreview = {
+        ...prevPreview,
+        version: Number(req.body?.version) || Number(prevPreview.version) || 0,
+        fitVersion: Number(req.body?.fitVersion) || Number(prevPreview.fitVersion) || 0,
+        savedAt: Date.now(),
+        confirmedAt: now,
+        confirmedBy: userOid,
+        teeth: validTeeth,
+      };
+
+      await PracticeTransfer.updateOne(
+        { _id: transferDoc._id },
+        {
+          $set: {
+            "production.designFiles": mergedDesignFiles,
+            "production.designReadyAt": now,
+            "production.practiceDesignConfirmedAt": now,
+            "production.practiceDesignConfirmedBy": userOid,
+            "production.confirmedAt": now,
+            "production.confirmedBy": userOid,
+            "production.customAbutmentPreview": nextPreview,
+          },
+          $unset: {
+            "production.customAbutmentManualDesign": "",
+          },
+        },
+      );
+    } finally {
+      await releaseAbutmentDesignHandoffLock(transferDoc._id);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        confirmed: true,
+        transferId,
+        requestCount: updatedRequests.length,
+        teeth: validTeeth.map((t) => t.toothNumber),
+      },
+    });
+
+    void (async () => {
+      for (const { reqDoc, rhinoName } of updatedRequests) {
+        try {
+          const prc = await resolvePrcFileNames(reqDoc.caseInfos);
+          const $set = {};
+          if (prc.faceHolePrcFileName) {
+            $set["caseInfos.faceHolePrcFileName"] = prc.faceHolePrcFileName;
+          }
+          if (prc.connectionPrcFileName) {
+            $set["caseInfos.connectionPrcFileName"] = prc.connectionPrcFileName;
+          }
+          if (Object.keys($set).length > 0) {
+            await Request.updateOne({ _id: reqDoc._id }, { $set });
+          }
+          if (rhinoName) {
+            triggerRhinoProcessFileForRequest({
+              requestId: reqDoc.requestId,
+              filePath: rhinoName,
+              fileName: rhinoName,
+            });
+          }
+        } catch (err) {
+          console.warn("[AI] confirm rhino trigger failed", err?.message || err);
+        }
+      }
+      if (updatedRequests.length > 0) {
+        try {
+          scheduleRequestReadyBadgeEmit();
+          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:updated", {
+            source: "practice-confirm-custom-abutment",
+            transferId,
+          });
+        } catch (err) {
+          console.warn("[AI] confirm worksheet emit failed", err?.message || err);
+        }
+      }
+      const toothListText = validTeeth.map((t) => `#${t.toothNumber}`).join(", ");
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: transferDoc._id,
+        senderUserId: req.user?._id,
+        content: `치과가 커스텀어벗 디자인(${toothListText})을 확정하여 생산을 의뢰했습니다.`,
+        systemEvent: "custom_abutment_confirmed",
+      }).catch((err) => console.warn("[AI] confirm system chat failed", err));
+      void emitCustomAbutmentTransferEvent(transferDoc, "abutment-design-confirmed").catch(
+        (err) => console.warn("[AI] confirm transfer emit failed", err),
+      );
+    })();
+  } catch (error) {
+    console.error("[AI] confirmCustomAbutmentDesign error", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "커스텀어벗 확정 처리 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * 치과 「수작업 의뢰」: 기공사 수작업 디자인으로 넘기고, 프리뷰 형상·3D 페인트를 공유한다.
+ * @route POST /api/ai/custom-abutment-design-manual-request
+ */
+export async function requestManualCustomAbutmentDesign(req, res) {
+  try {
+    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    if (!transferId || (!canSave && !privileged) || !anchorId) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 요청할 수 있습니다." });
+    }
+    const transferDoc = await PracticeTransfer.findOne({ transferId })
+      .select({
+        _id: 1,
+        transferId: 1,
+        practiceUserId: 1,
+        practiceBusinessAnchorId: 1,
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        "production.customAbutmentPreview": 1,
+      })
+      .lean();
+    if (!transferDoc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const now = new Date();
+    const message = String(req.body?.message || "").trim().slice(0, 1000);
+    const shapes = sanitizeWorkFilePaintShapes(req.body?.paint?.shapes);
+    const view = sanitizeWorkFilePaintView(req.body?.paint?.view);
+    assertWorkFilePaintSize({ shapes, view });
+
+    const incoming = snapshotTeeth(req.body?.teeth, transferId);
+    const checked = await Promise.all(
+      incoming.map(async (row) => {
+        if (!row.s3Key) return row;
+        const size = await headObjectSizeInS3(row.s3Key);
+        if (!size || size > PREVIEW_STL_MAX) return null;
+        let crownS3Key = "";
+        if (row.crownS3Key) {
+          const crownSize = await headObjectSizeInS3(row.crownS3Key);
+          if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
+        }
+        return { ...row, size, crownS3Key };
+      }),
+    );
+    const validTeeth = checked.filter(Boolean);
+
+    const prevPreview =
+      transferDoc.production?.customAbutmentPreview &&
+      typeof transferDoc.production.customAbutmentPreview === "object"
+        ? transferDoc.production.customAbutmentPreview
+        : {};
+    const nextPreview = {
+      ...prevPreview,
+      savedAt: Date.now(),
+      confirmedAt: null,
+      confirmedBy: null,
+      ...(validTeeth.length > 0
+        ? {
+            version: Number(req.body?.version) || Number(prevPreview.version) || 0,
+            fitVersion: Number(req.body?.fitVersion) || Number(prevPreview.fitVersion) || 0,
+            teeth: validTeeth,
+          }
+        : {}),
+      ...(req.body?.paint
+        ? {
+            paint: {
+              shapes,
+              view: view || null,
+              updatedAt: now,
+              updatedBy: req.user?._id || null,
+              updatedSide: "practice",
+            },
+          }
+        : {}),
+    };
+    const manualDesign = {
+      at: now,
+      by: req.user?._id || null,
+      message,
+      hasPaint: shapes.length > 0,
+    };
+
+    await PracticeTransfer.updateOne(
+      { _id: transferDoc._id },
+      {
+        $set: {
+          "production.customAbutmentManualDesign": manualDesign,
+          "production.customAbutmentPreview": nextPreview,
+        },
+      },
+    );
+
+    res.json({
+      success: true,
+      data: { manualDesign, transferId },
+    });
+
+    const chatSentDirectly = Boolean(req.body?.chatSentDirectly);
+    void (async () => {
+      if (!chatSentDirectly) {
+        const lines = [
+          "치과가 커스텀어벗 수작업 디자인을 의뢰했습니다.",
+          message ? `요청: ${message}` : "",
+          shapes.length > 0 ? "디자인 화면에 페인트 표시가 있습니다." : "",
+        ].filter(Boolean);
+        await postPracticeTransferSystemChatMessage({
+          transferMongoId: transferDoc._id,
+          senderUserId: req.user?._id,
+          content: lines.join("\n"),
+          systemEvent: "custom_abutment_manual_design",
+        }).catch((err) => console.warn("[AI] manual request chat failed", err));
+      }
+      await emitCustomAbutmentTransferEvent(
+        transferDoc,
+        "custom-abutment-manual-requested",
+      ).catch((err) => console.warn("[AI] manual request emit failed", err));
+    })();
+  } catch (error) {
+    console.error("[AI] requestManualCustomAbutmentDesign error", error);
+    return res.status(500).json({
+      success: false,
+      message: "수작업 의뢰를 저장하지 못했습니다.",
+    });
   }
 }
 

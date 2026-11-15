@@ -36,6 +36,10 @@ export type CustomAbutmentDesignParams = {
   axisToOpposing: number;
   /** 픽스쳐 장축 대비 삽입축 최대 각도(°). */
   axisMaxDeg: number;
+  /** 삽입축 목표 각도(°, -1이면 자동). */
+  axisTargetDeg: number;
+  /** 삽입축 기준(-1=자동, 0=악궁 교합 방향, 1=대합치 중심, 2=인접 어벗과 평행). */
+  axisSourceCode: number;
   /** 포스트 윗면을 순측(+)·설측(-)으로 옮기는 양(mm). */
   axisShiftLabialMm: number;
   /** 포스트 윗면을 근심(+)·원심(-)으로 옮기는 양(mm). */
@@ -53,20 +57,22 @@ export type CustomAbutmentParamSpec = {
 };
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
-  occlusalClearanceMm: { label: "대합치 거리", unit: "mm", min: 0.7, max: 2.5, step: 0.05 },
-  postTaperDeg: { label: "포스트 테이퍼(편측)", unit: "°", min: 1, max: 8, step: 0.5 },
+  occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.5, max: 3.5, step: 0.05 },
+  postTaperDeg: { label: "테이퍼", unit: "°", min: 0.5, max: 8, step: 0.1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
-  postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -2, max: 2, step: 0.1 },
-  postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.8, max: 1.15, step: 0.01 },
-  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.5, max: 0.8, step: 0.05 },
-  marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.8, step: 0.05 },
-  marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: 0, max: 2.0, step: 0.1 },
+  postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -3, max: 3, step: 0.1 },
+  postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.3, max: 1.0, step: 0.02 },
+  marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.9, step: 0.05 },
+  marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
   marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
-  marginSizeScale: { label: "마진 크기", unit: "배", min: 0.85, max: 1.2, step: 0.01 },
+  marginSizeScale: { label: "마진 크기", unit: "배", min: 0.7, max: 1.4, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
-  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 1.5, step: 0.05 },
+  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 2.5, step: 0.05 },
   axisToOpposing: { label: "대합치 중심 반영", unit: "", min: 0, max: 1, step: 0.05 },
   axisMaxDeg: { label: "삽입축 최대 각도", unit: "°", min: 0, max: 32, step: 0.5 },
+  axisTargetDeg: { label: "삽입축 각도", unit: "°", min: -1, max: 32, step: 0.1 },
+  axisSourceCode: { label: "삽입축 기준", unit: "", min: -1, max: 2, step: 1 },
   axisShiftLabialMm: { label: "윗면 순측 이동", unit: "mm", min: -2, max: 2, step: 0.1 },
   axisShiftMesialMm: { label: "윗면 근심 이동", unit: "mm", min: -2, max: 2, step: 0.1 },
 };
@@ -127,6 +133,8 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     minCrownThicknessMm: 1.0,
     axisToOpposing: 1,
     axisMaxDeg: defaultAxisMaxDeg(toothNumber),
+    axisTargetDeg: -1,
+    axisSourceCode: -1,
     axisShiftLabialMm: 0,
     axisShiftMesialMm: 0,
   };
@@ -208,16 +216,31 @@ const SCOPE_LABEL: Record<CustomAbutmentPreferenceScope, string> = {
   posterior: "구치",
 };
 
+const AXIS_SOURCE_CODE_LABEL: Record<number, string> = {
+  0: "악궁 교합 방향",
+  1: "대합치 중심",
+  2: "인접 어벗과 평행",
+};
+
 /** 「전체: 마진 깊이 0.8mm · 구치: 크라운 두께 1.2mm」 */
 export function describeCustomAbutmentPreference(pref: CustomAbutmentDesignPreference): string {
   const parts: string[] = [];
   for (const scope of ["all", "anterior", "posterior"] as const) {
     const values = pref.scopes[scope];
     if (!values) continue;
-    const items = Object.entries(values).map(([key, v]) => {
-      const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key as CustomAbutmentParamKey];
-      return `${spec.label} ${Math.round(Number(v) * 100) / 100}${spec.unit}`;
-    });
+    const items = Object.entries(values)
+      .map(([key, v]) => {
+        const num = Number(v);
+        if ((key === "axisTargetDeg" || key === "axisSourceCode") && num < 0) return "";
+        if (key === "axisSourceCode") {
+          const label = AXIS_SOURCE_CODE_LABEL[Math.round(num)];
+          return label ? `삽입축 기준 ${label}` : "";
+        }
+        const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key as CustomAbutmentParamKey];
+        if (!spec) return "";
+        return `${spec.label} ${Math.round(num * 100) / 100}${spec.unit}`;
+      })
+      .filter(Boolean);
     if (items.length > 0) parts.push(`${SCOPE_LABEL[scope]}: ${items.join(" · ")}`);
   }
   return parts.join(" / ");

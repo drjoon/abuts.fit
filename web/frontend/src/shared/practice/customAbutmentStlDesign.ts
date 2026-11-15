@@ -1787,7 +1787,14 @@ function parallelGroupOf(
  * 브리지·인접 치아끼리는 삽입축(포스트 패쓰)을 100% 동일한 월드 축으로 평행하게 맞춘다.
  */
 export async function designCustomAbutmentStl(args: DesignArgs): Promise<DesignedCustomAbutment> {
-  const group = parallelGroupOf(args.fixture, args.neighbors ?? [], args.toothWorks);
+  const explicitAxisSource =
+    args.params?.axisSourceCode != null && Number.isFinite(Number(args.params.axisSourceCode))
+      ? Math.round(Number(args.params.axisSourceCode))
+      : -1;
+  const group =
+    explicitAxisSource === 0 || explicitAxisSource === 1
+      ? [args.fixture]
+      : parallelGroupOf(args.fixture, args.neighbors ?? [], args.toothWorks);
   let groupAxisWorld: Vec3 | null = null;
   if (group.length > 1) {
     // 치아 호출 순서에 따라 부동소수 합산이 달라지지 않게 치아 번호 순으로 정렬해 공통 삽입축을 구한다.
@@ -3042,9 +3049,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       nearV = occV * 0.75 + crownShiftMesMm * 0.25;
     }
 
+    const explicitSourceCode = Math.round(params.axisSourceCode);
+    const effectiveAxisToOpposing =
+      explicitSourceCode === 0 ? 0 : explicitSourceCode === 1 ? 1 : params.axisToOpposing;
     let wantU = nearU;
     let wantV = nearV;
-    if (opposingLocalPts.length > 0 && params.axisToOpposing > 0) {
+    if (opposingLocalPts.length > 0 && effectiveAxisToOpposing > 0) {
       const frameOccRef = insertionFrame(occInFix, labXY);
       const mesSignOcc = dot3(frameOccRef.vSide, mesXY) >= 0 ? 1 : -1;
       const center = opposingCenterPoint(opposingLocalPts, c0, frameOccRef, {
@@ -3057,12 +3067,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const scaleH = H / Math.max(relOpp[2], H + 1.2);
         const oppU = dot3(relOpp, labXY) * scaleH;
         const oppV = dot3(relOpp, mesXY) * scaleH;
-        const wOppU = (isBridgedToScanned ? 0.5 : 0.62) * params.axisToOpposing;
-        const wOppV = (isBridgedToScanned ? 0.28 : 0.42) * params.axisToOpposing;
+        const wOppU = (isBridgedToScanned ? 0.5 : 0.62) * effectiveAxisToOpposing;
+        const wOppV = (isBridgedToScanned ? 0.28 : 0.42) * effectiveAxisToOpposing;
         wantU = oppU * wOppU + nearU * (1 - wOppU);
         wantV = oppV * wOppV + nearV * (1 - wOppV);
         axisSource = "opposing";
       }
+    } else if (explicitSourceCode === 0) {
+      axisSource = "arch";
     }
 
     const wantLat = Math.hypot(wantU, wantV);
@@ -3075,16 +3087,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     w = steerAxisForProximalClearance(w, Math.min(tiltCapRad, 8.0 * DEG));
   }
-  const neighborAxes = estimateAdjacentLongAxes(jawLocalPts, {
-    wOcc: occInFix,
-    labXY,
-    mesXY,
-    ownRadius: sbR,
-    ownHeight: sbH,
-    skipDistal: hasDistalRetromolarPad,
-    mesialBridgedAbutment: mesialAllowance.bridged,
-    distalBridgedAbutment: distalAllowance.bridged,
-  });
+  const explicitSource = Math.round(params.axisSourceCode);
+  const neighborAxes =
+    explicitSource === 0 || explicitSource === 1
+      ? []
+      : estimateAdjacentLongAxes(jawLocalPts, {
+          wOcc: occInFix,
+          labXY,
+          mesXY,
+          ownRadius: sbR,
+          ownHeight: sbH,
+          skipDistal: hasDistalRetromolarPad,
+          mesialBridgedAbutment: mesialAllowance.bridged,
+          distalBridgedAbutment: distalAllowance.bridged,
+        });
   if (neighborAxes.length > 0) {
     let target = neighborAxes[0]!;
     if (neighborAxes.length > 1) {
@@ -3109,8 +3125,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
   if (mode.probeAxis) return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
   const hasManualAxisShift = params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0;
-  if (mode.groupAxisWorld) {
+  if (mode.groupAxisWorld && explicitSource !== 0 && explicitSource !== 1) {
     w = worldDirToFixtureLocal(mode.groupAxisWorld, fixture.fixturePose);
+    axisSource = "parallel";
+  } else if (explicitSource === 2) {
     axisSource = "parallel";
   }
   if (hasManualAxisShift) {
@@ -3124,7 +3142,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const effectiveTiltCapRad = posterior ? Math.min(tiltCapRad, 9.5 * DEG) : tiltCapRad;
   // 브리지·인접 평행 그룹(groupAxisWorld)은 이미 그룹 전체 각도 상한 안에서 공통 월드 축으로 맞췄으므로,
   // 치아마다 따로 capTilt·allowRatio로 꺾지 않아 모든 지대주 포스트가 완전히 같은 각도로 평행해진다.
-  if (!mode.groupAxisWorld || hasManualAxisShift) {
+  if (!mode.groupAxisWorld || hasManualAxisShift || explicitSource === 0 || explicitSource === 1) {
     w = capTilt(w, hasManualAxisShift ? tiltCapRad : (neighborLockRad ?? effectiveTiltCapRad));
     if (posterior && neighborLockRad == null) {
       const H = tpl.postHeightMm;
@@ -3140,6 +3158,32 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           w = norm3([(w[0] / w[2]) * k, (w[1] / w[2]) * k, 1]);
         }
       }
+    }
+  }
+  if (
+    args.params?.axisTargetDeg != null &&
+    Number.isFinite(Number(args.params.axisTargetDeg)) &&
+    params.axisTargetDeg >= 0
+  ) {
+    const targetRad = clamp(params.axisTargetDeg, 0, 32) * DEG;
+    let dirX = w[0];
+    let dirY = w[1];
+    let len = Math.hypot(dirX, dirY);
+    if (len < 1e-5) {
+      dirX = occInFix[0];
+      dirY = occInFix[1];
+      len = Math.hypot(dirX, dirY);
+    }
+    if (len < 1e-5) {
+      dirX = labXY[0];
+      dirY = labXY[1];
+      len = Math.hypot(dirX, dirY) || 1;
+    }
+    if (targetRad < 1e-5) {
+      w = [0, 0, 1];
+    } else {
+      const s = Math.sin(targetRad) / len;
+      w = norm3([dirX * s, dirY * s, Math.cos(targetRad)]);
     }
   }
   const frame = insertionFrame(w, labXY);
@@ -3251,9 +3295,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     minSafePostHeightMm,
     hasOpposing ? Math.min(baseCap + offsetH, oppRefH - clearance + 0.8) : baseCap + offsetH,
   );
+  const hasExplicitClearance =
+    args.params?.occlusalClearanceMm != null && Number.isFinite(Number(args.params.occlusalClearanceMm));
   const noOppTop = Number.isFinite(archCrownTopH) ? baseCap : Math.min(baseCap, tpl.postHeightMm);
-  let postTopH = (hasOpposing ? Math.min(baseCap, oppRefH - clearance) : noOppTop) + offsetH;
-  if (hasOpposing) postTopH = Math.min(postTopH, oppRefH - clearance);
+  let postTopH =
+    (hasOpposing
+      ? hasExplicitClearance
+        ? Math.min(antIncisalCap, oppRefH - clearance)
+        : Math.min(baseCap, oppRefH - clearance)
+      : noOppTop) + offsetH;
+  if (hasOpposing && offsetH <= 0) postTopH = Math.min(postTopH, oppRefH - clearance);
   postTopH = Math.max(minSafePostHeightMm, postTopH);
   if (hasOpposing) {
     // 뼈대 최소 높이(2.2mm)에서도 최소 지르코니아 두께(0.7mm)는 반드시 남긴다.
@@ -3958,15 +4009,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           ? gingRise * scallopRatio
           : Math.max(naturalLift, minScallopLift);
       const zFl = flBase - params.marginDepthMm;
-      const maxSpanAboveFl = (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW;
+      const supragingivalLift = Math.max(0, -params.marginDepthMm);
+      const maxSpanAboveFl =
+        (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
       const highCap = Math.min(maxMarginZ, zFl + maxSpanAboveFl);
 
       // 치은 상방 노출 방지: 협측은 마진 반경 직상방 치은(gingAtM) 아래로 감추고, 근·원심은 치간유두 치은 라인 바로 아래까지 따라 올라간다.
       const crestSubgMin =
-        Math.min(0.38, params.marginDepthMm * 0.82) * (1 - proxW) +
-        Math.min(0.28, params.marginDepthMm * 0.45) * proxW;
+        params.marginDepthMm < 0
+          ? params.marginDepthMm
+          : Math.min(0.38, params.marginDepthMm * 0.82) * (1 - proxW) +
+            Math.min(0.28, params.marginDepthMm * 0.45) * proxW;
       const crestCeil = gCrest - crestSubgMin + extraUserProxLift * proxW;
-      const facialSurfaceCeil = gingAtM[b]! - Math.min(0.32, params.marginDepthMm * 0.72);
+      const facialSurfaceCeil =
+        params.marginDepthMm < 0
+          ? gingAtM[b]! + supragingivalLift
+          : gingAtM[b]! - Math.min(0.32, params.marginDepthMm * 0.72);
       const ceilZ =
         facialW > 0.15
           ? Math.min(highCap, crestCeil * (1 - facialW * 0.75) + Math.min(crestCeil, facialSurfaceCeil) * (facialW * 0.75))
@@ -3980,7 +4038,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const proxW = sMes * sMes;
       const facialW = Math.max(0, cLab) ** 2;
       const flBase = flMean + flSlope * cLab;
-      const maxSpanAboveFl = (sectorRetromolar[b] ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW;
+      const supragingivalLift = Math.max(0, -params.marginDepthMm);
+      const maxSpanAboveFl =
+        (sectorRetromolar[b] ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
       const highCap = Math.min(maxMarginZ, flBase - params.marginDepthMm + maxSpanAboveFl);
       const facialGuard =
         facialW > 0.25 && params.marginDepthMm > 0.05
@@ -3989,10 +4049,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       return clamp(Math.min(mz, facialGuard), minMarginZ, highCap);
     });
     smoothMarginZ = lowPassCircular(pass1, 3).map((z) => clamp(z, minMarginZ, maxMarginZ));
+    const hasExplicitMarginDepth =
+      args.params?.marginDepthMm != null && Number.isFinite(Number(args.params.marginDepthMm));
     // 픽스쳐가 깊게 식립되어 커프를 줄이고 포스트를 늘릴 수 있는 경우, 치은 하방 0.5~1.0mm 규정보다 우선해
     // 포스트 높이(기준 평균 마진 → 포스트 상단)가 4.5mm 이상이 되도록 치은 하방 최대 2.0mm까지 마진을 낮춘다.
     // 협측이 이미 치은 하방 2.0mm에 닿았으면 스캘럽으로 높게 올라간 근·원심 마진도 치은 하방 2.0mm 한도 안에서 추가로 낮춰 평균 포스트 높이를 채운다.
-    if (params.postHeightOffsetMm >= -0.05) {
+    if (!hasExplicitMarginDepth && params.postHeightOffsetMm >= -0.05) {
       const axialCosM = Math.max(frame.w[2], 0.2);
       const subgLine = gingSmooth.map((gc, b) => Math.min(gc, gingAtM[b]!));
       const wantMeanMarginZ = meanMarginZ + postTopH / axialCosM - (TARGET_RETENTION_POST_HEIGHT_MM + 0.2);

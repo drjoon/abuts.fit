@@ -1081,6 +1081,13 @@ const toProductionApiFields = (
         }
       : {}),
     confirmedAt: p.confirmedAt || null,
+    customAbutmentManualDesign: p.customAbutmentManualDesign?.at
+      ? {
+          at: new Date(p.customAbutmentManualDesign.at).toISOString(),
+          message: String(p.customAbutmentManualDesign.message || "").trim(),
+          hasPaint: Boolean(p.customAbutmentManualDesign.hasPaint),
+        }
+      : null,
     relatedRequestIds: Array.isArray(p.relatedRequestIds)
       ? p.relatedRequestIds.map((id) => String(id))
       : [],

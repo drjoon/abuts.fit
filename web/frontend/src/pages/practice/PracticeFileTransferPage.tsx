@@ -12362,6 +12362,7 @@ export const PracticeFileTransferPage = ({
                 data-no-drag
               >
                 <PracticeCustomAbutmentPreviewButton
+                  viewerRole="practice"
                   authToken={authToken}
                   caseTitle={selectedTransferCaseIdentity?.primary}
                   caseDatesLabel={selectedTransferCaseIdentity?.secondary}
@@ -12370,6 +12371,9 @@ export const PracticeFileTransferPage = ({
                   files={selectedTransferDetailModel?.files || []}
                   workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
                   transferId={String(selectedTransfer?.transferId || selectedTransfer?.id || "")}
+                  onActionComplete={() => {
+                    void loadRecentRequests({ silent: true });
+                  }}
                 />
                 {selectedTransferDetailModel?.abutmentStageLabel ? (
                   <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">

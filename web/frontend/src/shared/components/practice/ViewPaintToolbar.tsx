@@ -6,7 +6,14 @@
 // - web/frontend/src/shared/components/practice/ViewPaintSurface.tsx
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import {
   ChevronsDownUp,
   ChevronsUpDown,
@@ -76,19 +83,22 @@ export function useViewPaint({
     setCount(0);
   }, [initiallyOn, resetKey]);
 
-  return {
-    paintRef,
-    paintOn,
-    setPaintOn,
-    tool,
-    setTool,
-    color,
-    setColor,
-    width,
-    setWidth,
-    count,
-    setCount,
-  };
+  return useMemo(
+    () => ({
+      paintRef,
+      paintOn,
+      setPaintOn,
+      tool,
+      setTool,
+      color,
+      setColor,
+      width,
+      setWidth,
+      count,
+      setCount,
+    }),
+    [color, count, paintOn, tool, width],
+  );
 }
 
 export type ViewPaintState = ReturnType<typeof useViewPaint>;

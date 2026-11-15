@@ -8,10 +8,13 @@ import aiController from "../../controllers/ai/ai.controller.js";
 import {
   clearCustomAbutmentDesignPreference,
   chooseCustomAbutmentManualDesign,
+  confirmCustomAbutmentDesign,
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
   getCustomAbutmentDesignSnapshot,
   presignCustomAbutmentDesignSnapshot,
+  requestManualCustomAbutmentDesign,
+  saveCustomAbutmentDesignPaint,
   saveCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignSnapshot,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
@@ -65,6 +68,21 @@ router.put(
   "/custom-abutment-design-snapshot",
   authenticate,
   saveCustomAbutmentDesignSnapshot
+);
+router.put(
+  "/custom-abutment-design-paint",
+  authenticate,
+  saveCustomAbutmentDesignPaint
+);
+router.post(
+  "/custom-abutment-design-confirm",
+  authenticate,
+  confirmCustomAbutmentDesign
+);
+router.post(
+  "/custom-abutment-design-manual-request",
+  authenticate,
+  requestManualCustomAbutmentDesign
 );
 router.put(
   "/custom-abutment-design-preference",

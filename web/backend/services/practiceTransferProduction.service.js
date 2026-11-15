@@ -1084,6 +1084,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   transferDoc,
   shippingMode: _shippingModeRaw = null,
   actorUserId = null,
+  allowPracticeConfirmed = false,
 }) {
   const customRows = listCustomAbutmentToothWorks(
     transferDoc?.toothWorks,
@@ -1134,16 +1135,22 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   // 구강스캔은 선택 — 없어도 CA Request 생성(어벗 STL 핸드오프용 relatedRequestIds).
   const scanFiles = normalizeResultFiles(transferDoc?.files);
 
-  const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
+  const labAnchorId =
+    resolvePerformingLabAnchorId(transferDoc) ||
+    (allowPracticeConfirmed
+      ? String(transferDoc?.practiceBusinessAnchorId || "").trim()
+      : "");
   if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
     throw new Error("기공소 정보가 없어 어벗츠 의뢰를 생성할 수 없습니다.");
   }
 
-  const lockStatus = await checkCreditLock(labAnchorId);
-  if (lockStatus.isLocked) {
-    throw new Error(
-      `기공소 크레딧 사용이 제한되어 있습니다. 사유: ${lockStatus.reason || "-"}`,
-    );
+  if (!allowPracticeConfirmed) {
+    const lockStatus = await checkCreditLock(labAnchorId);
+    if (lockStatus.isLocked) {
+      throw new Error(
+        `기공소 크레딧 사용이 제한되어 있습니다. 사유: ${lockStatus.reason || "-"}`,
+      );
+    }
   }
 
   const labUserId = await resolveLabRequestorUserId({
@@ -1177,7 +1184,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .filter(Boolean)
     : [];
 
-  const designSoftware = String(labMeta.designSoftware || "").trim();
+  const designSoftware =
+    String(labMeta.designSoftware || "").trim() ||
+    (allowPracticeConfirmed ? "3Shape" : "");
   if (!designSoftware) {
     throw new Error(
       "기공소 디자인 소프트웨어가 설정되지 않았습니다. 치과의뢰 수신하기 또는 커스텀어벗 의뢰하기에서 먼저 설정해주세요.",
@@ -1461,12 +1470,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 
     // from-draft와 동일: 기공소 requestSettings + case implantManufacturer로 헥스 시드.
     // ExoCAD≤3.0 + implant 없음 → null (designSoftware 30° 폴백 금지).
-    const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
-      labMeta,
-      implantManufacturer ||
-        normalizedCaseInfos?.implantManufacturer ||
-        null,
-    );
+    const manufacturerHexRotation = allowPracticeConfirmed
+      ? "STL모델대로"
+      : resolveLabManufacturerHexForImplant(
+          labMeta,
+          implantManufacturer ||
+            normalizedCaseInfos?.implantManufacturer ||
+            null,
+        );
 
     const hexFields = manufacturerHexRotation
       ? {
@@ -1727,6 +1738,7 @@ async function clearAbutmentRequestEnsureLock(transferId) {
 export async function ensureAbutmentRequestsForHandoff({
   transferDoc,
   actorUserId = null,
+  allowPracticeConfirmed = false,
 }) {
   if (!hasCustomAbutmentToothWorks(transferDoc?.toothWorks)) {
     return { created: false, requestIds: [], shippingMode: null };
@@ -1760,6 +1772,7 @@ export async function ensureAbutmentRequestsForHandoff({
     result = await createAbutmentRequestsFromPracticeTransfer({
       transferDoc: workingTransfer,
       actorUserId,
+      allowPracticeConfirmed,
     });
   } catch (createErr) {
     await clearAbutmentRequestEnsureLock(workingTransfer._id);

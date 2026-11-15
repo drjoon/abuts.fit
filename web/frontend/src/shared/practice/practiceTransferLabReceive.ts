@@ -204,6 +204,11 @@ export type PracticeTransferLabReceiveItem = {
     /** 연동 CA Request 치아별 제조사 공정 */
     abutmentToothStages?: PracticeTransferAbutmentToothStage[];
     confirmedAt?: string | null;
+    customAbutmentManualDesign?: {
+      at?: string | null;
+      message?: string | null;
+      hasPaint?: boolean;
+    } | null;
     relatedRequestIds?: string[];
   } | null;
   /** 연동 커스텀어벗 Request 한진 배송 요약 */

@@ -325,6 +325,7 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import { PracticeCustomAbutmentPreviewButton } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
   collectOccupiedLabBasketTags,
   normalizeLabBasketTag,
@@ -1499,6 +1500,23 @@ export function RequestorPracticeReceivePage({
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
+              customAbutmentManualDesign:
+                productionRaw.customAbutmentManualDesign &&
+                typeof productionRaw.customAbutmentManualDesign === "object"
+                  ? {
+                      at: (productionRaw.customAbutmentManualDesign as { at?: string }).at
+                        ? String((productionRaw.customAbutmentManualDesign as { at?: string }).at)
+                        : null,
+                      message: String(
+                        (productionRaw.customAbutmentManualDesign as { message?: string })
+                          .message || "",
+                      ).trim(),
+                      hasPaint: Boolean(
+                        (productionRaw.customAbutmentManualDesign as { hasPaint?: boolean })
+                          .hasPaint,
+                      ),
+                    }
+                  : null,
               relatedRequestIds: Array.isArray(productionRaw.relatedRequestIds)
                 ? productionRaw.relatedRequestIds.map((id) => String(id))
                 : [],
@@ -10402,6 +10420,46 @@ export function RequestorPracticeReceivePage({
                 {PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT}
               </span>
             </>
+          ) : null
+        }
+        headerActionLeading={
+          selectedTransfer &&
+          (selectedTransfer.hasCustomAbutment ||
+            selectedTransferToothWorks.some((row) => row.customAbutment)) ? (
+            <div className="flex min-w-0 items-center gap-2" data-no-drag>
+              <PracticeCustomAbutmentPreviewButton
+                viewerRole="lab"
+                authToken={token}
+                caseTitle={selectedTransferCaseIdentity?.primary}
+                caseDatesLabel={selectedTransferCaseIdentity?.secondary}
+                patientName={selectedTransferPatientName}
+                toothWorks={selectedTransferToothWorks}
+                files={(selectedTransfer.files || []).map((f) => ({
+                  fileName: f.originalName,
+                  s3Key: String(f.s3Key || "").trim(),
+                  size: Number(f.size || 0),
+                  scanRole: f.scanRole || null,
+                  uploadedAt: f.uploadedAt || null,
+                }))}
+                workScanFiles={(selectedTransfer.production?.labWorkScanFiles || []).map((f) => ({
+                  fileName: f.originalName,
+                  s3Key: String(f.s3Key || "").trim(),
+                  size: Number(f.size || 0),
+                  scanRole: f.scanRole || null,
+                  uploadedAt: f.uploadedAt || null,
+                }))}
+                transferId={String(selectedTransfer.transferId || selectedTransfer._id || "")}
+              />
+              {selectedTransfer.production?.customAbutmentManualDesign ? (
+                <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
+                  수작업 의뢰{selectedTransfer.production.customAbutmentManualDesign.hasPaint ? " · 페인트" : ""}
+                </span>
+              ) : selectedTransfer.production?.practiceDesignConfirmedAt ? (
+                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
+                  치과 확정 디자인
+                </span>
+              ) : null}
+            </div>
           ) : null
         }
         summaryItems={[
