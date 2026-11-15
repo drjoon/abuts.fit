@@ -11,6 +11,7 @@ import {
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
   getCustomAbutmentDesignSnapshot,
+  presignCustomAbutmentDesignSnapshot,
   saveCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignSnapshot,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
@@ -54,6 +55,11 @@ router.get(
   "/custom-abutment-design-snapshot",
   authenticate,
   getCustomAbutmentDesignSnapshot
+);
+router.post(
+  "/custom-abutment-design-snapshot/file",
+  authenticate,
+  presignCustomAbutmentDesignSnapshot
 );
 router.put(
   "/custom-abutment-design-snapshot",

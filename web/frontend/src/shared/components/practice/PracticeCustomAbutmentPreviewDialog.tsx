@@ -1188,9 +1188,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         })),
         chat: savedChat,
       });
-      const scope = chatScopeRef.current;
-      if (scope && list.length > 0) {
-        publishCustomAbutmentSnapshot(String(authToken || ""), scope, {
+      const transferId = transferIdRef.current;
+      if (transferId && list.length > 0) {
+        publishCustomAbutmentSnapshot(String(authToken || ""), transferId, {
           version: CUSTOM_ABUTMENT_DESIGN_VERSION,
           fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
           teeth: list.map((d) => ({
@@ -1200,9 +1200,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             overrides: ctx.overrides[d.toothNumber] ?? {},
             params: d.params,
             metrics: d.metrics,
-            localPositions: toArrayBuffer(d.localPositions),
-            crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
-            marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
+            stlBlob: d.stlBlob,
+            crownLocalPositions: d.crownLocalPositions,
+            marginLoopLocal: d.marginLoopLocal,
           })),
           chat: savedChat,
         });
@@ -2163,7 +2163,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
         } else {
           setStatus({ kind: "ready" });
-          if (restoredChat && (!restored || redesignedFromFit)) persistDesign(restoredChat);
+          if (
+            builtAbutments.length > 0 &&
+            (!remote?.hasStl || (restoredChat && (!restored || redesignedFromFit)))
+          ) {
+            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
+          }
         }
 
         window.requestAnimationFrame(() => {

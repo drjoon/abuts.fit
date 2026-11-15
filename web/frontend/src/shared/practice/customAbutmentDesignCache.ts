@@ -7,7 +7,12 @@
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+
 import { request } from "@/shared/api/apiClient";
+import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import type { MatchedScanbodyFixture } from "@/shared/practice/customAbutmentScanbodyMatch";
 import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmentDesignParams";
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
@@ -316,7 +321,67 @@ function base64ToBuffer(raw: string): ArrayBuffer | null {
 export type RemoteCustomAbutmentSnapshot = {
   design: (CachedCustomAbutmentDesign & { designFresh: boolean }) | null;
   chat: CustomAbutmentChatTurn[];
+  /** 어벗 STL이 S3에 있다. 없으면 의뢰자 화면이 다시 올린다. */
+  hasStl: boolean;
 };
+
+export type CustomAbutmentSnapshotUploadTooth = {
+  toothNumber: string;
+  fileName: string;
+  fixture: MatchedScanbodyFixture;
+  overrides: Partial<CustomAbutmentDesignParams>;
+  params: CustomAbutmentDesignParams;
+  metrics: CustomAbutmentDesignMetrics;
+  stlBlob: Blob;
+  crownLocalPositions: Float32Array;
+  marginLoopLocal: Float32Array;
+};
+
+async function positionsFromStl(token: string, s3Key: string, fileName: string): Promise<ArrayBuffer | null> {
+  const blob = await fetchS3BlobCached({
+    s3Key,
+    fileName: fileName || "abutment.stl",
+    token,
+    buildUrl: buildS3ProxyDownloadUrl,
+  });
+  const geometry = new STLLoader().parse(await blob.arrayBuffer());
+  const attr = geometry.getAttribute("position");
+  if (!attr || attr.count < 3) {
+    geometry.dispose();
+    return null;
+  }
+  const copy = new Float32Array(attr.array as ArrayLike<number>);
+  geometry.dispose();
+  return copy.buffer;
+}
+
+async function presignPreviewStl(
+  token: string,
+  transferId: string,
+  toothNumber: string,
+  kind: "abutment" | "crown",
+  blob: Blob,
+  fileName: string,
+): Promise<string> {
+  const res = await request<{ data?: { uploadUrl?: string; s3Key?: string } }>({
+    path: "/api/ai/custom-abutment-design-snapshot/file",
+    method: "POST",
+    token,
+    jsonBody: { transferId, toothNumber, kind, size: blob.size, fileName },
+  });
+  const uploadUrl = String(res.data?.data?.uploadUrl || "");
+  const s3Key = String(res.data?.data?.s3Key || "");
+  if (!res.ok || !uploadUrl || !s3Key) {
+    throw new Error("STL 업로드 주소를 받지 못했습니다.");
+  }
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "model/stl" },
+    body: blob,
+  });
+  if (!put.ok) throw new Error("STL을 저장하지 못했습니다.");
+  return s3Key;
+}
 
 /** 의뢰자에 저장된 형상·대화. 관리자 화면은 이 값만 연다. */
 export async function fetchCustomAbutmentSnapshot(
@@ -347,18 +412,30 @@ export async function fetchCustomAbutmentSnapshot(
     const chat = normalizeCustomAbutmentChat(res.data.data.chat);
     const raw = res.data.data.design;
     if (!raw || !Array.isArray(raw.teeth) || raw.teeth.length === 0) {
-      return { design: null, chat };
+      return { design: null, chat, hasStl: false };
     }
     const teeth: CachedCustomAbutmentTooth[] = [];
+    let hasStl = false;
     for (const row of raw.teeth) {
-      const localPositions = base64ToBuffer(String(row.localPositions || ""));
-      const crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
-      const marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
       const fixture = row.fixture as MatchedScanbodyFixture | null;
-      if (!localPositions || !crownLocalPositions || !marginLoopLocal || !fixture) continue;
+      if (!fixture) continue;
+      const fileName = String(row.fileName || "abutment.stl");
+      const s3Key = String(row.s3Key || "");
+      let localPositions = s3Key ? await positionsFromStl(token, s3Key, fileName) : null;
+      if (localPositions) hasStl = true;
+      const crownKey = String(row.crownS3Key || "");
+      let crownLocalPositions = crownKey
+        ? await positionsFromStl(token, crownKey, fileName.replace(/\.stl$/i, "") + "-crown.stl")
+        : null;
+      let marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
+      if (!localPositions) localPositions = base64ToBuffer(String(row.localPositions || ""));
+      if (!crownLocalPositions) crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
+      if (!localPositions) continue;
+      if (!crownLocalPositions) crownLocalPositions = new ArrayBuffer(0);
+      if (!marginLoopLocal) marginLoopLocal = new ArrayBuffer(0);
       teeth.push({
         toothNumber: String(row.toothNumber || ""),
-        fileName: String(row.fileName || ""),
+        fileName,
         fixture,
         overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
         params: row.params as CustomAbutmentDesignParams,
@@ -368,11 +445,12 @@ export async function fetchCustomAbutmentSnapshot(
         marginLoopLocal,
       });
     }
-    if (teeth.length === 0) return { design: null, chat };
+    if (teeth.length === 0) return { design: null, chat, hasStl: false };
     const version = Number(raw.version) || 0;
     const fitVersion = Number(raw.fitVersion) || 0;
     return {
       chat,
+      hasStl,
       design: {
         key: id,
         version,
@@ -389,35 +467,61 @@ export async function fetchCustomAbutmentSnapshot(
   }
 }
 
-/** 의뢰자 저장본을 서버에 남긴다. 실패해도 화면은 유지한다. */
+/** 어벗 STL은 S3에, 위치와 대화는 의뢰 문서에 남긴다. 실패해도 화면은 유지한다. */
 export function publishCustomAbutmentSnapshot(
   token: string,
   transferId: string,
-  record: Pick<CachedCustomAbutmentDesign, "version" | "fitVersion" | "teeth" | "chat">,
+  record: {
+    version: number;
+    fitVersion: number;
+    chat: readonly CustomAbutmentChatTurn[];
+    teeth: readonly CustomAbutmentSnapshotUploadTooth[];
+  },
 ): void {
   const id = transferId.trim();
-  if (!token || !id) return;
-  const teeth = record.teeth.map((row) => ({
-    toothNumber: row.toothNumber,
-    fileName: row.fileName,
-    fixture: row.fixture,
-    overrides: row.overrides,
-    params: row.params,
-    metrics: row.metrics,
-    localPositions: bytesToBase64(row.localPositions),
-    crownLocalPositions: bytesToBase64(row.crownLocalPositions),
-    marginLoopLocal: bytesToBase64(row.marginLoopLocal),
-  }));
-  void request({
-    path: "/api/ai/custom-abutment-design-snapshot",
-    method: "PUT",
-    token,
-    jsonBody: {
-      transferId: id,
-      version: record.version,
-      fitVersion: record.fitVersion,
-      chat: normalizeCustomAbutmentChat(record.chat),
-      teeth,
-    },
-  }).catch((err) => console.warn("[custom-abutment] snapshot upload failed", err));
+  if (!token || !id || record.teeth.length === 0) return;
+  void (async () => {
+    const teeth = [];
+    for (const row of record.teeth) {
+      const fileName = row.fileName || `#${row.toothNumber}.stl`;
+      const s3Key = await presignPreviewStl(token, id, row.toothNumber, "abutment", row.stlBlob, fileName);
+      let crownS3Key = "";
+      if (row.crownLocalPositions.length >= 9) {
+        const crownBlob = encodeBinaryStl(row.crownLocalPositions, `abuts.fit crown #${row.toothNumber}`);
+        crownS3Key = await presignPreviewStl(
+          token,
+          id,
+          row.toothNumber,
+          "crown",
+          crownBlob,
+          fileName.replace(/\.stl$/i, "") + "-crown.stl",
+        );
+      }
+      teeth.push({
+        toothNumber: row.toothNumber,
+        fileName,
+        fixture: row.fixture,
+        overrides: row.overrides,
+        params: row.params,
+        metrics: row.metrics,
+        s3Key,
+        crownS3Key,
+        size: row.stlBlob.size,
+        marginLoopLocal: bytesToBase64(toArrayBuffer(row.marginLoopLocal)),
+      });
+    }
+    const saved = await request({
+      path: "/api/ai/custom-abutment-design-snapshot",
+      method: "PUT",
+      token,
+      jsonBody: {
+        transferId: id,
+        version: record.version,
+        fitVersion: record.fitVersion,
+        chat: normalizeCustomAbutmentChat(record.chat),
+        teeth,
+      },
+    });
+    if (!saved.ok) throw new Error("디자인 메타데이터를 저장하지 못했습니다.");
+  })().catch((err) => console.warn("[custom-abutment] snapshot upload failed", err));
 }

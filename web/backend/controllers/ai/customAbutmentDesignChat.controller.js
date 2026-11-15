@@ -23,6 +23,7 @@ import {
   setAiDesignGapChoice,
 } from "../../services/aiDesignGap.service.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
+import { getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
 const MODEL = "gemini-3.5-flash-lite";
@@ -148,29 +149,54 @@ function snapshotChat(raw) {
   return turns;
 }
 
-function snapshotTeeth(raw) {
-  if (!Array.isArray(raw)) return [];
+const PREVIEW_STL_MAX = 32 * 1024 * 1024;
+const MARGIN_B64_MAX = 400_000;
+
+function previewStlKey(transferId, toothNumber, kind) {
+  return `practice-transfers/${transferId}/custom-abutment-preview/${toothNumber}-${kind}.stl`;
+}
+
+function snapshotMargin(raw) {
+  const text = String(raw || "");
+  if (!text || text.length > MARGIN_B64_MAX || !SNAPSHOT_B64_RE.test(text)) return "";
+  return text;
+}
+
+function snapshotTeeth(raw, transferId) {
+  if (!Array.isArray(raw) || !transferId) return [];
   const teeth = [];
   for (const row of raw.slice(0, 16)) {
     const toothNumber = String(row?.toothNumber || "").trim();
     if (!TOOTH_RE.test(toothNumber)) continue;
+    const fixture = row?.fixture && typeof row.fixture === "object" ? row.fixture : null;
+    if (!fixture) continue;
+    const base = {
+      toothNumber,
+      fileName: String(row?.fileName || "").trim().slice(0, 180),
+      fixture,
+      overrides: row?.overrides && typeof row.overrides === "object" ? row.overrides : {},
+      params: row?.params && typeof row.params === "object" ? row.params : {},
+      metrics: row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
+    };
+    const s3Key = String(row?.s3Key || "").trim();
+    const crownS3Key = String(row?.crownS3Key || "").trim();
+    if (s3Key === previewStlKey(transferId, toothNumber, "abutment")) {
+      teeth.push({
+        ...base,
+        s3Key,
+        crownS3Key: crownS3Key === previewStlKey(transferId, toothNumber, "crown") ? crownS3Key : "",
+        size: Number(row?.size) || 0,
+        marginLoopLocal: snapshotMargin(row?.marginLoopLocal),
+      });
+      continue;
+    }
     const localPositions = snapshotBuffer(row?.localPositions);
     const crownLocalPositions = snapshotBuffer(row?.crownLocalPositions);
     const marginLoopLocal = snapshotBuffer(row?.marginLoopLocal);
     if (!localPositions || !crownLocalPositions || !marginLoopLocal) continue;
-    teeth.push({
-      toothNumber,
-      fileName: String(row?.fileName || "").trim().slice(0, 180),
-      fixture: row?.fixture && typeof row.fixture === "object" ? row.fixture : null,
-      overrides: row?.overrides && typeof row.overrides === "object" ? row.overrides : {},
-      params: row?.params && typeof row.params === "object" ? row.params : {},
-      metrics: row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
-      localPositions,
-      crownLocalPositions,
-      marginLoopLocal,
-    });
+    teeth.push({ ...base, localPositions, crownLocalPositions, marginLoopLocal });
   }
-  return teeth.filter((row) => row.fixture);
+  return teeth;
 }
 
 function gapChatTurns(rows) {
@@ -440,7 +466,33 @@ export async function clearCustomAbutmentDesignPreference(req, res) {
  * image: 화면 + 사용자가 그린 표시(data URL). 있으면 같이 본다.
  */
 /**
+ * 어벗 STL을 S3에 올리기 위한 주소. 키는 서버가 정한다.
+ * @route POST /api/ai/custom-abutment-design-snapshot/file
+ */
+export async function presignCustomAbutmentDesignSnapshot(req, res) {
+  try {
+    const { canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    if (!transferId || !canSave) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
+    }
+    const toothNumber = String(req.body?.toothNumber || "").trim();
+    const kind = req.body?.kind === "crown" ? "crown" : req.body?.kind === "abutment" ? "abutment" : "";
+    const size = Math.floor(Number(req.body?.size) || 0);
+    if (!TOOTH_RE.test(toothNumber) || !kind || size < 84 || size > PREVIEW_STL_MAX) {
+      return res.status(400).json({ success: false, message: "올릴 STL을 확인해 주세요." });
+    }
+    const s3Key = previewStlKey(transferId, toothNumber, kind);
+    const signed = await getPresignedPutUrl(s3Key, "model/stl", 900);
+    return res.json({ success: true, data: { uploadUrl: signed.url, s3Key } });
+  } catch (error) {
+    console.error("[AI] presignCustomAbutmentDesignSnapshot error", error);
+    return res.status(500).json({ success: false, message: "STL 업로드 주소를 만들지 못했습니다." });
+  }
+}
+
+/**
  * 의뢰자에 저장된 커스텀어벗 형상·대화.
+ * 형상 파일은 S3, 여기에는 키·위치·대화만 있다.
  * @route GET /api/ai/custom-abutment-design-snapshot?transferId=
  */
 export async function getCustomAbutmentDesignSnapshot(req, res) {
@@ -463,7 +515,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     const fromGaps = gapChatTurns(gaps);
     const storedChat = snapshotChat(stored?.chat);
     const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
-    const teeth = snapshotTeeth(stored?.teeth);
+    const teeth = snapshotTeeth(stored?.teeth, transferId);
     const design =
       teeth.length > 0
         ? {
@@ -492,7 +544,22 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
     }
     const chat = snapshotChat(req.body?.chat);
-    const teeth = snapshotTeeth(req.body?.teeth);
+    const incoming = snapshotTeeth(req.body?.teeth, transferId);
+    const teeth = [];
+    for (const row of incoming) {
+      if (!row.s3Key) {
+        teeth.push(row);
+        continue;
+      }
+      const size = await headObjectSizeInS3(row.s3Key);
+      if (!size || size > PREVIEW_STL_MAX) continue;
+      let crownS3Key = "";
+      if (row.crownS3Key) {
+        const crownSize = await headObjectSizeInS3(row.crownS3Key);
+        if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
+      }
+      teeth.push({ ...row, size, crownS3Key });
+    }
     const transfer = await PracticeTransfer.findOne({ transferId })
       .select({ "production.customAbutmentPreview": 1 })
       .lean();

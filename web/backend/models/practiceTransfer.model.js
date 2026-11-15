@@ -303,7 +303,7 @@ const practiceTransferSchema = new mongoose.Schema(
       /** AI 디자인 작업 문서(마진·삽입축·카메라·토글 등). 스캔 파일과 별개로 이 의뢰건에 남긴다. */
       workSession: { type: mongoose.Schema.Types.Mixed, default: undefined },
       /**
-       * 의뢰자가 연 커스텀어벗 프리뷰의 저장본(형상·대화).
+       * 의뢰자 커스텀어벗 프리뷰. STL은 S3, 여기에는 키·픽스쳐 위치·대화만 둔다.
        * 관리자는 이 값만 보고, 없으면 어벗을 새로 만들지 않는다.
        */
       customAbutmentPreview: { type: mongoose.Schema.Types.Mixed, default: undefined },
