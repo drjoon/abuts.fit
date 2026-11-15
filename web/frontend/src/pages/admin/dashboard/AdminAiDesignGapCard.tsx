@@ -1,6 +1,7 @@
 // 관리자 대시보드 — 자동 디자인으로 바꾸지 못한 커스텀어벗 요청.
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+// - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/backend/controllers/admin/admin.aiDesignGap.controller.js
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
+import {
+  PracticeCustomAbutmentPreviewDialog,
+  type PracticeDesignPreviewFileItem,
+} from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
+import { normalizeToothWorks, type ToothWorkSelection } from "@/shared/practice/transferMemo";
 
 type DesignGap = {
   id: string;
@@ -30,6 +38,14 @@ type DesignGap = {
 type GapData = {
   count: number;
   items: DesignGap[];
+};
+
+type DesignPreview = {
+  transferId: string;
+  patientName: string;
+  toothWorks: ToothWorkSelection[];
+  files: PracticeDesignPreviewFileItem[];
+  workScanFiles: PracticeDesignPreviewFileItem[];
 };
 
 const CHOICE_LABEL: Record<string, string> = {
@@ -64,6 +80,10 @@ export function AdminAiDesignGapCard({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<DesignPreview | null>(null);
+  const [openingId, setOpeningId] = useState("");
+  const { toast } = useToast();
+  const token = useAuthStore((state) => state.token);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["admin-ai-design-gaps"],
@@ -100,6 +120,28 @@ export function AdminAiDesignGapCard({
 
   const count = query.data?.count ?? 0;
   const items = query.data?.items || [];
+
+  const openPreview = async (row: DesignGap) => {
+    if (openingId) return;
+    setOpeningId(row.id);
+    try {
+      const res = await request<{ success?: boolean; data?: DesignPreview; message?: string }>({
+        path: `/api/admin/ai-design-gaps/${encodeURIComponent(row.id)}/preview`,
+        method: "GET",
+      });
+      if (!res.ok || !res.data?.data?.transferId) {
+        throw new Error(res.data?.message || "이 의뢰의 디자인을 열 수 없습니다.");
+      }
+      setPreview(res.data.data);
+    } catch (error) {
+      toast({
+        title: error instanceof Error ? error.message : "디자인을 불러오지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setOpeningId("");
+    }
+  };
 
   return (
     <>
@@ -139,10 +181,18 @@ export function AdminAiDesignGapCard({
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <li
-                  key={row.id}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm"
-                >
+                <li key={row.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm hover:bg-slate-50"
+                    onClick={() => void openPreview(row)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      void openPreview(row);
+                    }}
+                  >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-800">
@@ -156,7 +206,11 @@ export function AdminAiDesignGapCard({
                       variant="outline"
                       className="h-7 shrink-0 px-2 text-xs"
                       disabled={review.isPending}
-                      onClick={() => review.mutate(row.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        review.mutate(row.id);
+                      }}
+                      onKeyDown={(event) => event.stopPropagation()}
                     >
                       확인
                     </Button>
@@ -165,16 +219,36 @@ export function AdminAiDesignGapCard({
                     {row.message}
                   </p>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    {[CHOICE_LABEL[row.manualChoice || ""] || "답 없음", formatAt(row.createdAt)]
+                    {[
+                      openingId === row.id ? "디자인을 불러오는 중…" : "",
+                      CHOICE_LABEL[row.manualChoice || ""] || "답 없음",
+                      formatAt(row.createdAt),
+                    ]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
+                  </div>
                 </li>
               );
             })}
           </ul>
         </DialogContent>
       </Dialog>
+      {preview ? (
+        <PracticeCustomAbutmentPreviewDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setPreview(null);
+          }}
+          authToken={token}
+          caseTitle={preview.transferId}
+          patientName={preview.patientName}
+          toothWorks={normalizeToothWorks(preview.toothWorks || [])}
+          files={preview.files || []}
+          workScanFiles={preview.workScanFiles || []}
+          transferId={preview.transferId}
+        />
+      ) : null}
     </>
   );
 }

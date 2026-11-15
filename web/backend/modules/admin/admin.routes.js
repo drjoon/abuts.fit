@@ -71,6 +71,7 @@ import { getAdminNoOrderAlerts } from "../../controllers/admin/admin.noOrderAler
 import { listAdminNewMembers } from "../../controllers/admin/admin.newMembers.controller.js";
 import { listAdminAiDesignChatUsage } from "../../controllers/admin/admin.aiDesignChatUsage.controller.js";
 import {
+  getAdminAiDesignGapPreview,
   listAdminAiDesignGaps,
   reviewAdminAiDesignGap,
 } from "../../controllers/admin/admin.aiDesignGap.controller.js";
@@ -430,6 +431,7 @@ router.get("/dashboard", getDashboardStats);
 router.get("/new-members", listAdminNewMembers);
 router.get("/ai-design-chat-usage", listAdminAiDesignChatUsage);
 router.get("/ai-design-gaps", listAdminAiDesignGaps);
+router.get("/ai-design-gaps/:id/preview", getAdminAiDesignGapPreview);
 router.post("/ai-design-gaps/:id/review", reviewAdminAiDesignGap);
 router.get("/low-finish-line-watch", getAdminLowFinishLineWatch);
 router.post(

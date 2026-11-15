@@ -6,6 +6,7 @@
 import { Types } from "mongoose";
 import AiDesignGap from "../models/aiDesignGap.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import PracticeTransfer from "../models/practiceTransfer.model.js";
 
 const LIST_LIMIT = 50;
 
@@ -94,6 +95,50 @@ export async function listOpenAiDesignGaps() {
     return view;
   });
   return { count: items.length, items };
+}
+
+function mapStoredFiles(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row) => {
+      const file = row?.file && typeof row.file === "object" ? row.file : {};
+      const fileName = String(file.originalName || "").trim();
+      const s3Key = String(file.s3Key || "").trim();
+      if (!fileName || !s3Key) return null;
+      return {
+        fileName,
+        s3Key,
+        size: Number(file.size || 0),
+        scanRole: String(row?.scanRole || "").trim() || null,
+        uploadedAt: row?.uploadedAt || null,
+      };
+    })
+    .filter(Boolean);
+}
+
+/** 의뢰자 디자인 프리뷰에 넘길 치식·스캔. */
+export async function loadAiDesignGapPreview(gapId) {
+  if (!Types.ObjectId.isValid(String(gapId || ""))) return null;
+  const gap = await AiDesignGap.findById(gapId).select({ transferId: 1, patientName: 1 }).lean();
+  if (!gap) return null;
+  const transferId = String(gap.transferId || "").trim();
+  if (!transferId) return null;
+  const transfer = await PracticeTransfer.findOne({ transferId })
+    .select({
+      transferId: 1,
+      toothWorks: 1,
+      files: 1,
+      "production.labWorkScanFiles": 1,
+    })
+    .lean();
+  if (!transfer) return null;
+  return {
+    transferId: String(transfer.transferId || transferId),
+    patientName: String(gap.patientName || "").trim(),
+    toothWorks: Array.isArray(transfer.toothWorks) ? transfer.toothWorks : [],
+    files: mapStoredFiles(transfer.files),
+    workScanFiles: mapStoredFiles(transfer.production?.labWorkScanFiles),
+  };
 }
 
 export async function reviewAiDesignGap(gapId) {
