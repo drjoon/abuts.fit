@@ -1,17 +1,15 @@
 // 치과 채팅창 「디자인」 버튼 → 전체 화면 프리뷰 모달.
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
-// 스캔 치아 데이터 위에 올라간 모습으로 확인한다. 수정은 AI 대화로 디자인 조정값을 바꿔 다시 만든다.
+// 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
-// AI 대화는 의뢰별로 따로 저장해, 모달을 닫았다 열거나 형상을 다시 만들어도 남긴다.
+// 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignCache.ts
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
-// - web/frontend/src/shared/practice/customAbutmentChatCommands.ts (정형 명령은 AI 없이 처리)
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentDesignTree.tsx
-// - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx (페인트: AI 디자인·프리뷰 공용)
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentViewCube.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 
@@ -21,7 +19,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import * as THREE from "three";
@@ -29,16 +26,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import {
-  Bot,
-  ChevronsDownUp,
-  ChevronsUpDown,
-  Loader2,
-  Send,
-  Settings,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { Loader2, Settings, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -52,7 +40,6 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -95,16 +82,12 @@ import {
   type CustomAbutmentChatTurn,
 } from "@/shared/practice/customAbutmentDesignCache";
 import {
-  CUSTOM_ABUTMENT_PARAM_SPECS,
   EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
-  describeCustomAbutmentPreference,
-  hasCustomAbutmentPreference,
   parseCustomAbutmentParamOverrides,
   parseCustomAbutmentPreference,
   preferenceOverridesForTooth,
   type CustomAbutmentDesignParams,
   type CustomAbutmentDesignPreference,
-  type CustomAbutmentParamKey,
 } from "@/shared/practice/customAbutmentDesignParams";
 import {
   detectAndMatchScanbodiesOnJaw,
@@ -121,23 +104,7 @@ import {
   designCustomAbutmentStl,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
-import { parseLocalDesignCommand } from "@/shared/practice/customAbutmentChatCommands";
 import { PracticeCustomAbutmentDesignTree } from "@/shared/components/practice/PracticeCustomAbutmentDesignTree";
-import {
-  downloadBlobFile,
-  paintNoteFileName,
-  ViewPaintSurface,
-} from "@/shared/components/practice/ViewPaintSurface";
-import {
-  useViewPaint,
-  ViewPaintToolbar,
-  viewPaintSurfaceProps,
-} from "@/shared/components/practice/ViewPaintToolbar";
-import {
-  createViewPaintSpace,
-  notifyViewPaint,
-  type ViewPaintSpace,
-} from "@/shared/components/practice/viewPaintSpace";
 import {
   PracticeCustomAbutmentViewCube,
   toothViewCube,
@@ -251,9 +218,6 @@ const FIT_MARGIN = 1.06;
 const MARGIN_LINE_COLOR = 0x0891b2;
 const MARGIN_LINE_PX = 3.5;
 const PIVOT_MARKER_COLOR = 0xf59e0b;
-const CHAT_WIDTH_KEY = "abuts.caDesign.chatWidthRem";
-const CHAT_WIDTH_DEFAULT_REM = 22;
-const CHAT_WIDTH_MIN_REM = 16;
 const VIEW_KEY = "abuts.caDesign.view.v1";
 /** 맞춤 화면 기준 이 배율까지만. 그 이상이면 메쉬가 픽셀 단위로 깨지고, 핀치는 브라우저 배율로 넘어간다. */
 const VIEW_MAX_ZOOM = 8;
@@ -327,32 +291,12 @@ function applySavedView(
   camera.updateMatrixWorld();
   controls.syncFromCamera();
 }
-const SKETCH_MAX_PX = 1024;
 const VIEW_ANIM_MS = 280;
-const CHAT_EXAMPLES = [
-  "#23 포스트 0.5mm 낮춰줘",
-  "마진 0.3mm 얕게",
-  "포스트를 더 수직으로",
-  "앞으로 마진은 치은 하방 0.8mm로",
-];
 const CENTER_GUIDE_OPTIONS: Array<{ value: CenterGuideMode; label: string }> = [
   { value: "off", label: "끔" },
   { value: "center", label: "중앙선" },
   { value: "grid", label: "모눈" },
 ];
-
-function rootFontPx(): number {
-  return parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-}
-
-function readChatWidthRem(): number {
-  try {
-    const v = Number(window.localStorage.getItem(CHAT_WIDTH_KEY));
-    return Number.isFinite(v) && v >= CHAT_WIDTH_MIN_REM ? v : CHAT_WIDTH_DEFAULT_REM;
-  } catch {
-    return CHAT_WIDTH_DEFAULT_REM;
-  }
-}
 
 function createFixtureAnalogGeometry(originDiameterMm: number, lengthMm = 9.5): THREE.BufferGeometry {
   const topR = Math.max(1.5, originDiameterMm * 0.56);
@@ -362,47 +306,6 @@ function createFixtureAnalogGeometry(originDiameterMm: number, lengthMm = 9.5): 
   geo.translate(0, 0, -lengthMm / 2 - 0.05);
   geo.computeVertexNormals();
   return geo;
-}
-
-function formatParamValue(key: CustomAbutmentParamKey, value: number): string {
-  const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
-  const digits = spec.step >= 0.5 ? 1 : 2;
-  const text = Number(value.toFixed(digits)).toString();
-  return spec.unit === "배" ? `×${text}` : `${text}${spec.unit}`;
-}
-
-/** 바뀐 조정값 요약(대화에 붙인다). */
-function describeChanges(
-  changes: readonly DesignChange[],
-  before: ReadonlyMap<string, CustomAbutmentDesignParams>,
-): string {
-  const lines: string[] = [];
-  for (const change of changes) {
-    const prev = before.get(change.toothNumber);
-    const parts: string[] = [];
-    for (const [key, value] of Object.entries(change.params) as Array<[CustomAbutmentParamKey, number]>) {
-      const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
-      const from = prev ? formatParamValue(key, prev[key]) : "";
-      parts.push(`${spec.label} ${from ? `${from} → ` : ""}${formatParamValue(key, value)}`);
-    }
-    if (parts.length) lines.push(`#${change.toothNumber} ${parts.join(", ")}`);
-  }
-  return lines.join("\n");
-}
-
-function metricsForAi(d: DesignedCustomAbutment) {
-  const m = d.metrics;
-  return {
-    maxDiameterMm: m.maxDiameterMm,
-    cuffHeightMinMm: m.cuffHeightMinMm,
-    cuffHeightMaxMm: m.cuffHeightMaxMm,
-    postHeightMm: m.postHeightMm,
-    angulationDeg: m.angulationDeg,
-    cutbackMm: m.cutbackMm,
-    postTaperDeg: m.postTaperDeg,
-    occlusalClearanceMm: m.occlusalClearanceMm,
-    axisSource: m.axisSource,
-  };
 }
 
 export function PracticeCustomAbutmentPreviewButton({
@@ -569,15 +472,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [visibleTeeth, setVisibleTeeth] = useState<Record<string, boolean>>({});
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
-  const [chatOpen, setChatOpen] = useState(true);
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
   const [redesigning, setRedesigning] = useState<string[]>([]);
-  const [preference, setPreference] = useState<CustomAbutmentDesignPreference>(
-    EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
-  );
-  const [preferenceCanSave, setPreferenceCanSave] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const transferIdParam = String(transferId || "").trim();
   const readOnlyRef = useRef(readOnly);
@@ -586,13 +482,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   transferIdRef.current = transferIdParam;
   /** 디자인 배치 후 맞춤·복원이 끝난 뒤에만 카메라 뷰를 저장한다. */
   const viewReadyRef = useRef(false);
-  const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: true });
-  const [paintSpace, setPaintSpace] = useState<ViewPaintSpace | null>(null);
-  const paintListenersRef = useRef(new Set<() => void>());
-  /** 「AI에게」로 잡아 둔 화면(표시 포함). 다음 메시지와 함께 보낸다. */
-  const [sketchUrl, setSketchUrl] = useState<string | null>(null);
-  const [chatWidthRem, setChatWidthRem] = useState(readChatWidthRem);
-  const [chatCollapsed, setChatCollapsed] = useState(false);
   const [pivotSet, setPivotSet] = useState(false);
   const [pivotArmed, setPivotArmed] = useState(false);
   const pivotArmedRef = useRef(false);
@@ -602,7 +491,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   const pickEpochRef = useRef(0);
   const pivotMarkerRef = useRef<THREE.Mesh | null>(null);
   const cubeFrameRef = useRef<DentalFrame | null>(null);
-  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const viewCubeRef = useRef<ViewCubeHandle | null>(null);
   const viewAnimRef = useRef<{
     from: THREE.Quaternion;
@@ -612,7 +500,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     pivot: THREE.Vector3;
     t0: number;
   } | null>(null);
-  const asideRef = useRef<HTMLElement | null>(null);
   const badgeClickRef = useRef<(toothNumber: string) => void>(() => {});
 
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -635,7 +522,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   const chatScopeRef = useRef("");
   /** 파이프라인이 겹치면 먼저 끝난 쪽이 대화를 덮지 않게 한다. */
   const chatApplyEpochRef = useRef(0);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const jawMeshesRef = useRef<{
     upperScanbody: THREE.Mesh[];
@@ -1126,16 +1012,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 
-  const selectTooth = useCallback(
-    (toothNumber: string | null) => {
-      if (!toothNumber) {
-        setSelectedTooth(null);
-        return;
-      }
-      focusSingleTooth(toothNumber);
-    },
-    [focusSingleTooth],
-  );
   badgeClickRef.current = (toothNumber: string) => {
     if (selectedTooth === toothNumber) {
       setSelectedTooth(null);
@@ -1605,30 +1481,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         const viewH = (camera.top - camera.bottom) / camera.zoom;
         pivotMarker.scale.setScalar((viewH / Math.max(host.clientHeight, 1)) * 5);
       }
-      if (paintListeners.size > 0) notifyViewPaint(paintListeners);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       viewCubeRef.current?.sync(camera, cubeFrameRef.current ?? frameRef.current);
     };
-    const paintListeners = paintListenersRef.current;
     renderLoop();
-    setPaintSpace(
-      createViewPaintSpace({
-        getCamera: () => cameraRef.current,
-        getRenderer: () => rendererRef.current,
-        getParent: () => sceneRef.current,
-        getTargets: () =>
-          [
-            ...jawMeshesRef.current.upperTrimmed,
-            ...jawMeshesRef.current.upperScanbody,
-            ...jawMeshesRef.current.lowerTrimmed,
-            ...jawMeshesRef.current.lowerScanbody,
-            ...abutmentMeshesRef.current.values(),
-          ].filter((mesh) => mesh.visible),
-        listeners: paintListeners,
-        onView: (gesture) => applyExternalView(controls, gesture),
-      }),
-    );
 
     const onResize = () => {
       if (!host) return;
@@ -1649,8 +1506,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       host.removeEventListener("wheel", blockBrowserZoom, { capture: true });
       host.removeEventListener("gesturestart", blockGesture, { capture: true });
       host.removeEventListener("gesturechange", blockGesture, { capture: true });
-      paintListeners.clear();
-      setPaintSpace(null);
       ro.disconnect();
       controls.dispose();
       clearSceneObjects();
@@ -1826,14 +1681,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         })
           .then((res) => ({
             preference: parseCustomAbutmentPreference(res.ok ? res.data?.data?.preference : null),
-            canSave: Boolean(res.ok && res.data?.data?.canSave),
           }))
-          .catch(() => ({ preference: EMPTY_CUSTOM_ABUTMENT_PREFERENCE, canSave: false }));
+          .catch(() => ({ preference: EMPTY_CUSTOM_ABUTMENT_PREFERENCE }));
         void preferencePromise.then((p) => {
           if (cancelled) return;
           preferenceRef.current = p.preference;
-          setPreference(p.preference);
-          setPreferenceCanSave(p.canSave);
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
@@ -2429,11 +2281,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     visibleTeeth,
   ]);
 
-  useEffect(() => {
-    const el = chatScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [chatTurns, chatOpen]);
-
   /** 치아별 조정값을 바꿔 다시 디자인하고 씬·목록·저장본을 바꾼다. */
   const applyDesignChanges = useCallback(
     async (changes: readonly DesignChange[], mode: "merge" | "replace" = "merge") => {
@@ -2499,623 +2346,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     [applyDesignChanges, persistDesign],
   );
 
-  const startChatResize = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    const aside = asideRef.current;
-    if (!aside || e.button !== 0) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const startPx = aside.getBoundingClientRect().width;
-    const remPx = rootFontPx();
-    const maxPx = window.innerWidth * 0.6;
-    let lastRem = startPx / remPx;
-    const onMove = (ev: PointerEvent) => {
-      const px = Math.min(maxPx, Math.max(CHAT_WIDTH_MIN_REM * remPx, startPx + startX - ev.clientX));
-      lastRem = Math.round((px / remPx) * 4) / 4;
-      setChatWidthRem(lastRem);
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.style.cursor = "";
-      try {
-        window.localStorage.setItem(CHAT_WIDTH_KEY, String(lastRem));
-      } catch {
-        // 저장 실패해도 이번 세션 너비는 유지
-      }
-    };
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, []);
-
-  /** 지금 화면 + 페인트 표시 + 치아 번호 라벨을 한 장(JPEG data URL)으로 만든다. */
-  const captureSketch = useCallback(async (): Promise<string | null> => {
-    const renderer = rendererRef.current;
-    const camera = cameraRef.current;
-    const surface = paint.paintRef.current;
-    if (!renderer || !camera || !surface) return null;
-    const blob = await surface.compositePng(renderer.domElement);
-    if (!blob) return null;
-    const bitmap = await createImageBitmap(blob);
-    const scale = Math.min(1, SKETCH_MAX_PX / Math.max(bitmap.width, bitmap.height, 1));
-    const out = document.createElement("canvas");
-    out.width = Math.max(1, Math.round(bitmap.width * scale));
-    out.height = Math.max(1, Math.round(bitmap.height * scale));
-    const ctx = out.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(bitmap, 0, 0, out.width, out.height);
-    bitmap.close();
-    ctx.font = `600 ${Math.round(13 * scale * (window.devicePixelRatio || 1))}px sans-serif`;
-    ctx.textBaseline = "middle";
-    const p = new THREE.Vector3();
-    for (const [tooth, mesh] of abutmentMeshesRef.current.entries()) {
-      if (!mesh.visible || !mesh.geometry.boundingBox) continue;
-      mesh.geometry.boundingBox.getCenter(p).project(camera);
-      const x = ((p.x + 1) / 2) * out.width;
-      const y = ((1 - p.y) / 2) * out.height;
-      const label = `#${tooth}`;
-      const w = ctx.measureText(label).width + 8;
-      ctx.fillStyle = "rgba(15,23,42,0.85)";
-      ctx.fillRect(x - w / 2, y - 10, w, 20);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(label, x - w / 2 + 4, y);
-    }
-    return out.toDataURL("image/jpeg", 0.82);
-  }, [paint.paintRef]);
-
-  /** 페인트 막대 「AI에게」: 지금 화면을 첨부로 잡고 대화 입력으로 간다. 보낼 때 같이 간다. */
-  const attachSketchToChat = useCallback(() => {
-    void captureSketch().then((url) => {
-      if (!url) return;
-      setSketchUrl(url);
-      setChatOpen(true);
-      window.requestAnimationFrame(() => chatInputRef.current?.focus());
-    });
-  }, [captureSketch]);
-
-  const saveViewImage = useCallback(() => {
-    const renderer = rendererRef.current;
-    const surface = paint.paintRef.current;
-    if (!renderer || !surface) return;
-    void surface.compositePng(renderer.domElement).then((blob) => {
-      if (blob) downloadBlobFile(blob, paintNoteFileName(`커스텀어벗_${patientName || "디자인"}`));
-    });
-  }, [paint.paintRef, patientName]);
-
-  const savePreferenceDirect = useCallback(
-    async (
-      token: string,
-      update: { scope: string; params: Partial<CustomAbutmentDesignParams>; note: string },
-    ): Promise<string> => {
-      if (!preferenceCanSave) return "치과 기본값은 의뢰 치과 계정에서만 저장됩니다.";
-      const res = await apiFetch<{ data?: { preference?: unknown } }>({
-        path: "/api/ai/custom-abutment-design-preference",
-        method: "PUT",
-        token,
-        jsonBody: { transferId: transferIdParam || undefined, ...update },
-      });
-      if (!res.ok) return "치과 기본값을 저장하지 못했습니다.";
-      const nextPref = parseCustomAbutmentPreference(res.data?.data?.preference);
-      preferenceRef.current = nextPref;
-      setPreference(nextPref);
-      return `치과 기본값으로 저장: ${update.note}`;
-    },
-    [preferenceCanSave, transferIdParam],
-  );
-
-  const sendChat = useCallback(
-    async (rawText: string) => {
-      const text = rawText.trim();
-      const token = String(authToken || "").trim();
-      if (!text || chatBusy || !token || designedListRef.current.length === 0) return;
-      const history = chatTurnsRef.current
-        .filter((t) => !t.pending)
-        .map((t) => ({ role: t.role, text: t.text }));
-      const sketch =
-        sketchUrl ?? (paint.paintRef.current?.hasInk() ? await captureSketch() : null);
-      const withUser: ChatTurn[] = [
-        ...chatTurnsRef.current,
-        { role: "user", text: sketch ? `${text}\n(화면 그림 첨부)` : text },
-        { role: "assistant", text: "디자인을 검토하는 중…", pending: true },
-      ];
-      chatTurnsRef.current = withUser;
-      setChatTurns(withUser);
-      persistChat(withUser);
-      setChatInput("");
-      setChatBusy(true);
-
-      const finish = (reply: string, usage?: ChatTurn["usage"], offer?: ChatTurn["offer"]) => {
-        const turn: ChatTurn = { role: "assistant", text: reply };
-        if (usage) turn.usage = usage;
-        if (offer) turn.offer = offer;
-        const next: ChatTurn[] = [...chatTurnsRef.current.filter((t) => !t.pending), turn];
-        chatTurnsRef.current = next;
-        setChatTurns(next);
-        persistDesign(next);
-      };
-      const showApplying = () => {
-        const pendingNext: ChatTurn[] = [
-          ...chatTurnsRef.current.filter((t) => !t.pending),
-          { role: "assistant", text: "디자인에 반영하는 중…", pending: true },
-        ];
-        chatTurnsRef.current = pendingNext;
-        setChatTurns(pendingNext);
-      };
-
-      // 정형 명령(치아 고르기, 「마진 0.3mm 얕게」 등)은 AI를 부르지 않는다. 그림이 있으면 AI가 본다.
-      const local = sketch
-        ? null
-        : parseLocalDesignCommand(text, {
-            teeth: designedListRef.current.map((d) => ({
-              toothNumber: d.toothNumber,
-              params: d.params,
-              hasOpposing: d.metrics.occlusalClearanceMm != null,
-            })),
-            selectedTooth,
-          });
-      if (local) {
-        try {
-          if (local.kind === "select") {
-            selectTooth(local.toothNumber);
-            finish(
-              local.toothNumber
-                ? `#${local.toothNumber}만 바꿉니다. 전체로 돌리려면 「전체」라고 입력하세요.`
-                : "전체 치아를 바꿉니다.",
-            );
-          } else if (local.kind === "reply") {
-            finish(local.text);
-          } else if (local.kind === "reset") {
-            showApplying();
-            await applyDesignChanges(
-              local.teeth.map((toothNumber) => ({ toothNumber, params: {} })),
-              "replace",
-            );
-            finish(`기본 디자인으로 되돌렸습니다: ${local.teeth.map((t) => `#${t}`).join(" ")}`);
-          } else if (local.kind === "regenerate") {
-            showApplying();
-            await regenerateDesigns(local.teeth);
-            finish(`다시 만들었습니다: ${local.teeth.map((t) => `#${t}`).join(" ")}`);
-          } else {
-            const before = new Map(designedListRef.current.map((d) => [d.toothNumber, d.params]));
-            showApplying();
-            await applyDesignChanges(local.changes);
-            const lines = [describeChanges(local.changes, before) || "바꿀 내용이 없습니다."];
-            if (local.preference) lines.push(await savePreferenceDirect(token, local.preference));
-            finish(lines.join("\n"));
-          }
-        } catch (err) {
-          console.warn("[custom-abutment] local command failed", err);
-          finish("디자인을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
-        } finally {
-          setChatBusy(false);
-        }
-        return;
-      }
-
-      try {
-        const res = await apiFetch<{
-          success?: boolean;
-          message?: string;
-          data?: {
-            reply?: string;
-            changes?: DesignChange[];
-            preference?: unknown;
-            preferenceSaved?: { note?: string } | null;
-            usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
-            unsupported?: boolean;
-            gapId?: string | null;
-          };
-        }>({
-          path: "/api/ai/custom-abutment-design-chat",
-          method: "POST",
-          token,
-          jsonBody: {
-            message: text,
-            history,
-            selectedTooth,
-            patientName: patientName || undefined,
-            transferId: transferIdParam || undefined,
-            image: sketch ?? undefined,
-            teeth: designedListRef.current.map((d) => ({
-              toothNumber: d.toothNumber,
-              params: d.params,
-              metrics: metricsForAi(d),
-            })),
-          },
-        });
-        if (sketch && res.ok) {
-          setSketchUrl(null);
-          paint.paintRef.current?.clear({ silent: true });
-          paint.setPaintOn(false);
-        }
-        const usageRaw = res.data?.data?.usage;
-        const usage =
-          usageRaw && (Number(usageRaw.totalTokens) || 0) > 0
-            ? {
-                inputTokens: Math.max(0, Math.round(Number(usageRaw.inputTokens) || 0)),
-                outputTokens: Math.max(0, Math.round(Number(usageRaw.outputTokens) || 0)),
-                totalTokens: Math.max(0, Math.round(Number(usageRaw.totalTokens) || 0)),
-              }
-            : undefined;
-        if (!res.ok || !res.data?.data) {
-          finish(res.data?.message || "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.", usage);
-          return;
-        }
-        if (res.data.data.preference) {
-          const nextPref = parseCustomAbutmentPreference(res.data.data.preference);
-          preferenceRef.current = nextPref;
-          setPreference(nextPref);
-        }
-        const savedNote = res.data.data.preferenceSaved
-          ? String(res.data.data.preferenceSaved.note || "").trim() || "요청한 값"
-          : "";
-        const reply = [
-          String(res.data.data.reply || "").trim(),
-          savedNote ? `치과 기본값으로 저장: ${savedNote}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
-        const changes = (res.data.data.changes ?? [])
-          .map((c) => ({
-            toothNumber: String(c.toothNumber || ""),
-            params: parseCustomAbutmentParamOverrides(c.params),
-          }))
-          .filter((c) => Object.keys(c.params).length > 0);
-        if (changes.length === 0) {
-          const gapId = String(res.data.data.gapId || "").trim();
-          finish(
-            reply || "바꿀 내용이 없습니다.",
-            usage,
-            res.data.data.unsupported && gapId ? { kind: "manual-design", gapId } : undefined,
-          );
-          return;
-        }
-        const before = new Map(designedListRef.current.map((d) => [d.toothNumber, d.params]));
-        showApplying();
-        await applyDesignChanges(changes);
-        const summary = describeChanges(changes, before);
-        finish(summary ? `${reply}\n${summary}` : reply, usage);
-      } catch (err) {
-        console.warn("[custom-abutment] chat failed", err);
-        finish("디자인을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      } finally {
-        setChatBusy(false);
-      }
-    },
-    [
-      applyDesignChanges,
-      regenerateDesigns,
-      authToken,
-      captureSketch,
-      chatBusy,
-      paint,
-      persistChat,
-      patientName,
-      persistDesign,
-      savePreferenceDirect,
-      selectTooth,
-      selectedTooth,
-      sketchUrl,
-      transferIdParam,
-    ],
-  );
-
-  const chooseManualDesign = useCallback(
-    async (gapId: string, choice: "yes" | "no") => {
-      const token = String(authToken || "").trim();
-      if (!token || chatBusy || !gapId) return;
-      setChatBusy(true);
-      try {
-        const res = await apiFetch<{
-          success?: boolean;
-          message?: string;
-          data?: { choice?: "yes" | "no"; switched?: boolean };
-        }>({
-          path: "/api/ai/custom-abutment-design-manual",
-          method: "POST",
-          token,
-          jsonBody: { gapId, choice },
-        });
-        const saved = res.data?.data?.choice;
-        if (!res.ok || (saved !== "yes" && saved !== "no")) {
-          const next: ChatTurn[] = [
-            ...chatTurnsRef.current,
-            { role: "assistant", text: res.data?.message || "수작업 전환을 저장하지 못했습니다." },
-          ];
-          chatTurnsRef.current = next;
-          setChatTurns(next);
-          persistDesign(next);
-          return;
-        }
-        const note =
-          saved === "yes"
-            ? res.data?.data?.switched
-              ? "기공사 수작업으로 바꿨습니다.\n기공소 대화에 요청을 남겼습니다."
-              : "이 의뢰는 수작업으로 바꾸지 못했습니다."
-            : "자동 디자인을 유지합니다.";
-        const next: ChatTurn[] = [
-          ...chatTurnsRef.current.map((turn) =>
-            turn.offer?.gapId === gapId ? { ...turn, offer: { ...turn.offer, choice: saved } } : turn,
-          ),
-          { role: "assistant", text: note },
-        ];
-        chatTurnsRef.current = next;
-        setChatTurns(next);
-        persistDesign(next);
-      } catch (err) {
-        console.warn("[custom-abutment] manual design choice failed", err);
-        const next: ChatTurn[] = [
-          ...chatTurnsRef.current,
-          { role: "assistant", text: "수작업 전환을 저장하지 못했습니다." },
-        ];
-        chatTurnsRef.current = next;
-        setChatTurns(next);
-        persistDesign(next);
-      } finally {
-        setChatBusy(false);
-      }
-    },
-    [authToken, chatBusy, persistDesign],
-  );
-
-  const clearPreference = useCallback(async () => {
-    const token = String(authToken || "").trim();
-    if (!token || chatBusy) return;
-    setChatBusy(true);
-    try {
-      const res = await apiFetch<{ data?: { preference?: unknown } }>({
-        path: `/api/ai/custom-abutment-design-preference${
-          transferIdParam ? `?transferId=${encodeURIComponent(transferIdParam)}` : ""
-        }`,
-        method: "DELETE",
-        token,
-      });
-      if (!res.ok) return;
-      preferenceRef.current = EMPTY_CUSTOM_ABUTMENT_PREFERENCE;
-      setPreference(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
-      const next: ChatTurn[] = [
-        ...chatTurnsRef.current,
-        { role: "assistant", text: "치과 기본값을 지웠습니다. 다음 케이스부터 표준 디자인으로 만듭니다." },
-      ];
-      chatTurnsRef.current = next;
-      setChatTurns(next);
-      persistDesign(next);
-    } finally {
-      setChatBusy(false);
-    }
-  }, [authToken, chatBusy, persistDesign, transferIdParam]);
-
-  const renderChatPanel = () => (
-    <aside
-      ref={asideRef}
-      className={cn(
-        "pointer-events-auto relative flex max-w-[60vw] flex-col rounded-lg border bg-background/95 shadow-sm",
-        chatCollapsed ? "shrink-0" : "min-h-0 flex-1",
-      )}
-      style={{ width: `${chatWidthRem}rem` }}
-    >
-      {chatCollapsed ? null : (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="대화 패널 너비"
-          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize rounded-l-lg hover:bg-primary/20"
-          onPointerDown={startChatResize}
-        />
-      )}
-      <div
-        className={cn(
-          "flex items-center gap-1.5 py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground",
-          chatCollapsed ? null : "border-b",
-        )}
-      >
-        <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />
-        <span className="min-w-0 flex-1 truncate">AI 디자인 대화</span>
-        {chatTurns.some((t) => (t.usage?.totalTokens || 0) > 0) ? (
-          <span className="shrink-0 text-[0.6875rem] font-normal tabular-nums text-muted-foreground">
-            {chatTurns
-              .reduce((sum, t) => sum + (t.usage?.totalTokens || 0), 0)
-              .toLocaleString("ko-KR")}
-            토큰
-          </span>
-        ) : null}
-        {chatBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" /> : null}
-        <button
-          type="button"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={chatCollapsed ? "대화 펼치기" : "대화 접기"}
-          title={chatCollapsed ? "대화 펼치기" : "대화 접기"}
-          aria-expanded={!chatCollapsed}
-          onClick={() => setChatCollapsed((v) => !v)}
-        >
-          {chatCollapsed ? (
-            <ChevronsUpDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronsDownUp className="h-3.5 w-3.5" />
-          )}
-        </button>
-      </div>
-      {chatCollapsed ? null : (
-        <>
-          {hasCustomAbutmentPreference(preference) ? (
-            <div className="flex items-start gap-2 border-b bg-amber-50/70 px-3 py-2 text-[0.6875rem] leading-relaxed text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-              <div className="min-w-0 flex-1">
-                <span className="font-semibold">치과 기본값</span>
-                <span className="ml-1.5">{describeCustomAbutmentPreference(preference)}</span>
-              </div>
-              {preferenceCanSave ? (
-                <button
-                  type="button"
-                  className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-amber-100 disabled:opacity-50 dark:hover:bg-amber-900/40"
-                  disabled={chatBusy}
-                  onClick={() => void clearPreference()}
-                >
-                  지우기
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
-            {chatTurns.length === 0 ? (
-              readOnly ? (
-                <p className="text-xs leading-relaxed text-muted-foreground">저장된 대화가 없습니다.</p>
-              ) : (
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <p className="leading-relaxed">
-                  바꾸고 싶은 점을 말이나 그림으로 알려 주면 디자인을 다시 만듭니다.
-                  <br />
-                  치아는 왼쪽 목록이나 화면의 번호 뱃지를 누르거나, #23처럼 입력해 고릅니다.
-                  <br />
-                  페인트로 표시하고 「AI에게」를 누르면 그림이 함께 전달됩니다.
-                  <br />
-                  「앞으로」처럼 규칙으로 말하면 다음 케이스 기본값이 됩니다.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {CHAT_EXAMPLES.map((ex) => (
-                    <button
-                      key={ex}
-                      type="button"
-                      className="rounded-full border px-2.5 py-1 text-foreground hover:bg-muted"
-                      onClick={() => void sendChat(ex)}
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              )
-            ) : null}
-            {chatTurns.map((turn, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "max-w-[92%] whitespace-pre-line rounded-lg px-3 py-2 text-xs leading-relaxed",
-                  turn.role === "user"
-                    ? "ml-auto bg-primary text-primary-foreground"
-                    : "mr-auto border bg-muted/40 text-foreground",
-                )}
-              >
-                {turn.pending ? (
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {turn.text}
-                  </span>
-                ) : (
-                  <>
-                    {turn.text}
-                    {turn.role === "assistant" && turn.usage ? (
-                      <p className="mt-1 text-[0.625rem] font-normal tabular-nums opacity-70">
-                        입력 {turn.usage.inputTokens.toLocaleString("ko-KR")} · 출력{" "}
-                        {turn.usage.outputTokens.toLocaleString("ko-KR")}
-                      </p>
-                    ) : null}
-                    {turn.role === "assistant" && turn.offer && (turn.offer.choice || readOnly) ? (
-                      <p className="mt-2 font-medium">
-                        {turn.offer.choice === "yes"
-                          ? "수작업으로 전환"
-                          : turn.offer.choice === "no"
-                            ? "그대로 두기"
-                            : "답 없음"}
-                      </p>
-                    ) : null}
-                    {turn.role === "assistant" && turn.offer && !turn.offer.choice && !readOnly ? (
-                      <div className="mt-2 space-y-1.5">
-                        <p>기공사 수작업으로 바꿀까요?</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            className="rounded-full border border-primary/40 bg-background px-2.5 py-1 font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
-                            disabled={chatBusy}
-                            onClick={() => void chooseManualDesign(turn.offer!.gapId, "yes")}
-                          >
-                            수작업으로 전환
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-full border bg-background px-2.5 py-1 hover:bg-muted disabled:opacity-50"
-                            disabled={chatBusy}
-                            onClick={() => void chooseManualDesign(turn.offer!.gapId, "no")}
-                          >
-                            그대로 두기
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {readOnly ? null : (
-          <div className="space-y-1.5 border-t px-3 py-2.5">
-            <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
-              <span>대상 {selectedTooth ? `#${selectedTooth}` : "전체 치아"}</span>
-              {selectedTooth ? (
-                <button
-                  type="button"
-                  className="rounded px-1 font-medium text-primary hover:bg-muted"
-                  onClick={() => setSelectedTooth(null)}
-                >
-                  전체로
-                </button>
-              ) : null}
-              {!sketchUrl && paint.paintOn && paint.count > 0 ? (
-                <span className="text-rose-600">보내면 그림도 함께 갑니다</span>
-              ) : null}
-            </div>
-            {sketchUrl ? (
-              <div className="relative h-14 w-20 overflow-hidden rounded-md border">
-                <img src={sketchUrl} alt="첨부한 화면" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  className="absolute right-0.5 top-0.5 grid h-4 w-4 place-items-center rounded-full bg-white/95 text-slate-600 shadow-sm hover:bg-destructive hover:text-destructive-foreground"
-                  aria-label="첨부 지우기"
-                  onClick={() => setSketchUrl(null)}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : null}
-            <div className="flex items-end gap-1.5">
-              <Textarea
-                ref={chatInputRef}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    void sendChat(chatInput);
-                  }
-                }}
-                placeholder={
-                  sketchUrl || paint.count > 0
-                    ? "표시한 부위를 어떻게 바꿀지 적어 주세요"
-                    : "예: #23 마진 0.3mm 얕게"
-                }
-                rows={2}
-                className="min-h-[2.75rem] resize-none text-xs"
-                disabled={chatBusy}
-              />
-              <Button
-                type="button"
-                size="sm"
-                className="h-9 w-9 shrink-0 px-0"
-                aria-label="보내기"
-                disabled={chatBusy || !chatInput.trim()}
-                onClick={() => void sendChat(chatInput)}
-              >
-                {chatBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-          )}
-        </>
-      )}
-    </aside>
-  );
-
   const hasOpposingJaw =
     (prepJaws.has("upper") && availableJaws.lower) ||
     (prepJaws.has("lower") && availableJaws.upper);
@@ -3169,13 +2399,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="z-[520] w-60 space-y-3 p-3 text-xs">
-                <label className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Bot className="h-3.5 w-3.5 text-primary" />
-                    AI 디자인 대화
-                  </span>
-                  <Switch checked={chatOpen} onCheckedChange={setChatOpen} />
-                </label>
                 <label className="flex items-center justify-between gap-3">
                   <span className="font-medium">스캔색</span>
                   <Switch checked={colorMapping} onCheckedChange={setColorMapping} />
@@ -3307,13 +2530,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 >
                   저장된 어벗 형상이 없습니다.
                   <br />
-                  스캔과 대화만 표시합니다.
+                  스캔만 표시합니다.
                 </p>
               </div>
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex min-h-0 flex-col items-start gap-2 overflow-hidden">
+              <div className="pointer-events-none absolute left-3 top-3 z-10">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -3337,9 +2560,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                   }}
                   onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
                 />
-                {designedList.length > 0 ? (
-                  <PracticeCustomAbutmentDesignTree
-                    className="min-h-0"
+              </div>
+            ) : null}
+
+            {viewerLive && designedList.length > 0 ? (
+              <div className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex min-h-0 flex-col items-end">
+                <PracticeCustomAbutmentDesignTree
+                    className="min-h-0 max-h-full"
                     items={designedList}
                     visibleTeeth={visibleTeeth}
                     selectedTooth={selectedTooth}
@@ -3375,29 +2602,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                     onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
                     onRegenerate={readOnly ? undefined : () => void regenerateDesigns()}
                   />
-                ) : null}
-              </div>
-            ) : null}
-
-            {ready && chatOpen ? (
-              <div className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex flex-col items-end">
-                {renderChatPanel()}
-              </div>
-            ) : null}
-
-            <ViewPaintSurface
-              {...viewPaintSurfaceProps(paint)}
-              enabled={ready && paint.paintOn}
-              space={paintSpace}
-            />
-            {ready ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
-                <ViewPaintToolbar
-                  paint={paint}
-                  collapsible
-                  onSaveImage={saveViewImage}
-                  onSendToAi={readOnly ? undefined : attachSketchToChat}
-                />
               </div>
             ) : null}
 

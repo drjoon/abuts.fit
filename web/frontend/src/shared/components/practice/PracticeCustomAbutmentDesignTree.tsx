@@ -1,5 +1,5 @@
-// 커스텀어벗 디자인 뷰어 왼쪽 목록. 치아마다 표시·치식·다운로드만 보이고, 펼치면 치수를 보여 준다.
-// 치식을 누르면 그 치아를 고르고(AI 대화 대상) 화면을 맞춘다.
+// 커스텀어벗 디자인 뷰어 오른쪽 위 목록. 치아마다 표시·치식·다운로드만 보이고, 펼치면 치수를 보여 준다.
+// 치식을 누르면 그 치아를 고르고 화면을 맞춘다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
