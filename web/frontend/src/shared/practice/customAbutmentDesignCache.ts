@@ -337,11 +337,17 @@ export type CustomAbutmentSnapshotUploadTooth = {
   marginLoopLocal: Float32Array;
 };
 
-async function positionsFromStl(token: string, s3Key: string, fileName: string): Promise<ArrayBuffer | null> {
+async function positionsFromStl(
+  token: string,
+  s3Key: string,
+  fileName: string,
+  cacheRevision?: string | number,
+): Promise<ArrayBuffer | null> {
   const blob = await fetchS3BlobCached({
     s3Key,
     fileName: fileName || "abutment.stl",
     token,
+    cacheRevision,
     buildUrl: buildS3ProxyDownloadUrl,
   });
   const geometry = new STLLoader().parse(await blob.arrayBuffer());
@@ -383,7 +389,7 @@ async function presignPreviewStl(
   return s3Key;
 }
 
-/** 의뢰자에 저장된 형상·대화. 관리자 화면은 이 값만 연다. */
+/** 의뢰자에 저장된 형상·대화. 관리자는 최신이면 STL을 열고, 구버전이면 화면에서 다시 디자인한다. */
 export async function fetchCustomAbutmentSnapshot(
   token: string,
   transferId: string,
@@ -416,16 +422,24 @@ export async function fetchCustomAbutmentSnapshot(
     }
     const teeth: CachedCustomAbutmentTooth[] = [];
     let hasStl = false;
+    const stlRevision = Number(raw.savedAt) || Number(raw.version) || 0;
     for (const row of raw.teeth) {
       const fixture = row.fixture as MatchedScanbodyFixture | null;
       if (!fixture) continue;
       const fileName = String(row.fileName || "abutment.stl");
       const s3Key = String(row.s3Key || "");
-      let localPositions = s3Key ? await positionsFromStl(token, s3Key, fileName) : null;
+      let localPositions = s3Key
+        ? await positionsFromStl(token, s3Key, fileName, stlRevision)
+        : null;
       if (localPositions) hasStl = true;
       const crownKey = String(row.crownS3Key || "");
       let crownLocalPositions = crownKey
-        ? await positionsFromStl(token, crownKey, fileName.replace(/\.stl$/i, "") + "-crown.stl")
+        ? await positionsFromStl(
+            token,
+            crownKey,
+            fileName.replace(/\.stl$/i, "") + "-crown.stl",
+            stlRevision,
+          )
         : null;
       let marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
       if (!localPositions) localPositions = base64ToBuffer(String(row.localPositions || ""));
@@ -448,6 +462,7 @@ export async function fetchCustomAbutmentSnapshot(
     if (teeth.length === 0) return { design: null, chat, hasStl: false };
     const version = Number(raw.version) || 0;
     const fitVersion = Number(raw.fitVersion) || 0;
+    const savedAt = Number(raw.savedAt) || 0;
     return {
       chat,
       hasStl,
@@ -455,11 +470,12 @@ export async function fetchCustomAbutmentSnapshot(
         key: id,
         version,
         fitVersion,
-        savedAt: Number(raw.savedAt) || 0,
+        savedAt,
         alignedScans: [],
         teeth,
         chat,
-        designFresh: version === CUSTOM_ABUTMENT_DESIGN_VERSION && fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
+        designFresh:
+          version === CUSTOM_ABUTMENT_DESIGN_VERSION && fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
       },
     };
   } catch {

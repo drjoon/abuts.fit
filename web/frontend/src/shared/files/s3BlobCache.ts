@@ -32,6 +32,11 @@ export type FetchS3BlobCachedOptions = {
   token: string;
   /** 썸네일 프록시 요청 시 서버 리사이즈 폭(px) */
   thumbWidth?: number;
+  /**
+   * 같은 S3 키를 덮어쓴 뒤 구분할 때 IndexedDB 키에만 붙인다.
+   * 다운로드 URL·S3 키는 그대로다.
+   */
+  cacheRevision?: string | number;
   /** 프록시 URL 빌더 (캐시 미스 시에만 호출) */
   buildUrl: (s3Key: string, fileName: string) => string;
   onProgress?: (percent: number) => void;
@@ -186,7 +191,11 @@ export async function fetchS3BlobCached(
     return buildGuideTourDemoPlaceholderBlob();
   }
 
-  const cacheKey = s3FileBlobCacheKey(s3Key, options.thumbWidth);
+  const revision =
+    options.cacheRevision != null && String(options.cacheRevision).trim()
+      ? `:r${String(options.cacheRevision).trim()}`
+      : "";
+  const cacheKey = `${s3FileBlobCacheKey(s3Key, options.thumbWidth)}${revision}`;
   let entry = inflightByKey.get(cacheKey);
   if (!entry) {
     const cached = await getFileBlob(cacheKey);

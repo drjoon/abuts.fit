@@ -1834,7 +1834,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           remote?.design && remote.design.teeth.length > 0
             ? {
                 ...remote.design,
-                designFresh: readOnly ? true : remote.design.designFresh,
                 alignedScans: remote.design.alignedScans,
               }
             : null;
@@ -1855,25 +1854,32 @@ export function PracticeCustomAbutmentPreviewDialog({
         const jawScans = [...upperScans, ...lowerScans];
 
         // 저장본: 바이트 정렬 결과 정점이 같은 스캔에 맞을 때만 그대로 쓴다.
+        // 서버 스냅샷은 alignedScans가 비어 있다 — 최신이면 메시만 복원하고,
+        // 구버전이면 교합·스캔바디부터 다시 돌려 새 형상을 본다.
         let restored = false;
+        let meshRestore = false;
         let alignedScans: CachedAlignedScan[] = [];
         if (cached && cached.teeth.length > 0) {
-          const fits = cached.alignedScans.every((row) => {
-            const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName);
-            return scan?.geometry.getAttribute("position")?.count === row.vertexCount;
-          });
-          if (fits) {
-            for (const row of cached.alignedScans) {
-              const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName)!;
-              const attr = scan.geometry.getAttribute("position") as THREE.BufferAttribute;
-              (attr.array as Float32Array).set(new Float32Array(row.positions));
-              attr.needsUpdate = true;
-              scan.geometry.computeVertexNormals();
-              scan.geometry.computeBoundingBox();
-              scan.geometry.computeBoundingSphere();
+          if (cached.alignedScans.length > 0) {
+            const fits = cached.alignedScans.every((row) => {
+              const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName);
+              return scan?.geometry.getAttribute("position")?.count === row.vertexCount;
+            });
+            if (fits) {
+              for (const row of cached.alignedScans) {
+                const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName)!;
+                const attr = scan.geometry.getAttribute("position") as THREE.BufferAttribute;
+                (attr.array as Float32Array).set(new Float32Array(row.positions));
+                attr.needsUpdate = true;
+                scan.geometry.computeVertexNormals();
+                scan.geometry.computeBoundingBox();
+                scan.geometry.computeBoundingSphere();
+              }
+              alignedScans = cached.alignedScans;
+              restored = true;
             }
-            alignedScans = cached.alignedScans;
-            restored = true;
+          } else if (cached.designFresh) {
+            meshRestore = true;
           }
         }
 
@@ -1953,7 +1959,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               }),
             );
           }
-        } else if (restored && cached) {
+        } else if ((restored || meshRestore) && cached) {
           setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
           for (const row of cached.teeth) {
             overrides[row.toothNumber] = parseCustomAbutmentParamOverrides(row.overrides);
@@ -1969,7 +1975,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               }),
             );
           }
-        } else if (readOnly) {
+        } else if (readOnly && cached?.designFresh) {
           setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
         } else {
           setStatus({
@@ -2163,9 +2169,14 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
         } else {
           setStatus({ kind: "ready" });
+          const remoteNeedsPublish =
+            !remote?.hasStl ||
+            !remote?.design ||
+            remote.design.version !== CUSTOM_ABUTMENT_DESIGN_VERSION ||
+            remote.design.fitVersion !== CUSTOM_ABUTMENT_FIT_VERSION;
           if (
             builtAbutments.length > 0 &&
-            (!remote?.hasStl || (restoredChat && (!restored || redesignedFromFit)))
+            (remoteNeedsPublish || redesignedFromFit || !restored)
           ) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           }
