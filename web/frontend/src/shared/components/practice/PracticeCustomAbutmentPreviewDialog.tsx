@@ -82,8 +82,10 @@ import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
   CUSTOM_ABUTMENT_FIT_VERSION,
   customAbutmentDesignCacheKey,
+  fetchCustomAbutmentSnapshot,
   normalizeCustomAbutmentChat,
   pickCustomAbutmentChat,
+  publishCustomAbutmentSnapshot,
   readCustomAbutmentChat,
   readCustomAbutmentDesign,
   toArrayBuffer,
@@ -197,6 +199,8 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   workScanFiles?: readonly PracticeDesignPreviewFileItem[];
   /** 기공의뢰 id. 의뢰 치과의 디자인 취향을 읽고 저장할 때 쓴다. */
   transferId?: string;
+  /** 관리자 확인. 저장된 형상·대화만 보여주고 새로 만들지 않는다. */
+  readOnly?: boolean;
 };
 
 type CenterGuideMode = "off" | "center" | "grid";
@@ -488,6 +492,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   files,
   workScanFiles = [],
   transferId,
+  readOnly = false,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
 
@@ -575,6 +580,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [preferenceCanSave, setPreferenceCanSave] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const transferIdParam = String(transferId || "").trim();
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const transferIdRef = useRef(transferIdParam);
   transferIdRef.current = transferIdParam;
   /** 디자인 배치 후 맞춤·복원이 끝난 뒤에만 카메라 뷰를 저장한다. */
@@ -1137,6 +1144,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 대화를 의뢰 키로 남긴다. 빈 목록은 쓰지 않아 재계산이 대화를 지우지 않는다. */
   const persistChat = useCallback((chat?: readonly ChatTurn[]) => {
+    if (readOnlyRef.current) return;
     const scope = chatScopeRef.current;
     const turns = normalizeCustomAbutmentChat(
       (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
@@ -1149,6 +1157,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 지금 디자인·조정값·대화를 저장한다. 실패해도 화면은 그대로 둔다. */
   const persistDesign = useCallback((chat?: readonly ChatTurn[]) => {
+    if (readOnlyRef.current) return;
     const turns = normalizeCustomAbutmentChat(
       (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
     );
@@ -1179,8 +1188,27 @@ export function PracticeCustomAbutmentPreviewDialog({
         })),
         chat: savedChat,
       });
+      const scope = chatScopeRef.current;
+      if (scope && list.length > 0) {
+        publishCustomAbutmentSnapshot(String(authToken || ""), scope, {
+          version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+          fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+          teeth: list.map((d) => ({
+            toothNumber: d.toothNumber,
+            fileName: d.fileName,
+            fixture: d.fixture,
+            overrides: ctx.overrides[d.toothNumber] ?? {},
+            params: d.params,
+            metrics: d.metrics,
+            localPositions: toArrayBuffer(d.localPositions),
+            crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
+            marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
+          })),
+          chat: savedChat,
+        });
+      }
     })().catch((err) => console.warn("[custom-abutment] design cache write failed", err));
-  }, [persistChat]);
+  }, [authToken, persistChat]);
 
   const jawsForJobs = useCallback((jobs: readonly { jaw: "upper" | "lower" }[]) => {
     const has = {
@@ -1717,8 +1745,15 @@ export function PracticeCustomAbutmentPreviewDialog({
         const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
 
-        const cachePromise = readCustomAbutmentDesign(cacheKey);
-        const chatPromise = readCustomAbutmentChat(transferIdParam || pipelineKey);
+        const cachePromise = readOnly
+          ? Promise.resolve(null)
+          : readCustomAbutmentDesign(cacheKey);
+        const chatPromise = readOnly
+          ? Promise.resolve([] as CustomAbutmentChatTurn[])
+          : readCustomAbutmentChat(transferIdParam || pipelineKey);
+        const remotePromise = transferIdParam
+          ? fetchCustomAbutmentSnapshot(token, transferIdParam)
+          : Promise.resolve(null);
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
         const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
         if (!hasWorkScans) targetRoles.add("bite");
@@ -1774,7 +1809,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
-        const [rawLoadedScans, cached, savedChat] = await Promise.all([
+        const [rawLoadedScans, localCached, localChat, remote] = await Promise.all([
           Promise.all(
             toLoad.map((item, idx) =>
               loadSingleScan(item, (pct) => {
@@ -1793,7 +1828,22 @@ export function PracticeCustomAbutmentPreviewDialog({
           ),
           cachePromise,
           chatPromise,
+          remotePromise,
         ]);
+        const serverDesign =
+          remote?.design && remote.design.teeth.length > 0
+            ? {
+                ...remote.design,
+                designFresh: readOnly ? true : remote.design.designFresh,
+                alignedScans: remote.design.alignedScans,
+              }
+            : null;
+        const cached = readOnly
+          ? serverDesign
+          : localCached && localCached.teeth.length > 0
+            ? localCached
+            : serverDesign;
+        const savedChat = pickCustomAbutmentChat(localChat, remote?.chat ?? [], cached?.chat ?? []);
         const loadedScans = rawLoadedScans.filter(
           (row): row is LoadedJawScan => row != null,
         );
@@ -1919,6 +1969,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               }),
             );
           }
+        } else if (readOnly) {
+          setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
         } else {
           setStatus({
             kind: "loading",
@@ -2023,7 +2075,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           return;
         }
 
-        if (builtAbutments.length === 0 && pendingPickJobs.length === 0) {
+        if (builtAbutments.length === 0 && pendingPickJobs.length === 0 && !readOnly) {
           for (const s of jawScans) {
             s.geometry.dispose();
             s.texture?.dispose();
@@ -2151,6 +2203,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     persistChat,
     persistDesign,
     pipelineKey,
+    readOnly,
     rebuildJawScanMeshes,
     transferIdParam,
   ]);
@@ -2780,6 +2833,9 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {chatTurns.length === 0 ? (
+              readOnly ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">저장된 대화가 없습니다.</p>
+              ) : (
               <div className="space-y-2 text-xs text-muted-foreground">
                 <p className="leading-relaxed">
                   바꾸고 싶은 점을 말이나 그림으로 알려 주면 디자인을 다시 만듭니다.
@@ -2803,6 +2859,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ))}
                 </div>
               </div>
+              )
             ) : null}
             {chatTurns.map((turn, idx) => (
               <div
@@ -2828,7 +2885,16 @@ export function PracticeCustomAbutmentPreviewDialog({
                         {turn.usage.outputTokens.toLocaleString("ko-KR")}
                       </p>
                     ) : null}
-                    {turn.role === "assistant" && turn.offer && !turn.offer.choice ? (
+                    {turn.role === "assistant" && turn.offer && (turn.offer.choice || readOnly) ? (
+                      <p className="mt-2 font-medium">
+                        {turn.offer.choice === "yes"
+                          ? "수작업으로 전환"
+                          : turn.offer.choice === "no"
+                            ? "그대로 두기"
+                            : "답 없음"}
+                      </p>
+                    ) : null}
+                    {turn.role === "assistant" && turn.offer && !turn.offer.choice && !readOnly ? (
                       <div className="mt-2 space-y-1.5">
                         <p>기공사 수작업으로 바꿀까요?</p>
                         <div className="flex flex-wrap gap-1.5">
@@ -2857,6 +2923,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ))}
           </div>
 
+          {readOnly ? null : (
           <div className="space-y-1.5 border-t px-3 py-2.5">
             <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground">
               <span>대상 {selectedTooth ? `#${selectedTooth}` : "전체 치아"}</span>
@@ -2918,6 +2985,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               </Button>
             </div>
           </div>
+          )}
         </>
       )}
     </aside>
@@ -2926,7 +2994,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const hasOpposingJaw =
     (prepJaws.has("upper") && availableJaws.lower) ||
     (prepJaws.has("lower") && availableJaws.upper);
-  const ready = status.kind === "ready" && designedList.length > 0;
+  const ready = status.kind === "ready" && (designedList.length > 0 || readOnly);
   const viewerLive = ready || status.kind === "pick";
 
   return (
@@ -3104,6 +3172,21 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
+            {readOnly && viewerLive && designedList.length === 0 ? (
+              <div className="pointer-events-none absolute inset-x-0 top-16 z-10 flex justify-center px-3">
+                <p
+                  className={cn(
+                    CONTENT_MEASURED_CHROME_CLASS,
+                    "rounded-lg border bg-background/95 px-3 py-2 text-center text-xs leading-relaxed text-foreground shadow-sm",
+                  )}
+                >
+                  저장된 어벗 형상이 없습니다.
+                  <br />
+                  스캔과 대화만 표시합니다.
+                </p>
+              </div>
+            ) : null}
+
             {viewerLive ? (
               <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-10 flex min-h-0 flex-col items-start gap-2 overflow-hidden">
                 <PracticeCustomAbutmentViewCube
@@ -3165,7 +3248,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       focusSingleTooth(toothNumber);
                     }}
                     onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
-                    onRegenerate={() => void regenerateDesigns()}
+                    onRegenerate={readOnly ? undefined : () => void regenerateDesigns()}
                   />
                 ) : null}
               </div>
@@ -3188,7 +3271,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   paint={paint}
                   collapsible
                   onSaveImage={saveViewImage}
-                  onSendToAi={attachSketchToChat}
+                  onSendToAi={readOnly ? undefined : attachSketchToChat}
                 />
               </div>
             ) : null}

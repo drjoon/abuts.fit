@@ -16,6 +16,7 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { recordAiDesignChatUsage } from "../../services/aiDesignChatUsage.service.js";
 import { quoteAiDesignChatUsage } from "../../services/aiDesignChatUsageCost.js";
+import AiDesignGap from "../../models/aiDesignGap.model.js";
 import {
   findAiDesignGap,
   recordAiDesignGap,
@@ -113,6 +114,84 @@ function sanitizeHistory(raw) {
       text: String(row?.text || "").trim().slice(0, 300),
     }))
     .filter((row) => row.text);
+}
+
+const SNAPSHOT_B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+const SNAPSHOT_B64_MAX = 4_000_000;
+
+function snapshotBuffer(raw) {
+  const text = String(raw || "");
+  if (!text || text.length > SNAPSHOT_B64_MAX || !SNAPSHOT_B64_RE.test(text)) return "";
+  return text;
+}
+
+function snapshotChat(raw) {
+  if (!Array.isArray(raw)) return [];
+  const turns = [];
+  for (const row of raw.slice(-40)) {
+    const role = row?.role === "assistant" ? "assistant" : row?.role === "user" ? "user" : "";
+    const text = String(row?.text || "").trim().slice(0, 2000);
+    if (!role || !text) continue;
+    const turn = { role, text };
+    const offer = row?.offer;
+    if (offer && offer.kind === "manual-design") {
+      const gapId = String(offer.gapId || "").trim();
+      if (gapId) {
+        const choice = offer.choice === "yes" || offer.choice === "no" ? offer.choice : undefined;
+        turn.offer = choice
+          ? { kind: "manual-design", gapId, choice }
+          : { kind: "manual-design", gapId };
+      }
+    }
+    turns.push(turn);
+  }
+  return turns;
+}
+
+function snapshotTeeth(raw) {
+  if (!Array.isArray(raw)) return [];
+  const teeth = [];
+  for (const row of raw.slice(0, 16)) {
+    const toothNumber = String(row?.toothNumber || "").trim();
+    if (!TOOTH_RE.test(toothNumber)) continue;
+    const localPositions = snapshotBuffer(row?.localPositions);
+    const crownLocalPositions = snapshotBuffer(row?.crownLocalPositions);
+    const marginLoopLocal = snapshotBuffer(row?.marginLoopLocal);
+    if (!localPositions || !crownLocalPositions || !marginLoopLocal) continue;
+    teeth.push({
+      toothNumber,
+      fileName: String(row?.fileName || "").trim().slice(0, 180),
+      fixture: row?.fixture && typeof row.fixture === "object" ? row.fixture : null,
+      overrides: row?.overrides && typeof row.overrides === "object" ? row.overrides : {},
+      params: row?.params && typeof row.params === "object" ? row.params : {},
+      metrics: row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
+      localPositions,
+      crownLocalPositions,
+      marginLoopLocal,
+    });
+  }
+  return teeth.filter((row) => row.fixture);
+}
+
+function gapChatTurns(rows) {
+  const turns = [];
+  for (const row of rows) {
+    const message = String(row?.message || "").trim();
+    const reply = String(row?.reply || "").trim();
+    const gapId = row?._id ? String(row._id) : "";
+    const choice = row?.manualChoice === "yes" || row?.manualChoice === "no" ? row.manualChoice : undefined;
+    if (message) turns.push({ role: "user", text: message });
+    if (reply) {
+      const turn = { role: "assistant", text: reply };
+      if (gapId) {
+        turn.offer = choice
+          ? { kind: "manual-design", gapId, choice }
+          : { kind: "manual-design", gapId };
+      }
+      turns.push(turn);
+    }
+  }
+  return turns;
 }
 
 function sanitizeImage(raw) {
@@ -360,6 +439,85 @@ export async function clearCustomAbutmentDesignPreference(req, res) {
  * body: { message, history?, teeth: [{ toothNumber, params, metrics }], selectedTooth?, transferId?, image? }
  * image: 화면 + 사용자가 그린 표시(data URL). 있으면 같이 본다.
  */
+/**
+ * 의뢰자에 저장된 커스텀어벗 형상·대화.
+ * @route GET /api/ai/custom-abutment-design-snapshot?transferId=
+ */
+export async function getCustomAbutmentDesignSnapshot(req, res) {
+  try {
+    const { anchorId, transferId } = await resolvePreferenceAnchor(req, req.query?.transferId);
+    if (!transferId) {
+      return res.status(400).json({ success: false, message: "의뢰를 확인해 주세요." });
+    }
+    if (!anchorId && req.user?.role !== "admin") {
+      return res.status(403).json({ success: false, message: "이 의뢰를 볼 수 없습니다." });
+    }
+    const transfer = await PracticeTransfer.findOne({ transferId })
+      .select({ "production.customAbutmentPreview": 1 })
+      .lean();
+    const stored = transfer?.production?.customAbutmentPreview;
+    const gaps = await AiDesignGap.find({ transferId })
+      .sort({ createdAt: 1 })
+      .select({ message: 1, reply: 1, manualChoice: 1 })
+      .lean();
+    const fromGaps = gapChatTurns(gaps);
+    const storedChat = snapshotChat(stored?.chat);
+    const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
+    const teeth = snapshotTeeth(stored?.teeth);
+    const design =
+      teeth.length > 0
+        ? {
+            version: Number(stored?.version) || 0,
+            fitVersion: Number(stored?.fitVersion) || 0,
+            savedAt: Number(stored?.savedAt) || 0,
+            chat,
+            teeth,
+          }
+        : null;
+    return res.json({ success: true, data: { design, chat } });
+  } catch (error) {
+    console.error("[AI] getCustomAbutmentDesignSnapshot error", error);
+    return res.status(500).json({ success: false, message: "저장된 디자인을 불러오지 못했습니다." });
+  }
+}
+
+/**
+ * 의뢰자 프리뷰 저장. 치과 본인만 쓴다.
+ * @route PUT /api/ai/custom-abutment-design-snapshot
+ */
+export async function saveCustomAbutmentDesignSnapshot(req, res) {
+  try {
+    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    if (!transferId || !anchorId || !canSave) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
+    }
+    const chat = snapshotChat(req.body?.chat);
+    const teeth = snapshotTeeth(req.body?.teeth);
+    const transfer = await PracticeTransfer.findOne({ transferId })
+      .select({ "production.customAbutmentPreview": 1 })
+      .lean();
+    const prev = transfer?.production?.customAbutmentPreview || {};
+    const next = {
+      ...prev,
+      savedAt: Date.now(),
+      chat: chat.length > 0 ? chat : snapshotChat(prev.chat),
+    };
+    if (teeth.length > 0) {
+      next.version = Number(req.body?.version) || 0;
+      next.fitVersion = Number(req.body?.fitVersion) || 0;
+      next.teeth = teeth;
+    }
+    await PracticeTransfer.updateOne(
+      { transferId },
+      { $set: { "production.customAbutmentPreview": next } },
+    );
+    return res.json({ success: true, data: { saved: true } });
+  } catch (error) {
+    console.error("[AI] saveCustomAbutmentDesignSnapshot error", error);
+    return res.status(500).json({ success: false, message: "디자인을 저장하지 못했습니다." });
+  }
+}
+
 export async function customAbutmentDesignChat(req, res) {
   try {
     const message = String(req.body?.message || "").trim().slice(0, 1000);

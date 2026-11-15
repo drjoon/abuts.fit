@@ -100,7 +100,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllVisible: (visible: boolean) => void;
   onSelect: (toothNumber: string) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
-  onRegenerate: () => void;
+  onRegenerate?: () => void;
   className?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -117,6 +117,7 @@ export function PracticeCustomAbutmentDesignTree({
     >
       <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1 pl-2.5 pr-1 text-xs font-semibold text-foreground">
         <span className="min-w-0 flex-1 truncate">커스텀어벗 {items.length}</span>
+        {onRegenerate ? (
         <button
           type="button"
           className={headerBtn}
@@ -127,6 +128,7 @@ export function PracticeCustomAbutmentDesignTree({
         >
           <RefreshCw className={cn("h-3.5 w-3.5", redesigning.length > 0 && "animate-spin")} />
         </button>
+        ) : null}
         <ScanbodyButton
           shown={anyScanbody}
           label="모든"

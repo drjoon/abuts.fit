@@ -303,6 +303,11 @@ const practiceTransferSchema = new mongoose.Schema(
       /** AI 디자인 작업 문서(마진·삽입축·카메라·토글 등). 스캔 파일과 별개로 이 의뢰건에 남긴다. */
       workSession: { type: mongoose.Schema.Types.Mixed, default: undefined },
       /**
+       * 의뢰자가 연 커스텀어벗 프리뷰의 저장본(형상·대화).
+       * 관리자는 이 값만 보고, 없으면 어벗을 새로 만들지 않는다.
+       */
+      customAbutmentPreview: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /**
        * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
        * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.
        */

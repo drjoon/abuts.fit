@@ -10,7 +10,9 @@ import {
   chooseCustomAbutmentManualDesign,
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
+  getCustomAbutmentDesignSnapshot,
   saveCustomAbutmentDesignPreference,
+  saveCustomAbutmentDesignSnapshot,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
@@ -47,6 +49,16 @@ router.get(
   "/custom-abutment-design-preference",
   authenticate,
   getCustomAbutmentDesignPreference
+);
+router.get(
+  "/custom-abutment-design-snapshot",
+  authenticate,
+  getCustomAbutmentDesignSnapshot
+);
+router.put(
+  "/custom-abutment-design-snapshot",
+  authenticate,
+  saveCustomAbutmentDesignSnapshot
 );
 router.put(
   "/custom-abutment-design-preference",

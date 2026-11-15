@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 
+import { request } from "@/shared/api/apiClient";
 import type { MatchedScanbodyFixture } from "@/shared/practice/customAbutmentScanbodyMatch";
 import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmentDesignParams";
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
@@ -287,4 +288,136 @@ export function writeCustomAbutmentChat(
 
 export function toArrayBuffer(arr: Float32Array): ArrayBuffer {
   return arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength) as ArrayBuffer;
+}
+
+function bytesToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let text = "";
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    text += String.fromCharCode(...bytes.subarray(i, i + step));
+  }
+  return btoa(text);
+}
+
+function base64ToBuffer(raw: string): ArrayBuffer | null {
+  const text = String(raw || "");
+  if (!text) return null;
+  try {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  } catch {
+    return null;
+  }
+}
+
+export type RemoteCustomAbutmentSnapshot = {
+  design: (CachedCustomAbutmentDesign & { designFresh: boolean }) | null;
+  chat: CustomAbutmentChatTurn[];
+};
+
+/** 의뢰자에 저장된 형상·대화. 관리자 화면은 이 값만 연다. */
+export async function fetchCustomAbutmentSnapshot(
+  token: string,
+  transferId: string,
+): Promise<RemoteCustomAbutmentSnapshot | null> {
+  const id = transferId.trim();
+  if (!id) return null;
+  try {
+    const res = await request<{
+      data?: {
+        design?: {
+          version?: number;
+          fitVersion?: number;
+          savedAt?: number;
+          chat?: unknown;
+          teeth?: Array<Record<string, unknown>>;
+        } | null;
+        chat?: unknown;
+      };
+    }>({
+      path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
+      method: "GET",
+      token,
+      skipCache: true,
+    });
+    if (!res.ok || !res.data?.data) return null;
+    const chat = normalizeCustomAbutmentChat(res.data.data.chat);
+    const raw = res.data.data.design;
+    if (!raw || !Array.isArray(raw.teeth) || raw.teeth.length === 0) {
+      return { design: null, chat };
+    }
+    const teeth: CachedCustomAbutmentTooth[] = [];
+    for (const row of raw.teeth) {
+      const localPositions = base64ToBuffer(String(row.localPositions || ""));
+      const crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
+      const marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
+      const fixture = row.fixture as MatchedScanbodyFixture | null;
+      if (!localPositions || !crownLocalPositions || !marginLoopLocal || !fixture) continue;
+      teeth.push({
+        toothNumber: String(row.toothNumber || ""),
+        fileName: String(row.fileName || ""),
+        fixture,
+        overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
+        params: row.params as CustomAbutmentDesignParams,
+        metrics: row.metrics as CustomAbutmentDesignMetrics,
+        localPositions,
+        crownLocalPositions,
+        marginLoopLocal,
+      });
+    }
+    if (teeth.length === 0) return { design: null, chat };
+    const version = Number(raw.version) || 0;
+    const fitVersion = Number(raw.fitVersion) || 0;
+    return {
+      chat,
+      design: {
+        key: id,
+        version,
+        fitVersion,
+        savedAt: Number(raw.savedAt) || 0,
+        alignedScans: [],
+        teeth,
+        chat,
+        designFresh: version === CUSTOM_ABUTMENT_DESIGN_VERSION && fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** 의뢰자 저장본을 서버에 남긴다. 실패해도 화면은 유지한다. */
+export function publishCustomAbutmentSnapshot(
+  token: string,
+  transferId: string,
+  record: Pick<CachedCustomAbutmentDesign, "version" | "fitVersion" | "teeth" | "chat">,
+): void {
+  const id = transferId.trim();
+  if (!token || !id) return;
+  const teeth = record.teeth.map((row) => ({
+    toothNumber: row.toothNumber,
+    fileName: row.fileName,
+    fixture: row.fixture,
+    overrides: row.overrides,
+    params: row.params,
+    metrics: row.metrics,
+    localPositions: bytesToBase64(row.localPositions),
+    crownLocalPositions: bytesToBase64(row.crownLocalPositions),
+    marginLoopLocal: bytesToBase64(row.marginLoopLocal),
+  }));
+  void request({
+    path: "/api/ai/custom-abutment-design-snapshot",
+    method: "PUT",
+    token,
+    jsonBody: {
+      transferId: id,
+      version: record.version,
+      fitVersion: record.fitVersion,
+      chat: normalizeCustomAbutmentChat(record.chat),
+      teeth,
+    },
+  }).catch((err) => console.warn("[custom-abutment] snapshot upload failed", err));
 }

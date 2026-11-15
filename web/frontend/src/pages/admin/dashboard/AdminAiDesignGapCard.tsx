@@ -247,6 +247,7 @@ export function AdminAiDesignGapCard({
           files={preview.files || []}
           workScanFiles={preview.workScanFiles || []}
           transferId={preview.transferId}
+          readOnly
         />
       ) : null}
     </>
