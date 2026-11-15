@@ -1113,14 +1113,15 @@ function estimateScannedPillarAxis(
     if (topRows.length < 10) return null;
     const usTop = topRows.map((r) => r.u).sort((a, b) => a - b);
     const vsTop = topRows.map((r) => r.v).sort((a, b) => a - b);
-    const cuTop = 0.5 * (usTop[Math.floor(usTop.length * 0.1)]! + usTop[Math.floor(usTop.length * 0.9)]!);
-    const cvTop = 0.5 * (vsTop[Math.floor(vsTop.length * 0.1)]! + vsTop[Math.floor(vsTop.length * 0.9)]!);
+    let cuTrack = 0.5 * (usTop[Math.floor(usTop.length * 0.1)]! + usTop[Math.floor(usTop.length * 0.9)]!);
+    let cvTrack = 0.5 * (vsTop[Math.floor(vsTop.length * 0.1)]! + vsTop[Math.floor(vsTop.length * 0.9)]!);
 
     const slices: Array<{ h0: number; cu: number; cv: number; maxSpan: number }> = [];
     let refSpan: number | null = null;
-    for (let h0 = hPeak - 0.35; h0 >= Math.max(hBase + 0.5, hPeak - 5.5); h0 -= 0.35) {
+    for (let h0 = hPeak - 0.35; h0 >= Math.max(hBase + 0.5, hPeak - 5.8); h0 -= 0.35) {
+      const searchR = refSpan != null ? Math.min(5.2, Math.max(3.2, refSpan * 0.85 + 1.0)) : 5.2;
       const sl = proj.filter(
-        (r) => Math.abs(r.h - h0) <= 0.22 && Math.hypot(r.u - cuTop, r.v - cvTop) <= 5.5,
+        (r) => Math.abs(r.h - h0) <= 0.22 && Math.hypot(r.u - cuTrack, r.v - cvTrack) <= searchR,
       );
       if (sl.length < 14) continue;
       const us = sl.map((r) => r.u).sort((a, b) => a - b);
@@ -1132,11 +1133,16 @@ function estimateScannedPillarAxis(
       const spanU = uHi - uLo;
       const spanV = vHi - vLo;
       const maxSpan = Math.max(spanU, spanV);
-      if (Math.min(spanU, spanV) < 1.75) continue;
+      // 윗면 라운드·사선 챔퍼 직하방(1.75mm 미만)은 건너뛰고 실제 원통/원추 몸통부터 잡는다.
+      if (Math.min(spanU, spanV) < 1.85) continue;
       if (refSpan == null && slices.length >= 1) refSpan = Math.max(slices[0]!.maxSpan, maxSpan);
-      // 상단 기둥 단면 대비 1.38배(+1.35mm)를 넘기 시작하면 잇몸 치마로 진입한 것이므로 중단한다.
-      if (refSpan != null && maxSpan > Math.max(refSpan * 1.38, refSpan + 1.35)) break;
-      slices.push({ h0, cu: 0.5 * (uLo + uHi), cv: 0.5 * (vLo + vHi), maxSpan });
+      // 상단 기둥 단면 대비 1.28배(+1.05mm)를 넘기 시작하면 마진 치마·잇몸으로 진입한 것이므로 즉시 멈춘다.
+      if (refSpan != null && maxSpan > Math.max(refSpan * 1.28, refSpan + 1.05)) break;
+      const cu = 0.5 * (uLo + uHi);
+      const cv = 0.5 * (vLo + vHi);
+      slices.push({ h0, cu, cv, maxSpan });
+      cuTrack = cu;
+      cvTrack = cv;
     }
     if (slices.length < 4) return null;
     if (slices[0]!.h0 - slices[slices.length - 1]!.h0 < 1.05) return null;
@@ -1424,8 +1430,23 @@ function coverPostOverScrew(args: {
   return grew;
 }
 
-function frustumSoup(r0: number, r1: number, z0: number, z1: number, segments = 64): Float32Array {
-  const out = new Float32Array(segments * 4 * 9);
+function screwChannelSoup(
+  rBot: number,
+  rTop: number,
+  zBot: number,
+  seatZ0: number,
+  seatZ1: number,
+  zTop: number,
+  segments = 64,
+): Float32Array {
+  const rings: Array<[number, number]> = [
+    [rBot, zBot],
+    [rBot, seatZ0],
+    [rTop, seatZ1],
+    [rTop, zTop],
+  ];
+  const trisPerSeg = 2 + (rings.length - 1) * 2;
+  const out = new Float32Array(segments * trisPerSeg * 9);
   let o = 0;
   const put = (p: Vec3) => {
     out[o++] = p[0];
@@ -1435,14 +1456,26 @@ function frustumSoup(r0: number, r1: number, z0: number, z1: number, segments = 
   for (let i = 0; i < segments; i += 1) {
     const a0 = (i / segments) * Math.PI * 2;
     const a1 = ((i + 1) / segments) * Math.PI * 2;
-    const p00: Vec3 = [r0 * Math.cos(a0), r0 * Math.sin(a0), z0];
-    const p10: Vec3 = [r0 * Math.cos(a1), r0 * Math.sin(a1), z0];
-    const p01: Vec3 = [r1 * Math.cos(a0), r1 * Math.sin(a0), z1];
-    const p11: Vec3 = [r1 * Math.cos(a1), r1 * Math.sin(a1), z1];
-    put(p00); put(p10); put(p11);
-    put(p00); put(p11); put(p01);
-    put([0, 0, z0]); put(p10); put(p00);
-    put([0, 0, z1]); put(p01); put(p11);
+    const c0 = Math.cos(a0);
+    const s0 = Math.sin(a0);
+    const c1 = Math.cos(a1);
+    const s1 = Math.sin(a1);
+    put([0, 0, zBot]);
+    put([rBot * c1, rBot * s1, zBot]);
+    put([rBot * c0, rBot * s0, zBot]);
+    for (let k = 0; k < rings.length - 1; k += 1) {
+      const [ra, za] = rings[k]!;
+      const [rb, zb] = rings[k + 1]!;
+      put([ra * c0, ra * s0, za]);
+      put([ra * c1, ra * s1, za]);
+      put([rb * c1, rb * s1, zb]);
+      put([ra * c0, ra * s0, za]);
+      put([rb * c1, rb * s1, zb]);
+      put([rb * c0, rb * s0, zb]);
+    }
+    put([0, 0, zTop]);
+    put([rTop * c0, rTop * s0, zTop]);
+    put([rTop * c1, rTop * s1, zTop]);
   }
   return out;
 }
@@ -5558,14 +5591,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   let zTopMax = -Infinity;
   for (let i = 2; i < bodySoup.length; i += 3) zTopMax = Math.max(zTopMax, bodySoup[i]!);
-  const cutters = [
-    frustumSoup(boreBotR, boreBotR, zBot - 1, seatZ0),
-    frustumSoup(boreBotR, boreTopR, seatZ0 - 0.001, seatZ1),
-    frustumSoup(boreTopR, boreTopR, seatZ1 - 0.001, zTopMax + 3),
-  ];
+  const cutter = screwChannelSoup(boreBotR, boreTopR, zBot - 1, seatZ0, seatZ1, zTopMax + 3);
   const localPositions = await subtractTriangleSoups(
     bodySoup,
-    cutters,
+    [cutter],
     `#${fixture.toothNumber} 커스텀어벗`,
   );
 

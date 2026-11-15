@@ -1194,6 +1194,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           params: d.params,
           metrics: d.metrics,
           localPositions: toArrayBuffer(d.localPositions),
+          ...(d.solidBodyLocalPositions?.length
+            ? { solidBodyLocalPositions: toArrayBuffer(d.solidBodyLocalPositions) }
+            : {}),
           crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
           marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
         })),
@@ -1222,6 +1225,15 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [authToken, persistChat]);
 
   const editedTeethRef = useRef(new Set<string>());
+  const stripDirectEditShiftOverrides = (
+    raw: Partial<CustomAbutmentDesignParams>,
+  ): Partial<CustomAbutmentDesignParams> => {
+    const next = { ...raw };
+    delete next.axisShiftLabialMm;
+    delete next.axisShiftMesialMm;
+    delete next.postYawDeg;
+    return next;
+  };
   const rememberAbutmentEdit = useCallback(
     (summary: AbutmentEditSummary) => {
       const design = designedListRef.current.find((row) => row.toothNumber === summary.tooth);
@@ -1235,11 +1247,11 @@ export function PracticeCustomAbutmentPreviewDialog({
       const next: Partial<CustomAbutmentDesignParams> = {
         postWidthScale: clampKey("postWidthScale", base.postWidthScale * summary.widthRatio),
         postHeightOffsetMm: clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm),
-        postYawDeg: clampKey("postYawDeg", base.postYawDeg + summary.yawDeg),
-        axisShiftLabialMm: clampKey("axisShiftLabialMm", base.axisShiftLabialMm + summary.shiftLabialMm),
-        axisShiftMesialMm: clampKey("axisShiftMesialMm", base.axisShiftMesialMm + summary.shiftMesialMm),
       };
-      ctx.overrides[summary.tooth] = { ...(ctx.overrides[summary.tooth] ?? {}), ...next };
+      ctx.overrides[summary.tooth] = {
+        ...stripDirectEditShiftOverrides(ctx.overrides[summary.tooth] ?? {}),
+        ...next,
+      };
       const backToProposal =
         Math.abs(summary.widthRatio - 1) < 0.01 &&
         Math.abs(summary.heightDeltaMm) < 0.05 &&
@@ -2141,7 +2153,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             const jaw = row.fixture.jaw;
             const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
             if (!jawGeo) continue;
-            const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
+            const rowOverrides = stripDirectEditShiftOverrides(
+              parseCustomAbutmentParamOverrides(row.overrides),
+            );
             overrides[row.toothNumber] = rowOverrides;
             builtAbutments.push(
               await designCustomAbutmentStl({
@@ -2170,12 +2184,46 @@ export function PracticeCustomAbutmentPreviewDialog({
             cachedFixtures.filter((f) => f.jaw === "lower"),
           );
           for (const row of cached.teeth) {
-            overrides[row.toothNumber] = parseCustomAbutmentParamOverrides(row.overrides);
+            const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
+            overrides[row.toothNumber] = rowOverrides;
+            if (!readOnly && !row.solidBodyLocalPositions?.byteLength) {
+              const jaw = row.fixture.jaw;
+              const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
+              if (jawGeo) {
+                const freshSolid = await designCustomAbutmentStl({
+                  fixture: row.fixture,
+                  jawGeometry: jawGeo,
+                  opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
+                  neighbors: cachedFixtures.filter((f) => f.jaw === jaw),
+                  toothWorks: curAllToothWorks,
+                  params: row.params,
+                  patientName: curPatientName,
+                });
+                freshSolid.worldGeometry.dispose();
+                freshSolid.predictedCrownWorldGeometry.dispose();
+                builtAbutments.push(
+                  buildDesignedCustomAbutment({
+                    fixture: row.fixture,
+                    fileName: row.fileName,
+                    localPositions: new Float32Array(row.localPositions),
+                    solidBodyLocalPositions: freshSolid.solidBodyLocalPositions,
+                    crownLocalPositions: new Float32Array(row.crownLocalPositions),
+                    marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                    params: row.params,
+                    metrics: row.metrics,
+                  }),
+                );
+                continue;
+              }
+            }
             builtAbutments.push(
               buildDesignedCustomAbutment({
                 fixture: row.fixture,
                 fileName: row.fileName,
                 localPositions: new Float32Array(row.localPositions),
+                ...(row.solidBodyLocalPositions?.byteLength
+                  ? { solidBodyLocalPositions: new Float32Array(row.solidBodyLocalPositions) }
+                  : {}),
                 crownLocalPositions: new Float32Array(row.crownLocalPositions),
                 marginLoopLocal: new Float32Array(row.marginLoopLocal),
                 params: row.params,
@@ -2620,7 +2668,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       await applyDesignChanges(
         targets.map((toothNumber) => ({
           toothNumber,
-          params: { ...(ctx.overrides[toothNumber] ?? {}) },
+          params: stripDirectEditShiftOverrides(ctx.overrides[toothNumber] ?? {}),
         })),
         "replace",
       );

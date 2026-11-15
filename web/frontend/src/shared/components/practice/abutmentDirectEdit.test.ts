@@ -8,9 +8,11 @@ import {
   buildAbutmentPreferenceUpdate,
   clampAbutmentEdit,
   identityAbutmentEdit,
+  makeGumball,
   refitLocalPositions,
   screenGumballQuaternion,
   sculptFalloff,
+  writeAttribute,
   type AbutmentEdit,
 } from "./abutmentDirectEdit";
 
@@ -91,12 +93,12 @@ assert.ok(Math.abs(far[0]! - 2) < 1e-4, "범위 밖 포스트는 그대로");
 
 const limited = edit({ scale: [2, 0.1, 3], heightMm: 9, shiftLabialMm: 8, yawDeg: 90 });
 clampAbutmentEdit(limited, 8);
-assert.equal(limited.scale[0], 1.15);
-assert.equal(limited.scale[1], 0.8);
-assert.ok(limited.heightMm <= 2 && limited.shiftLabialMm === 2 && limited.yawDeg === 30);
+assert.equal(limited.scale[0], 1.45);
+assert.equal(limited.scale[1], 0.65);
+assert.ok(limited.heightMm <= 2.5 && limited.shiftLabialMm === 2.5 && limited.yawDeg === 30);
 const steep = edit({ tiltLabialDeg: 80 });
 clampAbutmentEdit(steep, 8);
-assert.ok(Math.abs(Math.tan((steep.tiltLabialDeg * Math.PI) / 180) * 8) <= 2 + 1e-6, "기울기 윗면은 2mm 안");
+assert.ok(Math.abs(steep.tiltLabialDeg) <= 25 + 1e-6, "기울기는 허용 각도(25°) 안");
 
 assert.equal(sculptFalloff(0, 2), 1);
 assert.equal(sculptFalloff(2, 2), 0);
@@ -154,6 +156,50 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   applyWorldRotationToAbutmentEdit(rotX, new THREE.Vector3(1, 0, 0), 10, axes);
   const topRotX = one([1, 0, 6.6], rotX);
   assert.ok(topRotX[1]! < -0.7 && Math.abs(topRotX[0]! - 1) < 1e-4, "+X 축 오른손 회전은 상단을 -Y로 기울인다");
+
+  // 좌수계 사분면(#38 하악 좌측: labial = +X, mesial = -Y, axis = +Z → labial × mesial = -Z)에서도
+  // 화면 밖(협측 +X) 주위로 반시계(+10°) 회전하면 상단(+Z)이 화면 왼쪽(근심, -Y)으로 정확히 기울어야 한다.
+  const leftHandAxes: [THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, -1, 0),
+    new THREE.Vector3(0, 0, 1),
+  ];
+  const leftHandZone = { ...zone, screwR: 0, labial: [1, 0] as [number, number], mesial: [0, -1] as [number, number] };
+  const rot38 = edit();
+  applyWorldRotationToAbutmentEdit(rot38, new THREE.Vector3(1, 0, 0), 10, leftHandAxes);
+  const out38 = new Float32Array(3);
+  refitLocalPositions(new Float32Array([1.5, 0, 6.6]), rot38, leftHandZone, out38);
+  assert.ok(out38[1]! < -0.7 && Math.abs(out38[0]! - 1.5) < 1e-4, "#38 좌수계 협측 뷰에서도 반시계 회전이 화면 왼쪽(근심)으로 기울인다");
+}
+
+// 정점 배열 크기가 솔리드 ↔ 스크류 홀 부울 메시로 바뀔 때 normal 버퍼 크기가 어긋나지 않는지 검증
+{
+  const geo = new THREE.BufferGeometry();
+  writeAttribute(geo, new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+  assert.equal(geo.getAttribute("normal")?.count, 3);
+  writeAttribute(
+    geo,
+    new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1]),
+  );
+  assert.equal(geo.getAttribute("position")?.count, 6);
+  assert.equal(geo.getAttribute("normal")?.count, 6, "정점 개수 변경 시 normal 버퍼도 새 크기로 재생성된다");
+}
+
+// 검볼 스케일 핸들(빨간 X 상자, 초록 Y 상자, 노란 XY 평면)이 다른 핸들에 가리지 않고 정면 광선에 잡히는지 검증
+{
+  const gb = makeGumball("38");
+  gb.updateMatrixWorld(true);
+  const rc = new THREE.Raycaster();
+  const checkRay = (x: number, y: number, expectedOp: string) => {
+    rc.set(new THREE.Vector3(x, y, 5), new THREE.Vector3(0, 0, -1));
+    const hits = rc.intersectObject(gb, true);
+    assert.ok(hits.length > 0, `(${x}, ${y}) 광선이 검볼에 맞는다`);
+    const found = hits.some((h) => h.object.userData.editHandle?.op === expectedOp);
+    assert.ok(found, `(${x}, ${y})에서 ${expectedOp} 핸들이 잡힌다`);
+  };
+  checkRay(0.47, 0, "scale");
+  checkRay(0, 0.47, "scale");
+  checkRay(0.41, 0.41, "scale2");
 }
 
 console.log("abutment direct edit ok");
