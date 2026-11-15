@@ -53,7 +53,7 @@ const PARAM_SPECS = {
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.8, max: 1.15 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.5, max: 0.8 },
   marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 구치 기본 0.5·전치 기본 0.4)", unit: "mm", min: 0.2, max: 0.8 },
-  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준)", unit: "mm", min: 0, max: 1.5 },
+  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준)", unit: "mm", min: 0, max: 2.0 },
   marginScallopMm: { label: "근·원심 마진 스캘럽(치관측 상승·치은 라인 추종, 전치 기본 0.75·구치 기본 0.55)", unit: "mm", min: 0, max: 1.6 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },

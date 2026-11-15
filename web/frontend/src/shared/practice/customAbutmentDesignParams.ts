@@ -60,7 +60,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.8, max: 1.15, step: 0.01 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.5, max: 0.8, step: 0.05 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.8, step: 0.05 },
-  marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: 0, max: 1.5, step: 0.1 },
+  marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: 0, max: 2.0, step: 0.1 },
   marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.85, max: 1.2, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
