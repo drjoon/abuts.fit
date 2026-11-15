@@ -15227,6 +15227,134 @@ function meanVec(points) {
   const n2 = points.length;
   return new Vector3(x / n2, y / n2, z / n2);
 }
+function quantileSorted(sorted, q) {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * q)));
+  return sorted[idx] ?? 0;
+}
+function eigenSymmetric3(xx, xy, xz, yy, yz, zz) {
+  const a2 = [xx, xy, xz, xy, yy, yz, xz, yz, zz];
+  const v = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  for (let sw = 0; sw < 32; sw += 1) {
+    let maxOff = 0;
+    for (let p = 0; p < 3; p += 1) {
+      for (let q = p + 1; q < 3; q += 1) {
+        const apq = a2[p * 3 + q];
+        if (Math.abs(apq) > maxOff) maxOff = Math.abs(apq);
+        if (Math.abs(apq) < 1e-13) continue;
+        const theta = (a2[q * 3 + q] - a2[p * 3 + p]) / (2 * apq);
+        const t2 = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+        const c2 = 1 / Math.sqrt(t2 * t2 + 1);
+        const s2 = t2 * c2;
+        for (let k = 0; k < 3; k += 1) {
+          const akp = a2[k * 3 + p];
+          const akq = a2[k * 3 + q];
+          a2[k * 3 + p] = c2 * akp - s2 * akq;
+          a2[k * 3 + q] = s2 * akp + c2 * akq;
+        }
+        for (let k = 0; k < 3; k += 1) {
+          const apk = a2[p * 3 + k];
+          const aqk = a2[q * 3 + k];
+          a2[p * 3 + k] = c2 * apk - s2 * aqk;
+          a2[q * 3 + k] = s2 * apk + c2 * aqk;
+        }
+        for (let k = 0; k < 3; k += 1) {
+          const vkp = v[k * 3 + p];
+          const vkq = v[k * 3 + q];
+          v[k * 3 + p] = c2 * vkp - s2 * vkq;
+          v[k * 3 + q] = s2 * vkp + c2 * vkq;
+        }
+      }
+    }
+    if (maxOff < 1e-12) break;
+  }
+  const order = [0, 1, 2].sort((i, j) => a2[i * 4] - a2[j * 4]);
+  const vecAt = (i) => {
+    const out2 = new Vector3(v[i], v[3 + i], v[6 + i]);
+    return out2.lengthSq() > 1e-12 ? out2.normalize() : new Vector3(0, 0, 1);
+  };
+  return {
+    values: [a2[order[0] * 4], a2[order[1] * 4], a2[order[2] * 4]],
+    vectors: [vecAt(order[0]), vecAt(order[1]), vecAt(order[2])]
+  };
+}
+function smallestPcaAxis(points, mean) {
+  if (points.length < 3) return new Vector3(0, 0, 1);
+  let xx = 0;
+  let yy = 0;
+  let zz = 0;
+  let xy = 0;
+  let xz = 0;
+  let yz = 0;
+  for (const p of points) {
+    const x = p[0] - mean.x;
+    const y = p[1] - mean.y;
+    const z = p[2] - mean.z;
+    xx += x * x;
+    yy += y * y;
+    zz += z * z;
+    xy += x * y;
+    xz += x * z;
+    yz += y * z;
+  }
+  return eigenSymmetric3(xx, xy, xz, yy, yz, zz).vectors[0];
+}
+function fitRobustPlaneNormal(points, seedNormal, huberDelta) {
+  if (points.length < 6) return null;
+  let normal = seedNormal.clone().normalize();
+  let eigMinor = 0;
+  let eigMajor = 0;
+  const weights = new Float64Array(points.length).fill(1);
+  for (let iter = 0; iter < 4; iter += 1) {
+    let sw = 0;
+    let mx = 0;
+    let my = 0;
+    let mz = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const w = weights[i];
+      const p = points[i];
+      sw += w;
+      mx += w * p[0];
+      my += w * p[1];
+      mz += w * p[2];
+    }
+    if (sw < 1e-8) return null;
+    mx /= sw;
+    my /= sw;
+    mz /= sw;
+    let xx = 0;
+    let xy = 0;
+    let xz = 0;
+    let yy = 0;
+    let yz = 0;
+    let zz = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const w = weights[i];
+      const p = points[i];
+      const dx = p[0] - mx;
+      const dy = p[1] - my;
+      const dz = p[2] - mz;
+      xx += w * dx * dx;
+      xy += w * dx * dy;
+      xz += w * dx * dz;
+      yy += w * dy * dy;
+      yz += w * dy * dz;
+      zz += w * dz * dz;
+    }
+    const eig = eigenSymmetric3(xx / sw, xy / sw, xz / sw, yy / sw, yz / sw, zz / sw);
+    const next = eig.vectors[0];
+    if (next.dot(normal) < 0) next.negate();
+    normal = next;
+    eigMinor = eig.values[1];
+    eigMajor = eig.values[2];
+    for (let i = 0; i < points.length; i += 1) {
+      const p = points[i];
+      const res = Math.abs((p[0] - mx) * normal.x + (p[1] - my) * normal.y + (p[2] - mz) * normal.z);
+      weights[i] = res <= huberDelta ? 1 : huberDelta / res;
+    }
+  }
+  return { normal, eigMinor, eigMajor };
+}
 function extractBoundaryVertices(geometry) {
   const pos = geometry.getAttribute("position");
   if (!pos || pos.count === 0) return [];
@@ -15315,6 +15443,330 @@ function crownDirection(mesh) {
   if (toCrown.lengthSq() < 1e-4) return null;
   return toCrown.normalize();
 }
+function planeBasis(up) {
+  const ref = Math.abs(up.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
+  const e1 = new Vector3().crossVectors(ref, up).normalize();
+  const e2 = new Vector3().crossVectors(up, e1).normalize();
+  return { e1, e2 };
+}
+function extractJawCrownCells(pts, origin, up, e1, e2, toMm, occSign) {
+  const cellMm = 2;
+  const raw = /* @__PURE__ */ new Map();
+  for (const p of pts) {
+    const dx = (p[0] - origin.x) * toMm;
+    const dy = (p[1] - origin.y) * toMm;
+    const dz = (p[2] - origin.z) * toMm;
+    const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
+    const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
+    const zUpMm = dx * up.x + dy * up.y + dz * up.z;
+    const hOccMm = zUpMm * occSign;
+    const gx = Math.round(xMm / cellMm);
+    const gy = Math.round(yMm / cellMm);
+    const key = `${gx},${gy}`;
+    const prev = raw.get(key);
+    if (!prev || hOccMm > prev.hOccMm) {
+      raw.set(key, { gx, gy, xMm, yMm, zUpMm, hOccMm, pt: p, isPeak: false });
+    }
+  }
+  const all = [...raw.values()];
+  if (all.length === 0) return { allMap: raw, crownCells: [], peakCells: [] };
+  const allH = all.map((c2) => c2.hOccMm).sort((a2, b2) => a2 - b2);
+  const hTop92 = quantileSorted(allH, 0.92);
+  const hFloor18 = quantileSorted(allH, 0.18);
+  const bandDepth = Math.min(7.5, Math.max(3.8, (hTop92 - hFloor18) * 0.56));
+  const crownFloor = hTop92 - bandDepth;
+  const crownCells = [];
+  const peakCells = [];
+  for (const c2 of all) {
+    if (c2.hOccMm < crownFloor) continue;
+    const nearH = [];
+    let higherIn4mm = 0;
+    for (let dy = -3; dy <= 3; dy += 1) {
+      for (let dx = -3; dx <= 3; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const nb = raw.get(`${c2.gx + dx},${c2.gy + dy}`);
+        if (!nb) continue;
+        nearH.push(nb.hOccMm);
+        if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2 && nb.hOccMm > c2.hOccMm + 0.15) {
+          higherIn4mm += 1;
+        }
+      }
+    }
+    if (nearH.length < 3) continue;
+    nearH.sort((a2, b2) => a2 - b2);
+    const nearP80 = quantileSorted(nearH, 0.8);
+    const nearP15 = quantileSorted(nearH, 0.15);
+    if (c2.hOccMm > nearP80 + 2.5) continue;
+    if (c2.hOccMm - nearP15 < 0.7 && c2.hOccMm < hTop92 - 3.5) continue;
+    c2.isPeak = higherIn4mm <= 2 && c2.hOccMm - nearP15 >= 1.3;
+    crownCells.push(c2);
+    if (c2.isPeak) peakCells.push(c2);
+  }
+  return {
+    allMap: raw,
+    crownCells: crownCells.length >= 12 ? crownCells : all,
+    peakCells: peakCells.length >= 10 ? peakCells : crownCells.length >= 12 ? crownCells : all
+  };
+}
+function findMidlineAnteriorAxis(upperCrowns, lowerCrowns, fallbackPts, origin, up, e1, e2, toMm) {
+  const samples = [];
+  for (const c2 of upperCrowns) {
+    samples.push({ x: c2.xMm, y: c2.yMm, h: c2.hOccMm, w: c2.isPeak ? 1.55 : 1.25, isUpper: true });
+  }
+  for (const c2 of lowerCrowns) {
+    samples.push({ x: c2.xMm, y: c2.yMm, h: c2.hOccMm, w: c2.isPeak ? 1.15 : 0.95, isUpper: false });
+  }
+  if (samples.length < 20) {
+    for (const p of fallbackPts) {
+      const dx = (p[0] - origin.x) * toMm;
+      const dy = (p[1] - origin.y) * toMm;
+      const dz = (p[2] - origin.z) * toMm;
+      samples.push({
+        x: dx * e1.x + dy * e1.y + dz * e1.z,
+        y: dx * e2.x + dy * e2.y + dz * e2.z,
+        h: 0,
+        w: 1,
+        isUpper: false
+      });
+    }
+  }
+  if (samples.length < 6) {
+    return { anterior: e1.clone(), midlineOffsetRightMm: 0 };
+  }
+  let sw = 0;
+  let mx = 0;
+  let my = 0;
+  for (const s2 of samples) {
+    sw += s2.w;
+    mx += s2.w * s2.x;
+    my += s2.w * s2.y;
+  }
+  mx /= sw;
+  my /= sw;
+  let cxx = 0;
+  let cxy = 0;
+  let cyy = 0;
+  for (const s2 of samples) {
+    const dx = s2.x - mx;
+    const dy = s2.y - my;
+    cxx += s2.w * dx * dx;
+    cxy += s2.w * dx * dy;
+    cyy += s2.w * dy * dy;
+  }
+  const pcaTheta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  const cp = Math.cos(pcaTheta);
+  const sp = Math.sin(pcaTheta);
+  const vA = cxx * cp * cp + 2 * cxy * cp * sp + cyy * sp * sp;
+  const vB = cxx * sp * sp - 2 * cxy * cp * sp + cyy * cp * cp;
+  const majorDir = vA >= vB ? [cp, sp] : [-sp, cp];
+  const minorDir = [-majorDir[1], majorDir[0]];
+  const majVals = samples.map((s2) => s2.x * majorDir[0] + s2.y * majorDir[1]).sort((a2, b2) => a2 - b2);
+  const minVals = samples.map((s2) => s2.x * minorDir[0] + s2.y * minorDir[1]).sort((a2, b2) => a2 - b2);
+  quantileSorted(majVals, 0.97) - quantileSorted(majVals, 0.03);
+  const spanMinor = quantileSorted(minVals, 0.97) - quantileSorted(minVals, 0.03);
+  const evalHorseshoe = (theta) => {
+    const ax = Math.cos(theta);
+    const ay = Math.sin(theta);
+    const rx = ay;
+    const ry = -ax;
+    const as = [];
+    const proj = [];
+    for (const s2 of samples) {
+      const a2 = s2.x * ax + s2.y * ay;
+      const r2 = s2.x * rx + s2.y * ry;
+      as.push(a2);
+      proj.push({ r: r2, a: a2, w: s2.w, isUpper: s2.isUpper });
+    }
+    as.sort((u2, v) => u2 - v);
+    const aHi = quantileSorted(as, 0.97);
+    const aLo = quantileSorted(as, 0.03);
+    const depth = aHi - aLo;
+    if (depth < 14) return null;
+    const frontRs = [];
+    for (const q of proj) {
+      if (q.a >= aHi - Math.min(7.5, depth * 0.24)) frontRs.push(q.r);
+    }
+    if (frontRs.length < 4) return null;
+    frontRs.sort((u2, v) => u2 - v);
+    const rFrontMid = 0.5 * (quantileSorted(frontRs, 0.12) + quantileSorted(frontRs, 0.88));
+    const frontSpan = quantileSorted(frontRs, 0.9) - quantileSorted(frontRs, 0.1);
+    const sliceMm = 3;
+    const sliceCount = Math.max(3, Math.min(18, Math.floor(depth / sliceMm)));
+    let bilateralSlices = 0;
+    let midSumW = 0;
+    let midSumR = 0;
+    const biRows = [];
+    let maxBackWidth = frontSpan;
+    for (let si = 1; si < sliceCount; si += 1) {
+      const sTop = aHi - si * sliceMm;
+      const sBot = sTop - sliceMm;
+      const rs = [];
+      for (const q of proj) {
+        if (q.a >= sBot && q.a <= sTop) rs.push(q.r);
+      }
+      if (rs.length < 4) continue;
+      rs.sort((u2, v) => u2 - v);
+      const rL = quantileSorted(rs, 0.08);
+      const rR = quantileSorted(rs, 0.92);
+      const width = rR - rL;
+      if (si >= 2 && width > maxBackWidth) maxBackWidth = width;
+      if (rL < rFrontMid - 6 && rR > rFrontMid + 6 && width >= 22) {
+        let midCnt = 0;
+        const innerHalf = Math.max(4, width * 0.24);
+        const midEst = 0.5 * (rL + rR);
+        for (const r2 of rs) {
+          if (Math.abs(r2 - midEst) <= innerHalf) midCnt += 1;
+        }
+        const hollow = si >= 3 ? 1 - midCnt / rs.length : 0.5;
+        const w = 1 / (1 + si * 0.08);
+        bilateralSlices += 1;
+        midSumW += w;
+        midSumR += w * midEst;
+        biRows.push({ a: 0.5 * (sTop + sBot), mid: midEst, width, hollow, w });
+      }
+    }
+    if (bilateralSlices < 2) return null;
+    const rMid = midSumR / Math.max(midSumW, 1e-6);
+    let driftErr = 0;
+    let hollowSum = 0;
+    for (const row of biRows) {
+      driftErr += row.w * (row.mid - rMid) ** 2;
+      hollowSum += row.hollow;
+    }
+    const rmsMidDrift = Math.sqrt(driftErr / Math.max(midSumW, 1e-6));
+    const avgHollow = hollowSum / biRows.length;
+    const upperAntCnt = proj.filter(
+      (q) => q.isUpper && q.a >= aHi - 16 && Math.abs(q.r - rMid) <= 18
+    ).length;
+    const useUpperOnlyForMidline = upperAntCnt >= 14;
+    const dBins = [2, 4.5, 7, 9.5, 12, 15];
+    let symErrSq = 0;
+    let symWeight = 0;
+    let apexDropSum = 0;
+    let centerLabialA = -Infinity;
+    for (const q of proj) {
+      if (useUpperOnlyForMidline && !q.isUpper) continue;
+      if (Math.abs(q.r - rMid) <= 4.8 && q.a > centerLabialA) centerLabialA = q.a;
+    }
+    if (!Number.isFinite(centerLabialA)) centerLabialA = aHi;
+    for (const d2 of dBins) {
+      let maxPos = -Infinity;
+      let maxNeg = -Infinity;
+      for (const q of proj) {
+        if (useUpperOnlyForMidline && !q.isUpper) continue;
+        if (q.a < aHi - 22) continue;
+        const dr = q.r - rMid;
+        if (Math.abs(dr - d2) <= 1.6 && q.a > maxPos) maxPos = q.a;
+        if (Math.abs(dr + d2) <= 1.6 && q.a > maxNeg) maxNeg = q.a;
+      }
+      if (Number.isFinite(maxPos) && Number.isFinite(maxNeg)) {
+        const wd = d2 <= 7 ? 2.2 : 1.2;
+        symErrSq += wd * (maxPos - maxNeg) ** 2;
+        symWeight += wd;
+        if (d2 >= 9.5) {
+          apexDropSum += centerLabialA - 0.5 * (maxPos + maxNeg);
+        }
+      }
+    }
+    if (symWeight < 2) return null;
+    const symRms = Math.sqrt(symErrSq / symWeight);
+    let antBridgeCnt = 0;
+    for (const q of proj) {
+      if (q.a >= aHi - 7.5 && Math.abs(q.r - rMid) <= 5.8) antBridgeCnt += 1;
+    }
+    if (antBridgeCnt < 3) return null;
+    const taperGain = Math.max(-8, Math.min(24, maxBackWidth - frontSpan));
+    const score = taperGain * 1.15 + avgHollow * 16 + Math.min(12, Math.max(-4, apexDropSum * 0.9)) + Math.min(8, bilateralSlices * 1.1) - rmsMidDrift * 3.8 - symRms * 4.4 - Math.abs(rFrontMid - rMid) * 1.2;
+    return { theta, rMid, score, symRms, rmsMidDrift };
+  };
+  if (spanMinor >= 27) {
+    let best = null;
+    for (let k = 0; k < 60; k += 1) {
+      const res = evalHorseshoe(k * 6 * Math.PI / 180);
+      if (res && (!best || res.score > best.score)) best = res;
+    }
+    if (best) {
+      const seedTheta = best.theta;
+      for (let step = -12; step <= 12; step += 1) {
+        if (step === 0) continue;
+        const th = seedTheta + step * 0.5 * Math.PI / 180;
+        const res = evalHorseshoe(th);
+        if (res && res.score > best.score) best = res;
+      }
+      const ax = Math.cos(best.theta);
+      const ay = Math.sin(best.theta);
+      const rx = ay;
+      const ry = -ax;
+      const upperIncisal = samples.filter((s2) => s2.isUpper);
+      const pool = upperIncisal.length >= 20 ? upperIncisal : samples;
+      let aMaxInc = -Infinity;
+      for (const s2 of pool) {
+        const r2 = s2.x * rx + s2.y * ry;
+        const a2 = s2.x * ax + s2.y * ay;
+        if (Math.abs(r2 - best.rMid) <= 9.5 && a2 > aMaxInc) aMaxInc = a2;
+      }
+      let refinedMid = best.rMid;
+      let bestIncErr = Infinity;
+      for (let dr = -2.4; dr <= 2.401; dr += 0.2) {
+        const candMid = best.rMid + dr;
+        let err2 = dr * dr * 0.35;
+        let pairs = 0;
+        for (const d2 of [2.5, 4.5, 6.5, 9, 11.5]) {
+          let pHi = -Infinity;
+          let nHi = -Infinity;
+          for (const s2 of pool) {
+            const a2 = s2.x * ax + s2.y * ay;
+            if (a2 < aMaxInc - 14) continue;
+            const r2 = s2.x * rx + s2.y * ry - candMid;
+            if (Math.abs(r2 - d2) <= 1.25 && a2 > pHi) pHi = a2;
+            if (Math.abs(r2 + d2) <= 1.25 && a2 > nHi) nHi = a2;
+          }
+          if (Number.isFinite(pHi) && Number.isFinite(nHi)) {
+            err2 += (pHi - nHi) ** 2 * (d2 <= 6.5 ? 1.8 : 1);
+            pairs += 1;
+          }
+        }
+        if (pairs >= 3 && err2 < bestIncErr) {
+          bestIncErr = err2;
+          refinedMid = candMid;
+        }
+      }
+      const anterior2 = new Vector3().addScaledVector(e1, ax).addScaledVector(e2, ay).normalize();
+      return { anterior: anterior2, midlineOffsetRightMm: refinedMid };
+    }
+  }
+  const fullProj = [];
+  for (const p of fallbackPts) {
+    const dx = (p[0] - origin.x) * toMm;
+    const dy = (p[1] - origin.y) * toMm;
+    const dz = (p[2] - origin.z) * toMm;
+    const px = dx * e1.x + dy * e1.y + dz * e1.z;
+    const py = dx * e2.x + dy * e2.y + dz * e2.z;
+    fullProj.push({
+      m: px * majorDir[0] + py * majorDir[1],
+      n: px * minorDir[0] + py * minorDir[1]
+    });
+  }
+  const fullM = fullProj.map((q) => q.m).sort((a2, b2) => a2 - b2);
+  const fmLo = quantileSorted(fullM, 0.14);
+  const fmHi = quantileSorted(fullM, 0.86);
+  const fullEndWidth = (side) => {
+    const ns = [];
+    for (const q of fullProj) {
+      if (side === "lo" ? q.m > fmLo : q.m < fmHi) continue;
+      ns.push(q.n);
+    }
+    if (ns.length < 4) return spanMinor;
+    ns.sort((a2, b2) => a2 - b2);
+    return quantileSorted(ns, 0.92) - quantileSorted(ns, 0.08);
+  };
+  const wLo = fullEndWidth("lo");
+  const wHi = fullEndWidth("hi");
+  const signMajor = wHi <= wLo ? 1 : -1;
+  const ant2 = [majorDir[0] * signMajor, majorDir[1] * signMajor];
+  const anterior = new Vector3().addScaledVector(e1, ant2[0]).addScaledVector(e2, ant2[1]).normalize();
+  return { anterior, midlineOffsetRightMm: 0 };
+}
 function estimateDentalFrame(loaded) {
   const upperPts = [];
   const lowerPts = [];
@@ -15324,7 +15776,7 @@ function estimateDentalFrame(loaded) {
   let singleMesh = null;
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
-    const pts = samplePositions(entry.geometry, 2500);
+    const pts = samplePositions(entry.geometry, 5e3);
     archPts.push(...pts);
     if (entry.role === "upper") {
       upperPts.push(...pts);
@@ -15337,7 +15789,7 @@ function estimateDentalFrame(loaded) {
   if (archPts.length < 30) {
     for (const entry of loaded) {
       if (entry.role === "bite") continue;
-      const pts = samplePositions(entry.geometry, 2500);
+      const pts = samplePositions(entry.geometry, 5e3);
       archPts.push(...pts);
       singleMesh = entry;
     }
@@ -15348,93 +15800,145 @@ function estimateDentalFrame(loaded) {
   const mean = meanVec(archPts);
   const both = upperPts.length >= 30 && lowerPts.length >= 30;
   const toMm = spanUnitsToMm(archPts, mean);
+  const orientUpPolarity = (dir) => {
+    if (both && upperC && lowerC) {
+      const uProj = upperPts.map((p) => p[0] * dir.x + p[1] * dir.y + p[2] * dir.z).sort((a2, b2) => a2 - b2);
+      const lProj = lowerPts.map((p) => p[0] * dir.x + p[1] * dir.y + p[2] * dir.z).sort((a2, b2) => a2 - b2);
+      const medDiffMm = (quantileSorted(uProj, 0.5) - quantileSorted(lProj, 0.5)) * toMm;
+      if (Math.abs(medDiffMm) >= 1.5) {
+        if (medDiffMm < 0) dir.negate();
+        return dir.normalize();
+      }
+      const cu = upperMesh ? crownDirection(upperMesh) : null;
+      const cl = lowerMesh ? crownDirection(lowerMesh) : null;
+      const vote = new Vector3();
+      if (cu) vote.sub(cu);
+      if (cl) vote.add(cl);
+      if (vote.lengthSq() > 1e-6 && dir.dot(vote) < 0) dir.negate();
+      return dir.normalize();
+    }
+    const single = upperMesh ?? lowerMesh ?? singleMesh;
+    const crown = single ? crownDirection(single) : null;
+    if (crown) {
+      const expectedUp = upperMesh && !lowerMesh ? crown.clone().negate() : crown;
+      if (dir.dot(expectedUp) < 0) dir.negate();
+    }
+    return dir.normalize();
+  };
   let up = new Vector3();
   if (both && upperC && lowerC) {
-    const delta = upperC.clone().sub(lowerC);
-    if (delta.length() * toMm >= 3) up.copy(delta);
+    const nu = smallestPcaAxis(upperPts, upperC);
+    const nl = smallestPcaAxis(lowerPts, lowerC);
+    if (nl.dot(nu) < 0) nl.negate();
+    up.copy(nu).add(nl);
   }
-  if (up.lengthSq() < 1e-4) {
+  if (up.lengthSq() < 1e-6) {
     up = smallestPcaAxis(archPts, mean);
-    if (both && upperC && lowerC && upperC.distanceToSquared(lowerC) > 1e-8) {
-      if (up.dot(upperC.clone().sub(lowerC)) < 0) up.negate();
+  }
+  if (up.lengthSq() < 1e-8) return null;
+  orientUpPolarity(up);
+  let upperGrid = null;
+  let lowerGrid = null;
+  let singleGrid = null;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const { e1: e12, e2: e22 } = planeBasis(up);
+    if (both) {
+      upperGrid = extractJawCrownCells(upperPts, mean, up, e12, e22, toMm, -1);
+      lowerGrid = extractJawCrownCells(lowerPts, mean, up, e12, e22, toMm, 1);
+      const pairRows = [];
+      for (const lc of lowerGrid.crownCells) {
+        let bestU = null;
+        let bestGap = Infinity;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            const uc = upperGrid.allMap.get(`${lc.gx + dx},${lc.gy + dy}`);
+            if (!uc) continue;
+            const gap = uc.zUpMm - lc.zUpMm;
+            if (gap < bestGap) {
+              bestGap = gap;
+              bestU = uc;
+            }
+          }
+        }
+        if (bestU && bestGap >= -3 && bestGap <= 9.5) {
+          pairRows.push({
+            gapMm: bestGap,
+            mid: [
+              (bestU.pt[0] + lc.pt[0]) * 0.5,
+              (bestU.pt[1] + lc.pt[1]) * 0.5,
+              (bestU.pt[2] + lc.pt[2]) * 0.5
+            ]
+          });
+        }
+      }
+      const fitU = fitRobustPlaneNormal(
+        upperGrid.peakCells.map((c2) => c2.pt),
+        up,
+        1.8 / toMm
+      );
+      const fitL = fitRobustPlaneNormal(
+        lowerGrid.peakCells.map((c2) => c2.pt),
+        up,
+        1.8 / toMm
+      );
+      const crownNormal = new Vector3();
+      if (fitU) crownNormal.add(fitU.normal);
+      if (fitL) crownNormal.add(fitL.normal);
+      if (crownNormal.lengthSq() < 1e-6) crownNormal.copy(up);
+      else crownNormal.normalize();
+      let nextUp = crownNormal;
+      if (pairRows.length >= 16) {
+        const sortedGaps = pairRows.map((r2) => r2.gapMm).sort((a2, b2) => a2 - b2);
+        const g10 = quantileSorted(sortedGaps, 0.1);
+        if (g10 <= 6) {
+          const maxContactGap = Math.max(2.6, g10 + 2.8);
+          const contactPts = pairRows.filter((r2) => r2.gapMm <= maxContactGap).map((r2) => r2.mid);
+          const fitContact = fitRobustPlaneNormal(contactPts, up, 1.4 / toMm);
+          if (fitContact) {
+            const minorMm2 = fitContact.eigMinor * toMm * toMm;
+            const wContact = Math.max(0, Math.min(1, (minorMm2 - 3.5) / 14));
+            nextUp = crownNormal.clone().multiplyScalar(1 - wContact).addScaledVector(fitContact.normal, wContact).normalize();
+          }
+        }
+      }
+      up = orientUpPolarity(nextUp);
     } else {
-      const single = upperMesh ?? lowerMesh ?? singleMesh;
-      const crown = single ? crownDirection(single) : null;
-      if (crown) {
-        const expectedUp = upperMesh && !lowerMesh ? crown.clone().negate() : crown;
-        if (up.dot(expectedUp) < 0) up.negate();
+      const occSign = upperMesh && !lowerMesh ? -1 : 1;
+      singleGrid = extractJawCrownCells(archPts, mean, up, e12, e22, toMm, occSign);
+      const fitSingle = fitRobustPlaneNormal(
+        singleGrid.peakCells.map((c2) => c2.pt),
+        up,
+        1.7 / toMm
+      );
+      if (fitSingle && fitSingle.eigMinor * toMm * toMm >= 6) {
+        up = orientUpPolarity(fitSingle.normal);
       }
     }
   }
-  if (up.lengthSq() < 1e-8) return null;
-  up.normalize();
-  const anterior = anteriorAxis(archPts, mean, up);
+  const { e1, e2 } = planeBasis(up);
+  if (both) {
+    upperGrid = extractJawCrownCells(upperPts, mean, up, e1, e2, toMm, -1);
+    lowerGrid = extractJawCrownCells(lowerPts, mean, up, e1, e2, toMm, 1);
+  } else {
+    const occSign = upperMesh && !lowerMesh ? -1 : 1;
+    singleGrid = extractJawCrownCells(archPts, mean, up, e1, e2, toMm, occSign);
+  }
+  const { anterior } = findMidlineAnteriorAxis(
+    upperGrid?.crownCells ?? (upperMesh && !lowerMesh ? singleGrid?.crownCells ?? [] : []),
+    lowerGrid?.crownCells ?? (!upperMesh && singleGrid ? singleGrid.crownCells : []),
+    archPts,
+    mean,
+    up,
+    e1,
+    e2,
+    toMm
+  );
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-8) return null;
+  anterior.normalize();
   const right = new Vector3().crossVectors(anterior, up).normalize();
   if (right.lengthSq() < 1e-8) return null;
   return { up, anterior, right };
-}
-function anteriorAxis(archPts, mean, up) {
-  const tangent = Math.abs(up.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
-  const axisA = new Vector3().crossVectors(up, tangent).normalize();
-  const axisB = new Vector3().crossVectors(up, axisA).normalize();
-  let cxx = 0;
-  let cxy = 0;
-  let cyy = 0;
-  const proj = [];
-  for (const p of archPts) {
-    const dx = p[0] - mean.x;
-    const dy = p[1] - mean.y;
-    const dz = p[2] - mean.z;
-    const a2 = dx * axisA.x + dy * axisA.y + dz * axisA.z;
-    const b2 = dx * axisB.x + dy * axisB.y + dz * axisB.z;
-    proj.push({ a: a2, b: b2 });
-    cxx += a2 * a2;
-    cxy += a2 * b2;
-    cyy += b2 * b2;
-  }
-  const theta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
-  const ct = Math.cos(theta);
-  const st = Math.sin(theta);
-  const lAlong = cxx * ct * ct + 2 * cxy * ct * st + cyy * st * st;
-  const lAcross = cxx * st * st - 2 * cxy * ct * st + cyy * ct * ct;
-  let major = new Vector2(ct, st);
-  let minor = new Vector2(-st, ct);
-  if (lAcross > lAlong) {
-    major = new Vector2(-st, ct);
-    minor = new Vector2(ct, st);
-  }
-  const evalAxis = (axisVec, perpVec) => {
-    const scores = proj.map((p) => p.a * axisVec.x + p.b * axisVec.y);
-    const sorted = [...scores].sort((a2, b2) => a2 - b2);
-    const loCut = sorted[Math.floor(sorted.length * 0.1)] ?? sorted[0] ?? 0;
-    const hiCut = sorted[Math.floor(sorted.length * 0.9)] ?? sorted[sorted.length - 1] ?? 0;
-    const spread = (side) => {
-      let n2 = 0;
-      let sum = 0;
-      let sum2 = 0;
-      for (let i = 0; i < proj.length; i += 1) {
-        const score = scores[i] ?? 0;
-        if (side === "lo" ? score > loCut : score < hiCut) continue;
-        const perpScore = (proj[i]?.a ?? 0) * perpVec.x + (proj[i]?.b ?? 0) * perpVec.y;
-        sum += perpScore;
-        sum2 += perpScore * perpScore;
-        n2 += 1;
-      }
-      if (n2 < 2) return 0;
-      const avg = sum / n2;
-      return sum2 / n2 - avg * avg;
-    };
-    const loSpread = spread("lo");
-    const hiSpread = spread("hi");
-    return { loSpread, hiSpread, contrast: Math.abs(hiSpread - loSpread) };
-  };
-  const minorRes = evalAxis(minor, major);
-  const majorRes = evalAxis(major, minor);
-  const useMinor = minorRes.contrast >= majorRes.contrast;
-  const chosenRes = useMinor ? minorRes : majorRes;
-  const chosenAxis = useMinor ? minor : major;
-  const chosenAxis3 = new Vector3().addScaledVector(axisA, chosenAxis.x).addScaledVector(axisB, chosenAxis.y).normalize();
-  return chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
 }
 function archPlanAxes(points) {
   if (points.length < 30) return null;
@@ -15442,55 +15946,11 @@ function archPlanAxes(points) {
   const up = smallestPcaAxis(points, mean);
   if (up.lengthSq() < 1e-8) return null;
   up.normalize();
-  return { up, anterior: anteriorAxis(points, mean, up), center: mean };
-}
-function smallestPcaAxis(points, mean) {
-  let xx = 0;
-  let yy = 0;
-  let zz = 0;
-  let xy = 0;
-  let xz = 0;
-  let yz = 0;
-  for (const p of points) {
-    const x = p[0] - mean.x;
-    const y = p[1] - mean.y;
-    const z = p[2] - mean.z;
-    xx += x * x;
-    yy += y * y;
-    zz += z * z;
-    xy += x * y;
-    xz += x * z;
-    yz += y * z;
-  }
-  const axes = [
-    new Vector3(1, 0, 0),
-    new Vector3(0, 1, 0),
-    new Vector3(0, 0, 1)
-  ];
-  const vars = [xx, yy, zz];
-  let best = 0;
-  if ((vars[1] ?? 0) < (vars[best] ?? 0)) best = 1;
-  if ((vars[2] ?? 0) < (vars[best] ?? 0)) best = 2;
-  const axis = axes[best] ?? new Vector3(0, 0, 1);
-  if (xy * xy + xz * xz + yz * yz > 1) {
-    const candidates = [
-      new Vector3(yy + zz, -xy, -xz),
-      new Vector3(-xy, xx + zz, -yz),
-      new Vector3(-xz, -yz, xx + yy)
-    ];
-    let pick = candidates[0];
-    let score = Infinity;
-    for (const c2 of candidates) {
-      if (c2.lengthSq() < 1e-8) continue;
-      const v = xx * c2.x * c2.x + yy * c2.y * c2.y + zz * c2.z * c2.z + 2 * xy * c2.x * c2.y + 2 * xz * c2.x * c2.z + 2 * yz * c2.y * c2.z;
-      if (v < score) {
-        score = v;
-        pick = c2;
-      }
-    }
-    if (pick.lengthSq() > 1e-8) return pick.normalize();
-  }
-  return axis;
+  const toMm = spanUnitsToMm(points, mean);
+  const { e1, e2 } = planeBasis(up);
+  const grid = extractJawCrownCells(points, mean, up, e1, e2, toMm, 1);
+  const { anterior } = findMidlineAnteriorAxis([], grid.crownCells, points, mean, up, e1, e2, toMm);
+  return { up, anterior, center: mean };
 }
 function reseatOcclusalOrigin(loaded, frame) {
   const upperPts = [];
@@ -15498,27 +15958,48 @@ function reseatOcclusalOrigin(loaded, frame) {
   const archPts = [];
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
-    const pts = samplePositions(entry.geometry, 1800);
+    const pts = samplePositions(entry.geometry, 2500);
     archPts.push(...pts);
     if (entry.role === "upper") upperPts.push(...pts);
     else lowerPts.push(...pts);
   }
   const mean = meanVec(archPts);
   if (!mean) return;
-  const upperC = meanVec(upperPts);
-  const lowerC = meanVec(lowerPts);
-  const mid = upperC && lowerC ? upperC.clone().add(lowerC).multiplyScalar(0.5) : mean;
   const up = frame.up.clone().normalize();
-  const shift = (mean.x - mid.x) * up.x + (mean.y - mid.y) * up.y + (mean.z - mid.z) * up.z;
-  const origin = new Vector3(
-    mean.x - up.x * shift,
-    mean.y - up.y * shift,
-    mean.z - up.z * shift
-  );
   const { right, anterior } = frame;
   if (Math.abs(right.dot(anterior)) > 0.02 || Math.abs(right.dot(up)) > 0.02 || Math.abs(anterior.dot(up)) > 0.02 || Math.abs(right.length() - 1) > 0.02 || Math.abs(anterior.length() - 1) > 0.02 || Math.abs(up.length() - 1) > 0.02) {
     return;
   }
+  const toMm = spanUnitsToMm(archPts, mean);
+  const { e1, e2 } = planeBasis(up);
+  let occLevel = mean.dot(up);
+  let midlineRight = mean.dot(right);
+  if (upperPts.length >= 30 && lowerPts.length >= 30) {
+    const uGrid = extractJawCrownCells(upperPts, mean, up, e1, e2, toMm, -1);
+    const lGrid = extractJawCrownCells(lowerPts, mean, up, e1, e2, toMm, 1);
+    const uOccZ = uGrid.crownCells.map((c2) => c2.zUpMm / toMm).sort((a2, b2) => a2 - b2);
+    const lOccZ = lGrid.crownCells.map((c2) => c2.zUpMm / toMm).sort((a2, b2) => a2 - b2);
+    if (uOccZ.length >= 6 && lOccZ.length >= 6) {
+      const uLow = quantileSorted(uOccZ, 0.12);
+      const lHigh = quantileSorted(lOccZ, 0.88);
+      occLevel = mean.dot(up) + 0.5 * (uLow + lHigh);
+    }
+    const midInfo = findMidlineAnteriorAxis(
+      uGrid.crownCells,
+      lGrid.crownCells,
+      archPts,
+      mean,
+      up,
+      e1,
+      e2,
+      toMm
+    );
+    const midWorld = mean.clone().addScaledVector(anterior.clone().cross(up).normalize(), midInfo.midlineOffsetRightMm / toMm);
+    if (Math.abs(midInfo.midlineOffsetRightMm) > 0.01 && Math.abs(midInfo.midlineOffsetRightMm) < 25) {
+      midlineRight = midWorld.dot(right);
+    }
+  }
+  const origin = new Vector3().addScaledVector(right, midlineRight).addScaledVector(anterior, mean.dot(anterior)).addScaledVector(up, occLevel);
   const matrix = new Matrix4().set(
     right.x,
     right.y,

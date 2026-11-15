@@ -26,7 +26,7 @@ const FACES: Array<{ face: ViewCubeFace; label: string; transform: string }> = [
   { face: "back", label: "후면", transform: "rotateY(180deg) translateZ(var(--cube-half))" },
   { face: "left", label: "좌", transform: "rotateY(90deg) translateZ(var(--cube-half))" },
   { face: "right", label: "우", transform: "rotateY(-90deg) translateZ(var(--cube-half))" },
-  { face: "top", label: "상", transform: "rotateX(90deg) translateZ(var(--cube-half))" },
+  { face: "top", label: "상", transform: "rotateX(90deg) rotateZ(180deg) translateZ(var(--cube-half))" },
   { face: "bottom", label: "하", transform: "rotateX(-90deg) translateZ(var(--cube-half))" },
 ];
 

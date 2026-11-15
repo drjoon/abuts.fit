@@ -558,7 +558,7 @@ function angleAbsDiff(a: number, b: number) {
   return Math.abs(d);
 }
 
-/** 악궁 자체의 최소분산(PCA) 교합면 법선과 전치·우측 축을 구한다(악궁이 기울어 있어도 치열 평면을 정확히 잡는다). */
+/** 스캔 전체에서 잡은 교합평면·미드라인(frame)을 우선 쓰되, 악궁이 따로 기울어 있으면 자체 PCA 법선으로 보완한다. */
 function computeJawOcclusalAxes(
   pts: Array<[number, number, number]>,
   frame: DentalFrame,
@@ -586,12 +586,15 @@ function computeJawOcclusalAxes(
   let minIdx = 0;
   if (eig.values[1]! < eig.values[minIdx]!) minIdx = 1;
   if (eig.values[2]! < eig.values[minIdx]!) minIdx = 2;
-  let occ = norm(eig.vec(minIdx));
-  const wantOcc: Vec3 =
+  let occPca = norm(eig.vec(minIdx));
+  const wantOcc: Vec3 = norm(
     jaw === "upper"
       ? [-frame.up.x, -frame.up.y, -frame.up.z]
-      : [frame.up.x, frame.up.y, frame.up.z];
-  if (dot(occ, wantOcc) < 0) occ = scale(occ, -1);
+      : [frame.up.x, frame.up.y, frame.up.z],
+  );
+  if (dot(occPca, wantOcc) < 0) occPca = scale(occPca, -1);
+  // frame이 전체 상·하악 교합평면으로 잘 잡혀 있으면(PCA와 32° 이내) 교합평면 법선을 그대로 따른다.
+  const occ = dot(occPca, wantOcc) >= Math.cos((32 * Math.PI) / 180) ? wantOcc : occPca;
 
   const rawRight: Vec3 = [frame.right.x, frame.right.y, frame.right.z];
   const archRight = norm(sub(rawRight, scale(occ, dot(rawRight, occ))));
@@ -766,7 +769,17 @@ function refineMatchedFixtureDirections(
     }
   }
 
-  const near = peaks.filter((p) => p.r <= (ownFdi && ownFdi.pos >= 6 ? 15.5 : 18));
+  const mesialHint = norm(scale(cross(cranialUp, outwardRef), side));
+  const isWisdom = ownFdi?.pos === 8;
+  const maxPeakRadius = ownFdi && ownFdi.pos >= 7 ? 24 : ownFdi && ownFdi.pos === 6 ? 18 : 19;
+  const near = peaks.filter((p) => {
+    if (p.r > maxPeakRadius) return false;
+    const pVec = add(scale(e1, p.x), scale(e2, p.y));
+    const alongMes = dot(pVec, mesialHint);
+    // 사랑니(#18·#28·#38·#48) 원심 뒤쪽은 치아가 아니라 후구치 삼각 융기·상악결절 점막이므로 배제한다.
+    if (isWisdom && alongMes < -2.0) return false;
+    return true;
+  });
   let perp = outwardRef;
   if (near.length > 0 || nbAnchors.length > 0) {
     let sw = 1.5;
@@ -812,9 +825,10 @@ function refineMatchedFixtureDirections(
   // 협측 교두나 설측 교두 중 한쪽 봉우리만 잡혀 접선이 10~15° 돌아가는 현상을 막기 위해,
   // 초기 접선(t0) 방향 구간마다 교합면 상단 띠의 협설 양끝 중앙(= central groove 연결선)을 추적해 보정한다.
   const t0 = norm(scale(cross(cranialUp, perp), side));
-  const maxStationMm = ownFdi && ownFdi.pos >= 6 ? 14.5 : 16.0;
+  const minStationMm = isWisdom ? 3.6 : -(ownFdi && ownFdi.pos >= 6 ? 14.5 : 16.0);
+  const maxStationMm = ownFdi && ownFdi.pos >= 7 ? 24.0 : ownFdi && ownFdi.pos === 6 ? 16.5 : 16.0;
   const binMm = 2.4;
-  const binCount = Math.floor((maxStationMm * 2) / binMm) + 1;
+  const binCount = Math.max(1, Math.ceil((maxStationMm - minStationMm) / binMm));
   const bins: Array<Array<{ u: number; z: number }>> = Array.from({ length: binCount }, () => []);
   for (const p of pts) {
     if (isOnAnyScanbody(p)) continue;
@@ -823,8 +837,8 @@ function refineMatchedFixtureDirections(
     if (z < baseOcc + 2.0 || z > baseOcc + 13.0) continue;
     const s = dot(rel, t0);
     const u = dot(rel, perp);
-    if (Math.abs(s) < 3.6 || Math.abs(s) > maxStationMm || Math.abs(u) > 6.5) continue;
-    const bi = Math.min(binCount - 1, Math.max(0, Math.floor((s + maxStationMm) / binMm)));
+    if (Math.abs(s) < 3.6 || s < minStationMm || s > maxStationMm || Math.abs(u) > 7.5) continue;
+    const bi = Math.min(binCount - 1, Math.max(0, Math.floor((s - minStationMm) / binMm)));
     bins[bi]!.push({ u, z });
   }
   const groovePts: Array<{ s: number; u: number; w: number }> = [];
@@ -833,7 +847,7 @@ function refineMatchedFixtureDirections(
     if (list.length < 10) continue;
     const zs = list.map((q) => q.z).sort((a, b) => a - b);
     const zTop = zs[Math.floor(zs.length * 0.92)]!;
-    if (zTop < baseOcc + 3.0) continue;
+    if (zTop < baseOcc + 2.6) continue;
     const occBand = list
       .filter((q) => q.z >= zTop - 2.3)
       .map((q) => q.u)
@@ -841,8 +855,8 @@ function refineMatchedFixtureDirections(
     if (occBand.length < 6) continue;
     const uLo = occBand[Math.floor(occBand.length * 0.14)]!;
     const uHi = occBand[Math.floor(occBand.length * 0.86)]!;
-    if (uHi - uLo < 2.2 || uHi - uLo > 12.0) continue;
-    const sMid = -maxStationMm + (bi + 0.5) * binMm;
+    if (uHi - uLo < 2.2 || uHi - uLo > 12.5) continue;
+    const sMid = minStationMm + (bi + 0.5) * binMm;
     groovePts.push({
       s: sMid,
       u: (uLo + uHi) * 0.5,
