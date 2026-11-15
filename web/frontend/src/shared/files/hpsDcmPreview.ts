@@ -2,7 +2,10 @@
 // - 2026-10-03: TRIOS CE 상악 UV 마지막 정점 flag 불일치 시 스트림 길이로 복구 — 텍스처 베이크 실패→검은 VertexColorSet 폴백 수정.
 // - 2026-09-17: VertexColorSet도 R/B 스왑 — BiteScan(텍스처 없음)이 보라색이던 문제.
 // - 2026-09-17: 텍스처 베이크 시 R/B 스왑(hpsdecode와 동일) — DCM 치은이 보라색으로 보이던 문제.
-// - 2026-09-14: CE Blowfish PADDING.NONE — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
+// - 2026-11-15: CE Blowfish는 egoroof에 NONE이 없어 PKCS5로 떨어지던 버그 수정 — 마지막 평문 바이트가 1..8이면
+//   잘못 잘려 Adler 실패(이지선 BiteScan). _decodeECB로 무패딩 복호화.
+// - 2026-09-14: CE Blowfish PADDING.NONE 시도 — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
+//   (실제로는 NONE 미지원이라 PKCS5였음. 2026-11-15에 raw ECB로 정리.)
 // - 2026-09-10: TextureData2·VertexColorSet·Facets tint → 버텍스 칼라(베이크). PLY export용 mesh 데이터.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) → Three.BufferGeometry 클라이언트 파서 (CA/CC/CE).
 // related files:
@@ -139,9 +142,11 @@ function buildCeKey(
 }
 
 /**
- * CE Blowfish ECB. Must use PADDING.NONE: NULL strips trailing 0-pad before the
- * 8-byte endian swap, which corrupts the last floats when plaintext length % 8 ≠ 0
- * (common on BiteScan vertex buffers). Caller truncates via truncateSize.
+ * CE Blowfish ECB (무패딩).
+ * egoroof-blowfish에는 PADDING.NONE이 없다. undefined를 넘기면 생성자 기본값 PKCS5가 되고,
+ * 복호화 평문 마지막 바이트가 1..8이면 그 길이만큼 잘라 버린다(Adler 실패·끝 정점 손실).
+ * NULL은 Trailing 0을 endian swap 전에 제거해 BiteScan(길이 % 8 ≠ 0)을 깨뜨린다.
+ * → `_decodeECB`로 블록만 풀고, 길이는 truncateSize로 자른다.
  */
 function decryptCeBuffer(
   encrypted: Uint8Array,
@@ -157,8 +162,11 @@ function decryptCeBuffer(
   }
 
   swapEndiannessInPlace(data);
-  const bf = new Blowfish(key, Blowfish.MODE.ECB, Blowfish.PADDING.NONE);
-  const decrypted = bf.decode(data, Blowfish.TYPE.UINT8_ARRAY);
+  const bf = new Blowfish(key, Blowfish.MODE.ECB, Blowfish.PADDING.PKCS5);
+  // 공개 decode()는 항상 unpad한다. ECB 블록 복호화만 쓴다.
+  const decrypted = (
+    bf as Blowfish & { _decodeECB: (buf: Uint8Array) => Uint8Array }
+  )._decodeECB(data);
   swapEndiannessInPlace(decrypted);
   if (truncateSize > 0 && decrypted.length > truncateSize) {
     return decrypted.subarray(0, truncateSize);

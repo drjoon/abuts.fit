@@ -14056,8 +14056,8 @@ function decryptCeBuffer(encrypted, key, truncateSize) {
     data = new Uint8Array(encrypted);
   }
   swapEndiannessInPlace(data);
-  const bf = new l(key, l.MODE.ECB, l.PADDING.NONE);
-  const decrypted = bf.decode(data, l.TYPE.UINT8_ARRAY);
+  const bf = new l(key, l.MODE.ECB, l.PADDING.PKCS5);
+  const decrypted = bf._decodeECB(data);
   swapEndiannessInPlace(decrypted);
   if (truncateSize > 0 && decrypted.length > truncateSize) {
     return decrypted.subarray(0, truncateSize);
