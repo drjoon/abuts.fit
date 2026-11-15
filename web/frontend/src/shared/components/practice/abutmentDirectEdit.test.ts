@@ -11,6 +11,7 @@ import {
 
 const zone = {
   coneZ: 1,
+  fixedZ: 1.6,
   marginZ: 3,
   screwR: 0.5,
   span: 8,
@@ -32,8 +33,26 @@ function one(src: number[], value: AbutmentEdit) {
 const connection = one([1, 0, 0.2], edit({ scale: [1.1, 1.1, 1.1], heightMm: 1 }));
 assert.ok(Math.abs(connection[0]! - 1) < 1e-6 && Math.abs(connection[2]! - 0.2) < 1e-6, "커넥션은 그대로");
 
-const screw = one([0.3, 0, 6], edit({ scale: [1.1, 1.1, 1] }));
-assert.ok(Math.abs(screw[0]! - 0.3) < 1e-6, "스크류 홀은 그대로");
+const taper = one([1.2, 0, 1.3], edit({ scale: [1.1, 1.1, 1.1], shiftLabialMm: 1, heightMm: 1 }));
+assert.ok(Math.abs(taper[0]! - 1.2) < 1e-6 && Math.abs(taper[2]! - 1.3) < 1e-6, "2° 테이퍼는 그대로");
+
+function many(src: number[], value: AbutmentEdit) {
+  const proposal = new Float32Array(src);
+  const out = new Float32Array(src.length);
+  refitLocalPositions(proposal, value, zone, out);
+  return out;
+}
+
+const hole = many(
+  [0.3, 0, 3.2, 0.3, 0, 7.6, 2.4, 0, 7.6],
+  edit({ heightMm: 1, shiftLabialMm: 0.8 }),
+);
+assert.ok(Math.abs(hole[0]! - 0.3) < 1e-6 && Math.abs(hole[2]! - 3.2) < 1e-6, "스크류 벽은 그대로");
+assert.ok(Math.abs(hole[3]! - 0.3) < 1e-6 && Math.abs(hole[5]! - 8.6) < 1e-3, "스크류 입구는 높이만");
+assert.ok(hole[6]! > 2.8 && Math.abs(hole[8]! - 8.6) < 1e-3, "포스트 윗면은 화살표 방향");
+
+const wall = one([0.9, 0, 6], edit({ shiftLabialMm: -0.5 }));
+assert.ok(Math.abs(wall[0]! - 0.58) < 1e-3, "스크류 벽 두께를 넘지 않음");
 
 const linear = one([2, 1, 6], edit({ scale: [1.1, 1, 1] }));
 assert.ok(Math.abs(linear[0]! - 2.2) < 1e-4, "선형은 순측만");
@@ -45,7 +64,7 @@ assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4
 const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
 assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
 
-const tiltDeg = (Math.atan2(1, 5) * 180) / Math.PI;
+const tiltDeg = (Math.atan2(1, 6 - zone.fixedZ) * 180) / Math.PI;
 const tilted = one([2, 0, 6], edit({ tiltLabialDeg: tiltDeg }));
 assert.ok(Math.abs(tilted[0]! - 3) < 1e-3 && Math.abs(tilted[2]! - 6) < 1e-4, "기울이면 윗면이 순측으로");
 const tiltConnection = one([1, 0, 0.2], edit({ tiltLabialDeg: tiltDeg }));

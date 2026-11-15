@@ -1,7 +1,7 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
 // 1) 피니시라인 = 둘레 치은연 아래 marginDepth(기본 0.5mm), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
-// 2) 삽입축 = 대합치 중심 방향(없으면 악궁 교합 방향). 치종별 상한, 한쪽으로 쏠리면 줄인다.
+// 2) 삽입축 = 인접 자연치·인접 어벗 장축에 평행(브리지는 더 정확히). 없으면 대합·악궁 방향.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
@@ -1056,6 +1056,71 @@ function adjacentLabialLimit(
  *   (양옆 치관의 대칭 풍융부 벌어짐이 상쇄되어 순수 인접치 근원심 치축 기울기만 남는다).
  * - 한쪽 인접치만 있으면 치경부 돌출 위(h ≥ 3.2mm)의 인접벽·치관 중체 기울기와 오버행 경사를 함께 본다.
  */
+function trimmedBandMean(samples: Array<{ u: number; v: number; h: number }>) {
+  if (samples.length < 12) return null;
+  const mid = (pick: (row: { u: number; v: number; h: number }) => number) => {
+    const sorted = samples.map(pick).sort((a, b) => a - b);
+    const lo = Math.floor(sorted.length * 0.2);
+    const hi = Math.max(lo + 1, Math.ceil(sorted.length * 0.8));
+    let sum = 0;
+    for (let i = lo; i < hi; i += 1) sum += sorted[i]!;
+    return sum / (hi - lo);
+  };
+  return { u: mid((row) => row.u), v: mid((row) => row.v), h: mid((row) => row.h) };
+}
+
+/**
+ * 인접 자연치 또는 스캔된 인접 어벗의 장축(치관 아래쪽 중심 → 위쪽 중심).
+ * 근심·원심이 있으면 둘 다 반환한다. 방향은 교합(+Z) 쪽이다.
+ */
+function estimateAdjacentLongAxes(
+  pts: Float32Array,
+  o: {
+    wOcc: Vec3;
+    labXY: Vec3;
+    mesXY: Vec3;
+    ownRadius: number;
+    ownHeight: number;
+    skipDistal: boolean;
+  },
+): Vec3[] {
+  const axes: Vec3[] = [];
+  for (const sign of [1, -1] as const) {
+    if (sign < 0 && o.skipDistal) continue;
+    const samples: Array<{ u: number; v: number; h: number }> = [];
+    for (let i = 0; i < pts.length; i += 3) {
+      const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+      if (Math.hypot(p[0], p[1]) < o.ownRadius + 0.55 && p[2] > -0.4 && p[2] < o.ownHeight + 0.9) continue;
+      const h = dot3(p, o.wOcc);
+      if (h < 1.2 || h > 12.5) continue;
+      const u = dot3(p, o.labXY);
+      const v = dot3(p, o.mesXY) * sign;
+      if (v < o.ownRadius + 1.35 || v > 8.2) continue;
+      if (Math.abs(u) > 5.4) continue;
+      samples.push({ u, v, h });
+    }
+    if (samples.length < 40) continue;
+    const hs = samples.map((row) => row.h).sort((a, b) => a - b);
+    const hLo = hs[Math.floor(hs.length * 0.12)]!;
+    const hHi = hs[Math.floor(hs.length * 0.88)]!;
+    const span = hHi - hLo;
+    if (span < 2) continue;
+    const band = span * 0.28;
+    const low = trimmedBandMean(samples.filter((row) => row.h >= hLo && row.h <= hLo + band));
+    const high = trimmedBandMean(samples.filter((row) => row.h <= hHi && row.h >= hHi - band));
+    if (!low || !high) continue;
+    const du = high.u - low.u;
+    const dv = (high.v - low.v) * sign;
+    const dh = high.h - low.h;
+    if (dh < 1.5 || Math.hypot(du, dv) > dh * Math.tan(34 * DEG)) continue;
+    let axis = norm3(add3(add3(scale3(o.labXY, du), scale3(o.mesXY, dv)), scale3(o.wOcc, dh)));
+    if (axis[2] < 0) axis = scale3(axis, -1);
+    if (axis[2] < 0.35 || dot3(axis, o.wOcc) < 0.55) continue;
+    axes.push(axis);
+  }
+  return axes;
+}
+
 function adjacentProximalCorridor(
   pts: Float32Array,
   o: {
@@ -1525,7 +1590,12 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
     // 그룹 내 모든 픽스쳐 장축에서 브리지 최대 허용 각도(구치 14°, 전치 18°) 안에 들어오도록 공통 축 자체를 조정한다.
     // 개별 치아에서 따로 capTilt를 걸지 않아 모든 브리지 지대주의 포스트 각도가 0.00° 오차로 완전히 평행해진다.
     const anyAnterior = sortedGroup.some((f) => abutmentTemplateForTooth(f.toothNumber).anterior);
-    const maxGroupTilt = (anyAnterior ? 30 : 14) * DEG;
+    const bridgeGroup = sortedGroup.some((f) => {
+      const digits = parseFdiTooth(f.toothNumber)?.digits;
+      const work = (args.toothWorks ?? []).find((tw) => parseFdiTooth(tw.toothNumber)?.digits === digits);
+      return String(work?.prosthesisType || "").trim() === "브리지";
+    });
+    const maxGroupTilt = (anyAnterior ? 30 : bridgeGroup ? 24 : 14) * DEG;
     for (let iter = 0; iter < 8; iter += 1) {
       let moved = false;
       for (const f of sortedGroup) {
@@ -2664,6 +2734,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   let w: Vec3 = [0, 0, 1];
   let axisSource: CustomAbutmentDesignMetrics["axisSource"] = "arch";
+  let neighborLockRad: number | null = null;
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
 
   if (!posterior) {
@@ -2786,6 +2857,36 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     w = steerAxisForProximalClearance(w, Math.min(tiltCapRad, 8.0 * DEG));
   }
+  const neighborAxes = estimateAdjacentLongAxes(jawLocalPts, {
+    wOcc: occInFix,
+    labXY,
+    mesXY,
+    ownRadius: sbR,
+    ownHeight: sbH,
+    skipDistal: ownFdi?.pos === 8,
+  });
+  if (neighborAxes.length > 0) {
+    let target = neighborAxes[0]!;
+    if (neighborAxes.length > 1) {
+      target = norm3(neighborAxes.reduce((acc, axis) => add3(acc, axis), [0, 0, 0] as Vec3));
+      if (target[2] < 0) target = scale3(target, -1);
+    }
+    const spread =
+      neighborAxes.length > 1
+        ? Math.acos(clamp(Math.abs(dot3(neighborAxes[0]!, neighborAxes[1]!)), 0, 1))
+        : 0;
+    const bridgeTight =
+      String(ownWork?.prosthesisType || "").trim() === "브리지" ||
+      mesialAllowance.bridged ||
+      distalAllowance.bridged;
+    let weight = bridgeTight ? 0.98 : neighborAxes.length > 1 ? 0.92 : 0.88;
+    if (spread > 28 * DEG) weight = bridgeTight ? 0.9 : 0.75;
+    w = norm3(add3(scale3(w, 1 - weight), scale3(target, weight)));
+    if (w[2] < 0) w = scale3(w, -1);
+    neighborLockRad = Math.min(tiltCapRad, (bridgeTight ? (posterior ? 22 : 28) : posterior ? 14 : 22) * DEG);
+    w = capTilt(w, neighborLockRad);
+    axisSource = bridgeTight ? "parallel" : axisSource;
+  }
   if (mode.probeAxis) return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
   const hasManualAxisShift = params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0;
   if (mode.groupAxisWorld) {
@@ -2804,8 +2905,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 브리지·인접 평행 그룹(groupAxisWorld)은 이미 그룹 전체 각도 상한 안에서 공통 월드 축으로 맞췄으므로,
   // 치아마다 따로 capTilt·allowRatio로 꺾지 않아 모든 지대주 포스트가 완전히 같은 각도로 평행해진다.
   if (!mode.groupAxisWorld || hasManualAxisShift) {
-    w = capTilt(w, hasManualAxisShift ? tiltCapRad : effectiveTiltCapRad);
-    if (posterior) {
+    w = capTilt(w, hasManualAxisShift ? tiltCapRad : (neighborLockRad ?? effectiveTiltCapRad));
+    if (posterior && neighborLockRad == null) {
       const H = tpl.postHeightMm;
       const allowRatio = 0.42;
       const offX = (w[0] / w[2]) * H;

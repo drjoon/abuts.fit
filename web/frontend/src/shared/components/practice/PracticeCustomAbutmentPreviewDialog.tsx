@@ -3,8 +3,8 @@
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
-// 번호 뱃지의 검볼은 커넥션을 두고 커프·포스트만 허용 범위 안에서 다시 계산한다.
-// 축 상자는 한 방향, 노란 면은 평면, 흰 고리는 전체 크기다. 부위는 포스트만 키우거나 줄인다.
+// 번호 뱃지의 검볼은 포스트 중심에 두고 화면을 정면으로 본다.
+// 화살표는 이동, 상자는 그 방향 크기, 흰 고리는 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -28,7 +28,7 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Loader2, Redo2, RotateCcw, Settings, Sparkles, Undo2, X } from "lucide-react";
+import { Axis3d, Loader2, Redo2, RotateCcw, Settings, Sparkles, Undo2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -59,11 +59,13 @@ import {
   fileFromModelBlob,
   getModelExtLower,
   isScanColorPreview,
+  loadTextureFromFile,
   parseModelPreview,
   peekPlyHeaderInfo,
   resolveCompanionTextureFileName,
   SCAN_COLOR_PREVIEW_BACKGROUND,
 } from "@/shared/files/modelPreviewFile";
+import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMeshCache";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
@@ -396,6 +398,43 @@ function ToolbarToggle({
   );
 }
 
+function HeaderIconButton({
+  label,
+  tip,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  tip?: ReactNode;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant={active ? "default" : "outline"}
+          className="h-8 w-8 px-0"
+          disabled={disabled}
+          aria-label={label}
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="z-[520]">
+        {tip ?? label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 const USER_EDIT_PREF_PREFIX = "abuts.abutmentDirectPreference.v1.";
 
 function readUserEditPreference(userId: string): CustomAbutmentDesignPreference {
@@ -523,7 +562,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [showPredictedCrown, setShowPredictedCrown] = useState(false);
   const [showFixtureAnalog, setShowFixtureAnalog] = useState(true);
   const [showFinishLine, setShowFinishLine] = useState(true);
-  const [opposingTransparency, setOpposingTransparency] = useState(55);
+  const [scanTransparency, setScanTransparency] = useState(0);
   const [visibleJaws, setVisibleJaws] = useState<{ upper: boolean; lower: boolean }>({
     upper: true,
     lower: true,
@@ -548,8 +587,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [pivotSet, setPivotSet] = useState(false);
   const [pivotArmed, setPivotArmed] = useState(false);
   const [gumballOn, setGumballOn] = useState(true);
-  const [sculptOn, setSculptOn] = useState(false);
-  const [sculptRadiusMm, setSculptRadiusMm] = useState(2.4);
   const [editRev, setEditRev] = useState(0);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
@@ -1257,8 +1294,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const bridge = editBridgeRef.current;
   if (bridge) {
     bridge.ui.gumballOn = gumballOn;
-    bridge.ui.sculptOn = sculptOn;
-    bridge.ui.radiusMm = sculptRadiusMm;
+    bridge.ui.sculptOn = false;
     bridge.ui.readOnly = readOnly;
     bridge.ui.selected = selectedTooth;
     bridge.ui.visible = visibleTeeth;
@@ -1752,6 +1788,29 @@ export function PracticeCustomAbutmentPreviewDialog({
     let cancelled = false;
     const cacheKey = customAbutmentDesignCacheKey(pipelineKey);
 
+    const loadCompanionTexture = async (
+      fileName: string,
+      preferredTex: string | null,
+    ): Promise<THREE.Texture | null> => {
+      const ext = getModelExtLower(fileName);
+      if ((ext !== ".ply" && ext !== ".obj") || curScanSources.companions.length === 0) return null;
+      const texName = resolveCompanionTextureFileName(
+        fileName,
+        preferredTex,
+        curScanSources.companions.map((c) => c.fileName),
+      );
+      const hitComp = texName ? curScanSources.companions.find((c) => c.fileName === texName) : null;
+      if (!hitComp?.s3Key) return null;
+      const texBlob = await fetchS3BlobCached({
+        s3Key: hitComp.s3Key,
+        fileName: hitComp.fileName,
+        token,
+        buildUrl: buildS3ProxyDownloadUrl,
+        signal: abort.signal,
+      });
+      return loadTextureFromFile(fileFromImageBlob(texBlob, hitComp.fileName));
+    };
+
     const loadSingleScan = async (
       item: PracticeDesignPreviewFileItem,
       onProgress: (p: number) => void,
@@ -1764,6 +1823,25 @@ export function PracticeCustomAbutmentPreviewDialog({
       });
       if (role !== "upper" && role !== "lower" && role !== "bite") return null;
 
+      const cachedGeometry = await readCachedScanGeometry(s3Key);
+      if (cachedGeometry) {
+        onProgress(100);
+        let texture: THREE.Texture | null = null;
+        if (cachedGeometry.getAttribute("uv")) {
+          try {
+            texture = await loadCompanionTexture(item.fileName, null);
+          } catch {
+            texture = null;
+          }
+        }
+        return {
+          role,
+          fileName: item.fileName,
+          geometry: cachedGeometry,
+          texture,
+        };
+      }
+
       const blob = await fetchS3BlobCached({
         s3Key,
         fileName: item.fileName,
@@ -1775,11 +1853,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       const modelFile = fileFromModelBlob(blob, item.fileName);
       const companionFiles: File[] = [];
       const ext = getModelExtLower(item.fileName);
+      let preferredTex: string | null = null;
       if ((ext === ".ply" || ext === ".obj") && curScanSources.companions.length > 0) {
-        const preferredTex =
-          ext === ".ply"
-            ? peekPlyHeaderInfo(await blob.arrayBuffer()).textureFileName
-            : null;
+        preferredTex =
+          ext === ".ply" ? peekPlyHeaderInfo(await blob.arrayBuffer()).textureFileName : null;
         const texName = resolveCompanionTextureFileName(
           item.fileName,
           preferredTex,
@@ -1800,6 +1877,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
       }
       const parsed = await parseModelPreview(modelFile, { companionFiles });
+      storeScanGeometry(s3Key, parsed.geometry);
       return {
         role,
         fileName: item.fileName,
@@ -2390,7 +2468,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     transferIdParam,
   ]);
 
-  // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 대합 투명도, 픽스쳐, 마진선, 악·치아 토글)
+  // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 상·하악 투명도, 픽스쳐, 마진선, 악·치아 토글)
   useEffect(() => {
     const renderer = rendererRef.current;
     const scene = sceneRef.current;
@@ -2411,12 +2489,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       restList: THREE.Mesh[],
     ) => {
       const roleVisible = visibleJaws[role];
-      const isOpposing =
-        (role === "upper" && !prepJaws.has("upper") && prepJaws.has("lower")) ||
-        (role === "lower" && !prepJaws.has("lower") && prepJaws.has("upper"));
-      const opacity = isOpposing
-        ? Math.max(0.05, Math.min(1, 1 - opposingTransparency / 100))
-        : 1;
+      const opacity =
+        scanTransparency <= 0 ? 1 : Math.max(0.08, Math.min(1, 1 - scanTransparency / 100));
 
       const applyMat = (mesh: THREE.Mesh, show: boolean) => {
         mesh.visible = show;
@@ -2476,8 +2550,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     colorMapping,
     designedList,
     shownScanbodies,
-    opposingTransparency,
-    prepJaws,
+    scanTransparency,
     selectedTooth,
     showFinishLine,
     showFixtureAnalog,
@@ -2553,9 +2626,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     [applyDesignChanges, persistDesign],
   );
 
-  const hasOpposingJaw =
-    (prepJaws.has("upper") && availableJaws.lower) ||
-    (prepJaws.has("lower") && availableJaws.upper);
   const ready = status.kind === "ready" && (designedList.length > 0 || readOnly);
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
   const canRedoEdit = editRev >= 0 && Boolean(directEditRef.current?.canRedo());
@@ -2594,19 +2664,77 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
           </div>
 
+          <div className="flex shrink-0 items-center gap-1">
+            {ready && !readOnly ? (
+              <>
+                <HeaderIconButton
+                  label="되돌리기"
+                  tip="직전 변형을 되돌립니다."
+                  disabled={!canUndoEdit}
+                  onClick={() => directEditRef.current?.undo()}
+                >
+                  <Undo2 className="h-4 w-4" />
+                </HeaderIconButton>
+                <HeaderIconButton
+                  label="다시실행"
+                  tip="되돌린 변형을 다시 적용합니다."
+                  disabled={!canRedoEdit}
+                  onClick={() => directEditRef.current?.redo()}
+                >
+                  <Redo2 className="h-4 w-4" />
+                </HeaderIconButton>
+                <HeaderIconButton
+                  label="초기값"
+                  tip={
+                    <>
+                      선택한 어벗을 처음 계산한 형상으로 되돌립니다.
+                      <br />
+                      선택된 치아가 없으면 바꾼 어벗을 모두 되돌립니다.
+                    </>
+                  }
+                  disabled={!canUndoEdit}
+                  onClick={() => directEditRef.current?.reset(selectedTooth)}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </HeaderIconButton>
+                <HeaderIconButton
+                  label="검볼"
+                  active={gumballOn}
+                  tip={
+                    <>
+                      화살표는 그 방향으로 포스트를 옮깁니다.
+                      <br />
+                      상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기입니다.
+                      <br />
+                      커넥션과 2° 테이퍼는 고정이고, 커프부터 바뀝니다.
+                    </>
+                  }
+                  onClick={() => setGumballOn((on) => !on)}
+                >
+                  <Axis3d className="h-4 w-4" />
+                </HeaderIconButton>
+              </>
+            ) : null}
           {ready ? (
             <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">설정</span>
-                </Button>
-              </PopoverTrigger>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-8 shrink-0 px-0"
+                      aria-label="설정"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="z-[520]">
+                  설정
+                </TooltipContent>
+              </Tooltip>
               <PopoverContent align="end" className="z-[520] w-60 space-y-3 p-3 text-xs">
                 <label className="flex items-center justify-between gap-3">
                   <span className="font-medium">스캔색</span>
@@ -2632,6 +2760,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               </PopoverContent>
             </Popover>
           ) : null}
+          </div>
 
           <DialogClose
             className="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
@@ -2690,19 +2819,19 @@ export function PracticeCustomAbutmentPreviewDialog({
                         onClick={() => setVisibleJaws((p) => ({ ...p, lower: !p.lower }))}
                       />
                     ) : null}
-                    {hasOpposingJaw ? (
+                    {availableJaws.upper || availableJaws.lower ? (
                       <div className="flex items-center gap-2 px-1.5">
                         <span className="whitespace-nowrap text-[0.6875rem] text-muted-foreground">
-                          대합 투명도
+                          투명도
                         </span>
                         <Slider
                           className="w-20"
                           min={0}
                           max={90}
                           step={5}
-                          value={[opposingTransparency]}
-                          onValueChange={([val]) => setOpposingTransparency(val ?? 55)}
-                          aria-label="대합악 투명도"
+                          value={[scanTransparency]}
+                          onValueChange={([val]) => setScanTransparency(val ?? 0)}
+                          aria-label="스캔 투명도"
                         />
                       </div>
                     ) : null}
@@ -2725,85 +2854,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                       onClick={() => setShowFixtureAnalog((v) => !v)}
                     />
                   </div>
-                  {readOnly ? null : (
-                    <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
-                      <ToolbarToggle
-                        active={gumballOn}
-                        label="검볼"
-                        tip={
-                          <>
-                            커넥션은 고정이고, 커프부터 포스트만 바뀝니다.
-                            <br />
-                            화살표는 이동, 호는 커넥션을 축으로 기울입니다.
-                            <br />
-                            상자는 한 방향, 노란 면은 평면, 흰 고리는 전체 크기입니다.
-                          </>
-                        }
-                        onClick={() => setGumballOn((on) => !on)}
-                      />
-                      <ToolbarToggle
-                        active={sculptOn}
-                        label="부위"
-                        tip={
-                          <>
-                            포스트를 밖으로 끌면 그 부분이 커집니다.
-                            <br />
-                            축 쪽으로 끌면 작아집니다.
-                          </>
-                        }
-                        onClick={() => setSculptOn((on) => !on)}
-                      />
-                      {sculptOn ? (
-                        <div className="flex items-center gap-2 px-1.5">
-                          <span className="whitespace-nowrap text-[0.6875rem] text-muted-foreground">
-                            범위
-                          </span>
-                          <Slider
-                            className="w-20"
-                            min={0.6}
-                            max={6}
-                            step={0.2}
-                            value={[sculptRadiusMm]}
-                            onValueChange={([val]) => setSculptRadiusMm(val ?? 2.4)}
-                            aria-label="부위 범위"
-                          />
-                          <span className="w-10 text-right text-[0.6875rem] tabular-nums text-muted-foreground">
-                            {sculptRadiusMm.toFixed(1)}mm
-                          </span>
-                        </div>
-                      ) : null}
-                      <ToolbarToggle
-                        active={false}
-                        disabled={!canUndoEdit}
-                        icon={<Undo2 className="h-3.5 w-3.5" />}
-                        label="되돌리기"
-                        tip="직전 변형을 되돌립니다."
-                        onClick={() => directEditRef.current?.undo()}
-                      />
-                      <ToolbarToggle
-                        active={false}
-                        disabled={!canRedoEdit}
-                        icon={<Redo2 className="h-3.5 w-3.5" />}
-                        label="다시실행"
-                        tip="되돌린 변형을 다시 적용합니다."
-                        onClick={() => directEditRef.current?.redo()}
-                      />
-                      <ToolbarToggle
-                        active={false}
-                        disabled={!canUndoEdit}
-                        icon={<RotateCcw className="h-3.5 w-3.5" />}
-                        label="초기"
-                        tip={
-                          <>
-                            선택한 어벗을 처음 계산한 형상으로 되돌립니다.
-                            <br />
-                            선택된 치아가 없으면 바꾼 어벗을 모두 되돌립니다.
-                          </>
-                        }
-                        onClick={() => directEditRef.current?.reset(selectedTooth)}
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             ) : null}

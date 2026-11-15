@@ -1,8 +1,8 @@
 // 커스텀어벗 뷰어의 직접 편집.
-// 검볼은 픽스쳐 중심축에 두고, 커넥션(원뿔 위까지)과 스크류 홀은 그대로 둔다.
-// 커프부터 포스트만 바꾼다. 바꿀 때마다 초기 제안 형상에서 허용 범위 안으로 다시 계산한다.
-// 축 상자는 선형(1D), 노란 면은 평면(2D), 흰 고리는 입체(3D) 스케일이다.
-// 부위 도구는 포스트 반경만 키우거나 줄인다.
+// 검볼은 포스트 중심에 두고, 화면을 정면으로 본다. 뷰가 바뀌면 검볼 방향도 바뀐다.
+// 화살표는 그 방향으로 포스트를 옮긴다. 축 상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기다.
+// 커넥션과 그 위 2° 테이퍼는 고정이다. 그 위 커프부터 포스트만 허용 범위 안에서 다시 계산한다.
+// 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
@@ -93,6 +93,8 @@ type MarginLine = THREE.Object3D & {
 
 type Zone = {
   coneZ: number;
+  /** 커넥션 위 2° 테이퍼가 끝나는 높이. 이 아래는 고정. */
+  fixedZ: number;
   marginZ: number;
   screwR: number;
   span: number;
@@ -127,6 +129,7 @@ type Drag =
       kind: "move" | "scale";
       tooth: string;
       axis: number;
+      axisWorld: THREE.Vector3;
       start: AbutmentEdit;
       startAlong: number;
       pointerId: number;
@@ -149,7 +152,15 @@ type Drag =
       startDist: number;
       pointerId: number;
     }
-  | { kind: "center"; tooth: string; pointerId: number; x: number; y: number }
+  | {
+      kind: "center";
+      tooth: string;
+      pointerId: number;
+      x: number;
+      y: number;
+      start: AbutmentEdit;
+      startHit: THREE.Vector3;
+    }
   | {
       kind: "sculpt";
       tooth: string;
@@ -292,7 +303,8 @@ function angleDelta(a: number, b: number) {
 }
 
 /**
- * 초기 제안 정점에서 커넥션은 복사하고, 그 위만 검볼·부위 값으로 다시 놓는다.
+ * 초기 제안 정점에서 커넥션과 2° 테이퍼는 복사하고, 그 위 커프·포스트만 다시 놓는다.
+ * 스크류 홀은 반경을 유지하고, 윗면 입구만 높이를 따라간다.
  * 반경은 제안 대비 0.8~1.15, 높이 이동은 ±2mm를 넘지 않는다.
  */
 export function refitLocalPositions(
@@ -301,26 +313,47 @@ export function refitLocalPositions(
   zone: Zone,
   out: Float32Array,
 ): { widthRatio: number; heightDeltaMm: number } {
-  const { coneZ, marginZ, screwR, labial, mesial } = zone;
+  const { fixedZ, marginZ, screwR, labial, mesial } = zone;
   const yawRad = (edit.yawDeg * Math.PI) / 180;
+  const hole = screwR > 0.15;
+  const minWallR = screwR + 0.08;
   let widthSum = 0;
   let widthN = 0;
   let propTop = -Infinity;
+  let boreTop = -Infinity;
   let nextTop = -Infinity;
+  for (let i = 0; i < proposal.length; i += 3) {
+    const z = proposal[i + 2]!;
+    if (z > propTop) propTop = z;
+    if (!hole) continue;
+    const r = Math.hypot(proposal[i]!, proposal[i + 1]!);
+    if (r <= screwR && z > boreTop) boreTop = z;
+  }
+  const rimZ = (Number.isFinite(boreTop) ? boreTop : propTop) - 0.7;
   for (let i = 0; i < proposal.length; i += 3) {
     const x = proposal[i]!;
     const y = proposal[i + 1]!;
     const z = proposal[i + 2]!;
-    if (z > propTop) propTop = z;
     const rProp = Math.hypot(x, y);
-    if (z <= coneZ + 0.05 || rProp <= screwR) {
+    const t = blendAbove(z, fixedZ, marginZ);
+    const zLift = (z - fixedZ) * (edit.scale[2] - 1) * t + edit.heightMm * t;
+    const z2 = z + clamp(zLift, -HEIGHT_MM, HEIGHT_MM);
+    const frozenTaper = z <= fixedZ + 0.02;
+    const deepBore = hole && rProp <= screwR && z < rimZ;
+    if (frozenTaper || deepBore) {
       out[i] = x;
       out[i + 1] = y;
       out[i + 2] = z;
       if (z > nextTop) nextTop = z;
       continue;
     }
-    const t = blendAbove(z, coneZ, marginZ);
+    if (hole && rProp <= screwR + 0.22 && z >= rimZ) {
+      out[i] = x;
+      out[i + 1] = y;
+      out[i + 2] = z2;
+      if (z2 > nextTop) nextTop = z2;
+      continue;
+    }
     const l = x * labial[0] + y * labial[1];
     const m = x * mesial[0] + y * mesial[1];
     const yaw = yawRad * t;
@@ -328,13 +361,11 @@ export function refitLocalPositions(
     const s = Math.sin(yaw);
     const lS = l * (1 + (edit.scale[0] - 1) * t);
     const mS = m * (1 + (edit.scale[1] - 1) * t);
-    const h = Math.max(z - coneZ, 0);
+    const h = Math.max(z - fixedZ, 0);
     const offL = edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * h;
     const offM = edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * h;
     let ly = lS * c - mS * s + (offL * c - offM * s) * t;
     let my = lS * s + mS * c + (offL * s + offM * c) * t;
-    let z2 = z + (z - coneZ) * (edit.scale[2] - 1) * t + edit.heightMm * t;
-    z2 = z + clamp(z2 - z, -HEIGHT_MM, HEIGHT_MM);
     if (z > marginZ && edit.partial.length > 0) {
       const ang = Math.atan2(my, ly);
       const rad = Math.max(Math.hypot(ly, my), 0.4);
@@ -348,6 +379,14 @@ export function refitLocalPositions(
       if (rNow > 1e-6 && rProp > screwR) {
         const target = clamp(rNow * extra, rProp * SCALE_MIN, rProp * SCALE_MAX);
         const k = target / rNow;
+        ly *= k;
+        my *= k;
+      }
+    }
+    if (hole && rProp > screwR) {
+      const rNow = Math.hypot(ly, my);
+      if (rNow < minWallR && rNow > 1e-6) {
+        const k = minWallR / rNow;
         ly *= k;
         my *= k;
       }
@@ -472,10 +511,14 @@ function zoneOf(design: DirectEditDesign, proposal: Float32Array, margin: Float3
   }
   let top = coneZ + 4;
   for (let i = 2; i < proposal.length; i += 3) top = Math.max(top, proposal[i]!);
-  const marginZ = marginN > 0 ? marginSum / marginN : coneZ + 1.5;
+  const marginZ = Math.max(marginN > 0 ? marginSum / marginN : coneZ + 1.5, coneZ + 0.4);
+  const spanToMargin = Math.max(0.35, marginZ - coneZ);
+  let fixedZ = coneZ + Math.max(0.45, Math.min(1.35, spanToMargin * 0.25));
+  if (fixedZ > marginZ - 0.25) fixedZ = Math.max(coneZ, marginZ - 0.25);
   return {
     coneZ,
-    marginZ: Math.max(marginZ, coneZ + 0.4),
+    fixedZ,
+    marginZ,
     screwR,
     span: Math.max(0.5, top - coneZ),
     labial: axes.labial,
@@ -550,34 +593,34 @@ function makeGumball(tooth: string) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
     const shaft = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.46, 10), mat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.5, 12), mat),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(shaft, axis, 0.58);
-    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.22, 12), mat), "move", axis, -1, mat);
-    alongAxis(head, axis, 0.9);
+    alongAxis(shaft, axis, 0.78);
+    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 14), mat), "move", axis, -1, mat);
+    alongAxis(head, axis, 1.12);
     const hit = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.78, 8), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.86, 10), basicMat(0xffffff, 0)),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(hit, axis, 0.62);
+    alongAxis(hit, axis, 0.78);
     const scaleMat = basicMat(color);
     const box = tagHandle(
-      new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.13), scaleMat),
+      new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), scaleMat),
       "scale",
       axis,
       -1,
       scaleMat,
     );
-    box.position.set(axis === 0 ? 0.34 : 0, axis === 1 ? 0.34 : 0, axis === 2 ? 0.34 : 0);
+    box.position.set(axis === 0 ? 0.4 : 0, axis === 1 ? 0.4 : 0, axis === 2 ? 0.4 : 0);
     const scaleHit = tagHandle(
-      new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), basicMat(0xffffff, 0)),
       "scale",
       axis,
       -1,
@@ -586,14 +629,14 @@ function makeGumball(tooth: string) {
     scaleHit.position.copy(box.position);
     const arcMat = basicMat(color);
     const arc = tagHandle(
-      new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.03, 8, 18, Math.PI * 0.72), arcMat),
+      new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.045, 8, 20, Math.PI * 0.72), arcMat),
       "rot",
       axis,
       -1,
       arcMat,
     );
     const arcHit = tagHandle(
-      new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.11, 6, 14, Math.PI * 0.72), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.14, 6, 16, Math.PI * 0.72), basicMat(0xffffff, 0)),
       "rot",
       axis,
       -1,
@@ -617,17 +660,17 @@ function makeGumball(tooth: string) {
   ];
   for (const [a, b] of planePairs) {
     const mat = basicMat(0xf5d90a, 0.9);
-    const quad = tagHandle(new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.16), mat), "scale2", a, b, mat);
+    const quad = tagHandle(new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), mat), "scale2", a, b, mat);
     const hit = tagHandle(
-      new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.24), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.36), basicMat(0xffffff, 0)),
       "scale2",
       a,
       b,
       mat,
     );
     const pos = new THREE.Vector3();
-    pos.setComponent(a, 0.28);
-    pos.setComponent(b, 0.28);
+    pos.setComponent(a, 0.36);
+    pos.setComponent(b, 0.36);
     quad.position.copy(pos);
     hit.position.copy(pos);
     const facing = 3 - a - b;
@@ -641,18 +684,18 @@ function makeGumball(tooth: string) {
     group.add(quad, hit);
   }
   const ringMat = basicMat(0xf8fafc);
-  const ring = tagHandle(new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.028, 8, 24), ringMat), "scale3", 0, -1, ringMat);
+  const ring = tagHandle(new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.04, 8, 28), ringMat), "scale3", 0, -1, ringMat);
   const ringHit = tagHandle(
-    new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.07, 6, 18), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.1, 6, 20), basicMat(0xffffff, 0)),
     "scale3",
     0,
     -1,
     ringMat,
   );
   const centerMat = basicMat(0xe2e8f0);
-  const center = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10), centerMat), "center", 0, -1, centerMat);
+  const center = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), centerMat), "center", 0, -1, centerMat);
   const centerHit = tagHandle(
-    new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), basicMat(0xffffff, 0)),
     "center",
     0,
     -1,
@@ -698,6 +741,11 @@ export class AbutmentDirectEditSession {
   private localBuf = new Float32Array(0);
   private worldBuf = new Float32Array(0);
   private summary: { widthRatio: number; heightDeltaMm: number } = { widthRatio: 1, heightDeltaMm: 0 };
+  private readonly camRight = new THREE.Vector3();
+  private readonly camUp = new THREE.Vector3();
+  private readonly camForward = new THREE.Vector3();
+  private readonly viewQuat = new THREE.Quaternion();
+  private readonly basisM = new THREE.Matrix4();
 
   constructor(private readonly bridge: AbutmentEditBridge) {
     this.brush = new THREE.Mesh(
@@ -863,15 +911,16 @@ export class AbutmentDirectEditSession {
     const viewH = (camera.top - camera.bottom) / Math.max(camera.zoom, 1e-4);
     const worldPerPx = viewH / Math.max(host.clientHeight, 1);
     const show = this.bridge.ui.gumballOn && !this.bridge.ui.readOnly;
+    const gumballQuat = this.viewQuaternion();
     for (const [tooth, view] of this.views) {
       const mesh = this.bridge.getAbutment(tooth);
       const visible = !!mesh && mesh.visible && this.bridge.ui.visible[tooth] !== false;
       const edit = this.edits.get(tooth) ?? EMPTY_EDIT;
       const selected = this.bridge.ui.selected === tooth;
       view.gumball.visible = show && visible;
-      view.gumball.quaternion.copy(this.orient(view, edit));
+      view.gumball.quaternion.copy(gumballQuat);
       view.gumball.position.copy(this.gumballPosition(view, edit));
-      view.gumball.scale.setScalar(worldPerPx * (selected ? 78 : 64));
+      view.gumball.scale.setScalar(worldPerPx * (selected ? 156 : 132));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible);
     }
   }
@@ -928,8 +977,13 @@ export class AbutmentDirectEditSession {
     }
     this.brush.visible = false;
     if (drag.kind === "center") {
-      if (Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) < 5) this.bridge.onBadge(drag.tooth);
-      return;
+      const moved = Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y);
+      if (moved < 6) {
+        this.edits.set(drag.tooth, drag.start);
+        this.show(drag.tooth, false);
+        this.bridge.onBadge(drag.tooth);
+        return;
+      }
     }
     if (drag.kind === "sculpt") this.finishSculpt(drag, event);
     const edit = this.edits.get(drag.tooth);
@@ -944,13 +998,25 @@ export class AbutmentDirectEditSession {
     const camera = this.bridge.getCamera();
     if (!view || !camera || !this.dom) return false;
     if (handle.op === "center") {
-      this.drag = { kind: "center", tooth: handle.tooth, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+      const start = cloneAbutmentEdit(this.editOf(handle.tooth));
+      const center = this.gumballPosition(view, start);
+      this.viewPlane(center);
+      const hit = this.rayOnPlane(event);
+      this.drag = {
+        kind: "center",
+        tooth: handle.tooth,
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        start,
+        startHit: (hit ?? center).clone(),
+      };
       return true;
     }
     const start = cloneAbutmentEdit(this.editOf(handle.tooth));
     const center = this.gumballPosition(view, start);
     if (handle.op === "move" || handle.op === "scale") {
-      const axis = this.visualAxis(view, start, handle.axis, vC).clone();
+      const axis = this.cameraAxis(handle.axis, vC).clone();
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return false;
@@ -959,6 +1025,7 @@ export class AbutmentDirectEditSession {
         kind: handle.op,
         tooth: handle.tooth,
         axis: handle.axis,
+        axisWorld: axis,
         start,
         startAlong: along,
         pointerId: event.pointerId,
@@ -966,7 +1033,7 @@ export class AbutmentDirectEditSession {
       return true;
     }
     if (handle.op === "rot") {
-      const axis = this.visualAxis(view, start, handle.axis, vC).clone();
+      const axis = this.cameraAxis(handle.axis, vC).clone();
       plane.setFromNormalAndCoplanarPoint(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return false;
@@ -1026,12 +1093,20 @@ export class AbutmentDirectEditSession {
   private dragMove(event: PointerEvent) {
     const drag = this.drag;
     const camera = this.bridge.getCamera();
-    if (!drag || !camera || !this.dom || drag.kind === "center") return;
+    if (!drag || !camera || !this.dom) return;
     const view = this.views.get(drag.tooth);
     if (!view) return;
     const edit = cloneAbutmentEdit(drag.start);
-    if (drag.kind === "move" || drag.kind === "scale") {
-      const axis = this.visualAxis(view, drag.start, drag.axis, vC).clone();
+    if (drag.kind === "center") {
+      this.viewPlane(drag.startHit);
+      const hit = this.rayOnPlane(event);
+      if (!hit) return;
+      const delta = hit.sub(drag.startHit);
+      edit.shiftLabialMm += delta.dot(view.axes[0]);
+      edit.shiftMesialMm += delta.dot(view.axes[1]);
+      edit.heightMm += delta.dot(view.axes[2]);
+    } else if (drag.kind === "move" || drag.kind === "scale") {
+      const axis = drag.axisWorld;
       const center = this.gumballPosition(view, drag.start);
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
@@ -1039,11 +1114,11 @@ export class AbutmentDirectEditSession {
       const along = hit.sub(center).dot(axis);
       const delta = along - drag.startAlong;
       if (drag.kind === "move") {
-        if (drag.axis === 0) edit.shiftLabialMm += delta;
-        else if (drag.axis === 1) edit.shiftMesialMm += delta;
-        else edit.heightMm += delta;
+        edit.shiftLabialMm += delta * axis.dot(view.axes[0]);
+        edit.shiftMesialMm += delta * axis.dot(view.axes[1]);
+        edit.heightMm += delta * axis.dot(view.axes[2]);
       } else if (Math.abs(drag.startAlong) > 0.15) {
-        edit.scale[drag.axis] = drag.start.scale[drag.axis] * (along / drag.startAlong);
+        this.scaleAlong(edit, drag.start, view, axis, along / drag.startAlong);
       }
     } else if (drag.kind === "rot") {
       const center = this.gumballPosition(view, drag.start);
@@ -1053,9 +1128,10 @@ export class AbutmentDirectEditSession {
       const cur = hit.sub(center);
       const angle = Math.atan2(vA.crossVectors(drag.startVec, cur).dot(drag.worldAxis), drag.startVec.dot(cur));
       const deg = (angle * 180) / Math.PI;
-      if (drag.axis === 2) edit.yawDeg += deg;
-      else if (drag.axis === 0) edit.tiltMesialDeg += deg;
-      else edit.tiltLabialDeg -= deg;
+      const axis = drag.worldAxis;
+      edit.yawDeg += deg * axis.dot(view.axes[2]);
+      edit.tiltMesialDeg += deg * axis.dot(view.axes[0]);
+      edit.tiltLabialDeg -= deg * axis.dot(view.axes[1]);
     } else if (drag.kind === "scale2" || drag.kind === "scale3") {
       this.setNdc(event);
       raycaster.setFromCamera(ndc, camera);
@@ -1068,8 +1144,9 @@ export class AbutmentDirectEditSession {
         edit.scale[1] = drag.start.scale[1] * factor;
         edit.scale[2] = drag.start.scale[2] * factor;
       } else {
-        edit.scale[drag.axis] = drag.start.scale[drag.axis] * factor;
-        if (drag.axis2 >= 0) edit.scale[drag.axis2] = drag.start.scale[drag.axis2] * factor;
+        const a = this.cameraAxis(drag.axis, vB).clone();
+        const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC).clone() : null;
+        this.scaleAxes(edit, drag.start, view, b ? [a, b] : [a], factor);
       }
     } else if (drag.kind === "sculpt") {
       this.previewSculpt(drag, event, view, edit);
@@ -1267,30 +1344,39 @@ export class AbutmentDirectEditSession {
     view.axes[1].copy(mesial);
     view.axes[2].copy(axis);
     view.quat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(labial, mesial, axis));
-    let minZ = Infinity;
-    let maxZ = -Infinity;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let n = 0;
+    let top = -Infinity;
     const proposal = view.proposal;
-    for (let i = 2; i < proposal.length; i += 3) {
-      minZ = Math.min(minZ, proposal[i]!);
-      maxZ = Math.max(maxZ, proposal[i]!);
+    const postZ = Math.max(view.zone.marginZ, view.zone.fixedZ);
+    for (let i = 0; i < proposal.length; i += 3) {
+      const x = proposal[i]!;
+      const y = proposal[i + 1]!;
+      const z = proposal[i + 2]!;
+      if (z > top) top = z;
+      if (z <= postZ || Math.hypot(x, y) <= view.zone.screwR + 0.15) continue;
+      sx += x;
+      sy += y;
+      sz += z;
+      n += 1;
     }
-    const mid = (minZ + maxZ) / 2;
-    view.midZ = Number.isFinite(mid) ? mid : view.zone.coneZ;
-    const origin = new THREE.Vector3(pose.origin[0] ?? 0, pose.origin[1] ?? 0, pose.origin[2] ?? 0);
-    view.anchor.copy(origin).addScaledVector(axis, view.midZ);
-  }
-
-  private orient(view: ToothView, edit: AbutmentEdit) {
-    return view.quat
-      .clone()
-      .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (edit.yawDeg * Math.PI) / 180));
+    if (n > 0) {
+      view.midZ = sz / n;
+      view.anchor.set(sx / n, sy / n, sz / n);
+    } else {
+      view.midZ = Number.isFinite(top) ? (view.zone.fixedZ + top) / 2 : view.zone.fixedZ;
+      view.anchor.set(0, 0, view.midZ);
+    }
+    view.anchor.applyMatrix4(view.fixture);
   }
 
   private gumballPosition(view: ToothView, edit: AbutmentEdit) {
     const yaw = (edit.yawDeg * Math.PI) / 180;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    const h = Math.max(view.midZ - view.zone.coneZ, 0);
+    const h = Math.max(view.midZ - view.zone.fixedZ, 0);
     const offL = edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * h;
     const offM = edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * h;
     const lab = offL * c - offM * s;
@@ -1302,14 +1388,48 @@ export class AbutmentDirectEditSession {
       .addScaledVector(view.axes[2], edit.heightMm);
   }
 
-  private visualAxis(view: ToothView, edit: AbutmentEdit, axis: number, out: THREE.Vector3) {
-    const yaw = (edit.yawDeg * Math.PI) / 180;
-    const c = Math.cos(yaw);
-    const s = Math.sin(yaw);
-    if (axis === 2) return out.copy(view.axes[2]);
-    const lab = axis === 0 ? c : -s;
-    const mes = axis === 0 ? s : c;
-    return out.copy(view.axes[0]).multiplyScalar(lab).addScaledVector(view.axes[1], mes);
+  private cameraBasis() {
+    const camera = this.bridge.getCamera();
+    if (!camera) return false;
+    camera.updateMatrixWorld();
+    this.camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    this.camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    this.camForward.setFromMatrixColumn(camera.matrixWorld, 2).negate().normalize();
+    return true;
+  }
+
+  /** 화면 오른쪽, 위, 보는 방향. 검볼은 이 축으로 뷰에 수직이다. */
+  private cameraAxis(axis: number, out: THREE.Vector3) {
+    this.cameraBasis();
+    if (axis === 0) return out.copy(this.camRight);
+    if (axis === 1) return out.copy(this.camUp);
+    return out.copy(this.camForward);
+  }
+
+  private viewQuaternion() {
+    this.cameraBasis();
+    this.basisM.makeBasis(this.camRight, this.camUp, this.camForward);
+    return this.viewQuat.setFromRotationMatrix(this.basisM);
+  }
+
+  /** 화살표 방향으로 키우거나 줄인다. 그 방향에 놓인 순측·근심·삽입축 비율만 바꾼다. */
+  private scaleAlong(edit: AbutmentEdit, start: AbutmentEdit, view: ToothView, axis: THREE.Vector3, factor: number) {
+    this.scaleAxes(edit, start, view, [axis], factor);
+  }
+
+  private scaleAxes(
+    edit: AbutmentEdit,
+    start: AbutmentEdit,
+    view: ToothView,
+    axes: readonly THREE.Vector3[],
+    factor: number,
+  ) {
+    const gain = clamp(factor, 0.5, 1.8) - 1;
+    for (let i = 0; i < 3; i += 1) {
+      let weight = 0;
+      for (const axis of axes) weight += axis.dot(view.axes[i]!) ** 2;
+      edit.scale[i] = start.scale[i]! * (1 + gain * Math.min(1, weight));
+    }
   }
 
   private setNdc(event: PointerEvent) {
@@ -1329,15 +1449,26 @@ export class AbutmentDirectEditSession {
     return raycaster.ray.intersectPlane(plane, vA) ? vA.clone() : null;
   }
 
-  private axisPlane(axis: THREE.Vector3, origin: THREE.Vector3) {
+  private viewPlane(origin: THREE.Vector3) {
     const camera = this.bridge.getCamera();
     if (!camera) return;
     camera.getWorldDirection(vB);
-    const side = vC.crossVectors(axis, vB);
-    if (side.lengthSq() < 1e-8) side.crossVectors(axis, Math.abs(axis.x) < 0.9 ? vB.set(1, 0, 0) : vB.set(0, 1, 0));
-    side.normalize();
-    const normal = vB.crossVectors(axis, side).normalize();
-    plane.setFromNormalAndCoplanarPoint(normal, origin);
+    plane.setFromNormalAndCoplanarPoint(vB, origin);
+  }
+
+  /** 축을 포함하고 카메라를 바라보는 평면. 끌기 부호가 화살표와 같다. */
+  private axisPlane(axis: THREE.Vector3, origin: THREE.Vector3) {
+    const camera = this.bridge.getCamera();
+    if (!camera) return;
+    vB.copy(camera.position).sub(origin);
+    vB.addScaledVector(axis, -vB.dot(axis));
+    if (vB.lengthSq() < 1e-8) {
+      camera.getWorldDirection(vB);
+      vB.addScaledVector(axis, -vB.dot(axis));
+    }
+    if (vB.lengthSq() < 1e-8) vB.set(0, 1, 0).addScaledVector(axis, -axis.y);
+    vB.normalize();
+    plane.setFromNormalAndCoplanarPoint(vB, origin);
   }
 
   private moveBadge(mesh: THREE.Mesh, center: THREE.Vector3, gumballOn: boolean) {
