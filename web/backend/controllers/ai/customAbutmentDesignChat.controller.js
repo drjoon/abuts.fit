@@ -38,6 +38,12 @@ const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 const PARAM_SPECS = {
   occlusalClearanceMm: { label: "포스트 최정점 → 대합치 거리", unit: "mm", min: 0.7, max: 2.5 },
   postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 1, max: 8 },
+  postYawDeg: {
+    label: "포스트 수평 회전 보정(교합면 시점 +=반시계, -=시계, 기본 0=악궁·중심구 평행)",
+    unit: "°",
+    min: -30,
+    max: 30,
+  },
   postHeightOffsetMm: {
     label: "포스트 높이 보정(대합치가 있으면 음수만 효과)",
     unit: "mm",
@@ -47,7 +53,8 @@ const PARAM_SPECS = {
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.8, max: 1.15 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.5, max: 0.8 },
   marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 기본 0.35)", unit: "mm", min: 0.2, max: 0.8 },
-  marginDepthMm: { label: "피니시라인 치은 하방 깊이(둘레 전체)", unit: "mm", min: 0, max: 1.5 },
+  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준)", unit: "mm", min: 0, max: 1.5 },
+  marginScallopMm: { label: "근·원심 마진 스캘럽(치관측 상승·치은 라인 추종, 전치 기본 0.75·구치 기본 0.55)", unit: "mm", min: 0, max: 1.6 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.85, max: 1.2 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },
   minCrownThicknessMm: { label: "크라운 두께(포스트 컷백, 기본 1.0, 공간 없으면 0.7까지 자동)", unit: "mm", min: 0.7, max: 1.5 },
@@ -58,9 +65,9 @@ const PARAM_SPECS = {
 };
 
 const PARAM_KEYS = Object.keys(PARAM_SPECS);
-/** 케이스마다 다른 윗면 이동은 취향으로 저장하지 않는다. */
+/** 케이스마다 다른 윗면 이동·수평 회전은 취향으로 저장하지 않는다. */
 const PREFERENCE_KEYS = PARAM_KEYS.filter(
-  (k) => k !== "axisShiftLabialMm" && k !== "axisShiftMesialMm",
+  (k) => k !== "axisShiftLabialMm" && k !== "axisShiftMesialMm" && k !== "postYawDeg",
 );
 const SCOPES = ["all", "anterior", "posterior"];
 const TOOTH_RE = /^[1-4][1-8]$/;
@@ -379,8 +386,8 @@ function buildPrompt({ message, history, teeth, selectedTooth, preference, hasIm
     "\n규칙:\n" +
     "- 치아를 안 말하면 selectedTooth, 없으면 toothNumber \"all\".\n" +
     "- 「조금」 범위 10~15%, 「많이」 25~35%. 숫자가 있으면 그 값.\n" +
-    "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓.\n" +
-    "- 마진 깊게/치은 하방=marginDepthMm. 마진 넓게/좁게=marginShoulderMm.\n" +
+    "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓. 포스트 회전/돌려=postYawDeg(교합면 시점 반시계 +, 시계 -, 그림 선이 있으면 현재 포스트에서 목표 선까지 각도만큼 보정).\n" +
+    "- 마진 깊게/치은 하방=marginDepthMm. 근원심 마진 치관쪽 상승·스캘럽(scallop)·치은 라인 추종=marginScallopMm↑(평평·완만=↓). 마진 넓게/좁게=marginShoulderMm.\n" +
     "- 질문이거나 바꿀 게 없으면 changes [].\n" +
     "- 조정값으로 바꿀 수 없는 요청이면 unsupported true와 changes []. 질문·이미 그 값이면 unsupported false.\n" +
     (hasImage

@@ -65,6 +65,7 @@ const RULES: Rule[] = [
     match: (c, num, amount) => {
       if (!has(c, /(마진|피니[시쉬]\s*라인|피니[시쉬]라인)/)) return null;
       if (has(c, /(폭|넓|좁|크|작|키워|줄여)/)) return null;
+      if (has(c, /(스캘럽|스칼럽|scallop|근원심|근·원심|근심|원심|인접|치관|(?:치은|잇몸)\s*(?:라인|선))/i)) return null;
       const strip = [/(마진|피니[시쉬]\s*라인)/g, /(치은|잇몸)\s*(하방|아래|밑)/g, /(깊|얕)[게이]?/g, /하방/g];
       if (has(c, /(치은|잇몸)?\s*(하방|아래|밑)/) && num != null && !has(c, /(깊|얕)/)) {
         return { strip, deltas: [{ key: "marginDepthMm", mode: "set", value: num }] };
@@ -75,6 +76,65 @@ const RULES: Rule[] = [
         return { strip: [...strip, /깊이/g], deltas: [{ key: "marginDepthMm", mode: "set", value: num }] };
       }
       return null;
+    },
+  },
+  // 근·원심 스캘럽 마진(치관측 상승 / 치은 라인 추종)
+  {
+    match: (c, num, amount) => {
+      const hasScallopWord = has(c, /(스캘럽|스칼럽|scallop)/i);
+      const hasProxMargin =
+        has(c, /(마진|피니[시쉬]\s*라인|피니[시쉬]라인)/) &&
+        (has(c, /(근원심|근·원심|근심|원심|인접\s*면?)/) || has(c, /(치은|잇몸)\s*(라인|선)/));
+      if (!hasScallopWord && !hasProxMargin) return null;
+      const strip = [
+        /(마진|피니[시쉬]\s*라인|피니[시쉬]라인)/g,
+        /(스캘럽|스칼럽|scallop)\s*(패턴|형태|모양)?/gi,
+        /(근원심|근·원심|근심|원심|인접\s*면?)/g,
+        /치관\s*(쪽|측|방향)?/g,
+        /(치은|잇몸)\s*(라인|선)/g,
+        /따라\s*(가도록|가게|서)?/g,
+        /잡아/g,
+        /(올라가[는게도록]*|올려|높여|높게|깊게|뚜렷[하게히]*|강하게|키워|늘려|평평[하게히]*|완만[하게히]*|줄여|낮춰|낮게|내려|없[게이])/g,
+      ];
+      if (has(c, /(평평|없[게이])/)) {
+        return {
+          strip,
+          deltas: [{ key: "marginScallopMm", mode: num != null ? "set" : "set", value: num ?? 0 }],
+        };
+      }
+      if (has(c, /(완만|줄여|낮춰|낮게|내려)/)) {
+        return {
+          strip,
+          deltas: [{ key: "marginScallopMm", mode: "add", value: -(num ?? 0.25 * amount) }],
+        };
+      }
+      if (
+        num != null &&
+        !has(c, /(올라|올려|높여|높게|깊게|뚜렷|강하|키워|늘려|더)/)
+      ) {
+        return { strip, deltas: [{ key: "marginScallopMm", mode: "set", value: num }] };
+      }
+      return {
+        strip,
+        deltas: [{ key: "marginScallopMm", mode: "add", value: num ?? 0.3 * amount }],
+      };
+    },
+  },
+  // 마진 평평·완만 요청(스캘럽 축소)
+  {
+    match: (c, num, amount) => {
+      if (!has(c, /(마진|피니[시쉬]\s*라인|피니[시쉬]라인)/) || !has(c, /(평평|완만)/)) return null;
+      const strip = [
+        /(마진|피니[시쉬]\s*라인|피니[시쉬]라인)/g,
+        /(평평|완만)[하게히]*/g,
+      ];
+      if (has(c, /평평/)) {
+        return { strip, deltas: [{ key: "marginScallopMm", mode: "set", value: num ?? 0 }] };
+      }
+      return {
+        strip,
+        deltas: [{ key: "marginScallopMm", mode: "add", value: -(num ?? 0.25 * amount) }],
+      };
     },
   },
   // 마진(챔퍼) 폭
@@ -166,6 +226,37 @@ const RULES: Rule[] = [
       const v = num ?? 0.2 * amount;
       if (has(c, /(얇|줄)/)) return { strip, deltas: [{ key: "minCrownThicknessMm", mode: "add", value: -v }] };
       return { strip, deltas: [{ key: "minCrownThicknessMm", mode: "add", value: v }] };
+    },
+  },
+  // 포스트 수평 회전(악궁·중심구 정렬 / 시계·반시계 각도 회전)
+  {
+    match: (c, num, amount) => {
+      if (!has(c, /(회전|돌려|평행)/)) return null;
+      if (has(c, /(순측|협측|설측|구개측|근심|원심)/) && !has(c, /(시계|악궁|중심구|central\s*groove)/i)) {
+        return null;
+      }
+      const strip = [
+        /(포스트|기둥|어벗)/g,
+        /(악궁|치열|중심구|central\s*groove)\s*(선|라인|방향)?[에과와]*/gi,
+        /(평행|나란)[하게히]*/g,
+        /(반\s*시계|시계\s*반대|시계)\s*(방향)?/g,
+        /(회전|돌려|배치)[시켜해줘여겨기]*/g,
+      ];
+      if (has(c, /(악궁|치열|중심구|central\s*groove)/i) && num == null && !has(c, /(반\s*시계|시계)/)) {
+        return { strip, deltas: [{ key: "postYawDeg", mode: "set", value: 0 }] };
+      }
+      const deg = num ?? 5 * amount;
+      if (has(c, /(반\s*시계|시계\s*반대)/)) {
+        return { strip, deltas: [{ key: "postYawDeg", mode: "add", value: deg }] };
+      }
+      if (has(c, /시계/)) {
+        return { strip, deltas: [{ key: "postYawDeg", mode: "add", value: -deg }] };
+      }
+      if (num != null && has(c, /(회전|돌려)/)) {
+        const signed = has(c, /-\s*\d/) ? -deg : deg;
+        return { strip: [...strip, /-/g], deltas: [{ key: "postYawDeg", mode: "add", value: signed }] };
+      }
+      return null;
     },
   },
   // 윗면(삽입축) 이동

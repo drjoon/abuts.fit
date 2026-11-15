@@ -21,6 +21,7 @@ import * as THREE from "three";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import {
   archPlanAxes,
+  estimateDentalFrame,
   samplePositions,
   type DentalFrame,
 } from "@/shared/practice/dentalFrame";
@@ -84,10 +85,10 @@ const LINGUAL_CONVERGE_EARLIER = 0.2;
 const AXIS_VERTICAL_DEADZONE_POSTERIOR_MM = 1.8;
 const AXIS_VERTICAL_DEADZONE_ANTERIOR_MM = 1.2;
 /** 스캘럽 마진 진폭(근·원심 높고 협·설 낮음, 반진폭 mm = 최고~최저의 절반). 완만한 곡선만 그린다. */
-const SCALLOP_MIN_POSTERIOR_MM = 0.15;
-const SCALLOP_MAX_POSTERIOR_MM = 0.65;
-const SCALLOP_MIN_ANTERIOR_MM = 0.35;
-const SCALLOP_MAX_ANTERIOR_MM = 1.05;
+const SCALLOP_MIN_POSTERIOR_MM = 0.28;
+const SCALLOP_MAX_POSTERIOR_MM = 0.85;
+const SCALLOP_MIN_ANTERIOR_MM = 0.42;
+const SCALLOP_MAX_ANTERIOR_MM = 1.15;
 /** 2.5° 간격(144열) — 6각 헥스 모서리(30°+60°k)가 격자 위에 놓인다. */
 const ANGULAR_COLS = 144;
 const SECTORS = 36;
@@ -110,11 +111,11 @@ const NEIGHBOR_PLANE_MARGIN_GAP_MM = 0.9;
 const GINGIVA_INSET_MM = 0.2;
 /** 마진은 치은선(크라운이 올라갈 잇몸 테두리) 아래 marginDepthMm(기본 0.5), 매끄럽게 할 때도 1.0mm보다 깊지 않다. */
 const MARGIN_SUBG_MAX_MM = 1.0;
-/** 치은선을 초기 추정하는 범위: 스캔바디 면에서 바깥으로 이만큼(너무 멀리 잡으면 인접치 치간유두 꼭대기를 치은선으로 오인한다). */
-const GINGIVA_RIM_REACH_MM = 1.5;
+/** 치은선을 초기 추정하는 범위: 스캔바디 면에서 바깥으로 이만큼(출현 소켓 테두리까지 보되 가파른 인접치 벽 직전에서 멈춘다). */
+const GINGIVA_RIM_REACH_MM = 2.1;
 const GINGIVA_RIM_BIN_MM = 0.4;
 /** 바깥 칸이 이보다 가파르게 솟으면 잇몸이 아니라 인접치 벽이다. */
-const GINGIVA_RIM_MAX_STEP_MM = 1.0;
+const GINGIVA_RIM_MAX_STEP_MM = 0.95;
 const MIN_POST_HEIGHT_MM = 4;
 /** 포스트 윗면은 예측 크라운 교합면(인접치 높이)보다 이만큼 낮다. */
 const POST_BELOW_CROWN_MM = 1.5;
@@ -704,6 +705,30 @@ type ContralateralCrownMirror = {
 };
 
 const jawFrameCache = new WeakMap<THREE.BufferGeometry, DentalFrame | null>();
+const biJawFrameCache = new WeakMap<
+  THREE.BufferGeometry,
+  WeakMap<THREE.BufferGeometry, DentalFrame | null>
+>();
+
+function getBiJawDentalFrame(
+  jawGeometry: THREE.BufferGeometry,
+  opposingGeometry: THREE.BufferGeometry | null | undefined,
+  jaw: "upper" | "lower",
+): DentalFrame | null {
+  if (!opposingGeometry) return null;
+  let subMap = biJawFrameCache.get(jawGeometry);
+  if (!subMap) {
+    subMap = new WeakMap();
+    biJawFrameCache.set(jawGeometry, subMap);
+  }
+  if (subMap.has(opposingGeometry)) return subMap.get(opposingGeometry) ?? null;
+  const computed = estimateDentalFrame([
+    { role: jaw, geometry: jawGeometry },
+    { role: jaw === "upper" ? "lower" : "upper", geometry: opposingGeometry },
+  ]);
+  subMap.set(opposingGeometry, computed);
+  return computed;
+}
 
 function getJawDentalFrame(jawGeometry: THREE.BufferGeometry, fixture: MatchedScanbodyFixture): DentalFrame | null {
   if (jawFrameCache.has(jawGeometry)) return jawFrameCache.get(jawGeometry) ?? null;
@@ -1250,6 +1275,8 @@ async function autoAxisWorld(args: DesignArgs): Promise<Vec3> {
     args.fixture.fixturePose.axis,
     args.opposingGeometry?.uuid ?? null,
     p.marginDepthMm,
+    p.marginScallopMm,
+    p.postYawDeg,
     p.axisToOpposing,
     p.axisMaxDeg,
   ]);
@@ -1384,7 +1411,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const contact = params.crownContactMm;
   const clearance = params.occlusalClearanceMm;
 
-  const jawLocalAll = cropScanPointsInFixtureFrame(jawGeometry, fixture.fixturePose, 17);
+  const jawLocalAll = cropScanPointsInFixtureFrame(jawGeometry, fixture.fixturePose, 20);
   const opposingLocalPts = cropScanPointsInFixtureFrame(opposingGeometry, fixture.fixturePose, 17);
 
   const boreBotR = conn.screwLowerDiameterMm / 2;
@@ -1437,183 +1464,266 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 프렙 지대치(크라운·브리지 보철 대상)인지, 그리고 브리지로 연결되는지 읽어 인접 크라운 벽 두께 여유를 계산한다.
   const ownFdi = parseFdiTooth(fixture.toothNumber);
 
-  // 구치 포스트의 근원심은 인접 교합면 중심구(상단 띠의 협설 중앙을 이은 선)에 맞춘다.
-  // 인접 접촉면 기울기는 그보다 약하게 더해, 중심구와 함께 인접치와도 어느 정도 평행하게 둔다.
+  // 구치 포스트의 근원심은 교합면 시점(상·하악 대합 교합 평면)에서 원심~근심 치관 중체·협측 외형선을 잇는
+  // 악궁·중심구 직선에 평행하게 맞추고, 임플란트가 협측으로 기울어진 경우에도 교합면 투영 비틀림이 생기지 않게 변환한다.
   {
-    const wOccPlane = norm3(occInFix);
-    let uPlane = sub3(labXY, scale3(wOccPlane, dot3(labXY, wOccPlane)));
-    uPlane = Math.hypot(...uPlane) > 1e-5 ? norm3(uPlane) : labXY;
-    let vPlane = sub3(mesXY, scale3(wOccPlane, dot3(mesXY, wOccPlane)));
-    vPlane = Math.hypot(...vPlane) > 1e-5 ? norm3(vPlane) : mesXY;
+    const biFrame = getBiJawDentalFrame(jawGeometry, opposingGeometry, fixture.jaw);
+    const trueOccWorld: Vec3 = biFrame
+      ? fixture.jaw === "upper"
+        ? [-biFrame.up.x, -biFrame.up.y, -biFrame.up.z]
+        : [biFrame.up.x, biFrame.up.y, biFrame.up.z]
+      : fixture.archOcclusalDir;
+    const wOccPlane = norm3(worldDirToFixtureLocal(trueOccWorld, fixture.fixturePose));
+    let uTargetOcc = sub3(labXY, scale3(wOccPlane, dot3(labXY, wOccPlane)));
+    uTargetOcc = Math.hypot(...uTargetOcc) > 1e-5 ? norm3(uTargetOcc) : labXY;
+    let vTargetOcc = sub3(mesXY, scale3(wOccPlane, dot3(mesXY, wOccPlane)));
+    vTargetOcc = sub3(vTargetOcc, scale3(uTargetOcc, dot3(vTargetOcc, uTargetOcc)));
+    vTargetOcc = Math.hypot(...vTargetOcc) > 1e-5 ? norm3(vTargetOcc) : mesXY;
 
-    const gingBaseOcc = Math.max(2.0, fixture.gingivaFloorMm + 0.4);
-    let slopeWeightSum = 0;
-    let slopeWeighted = 0;
-    let grooveWeight = 0;
-
-    // 1) 바로 옆 사분면 인접 임플란트 픽스쳐(예: #47↔#46)가 있으면 두 픽스쳐를 잇는 중심구 방향에 맞춘다.
-    if (ownFdi) {
-      for (const nb of neighbors) {
-        const nbFdi = parseFdiTooth(nb.toothNumber);
-        if (!nbFdi || nbFdi.digits[0] !== ownFdi.digits[0]) continue;
-        const dPos = ownFdi.pos - nbFdi.pos;
-        if (Math.abs(dPos) !== 1) continue;
-        const distXY = Math.hypot(nb.origin[0], nb.origin[1]);
-        if (distXY < 4.5 || distXY > 12.0) continue;
-        const vecToMesial = dPos > 0 ? nb.origin : scale3(nb.origin, -1);
-        const duNb = dot3(vecToMesial, uPlane);
-        const dvNb = dot3(vecToMesial, vPlane);
-        if (dvNb > 3.0) {
-          const nbSlope = clamp(-duNb / dvNb, -Math.tan(20 * DEG), Math.tan(20 * DEG));
-          const wgt = 1.6;
-          slopeWeighted += nbSlope * wgt;
-          slopeWeightSum += wgt;
-        }
+    const gingHs: number[] = [];
+    for (let i = 0; i < jawLocalPts.length; i += 3) {
+      const x = jawLocalPts[i]!;
+      const y = jawLocalPts[i + 1]!;
+      const z = jawLocalPts[i + 2]!;
+      const r = Math.hypot(x, y);
+      if (r >= sbR + 0.5 && r <= sbR + 2.8 && z >= 0.8 && z <= sbH - 0.3) {
+        gingHs.push(dot3([x, y, z], wOccPlane));
       }
     }
+    gingHs.sort((a, b) => a - b);
+    const gingBaseOcc =
+      gingHs.length >= 10
+        ? gingHs[Math.floor(gingHs.length * 0.5)]!
+        : Math.max(2.0, fixture.gingivaFloorMm + 0.4);
 
-    // 2) 근심(+1)·원심(-1)에 스캔된 인접치 접촉벽이 있으면 협설 띠별 최근접 거리 v(u)의 기울기 dv/du를 잰다.
-    for (const sign of [1, -1] as const) {
-      if (ownFdi?.pos === 8 && sign < 0) continue;
-      if (
-        ownFdi &&
-        neighbors.some((nb) => {
-          const nf = parseFdiTooth(nb.toothNumber);
-          return nf && nf.digits[0] === ownFdi.digits[0] && ownFdi.pos - nf.pos === sign;
-        })
-      ) {
-        continue;
-      }
-      const strips: Array<[number, number]> = [];
-      for (let u = -1.8; u <= 1.81; u += 0.45) {
-        const vs: number[] = [];
+    if (!ownFdi || ownFdi.pos >= 4) {
+      // 전치부 회전 구간이 섞이지 않게 치식별 구치부 악궁 구간만 잡고 2회 반복으로 악궁·중심구 접선을 수렴시킨다.
+      const vDistalMin = !ownFdi ? -15 : ownFdi.pos >= 7 ? -11.5 : ownFdi.pos === 6 ? -13.0 : -17.5;
+      const vMesialMax = !ownFdi
+        ? 15
+        : ownFdi.pos >= 7
+          ? 19.5
+          : ownFdi.pos === 6
+            ? 17.5
+            : ownFdi.pos === 5
+              ? 12.0
+              : 10.5;
+      let archFitSucceeded = false;
+
+      for (let pass = 0; pass < 2; pass += 1) {
+        const binMm = 2.0;
+        const binCount = Math.ceil((vMesialMax - vDistalMin) / binMm);
+        const gBins: Array<Array<{ u: number; h: number }>> = Array.from(
+          { length: binCount },
+          () => [],
+        );
         for (let i = 0; i < jawLocalPts.length; i += 3) {
           const x = jawLocalPts[i]!;
           const y = jawLocalPts[i + 1]!;
           const z = jawLocalPts[i + 2]!;
-          if (Math.hypot(x, y) < sbR + 1.15 && z < sbH + 1.2) continue;
+          if (Math.hypot(x, y) < sbR + 1.2 && z < sbH + 1.2) continue;
           const p: Vec3 = [x, y, z];
           const hOcc = dot3(p, wOccPlane);
-          if (hOcc < gingBaseOcc + 2.4 || hOcc > gingBaseOcc + 7.6) continue;
-          const pu = dot3(p, uPlane);
-          if (Math.abs(pu - u) > 0.32) continue;
-          const pv = dot3(p, vPlane) * sign;
-          if (pv < Math.max(3.1, sbR + 1.15) || pv > 7.8) continue;
-          vs.push(pv);
+          if (hOcc < gingBaseOcc + 1.0 || hOcc > gingBaseOcc + 12.5) continue;
+          const pv = dot3(p, vTargetOcc);
+          if (pv < vDistalMin || pv > vMesialMax || Math.abs(pv) < 4.5) continue;
+          const pu = dot3(p, uTargetOcc);
+          if (Math.abs(pu) > 8.5) continue;
+          const bi = Math.min(binCount - 1, Math.max(0, Math.floor((pv - vDistalMin) / binMm)));
+          gBins[bi]!.push({ u: pu, h: hOcc });
         }
-        if (vs.length < 5) continue;
-        vs.sort((a, b) => a - b);
-        strips.push([u, sign * vs[Math.floor(vs.length * 0.08)]!]);
-      }
-      if (strips.length < 5) continue;
-      const uSpan = strips[strips.length - 1]![0] - strips[0]![0];
-      if (uSpan < 1.7) continue;
-      const mu = strips.reduce((s, q) => s + q[0], 0) / strips.length;
-      const mv = strips.reduce((s, q) => s + q[1], 0) / strips.length;
-      if (Math.abs(mv) > 6.8) continue;
-      let suu = 0;
-      let suv = 0;
-      for (const [u, v] of strips) {
-        suu += (u - mu) ** 2;
-        suv += (u - mu) * (v - mv);
-      }
-      if (suu < 0.4) continue;
-      const rawSlope = suv / suu;
-      let errSq = 0;
-      for (const [u, v] of strips) {
-        errSq += (v - (mv + rawSlope * (u - mu))) ** 2;
-      }
-      const rms = Math.sqrt(errSq / strips.length);
-      if (rms > 0.36 || Math.abs(rawSlope) > Math.tan(26 * DEG)) continue;
-      const wgt = 1.6 / Math.max(3.0, Math.abs(mv));
-      slopeWeighted += clamp(rawSlope, -Math.tan(20 * DEG), Math.tan(20 * DEG)) * wgt;
-      slopeWeightSum += wgt;
-    }
 
-    // 소·대구치: 근심 방향 구간마다 교합면 상단 띠의 협설 중앙을 잡아 중심구 기울기 du/dv를 잰다.
-    // 포스트 근심축을 그 접선에 두려면 yaw = -du/dv (mes_new = mes + (du/dv) * lab).
-    if (!ownFdi || ownFdi.pos >= 4) {
-      const vMax = ownFdi && ownFdi.pos >= 6 ? 15.5 : 16.5;
-      const binMm = 2.2;
-      const binCount = Math.floor((vMax * 2) / binMm) + 1;
-      const gBins: Array<Array<{ u: number; h: number }>> = Array.from({ length: binCount }, () => []);
-      for (let i = 0; i < jawLocalPts.length; i += 3) {
-        const x = jawLocalPts[i]!;
-        const y = jawLocalPts[i + 1]!;
-        const z = jawLocalPts[i + 2]!;
-        if (Math.hypot(x, y) < sbR + 1.15 && z < sbH + 1.2) continue;
-        const p: Vec3 = [x, y, z];
-        const hOcc = dot3(p, wOccPlane);
-        if (hOcc < gingBaseOcc + 2.0 || hOcc > gingBaseOcc + 12.5) continue;
-        const pu = dot3(p, uPlane);
-        const pv = dot3(p, vPlane);
-        if (Math.abs(pv) < 3.8 || Math.abs(pv) > vMax || Math.abs(pu) > 7.0) continue;
-        const bi = Math.min(binCount - 1, Math.max(0, Math.floor((pv + vMax) / binMm)));
-        gBins[bi]!.push({ u: pu, h: hOcc });
-      }
-      const stations: Array<{ v: number; u: number; w: number }> = [];
-      let mesialStations = 0;
-      let distalStations = 0;
-      for (let bi = 0; bi < binCount; bi += 1) {
-        const list = gBins[bi]!;
-        if (list.length < 8) continue;
-        const hs = list.map((q) => q.h).sort((a, b) => a - b);
-        const hTop = hs[Math.floor(hs.length * 0.9)]!;
-        if (hTop < gingBaseOcc + 3.0) continue;
-        const band = list
-          .filter((q) => q.h >= hTop - 2.3)
-          .map((q) => q.u)
-          .sort((a, b) => a - b);
-        if (band.length < 5) continue;
-        const uLo = band[Math.floor(band.length * 0.14)]!;
-        const uHi = band[Math.floor(band.length * 0.86)]!;
-        if (uHi - uLo < 2.2 || uHi - uLo > 12) continue;
-        const vMid = -vMax + (bi + 0.5) * binMm;
-        stations.push({ v: vMid, u: (uLo + uHi) * 0.5, w: 11 / (Math.abs(vMid) + 2.2) });
-        if (vMid >= 0) mesialStations += 1;
-        else distalStations += 1;
-      }
-      if (stations.length >= 2) {
-        const vLo = Math.min(...stations.map((s) => s.v));
-        const vHi = Math.max(...stations.map((s) => s.v));
-        if (vHi - vLo >= 3.6) {
-          let v2 = 4;
-          let vu = 0;
-          for (const s of stations) {
-            v2 += s.w * s.v * s.v;
-            vu += s.w * s.v * s.u;
+        const stations: Array<{ v: number; uGroove: number; uBuccal: number; w: number }> = [];
+        for (let bi = 0; bi < binCount; bi += 1) {
+          const list = gBins[bi]!;
+          if (list.length < 15) continue;
+          const hs = list.map((q) => q.h).sort((a, b) => a - b);
+          const h90 = hs[Math.floor(hs.length * 0.9)]!;
+          if (h90 < gingBaseOcc + 2.4) continue;
+          const hCeil = Math.min(h90 + 0.2, gingBaseOcc + 5.2);
+          const band = list
+            .filter((q) => q.h >= gingBaseOcc + 1.2 && q.h <= hCeil)
+            .map((q) => q.u)
+            .sort((a, b) => a - b);
+          if (band.length < 10) continue;
+          const uLo = band[Math.floor(band.length * 0.08)]!;
+          const uHi = band[Math.floor(band.length * 0.92)]!;
+          if (uHi - uLo < 3.8 || uHi - uLo > 13.5) continue;
+          const vMid = vDistalMin + (bi + 0.5) * binMm;
+          stations.push({
+            v: vMid,
+            uGroove: uHi * 0.6 + uLo * 0.4,
+            uBuccal: uHi,
+            w: 1 / (1 + Math.abs(vMid) * 0.03),
+          });
+        }
+        // 같은 사분면 인접 구치 픽스쳐 원점도 악궁선 위의 기준점으로 함께 넣는다.
+        if (ownFdi) {
+          for (const nb of neighbors) {
+            const nbFdi = parseFdiTooth(nb.toothNumber);
+            if (!nbFdi || nbFdi.digits[0] !== ownFdi.digits[0] || nbFdi.pos < 4) continue;
+            if (Math.abs(ownFdi.pos - nbFdi.pos) > 2) continue;
+            const pv = dot3(nb.origin, vTargetOcc);
+            const pu = dot3(nb.origin, uTargetOcc);
+            if (Math.abs(pv) >= 4.2 && pv >= vDistalMin && pv <= vMesialMax) {
+              stations.push({ v: pv, uGroove: pu, uBuccal: pu, w: 1.35 });
+            }
           }
-          const gSlope = vu / Math.max(v2, 1e-4);
-          let err = 0;
-          let werr = 0;
-          for (const s of stations) {
-            const e = s.u - gSlope * s.v;
-            err += s.w * e * e;
-            werr += s.w;
-          }
-          const rms = Math.sqrt(err / Math.max(werr, 1e-6));
-          if (rms < 1.05 && Math.abs(gSlope) < Math.tan(34 * DEG)) {
-            const both = mesialStations >= 1 && distalStations >= 1;
-            const wgt = both ? 9.5 : 6.2;
-            slopeWeighted += clamp(-gSlope, -Math.tan(30 * DEG), Math.tan(30 * DEG)) * wgt;
-            slopeWeightSum += wgt;
-            grooveWeight += wgt;
+          if (neighbors.some((nb) => parseFdiTooth(nb.toothNumber)?.digits[0] === ownFdi.digits[0])) {
+            stations.push({ v: 0, uGroove: 0, uBuccal: 0, w: 1.1 });
           }
         }
+        if (stations.length < 2) break;
+        const vSpan =
+          Math.max(...stations.map((s) => s.v)) - Math.min(...stations.map((s) => s.v));
+        if (vSpan < 4.5) break;
+
+        const fitCenteredSlope = (pickU: (s: (typeof stations)[number]) => number) => {
+          const sw = stations.reduce((s, q) => s + q.w, 0);
+          const mv = stations.reduce((s, q) => s + q.w * q.v, 0) / Math.max(sw, 1e-6);
+          const mu = stations.reduce((s, q) => s + q.w * pickU(q), 0) / Math.max(sw, 1e-6);
+          let cvv = 0;
+          let cvu = 0;
+          for (const q of stations) {
+            cvv += q.w * (q.v - mv) ** 2;
+            cvu += q.w * (q.v - mv) * (pickU(q) - mu);
+          }
+          if (cvv < 2.0) return null;
+          let errSq = 0;
+          const m = cvu / cvv;
+          for (const q of stations) {
+            errSq += q.w * (pickU(q) - (mu + m * (q.v - mv))) ** 2;
+          }
+          const rms = Math.sqrt(errSq / Math.max(sw, 1e-6));
+          return rms <= 1.35 ? m : null;
+        };
+
+        const mGroove = fitCenteredSlope((s) => s.uGroove);
+        const mBuccal = fitCenteredSlope((s) => s.uBuccal);
+        if (mGroove == null && mBuccal == null) break;
+        const rawSlope =
+          mGroove != null && mBuccal != null
+            ? mGroove * 0.55 + mBuccal * 0.45
+            : (mGroove ?? mBuccal)!;
+        const maxRot = pass === 0 ? Math.tan(28 * DEG) : Math.tan(12 * DEG);
+        const slope = clamp(rawSlope, -maxRot, maxRot);
+        const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, slope)));
+        const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
+        vTargetOcc = nextV;
+        uTargetOcc = nextU;
+        archFitSucceeded = true;
+      }
+
+      // 인접 치관이 한쪽에만 있거나 치관이 짧아 악궁선 스테이션이 부족할 때만 인접 접촉벽 기울기를 보조로 쓴다.
+      if (!archFitSucceeded) {
+        let slopeWeightSum = 0;
+        let slopeWeighted = 0;
+        for (const sign of [1, -1] as const) {
+          if (ownFdi?.pos === 8 && sign < 0) continue;
+          const strips: Array<[number, number]> = [];
+          for (let u = -1.8; u <= 1.81; u += 0.45) {
+            const vs: number[] = [];
+            for (let i = 0; i < jawLocalPts.length; i += 3) {
+              const x = jawLocalPts[i]!;
+              const y = jawLocalPts[i + 1]!;
+              const z = jawLocalPts[i + 2]!;
+              if (Math.hypot(x, y) < sbR + 1.15 && z < sbH + 1.2) continue;
+              const p: Vec3 = [x, y, z];
+              const hOcc = dot3(p, wOccPlane);
+              if (hOcc < gingBaseOcc + 2.0 || hOcc > gingBaseOcc + 7.6) continue;
+              const pu = dot3(p, uTargetOcc);
+              if (Math.abs(pu - u) > 0.32) continue;
+              const pv = dot3(p, vTargetOcc) * sign;
+              if (pv < Math.max(3.1, sbR + 1.15) || pv > 7.8) continue;
+              vs.push(pv);
+            }
+            if (vs.length < 5) continue;
+            vs.sort((a, b) => a - b);
+            strips.push([u, sign * vs[Math.floor(vs.length * 0.08)]!]);
+          }
+          if (strips.length < 5) continue;
+          if (strips[strips.length - 1]![0] - strips[0]![0] < 1.7) continue;
+          const mu = strips.reduce((s, q) => s + q[0], 0) / strips.length;
+          const mv = strips.reduce((s, q) => s + q[1], 0) / strips.length;
+          if (Math.abs(mv) > 6.8) continue;
+          let suu = 0;
+          let suv = 0;
+          for (const [u, v] of strips) {
+            suu += (u - mu) ** 2;
+            suv += (u - mu) * (v - mv);
+          }
+          if (suu < 0.4) continue;
+          const rawSlope = suv / suu;
+          let errSq = 0;
+          for (const [u, v] of strips) errSq += (v - (mv + rawSlope * (u - mu))) ** 2;
+          if (Math.sqrt(errSq / strips.length) > 0.36 || Math.abs(rawSlope) > Math.tan(24 * DEG)) {
+            continue;
+          }
+          const wgt = 1 / Math.max(3.0, Math.abs(mv));
+          slopeWeighted += clamp(-rawSlope, -Math.tan(18 * DEG), Math.tan(18 * DEG)) * wgt;
+          slopeWeightSum += wgt;
+        }
+        if (slopeWeightSum > 0) {
+          const s = slopeWeighted / slopeWeightSum;
+          const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, s)));
+          const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
+          vTargetOcc = nextV;
+          uTargetOcc = nextU;
+        }
+      }
+    } else {
+      // 전치부: 바로 옆 인접 임플란트나 인접 접촉면이 있으면 완만하게 회전 보정한다.
+      let slopeWeightSum = 0;
+      let slopeWeighted = 0;
+      if (ownFdi) {
+        for (const nb of neighbors) {
+          const nbFdi = parseFdiTooth(nb.toothNumber);
+          if (!nbFdi || nbFdi.digits[0] !== ownFdi.digits[0]) continue;
+          const dPos = ownFdi.pos - nbFdi.pos;
+          if (Math.abs(dPos) !== 1) continue;
+          const distXY = Math.hypot(nb.origin[0], nb.origin[1]);
+          if (distXY < 4.2 || distXY > 11.5) continue;
+          const vecToMesial = dPos > 0 ? nb.origin : scale3(nb.origin, -1);
+          const duNb = dot3(vecToMesial, uTargetOcc);
+          const dvNb = dot3(vecToMesial, vTargetOcc);
+          if (dvNb > 2.8) {
+            slopeWeighted += clamp(duNb / dvNb, -Math.tan(18 * DEG), Math.tan(18 * DEG)) * 2.0;
+            slopeWeightSum += 2.0;
+          }
+        }
+      }
+      if (slopeWeightSum > 0) {
+        const s = slopeWeighted / slopeWeightSum;
+        const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, s)));
+        const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
+        vTargetOcc = nextV;
+        uTargetOcc = nextU;
       }
     }
 
-    if (slopeWeightSum > 0) {
-      const yawCap = grooveWeight > 0 ? Math.tan(30 * DEG) : Math.tan(18 * DEG);
-      const sYaw = clamp(slopeWeighted / slopeWeightSum, -yawCap, yawCap);
-      const mesSignBefore = labXY[0] * mesXY[1] - labXY[1] * mesXY[0] >= 0 ? 1 : -1;
-      const nextLab = norm3([
-        labXY[0] + sYaw * mesXY[0],
-        labXY[1] + sYaw * mesXY[1],
-        0,
-      ]);
+    // 사용자 포스트 수평 회전 보정(postYawDeg: 교합면에서 바라봤을 때 + = 반시계, - = 시계)
+    if (Math.abs(params.postYawDeg) > 1e-3) {
+      const rad = params.postYawDeg * DEG;
+      const ccwSign = dot3(cross3(vTargetOcc, uTargetOcc), wOccPlane) >= 0 ? 1 : -1;
+      const th = rad * ccwSign;
+      const cs = Math.cos(th);
+      const sn = Math.sin(th);
+      const rotV = norm3(add3(scale3(vTargetOcc, cs), scale3(uTargetOcc, sn)));
+      const rotU = norm3(sub3(scale3(uTargetOcc, cs), scale3(vTargetOcc, sn)));
+      vTargetOcc = rotV;
+      uTargetOcc = rotU;
+    }
+
+    // 임플란트 축(+Z)이 협측으로 기울어 있어도 포스트의 근·원심 벽([0,0,1]×labXY)이 교합면 시점의 uTargetOcc를
+    // 정확히 향하도록 mesXY = normalize([0,0,1] × uTargetOcc)로 잡는다(투영 비틀림 0°).
+    const mesCross = cross3([0, 0, 1], uTargetOcc);
+    if (Math.hypot(mesCross[0], mesCross[1]) > 1e-5) {
+      let nextMes: Vec3 = norm3([mesCross[0], mesCross[1], 0]);
+      if (dot3(nextMes, vTargetOcc) < 0) nextMes = scale3(nextMes, -1);
+      let nextLab: Vec3 = [-nextMes[1], nextMes[0], 0];
+      if (dot3(nextLab, uTargetOcc) < 0) nextLab = scale3(nextLab, -1);
       labXY = nextLab;
-      mesXY = [-labXY[1] * mesSignBefore, labXY[0] * mesSignBefore, 0];
+      mesXY = nextMes;
     }
   }
   const labialAngleFix = Math.atan2(labXY[1], labXY[0]);
@@ -1746,19 +1856,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let oppMarginCapZ = Infinity;
   if (opposingLocalPts.length > 0) {
     const oppCoreZs: number[] = [];
+    const oppR2 = (posterior ? 3.6 : 3.0) ** 2;
     for (let i = 0; i < opposingLocalPts.length; i += 3) {
       const ox = opposingLocalPts[i]!;
       const oy = opposingLocalPts[i + 1]!;
       const oz = opposingLocalPts[i + 2]!;
-      if (oz >= 2.8 && oz <= 15 && ox * ox + oy * oy <= 2.6 * 2.6) oppCoreZs.push(oz);
+      if (oz >= 2.8 && oz <= 15 && ox * ox + oy * oy <= oppR2) oppCoreZs.push(oz);
     }
     if (oppCoreZs.length >= 6) {
       oppCoreZs.sort((a, c) => a - c);
-      const oppLowZ = oppCoreZs[Math.floor(oppCoreZs.length * 0.15)]!;
-      oppMarginCapZ = Math.max(minMarginZ + 0.25, oppLowZ - clearance - 1.35);
+      const oppLowZ = oppCoreZs[Math.floor(oppCoreZs.length * 0.12)]!;
+      oppMarginCapZ = Math.max(
+        minMarginZ + 0.25,
+        oppLowZ - clearance - chamfer.height - (posterior ? 1.45 : 1.6),
+      );
     }
   }
-  const maxMarginZ = Math.min(Math.max(8.5, sbH - 1.1), medianRimZ + 1.4, oppMarginCapZ);
+  const maxMarginZ = Math.min(Math.max(8.5, sbH - 1.0), medianRimZ + (posterior ? 1.55 : 2.1), oppMarginCapZ);
 
   // 사랑니(#18·#28·#38·#48) 원심뿐 아니라 사랑니가 없는 제2대구치(#17·#27·#37·#47) 원심의 후구치 삼각 융기(retromolar pad)도
   // 실제 인접 자연치 치관(치은선 위 ≥3.1mm로 뚜렷이 솟은 치아)이 아니면 점막이므로 인접치 벽으로 취급하지 않는다.
@@ -1798,10 +1912,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     s1Mes += (v * Math.sin(phi) * 2) / SECTORS;
     c2Scallop += (-v * Math.cos(2 * phi) * 2) / SECTORS;
   }
-  const scallopMin = posterior ? SCALLOP_MIN_POSTERIOR_MM : SCALLOP_MIN_ANTERIOR_MM;
-  const scallopMax = posterior ? SCALLOP_MAX_POSTERIOR_MM : SCALLOP_MAX_ANTERIOR_MM;
+  const scallopMin = Math.min(
+    posterior ? SCALLOP_MIN_POSTERIOR_MM : SCALLOP_MIN_ANTERIOR_MM,
+    params.marginScallopMm * 0.5,
+  );
+  const scallopMax = Math.max(
+    posterior ? SCALLOP_MAX_POSTERIOR_MM : SCALLOP_MAX_ANTERIOR_MM,
+    params.marginScallopMm * 0.65,
+  );
   // c2Scallop > 0 이면 근·원심(φ=±π/2, -cos 2φ=+1)이 높고 협·설(φ=0, π, -cos 2φ=-1)이 낮다.
-  const scallopAmp = clamp(Math.max(scallopMin, c2Scallop), scallopMin, scallopMax);
+  const scallopAmp = clamp(
+    Math.max(params.marginScallopMm * 0.5, c2Scallop * (params.marginScallopMm > 0.05 ? 1 : 0)),
+    scallopMin,
+    scallopMax,
+  );
   // 치은선의 완만한 1차 경사만 절반 반영해 스캘럽(-cos 2φ: 근·원심 고점, 협·설 저점)이 뚜렷이 남게 한다.
   const tiltCap = posterior ? 0.55 : 0.9;
   const a1Lab = clamp(c1Lab * 0.5, -tiltCap, tiltCap);
@@ -2657,107 +2781,241 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   }
 
-  const marginRadii = Array.from({ length: ANGULAR_COLS }, (_, col) => {
-    const theta = (col / ANGULAR_COLS) * Math.PI * 2;
-    const ct = Math.cos(theta);
-    const st = Math.sin(theta);
-    const radialFix: Vec3 = [ct, st, 0];
-    const dz0 = evalPeriodicLinear(smoothMarginZ, theta) - meanMarginZ;
-    // 마진 점 [rFix*ct, rFix*st, zMargin]을 삽입축 평면(uLabial, vSide)에 실제로 정사영했을 때
-    // (u(rFix), v(rFix))가 해석 해부 단면 위에 정확히 놓이는 rFix를 직접 푼다.
-    // 경사진 전치 삽입축(15~28°)에서 dz0 * uLabial[2] 수직 이동항을 빼먹으면 설측 마진이 불룩 튀어나오므로 정사영 방정식을 그대로 푼다.
-    const u0Off = dz0 * frame.uLabial[2];
-    const v0Off = dz0 * frame.vSide[2];
-    const gu = dot3(radialFix, frame.uLabial);
-    const gv = dot3(radialFix, frame.vSide);
-    const evalMarginNorm = (rFix: number) => {
-      const u = u0Off + rFix * gu - mCu;
-      const v = v0Off + rFix * gv - mCv;
-      const len = Math.hypot(u, v);
-      if (len < 1e-7) return 0;
-      const phi = Math.atan2(v, u);
-      const secR = toothSectionRadius(tpl.kind, "margin", Math.max(0.35, mHalfBl), Math.max(0.35, mHalfMd), phi);
-      return len / Math.max(secR, 1e-4);
-    };
-    if (evalMarginNorm(minMarginRadius) >= 1) return minMarginRadius;
-    let lo = minMarginRadius;
-    let hi = minMarginRadius + Math.max(mHalfBl, mHalfMd) * 2.2;
-    while (evalMarginNorm(hi) < 1 && hi < 12) hi *= 1.4;
-    for (let it = 0; it < 16; it += 1) {
-      const mid = (lo + hi) * 0.5;
-      if (evalMarginNorm(mid) < 1) lo = mid;
-      else hi = mid;
-    }
-    return Math.max(minMarginRadius, (lo + hi) * 0.5);
-  });
+  const solveMarginRadii = (zLoop: readonly number[], zRef: number) =>
+    Array.from({ length: ANGULAR_COLS }, (_, col) => {
+      const theta = (col / ANGULAR_COLS) * Math.PI * 2;
+      const ct = Math.cos(theta);
+      const st = Math.sin(theta);
+      const radialFix: Vec3 = [ct, st, 0];
+      const dz0 = evalPeriodicLinear(zLoop, theta) - zRef;
+      // 마진 점 [rFix*ct, rFix*st, zMargin]을 삽입축 평면(uLabial, vSide)에 실제로 정사영했을 때
+      // (u(rFix), v(rFix))가 해석 해부 단면 위에 정확히 놓이는 rFix를 직접 푼다.
+      // 경사진 전치 삽입축(15~28°)에서 dz0 * uLabial[2] 수직 이동항을 빼먹으면 설측 마진이 불룩 튀어나오므로 정사영 방정식을 그대로 푼다.
+      const u0Off = dz0 * frame.uLabial[2];
+      const v0Off = dz0 * frame.vSide[2];
+      const gu = dot3(radialFix, frame.uLabial);
+      const gv = dot3(radialFix, frame.vSide);
+      const evalMarginNorm = (rFix: number) => {
+        const u = u0Off + rFix * gu - mCu;
+        const v = v0Off + rFix * gv - mCv;
+        const len = Math.hypot(u, v);
+        if (len < 1e-7) return 0;
+        const phi = Math.atan2(v, u);
+        const secR = toothSectionRadius(tpl.kind, "margin", Math.max(0.35, mHalfBl), Math.max(0.35, mHalfMd), phi);
+        return len / Math.max(secR, 1e-4);
+      };
+      if (evalMarginNorm(minMarginRadius) >= 1) return minMarginRadius;
+      let lo = minMarginRadius;
+      let hi = minMarginRadius + Math.max(mHalfBl, mHalfMd) * 2.2;
+      while (evalMarginNorm(hi) < 1 && hi < 12) hi *= 1.4;
+      for (let it = 0; it < 16; it += 1) {
+        const mid = (lo + hi) * 0.5;
+        if (evalMarginNorm(mid) < 1) lo = mid;
+        else hi = mid;
+      }
+      return Math.max(minMarginRadius, (lo + hi) * 0.5);
+    });
 
-  // 마진 반경(marginRadii)이 확정된 뒤, 멀리 떨어진 인접치 치간유두가 아니라 실제 마진이 놓이는 반경(r ≈ marginRadii)
-  // 바로 위의 스캔 치은 표면 높이를 재서 협·설면과 근·원심 인접면 모두 치은 하방 params.marginDepthMm(기본 0.5mm)에 맞춘다.
+  let marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
+
+  // 마진 반경(marginRadii)과 예측 크라운 치경부 출현 윤곽이 확정된 뒤, 실제 치은 라인(출현 소켓 테두리·치간유두 능선)을 따라
+  // 협·설측은 치은 하방(params.marginDepthMm)으로 내리고 근·원심은 치관 쪽으로 올라가는 스캘럽 마진을 잡는다.
   {
+    const CREST_BIN_MM = 0.35;
+    const CREST_BINS = 6;
+    const sectorRStart = new Array<number>(SECTORS);
+    const sectorREnd = new Array<number>(SECTORS);
+    const sectorCLab = new Array<number>(SECTORS);
+    const sectorSMes = new Array<number>(SECTORS);
+    const sectorRetromolar = new Array<boolean>(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const theta = ((b + 0.5) / SECTORS) * Math.PI * 2;
+      const ct = Math.cos(theta);
+      const st = Math.sin(theta);
+      const cLab = ct * labXY[0] + st * labXY[1];
+      const sMes = ct * mesXY[0] + st * mesXY[1];
+      const proxW = sMes * sMes;
+      const isRetromolar = hasDistalRetromolarPad && sMes < -0.35;
+      const rM = evalPeriodicLinear(marginRadii, theta);
+      const colIdx = Math.floor(((b + 0.5) / SECTORS) * ANGULAR_COLS) % ANGULAR_COLS;
+      const tCrown = analyticSectionRay(
+        tpl.kind,
+        "crown",
+        natHalfBl,
+        natHalfBl,
+        crownHalfMd,
+        crownCenterU,
+        crownCenterV * crownSideSign,
+        colDuFix[colIdx]!,
+        colDvFix[colIdx]!,
+      );
+      const rCrownFix = Number.isFinite(tCrown)
+        ? tCrown / Math.max(0.35, colProjScale[colIdx]!)
+        : rM + 1.0;
+      const rProxEnd = Math.max(rM + 0.55, Math.min(rM + 1.25, rM * 0.4 + rCrownFix * 0.6));
+      sectorCLab[b] = cLab;
+      sectorSMes[b] = sMes;
+      sectorRetromolar[b] = isRetromolar;
+      sectorRStart[b] = Math.max(sbR + 0.22, rM - 0.32);
+      sectorREnd[b] = isRetromolar ? rM + 0.35 : (rM + 0.5) * (1 - proxW) + rProxEnd * proxW;
+    }
+
     const atMarginBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+    const crestBins: number[][][] = Array.from({ length: SECTORS }, () =>
+      Array.from({ length: CREST_BINS }, () => [] as number[]),
+    );
+    const zScanCap = medianRimZ + (posterior ? 2.7 : 3.5);
     for (let i = 0; i < jawLocalPts.length; i += 3) {
       const x = jawLocalPts[i]!;
       const y = jawLocalPts[i + 1]!;
       const z = jawLocalPts[i + 2]!;
-      if (z < 0.8 || z > sbH - 0.2) continue;
+      if (z < 0.8 || z > sbH - 0.15 || z > zScanCap) continue;
       const theta = wrapAngle(Math.atan2(y, x));
       const b = Math.min(SECTORS - 1, Math.floor((theta / (Math.PI * 2)) * SECTORS));
-      if (z > rawGingivaZ[b]! + 2.1) continue;
-      const rM = evalPeriodicLinear(marginRadii, theta);
       const r = Math.hypot(x, y);
-      if (r < Math.max(sbR + 0.22, rM - 0.38) || r > rM + 0.38) continue;
-      atMarginBuckets[b]!.push(z);
+      const rStart = sectorRStart[b]!;
+      if (r < rStart) continue;
+      const rM = evalPeriodicLinear(marginRadii, theta);
+      if (r <= rM + 0.32 && z <= rawGingivaZ[b]! + 2.3) {
+        atMarginBuckets[b]!.push(z);
+      }
+      if (r <= sectorREnd[b]!) {
+        const bi = Math.min(CREST_BINS - 1, Math.max(0, Math.floor((r - rStart) / CREST_BIN_MM)));
+        crestBins[b]![bi]!.push(z);
+      }
     }
+
+    const fillMissingCircular = (arr: number[], fallback: readonly number[]) => {
+      for (let b = 0; b < SECTORS; b += 1) {
+        if (Number.isFinite(arr[b]!)) continue;
+        let prev = fallback[b]!;
+        let next = fallback[b]!;
+        let dPrev = SECTORS;
+        let dNext = SECTORS;
+        for (let step = 1; step < SECTORS; step += 1) {
+          const lp = arr[(b - step + SECTORS) % SECTORS]!;
+          if (dPrev === SECTORS && Number.isFinite(lp)) {
+            prev = lp;
+            dPrev = step;
+          }
+          const rn = arr[(b + step) % SECTORS]!;
+          if (dNext === SECTORS && Number.isFinite(rn)) {
+            next = rn;
+            dNext = step;
+          }
+          if (dPrev < SECTORS && dNext < SECTORS) break;
+        }
+        arr[b] =
+          dPrev < SECTORS || dNext < SECTORS
+            ? (prev * dNext + next * dPrev) / Math.max(dPrev + dNext, 1)
+            : fallback[b]!;
+      }
+    };
+
     const gingAtM = atMarginBuckets.map((list) => {
       if (list.length < 3) return Number.NaN;
       list.sort((a, c) => a - c);
-      return list[Math.floor(list.length * 0.45)]!;
+      return list[Math.floor(list.length * 0.52)]!;
     });
-    for (let b = 0; b < SECTORS; b += 1) {
-      if (Number.isFinite(gingAtM[b]!)) continue;
-      let prev = rimLow[b]!;
-      let next = rimLow[b]!;
-      let dPrev = SECTORS;
-      let dNext = SECTORS;
-      for (let step = 1; step < SECTORS; step += 1) {
-        const lp = gingAtM[(b - step + SECTORS) % SECTORS]!;
-        if (dPrev === SECTORS && Number.isFinite(lp)) {
-          prev = lp;
-          dPrev = step;
-        }
-        const rn = gingAtM[(b + step) % SECTORS]!;
-        if (dNext === SECTORS && Number.isFinite(rn)) {
-          next = rn;
-          dNext = step;
-        }
-        if (dPrev < SECTORS && dNext < SECTORS) break;
+    fillMissingCircular(gingAtM, rimLow);
+
+    const gingCrestRaw = crestBins.map((bins, b) => {
+      const cLab = sectorCLab[b]!;
+      let crest = Number.NaN;
+      let prev = Number.NaN;
+      for (const list of bins) {
+        if (list.length < 3) continue;
+        list.sort((a, c) => a - c);
+        const m = list[Math.floor(list.length * 0.55)]!;
+        // 반경 0.35mm 안에 0.92mm 넘게 치솟으면 치은이 아니라 인접 자연치 법랑질 벽이므로 직전에서 멈춘다.
+        if (Number.isFinite(prev) && m - prev > 0.92) break;
+        // 순·협측에서 치은정 능선을 넘어 바깥 치조점막으로 꺾여 내려가면 능선 꼭대기를 치은 라인으로 잡는다.
+        if (cLab > 0.35 && Number.isFinite(crest) && m < crest - 0.18) break;
+        crest = Number.isFinite(crest) ? Math.max(crest, m) : m;
+        prev = m;
       }
-      gingAtM[b] =
-        dPrev < SECTORS || dNext < SECTORS
-          ? (prev * dNext + next * dPrev) / Math.max(dPrev + dNext, 1)
-          : rimLow[b]!;
+      return crest;
+    });
+    fillMissingCircular(gingCrestRaw, gingAtM);
+
+    const gingSmooth = lowPassCircular(gingCrestRaw, 3);
+    // 협·설 치은정(cLab² 가중)을 잇는 기준선을 구해 임플란트 협설 경사와 무관하게 근·원심 치간유두 상승량을 분리한다.
+    let flWSum = 0;
+    let flMeanNum = 0;
+    let flW2Sum = 0;
+    let flSlopeNum = 0;
+    for (let b = 0; b < SECTORS; b += 1) {
+      const cLab = sectorCLab[b]!;
+      const w = cLab * cLab;
+      flWSum += w;
+      flMeanNum += w * gingSmooth[b]!;
+      flW2Sum += w * cLab * cLab;
+      flSlopeNum += w * cLab * gingSmooth[b]!;
     }
-    const smoothGingAtM = lowPassCircular(gingAtM, 2);
-    const sortedGingAtM = [...smoothGingAtM].sort((a, c) => a - c);
-    const medGingAtM = sortedGingAtM[Math.floor(sortedGingAtM.length / 2)]!;
-    // 후구치 삼각 융기 등 한쪽 점막만 급격히 치솟아도 마진이 교합면 근처까지 기어오르지 않도록 둘레 고저차를 제한한다.
-    const localHighMarginCap = Math.min(
-      maxMarginZ,
-      medGingAtM - params.marginDepthMm + (posterior ? 1.05 : 1.4),
-    );
-    const refinedDraft = smoothGingAtM.map((gz) =>
-      clamp(gz - params.marginDepthMm, minMarginZ, localHighMarginCap),
-    );
-    const cappedDraft = lowPassCircular(refinedDraft, 2).map((mz, b) =>
-      clamp(
-        Math.min(mz, gingAtM[b]! - Math.min(0.42, params.marginDepthMm * 0.85)),
-        minMarginZ,
-        localHighMarginCap,
-      ),
-    );
-    smoothMarginZ = lowPassCircular(cappedDraft, 2).map((z) =>
-      clamp(z, minMarginZ, localHighMarginCap),
-    );
+    const flMean = flMeanNum / Math.max(flWSum, 1e-4);
+    const flSlope = flSlopeNum / Math.max(flW2Sum, 1e-4);
+
+    const defaultScallop = posterior ? 0.55 : 0.75;
+    const scallopRatio = clamp(params.marginScallopMm / defaultScallop, 0, 2.4);
+    const followScale = scallopRatio <= 1 ? scallopRatio : 1 + (scallopRatio - 1) * 0.25;
+    const proxDepthRelief = Math.min(params.marginDepthMm * 0.62, params.marginScallopMm * 0.55);
+    const extraUserProxLift = Math.max(0, params.marginScallopMm - defaultScallop) * 0.55;
+
+    const baseMaxSpan = tpl.kind === "molar" ? 1.45 : tpl.kind === "premolar" ? 1.75 : 2.35;
+
+    const draftZ = gingSmooth.map((gCrest, b) => {
+      const cLab = sectorCLab[b]!;
+      const sMes = sectorSMes[b]!;
+      const proxW = sMes * sMes;
+      const facialW = Math.max(0, cLab) ** 2;
+      const isRetromolar = sectorRetromolar[b]!;
+      const flBase = flMean + flSlope * cLab;
+      const gingRise = clamp(
+        gCrest - flBase,
+        -0.55,
+        isRetromolar ? 0.75 : baseMaxSpan,
+      );
+      const naturalLift = gingRise * followScale + proxDepthRelief * proxW;
+      const minScallopLift =
+        (isRetromolar ? Math.min(0.45, params.marginScallopMm * 0.65) : params.marginScallopMm * 0.92) *
+        proxW;
+      const coronalLift =
+        params.marginScallopMm <= 0.02
+          ? gingRise * scallopRatio
+          : Math.max(naturalLift, minScallopLift);
+      const zFl = flBase - params.marginDepthMm;
+      const maxSpanAboveFl = (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW;
+      const highCap = Math.min(maxMarginZ, zFl + maxSpanAboveFl);
+
+      // 치은 상방 노출 방지: 협측은 마진 반경 직상방 치은(gingAtM) 아래로 감추고, 근·원심은 치간유두 치은 라인 바로 아래까지 따라 올라간다.
+      const crestSubgMin =
+        Math.min(0.38, params.marginDepthMm * 0.82) * (1 - proxW) +
+        Math.min(0.28, params.marginDepthMm * 0.45) * proxW;
+      const crestCeil = gCrest - crestSubgMin + extraUserProxLift * proxW;
+      const facialSurfaceCeil = gingAtM[b]! - Math.min(0.32, params.marginDepthMm * 0.72);
+      const ceilZ =
+        facialW > 0.15
+          ? Math.min(highCap, crestCeil * (1 - facialW * 0.75) + Math.min(crestCeil, facialSurfaceCeil) * (facialW * 0.75))
+          : Math.min(highCap, crestCeil);
+      return clamp(Math.min(zFl + coronalLift, ceilZ), minMarginZ, highCap);
+    });
+
+    const pass1 = lowPassCircular(draftZ, 3).map((mz, b) => {
+      const cLab = sectorCLab[b]!;
+      const sMes = sectorSMes[b]!;
+      const proxW = sMes * sMes;
+      const facialW = Math.max(0, cLab) ** 2;
+      const flBase = flMean + flSlope * cLab;
+      const maxSpanAboveFl = (sectorRetromolar[b] ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW;
+      const highCap = Math.min(maxMarginZ, flBase - params.marginDepthMm + maxSpanAboveFl);
+      const facialGuard =
+        facialW > 0.25 && params.marginDepthMm > 0.05
+          ? gingAtM[b]! - Math.min(0.28, params.marginDepthMm * 0.65) * facialW
+          : Infinity;
+      return clamp(Math.min(mz, facialGuard), minMarginZ, highCap);
+    });
+    smoothMarginZ = lowPassCircular(pass1, 3).map((z) => clamp(z, minMarginZ, maxMarginZ));
+    marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
   }
   // 평균 크라운을 옮긴 뒤에도 풍융부에서 마진 위 축벽 + 최소 두께가 들어가야 한다. 모자라면 옮긴 양을 줄인다.
   for (let iter = 0; iter < 12; iter += 1) {

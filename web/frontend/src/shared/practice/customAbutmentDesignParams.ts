@@ -12,6 +12,8 @@ export type CustomAbutmentDesignParams = {
   occlusalClearanceMm: number;
   /** 포스트 축벽 편측 테이퍼(°). */
   postTaperDeg: number;
+  /** 악궁 접선 기준 포스트 수평 회전 보정(°, 교합면 시점 +=반시계, -=시계). */
+  postYawDeg: number;
   /** 대합치가 없을 때 포스트 높이 보정(mm). 대합치가 있으면 낮추기만 한다. */
   postHeightOffsetMm: number;
   /** 포스트 굵기 배율. */
@@ -20,8 +22,10 @@ export type CustomAbutmentDesignParams = {
   marginFilletRadiusMm: number;
   /** 마진 챔퍼 폭(mm). 피니시라인에서 포스트 축벽까지 안쪽으로 들어가는 양. */
   marginShoulderMm: number;
-  /** 치은연 아래 피니시라인 깊이(mm). 둘레 전체에 같게 둔다. */
+  /** 치은연 아래 피니시라인 깊이(mm). 협·설측 기준이며 근·원심은 치은 라인 스캘럽을 따른다. */
   marginDepthMm: number;
+  /** 근·원심 마진이 협·설 대비 치관 쪽(치은 라인)으로 올라가는 스캘럽 양(mm). */
+  marginScallopMm: number;
   /** 마진 단면 크기 배율. */
   marginSizeScale: number;
   /** 예측 크라운이 인접치·대합치에 겹치는 접촉량(mm). */
@@ -51,11 +55,13 @@ export type CustomAbutmentParamSpec = {
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
   occlusalClearanceMm: { label: "대합치 거리", unit: "mm", min: 0.7, max: 2.5, step: 0.05 },
   postTaperDeg: { label: "포스트 테이퍼(편측)", unit: "°", min: 1, max: 8, step: 0.5 },
+  postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -2, max: 2, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.8, max: 1.15, step: 0.01 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.5, max: 0.8, step: 0.05 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.8, step: 0.05 },
   marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: 0, max: 1.5, step: 0.1 },
+  marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.85, max: 1.2, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
   minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 1.5, step: 0.05 },
@@ -69,9 +75,10 @@ export const CUSTOM_ABUTMENT_PARAM_KEYS = Object.keys(
   CUSTOM_ABUTMENT_PARAM_SPECS,
 ) as CustomAbutmentParamKey[];
 
-/** 치과 취향으로 저장할 수 있는 값. 윗면 이동은 케이스마다 달라 뺀다. */
+/** 치과 취향으로 저장할 수 있는 값. 윗면 이동·개별 수평 회전은 케이스마다 달라 뺀다. */
 export const CUSTOM_ABUTMENT_PREFERENCE_KEYS = CUSTOM_ABUTMENT_PARAM_KEYS.filter(
-  (key) => key !== "axisShiftLabialMm" && key !== "axisShiftMesialMm",
+  (key) =>
+    key !== "axisShiftLabialMm" && key !== "axisShiftMesialMm" && key !== "postYawDeg",
 );
 
 export type CustomAbutmentPreferenceScope = "all" | "anterior" | "posterior";
@@ -107,11 +114,13 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
   return {
     occlusalClearanceMm: 1.3,
     postTaperDeg: 2,
+    postYawDeg: 0,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
     marginFilletRadiusMm: 0.6,
     marginShoulderMm: 0.35,
     marginDepthMm: 0.5,
+    marginScallopMm: isAnteriorTooth(toothNumber) ? 0.75 : 0.55,
     marginSizeScale: 1,
     crownContactMm: 0.05,
     minCrownThicknessMm: 1.0,
