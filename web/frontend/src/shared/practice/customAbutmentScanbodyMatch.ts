@@ -1043,18 +1043,127 @@ function evaluateScanbodyPeak(
 ): { top: Vec3; axis: Vec3; cylinderScore: number } | null {
   let center = guess;
   let n = occlusalAxis;
+
+  // 스캔바디가 기울어져 있으면 가장 높은 점(guess)이 상판 한쪽 가장자리(중심에서 ~R)에 찍힌다.
+  // 그냥 반경 R+0.55mm 창으로 평균을 내면 반대쪽 스캔바디 절반은 잘리고 옆 치은/후구치 융기가 섞여 중심이 밀리므로,
+  // 먼저 절벽(치은 열구 단차 > 0.65mm)에서 멈추는 2D 연결 평탄면(flood-fill)으로 진짜 상판 중심을 잡는다.
+  {
+    const g1 = norm(Math.abs(n[2]) < 0.9 ? cross(n, [0, 0, 1]) : cross(n, [1, 0, 0]));
+    const g2 = cross(n, g1);
+    const cell = 0.42;
+    const maxSpan = expectedRadiusMm * 2 + 0.55;
+    const half = maxSpan + 0.5;
+    const side = Math.ceil((2 * half) / cell);
+    const cellH = new Float32Array(side * side).fill(-Infinity);
+    const cellSum = new Float64Array(side * side * 3);
+    const cellCnt = new Int32Array(side * side);
+    for (let i = 0; i < target.length; i += 3) {
+      const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], guess);
+      const h = dot(d, n);
+      if (h < -2.4 || h > 2.0) continue;
+      const u = dot(d, g1);
+      const v = dot(d, g2);
+      if (Math.abs(u) > half || Math.abs(v) > half) continue;
+      const gx = Math.floor((u + half) / cell);
+      const gy = Math.floor((v + half) / cell);
+      if (gx < 0 || gy < 0 || gx >= side || gy >= side) continue;
+      const idx = gy * side + gx;
+      if (h > cellH[idx]!) cellH[idx] = h;
+      if (h >= -1.55) {
+        cellSum[idx * 3] += target[i]!;
+        cellSum[idx * 3 + 1] += target[i + 1]!;
+        cellSum[idx * 3 + 2] += target[i + 2]!;
+        cellCnt[idx] += 1;
+      }
+    }
+    const cIdx = Math.floor(half / cell);
+    let seedX = cIdx;
+    let seedY = cIdx;
+    let seedH = -Infinity;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const x = cIdx + dx;
+        const y = cIdx + dy;
+        if (x < 0 || y < 0 || x >= side || y >= side) continue;
+        const h = cellH[y * side + x]!;
+        if (h > seedH) {
+          seedH = h;
+          seedX = x;
+          seedY = y;
+        }
+      }
+    }
+    if (Number.isFinite(seedH)) {
+      const visited = new Uint8Array(side * side);
+      const queue: number[] = [seedY * side + seedX];
+      visited[seedY * side + seedX] = 1;
+      let minU = Infinity;
+      let maxU = -Infinity;
+      let minV = Infinity;
+      let maxV = -Infinity;
+      let sumX = 0;
+      let sumY = 0;
+      let sumZ = 0;
+      let ptsCnt = 0;
+      let cellsUsed = 0;
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const cx = cur % side;
+        const cy = Math.floor(cur / side);
+        const curH = cellH[cur]!;
+        const u = (cx + 0.5) * cell - half;
+        const v = (cy + 0.5) * cell - half;
+        minU = Math.min(minU, u);
+        maxU = Math.max(maxU, u);
+        minV = Math.min(minV, v);
+        maxV = Math.max(maxV, v);
+        cellsUsed += 1;
+        const cnt = cellCnt[cur]!;
+        if (cnt > 0) {
+          sumX += cellSum[cur * 3]!;
+          sumY += cellSum[cur * 3 + 1]!;
+          sumZ += cellSum[cur * 3 + 2]!;
+          ptsCnt += cnt;
+        }
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= side || ny >= side) continue;
+            const nIdx = ny * side + nx;
+            if (visited[nIdx]) continue;
+            const nh = cellH[nIdx]!;
+            if (!Number.isFinite(nh) || nh < seedH - 1.45) continue;
+            if (Math.abs(nh - curH) > 0.65) continue;
+            const nu = (nx + 0.5) * cell - half;
+            const nv = (ny + 0.5) * cell - half;
+            if (Math.hypot(nu, nv) > maxSpan) continue;
+            visited[nIdx] = 1;
+            queue.push(nIdx);
+          }
+        }
+      }
+      const spanLim = expectedRadiusMm * 2 + 1.25;
+      if (cellsUsed >= 4 && ptsCnt >= 12 && maxU - minU <= spanLim && maxV - minV <= spanLim) {
+        center = [sumX / ptsCnt, sumY / ptsCnt, sumZ / ptsCnt];
+      }
+    }
+  }
+
   for (let iter = 0; iter < 4; iter += 1) {
     const near: Vec3[] = [];
     let maxH = -Infinity;
+    const capSearchR = expectedRadiusMm + 0.38;
     for (let i = 0; i < target.length; i += 3) {
       const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
       const h = dot(d, n);
       if (h < -2.2 || h > 2.2) continue;
-      if (Math.hypot(...sub(d, scale(n, h))) > expectedRadiusMm + 0.55) continue;
+      if (Math.hypot(...sub(d, scale(n, h))) > capSearchR) continue;
       near.push(d);
       if (h > maxH) maxH = h;
     }
-    const cap = near.filter((d) => dot(d, n) >= maxH - (iter === 0 ? 1.1 : 0.55));
+    const cap = near.filter((d) => dot(d, n) >= maxH - (iter === 0 ? 0.95 : 0.55));
     if (cap.length < 14) break;
     const c: Vec3 = [0, 0, 0];
     for (const d of cap) {
@@ -1187,6 +1296,8 @@ type DetectScanbodyArgs = {
   models: readonly LoadedScanbodyModel[];
   connections: readonly ImplantConnection[];
   excludeTops?: readonly Vec3[];
+  /** 사용자가 찍은 스캔 위의 점. 있으면 그 점만 탐색 원점으로 쓴다. */
+  anchorWorld?: Vec3;
 };
 
 type ScanbodyHit = {
@@ -1202,17 +1313,20 @@ type ScanbodyHit = {
 function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): ScanbodyHit[] {
   const { jawGeometry, frame, toothWork, models, connections } = args;
   if (models.length === 0) return [];
-  const slot = locateNominalToothSlot({
+  const nominal = locateNominalToothSlot({
     geometry: jawGeometry,
     frame,
     toothNumber: toothWork.toothNumber,
   });
-  if (!slot) return [];
+  if (!nominal) return [];
+  const anchor = args.anchorWorld;
+  const anchored = anchor != null;
+  const slot = anchored ? { ...nominal, center: [anchor[0], anchor[1], anchor[2]] as Vec3 } : nominal;
 
   const posAttr = jawGeometry.getAttribute("position");
   if (!posAttr || posAttr.count < 90) return [];
 
-  const searchRadiusMm = 26.0;
+  const searchRadiusMm = anchored ? 12 : 26;
   const r2 = searchRadiusMm * searchRadiusMm;
   const seen = new Set<number>();
   const localPts: number[] = [];
@@ -1220,9 +1334,11 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     const wx = posAttr.getX(i);
     const wy = posAttr.getY(i);
     const wz = posAttr.getZ(i);
-    const worldR =
-      wx * slot.archRight[0] + wy * slot.archRight[1] + wz * slot.archRight[2];
-    if (slot.side * worldR < -2.5) continue;
+    if (!anchored) {
+      const worldR =
+        wx * slot.archRight[0] + wy * slot.archRight[1] + wz * slot.archRight[2];
+      if (slot.side * worldR < -2.5) continue;
+    }
     const dx = wx - slot.center[0];
     const dy = wy - slot.center[1];
     const dz = wz - slot.center[2];
@@ -1309,9 +1425,11 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   evaluatedPeaksRaw.sort(
     (a, b) => a.cylinderScore + a.distMm * 0.025 - (b.cylinderScore + b.distMm * 0.025),
   );
+  // 한 스캔바디/교두 안의 중복 봉우리(반경 1.4mm)는 묶고, 기울어진 스캔바디에서 윗면 중앙과 치은 경계처럼
+  // 1.5~2.2mm 떨어진 서로 다른 후보는 모두 남겨 최대 26개까지 ICP 정합을 대 본다.
   const evaluatedPeaks: typeof evaluatedPeaksRaw = [];
   for (const row of evaluatedPeaksRaw) {
-    if (evaluatedPeaks.some((p) => Math.hypot(...sub(p.top, row.top)) < 2.2)) continue;
+    if (evaluatedPeaks.some((p) => Math.hypot(...sub(p.top, row.top)) < 1.35)) continue;
     evaluatedPeaks.push(row);
   }
 
@@ -1381,8 +1499,18 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     distFromSlot: number;
   };
   const peakHits: PeakHit[] = [];
+  let peaksForFit = evaluatedPeaks.slice(0, anchored ? 12 : 26);
+  if (anchored) {
+    const clickGuess: Vec3 = [0, 0, 0];
+    const clicked = evaluateScanbodyPeak(target, clickGuess, axis, expectedR);
+    const seed = clicked
+      ? { ...clicked, distMm: Math.hypot(dot(clicked.top, e1), dot(clicked.top, e2)) }
+      : { top: clickGuess, axis, cylinderScore: 0.45, distMm: 0 };
+    const rest = peaksForFit.filter((p) => Math.hypot(...sub(p.top, seed.top)) >= 2.2);
+    peaksForFit = [seed, ...rest].slice(0, 8);
+  }
 
-  for (const candPeak of evaluatedPeaks.slice(0, 14)) {
+  for (const candPeak of peaksForFit) {
     let bestHit: PeakHit | null = null;
     for (const model of candidateModels) {
       const originGuess = sub(candPeak.top, scale(candPeak.axis, model.topMm));
@@ -1399,27 +1527,50 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       const isShallowCap = model.key.startsWith("param-shallow:");
       const fittedTop = applyPose(fit.pose, 0, model.topMm, 0);
       if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < 3.6)) continue;
+      const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
+      if (anchored && distFromSlot > 6.5) continue;
       const fitAxis = norm(poseColumn(fit.pose, 1));
       const iso = measureFittedIsolation(fittedTop, fitAxis, model.radiusMm);
-      if (iso.overhangRatio > 0.08 || iso.flareRatio > 0.62) continue;
+      const overhangLimit = anchored ? 0.12 : 0.08;
+      const flareLimit = anchored ? 0.78 : 0.62;
+      if (iso.overhangRatio > overhangLimit || iso.flareRatio > flareLimit) continue;
       // 자연치 절단연·교두에 비스듬히 얹힌 가짜 정합을 차단하되,
       // 치은에 깊게 묻힌 5mm 단축·심부 식립 스캔바디(360° 원통 ≥11/12 부채꼴 + 평평한 상단 중심 원판 + 돌출 0)는
       // 베벨 위치 차이로 파라메트릭 ICP rms가 0.18~0.19mm까지 올라가더라도 정확히 인식한다.
       const deepCleanCylinder =
         iso.sectorCount >= 11 &&
-        iso.capCenterCnt >= 320 &&
+        iso.capCenterCnt >= 145 &&
         iso.flareRatio <= 0.45 &&
         iso.overhangRatio <= 0.015;
       const ultraSharpPartialScanbody =
         iso.sectorCount >= 9 &&
-        iso.capCenterCnt >= 320 &&
+        iso.capCenterCnt >= 145 &&
         fit.rmsMm <= 0.135 &&
         iso.flareRatio <= 0.12 &&
         iso.overhangRatio <= 0.015;
-      const maxAllowedRms = model.isLibraryCad ? 0.168 : deepCleanCylinder ? 0.198 : 0.172;
-      const minAllowedTopCov = ultraSharpPartialScanbody ? 0.66 : deepCleanCylinder ? 0.72 : 0.82;
+      const maxAllowedRms = anchored
+        ? model.isLibraryCad
+          ? 0.21
+          : deepCleanCylinder
+            ? 0.23
+            : 0.21
+        : model.isLibraryCad
+          ? 0.168
+          : isShallowCap
+            ? deepCleanCylinder && fit.topCoverage >= 0.86
+              ? 0.188
+              : 0.165
+            : deepCleanCylinder
+              ? 0.198
+              : 0.172;
+      const minAllowedTopCov = anchored
+        ? 0.62
+        : ultraSharpPartialScanbody
+          ? 0.66
+          : deepCleanCylinder
+            ? 0.72
+            : 0.82;
       if (fit.topCoverage < minAllowedTopCov || fit.rmsMm > maxAllowedRms) continue;
-      const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
       const libBonus = model.isLibraryCad && fit.rmsMm <= 0.11 && fit.topCoverage >= 0.85 ? -0.08 : 0;
       const shallowPenalty = isShallowCap ? 0.035 : 0;
       const totalScore =
@@ -1427,7 +1578,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
         (1 - fit.topCoverage) * 2.1 +
         candPeak.cylinderScore * 0.45 +
         iso.flareRatio * 0.75 +
-        distFromSlot * 0.008 +
+        distFromSlot * (anchored ? 0.05 : 0.008) +
         libBonus +
         shallowPenalty;
       if (!bestHit || totalScore < bestHit.totalScore) {
@@ -1607,6 +1758,34 @@ export function detectAndMatchScanbodiesOnJaw(args: {
   return out;
 }
 
+/**
+ * 사용자가 스캔 위에서 찍은 점 주변(반경 12mm, 정합 윗면은 6.5mm 안)만 다시 찾는다.
+ * 자동 배정이 비었을 때 그 치아의 스캔바디 상단을 클릭하면 호출한다.
+ */
+export function matchScanbodyNearPoint(args: {
+  jawGeometry: THREE.BufferGeometry;
+  frame: DentalFrame;
+  toothWork: ToothWorkSelection;
+  models: readonly LoadedScanbodyModel[];
+  connections: readonly ImplantConnection[];
+  point: readonly [number, number, number];
+  excludeTops?: readonly Vec3[];
+}): MatchedScanbodyFixture | null {
+  const hits = collectScanbodyHits(
+    {
+      jawGeometry: args.jawGeometry,
+      frame: args.frame,
+      toothWork: args.toothWork,
+      models: args.models,
+      connections: args.connections,
+      excludeTops: args.excludeTops,
+      anchorWorld: [args.point[0], args.point[1], args.point[2]],
+    },
+    1,
+  );
+  return hits[0]?.fixture ?? null;
+}
+
 /** 픽스쳐 로컬(플랫폼 원점, +Z 임플란트 축, +X 헥스) → 스캔 월드 4×4 행렬. */
 export function fixturePoseToMatrix4(pose: FixtureWorldPose): THREE.Matrix4 {
   const [xx, xy, xz] = pose.hexX;
@@ -1664,14 +1843,55 @@ export function splitScanByScanbodies(
   const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
   if (fixtures.length === 0 || !pos || pos.count < 3) return { rest: source.clone(), scanbodies };
-  const zones = fixtures.map((f) => ({
-    tooth: f.toothNumber,
-    origin: f.fixturePose.origin,
-    axis: f.fixturePose.axis,
-    maxR2: (f.scanbodyRadiusMm + 0.28) ** 2,
-    minZ: Math.max(0.8, f.gingivaFloorMm + 0.15),
-    maxZ: f.scanbodyHeightMm + 1.2,
-  }));
+  const SECTORS = 24;
+  const zones = fixtures.map((f) => {
+    const axis = f.fixturePose.axis;
+    const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
+    const e2 = cross(axis, e1);
+    const rawFloor = new Float64Array(SECTORS).fill(Infinity);
+    const rOuterMin = f.scanbodyRadiusMm + 0.34;
+    const rOuterMax = f.scanbodyRadiusMm + 1.65;
+    for (let vi = 0; vi < pos.count; vi += 1) {
+      const rx0 = pos.getX(vi) - f.fixturePose.origin[0];
+      const ry0 = pos.getY(vi) - f.fixturePose.origin[1];
+      const rz0 = pos.getZ(vi) - f.fixturePose.origin[2];
+      const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
+      if (hz < 0.6 || hz > f.scanbodyHeightMm - 0.55) continue;
+      const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
+      const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
+      const r = Math.hypot(u, v);
+      if (r < rOuterMin || r > rOuterMax) continue;
+      const b = Math.min(
+        SECTORS - 1,
+        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
+      );
+      if (hz < rawFloor[b]!) rawFloor[b] = hz;
+    }
+    const baseFloor = Math.max(0.75, f.gingivaFloorMm - 0.15);
+    const filled = Array.from({ length: SECTORS }, (_, b) =>
+      Number.isFinite(rawFloor[b]!) ? rawFloor[b]! : baseFloor,
+    );
+    const sectorMinZ = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const prev = filled[(b - 1 + SECTORS) % SECTORS]!;
+      const cur = filled[b]!;
+      const next = filled[(b + 1) % SECTORS]!;
+      sectorMinZ[b] = Math.max(
+        0.65,
+        Math.min(f.scanbodyHeightMm - 1.3, (prev + cur * 2 + next) * 0.25 - 0.28),
+      );
+    }
+    return {
+      tooth: f.toothNumber,
+      origin: f.fixturePose.origin,
+      axis,
+      e1,
+      e2,
+      maxR2: (f.scanbodyRadiusMm + 0.34) ** 2,
+      sectorMinZ,
+      maxZ: f.scanbodyHeightMm + 1.2,
+    };
+  });
   const zoneOf = (vi: number) => {
     const dx = pos.getX(vi);
     const dy = pos.getY(vi);
@@ -1682,11 +1902,19 @@ export function splitScanByScanbodies(
       const ry0 = dy - zone.origin[1];
       const rz0 = dz - zone.origin[2];
       const hz = rx0 * zone.axis[0] + ry0 * zone.axis[1] + rz0 * zone.axis[2];
-      if (hz < zone.minZ || hz > zone.maxZ) continue;
+      if (hz > zone.maxZ || hz < 0.6) continue;
       const rx = rx0 - zone.axis[0] * hz;
       const ry = ry0 - zone.axis[1] * hz;
       const rz = rz0 - zone.axis[2] * hz;
-      if (rx * rx + ry * ry + rz * rz <= zone.maxR2) return k;
+      const r2 = rx * rx + ry * ry + rz * rz;
+      if (r2 > zone.maxR2) continue;
+      const u = rx0 * zone.e1[0] + ry0 * zone.e1[1] + rz0 * zone.e1[2];
+      const v = rx0 * zone.e2[0] + ry0 * zone.e2[1] + rz0 * zone.e2[2];
+      const b = Math.min(
+        SECTORS - 1,
+        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
+      );
+      if (hz >= zone.sectorMinZ[b]!) return k;
     }
     return -1;
   };
@@ -1700,7 +1928,11 @@ export function splitScanByScanbodies(
     const b = vert(t, 1);
     const c = vert(t, 2);
     const za = zoneOf(a);
-    if (za >= 0 && zoneOf(b) === za && zoneOf(c) === za) parts[za]!.push(a, b, c);
+    const zb = zoneOf(b);
+    const zc = zoneOf(c);
+    const zMatch =
+      za >= 0 && (zb === za || zc === za) ? za : zb >= 0 && zc === zb ? zb : -1;
+    if (zMatch >= 0) parts[zMatch]!.push(a, b, c);
     else rest.push(a, b, c);
   }
   const withIndex = (ids: number[]) => {

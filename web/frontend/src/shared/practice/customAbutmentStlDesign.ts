@@ -1668,7 +1668,48 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 치은선의 자잘한 굴곡을 그대로 따르지 않고 서브 0.5~1.0mm(기본 marginDepthMm=0.5~0.8)를 기준으로
   // 저차 조화(k ≤ 2: 평균 + 전후/근원심 기울기 + cos 2φ 스캘럽)만 남긴다.
   const minMarginZ = Math.max(1.5, coneTopZ + 1.1);
-  const maxMarginZ = Math.min(Math.max(8.5, sbH - 1.1), medianRimZ + 1.4);
+  let oppMarginCapZ = Infinity;
+  if (opposingLocalPts.length > 0) {
+    const oppCoreZs: number[] = [];
+    for (let i = 0; i < opposingLocalPts.length; i += 3) {
+      const ox = opposingLocalPts[i]!;
+      const oy = opposingLocalPts[i + 1]!;
+      const oz = opposingLocalPts[i + 2]!;
+      if (oz >= 2.8 && oz <= 15 && ox * ox + oy * oy <= 2.6 * 2.6) oppCoreZs.push(oz);
+    }
+    if (oppCoreZs.length >= 6) {
+      oppCoreZs.sort((a, c) => a - c);
+      const oppLowZ = oppCoreZs[Math.floor(oppCoreZs.length * 0.15)]!;
+      oppMarginCapZ = Math.max(minMarginZ + 0.25, oppLowZ - clearance - 1.35);
+    }
+  }
+  const maxMarginZ = Math.min(Math.max(8.5, sbH - 1.1), medianRimZ + 1.4, oppMarginCapZ);
+
+  // 사랑니(#18·#28·#38·#48) 원심뿐 아니라 사랑니가 없는 제2대구치(#17·#27·#37·#47) 원심의 후구치 삼각 융기(retromolar pad)도
+  // 실제 인접 자연치 치관(치은선 위 ≥3.1mm로 뚜렷이 솟은 치아)이 아니면 점막이므로 인접치 벽으로 취급하지 않는다.
+  const hasDistalNeighborFixture = neighbors.some((nb) => {
+    const d = sub3(nb.origin, [0, 0, 0]);
+    return d[0] * mesXY[0] + d[1] * mesXY[1] < -2.5;
+  });
+  const hasDistalRetromolarPad = (() => {
+    if (ownFdi?.pos === 8) return true;
+    if (ownFdi?.pos !== 7 || distalAllowance.wallMm > 0 || hasDistalNeighborFixture) return false;
+    let tallDistalCrownPts = 0;
+    for (let i = 0; i < jawLocalPts.length; i += 3) {
+      const px = jawLocalPts[i]!;
+      const py = jawLocalPts[i + 1]!;
+      const pz = jawLocalPts[i + 2]!;
+      const r = Math.hypot(px, py);
+      if (r < 3.8 || r > 9.2) continue;
+      const alongDistal = -(px * mesXY[0] + py * mesXY[1]);
+      if (alongDistal < 3.4 || Math.abs(px * labXY[0] + py * labXY[1]) > 4.2) continue;
+      if (pz >= medianRimZ + 3.1) {
+        tallDistalCrownPts += 1;
+        if (tallDistalCrownPts >= 20) return false;
+      }
+    }
+    return true;
+  })();
   const targetSubgDepth = clamp(params.marginDepthMm + 0.15, params.marginDepthMm, 1.0);
   const rimFourier = lowPassCircular(rimZ, 2);
   let c2Scallop = 0;
@@ -1817,7 +1858,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const rel = sub3(p, c0);
     const h = dot3(rel, frame0.w);
     const mesSign0 = dot3(frame0.vSide, mesXY) >= 0 ? 1 : -1;
-    const isWisdomDistal0 = parseFdiTooth(fixture.toothNumber)?.pos === 8 && dot3(rel, frame0.vSide) * mesSign0 < 0;
+    const isWisdomDistal0 = hasDistalRetromolarPad && dot3(rel, frame0.vSide) * mesSign0 < 0;
     if (!isWisdomDistal0 && h >= 2.6 && h <= 9.5) {
       const tu = dot3(rel, frame0.uLabial);
       const tv = dot3(rel, frame0.vSide);
@@ -2128,7 +2169,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           { radius: sbR, height: sbH },
           {
             mesialSignOnV,
-            isWisdom: parseFdiTooth(fixture.toothNumber)?.pos === 8,
+            isWisdom: hasDistalRetromolarPad,
             skipPos: !posHasFinishedNeighbor,
             skipNeg: !negHasFinishedNeighbor,
           },
@@ -2204,7 +2245,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   };
 
   const scanLimit = new Float32Array(LIMIT_PHI_BINS * LIMIT_H_BINS).fill(Infinity);
-  const isWisdomTooth = parseFdiTooth(fixture.toothNumber)?.pos === 8;
+  const isWisdomTooth = hasDistalRetromolarPad;
   for (let i = 0; i < jawLocalPts.length; i += 3) {
     const p: Vec3 = [jawLocalPts[i]!, jawLocalPts[i + 1]!, jawLocalPts[i + 2]!];
     if (Math.hypot(p[0], p[1]) < sbR + 0.4 && p[2] > 0 && p[2] < sbH + 1) continue;
@@ -2339,8 +2380,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const hAboveMargin = p[2] - localMarginZ;
     if (hAboveMargin < 0.8 || hAboveMargin > 10.5) continue;
     const vSigned = v * crownSideSign;
-    const isDistalOfWisdom =
-      parseFdiTooth(fixture.toothNumber)?.pos === 8 && v * mesialSignOnV < 0;
+    const isDistalOfWisdom = hasDistalRetromolarPad && v * mesialSignOnV < 0;
     const inMesialOrDistalSide =
       !isDistalOfWisdom && ((vSigned > 0 && toothPos) || (vSigned < 0 && toothNeg));
     if (!inMesialOrDistalSide || Math.abs(Math.sin(phi)) < Math.sin(42 * DEG)) continue;
@@ -2623,18 +2663,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           : rimLow[b]!;
     }
     const smoothGingAtM = lowPassCircular(gingAtM, 2);
+    const sortedGingAtM = [...smoothGingAtM].sort((a, c) => a - c);
+    const medGingAtM = sortedGingAtM[Math.floor(sortedGingAtM.length / 2)]!;
+    // 후구치 삼각 융기 등 한쪽 점막만 급격히 치솟아도 마진이 교합면 근처까지 기어오르지 않도록 둘레 고저차를 제한한다.
+    const localHighMarginCap = Math.min(
+      maxMarginZ,
+      medGingAtM - params.marginDepthMm + (posterior ? 1.05 : 1.4),
+    );
     const refinedDraft = smoothGingAtM.map((gz) =>
-      clamp(gz - params.marginDepthMm, minMarginZ, maxMarginZ),
+      clamp(gz - params.marginDepthMm, minMarginZ, localHighMarginCap),
     );
     const cappedDraft = lowPassCircular(refinedDraft, 2).map((mz, b) =>
       clamp(
         Math.min(mz, gingAtM[b]! - Math.min(0.42, params.marginDepthMm * 0.85)),
         minMarginZ,
-        maxMarginZ,
+        localHighMarginCap,
       ),
     );
     smoothMarginZ = lowPassCircular(cappedDraft, 2).map((z) =>
-      clamp(z, minMarginZ, maxMarginZ),
+      clamp(z, minMarginZ, localHighMarginCap),
     );
   }
   // 평균 크라운을 옮긴 뒤에도 풍융부에서 마진 위 축벽 + 최소 두께가 들어가야 한다. 모자라면 옮긴 양을 줄인다.
@@ -2971,10 +3018,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let meanHBaseSum = 0;
     let meanRoundStartSum = 0;
     for (const c of cols) {
-      const hBase = c.h0 + hPostBase;
-      // 인접면 마진이 높게 올라오는 짧은 포스트(예: 5mm 단축 스캔바디 케이스)에서도 roundStart가 hBase 아래로 역전되지 않도록
-      // 최소 축벽 높이(0.45mm)를 보장한다.
-      const roundStart = Math.max(hBase + 0.45, c.hTop - topRoundMm * 0.9);
+      const estRTop = Math.max(0.75, c.r0 - shoulderW - 0.35);
+      const colEdgeTop = top.heightAt(
+        dot3(c.dir, frame.uLabial) * estRTop,
+        dot3(c.dir, frame.vSide) * estRTop,
+      );
+      const hBase = Math.min(c.h0 + hPostBase, Math.max(c.h0 + 0.06, colEdgeTop - 0.3));
+      // 인접면이나 원심 마진이 높고 대합치가 가까운 짧은 포스트에서도 roundStart가 윗면 평면(colEdgeTop)을 절대 넘지 않게 고정한다.
+      // 넘어가면 해당 열 모서리가 교합면 위로 각지게 툭 튀어나온다.
+      const maxRoundStart = Math.max(hBase + 0.08, colEdgeTop - 0.1);
+      const roundStart = Math.min(
+        maxRoundStart,
+        Math.max(hBase + 0.36, colEdgeTop - topRoundMm * 0.9),
+      );
       meanHBaseSum += hBase / ANGULAR_COLS;
       meanRoundStartSum += roundStart / ANGULAR_COLS;
       meanSpanSum += Math.max(0.4, roundStart - hBase) / ANGULAR_COLS;
@@ -3382,10 +3438,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const cos0 = Math.cos(t0);
       const edgeHeight = (rFlat: number) =>
         top.heightAt(dot3(c.dir, frame.uLabial) * rFlat, dot3(c.dir, frame.vSide) * rFlat);
-      const rhoMax = Math.max(0.15, Math.min(topRoundMm, (rEnd - 0.3) / cos0));
+      const rhoMax = Math.max(0.06, Math.min(topRoundMm, (rEnd - 0.3) / cos0));
       const rise = Math.max(1 - sin0, 1e-3);
-      const rho = clamp((edgeHeight(rEnd - rhoMax * cos0) - hEnd) / rise, 0.15, rhoMax);
-      const ext = Math.max(0.02, edgeHeight(rEnd - rho * cos0) - hEnd - rho * rise);
+      const availRise = Math.max(0.03, edgeHeight(rEnd - Math.min(rhoMax, 0.22) * cos0) - hEnd);
+      const rhoCap = Math.min(rhoMax, availRise / rise);
+      const rho = clamp(
+        (edgeHeight(rEnd - rhoCap * cos0) - hEnd) / rise,
+        Math.min(0.15, rhoCap),
+        rhoCap,
+      );
+      const ext = Math.max(0, edgeHeight(rEnd - rho * cos0) - hEnd - rho * rise);
       const h1 = hEnd + ext;
       const r1 = Math.max(rho * cos0 + 0.2, rEnd - Math.tan(t0) * ext);
       post.push(at(h1, r1));
