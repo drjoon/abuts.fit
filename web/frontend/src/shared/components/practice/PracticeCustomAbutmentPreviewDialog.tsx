@@ -714,10 +714,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
         const split = splitScanByScanbodies(scan.geometry, jawFixtures);
         const restMesh = makeMesh(split.rest, scan.texture, false);
+        restMesh.userData.sourceGeometry = scan.geometry;
         restMesh.visible = visible;
         jawMeshesRef.current[trimKey].push(restMesh);
         for (const [tooth, geo] of split.scanbodies) {
           const sbMesh = makeMesh(geo, scan.texture, true);
+          sbMesh.userData.sourceGeometry = scan.geometry;
           sbMesh.userData.scanbodyTooth = tooth;
           sbMesh.visible = false;
           jawMeshesRef.current[sbKey].push(sbMesh);
@@ -1265,25 +1267,51 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (pickEpochRef.current !== epoch) return;
         const ctx = designContextRef.current;
         const frame = frameRef.current;
-        const jawGeo = ctx?.jawGeometry[job.jaw] ?? null;
-        if (!ctx || !frame || !jawGeo) {
+        const hitGeo =
+          (hit.object.userData?.sourceGeometry as THREE.BufferGeometry | undefined) ?? null;
+        const candidateGeos: THREE.BufferGeometry[] = [];
+        for (const g of [
+          hitGeo,
+          ctx?.jawGeometry[job.jaw] ?? null,
+          ...rawJawScansRef.current.filter((s) => s.jaw === job.jaw).map((s) => s.geometry),
+        ]) {
+          if (g && !candidateGeos.includes(g)) candidateGeos.push(g);
+        }
+        if (!ctx || !frame || candidateGeos.length === 0) {
           setStatus({ kind: "pick", toothNumber: job.toothNumber, phase: "miss" });
           return;
         }
-        const fixture = matchScanbodyNearPoint({
-          jawGeometry: jawGeo,
-          frame,
-          toothWork: job.toothWork,
-          models: job.models,
-          connections: session.connections,
-          point: [hit.point.x, hit.point.y, hit.point.z],
-          excludeTops: ctx.fixtures.filter((row) => row.jaw === job.jaw).map((row) => row.scanbodyTop),
-        });
+        const excludeTops = ctx.fixtures
+          .filter((row) => row.jaw === job.jaw)
+          .map((row) => row.scanbodyTop);
+        let fixture: MatchedScanbodyFixture | null = null;
+        let matchedGeo: THREE.BufferGeometry = candidateGeos[0]!;
+        let bestRank = Infinity;
+        for (const candGeo of candidateGeos) {
+          const candFixture = matchScanbodyNearPoint({
+            jawGeometry: candGeo,
+            frame,
+            toothWork: job.toothWork,
+            models: job.models,
+            connections: session.connections,
+            point: [hit.point.x, hit.point.y, hit.point.z],
+            excludeTops,
+          });
+          if (!candFixture) continue;
+          const rank = candFixture.rmsMm + (1 - candFixture.topCoverage) * 0.5;
+          if (!fixture || rank < bestRank) {
+            fixture = candFixture;
+            matchedGeo = candGeo;
+            bestRank = rank;
+          }
+        }
         if (pickEpochRef.current !== epoch) return;
         if (!fixture) {
           setStatus({ kind: "pick", toothNumber: job.toothNumber, phase: "miss" });
           return;
         }
+        const jawGeo = ctx.jawGeometry[job.jaw] ?? matchedGeo;
+        ctx.jawGeometry[job.jaw] = matchedGeo;
 
         setStatus({ kind: "pick", toothNumber: job.toothNumber, phase: "designing" });
         await new Promise<void>((r) => window.setTimeout(r, 16));
@@ -1303,7 +1331,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         for (const fx of jawFixtures) {
           const designed = await designCustomAbutmentStl({
             fixture: fx,
-            jawGeometry: jawGeo,
+            jawGeometry: matchedGeo || jawGeo,
             opposingGeometry: ctx.jawGeometry[job.jaw === "upper" ? "lower" : "upper"],
             neighbors: jawFixtures,
             toothWorks: ctx.allToothWorks,
@@ -1918,8 +1946,38 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         frameRef.current = frame;
 
-        const upperPrimary = upperScans[0]?.geometry ?? null;
-        const lowerPrimary = lowerScans[0]?.geometry ?? null;
+        let upperPrimary = upperScans[0]?.geometry ?? null;
+        let lowerPrimary = lowerScans[0]?.geometry ?? null;
+        const pickBestJawGeoForFixtures = (
+          scans: readonly LoadedJawScan[],
+          fixturesForJaw: readonly MatchedScanbodyFixture[],
+        ): THREE.BufferGeometry | null => {
+          if (scans.length === 0) return null;
+          if (scans.length === 1 || fixturesForJaw.length === 0) return scans[0]!.geometry;
+          let bestGeo = scans[0]!.geometry;
+          let bestErr = Infinity;
+          for (const scan of scans) {
+            const pos = scan.geometry.getAttribute("position");
+            if (!pos || pos.count === 0) continue;
+            const stride = Math.max(1, Math.floor(pos.count / 12000));
+            let errSum = 0;
+            for (const fx of fixturesForJaw) {
+              let minD2 = Infinity;
+              const [tx, ty, tz] = fx.scanbodyTop;
+              for (let i = 0; i < pos.count; i += stride) {
+                const d2 =
+                  (pos.getX(i) - tx) ** 2 + (pos.getY(i) - ty) ** 2 + (pos.getZ(i) - tz) ** 2;
+                if (d2 < minD2) minD2 = d2;
+              }
+              errSum += Math.sqrt(minD2);
+            }
+            if (errSum < bestErr) {
+              bestErr = errSum;
+              bestGeo = scan.geometry;
+            }
+          }
+          return bestGeo;
+        };
         const builtAbutments: DesignedCustomAbutment[] = [];
         const overrides: Record<string, Partial<CustomAbutmentDesignParams>> = {};
         const pendingPickJobs: ScanbodyPickJob[] = [];
@@ -1931,6 +1989,14 @@ export function PracticeCustomAbutmentPreviewDialog({
           const curPreference = await preferencePromise;
           if (cancelled) return;
           const fixtures = cached.teeth.map((row) => row.fixture);
+          upperPrimary = pickBestJawGeoForFixtures(
+            upperScans,
+            fixtures.filter((f) => f.jaw === "upper"),
+          );
+          lowerPrimary = pickBestJawGeoForFixtures(
+            lowerScans,
+            fixtures.filter((f) => f.jaw === "lower"),
+          );
           for (const row of cached.teeth) {
             setStatus({
               kind: "loading",
@@ -1961,6 +2027,15 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         } else if ((restored || meshRestore) && cached) {
           setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
+          const cachedFixtures = cached.teeth.map((row) => row.fixture);
+          upperPrimary = pickBestJawGeoForFixtures(
+            upperScans,
+            cachedFixtures.filter((f) => f.jaw === "upper"),
+          );
+          lowerPrimary = pickBestJawGeoForFixtures(
+            lowerScans,
+            cachedFixtures.filter((f) => f.jaw === "lower"),
+          );
           for (const row of cached.teeth) {
             overrides[row.toothNumber] = parseCustomAbutmentParamOverrides(row.overrides);
             builtAbutments.push(
@@ -1995,10 +2070,10 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
 
           for (const jaw of ["upper", "lower"] as const) {
-            const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
+            const jawScanList = jaw === "upper" ? upperScans : lowerScans;
             const oppGeo = jaw === "upper" ? lowerPrimary : upperPrimary;
             const teeth = teethByJaw[jaw];
-            if (!jawGeo || teeth.length === 0) continue;
+            if (jawScanList.length === 0 || teeth.length === 0) continue;
 
             setStatus({
               kind: "loading",
@@ -2020,12 +2095,46 @@ export function PracticeCustomAbutmentPreviewDialog({
             );
             if (cancelled) return;
 
-            const matchedTeeth = detectAndMatchScanbodiesOnJaw({
-              jawGeometry: jawGeo,
-              frame,
-              teeth: withModels,
-              connections: curConnections,
+            // 치은 스캔과 스캔바디 스캔처럼 같은 악궁 파일이 여러 개 올라온 의뢰는 각 스캔에서 찾은 뒤
+            // 매칭 치아 수가 가장 많은 스캔을 기준으로 삼고, 다른 스캔에만 찍힌 치아가 있으면 함께 합친다.
+            const perScanMatches = jawScanList.map((scan) => {
+              const matched = detectAndMatchScanbodiesOnJaw({
+                jawGeometry: scan.geometry,
+                frame,
+                teeth: withModels,
+                connections: curConnections,
+              });
+              let rmsSum = 0;
+              for (const fx of matched.values()) rmsSum += fx.rmsMm;
+              const avgRms = matched.size > 0 ? rmsSum / matched.size : Infinity;
+              const verts = scan.geometry.getAttribute("position")?.count ?? 0;
+              return { geometry: scan.geometry, matched, avgRms, verts };
             });
+            perScanMatches.sort(
+              (a, b) =>
+                b.matched.size - a.matched.size || a.avgRms - b.avgRms || b.verts - a.verts,
+            );
+            const jawGeo = perScanMatches[0]!.geometry;
+            if (jaw === "upper") upperPrimary = jawGeo;
+            else lowerPrimary = jawGeo;
+
+            const matchedTeeth = new Map(perScanMatches[0]!.matched);
+            if (matchedTeeth.size < teeth.length && perScanMatches.length > 1) {
+              for (const alt of perScanMatches.slice(1)) {
+                for (const [tn, fx] of alt.matched.entries()) {
+                  if (matchedTeeth.has(tn)) continue;
+                  const collides = [...matchedTeeth.values()].some(
+                    (prev) =>
+                      Math.hypot(
+                        prev.scanbodyTop[0] - fx.scanbodyTop[0],
+                        prev.scanbodyTop[1] - fx.scanbodyTop[1],
+                        prev.scanbodyTop[2] - fx.scanbodyTop[2],
+                      ) < 3.0,
+                  );
+                  if (!collides) matchedTeeth.set(tn, fx);
+                }
+              }
+            }
             const jawFixtures = teeth
               .map((tw) => matchedTeeth.get(tw.toothNumber))
               .filter((m): m is MatchedScanbodyFixture => m != null);

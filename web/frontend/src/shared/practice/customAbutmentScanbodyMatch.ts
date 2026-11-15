@@ -1032,6 +1032,36 @@ function jacobi3(input: number[]) {
 }
 
 /**
+ * 12부채꼴(30° 간격) 둘레에서 서로 마주보는 협측·설(구개)측 두 호(각 ≥60°, 2칸 연속)가 모두 치관 퍼짐 없이 깨끗한지 본다.
+ * 인접 스캔바디나 인접 자연치가 근심·원심 양쪽으로 바짝 붙어 있어도 협측과 설측 절벽은 비어 있고,
+ * 반대로 넓은 구치 교합면 위에 얹힌 가짜 후보는 협·설 중 적어도 한쪽으로 치관이 퍼져 있어 걸러진다.
+ */
+function hasOppositeCleanSectorArcs(sectorCounts: ArrayLike<number>, cleanMax: number): boolean {
+  for (let s = 0; s < 12; s += 1) {
+    if ((sectorCounts[s] ?? 0) > cleanMax || (sectorCounts[(s + 1) % 12] ?? 0) > cleanMax) {
+      continue;
+    }
+    for (const offset of [5, 6] as const) {
+      const o0 = (s + offset) % 12;
+      const o1 = (o0 + 1) % 12;
+      if ((sectorCounts[o0] ?? 0) <= cleanMax && (sectorCounts[o1] ?? 0) <= cleanMax) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function sumSmallestSectors(sectorCounts: ArrayLike<number>, keepCount: number): number {
+  const sorted = Array.from({ length: 12 }, (_, i) => Number(sectorCounts[i] ?? 0)).sort(
+    (a, b) => a - b,
+  );
+  let sum = 0;
+  for (let i = 0; i < Math.min(12, keepCount); i += 1) sum += sorted[i]!;
+  return sum;
+}
+
+/**
  * 봉우리 후보에서 스캔바디 윗면 평면과 원기둥 옆면 반경을 함께 평가한다.
  * 인접 자연치보다 낮게 묻힌 스캔바디(예: 견치 심부 식립)도 원기둥 반경 일관성으로 정확히 구별한다.
  */
@@ -1190,17 +1220,20 @@ function evaluateScanbodyPeak(
   }
 
   // 1) 상단 원기둥 중심(깊이 0.45~2.2mm 구간의 수평 중심)을 먼저 맞춰 짧은/심부 스캔바디에서도 축 편향을 없앤다.
+  //    인접 스캔바디와 옆면이 붙어 한쪽 벽이 비어도 중심이 반대쪽으로 쏠리지 않도록 부채꼴별 반경(R) 정합으로 다듬는다.
   const e1 = norm(Math.abs(n[2]) < 0.9 ? cross(n, [0, 0, 1]) : cross(n, [1, 0, 0]));
   const e2 = cross(n, e1);
   let cylU = 0;
   let cylV = 0;
   let cylN = 0;
+  const shaftSlice: Array<[number, number]> = [];
   for (let i = 0; i < target.length; i += 3) {
     const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
     const h = dot(d, n);
     if (h > -0.4 || h < -2.4) continue;
     const u = dot(d, e1);
     const v = dot(d, e2);
+    if (Math.hypot(u, v) <= expectedRadiusMm + 1.35) shaftSlice.push([u, v]);
     if (Math.hypot(u, v) > expectedRadiusMm + 0.75) continue;
     cylU += u;
     cylV += v;
@@ -1213,6 +1246,55 @@ function evaluateScanbodyPeak(
     cylU = 0;
     cylV = 0;
   }
+  const initU = cylU;
+  const initV = cylV;
+  for (let step = 0; step < 2; step += 1) {
+    const binSumU = new Float64Array(12);
+    const binSumV = new Float64Array(12);
+    const binCnt = new Int32Array(12);
+    for (const [pu, pv] of shaftSlice) {
+      const du = pu - cylU;
+      const dv = pv - cylV;
+      const r = Math.hypot(du, dv);
+      if (r < expectedRadiusMm * 0.55 || r > expectedRadiusMm + 0.68) continue;
+      const b = Math.min(11, Math.max(0, Math.floor(((Math.atan2(dv, du) + Math.PI) / (Math.PI * 2)) * 12)));
+      binSumU[b] += du;
+      binSumV[b] += dv;
+      binCnt[b] += 1;
+    }
+    let a00 = 0.2;
+    let a01 = 0;
+    let a11 = 0.2;
+    let b0 = 0;
+    let b1 = 0;
+    let usedBins = 0;
+    for (let b = 0; b < 12; b += 1) {
+      const cnt = binCnt[b]!;
+      if (cnt < 2) continue;
+      const mu = binSumU[b]! / cnt;
+      const mv = binSumV[b]! / cnt;
+      const mr = Math.hypot(mu, mv);
+      if (mr < 1e-4) continue;
+      const nx = mu / mr;
+      const ny = mv / mr;
+      const err = mr - expectedRadiusMm;
+      a00 += nx * nx;
+      a01 += nx * ny;
+      a11 += ny * ny;
+      b0 += nx * err;
+      b1 += ny * err;
+      usedBins += 1;
+    }
+    const det = a00 * a11 - a01 * a01;
+    if (usedBins < 6 || det < 1.1) break;
+    const stepU = (a11 * b0 - a01 * b1) / det;
+    const stepV = (a00 * b1 - a01 * b0) / det;
+    const nextU = cylU + stepU;
+    const nextV = cylV + stepV;
+    if (Math.hypot(nextU - initU, nextV - initV) > 0.9) break;
+    cylU = nextU;
+    cylV = nextV;
+  }
 
   // 2) 상부 노출 원기둥 구간(h ∈ [-2.0, -0.35])의 반경 분포와 최상단(h > -1.05) 치관 퍼짐을 함께 잰다.
   //    잇몸에 깊게 묻혀 1.5~2.0mm만 드러난 스캔바디도 -1.05mm 아래는 둘레 치은이므로 치관 누설에서 제외한다.
@@ -1220,6 +1302,7 @@ function evaluateScanbodyPeak(
   let sectors = 0;
   const sectorHit = new Uint8Array(12);
   let outerLeak = 0;
+  const leakBySec = new Int32Array(12);
   for (let i = 0; i < target.length; i += 3) {
     const d = sub([target[i]!, target[i + 1]!, target[i + 2]!], center);
     const h = dot(d, n);
@@ -1227,21 +1310,29 @@ function evaluateScanbodyPeak(
     const u = dot(d, e1) - cylU;
     const v = dot(d, e2) - cylV;
     const r = Math.hypot(u, v);
+    const bin = Math.min(11, Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * 12)));
     if (r > expectedRadiusMm + 0.65 && r < expectedRadiusMm + 2.3) {
-      if (h > -1.05) outerLeak += 1;
+      if (h > -1.05) {
+        outerLeak += 1;
+        leakBySec[bin] += 1;
+      }
       continue;
     }
     if (r < expectedRadiusMm * 0.55 || r > expectedRadiusMm + 0.65) continue;
     shaftRadii.push(r);
-    const bin = Math.min(11, Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * 12)));
     if (!sectorHit[bin]) {
       sectorHit[bin] = 1;
       sectors += 1;
     }
   }
   if (shaftRadii.length < 14 || sectors < 5) return null;
-  const leakRatio = outerLeak / Math.max(shaftRadii.length, 1);
-  if (leakRatio > (sectors >= 10 ? 1.15 : 0.8)) return null;
+  const shaftDenom = Math.max(shaftRadii.length, 1);
+  const leakRatio = outerLeak / shaftDenom;
+  const proximalLeakOnly =
+    sectors >= 7 &&
+    hasOppositeCleanSectorArcs(leakBySec, Math.max(2, Math.floor(shaftDenom * 0.012)));
+  const maxLeakRatio = proximalLeakOnly ? 1.85 : sectors >= 10 ? 1.15 : 0.8;
+  if (leakRatio > maxLeakRatio) return null;
   shaftRadii.sort((a, b) => a - b);
   const medR = shaftRadii[Math.floor(shaftRadii.length * 0.55)]!;
   const spreadR =
@@ -1250,8 +1341,11 @@ function evaluateScanbodyPeak(
   const radiusErr = Math.abs(medR - expectedRadiusMm);
   if (radiusErr > 0.68) return null;
   const recenteredTop = add(center, add(scale(e1, cylU), scale(e2, cylV)));
+  const effectiveLeak = proximalLeakOnly
+    ? Math.min(leakRatio, sumSmallestSectors(leakBySec, 8) / shaftDenom)
+    : leakRatio;
   const cylinderScore =
-    radiusErr * 1.2 + spreadR * 0.8 + leakRatio * 0.85 + (1 - sectors / 12) * 0.4;
+    radiusErr * 1.2 + spreadR * 0.8 + effectiveLeak * 0.85 + (1 - sectors / 12) * 0.4;
   return { top: recenteredTop, axis: n, cylinderScore };
 }
 
@@ -1407,6 +1501,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   }
 
   const expectedR = models[models.length - 1]!.radiusMm;
+  const minCenterSep = Math.max(2.9, Math.min(3.5, expectedR * 1.48));
   const evaluatedPeaksRaw: Array<{
     top: Vec3;
     axis: Vec3;
@@ -1414,16 +1509,20 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     distMm: number;
   }> = [];
   for (const guess of nmsPeaks) {
-    if (excludedLocal.some((ex) => Math.hypot(...sub(guess, ex)) < 3.6)) continue;
+    // 기울어진 인접 스캔바디는 국소 최고점(guess)이 이미 매칭된 옆 스캔바디 쪽 가장자리(~2.3mm)에 찍힐 수 있으므로,
+    // 중심 보정 전에는 옆 스캔바디 상판 내부(< 0.85R)만 제외하고 보정된 중심(ev.top)에서 중심 간격을 검사한다.
+    if (excludedLocal.some((ex) => Math.hypot(...sub(guess, ex)) < expectedR * 0.85)) continue;
     const ev = evaluateScanbodyPeak(target, guess, axis, expectedR);
     if (!ev) continue;
-    if (excludedLocal.some((ex) => Math.hypot(...sub(ev.top, ex)) < 3.6)) continue;
+    if (excludedLocal.some((ex) => Math.hypot(...sub(ev.top, ex)) < minCenterSep)) continue;
     const distMm = Math.hypot(dot(ev.top, e1), dot(ev.top, e2));
     evaluatedPeaksRaw.push({ ...ev, distMm });
   }
 
+  const peakDistWeight = anchored ? 0.18 : 0.025;
   evaluatedPeaksRaw.sort(
-    (a, b) => a.cylinderScore + a.distMm * 0.025 - (b.cylinderScore + b.distMm * 0.025),
+    (a, b) =>
+      a.cylinderScore + a.distMm * peakDistWeight - (b.cylinderScore + b.distMm * peakDistWeight),
   );
   // 한 스캔바디/교두 안의 중복 봉우리(반경 1.4mm)는 묶고, 기울어진 스캔바디에서 윗면 중앙과 치은 경계처럼
   // 1.5~2.2mm 떨어진 서로 다른 후보는 모두 남겨 최대 26개까지 ICP 정합을 대 본다.
@@ -1435,8 +1534,8 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
 
   // 정합된 스캔바디 최상단(z ∈ [-1.05, 0.22])이 자연치 치관처럼 바깥으로 퍼지거나(flareRatio),
   // 평평한 캡 바로 위(z > 0.42, r < 0.88R)에 자연치 절단연/교두가 더 솟아 있으면 가짜 정합으로 거른다.
-  // 또한 윗면 원판 중심부(r <= 0.62R, z ∈ [-0.28, 0.28])의 평탄도를 함께 재서
-  // 치은에 깊게 묻힌 진짜 5mm·심부 스캔바디(평평한 가공 상판 + 12/12 원통 둘레)와 뾰족한 자연치 절단연을 정확히 가른다.
+  // 또한 윗면 원판 중심부(r <= 0.65R, z ∈ [-0.28, 0.28])의 평탄도와 마주보는 협·설 절벽(hasOppositeCleanArcs)을 함께 재서,
+  // 인접 스캔바디·자연치와 근원심으로 붙어 있는 스캔바디는 정확히 살리고 구치 교합면 가짜 정합은 차단한다.
   const measureFittedIsolation = (fittedTopLocal: Vec3, fitAxis: Vec3, radiusMm: number) => {
     const u1 = norm(Math.abs(fitAxis[2]) < 0.9 ? cross(fitAxis, [0, 0, 1]) : cross(fitAxis, [1, 0, 0]));
     const u2 = cross(fitAxis, u1);
@@ -1445,6 +1544,7 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     let capOverhangCnt = 0;
     let capCenterCnt = 0;
     const shaftSectors = new Uint8Array(12);
+    const outerBySec = new Int32Array(12);
     for (let i = 0; i < target.length; i += 3) {
       const rel = sub([target[i]!, target[i + 1]!, target[i + 2]!], fittedTopLocal);
       const z = dot(rel, fitAxis);
@@ -1453,14 +1553,19 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       const v = dot(rel, u2);
       const r = Math.hypot(u, v);
       if (r > radiusMm + 2.5) continue;
+      const sec = Math.min(
+        11,
+        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * 12)),
+      );
       if (z > 0.42 && r < radiusMm * 0.88) capOverhangCnt += 1;
       if (z >= -0.28 && z <= 0.28 && r <= radiusMm * 0.65) capCenterCnt += 1;
-      if (z >= -1.05 && z <= 0.22 && r > radiusMm + 0.5 && r < radiusMm + 2.35) outerTopCnt += 1;
+      if (z >= -1.05 && z <= 0.22 && r > radiusMm + 0.5 && r < radiusMm + 2.35) {
+        outerTopCnt += 1;
+        outerBySec[sec] += 1;
+      }
       if (z >= -2.1 && z <= -0.35 && r >= radiusMm * 0.58 && r <= radiusMm + 0.58) {
         shaftCnt += 1;
-        shaftSectors[
-          Math.min(11, Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * 12)))
-        ] = 1;
+        shaftSectors[sec] = 1;
       }
     }
     const denom = Math.max(1, shaftCnt);
@@ -1468,6 +1573,12 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
     for (let k = 0; k < 12; k += 1) sectorCount += shaftSectors[k]!;
     return {
       flareRatio: outerTopCnt / denom,
+      halfCleanFlareRatio: sumSmallestSectors(outerBySec, 6) / denom,
+      clean8FlareRatio: sumSmallestSectors(outerBySec, 8) / denom,
+      hasOppositeCleanArcs: hasOppositeCleanSectorArcs(
+        outerBySec,
+        Math.max(3, Math.floor(denom * 0.012)),
+      ),
       overhangRatio: capOverhangCnt / denom,
       capCenterRatio: capCenterCnt / denom,
       capCenterCnt,
@@ -1526,13 +1637,25 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       if (poseTiltDeg(fit.pose, axis) > 45) continue;
       const isShallowCap = model.key.startsWith("param-shallow:");
       const fittedTop = applyPose(fit.pose, 0, model.topMm, 0);
-      if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < 3.6)) continue;
+      if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < minCenterSep)) continue;
       const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
       if (anchored && distFromSlot > 6.5) continue;
       const fitAxis = norm(poseColumn(fit.pose, 1));
       const iso = measureFittedIsolation(fittedTop, fitAxis, model.radiusMm);
+      const proximalBridgedScanbody =
+        iso.hasOppositeCleanArcs &&
+        iso.halfCleanFlareRatio <= 0.08 &&
+        iso.capCenterCnt >= 145 &&
+        iso.sectorCount >= 8 &&
+        iso.overhangRatio <= (anchored ? 0.08 : 0.04);
       const overhangLimit = anchored ? 0.12 : 0.08;
-      const flareLimit = anchored ? 0.78 : 0.62;
+      const flareLimit = proximalBridgedScanbody
+        ? anchored
+          ? 1.55
+          : 1.25
+        : anchored
+          ? 0.78
+          : 0.62;
       if (iso.overhangRatio > overhangLimit || iso.flareRatio > flareLimit) continue;
       // 자연치 절단연·교두에 비스듬히 얹힌 가짜 정합을 차단하되,
       // 치은에 깊게 묻힌 5mm 단축·심부 식립 스캔바디(360° 원통 ≥11/12 부채꼴 + 평평한 상단 중심 원판 + 돌출 0)는
@@ -1569,16 +1692,21 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
           ? 0.66
           : deepCleanCylinder
             ? 0.72
-            : 0.82;
+            : proximalBridgedScanbody && fit.rmsMm <= 0.165
+              ? 0.75
+              : 0.82;
       if (fit.topCoverage < minAllowedTopCov || fit.rmsMm > maxAllowedRms) continue;
       const libBonus = model.isLibraryCad && fit.rmsMm <= 0.11 && fit.topCoverage >= 0.85 ? -0.08 : 0;
       const shallowPenalty = isShallowCap ? 0.035 : 0;
+      const effectiveFlare = proximalBridgedScanbody
+        ? Math.min(iso.flareRatio, iso.clean8FlareRatio)
+        : iso.flareRatio;
       const totalScore =
         fit.rmsMm * 2.4 +
         (1 - fit.topCoverage) * 2.1 +
         candPeak.cylinderScore * 0.45 +
-        iso.flareRatio * 0.75 +
-        distFromSlot * (anchored ? 0.05 : 0.008) +
+        effectiveFlare * 0.75 +
+        distFromSlot * (anchored ? 0.12 : 0.008) +
         libBonus +
         shallowPenalty;
       if (!bestHit || totalScore < bestHit.totalScore) {
@@ -1844,7 +1972,28 @@ export function splitScanByScanbodies(
   const pos = source.getAttribute("position");
   if (fixtures.length === 0 || !pos || pos.count < 3) return { rest: source.clone(), scanbodies };
   const SECTORS = 24;
-  const zones = fixtures.map((f) => {
+  const isInsideOtherScanbody = (px: number, py: number, pz: number, skipIdx: number) => {
+    for (let j = 0; j < fixtures.length; j += 1) {
+      if (j === skipIdx) continue;
+      const other = fixtures[j]!;
+      const ox = px - other.fixturePose.origin[0];
+      const oy = py - other.fixturePose.origin[1];
+      const oz = pz - other.fixturePose.origin[2];
+      const oh =
+        ox * other.fixturePose.axis[0] +
+        oy * other.fixturePose.axis[1] +
+        oz * other.fixturePose.axis[2];
+      if (oh < 0.6 || oh > other.scanbodyHeightMm + 1.2) continue;
+      const orx = ox - other.fixturePose.axis[0] * oh;
+      const ory = oy - other.fixturePose.axis[1] * oh;
+      const orz = oz - other.fixturePose.axis[2] * oh;
+      if (orx * orx + ory * ory + orz * orz <= (other.scanbodyRadiusMm + 0.55) ** 2) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const zones = fixtures.map((f, fi) => {
     const axis = f.fixturePose.axis;
     const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
     const e2 = cross(axis, e1);
@@ -1852,15 +2001,19 @@ export function splitScanByScanbodies(
     const rOuterMin = f.scanbodyRadiusMm + 0.34;
     const rOuterMax = f.scanbodyRadiusMm + 1.65;
     for (let vi = 0; vi < pos.count; vi += 1) {
-      const rx0 = pos.getX(vi) - f.fixturePose.origin[0];
-      const ry0 = pos.getY(vi) - f.fixturePose.origin[1];
-      const rz0 = pos.getZ(vi) - f.fixturePose.origin[2];
+      const px = pos.getX(vi);
+      const py = pos.getY(vi);
+      const pz = pos.getZ(vi);
+      const rx0 = px - f.fixturePose.origin[0];
+      const ry0 = py - f.fixturePose.origin[1];
+      const rz0 = pz - f.fixturePose.origin[2];
       const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
       if (hz < 0.6 || hz > f.scanbodyHeightMm - 0.55) continue;
       const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
       const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
       const r = Math.hypot(u, v);
       if (r < rOuterMin || r > rOuterMax) continue;
+      if (isInsideOtherScanbody(px, py, pz, fi)) continue;
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
@@ -1887,11 +2040,23 @@ export function splitScanByScanbodies(
       axis,
       e1,
       e2,
+      radiusMm: f.scanbodyRadiusMm,
+      baseFloor,
       maxR2: (f.scanbodyRadiusMm + 0.34) ** 2,
       sectorMinZ,
       maxZ: f.scanbodyHeightMm + 1.2,
     };
   });
+  // 인접 스캔바디 두 개가 바짝 붙어 있으면 두 원통 사이의 얇은 스캔 브리지 막도 함께 스캔바디 조각으로 분리한다.
+  const bridgedPairs: Array<[number, number]> = [];
+  for (let a = 0; a < zones.length; a += 1) {
+    for (let b = a + 1; b < zones.length; b += 1) {
+      const topDist = Math.hypot(...sub(fixtures[a]!.scanbodyTop, fixtures[b]!.scanbodyTop));
+      if (topDist <= zones[a]!.radiusMm + zones[b]!.radiusMm + 1.8) {
+        bridgedPairs.push([a, b]);
+      }
+    }
+  }
   const zoneOf = (vi: number) => {
     const dx = pos.getX(vi);
     const dy = pos.getY(vi);
@@ -1915,6 +2080,38 @@ export function splitScanByScanbodies(
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
       if (hz >= zone.sectorMinZ[b]!) return k;
+    }
+    for (const [ia, ib] of bridgedPairs) {
+      const za = zones[ia]!;
+      const zb = zones[ib]!;
+      const ha =
+        (dx - za.origin[0]) * za.axis[0] +
+        (dy - za.origin[1]) * za.axis[1] +
+        (dz - za.origin[2]) * za.axis[2];
+      const hb =
+        (dx - zb.origin[0]) * zb.axis[0] +
+        (dy - zb.origin[1]) * zb.axis[1] +
+        (dz - zb.origin[2]) * zb.axis[2];
+      if (ha < za.baseFloor + 0.35 || hb < zb.baseFloor + 0.35 || ha > za.maxZ || hb > zb.maxZ) {
+        continue;
+      }
+      const pax = za.origin[0] + za.axis[0] * ha;
+      const pay = za.origin[1] + za.axis[1] * ha;
+      const paz = za.origin[2] + za.axis[2] * ha;
+      const sx = zb.origin[0] + zb.axis[0] * hb - pax;
+      const sy = zb.origin[1] + zb.axis[1] * hb - pay;
+      const sz = zb.origin[2] + zb.axis[2] * hb - paz;
+      const s2 = sx * sx + sy * sy + sz * sz;
+      if (s2 < 1e-4) continue;
+      const t = ((dx - pax) * sx + (dy - pay) * sy + (dz - paz) * sz) / s2;
+      if (t <= 0 || t >= 1) continue;
+      const qx = dx - (pax + sx * t);
+      const qy = dy - (pay + sy * t);
+      const qz = dz - (paz + sz * t);
+      const capR = (1 - t) * za.radiusMm + t * zb.radiusMm + 0.45;
+      if (qx * qx + qy * qy + qz * qz <= capR * capR) {
+        return t < 0.5 ? ia : ib;
+      }
     }
     return -1;
   };
