@@ -7841,7 +7841,8 @@ export async function getMyPracticeTransfers(req, res) {
           range: calendarRange,
           select: PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
         });
-      const [byAnchor, byLegacy, owned] = await Promise.all([
+      // 동료 범위(User 조회)는 이 응답에 안 쓴다. 앵커 인덱스 조회와 겹치지 않게 뺀다.
+      const [byAnchor, byLegacy] = await Promise.all([
         indexed({
           practiceBusinessAnchorId: new Types.ObjectId(calendarAnchorId),
         }),
@@ -7851,10 +7852,7 @@ export async function getMyPracticeTransfers(req, res) {
               practiceUserId: { $in: legacyUserIds },
             })
           : Promise.resolve([]),
-        buildPracticeOwnedScope(req),
       ]);
-      baseFilter = owned.scope;
-      practiceUserObjectIds = owned.practiceUserObjectIds;
       fetched = mergeNewestTransferDocs(
         byAnchor,
         byLegacy,

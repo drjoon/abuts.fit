@@ -12,10 +12,14 @@ export function markPracticeCalendarFirstPaint() {
   listeners.clear();
 }
 
-/** 캘린더가 그려지면 바로, 실패해도 fallbackMs 뒤에는 실행한다. */
+/**
+ * 캘린더가 그려지면 바로 실행한다.
+ * 실패·무응답일 때만 fallback. 1.6초면 아직 진행 중인 목록 조회와
+ * 채팅·설정 요청이 겹쳐 첫 화면이 3초대로 늘어난다.
+ */
 export function whenPracticeCalendarPainted(
   run: () => void,
-  fallbackMs = 1600,
+  fallbackMs = 8000,
 ) {
   let done = false;
   let timer = 0;

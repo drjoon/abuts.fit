@@ -106,10 +106,16 @@ import {
   type PracticeTransferPanelDockSide,
 } from "@/shared/practice/labReceiveCalendarWeekGrid";
 import {
+  buildLabReceiveCalendarCursorMonthYmdRange,
   buildLabReceiveCalendarFetchYmdRange,
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import { markPracticeCalendarFirstPaint } from "@/shared/practice/practiceCalendarFirstPaint";
+import {
+  practiceCalendarListCacheKey,
+  readInitialSendCalendarCache,
+  writePracticeCalendarListCache,
+} from "@/shared/practice/practiceCalendarListCache";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   isPracticeStatusBadgeQueueTransfer,
@@ -317,7 +323,9 @@ export function PracticeRecentTransfersAllModal({
   const [badgeFocusItemId, setBadgeFocusItemId] = useState<string | null>(null);
   const [badgeFocusItemYmd, setBadgeFocusItemYmd] = useState<string | null>(null);
   const [badgeFocusEpoch, setBadgeFocusEpoch] = useState(0);
-  const [calendarRequests, setCalendarRequests] = useState<PracticeRecentRequestItem[]>([]);
+  const [calendarRequests, setCalendarRequests] = useState<PracticeRecentRequestItem[]>(
+    () => (isPage ? readInitialSendCalendarCache() : []),
+  );
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
 
@@ -446,36 +454,37 @@ export function PracticeRecentTransfersAllModal({
         })
       : headerActions;
 
+  const calendarFetchSeqRef = useRef(0);
+
   const fetchCalendarTransfers = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!token) return;
       const silent = options?.silent === true;
+      const seq = ++calendarFetchSeqRef.current;
       if (!silent) {
         setCalendarLoading(true);
         setCalendarError("");
       }
-      try {
-        const qs = buildPracticeTransferCalendarApiQuery(calendarYmdRange, dateKey);
+
+      const loadRange = async (range: { fromYmd: string; toYmd: string }) => {
+        const qs = buildPracticeTransferCalendarApiQuery(range, dateKey);
         const res = await apiFetch<unknown>({
           path: `/api/practice/transfers/my?${qs}`,
           method: "GET",
           token,
         });
-
+        if (seq !== calendarFetchSeqRef.current) return { stale: true as const };
         if (!res.ok) {
           const body =
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          if (!silent) {
-            setCalendarRequests([]);
-            setCalendarError(
-              String(body.message || "전송 내역을 불러오지 못했습니다."),
-            );
-          }
-          return;
+          return {
+            stale: false as const,
+            ok: false as const,
+            message: String(body.message || "전송 내역을 불러오지 못했습니다."),
+          };
         }
-
         const body = res.data;
         const data =
           body && typeof body === "object" && "data" in (body as Record<string, unknown>)
@@ -487,25 +496,76 @@ export function PracticeRecentTransfersAllModal({
           Array.isArray((data as { requests?: unknown }).requests)
             ? ((data as { requests: unknown[] }).requests ?? [])
             : [];
+        return {
+          stale: false as const,
+          ok: true as const,
+          rows: mapMyPracticeTransferApiRows(list),
+        };
+      };
 
-        setCalendarRequests(mapMyPracticeTransferApiRows(list));
+      const paint = (rows: PracticeRecentRequestItem[]) => {
+        if (seq !== calendarFetchSeqRef.current) return;
+        setCalendarRequests(rows);
         if (!silent) setCalendarError("");
+        setCalendarLoading(false);
         requestAnimationFrame(() => {
           requestAnimationFrame(() => markPracticeCalendarFirstPaint());
         });
+      };
+
+      try {
+        const origin = cursorYmd || toKstYmd(new Date()) || "";
+        const monthRange = buildLabReceiveCalendarCursorMonthYmdRange(origin);
+        const monthFirst =
+          !silent &&
+          viewMode === "list" &&
+          (monthRange.fromYmd !== calendarYmdRange.fromYmd ||
+            monthRange.toYmd !== calendarYmdRange.toYmd);
+
+        // 목록은 3개월을 한 번에 받으면 빈 칸이 길다. 커서가 있는 달만 먼저 그린다.
+        if (monthFirst) {
+          const month = await loadRange(monthRange);
+          if (month.stale) return;
+          if (month.ok && month.rows.length > 0) paint(month.rows);
+        }
+
+        const full = await loadRange(calendarYmdRange);
+        if (full.stale) return;
+        if (!full.ok) {
+          if (!silent) {
+            setCalendarError(full.message);
+            setCalendarRequests((prev) => (prev.length > 0 ? prev : []));
+          }
+          return;
+        }
+        paint(full.rows);
+        const anchorId = String(
+          useAuthStore.getState().user?.businessAnchorId || "",
+        );
+        writePracticeCalendarListCache(
+          practiceCalendarListCacheKey({
+            anchorId,
+            dateKey,
+            fromYmd: calendarYmdRange.fromYmd,
+            toYmd: calendarYmdRange.toYmd,
+          }),
+          full.rows,
+        );
       } catch {
-        if (!silent) {
-          setCalendarRequests([]);
+        if (!silent && seq === calendarFetchSeqRef.current) {
           setCalendarError("전송 내역 조회 중 오류가 발생했습니다.");
+          setCalendarRequests((prev) => (prev.length > 0 ? prev : []));
         }
       } finally {
-        if (!silent) setCalendarLoading(false);
+        if (seq === calendarFetchSeqRef.current && !silent) {
+          setCalendarLoading(false);
+        }
       }
     },
-    [calendarYmdRange, dateKey, token],
+    [calendarYmdRange, cursorYmd, dateKey, token, viewMode],
   );
 
-  const hasLoadedCalendarRef = useRef(false);
+  const hasLoadedCalendarRef = useRef(calendarRequests.length > 0);
 
   useEffect(() => {
     if (!open) {

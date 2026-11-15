@@ -110,6 +110,15 @@ export const buildLabReceiveCalendarListYmdRange = (
   return { fromYmd, toYmd };
 };
 
+/** 목록 첫 화면 — 커서 월만. 앞뒤 달은 칸이 그려진 뒤 이어서 받는다. */
+export const buildLabReceiveCalendarCursorMonthYmdRange = (
+  originYmd = toKstYmd(new Date()) || "",
+): LabReceiveCalendarYmdRange => {
+  const fromYmd = kstStartOfMonth(originYmd) || originYmd;
+  const toYmd = kstEndOfMonth(fromYmd) || fromYmd;
+  return { fromYmd, toYmd };
+};
+
 export const buildLabReceiveCalendarFetchYmdRange = (
   originYmd = toKstYmd(new Date()) || "",
   viewMode: LabReceiveCalendarViewMode = "calendar",
