@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 
 import {
+  applyWorldDeltaToAbutmentEdit,
+  applyWorldRotationToAbutmentEdit,
   buildAbutmentPreferenceUpdate,
   clampAbutmentEdit,
   identityAbutmentEdit,
@@ -20,6 +22,8 @@ const zone = {
   span: 8,
   labial: [1, 0] as [number, number],
   mesial: [0, 1] as [number, number],
+  centerL: 0,
+  centerM: 0,
 };
 
 function edit(patch: Partial<AbutmentEdit> = {}): AbutmentEdit {
@@ -123,5 +127,33 @@ const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
 assert.ok(localX.distanceTo(right) < 1e-6, "빨간 축은 화면 오른쪽");
 assert.ok(localY.distanceTo(up) < 1e-6, "초록 축은 화면 위");
 assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고리는 화면에 평행");
+
+// 회전(yaw)이 이미 적용된 상태에서도 화살표 이동과 축 회전 기울기 부호가 화면 드래그 방향과 정확히 일치하는지 검증
+{
+  const axes: [THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0, 0, 1),
+  ];
+  const movedAfterYaw = edit({ yawDeg: 90 });
+  applyWorldDeltaToAbutmentEdit(movedAfterYaw, new THREE.Vector3(1, 0, 0), axes);
+  const beforePt = one([2, 0, 6], edit({ yawDeg: 90 }));
+  const afterPt = one([2, 0, 6], movedAfterYaw);
+  assert.ok(Math.abs(afterPt[0]! - beforePt[0]! - 1) < 1e-4, "회전 후에도 +X 화살표 이동은 +X로 이동");
+  assert.ok(Math.abs(afterPt[1]! - beforePt[1]!) < 1e-4, "회전 후에도 +X 화살표 이동이 Y로 틀어지지 않음");
+
+  // 화면 밖(+Z_cam = +axes[1] 가정: 협측 정면 뷰에서 파란 고리 반시계 회전 = 상단이 왼쪽(-X)으로 기울어짐)
+  // 오른손 법칙: worldAxis = +Y 주위로 +10° 회전하면 +Z 정점(0, 0, h)은 +Y × +Z = +X 방향으로 이동해야 한다.
+  const rotY = edit();
+  applyWorldRotationToAbutmentEdit(rotY, new THREE.Vector3(0, 1, 0), 10, axes);
+  const topRotY = one([1, 0, 6.6], rotY);
+  assert.ok(topRotY[0]! > 1.7 && Math.abs(topRotY[1]!) < 1e-4, "+Y 축 오른손 회전은 상단을 +X로 기울인다");
+
+  // 오른손 법칙: worldAxis = +X 주위로 +10° 회전하면 +Z 정점(1, 0, h)은 +X × +Z = -Y 방향으로 이동해야 한다.
+  const rotX = edit();
+  applyWorldRotationToAbutmentEdit(rotX, new THREE.Vector3(1, 0, 0), 10, axes);
+  const topRotX = one([1, 0, 6.6], rotX);
+  assert.ok(topRotX[1]! < -0.7 && Math.abs(topRotX[0]! - 1) < 1e-4, "+X 축 오른손 회전은 상단을 -Y로 기울인다");
+}
 
 console.log("abutment direct edit ok");

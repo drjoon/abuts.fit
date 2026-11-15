@@ -17,6 +17,7 @@ import {
   isAnteriorTooth,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
+import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { withDoubleSidePick } from "../../three/backFaceShell";
 
 const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
@@ -37,7 +38,9 @@ export type DirectEditFixture = {
     origin: readonly number[];
   };
   connectionSpec?: {
+    l2Mm?: number;
     prcConeTopMm: number;
+    screwLowerDiameterMm?: number;
     screwUpperDiameterMm: number;
   };
 };
@@ -46,6 +49,7 @@ export type DirectEditDesign = {
   toothNumber: string;
   fixture: DirectEditFixture;
   localPositions: Float32Array;
+  solidBodyLocalPositions?: Float32Array;
   crownLocalPositions: Float32Array;
   marginLoopLocal: Float32Array;
   stlBlob: Blob;
@@ -101,11 +105,14 @@ type Zone = {
   span: number;
   labial: [number, number];
   mesial: [number, number];
+  centerL?: number;
+  centerM?: number;
 };
 
 type ToothView = {
   geometry: THREE.BufferGeometry;
   proposal: Float32Array;
+  proposalSolid: Float32Array | null;
   proposalCrown: Float32Array | null;
   proposalMargin: Float32Array | null;
   zone: Zone;
@@ -116,6 +123,7 @@ type ToothView = {
   invFixture: THREE.Matrix4;
   fixture: THREE.Matrix4;
   gumball: THREE.Group;
+  bakeEpoch: number;
 };
 
 type HandleHit = {
@@ -330,6 +338,31 @@ export function refitLocalPositions(
     const r = Math.hypot(proposal[i]!, proposal[i + 1]!);
     if (r <= screwR && z > boreTop) boreTop = z;
   }
+  // 커프에서 마진까지 부드럽게 보간하고, 마진(marginZ)부터 포스트 상단까지는 동일한 강체 이동·회전·균일 스케일·일정 기울기를
+  // 그대로 적용해 마진 폭 일정·포스트 직선 축벽·단면 둥근 사각형을 변형 후에도 보존한다.
+  let postCenterL = zone.centerL ?? Number.NaN;
+  let postCenterM = zone.centerM ?? Number.NaN;
+  if (!Number.isFinite(postCenterL) || !Number.isFinite(postCenterM)) {
+    postCenterL = 0;
+    postCenterM = 0;
+    let postCenterN = 0;
+    for (let i = 0; i < proposal.length; i += 3) {
+      const z = proposal[i + 2]!;
+      if (z <= marginZ) continue;
+      const x = proposal[i]!;
+      const y = proposal[i + 1]!;
+      if (hole && Math.hypot(x, y) <= screwR + 0.12) continue;
+      postCenterL += x * labial[0] + y * labial[1];
+      postCenterM += x * mesial[0] + y * mesial[1];
+      postCenterN += 1;
+    }
+    if (postCenterN > 0) {
+      postCenterL /= postCenterN;
+      postCenterM /= postCenterN;
+    }
+  }
+  const tiltSlopeL = Math.tan((edit.tiltLabialDeg * Math.PI) / 180);
+  const tiltSlopeM = Math.tan((edit.tiltMesialDeg * Math.PI) / 180);
   const rimZ = (Number.isFinite(boreTop) ? boreTop : propTop) - 0.7;
   for (let i = 0; i < proposal.length; i += 3) {
     const x = proposal[i]!;
@@ -360,13 +393,15 @@ export function refitLocalPositions(
     const yaw = yawRad * t;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    const lS = l * (1 + (edit.scale[0] - 1) * t);
-    const mS = m * (1 + (edit.scale[1] - 1) * t);
+    // 포스트 중심(postCenterL, postCenterM) 기준 스케일·회전을 적용하고, 마진·포스트 전체에 동일 배율이 걸려 마진 폭 비율을 유지한다.
+    const dl = (l - postCenterL * t) * (1 + (edit.scale[0] - 1) * t);
+    const dm = (m - postCenterM * t) * (1 + (edit.scale[1] - 1) * t);
     const h = Math.max(z - fixedZ, 0);
-    const offL = edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * h;
-    const offM = edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * h;
-    let ly = lS * c - mS * s + (offL * c - offM * s) * t;
-    let my = lS * s + mS * c + (offL * s + offM * c) * t;
+    // 월드 공간 변위: 회전은 단면 자체만 돌리고, 화살표 이동(shift)·축 회전 기울기(tilt)는 돌린 방향과 무관하게 정확한 화면 방향으로 민다.
+    const offL = (edit.shiftLabialMm + tiltSlopeL * h) * t;
+    const offM = (edit.shiftMesialMm + tiltSlopeM * h) * t;
+    let ly = postCenterL * t + dl * c - dm * s + offL;
+    let my = postCenterM * t + dl * s + dm * c + offM;
     if (z > marginZ && edit.partial.length > 0) {
       const ang = Math.atan2(my, ly);
       const rad = Math.max(Math.hypot(ly, my), 0.4);
@@ -396,9 +431,12 @@ export function refitLocalPositions(
     out[i + 1] = ly * labial[1] + my * mesial[1];
     out[i + 2] = z2;
     if (z > marginZ && rProp > screwR) {
-      const rNow = Math.hypot(out[i]!, out[i + 1]!);
-      widthSum += rNow / Math.max(rProp, 1e-4);
-      widthN += 1;
+      const rOrigFromCenter = Math.hypot(l - postCenterL, m - postCenterM);
+      const rNowFromCenter = Math.hypot(ly - (postCenterL + offL), my - (postCenterM + offM));
+      if (rOrigFromCenter > 0.25) {
+        widthSum += rNowFromCenter / rOrigFromCenter;
+        widthN += 1;
+      }
     }
     if (z2 > nextTop) nextTop = z2;
   }
@@ -516,6 +554,23 @@ function zoneOf(design: DirectEditDesign, proposal: Float32Array, margin: Float3
   const spanToMargin = Math.max(0.35, marginZ - coneZ);
   let fixedZ = coneZ + Math.max(0.45, Math.min(1.35, spanToMargin * 0.25));
   if (fixedZ > marginZ - 0.25) fixedZ = Math.max(coneZ, marginZ - 0.25);
+  let centerL = 0;
+  let centerM = 0;
+  let centerN = 0;
+  for (let i = 0; i < proposal.length; i += 3) {
+    const z = proposal[i + 2]!;
+    if (z <= marginZ) continue;
+    const x = proposal[i]!;
+    const y = proposal[i + 1]!;
+    if (Math.hypot(x, y) <= screwR + 0.12) continue;
+    centerL += x * axes.labial[0] + y * axes.labial[1];
+    centerM += x * axes.mesial[0] + y * axes.mesial[1];
+    centerN += 1;
+  }
+  if (centerN > 0) {
+    centerL /= centerN;
+    centerM /= centerN;
+  }
   return {
     coneZ,
     fixedZ,
@@ -524,6 +579,8 @@ function zoneOf(design: DirectEditDesign, proposal: Float32Array, margin: Float3
     span: Math.max(0.5, top - coneZ),
     labial: axes.labial,
     mesial: axes.mesial,
+    centerL,
+    centerM,
   };
 }
 
@@ -541,12 +598,79 @@ function applyMatrixToPositions(src: Float32Array, matrix: THREE.Matrix4, out: F
 }
 
 function writeAttribute(geometry: THREE.BufferGeometry, positions: Float32Array) {
-  const attr = geometry.getAttribute("position") as THREE.BufferAttribute;
-  (attr.array as Float32Array).set(positions.subarray(0, attr.array.length));
-  attr.needsUpdate = true;
+  const attr = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!attr || attr.array.length !== positions.length) {
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  } else {
+    (attr.array as Float32Array).set(positions);
+    attr.needsUpdate = true;
+  }
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+}
+
+function screwFrustumSoup(r0: number, r1: number, z0: number, z1: number, segments = 64): Float32Array {
+  const out = new Float32Array(segments * 4 * 9);
+  let o = 0;
+  const put = (x: number, y: number, z: number) => {
+    out[o++] = x;
+    out[o++] = y;
+    out[o++] = z;
+  };
+  for (let i = 0; i < segments; i += 1) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    const c0 = Math.cos(a0);
+    const s0 = Math.sin(a0);
+    const c1 = Math.cos(a1);
+    const s1 = Math.sin(a1);
+    put(r0 * c0, r0 * s0, z0);
+    put(r0 * c1, r0 * s1, z0);
+    put(r1 * c1, r1 * s1, z1);
+    put(r0 * c0, r0 * s0, z0);
+    put(r1 * c1, r1 * s1, z1);
+    put(r1 * c0, r1 * s0, z1);
+    put(0, 0, z0);
+    put(r0 * c1, r0 * s1, z0);
+    put(r0 * c0, r0 * s0, z0);
+    put(0, 0, z1);
+    put(r1 * c0, r1 * s0, z1);
+    put(r1 * c1, r1 * s1, z1);
+  }
+  return out;
+}
+
+/**
+ * 월드 공간 이동 벡터를 로컬 순측(axes[0])·근심(axes[1])·임플란트 장축(axes[2]) 분해로 정확히 옮긴다.
+ * view.axes[0]·view.axes[1]은 임플란트 축에 수직이고, refitLocalPositions의 labial·mesial은 XY 단위벡터다.
+ */
+export function applyWorldDeltaToAbutmentEdit(
+  edit: AbutmentEdit,
+  deltaWorld: THREE.Vector3,
+  axes: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+) {
+  edit.shiftLabialMm += deltaWorld.dot(axes[0]);
+  edit.shiftMesialMm += deltaWorld.dot(axes[1]);
+  edit.heightMm += deltaWorld.dot(axes[2]);
+}
+
+/**
+ * 월드 회전축(worldAxis) 주위로 오른손 법칙 각도 deg만큼 돌렸을 때 포스트 상단이 움직이는 방향과
+ * 단면 수평 회전(yaw)이 정확히 일치하도록 변환한다.
+ * +yaw: labial → +mesial (+axes[2] 주위 오른손 회전),
+ * +tiltLabial: 상단이 +axes[0](= axes[1] × axes[2]) 쪽으로 기울어짐 → +axes[1] 회전과 동일 부호,
+ * +tiltMesial: 상단이 +axes[1](= -axes[0] × axes[2]) 쪽으로 기울어짐 → -axes[0] 회전과 동일 부호.
+ */
+export function applyWorldRotationToAbutmentEdit(
+  edit: AbutmentEdit,
+  worldAxis: THREE.Vector3,
+  deg: number,
+  axes: readonly [THREE.Vector3, THREE.Vector3, THREE.Vector3],
+) {
+  edit.yawDeg += deg * worldAxis.dot(axes[2]);
+  edit.tiltLabialDeg += deg * worldAxis.dot(axes[1]);
+  edit.tiltMesialDeg -= deg * worldAxis.dot(axes[0]);
 }
 
 function copyPositions(attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) {
@@ -893,11 +1017,15 @@ export class AbutmentDirectEditSession {
         if (had) this.bridge.onHistory();
       }
       const proposal = new Float32Array(design.localPositions);
+      const proposalSolid = design.solidBodyLocalPositions?.length
+        ? new Float32Array(design.solidBodyLocalPositions)
+        : null;
       const margin = design.marginLoopLocal?.length ? new Float32Array(design.marginLoopLocal) : null;
       const fixture = fixtureMatrix(design.fixture.fixturePose);
       const view: ToothView = {
         geometry: mesh.geometry,
         proposal,
+        proposalSolid,
         proposalCrown: design.crownLocalPositions?.length ? new Float32Array(design.crownLocalPositions) : null,
         proposalMargin: margin,
         zone: zoneOf(design, proposal, margin),
@@ -908,6 +1036,7 @@ export class AbutmentDirectEditSession {
         invFixture: fixture.clone().invert(),
         fixture,
         gumball: makeGumball(design.toothNumber),
+        bakeEpoch: 0,
       };
       this.placeAnchor(view, design);
       this.views.set(design.toothNumber, view);
@@ -1118,9 +1247,7 @@ export class AbutmentDirectEditSession {
       const hit = this.rayOnPlane(event);
       if (!hit) return;
       const delta = hit.sub(drag.startHit);
-      edit.shiftLabialMm += delta.dot(view.axes[0]);
-      edit.shiftMesialMm += delta.dot(view.axes[1]);
-      edit.heightMm += delta.dot(view.axes[2]);
+      applyWorldDeltaToAbutmentEdit(edit, delta, view.axes);
     } else if (drag.kind === "move" || drag.kind === "scale") {
       const axis = drag.axisWorld;
       const center = this.gumballPosition(view, drag.start);
@@ -1130,9 +1257,8 @@ export class AbutmentDirectEditSession {
       const along = hit.sub(center).dot(axis);
       const delta = along - drag.startAlong;
       if (drag.kind === "move") {
-        edit.shiftLabialMm += delta * axis.dot(view.axes[0]);
-        edit.shiftMesialMm += delta * axis.dot(view.axes[1]);
-        edit.heightMm += delta * axis.dot(view.axes[2]);
+        vB.copy(axis).multiplyScalar(delta);
+        applyWorldDeltaToAbutmentEdit(edit, vB, view.axes);
       } else if (Math.abs(drag.startAlong) > 0.15) {
         this.scaleAlong(edit, drag.start, view, axis, along / drag.startAlong);
       }
@@ -1144,10 +1270,7 @@ export class AbutmentDirectEditSession {
       const cur = hit.sub(center);
       const angle = Math.atan2(vA.crossVectors(drag.startVec, cur).dot(drag.worldAxis), drag.startVec.dot(cur));
       const deg = (angle * 180) / Math.PI;
-      const axis = drag.worldAxis;
-      edit.yawDeg += deg * axis.dot(view.axes[2]);
-      edit.tiltMesialDeg += deg * axis.dot(view.axes[0]);
-      edit.tiltLabialDeg -= deg * axis.dot(view.axes[1]);
+      applyWorldRotationToAbutmentEdit(edit, drag.worldAxis, deg, view.axes);
     } else if (drag.kind === "scale2" || drag.kind === "scale3") {
       this.setNdc(event);
       raycaster.setFromCamera(ndc, camera);
@@ -1300,9 +1423,8 @@ export class AbutmentDirectEditSession {
       if (bake) design.marginLoopLocal = marginLocal;
     }
     if (bake) {
-      design.localPositions = new Float32Array(local);
-      design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
-      this.bridge.onCommit({
+      const epoch = ++view.bakeEpoch;
+      const commitSummary: AbutmentEditSummary = {
         tooth,
         widthRatio: measured.widthRatio,
         heightDeltaMm: measured.heightDeltaMm,
@@ -1311,7 +1433,47 @@ export class AbutmentDirectEditSession {
           edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * view.zone.span,
         shiftMesialMm:
           edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * view.zone.span,
-      });
+      };
+      if (view.proposalSolid && !editsEqual(edit, EMPTY_EDIT)) {
+        const solidOut = new Float32Array(view.proposalSolid.length);
+        refitLocalPositions(view.proposalSolid, edit, { ...view.zone, screwR: 0 }, solidOut);
+        const conn = design.fixture.connectionSpec;
+        const l2 = conn?.l2Mm ?? 2.75;
+        const zBot = -l2;
+        const boreTopR = (conn?.screwUpperDiameterMm ?? 2.45) / 2;
+        const boreBotR = (conn?.screwLowerDiameterMm ?? boreTopR * 0.85) / 2;
+        let zTopMax = -Infinity;
+        for (let i = 2; i < solidOut.length; i += 3) zTopMax = Math.max(zTopMax, solidOut[i]!);
+        const cutters = [
+          screwFrustumSoup(boreBotR, boreBotR, zBot - 1, 0.8),
+          screwFrustumSoup(boreBotR, boreTopR, 0.799, 1.3),
+          screwFrustumSoup(boreTopR, boreTopR, 1.299, zTopMax + 3),
+        ];
+        void subtractTriangleSoups(solidOut, cutters, `#${tooth} 커스텀어벗`)
+          .then((drilled) => {
+            if (view.bakeEpoch !== epoch) return;
+            const curMesh = this.bridge.getAbutment(tooth);
+            if (curMesh) {
+              writeAttribute(
+                curMesh.geometry,
+                applyMatrixToPositions(drilled, view.fixture, new Float32Array(drilled.length)),
+              );
+            }
+            design.localPositions = drilled;
+            design.stlBlob = encodeBinaryStl(drilled, `abuts.fit custom abutment #${tooth}`);
+            this.bridge.onCommit(commitSummary);
+          })
+          .catch(() => {
+            if (view.bakeEpoch !== epoch) return;
+            design.localPositions = new Float32Array(local);
+            design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
+            this.bridge.onCommit(commitSummary);
+          });
+      } else {
+        design.localPositions = new Float32Array(local);
+        design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
+        this.bridge.onCommit(commitSummary);
+      }
     }
     this.moveBadge(mesh, this.gumballPosition(view, edit), view.gumball.visible);
   }
@@ -1341,21 +1503,20 @@ export class AbutmentDirectEditSession {
 
   private placeAnchor(view: ToothView, design: DirectEditDesign) {
     const pose = design.fixture.fixturePose;
+    const hexX = new THREE.Vector3(pose.hexX[0] ?? 1, pose.hexX[1] ?? 0, pose.hexX[2] ?? 0);
+    const hexY = new THREE.Vector3(pose.hexY[0] ?? 0, pose.hexY[1] ?? 1, pose.hexY[2] ?? 0);
     const axis = vA.set(pose.axis[0] ?? 0, pose.axis[1] ?? 0, pose.axis[2] ?? 1).normalize();
-    const labial = vB.set(design.fixture.labialDir[0] ?? 1, design.fixture.labialDir[1] ?? 0, design.fixture.labialDir[2] ?? 0);
-    labial.addScaledVector(axis, -labial.dot(axis));
-    if (labial.lengthSq() < 1e-8) labial.set(1, 0, 0).addScaledVector(axis, -axis.x);
-    labial.normalize();
-    const mesial = vC.crossVectors(axis, labial).normalize();
-    const mesRaw = new THREE.Vector3(
-      design.fixture.mesialDir[0] ?? 0,
-      design.fixture.mesialDir[1] ?? 1,
-      design.fixture.mesialDir[2] ?? 0,
-    );
-    if (labial.dot(new THREE.Vector3(...(design.fixture.labialDir as [number, number, number]))) + mesial.dot(mesRaw) < 0) {
-      labial.negate();
-      mesial.negate();
-    }
+    // refitLocalPositions가 쓰는 로컬 XY 단위벡터(zone.labial, zone.mesial)와 100% 일치하는 월드 직교 기저를 쓴다.
+    const labial = vB
+      .copy(hexX)
+      .multiplyScalar(view.zone.labial[0])
+      .addScaledVector(hexY, view.zone.labial[1])
+      .normalize();
+    const mesial = vC
+      .copy(hexX)
+      .multiplyScalar(view.zone.mesial[0])
+      .addScaledVector(hexY, view.zone.mesial[1])
+      .normalize();
     view.axes[0].copy(labial);
     view.axes[1].copy(mesial);
     view.axes[2].copy(axis);
@@ -1389,19 +1550,15 @@ export class AbutmentDirectEditSession {
   }
 
   private gumballPosition(view: ToothView, edit: AbutmentEdit) {
-    const yaw = (edit.yawDeg * Math.PI) / 180;
-    const c = Math.cos(yaw);
-    const s = Math.sin(yaw);
     const h = Math.max(view.midZ - view.zone.fixedZ, 0);
     const offL = edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * h;
     const offM = edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * h;
-    const lab = offL * c - offM * s;
-    const mes = offL * s + offM * c;
+    const zLift = (view.midZ - view.zone.fixedZ) * (edit.scale[2] - 1) + edit.heightMm;
     return view.anchor
       .clone()
-      .addScaledVector(view.axes[0], lab)
-      .addScaledVector(view.axes[1], mes)
-      .addScaledVector(view.axes[2], edit.heightMm);
+      .addScaledVector(view.axes[0], offL)
+      .addScaledVector(view.axes[1], offM)
+      .addScaledVector(view.axes[2], clamp(zLift, -HEIGHT_MM, HEIGHT_MM));
   }
 
   private cameraBasis() {

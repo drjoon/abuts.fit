@@ -2031,6 +2031,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               alignedScans = cached.alignedScans;
               restored = true;
             }
+          } else if (hasWorkScans) {
+            // 작업 스캔은 이미 정렬된 월드 좌표이므로 alignedScans가 비어 있어도 정합을 재사용한다.
+            restored = true;
           } else if (cached.designFresh) {
             meshRestore = true;
           }
@@ -2837,6 +2840,20 @@ export function PracticeCustomAbutmentPreviewDialog({
                     ) : null}
                   </div>
                   <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
+                    <ToolbarToggle
+                      active={
+                        designedList.length > 0 &&
+                        designedList.some((d) => shownScanbodies[d.toothNumber])
+                      }
+                      label="스캔바디"
+                      tip="스캔에 찍힌 스캔바디를 함께 표시합니다."
+                      onClick={() => {
+                        const anyShown = designedList.some((d) => shownScanbodies[d.toothNumber]);
+                        setShownScanbodies(
+                          Object.fromEntries(designedList.map((d) => [d.toothNumber, !anyShown])),
+                        );
+                      }}
+                    />
                     <ToolbarToggle
                       active={showPredictedCrown}
                       label="예측 크라운"
