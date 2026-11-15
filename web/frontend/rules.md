@@ -973,6 +973,7 @@ Notes:
   - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.
 
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
+- 무한 루프 금지: 효과 의존성에 매 렌더 바뀌는 콜백을 넣어 같은 GET을 반복하지 않는다. 같은 `/api`가 1초에 8회를 넘으면 `installFetchGuard`가 네트워크를 끊는다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 공통 컴포넌트 재사용을 우선합니다.
   - 페이지 전역: `@/features/requests/components/PageFileDropZone`

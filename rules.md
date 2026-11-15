@@ -135,6 +135,13 @@
 - 역할별 UI를 한 파일에서 분기하지 말고 역할 폴더 분리
 - 소스 파일 800줄 초과 금지 (초과 시 분리)
 
+### 1.6 무한 루프 금지 (강제)
+
+- 루프·재시도·효과·폴링은 횟수·시간·종료 조건 중 하나 없이 돌리지 않는다.
+- 같은 요청·같은 로그가 반복되면 그 호출을 멈춘다. 429를 받고 바로 다시 호출하지 않는다.
+- 로그인 없는 IP가 반복되거나 짧은 시간에 요청이 너무 많으면 그 IP를 등록하고 오래 막는다. 유효한 로그인 의뢰자는 IP 차단에 넣지 않는다. 로컬 저장은 `MONGODB_URI_TEST`의 `DdosIpBan`(IP당 한 문서).
+- 상세: `.cursor/rules/no-infinite-loop.mdc`
+
 ---
 
 
@@ -442,6 +449,9 @@
 - 정책 변경 없이 색상/단계명/필드명 임의 확장 금지
 - **git 브랜치는 `main`만(강제).** 승인 없이 브랜치를 만들지 않는다. 꼭 필요할 때만 사용자 승인 후 만든다.
 상세: `.cursor/rules/git-branch-main-only.mdc`
+- **무한 루프 금지(강제):** 끝 조건 없는 루프·재시도·효과 재실행을 두지 않는다.
+같은 호출이 로그에 반복되면 그 경로를 막는다.
+상세: `.cursor/rules/no-infinite-loop.mdc`
 - **변이 UX 고지연 구현 금지(강제):** 업로드·취소·작업시작·완료·핸드오프 등 「처리 중…」 경로는
 처음부터 critical path만 await하고, 수수료·스냅샷·알림·Rhino 등은 응답 후 처리.
 동일 문서 재조회/재저장·성공 후 전체 목록 refetch로 대기를 늘리지 않는다.
@@ -459,6 +469,7 @@
 
 - 루트에는 전역 진입점만 유지합니다.
   - `web/frontend/src/App.tsx`
+  - `web/frontend/src/shared/api/installFetchGuard.ts` (같은 API 반복 차단)
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
   - `web/frontend/src/shared/types/role.ts`
   - `web/frontend/src/shared/business/requestorCapabilities.ts` (의뢰자 유형·유료게이트)
@@ -472,6 +483,7 @@
 - 루트에는 전역 진입점만 유지합니다.
   - `web/backend/bootstrap/env.js` (프로세스 `TZ=Asia/Seoul` 강제)
   - `web/backend/app.js`
+  - `web/backend/middlewares/requestFloodBlocker.js` (같은 API 반복 차단)
   - `web/backend/server.js`
   - `web/backend/utils/distributedJobLock.js` (멀티 인스턴스 워커 락 SSOT)
   - `web/backend/utils/requestorCapabilities.js` (의뢰자 유형·기공의뢰서 권한)

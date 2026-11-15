@@ -27,6 +27,8 @@
 - 서버 엔트리
   - `app.js`
   - `server.js`
+- 같은 API 반복 차단: `middlewares/requestFloodBlocker.js` (계정 기준 1초 8회 또는 10초 40회). 막힌 요청은 morgan 전에 끝나 같은 429 줄이 쌓이지 않는다. 경고는 10초에 한 번이다.
+- IP 등록·장시간 차단: 로그인 없는 요청만. 같은 IP가 10분 안에 반복 위반 3회, 또는 10초에 1200회면 1시간→6시간→24시간. 컬렉션 `DdosIpBan`은 IP unique upsert(더 긴 차단·더 큰 banLevel만). 로컬은 `MONGODB_URI_TEST`. 30초마다 다시 읽는다. 루프백은 메모리 2분만 두고 DB에 쓰지 않는다. 유효한 사용자 토큰은 IP 차단을 건너뛴다. 로그인·토큰갱신·비밀번호 찾기는 IP가 막혀 있어도 연다. 등록 로그는 `[ddos-guard] registered`.
 - 의뢰/공정
   - `modules/requests/request.routes.js`
   - `controllers/requests/creation.from-draft.controller.js`

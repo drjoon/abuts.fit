@@ -455,7 +455,6 @@ export async function fetchCustomAbutmentSnapshot(
       path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
       method: "GET",
       token,
-      skipCache: true,
     });
     if (!res.ok || !res.data?.data) return null;
     const chat = normalizeCustomAbutmentChat(res.data.data.chat);

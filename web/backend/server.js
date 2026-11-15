@@ -12,6 +12,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/jobs/dailyReferralOwnershipResetWorker.js
 // - web/backend/jobs/workScanAutoAlignWorker.js
+// - web/backend/services/ddosIpBan.store.js
 // change-log:
 // - 2026-10-04: Lab Helper 알람 WS attach.
 import { createServer } from "http";
@@ -119,6 +120,8 @@ process.once("SIGINT", () => {
 dbReady
   .then(async () => {
     console.log("MongoDB 연결 준비 완료");
+    const { startDdosIpBanSync } = await import("./services/ddosIpBan.store.js");
+    startDdosIpBanSync();
     try {
       const { refreshPracticeLaunchMode } = await import(
         "./utils/practiceObBeta.util.js"

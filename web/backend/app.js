@@ -3,6 +3,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/middlewares/requestFloodBlocker.js
 // - web/frontend/src/App.tsx
 // change-log:
 // - 2026-10-18: 로컬 Atlas 풀을 유지한다. 유휴 10초면 제출 때 연결을 다시 열어 1초가 넘었다.
@@ -272,6 +273,8 @@ app.use(
     },
   }),
 );
+// 반복 429는 morgan에 닿기 전에 끊는다. 막힌 뒤에는 같은 줄이 로그를 채우지 않는다.
+app.use("/api", requestFloodBlocker);
 app.use(morgan("dev", { skip: shouldSkipRequestLog }));
 
 // Rate Limiting 설정
@@ -306,8 +309,6 @@ const limiter = rateLimit({
 
 // API 요청에 Rate Limiting 적용
 app.use("/api", limiter);
-// 동일 사용자·동일 콜 반복 차단 (10초 내 40회). 인증 전이라 토큰 userId로 구분한다.
-app.use("/api", requestFloodBlocker);
 
 // 정적 파일 제공 (업로드된 파일 등)
 app.use("/uploads", staticMiddleware(resolve(__dirname, "uploads")));

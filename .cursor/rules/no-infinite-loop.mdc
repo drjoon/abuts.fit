@@ -1,0 +1,41 @@
+---
+description: 무한 루프를 만들지 않고, 로그에 반복이 보이면 그 호출을 막는다
+alwaysApply: true
+---
+
+# 무한 루프 금지 (제1원칙)
+
+끝 없이 도는 코드는 넣지 않는다. 루프·재시도·`useEffect`·폴링·`while (true)` 는 횟수, 시간, 또는 반드시 도달하는 종료 조건이 있다.
+
+## 코드
+
+- 같은 상태 갱신이 그 효과를 다시 실행하면 의존성에서 뺀다. 매 렌더 바뀌는 콜백·배열·객체로 효과를 다시 열지 않는다.
+- 실패·429를 받는 즉시 같은 호출을 다시 보내지 않는다. 간격을 두고, 횟수 상한에서 멈춘다.
+- `while (true)` 는 대기와 종료 플래그가 있는 워커만 허용한다. 대기 없는 회전은 금지한다.
+- 벤더 생성 파일은 이 작업에서 고치지 않는다. 손대는 코드에 상한을 둔다.
+
+## 로그
+
+- 개발 서버 터미널·stdout에 같은 줄·같은 API가 반복되면 그 호출을 멈춘다.
+- 클라이언트: `installFetchGuard` — 같은 `/api`가 1초에 8회를 넘으면 8초간 네트워크를 끊고 `[loop-guard] blocked` 한 줄만 남긴다.
+- 서버: `requestFloodBlocker` — 같은 사용자·같은 요청이 1초에 8회 또는 10초에 40회를 넘으면 429. 막힌 뒤에는 액세스 로그를 찍지 않고, 경고는 10초에 한 번이다.
+- 로그인 없는 IP가 10분 안에 3번 걸리거나 10초에 1200회를 넘으면 `DdosIpBan`에 IP 하나로 upsert 하고 1시간부터 막아 24시간까지 늘린다. 유효한 사용자 토큰은 IP 차단을 타지 않는다. 루프백은 2분이고 DB에 쓰지 않는다.
+- 가드가 막은 뒤에도 반복되면 가드를 더 세게 하지 말고, 다시 호출하는 효과를 고친다.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — setState가 효과를 다시 연다
+useEffect(() => {
+  setStatus("loading");
+  void fetchSnapshot();
+}, [fetchSnapshot, fitCamera]);
+
+// ✅ GOOD — 의뢰 키가 바뀔 때만 조회한다
+useEffect(() => {
+  const timer = window.setTimeout(() => void fetchSnapshot(), 0);
+  return () => window.clearTimeout(timer);
+}, [transferId, pipelineKey]);
+```
+
+SSOT: 루트 `rules.md` §1.6

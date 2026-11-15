@@ -717,7 +717,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
     hostRef.current = node;
-    setHostEl(node);
+    setHostEl((prev) => (prev === node ? prev : node));
   }, []);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
@@ -2676,26 +2676,25 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
     };
 
-    void runPipeline();
+    // 콜백 식별자가 바뀔 때마다 파이프라인을 다시 열면 스냅샷 GET이 무한 반복된다.
+    // 조회는 의뢰 키가 바뀔 때만 한다. 같은 키의 재진입은 타이머를 지워 한 번만 남긴다.
+    const timer = window.setTimeout(() => {
+      if (!cancelled) void runPipeline();
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       abort.abort();
       pickEpochRef.current += 1;
       scanbodyPickRef.current = null;
     };
   }, [
-    addDesignToScene,
     authToken,
-    clearSceneObjects,
-    fitDefaultCamera,
     hostEl,
     isLabViewer,
     open,
-    persistChat,
-    persistDesign,
     pipelineKey,
     readOnly,
-    rebuildJawScanMeshes,
     transferIdParam,
   ]);
 

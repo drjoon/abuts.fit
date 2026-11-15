@@ -1,71 +1,94 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
-import { toast } from "@/shared/hooks/use-toast";
+// - web/frontend/src/main.tsx
+// - web/backend/middlewares/requestFloodBlocker.js
+// 같은 API가 짧은 시간에 반복되면 네트워크로 나가지 않게 끊는다.
+// 효과·렌더가 다시 그려져도 서버 로그가 같은 줄로 쌓이지 않게 하는 장치다.
 
-const WINDOW_MS = 1000; // 1초
-const MAX_CALLS = 3; // 윈도 내 최대 허용 호출 수
+const WINDOW_MS = 1000;
+const MAX_CALLS = 8;
+const BLOCK_MS = 8000;
+const SCAN_MS = 5000;
 
-// 과도 호출을 감시할 경로 목록 (부분 문자열 매칭)
-// 현재는 모든 API 호출을 허용 (무한 루프 방지를 위해 Draft API 등은 제외)
-const GUARDED_PATHS: string[] = []; // 필요 시 추가
+type Bucket = {
+  times: number[];
+  blockedUntil: number;
+  reportedAt: number;
+};
 
-const callHistory = new Map<string, number[]>();
+const buckets = new Map<string, Bucket>();
 
-function shouldGuard(url: string): boolean {
+export function fetchGuardKey(url: string, method: string): string | null {
+  let parsed: URL;
   try {
-    const u = new URL(url, window.location.origin);
-    return GUARDED_PATHS.some((p) => u.pathname.includes(p));
+    parsed = new URL(url, "http://local");
   } catch {
-    return GUARDED_PATHS.some((p) => url.includes(p));
+    return null;
+  }
+  if (!parsed.pathname.startsWith("/api/")) return null;
+  const verb = (method || "GET").toUpperCase();
+  return `${verb} ${parsed.pathname}${parsed.search}`;
+}
+
+/** 호출 기록을 보고 막아야 하면 true. 주기 점검도 이 함수를 쓴다. */
+export function noteFetchGuard(key: string, now = Date.now()): boolean {
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = { times: [], blockedUntil: 0, reportedAt: 0 };
+    buckets.set(key, bucket);
+  }
+  if (bucket.blockedUntil > now) return true;
+
+  bucket.times = bucket.times.filter((ts) => now - ts <= WINDOW_MS);
+  if (bucket.times.length >= MAX_CALLS) {
+    bucket.blockedUntil = now + BLOCK_MS;
+    if (now - bucket.reportedAt > BLOCK_MS) {
+      bucket.reportedAt = now;
+      console.error(
+        `[loop-guard] blocked ${key} (${bucket.times.length} calls / ${WINDOW_MS}ms)`,
+      );
+    }
+    return true;
+  }
+  bucket.times.push(now);
+  return false;
+}
+
+function scanFetchGuard(now = Date.now()) {
+  for (const [key, bucket] of buckets) {
+    bucket.times = bucket.times.filter((ts) => now - ts <= WINDOW_MS);
+    if (bucket.times.length >= MAX_CALLS) noteFetchGuard(key, now);
+    if (bucket.blockedUntil <= now && bucket.times.length === 0) buckets.delete(key);
   }
 }
 
-function registerCall(key: string): { allowed: boolean; count: number } {
-  const now = Date.now();
-  const prev = callHistory.get(key) || [];
-  const recent = prev.filter((t) => now - t <= WINDOW_MS);
-  recent.push(now);
-  callHistory.set(key, recent);
-  return { allowed: recent.length <= MAX_CALLS, count: recent.length };
+function blockedResponse(): Response {
+  return new Response(
+    JSON.stringify({ message: "같은 요청이 반복되어 잠시 멈췄습니다." }),
+    { status: 429, headers: { "Content-Type": "application/json" } },
+  );
 }
 
 export function installFetchGuard() {
-  if (typeof window === "undefined" || typeof window.fetch !== "function") {
-    return;
-  }
+  if (typeof window === "undefined" || typeof window.fetch !== "function") return;
+  const win = window as Window & { __FETCH_GUARD_INSTALLED__?: boolean };
+  if (win.__FETCH_GUARD_INSTALLED__) return;
+  win.__FETCH_GUARD_INSTALLED__ = true;
 
   const originalFetch = window.fetch.bind(window);
-
-  if ((window as any).__FETCH_GUARD_INSTALLED__) {
-    return;
-  }
-  (window as any).__FETCH_GUARD_INSTALLED__ = true;
+  window.setInterval(() => scanFetchGuard(), SCAN_MS);
 
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
       typeof input === "string" || input instanceof URL
         ? String(input)
-        : String((input as Request).url);
-
-    if (shouldGuard(url)) {
-      const { allowed, count } = registerCall(url);
-      if (!allowed) {
-        const message = `짧은 시간 내 동일 AI API 호출이 ${count}회 이상 감지되어 차단되었습니다.`;
-        console.error("[Guard] Rapid external API calls blocked", {
-          url,
-          count,
-        });
-        toast({
-          title: "외부 AI API 과도 호출 감지",
-          description: message,
-          variant: "destructive",
-        });
-        return Promise.reject(new Error("Too many rapid external API calls"));
-      }
-    }
-
-    return originalFetch(input as any, init as any);
+        : input instanceof Request
+          ? input.url
+          : "";
+    const method =
+      init?.method || (input instanceof Request ? input.method : "GET");
+    const key = url ? fetchGuardKey(url, method) : null;
+    if (key && noteFetchGuard(key)) return blockedResponse();
+    return originalFetch(input, init);
   }) as typeof window.fetch;
 }
