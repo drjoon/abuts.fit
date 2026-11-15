@@ -87,6 +87,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSelect,
   onDownload,
   onRegenerate,
+  onRegenerateTooth,
   className,
 }: {
   shownScanbodies: Record<string, boolean>;
@@ -101,6 +102,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSelect: (toothNumber: string) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
   onRegenerate?: () => void;
+  onRegenerateTooth?: (toothNumber: string) => void;
   className?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -203,6 +205,18 @@ export function PracticeCustomAbutmentDesignTree({
                   label={`#${tooth}`}
                   onClick={() => onToggleScanbody(tooth)}
                 />
+                {onRegenerateTooth ? (
+                  <button
+                    type="button"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                    aria-label={`#${tooth} 재생성`}
+                    title={`#${tooth}만 지금 값으로 다시 만듭니다.`}
+                    disabled={redesigning.length > 0}
+                    onClick={() => onRegenerateTooth(tooth)}
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"

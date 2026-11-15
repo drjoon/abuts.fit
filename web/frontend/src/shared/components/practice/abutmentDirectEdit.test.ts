@@ -1,84 +1,93 @@
 import assert from "node:assert/strict";
-import * as THREE from "three";
 
 import {
-  applyStamps,
-  frameFromPositions,
-  rigidMatrix,
+  buildAbutmentPreferenceUpdate,
+  clampAbutmentEdit,
+  identityAbutmentEdit,
+  refitLocalPositions,
   sculptFalloff,
-  type DirectEditFixture,
+  type AbutmentEdit,
 } from "./abutmentDirectEdit";
 
-const fixture: DirectEditFixture = {
-  labialDir: [1, 0, 0],
-  mesialDir: [0, 1, 0],
-  fixturePose: {
-    hexX: [1, 0, 0],
-    hexY: [0, 1, 0],
-    axis: [0, 0, 1],
-    origin: [0, 0, 0],
-  },
+const zone = {
+  coneZ: 1,
+  marginZ: 3,
+  screwR: 0.5,
+  span: 8,
+  labial: [1, 0] as [number, number],
+  mesial: [0, 1] as [number, number],
 };
 
-function boxPoints() {
-  const pts: number[] = [];
-  for (const x of [-2, 2]) {
-    for (const y of [-1, 1]) {
-      for (const z of [0, 10]) pts.push(x, y, z);
-    }
-  }
-  return new Float32Array(pts);
+function edit(patch: Partial<AbutmentEdit> = {}): AbutmentEdit {
+  return { ...identityAbutmentEdit(), ...patch, scale: patch.scale ?? [1, 1, 1], partial: patch.partial ?? [] };
 }
 
-const frame = frameFromPositions(boxPoints(), fixture);
-assert.ok(frame.axes[2].dot(new THREE.Vector3(0, 0, 1)) > 0.99, "중심축은 위쪽");
-assert.ok(frame.axes[0].dot(new THREE.Vector3(1, 0, 0)) > 0.99, "빨강은 순측");
-assert.ok(Math.abs(frame.origin.z - 5) < 1e-6, "검볼은 가운데");
-
-function apply(matrix: THREE.Matrix4, x: number, y: number, z: number) {
-  const e = matrix.elements;
-  return [
-    e[0]! * x + e[4]! * y + e[8]! * z + e[12]!,
-    e[1]! * x + e[5]! * y + e[9]! * z + e[13]!,
-    e[2]! * x + e[6]! * y + e[10]! * z + e[14]!,
-  ];
+function one(src: number[], value: AbutmentEdit) {
+  const proposal = new Float32Array(src);
+  const out = new Float32Array(src.length);
+  refitLocalPositions(proposal, value, zone, out);
+  return out;
 }
 
-const scaled = apply(
-  rigidMatrix(frame, {
-    translate: new THREE.Vector3(0, 0, 2),
-    quat: new THREE.Quaternion(),
-    scale: [2, 1, 1],
-  }),
-  2,
-  0,
-  5,
-);
-assert.ok(Math.abs(scaled[0]! - 4) < 1e-4, "순측 스케일");
-assert.ok(Math.abs(scaled[2]! - 7) < 1e-4, "축 이동");
+const connection = one([1, 0, 0.2], edit({ scale: [1.1, 1.1, 1.1], heightMm: 1 }));
+assert.ok(Math.abs(connection[0]! - 1) < 1e-6 && Math.abs(connection[2]! - 0.2) < 1e-6, "커넥션은 그대로");
 
-const spun = apply(
-  rigidMatrix(frame, {
-    translate: new THREE.Vector3(),
-    quat: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2),
-    scale: [1, 1, 1],
-  }),
-  2,
-  0,
-  5,
-);
-assert.ok(Math.abs(spun[0]!) < 1e-4 && Math.abs(spun[1]! - 2) < 1e-4, "중심축 회전");
-assert.ok(Math.abs(spun[2]! - 5) < 1e-4, "회전 중심은 가운데");
+const screw = one([0.3, 0, 6], edit({ scale: [1.1, 1.1, 1] }));
+assert.ok(Math.abs(screw[0]! - 0.3) < 1e-6, "스크류 홀은 그대로");
 
-const base = new Float32Array([0, 0, 5, 4, 0, 5]);
-const stamped = applyStamps(
-  base,
-  [{ center: [0, 0, 5], delta: [0, 0, 1], radius: 1 }],
-  new Float32Array(base.length),
+const linear = one([2, 1, 6], edit({ scale: [1.1, 1, 1] }));
+assert.ok(Math.abs(linear[0]! - 2.2) < 1e-4, "선형은 순측만");
+assert.ok(Math.abs(linear[1]! - 1) < 1e-4, "근심은 선형에서 그대로");
+
+const planar = one([2, 1, 6], edit({ scale: [1.1, 1.2, 1] }));
+assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4, "평면은 두 축");
+
+const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
+assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
+
+const tiltDeg = (Math.atan2(1, 5) * 180) / Math.PI;
+const tilted = one([2, 0, 6], edit({ tiltLabialDeg: tiltDeg }));
+assert.ok(Math.abs(tilted[0]! - 3) < 1e-3 && Math.abs(tilted[2]! - 6) < 1e-4, "기울이면 윗면이 순측으로");
+const tiltConnection = one([1, 0, 0.2], edit({ tiltLabialDeg: tiltDeg }));
+assert.ok(Math.abs(tiltConnection[0]! - 1) < 1e-6, "기울여도 커넥션은 그대로");
+
+const grown = one(
+  [2, 0, 6],
+  edit({ partial: [{ z: 6, angle: 0, reach: 2, grow: 0.1 }] }),
 );
-assert.ok(Math.abs(stamped[2]! - 6) < 1e-6, "잡은 점은 올라간다");
-assert.ok(Math.abs(stamped[5]! - 5) < 1e-6, "반경 밖은 그대로");
+assert.ok(Math.abs(grown[0]! - 2.2) < 1e-4, "포스트 부위가 커진다");
+
+const far = one(
+  [2, 0, 6],
+  edit({ partial: [{ z: 3.2, angle: 0, reach: 1, grow: 0.1 }] }),
+);
+assert.ok(Math.abs(far[0]! - 2) < 1e-4, "범위 밖 포스트는 그대로");
+
+const limited = edit({ scale: [2, 0.1, 3], heightMm: 9, shiftLabialMm: 8, yawDeg: 90 });
+clampAbutmentEdit(limited, 8);
+assert.equal(limited.scale[0], 1.15);
+assert.equal(limited.scale[1], 0.8);
+assert.ok(limited.heightMm <= 2 && limited.shiftLabialMm === 2 && limited.yawDeg === 30);
+const steep = edit({ tiltLabialDeg: 80 });
+clampAbutmentEdit(steep, 8);
+assert.ok(Math.abs(Math.tan((steep.tiltLabialDeg * Math.PI) / 180) * 8) <= 2 + 1e-6, "기울기 윗면은 2mm 안");
+
 assert.equal(sculptFalloff(0, 2), 1);
 assert.equal(sculptFalloff(2, 2), 0);
+
+const pref = buildAbutmentPreferenceUpdate({
+  tooth: "38",
+  baseWidth: 1,
+  baseHeight: 0,
+  widthRatio: 1.1,
+  heightDeltaMm: 0.6,
+});
+assert.equal(pref?.scope, "posterior");
+assert.equal(pref?.params.postWidthScale, 1.1);
+assert.equal(pref?.params.postHeightOffsetMm, 0.6);
+assert.equal(
+  buildAbutmentPreferenceUpdate({ tooth: "11", baseWidth: 1, baseHeight: 0, widthRatio: 1, heightDeltaMm: 0 }),
+  null,
+);
 
 console.log("abutment direct edit ok");
