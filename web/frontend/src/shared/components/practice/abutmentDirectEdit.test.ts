@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 
+import * as THREE from "three";
+
 import {
   buildAbutmentPreferenceUpdate,
   clampAbutmentEdit,
   identityAbutmentEdit,
   refitLocalPositions,
+  screenGumballQuaternion,
   sculptFalloff,
   type AbutmentEdit,
 } from "./abutmentDirectEdit";
@@ -108,5 +111,17 @@ assert.equal(
   buildAbutmentPreferenceUpdate({ tooth: "11", baseWidth: 1, baseHeight: 0, widthRatio: 1, heightDeltaMm: 0 }),
   null,
 );
+
+const q = new THREE.Quaternion();
+const right = new THREE.Vector3(0, 1, 0);
+const up = new THREE.Vector3(0, 0, 1);
+const outOfScreen = new THREE.Vector3(1, 0, 0);
+screenGumballQuaternion(right, up, outOfScreen, q);
+const localX = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
+const localY = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+assert.ok(localX.distanceTo(right) < 1e-6, "빨간 축은 화면 오른쪽");
+assert.ok(localY.distanceTo(up) < 1e-6, "초록 축은 화면 위");
+assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고리는 화면에 평행");
 
 console.log("abutment direct edit ok");

@@ -1,5 +1,6 @@
 // 커스텀어벗 뷰어의 직접 편집.
-// 검볼은 포스트 중심에 두고, 화면을 정면으로 본다. 뷰가 바뀌면 검볼 방향도 바뀐다.
+// 검볼은 포스트 중심에 둔다. 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
+// 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 화살표는 그 방향으로 포스트를 옮긴다. 축 상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기다.
 // 커넥션과 그 위 2° 테이퍼는 고정이다. 그 위 커프부터 포스트만 허용 범위 안에서 다시 계산한다.
 // 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
@@ -577,6 +578,22 @@ function tagHandle(
   return mesh;
 }
 
+const gumballBasis = new THREE.Matrix4();
+
+/**
+ * 화면 오른쪽·위·화면 밖(+Z). 오른손 좌표계라 흰 고리가 화면에 평행하고 파란 축이 화면에 수직이다.
+ * 화면 안쪽(-Z)을 세 번째 축으로 쓰면 행렬식이 -1이 되어 고리가 기울어진다.
+ */
+export function screenGumballQuaternion(
+  right: THREE.Vector3,
+  up: THREE.Vector3,
+  outOfScreen: THREE.Vector3,
+  out: THREE.Quaternion,
+) {
+  gumballBasis.makeBasis(right, up, outOfScreen);
+  return out.setFromRotationMatrix(gumballBasis);
+}
+
 function alongAxis(mesh: THREE.Object3D, axis: number, distance: number) {
   mesh.position.set(axis === 0 ? distance : 0, axis === 1 ? distance : 0, axis === 2 ? distance : 0);
   if (axis === 0) mesh.rotation.z = -Math.PI / 2;
@@ -745,7 +762,6 @@ export class AbutmentDirectEditSession {
   private readonly camUp = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
   private readonly viewQuat = new THREE.Quaternion();
-  private readonly basisM = new THREE.Matrix4();
 
   constructor(private readonly bridge: AbutmentEditBridge) {
     this.brush = new THREE.Mesh(
@@ -1394,11 +1410,12 @@ export class AbutmentDirectEditSession {
     camera.updateMatrixWorld();
     this.camRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
     this.camUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-    this.camForward.setFromMatrixColumn(camera.matrixWorld, 2).negate().normalize();
+    // 카메라 로컬 +Z는 화면 밖(보는 사람). 고리가 화면에 평행하다.
+    this.camForward.setFromMatrixColumn(camera.matrixWorld, 2).normalize();
     return true;
   }
 
-  /** 화면 오른쪽, 위, 보는 방향. 검볼은 이 축으로 뷰에 수직이다. */
+  /** 화면 오른쪽, 위, 화면 밖. 검볼은 이 축으로 화면에 수직이다. */
   private cameraAxis(axis: number, out: THREE.Vector3) {
     this.cameraBasis();
     if (axis === 0) return out.copy(this.camRight);
@@ -1408,8 +1425,7 @@ export class AbutmentDirectEditSession {
 
   private viewQuaternion() {
     this.cameraBasis();
-    this.basisM.makeBasis(this.camRight, this.camUp, this.camForward);
-    return this.viewQuat.setFromRotationMatrix(this.basisM);
+    return screenGumballQuaternion(this.camRight, this.camUp, this.camForward, this.viewQuat);
   }
 
   /** 화살표 방향으로 키우거나 줄인다. 그 방향에 놓인 순측·근심·삽입축 비율만 바꾼다. */

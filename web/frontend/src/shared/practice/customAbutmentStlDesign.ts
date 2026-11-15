@@ -1,13 +1,14 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
 // 1) 피니시라인 = 둘레 치은연 아래 marginDepth(기본 0.5mm), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
-// 2) 삽입축 = 인접 자연치·인접 어벗 장축에 평행(브리지는 더 정확히). 없으면 대합·악궁 방향.
+// 2) 삽입축 = 인접 자연치·인접 어벗 장축과 같은 각도(브리지는 더 정확히). 없으면 대합·악궁 방향.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
-// 6) 닫힌 외형에서 스크류 채널을 빼서(manifold) 하나의 닫힌 STL을 만든다.
+// 6) 포스트 축벽은 솔리드로 두고, 스크류 홀은 그 다음 임플란트 축 원통으로만 뚫는다.
+//    원통이 옆면으로 나오지 않게 축벽이 채널을 윗면까지 감싼 뒤 뺀다(manifold).
 // 로컬 좌표계(제조사 STL SSOT): 플랫폼 원점(0,0,0), +Z 임플란트 장축, +X 헥스 평면 법선.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
@@ -1056,22 +1057,23 @@ function adjacentLabialLimit(
  *   (양옆 치관의 대칭 풍융부 벌어짐이 상쇄되어 순수 인접치 근원심 치축 기울기만 남는다).
  * - 한쪽 인접치만 있으면 치경부 돌출 위(h ≥ 3.2mm)의 인접벽·치관 중체 기울기와 오버행 경사를 함께 본다.
  */
-function trimmedBandMean(samples: Array<{ u: number; v: number; h: number }>) {
+function trimmedPointMean(samples: readonly Vec3[]): Vec3 | null {
   if (samples.length < 12) return null;
-  const mid = (pick: (row: { u: number; v: number; h: number }) => number) => {
-    const sorted = samples.map(pick).sort((a, b) => a - b);
-    const lo = Math.floor(sorted.length * 0.2);
-    const hi = Math.max(lo + 1, Math.ceil(sorted.length * 0.8));
+  const mid = (axis: 0 | 1 | 2) => {
+    const sorted = samples.map((p) => p[axis]).sort((a, b) => a - b);
+    const lo = Math.floor(sorted.length * 0.25);
+    const hi = Math.max(lo + 1, Math.ceil(sorted.length * 0.75));
     let sum = 0;
     for (let i = lo; i < hi; i += 1) sum += sorted[i]!;
     return sum / (hi - lo);
   };
-  return { u: mid((row) => row.u), v: mid((row) => row.v), h: mid((row) => row.h) };
+  return [mid(0), mid(1), mid(2)];
 }
 
 /**
  * 인접 자연치 또는 스캔된 인접 어벗의 장축(치관 아래쪽 중심 → 위쪽 중심).
  * 근심·원심이 있으면 둘 다 반환한다. 방향은 교합(+Z) 쪽이다.
+ * 임플란트가 기울어 있어도 교합면에 수직인 프레임에서 점을 고르고, 두 띠의 3D 중심으로 축을 낸다.
  */
 function estimateAdjacentLongAxes(
   pts: Float32Array,
@@ -1084,20 +1086,22 @@ function estimateAdjacentLongAxes(
     skipDistal: boolean;
   },
 ): Vec3[] {
+  const occ = insertionFrame(o.wOcc, o.labXY);
+  const vMes = dot3(occ.vSide, o.mesXY) >= 0 ? occ.vSide : scale3(occ.vSide, -1);
   const axes: Vec3[] = [];
   for (const sign of [1, -1] as const) {
     if (sign < 0 && o.skipDistal) continue;
-    const samples: Array<{ u: number; v: number; h: number }> = [];
+    const samples: Array<{ p: Vec3; h: number }> = [];
     for (let i = 0; i < pts.length; i += 3) {
       const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
       if (Math.hypot(p[0], p[1]) < o.ownRadius + 0.55 && p[2] > -0.4 && p[2] < o.ownHeight + 0.9) continue;
       const h = dot3(p, o.wOcc);
       if (h < 1.2 || h > 12.5) continue;
-      const u = dot3(p, o.labXY);
-      const v = dot3(p, o.mesXY) * sign;
-      if (v < o.ownRadius + 1.35 || v > 8.2) continue;
-      if (Math.abs(u) > 5.4) continue;
-      samples.push({ u, v, h });
+      const u = dot3(p, occ.uLabial);
+      const v = dot3(p, vMes) * sign;
+      if (v < o.ownRadius + 1.15 || v > 8.6) continue;
+      if (Math.abs(u) > 5.6) continue;
+      samples.push({ p, h });
     }
     if (samples.length < 40) continue;
     const hs = samples.map((row) => row.h).sort((a, b) => a - b);
@@ -1106,15 +1110,17 @@ function estimateAdjacentLongAxes(
     const span = hHi - hLo;
     if (span < 2) continue;
     const band = span * 0.28;
-    const low = trimmedBandMean(samples.filter((row) => row.h >= hLo && row.h <= hLo + band));
-    const high = trimmedBandMean(samples.filter((row) => row.h <= hHi && row.h >= hHi - band));
+    const lowRows = samples.filter((row) => row.h >= hLo && row.h <= hLo + band);
+    const highRows = samples.filter((row) => row.h <= hHi && row.h >= hHi - band);
+    const low = trimmedPointMean(lowRows.map((row) => row.p));
+    const high = trimmedPointMean(highRows.map((row) => row.p));
     if (!low || !high) continue;
-    const du = high.u - low.u;
-    const dv = (high.v - low.v) * sign;
-    const dh = high.h - low.h;
-    if (dh < 1.5 || Math.hypot(du, dv) > dh * Math.tan(34 * DEG)) continue;
-    let axis = norm3(add3(add3(scale3(o.labXY, du), scale3(o.mesXY, dv)), scale3(o.wOcc, dh)));
+    const lowH = lowRows.reduce((s, row) => s + row.h, 0) / lowRows.length;
+    const highH = highRows.reduce((s, row) => s + row.h, 0) / highRows.length;
+    if (highH - lowH < 1.5) continue;
+    let axis = norm3(sub3(high, low));
     if (axis[2] < 0) axis = scale3(axis, -1);
+    if (Math.hypot(axis[0], axis[1]) > axis[2] * Math.tan(34 * DEG)) continue;
     if (axis[2] < 0.35 || dot3(axis, o.wOcc) < 0.55) continue;
     axes.push(axis);
   }
@@ -1239,6 +1245,106 @@ function adjacentProximalCorridor(
   }
   const capped = clamp(slope, -Math.tan(15 * DEG), Math.tan(15 * DEG));
   return { wCorr: norm3(add3(o.wOccRef, scale3(vMes, capped))), bothSides: false };
+}
+
+/**
+ * 축벽이 임플란트 축 스크류 원통을 감싸도록 단면 반경을 키운다.
+ * 포스트 외형은 솔리드로 남고, 스크류 홀은 이후 원통 boolean으로만 뚫린다.
+ * 스크류가 벗어난 쪽만 불룩하게 하고, 마진 숄더·인접 한계·언더컷은 넘지 않는다.
+ */
+function coverPostOverScrew(args: {
+  w: Vec3;
+  c0: Vec3;
+  boreR: number;
+  wallMm: number;
+  dirs: readonly Vec3[];
+  postR: number[][];
+  postH: number[][];
+  marginCap: readonly number[];
+  hardTop: readonly number[];
+  topLevel: number;
+}) {
+  const { w, c0, dirs, postR, postH, topLevel } = args;
+  const n = dirs.length;
+  if (n < 8 || Math.abs(w[2]) < 0.25 || !(args.boreR > 0.2)) return;
+
+  const scalesAt = (level: number) => {
+    let hSum = 0;
+    for (let col = 0; col < n; col += 1) hSum += postH[col]![level]!;
+    const h = hSum / n;
+    const origin = add3(c0, scale3(w, h));
+    const screwOnPlane: Vec3 = [0, 0, dot3(origin, w) / w[2]];
+    let majorDir = sub3([0, 0, 1], scale3(w, w[2]));
+    const majorLen = Math.hypot(...majorDir);
+    if (majorLen < 1e-6) majorDir = [1, 0, 0];
+    else majorDir = scale3(majorDir, 1 / majorLen);
+    const minorDir = norm3(cross3(w, majorDir));
+    const tube = args.boreR + args.wallMm;
+    const majorR = tube / Math.max(Math.abs(w[2]), 0.45);
+    const need = new Array<number>(n).fill(1);
+    for (let i = 0; i < 36; i += 1) {
+      const ang = (i / 36) * Math.PI * 2;
+      const sample = add3(
+        screwOnPlane,
+        add3(scale3(majorDir, Math.cos(ang) * majorR), scale3(minorDir, Math.sin(ang) * tube)),
+      );
+      let rel = sub3(sample, origin);
+      rel = sub3(rel, scale3(w, dot3(rel, w)));
+      const len = Math.hypot(...rel);
+      if (len < 1e-5) continue;
+      const dir = scale3(rel, 1 / len);
+      let best = 0;
+      let bestDot = -Infinity;
+      for (let col = 0; col < n; col += 1) {
+        const dot = dot3(dirs[col]!, dir);
+        if (dot > bestDot) {
+          bestDot = dot;
+          best = col;
+        }
+      }
+      const radius = postR[best]![level]!;
+      if (radius > 0.15) need[best] = Math.max(need[best]!, len / radius);
+    }
+    const spread = new Array<number>(n).fill(1);
+    for (let col = 0; col < n; col += 1) {
+      let peak = 1;
+      for (let d = -8; d <= 8; d += 1) {
+        const j = (col + d + n) % n;
+        const falloff = 1 - Math.abs(d) / 9;
+        peak = Math.max(peak, 1 + (need[j]! - 1) * falloff);
+      }
+      spread[col] = Math.min(2, peak);
+    }
+    return spread;
+  };
+
+  const topSpread = scalesAt(topLevel);
+  const midSpread = scalesAt(Math.round(topLevel * 0.62));
+  let grew = false;
+  for (let col = 0; col < n; col += 1) {
+    let topScale = Math.max(topSpread[col]!, 1 + (midSpread[col]! - 1) / 0.62);
+    topScale = clamp(topScale, 1, 2);
+    const baseR = postR[col]![0]!;
+    const topR = postR[col]![topLevel]!;
+    const margin = Math.max(baseR, args.marginCap[col]!);
+    let baseScale = 1;
+    if (topR > 0.15 && baseR > 0.15 && topR * topScale > baseR) {
+      baseScale = (topR * topScale) / baseR;
+    }
+    if (baseR > 0.15) baseScale = Math.min(baseScale, margin / baseR);
+    baseScale = Math.max(1, baseScale);
+    if (topR > 0.15) topScale = Math.min(topScale, (baseR * baseScale) / topR);
+    const hard = args.hardTop[col]!;
+    if (Number.isFinite(hard) && topR > 0.15) topScale = Math.min(topScale, Math.max(1, hard / topR));
+    topScale = Math.max(1, topScale);
+    if (topScale <= 1.004 && baseScale <= 1.004) continue;
+    grew = true;
+    for (let k = 0; k <= topLevel; k += 1) {
+      const u = k / topLevel;
+      postR[col]![k] = postR[col]![k]! * (baseScale * (1 - u) + topScale * u);
+    }
+  }
+  return grew;
 }
 
 function frustumSoup(r0: number, r1: number, z0: number, z1: number, segments = 64): Float32Array {
@@ -2879,13 +2985,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       String(ownWork?.prosthesisType || "").trim() === "브리지" ||
       mesialAllowance.bridged ||
       distalAllowance.bridged;
-    let weight = bridgeTight ? 0.98 : neighborAxes.length > 1 ? 0.92 : 0.88;
-    if (spread > 28 * DEG) weight = bridgeTight ? 0.9 : 0.75;
-    w = norm3(add3(scale3(w, 1 - weight), scale3(target, weight)));
+    // 인접 어벗·자연치가 하나면 그 장축과 포스트 각도를 맞춘다. 양쪽이 크게 벌어질 때만 섞는다.
+    const weight = spread > 28 * DEG ? (bridgeTight ? 0.94 : 0.82) : 1;
+    w = weight >= 0.999 ? target : norm3(add3(scale3(w, 1 - weight), scale3(target, weight)));
     if (w[2] < 0) w = scale3(w, -1);
-    neighborLockRad = Math.min(tiltCapRad, (bridgeTight ? (posterior ? 22 : 28) : posterior ? 14 : 22) * DEG);
+    neighborLockRad = (posterior ? 28 : 32) * DEG;
     w = capTilt(w, neighborLockRad);
-    axisSource = bridgeTight ? "parallel" : axisSource;
+    axisSource = "parallel";
   }
   if (mode.probeAxis) return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
   const hasManualAxisShift = params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0;
@@ -4936,6 +5042,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
 
+    // 축벽은 솔리드다. 스크류 원통이 옆면으로 나가기 전에 그 쪽 벽이 채널을 감싼다.
+    coverPostOverScrew({
+      w: frame.w,
+      c0,
+      boreR: boreTopR,
+      wallMm: SCREW_WALL_MM,
+      dirs: cols.map((c) => c.dir),
+      postR,
+      postH,
+      marginCap: cols.map((c) => Math.max(0.85, c.r0 - MIN_MARGIN_SHOULDER_MM)),
+      hardTop: hardCapR.map((row) => row[POST_LEVELS] ?? Number.POSITIVE_INFINITY),
+      topLevel: POST_LEVELS,
+    });
+
     // ── 7) 열 점: 피니시라인 → 오목 챔퍼 → 축벽 → 윗면 라운드 / 해부 3링 예측 크라운 교합면
     const postByCol: Vec3[][] = [];
     const crownByCol: Vec3[][] = [];
@@ -5151,7 +5271,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   }
   const { postByCol, crownByCol, cutbackSum, taperMean, postApex, crownApex, meanCrownCuspH, chamferRho } = shape;
-  // ── 8) 커넥션(헥스 + 11° 원뿔) + cuffBlend 커프 + 포스트를 닫힌 외형으로 잇고 스크류 채널을 뺀다
+  // ── 8) 솔리드 외형(커넥션·커프·포스트)을 닫고, 스크류 홀은 임플란트 축 원통으로 따로 뚫는다
   const l2 = conn.l2Mm;
   const zBot = -l2;
   const seatZ0 = 0.8;
