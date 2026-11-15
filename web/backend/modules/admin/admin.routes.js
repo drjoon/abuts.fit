@@ -69,6 +69,7 @@ import {
 import { s3Upload } from "../../utils/s3.utils.js";
 import { getAdminNoOrderAlerts } from "../../controllers/admin/admin.noOrderAlerts.controller.js";
 import { listAdminNewMembers } from "../../controllers/admin/admin.newMembers.controller.js";
+import { listAdminAiDesignChatUsage } from "../../controllers/admin/admin.aiDesignChatUsage.controller.js";
 import {
   listHexVerificationInProgress,
   completeHexVerification,
@@ -423,6 +424,7 @@ router.post("/practice-launch/switch", adminSwitchPracticeLaunch);
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
 router.get("/new-members", listAdminNewMembers);
+router.get("/ai-design-chat-usage", listAdminAiDesignChatUsage);
 router.get("/low-finish-line-watch", getAdminLowFinishLineWatch);
 router.post(
   "/low-finish-line-watch/:requestId/verdict",

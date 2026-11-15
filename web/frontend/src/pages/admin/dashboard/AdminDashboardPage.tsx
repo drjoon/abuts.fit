@@ -95,6 +95,7 @@ import { AdminPracticeDelinquencyCard } from "@/pages/admin/dashboard/AdminPract
 import { AdminPracticeLaunchButton } from "@/pages/admin/dashboard/AdminPracticeLaunchButton";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import { AdminNewMembersCard } from "@/pages/admin/dashboard/AdminNewMembersCard";
+import { AdminAiDesignChatUsageCard } from "@/pages/admin/dashboard/AdminAiDesignChatUsageCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
 import { HeldSmsCard } from "@/pages/admin/dashboard/HeldSmsCard";
@@ -2330,6 +2331,10 @@ export const AdminDashboardPage = () => {
               />
               <AdminNewMembersCard
                 className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminAiDesignChatUsageCard
+                className={DASH_SPAN.c4}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminPopbillPointCard

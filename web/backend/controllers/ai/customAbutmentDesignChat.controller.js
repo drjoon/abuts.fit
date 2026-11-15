@@ -9,10 +9,13 @@
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/backend/modules/ai/ai.routes.js
 // - web/backend/models/businessAnchor.model.js (customAbutmentDesignPreference)
+// - web/backend/services/aiDesignChatUsage.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
+import { recordAiDesignChatUsage } from "../../services/aiDesignChatUsage.service.js";
+import { quoteAiDesignChatUsage } from "../../services/aiDesignChatUsageCost.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
 const MODEL = "gemini-3.5-flash-lite";
@@ -176,24 +179,40 @@ function preferenceView(stored) {
  * 취향을 둘 치과 사업자. 의뢰(transferId)가 있으면 그 의뢰의 치과, 없으면 로그인 사업자.
  * canSave: 의뢰 치과 본인 계정일 때만 대화 내용을 취향으로 저장한다(기공소 대화는 읽기만).
  */
+async function findTransferForDesignChat(raw) {
+  const id = String(raw || "").trim();
+  if (!id) return null;
+  const select = {
+    transferId: 1,
+    practiceBusinessAnchorId: 1,
+    targetLabAnchorId: 1,
+    assigneeLabAnchorId: 1,
+  };
+  if (Types.ObjectId.isValid(id)) {
+    const byId = await PracticeTransfer.findById(id).select(select).lean();
+    if (byId?.practiceBusinessAnchorId) return byId;
+  }
+  return PracticeTransfer.findOne({ transferId: id }).select(select).lean();
+}
+
 async function resolvePreferenceAnchor(req, rawTransferId) {
   const own = String(req.user?.businessAnchorId || "").trim();
   const transferId = String(rawTransferId || "").trim();
-  if (Types.ObjectId.isValid(transferId)) {
-    const t = await PracticeTransfer.findById(transferId)
-      .select({ practiceBusinessAnchorId: 1, targetLabAnchorId: 1, assigneeLabAnchorId: 1 })
-      .lean();
-    if (t?.practiceBusinessAnchorId) {
-      const practiceId = String(t.practiceBusinessAnchorId);
-      const parties = [practiceId, String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")];
-      const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
-      if (parties.includes(own) || privileged) {
-        return { anchorId: practiceId, canSave: own === practiceId };
-      }
+  const t = await findTransferForDesignChat(transferId);
+  if (t?.practiceBusinessAnchorId) {
+    const practiceId = String(t.practiceBusinessAnchorId);
+    const parties = [practiceId, String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")];
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    if (parties.includes(own) || privileged) {
+      return {
+        anchorId: practiceId,
+        canSave: own === practiceId,
+        transferId: String(t.transferId || transferId),
+      };
     }
   }
-  if (Types.ObjectId.isValid(own)) return { anchorId: own, canSave: true };
-  return { anchorId: null, canSave: false };
+  if (Types.ObjectId.isValid(own)) return { anchorId: own, canSave: true, transferId };
+  return { anchorId: null, canSave: false, transferId };
 }
 
 async function loadPreference(anchorId) {
@@ -361,7 +380,7 @@ export async function customAbutmentDesignChat(req, res) {
       });
     }
 
-    const { anchorId, canSave } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
     let preference = await loadPreference(anchorId);
 
     const image = sanitizeImage(req.body?.image);
@@ -384,6 +403,19 @@ export async function customAbutmentDesignChat(req, res) {
     const result = await model.generateContent(
       image ? [{ text: prompt }, { inlineData: image }] : prompt,
     );
+    const usage = quoteAiDesignChatUsage(result?.response?.usageMetadata);
+    const usageView = {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+    };
+    void recordAiDesignChatUsage({
+      ...usage,
+      practiceBusinessAnchorId: anchorId,
+      userId: req.user?._id,
+      transferId,
+      model: MODEL,
+    }).catch((err) => console.warn("[AI] design chat usage write failed", err));
     const parsed = parseJsonObject(result?.response?.text?.() || "");
     if (!parsed || typeof parsed !== "object") {
       return res.json({
@@ -394,6 +426,7 @@ export async function customAbutmentDesignChat(req, res) {
           preference,
           preferenceSaved: null,
           model: MODEL,
+          usage: usageView,
         },
       });
     }
@@ -410,7 +443,7 @@ export async function customAbutmentDesignChat(req, res) {
       (changes.length > 0 ? "디자인 값을 바꿨습니다." : "바꿀 내용이 없습니다.");
     return res.json({
       success: true,
-      data: { reply, changes, preference, preferenceSaved, model: MODEL },
+      data: { reply, changes, preference, preferenceSaved, model: MODEL, usage: usageView },
     });
   } catch (error) {
     console.error("[AI] customAbutmentDesignChat error", error);

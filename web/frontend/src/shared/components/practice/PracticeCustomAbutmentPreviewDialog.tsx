@@ -2,6 +2,7 @@
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다. 수정은 AI 대화로 디자인 조정값을 바꿔 다시 만든다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
+// AI 대화는 의뢰별로 따로 저장해, 모달을 닫았다 열거나 형상을 다시 만들어도 남긴다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -81,8 +82,12 @@ import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
   CUSTOM_ABUTMENT_FIT_VERSION,
   customAbutmentDesignCacheKey,
+  normalizeCustomAbutmentChat,
+  pickCustomAbutmentChat,
+  readCustomAbutmentChat,
   readCustomAbutmentDesign,
   toArrayBuffer,
+  writeCustomAbutmentChat,
   writeCustomAbutmentDesign,
   type CachedAlignedScan,
   type CustomAbutmentChatTurn,
@@ -619,6 +624,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   designedListRef.current = designedList;
   const chatTurnsRef = useRef<ChatTurn[]>([]);
   chatTurnsRef.current = chatTurns;
+  /** 대화 저장 범위. 의뢰 id가 있으면 스캔 키가 바뀌어도 같은 대화를 연다. */
+  const chatScopeRef = useRef("");
+  /** 파이프라인이 겹치면 먼저 끝난 쪽이 대화를 덮지 않게 한다. */
+  const chatApplyEpochRef = useRef(0);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const jawMeshesRef = useRef<{
@@ -1094,7 +1103,15 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!frame || designedList.length === 0) return null;
     const designed =
       designedList.find((d) => d.toothNumber === selectedTooth) ?? designedList[0];
-    const view = toothViewCube(designed.toothNumber, designed.fixture, frame);
+    const view = toothViewCube(
+      designed.toothNumber,
+      designed.fixture,
+      frame,
+      designedList.map((row) => ({
+        toothNumber: row.toothNumber,
+        origin: row.fixture.fixturePose.origin,
+      })),
+    );
     return view ? { ...view, toothNumber: designed.toothNumber } : null;
   }, [designedList, selectedTooth]);
   cubeFrameRef.current = cubeView?.frame ?? null;
@@ -1118,35 +1135,52 @@ export function PracticeCustomAbutmentPreviewDialog({
     focusSingleTooth(toothNumber);
   };
 
+  /** 대화를 의뢰 키로 남긴다. 빈 목록은 쓰지 않아 재계산이 대화를 지우지 않는다. */
+  const persistChat = useCallback((chat?: readonly ChatTurn[]) => {
+    const scope = chatScopeRef.current;
+    const turns = normalizeCustomAbutmentChat(
+      (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
+    );
+    if (!scope || turns.length === 0) return;
+    void writeCustomAbutmentChat(scope, turns).catch((err) =>
+      console.warn("[custom-abutment] chat cache write failed", err),
+    );
+  }, []);
+
   /** 지금 디자인·조정값·대화를 저장한다. 실패해도 화면은 그대로 둔다. */
   const persistDesign = useCallback((chat?: readonly ChatTurn[]) => {
+    const turns = normalizeCustomAbutmentChat(
+      (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
+    );
+    if (turns.length > 0) persistChat(turns);
     const ctx = designContextRef.current;
     if (!ctx) return;
     const list = designedListRef.current;
-    const turns = (chat ?? chatTurnsRef.current)
-      .filter((t) => !t.pending)
-      .map((t) => ({ role: t.role, text: t.text }))
-      .slice(-40);
-    void writeCustomAbutmentDesign({
-      key: ctx.cacheKey,
-      version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-      fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-      savedAt: Date.now(),
-      alignedScans: ctx.alignedScans,
-      teeth: list.map((d) => ({
-        toothNumber: d.toothNumber,
-        fileName: d.fileName,
-        fixture: d.fixture,
-        overrides: ctx.overrides[d.toothNumber] ?? {},
-        params: d.params,
-        metrics: d.metrics,
-        localPositions: toArrayBuffer(d.localPositions),
-        crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
-        marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
-      })),
-      chat: turns,
-    }).catch((err) => console.warn("[custom-abutment] design cache write failed", err));
-  }, []);
+    const scope = chatScopeRef.current;
+    void (async () => {
+      const savedChat =
+        turns.length > 0 ? turns : scope ? await readCustomAbutmentChat(scope) : [];
+      await writeCustomAbutmentDesign({
+        key: ctx.cacheKey,
+        version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+        fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+        savedAt: Date.now(),
+        alignedScans: ctx.alignedScans,
+        teeth: list.map((d) => ({
+          toothNumber: d.toothNumber,
+          fileName: d.fileName,
+          fixture: d.fixture,
+          overrides: ctx.overrides[d.toothNumber] ?? {},
+          params: d.params,
+          metrics: d.metrics,
+          localPositions: toArrayBuffer(d.localPositions),
+          crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
+          marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
+        })),
+        chat: savedChat,
+      });
+    })().catch((err) => console.warn("[custom-abutment] design cache write failed", err));
+  }, [persistChat]);
 
   const jawsForJobs = useCallback((jobs: readonly { jaw: "upper" | "lower" }[]) => {
     const has = {
@@ -1363,6 +1397,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       }),
     [abutmentToothWorks, normalizedToothWorks, scanSources.meshes],
   );
+  chatScopeRef.current = transferIdParam || pipelineKey;
+
+  useEffect(() => {
+    return () => {
+      persistChat();
+    };
+  }, [persistChat]);
 
   // WebGL 씬 초기화 (Radix DialogPortal이 마운트된 뒤 hostEl 콜백 ref로 실행)
   useEffect(() => {
@@ -1673,9 +1714,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         setSelectedTooth(null);
         setRestoredFromCache(false);
         designContextRef.current = null;
+        const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
 
         const cachePromise = readCustomAbutmentDesign(cacheKey);
+        const chatPromise = readCustomAbutmentChat(transferIdParam || pipelineKey);
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
         const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
         if (!hasWorkScans) targetRoles.add("bite");
@@ -1731,7 +1774,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
-        const [rawLoadedScans, cached] = await Promise.all([
+        const [rawLoadedScans, cached, savedChat] = await Promise.all([
           Promise.all(
             toLoad.map((item, idx) =>
               loadSingleScan(item, (pct) => {
@@ -1749,6 +1792,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ),
           ),
           cachePromise,
+          chatPromise,
         ]);
         const loadedScans = rawLoadedScans.filter(
           (row): row is LoadedJawScan => row != null,
@@ -2040,9 +2084,20 @@ export function PracticeCustomAbutmentPreviewDialog({
         );
         setDesignedList(builtAbutments);
         setRestoredFromCache(restored);
-        const restoredChat = restored && cached ? cached.chat : [];
-        setChatTurns(restoredChat);
-        chatTurnsRef.current = restoredChat;
+        const fromDesign = cached ? normalizeCustomAbutmentChat(cached.chat) : [];
+        const restoredChat =
+          chatApplyEpochRef.current === chatApplyEpoch
+            ? pickCustomAbutmentChat(
+                chatTurnsRef.current.filter((t) => !t.pending),
+                savedChat,
+                fromDesign,
+              )
+            : null;
+        if (restoredChat) {
+          setChatTurns(restoredChat);
+          chatTurnsRef.current = restoredChat;
+          if (restoredChat.length > savedChat.length) persistChat(restoredChat);
+        }
         if (pendingPickJobs.length > 0) {
           scanbodyPickRef.current = {
             jobs: pendingPickJobs,
@@ -2056,7 +2111,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
         } else {
           setStatus({ kind: "ready" });
-          if (!restored || redesignedFromFit) persistDesign(restoredChat);
+          if (restoredChat && (!restored || redesignedFromFit)) persistDesign(restoredChat);
         }
 
         window.requestAnimationFrame(() => {
@@ -2093,6 +2148,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     fitDefaultCamera,
     hostEl,
     open,
+    persistChat,
     persistDesign,
     pipelineKey,
     rebuildJawScanMeshes,
@@ -2386,13 +2442,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       ];
       chatTurnsRef.current = withUser;
       setChatTurns(withUser);
+      persistChat(withUser);
       setChatInput("");
       setChatBusy(true);
 
-      const finish = (reply: string) => {
+      const finish = (reply: string, usage?: ChatTurn["usage"]) => {
         const next: ChatTurn[] = [
           ...chatTurnsRef.current.filter((t) => !t.pending),
-          { role: "assistant", text: reply },
+          usage ? { role: "assistant", text: reply, usage } : { role: "assistant", text: reply },
         ];
         chatTurnsRef.current = next;
         setChatTurns(next);
@@ -2466,6 +2523,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             changes?: DesignChange[];
             preference?: unknown;
             preferenceSaved?: { note?: string } | null;
+            usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
           };
         }>({
           path: "/api/ai/custom-abutment-design-chat",
@@ -2489,8 +2547,17 @@ export function PracticeCustomAbutmentPreviewDialog({
           paint.paintRef.current?.clear({ silent: true });
           paint.setPaintOn(false);
         }
+        const usageRaw = res.data?.data?.usage;
+        const usage =
+          usageRaw && (Number(usageRaw.totalTokens) || 0) > 0
+            ? {
+                inputTokens: Math.max(0, Math.round(Number(usageRaw.inputTokens) || 0)),
+                outputTokens: Math.max(0, Math.round(Number(usageRaw.outputTokens) || 0)),
+                totalTokens: Math.max(0, Math.round(Number(usageRaw.totalTokens) || 0)),
+              }
+            : undefined;
         if (!res.ok || !res.data?.data) {
-          finish(res.data?.message || "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.");
+          finish(res.data?.message || "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.", usage);
           return;
         }
         if (res.data.data.preference) {
@@ -2514,14 +2581,14 @@ export function PracticeCustomAbutmentPreviewDialog({
           }))
           .filter((c) => Object.keys(c.params).length > 0);
         if (changes.length === 0) {
-          finish(reply || "바꿀 내용이 없습니다.");
+          finish(reply || "바꿀 내용이 없습니다.", usage);
           return;
         }
         const before = new Map(designedListRef.current.map((d) => [d.toothNumber, d.params]));
         showApplying();
         await applyDesignChanges(changes);
         const summary = describeChanges(changes, before);
-        finish(summary ? `${reply}\n${summary}` : reply);
+        finish(summary ? `${reply}\n${summary}` : reply, usage);
       } catch (err) {
         console.warn("[custom-abutment] chat failed", err);
         finish("디자인을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
@@ -2536,6 +2603,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       captureSketch,
       chatBusy,
       paint,
+      persistChat,
       persistDesign,
       savePreferenceDirect,
       selectTooth,
@@ -2598,6 +2666,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       >
         <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="min-w-0 flex-1 truncate">AI 디자인 대화</span>
+        {chatTurns.some((t) => (t.usage?.totalTokens || 0) > 0) ? (
+          <span className="shrink-0 text-[0.6875rem] font-normal tabular-nums text-muted-foreground">
+            {chatTurns
+              .reduce((sum, t) => sum + (t.usage?.totalTokens || 0), 0)
+              .toLocaleString("ko-KR")}
+            토큰
+          </span>
+        ) : null}
         {chatBusy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" /> : null}
         <button
           type="button"
@@ -2677,7 +2753,15 @@ export function PracticeCustomAbutmentPreviewDialog({
                     {turn.text}
                   </span>
                 ) : (
-                  turn.text
+                  <>
+                    {turn.text}
+                    {turn.role === "assistant" && turn.usage ? (
+                      <p className="mt-1 text-[0.625rem] font-normal tabular-nums opacity-70">
+                        입력 {turn.usage.inputTokens.toLocaleString("ko-KR")} · 출력{" "}
+                        {turn.usage.outputTokens.toLocaleString("ko-KR")}
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </div>
             ))}

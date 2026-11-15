@@ -1,7 +1,8 @@
-// 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값·AI 대화)을
+// 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값)을
 // 이 브라우저 IndexedDB에 두고, 모달을 다시 열면 스캔만 읽어 그대로 보여 준다.
 // 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
 // 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
+// AI 대화는 정합 키와 따로, 의뢰 id(`chat:{transferId}`)로 둔다. 형상을 다시 만들어도 대화는 남는다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -20,7 +21,17 @@ const STORE = "designs";
 const DB_VERSION = 1;
 const MAX_RECORDS = 30;
 
-export type CustomAbutmentChatTurn = { role: "user" | "assistant"; text: string };
+export type CustomAbutmentChatUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
+export type CustomAbutmentChatTurn = {
+  role: "user" | "assistant";
+  text: string;
+  usage?: CustomAbutmentChatUsage;
+};
 
 export type CachedCustomAbutmentTooth = {
   toothNumber: string;
@@ -78,6 +89,55 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
+/** 대화 저장 키. 정합·형상 버전과 스캔 키가 바뀌어도 같은 의뢰면 그대로다. */
+export function customAbutmentChatCacheKey(scope: string): string {
+  const id = scope.trim();
+  return id ? `chat:${id}` : "";
+}
+
+const CHAT_TURN_LIMIT = 40;
+
+/** 화면에 쌓인 말이 저장본보다 길면 화면을 유지한다. 아니면 의뢰 저장 → 디자인 저장본 순. */
+export function pickCustomAbutmentChat(
+  live: readonly CustomAbutmentChatTurn[],
+  saved: readonly CustomAbutmentChatTurn[],
+  fromDesign: readonly CustomAbutmentChatTurn[],
+): CustomAbutmentChatTurn[] {
+  const current = normalizeCustomAbutmentChat(live);
+  const stored =
+    saved.length > 0 ? normalizeCustomAbutmentChat(saved) : normalizeCustomAbutmentChat(fromDesign);
+  return current.length > stored.length ? current : stored;
+}
+
+function readChatUsage(raw: unknown): CustomAbutmentChatUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const row = raw as { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown };
+  const inputTokens = Math.max(0, Math.round(Number(row.inputTokens) || 0));
+  const outputTokens = Math.max(0, Math.round(Number(row.outputTokens) || 0));
+  const totalTokens = Math.max(0, Math.round(Number(row.totalTokens) || inputTokens + outputTokens));
+  if (inputTokens + outputTokens + totalTokens === 0) return undefined;
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+export function normalizeCustomAbutmentChat(raw: unknown): CustomAbutmentChatTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: CustomAbutmentChatTurn[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const role = (row as { role?: unknown }).role;
+    const text = String((row as { text?: unknown }).text ?? "");
+    if ((role !== "user" && role !== "assistant") || !text.trim()) continue;
+    const usage = readChatUsage((row as { usage?: unknown }).usage);
+    turns.push(usage ? { role, text, usage } : { role, text });
+  }
+  return turns.slice(-CHAT_TURN_LIMIT);
+}
+
+function isChatCacheKey(key: IDBValidKey | undefined, row: unknown): boolean {
+  if (String(key ?? "").startsWith("chat:")) return true;
+  return !!row && typeof row === "object" && (row as { kind?: unknown }).kind === "chat";
+}
+
 export async function readCustomAbutmentDesign(
   key: string,
 ): Promise<(CachedCustomAbutmentDesign & { designFresh: boolean }) | null> {
@@ -95,7 +155,7 @@ export async function readCustomAbutmentDesign(
         resolve({
           ...row,
           alignedScans: Array.isArray(row.alignedScans) ? row.alignedScans : [],
-          chat: Array.isArray(row.chat) ? row.chat : [],
+          chat: normalizeCustomAbutmentChat(row.chat),
           designFresh: row.version === CUSTOM_ABUTMENT_DESIGN_VERSION,
         });
       };
@@ -122,11 +182,17 @@ export async function writeCustomAbutmentDesign(record: CachedCustomAbutmentDesi
     let rows: CachedCustomAbutmentDesign[] | null = null;
     let ids: IDBValidKey[] | null = null;
     const prune = () => {
-      if (!rows || !ids || rows.length <= MAX_RECORDS) return;
-      const order = rows
-        .map((row, i) => ({ key: ids![i]!, savedAt: Number(row?.savedAt) || 0 }))
-        .sort((a, b) => a.savedAt - b.savedAt);
-      for (const row of order.slice(0, rows.length - MAX_RECORDS)) store.delete(row.key);
+      if (!rows || !ids) return;
+      const designs = rows
+        .map((row, i) => ({
+          key: ids![i]!,
+          savedAt: Number(row?.savedAt) || 0,
+          chat: isChatCacheKey(ids![i], row),
+        }))
+        .filter((row) => !row.chat);
+      if (designs.length <= MAX_RECORDS) return;
+      const order = designs.sort((a, b) => a.savedAt - b.savedAt);
+      for (const row of order.slice(0, designs.length - MAX_RECORDS)) store.delete(row.key);
     };
     all.onsuccess = () => {
       rows = all.result as CachedCustomAbutmentDesign[];
@@ -137,6 +203,65 @@ export async function writeCustomAbutmentDesign(record: CachedCustomAbutmentDesi
       prune();
     };
   });
+}
+
+type CachedCustomAbutmentChat = {
+  key: string;
+  kind: "chat";
+  savedAt: number;
+  chat: CustomAbutmentChatTurn[];
+};
+
+/** 의뢰 대화. 디자인 저장본이 없거나 정합을 다시 해도 이 기록을 보여 준다. */
+export async function readCustomAbutmentChat(scope: string): Promise<CustomAbutmentChatTurn[]> {
+  const key = customAbutmentChatCacheKey(scope);
+  if (!isBrowser || !key) return [];
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
+      request.onsuccess = () => {
+        const row = request.result as CachedCustomAbutmentChat | undefined;
+        resolve(normalizeCustomAbutmentChat(row?.chat));
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+let chatWriteChain: Promise<void> = Promise.resolve();
+
+/** 빈 목록은 저장하지 않는다. 디자인 재계산이 대화를 지우지 않게. */
+export function writeCustomAbutmentChat(
+  scope: string,
+  chat: readonly CustomAbutmentChatTurn[],
+): Promise<void> {
+  const key = customAbutmentChatCacheKey(scope);
+  const turns = normalizeCustomAbutmentChat(chat);
+  if (!isBrowser || !key || turns.length === 0) return Promise.resolve();
+  const job = chatWriteChain.then(async () => {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const record: CachedCustomAbutmentChat = {
+        key,
+        kind: "chat",
+        savedAt: Date.now(),
+        chat: turns,
+      };
+      tx.objectStore(STORE).put(record, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  });
+  chatWriteChain = job.then(
+    () => undefined,
+    () => undefined,
+  );
+  return job;
 }
 
 export function toArrayBuffer(arr: Float32Array): ArrayBuffer {

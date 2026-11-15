@@ -56,45 +56,123 @@ export function viewCubeDirection(
 
 type Vec3 = readonly [number, number, number];
 
+export type ToothCubeNeighbor = { toothNumber: string; origin: Vec3 };
+
+function flatToUp(v: THREE.Vector3, up: THREE.Vector3) {
+  v.addScaledVector(up, -v.dot(up));
+  return v;
+}
+
+/** 악궁이 놓인 앞·오른쪽에서 FDI 치아의 바깥(순·협)과 정중선(근심) 쪽을 어림한다. */
+function archToothDirs(toothNumber: string, up: THREE.Vector3, frame: DentalFrame) {
+  const m = /^([1-4])([1-8])$/.exec(toothNumber);
+  if (!m) return null;
+  const quadrant = Number(m[1]);
+  const position = Number(m[2]);
+  const side = quadrant === 1 || quadrant === 4 ? 1 : -1;
+  const phi = (Math.min(position, 8) / 8) * 1.45;
+  const buccal = flatToUp(
+    frame.right
+      .clone()
+      .multiplyScalar(side * Math.sin(phi))
+      .addScaledVector(frame.anterior, Math.cos(phi)),
+    up,
+  );
+  const mesial = flatToUp(
+    frame.anterior
+      .clone()
+      .multiplyScalar(Math.sin(phi))
+      .addScaledVector(frame.right, -side * Math.cos(phi)),
+    up,
+  );
+  if (buccal.lengthSq() < 1e-8 || mesial.lengthSq() < 1e-8) return null;
+  return { buccal: buccal.normalize(), mesial: mesial.normalize(), quadrant, position };
+}
+
+function neighborOrigin(
+  neighbors: readonly ToothCubeNeighbor[] | undefined,
+  toothNumber: string,
+): THREE.Vector3 | null {
+  const hit = neighbors?.find((row) => row.toothNumber === toothNumber);
+  return hit ? new THREE.Vector3(...hit.origin) : null;
+}
+
 /**
  * 디자인한 치아 기준 큐브. 정면=순(협)측, 위=환자 위쪽(상악은 치은, 하악은 교합),
- * 좌·우=근심·원심. FDI 번호와 픽스처 방향이 맞지 않으면 null.
+ * 좌·우=근심·원심.
+ * 방향은 악궁이 놓인 3차원 축(앞·오른쪽·위)과 치아 번호로 정한다.
+ * 이웃 치아가 있으면 그 자리의 접선을 근심으로 쓰고, 픽스처 방향이 악궁과 반대면 악궁 부호를 따른다.
  */
 export function toothViewCube(
   toothNumber: string,
-  fixture: { labialDir: Vec3; archOcclusalDir: Vec3; mesialDir?: Vec3 | null },
+  fixture: {
+    labialDir: Vec3;
+    archOcclusalDir: Vec3;
+    mesialDir?: Vec3 | null;
+    fixturePose?: { origin: Vec3 };
+  },
   frame: DentalFrame,
+  neighbors?: readonly ToothCubeNeighbor[],
 ): { frame: DentalFrame; labels: ViewCubeFaceLabels } | null {
-  const m = /^([1-4])([1-8])$/.exec(String(toothNumber).trim());
-  if (!m) return null;
-  const upper = m[1] === "1" || m[1] === "2";
-  const anteriorTooth = Number(m[2]) <= 3;
-  const up = new THREE.Vector3(...fixture.archOcclusalDir).normalize();
-  if (upper) up.negate();
-  if (up.dot(frame.up) < 0) return null;
-  const anterior = new THREE.Vector3(...fixture.labialDir);
-  anterior.addScaledVector(up, -anterior.dot(up));
-  if (anterior.lengthSq() < 1e-6) return null;
-  anterior.normalize();
-  // 오른손 좌표계: 환자를 정면(+anterior)에서 바라볼 때 오른쪽은 +right = anterior × up (위쪽 화면 우측 = -right).
-  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
+  const digits = String(toothNumber).trim();
+  const arch = archToothDirs(digits, frame.up.clone().normalize(), frame);
+  if (!arch) return null;
+  const { quadrant, position } = arch;
+  const upper = quadrant <= 2;
+  const anteriorTooth = position <= 3;
+  const up = frame.up.clone().normalize();
 
-  let left = "좌";
-  let rightLabel = "우";
-  if (fixture.mesialDir) {
-    const mesialRight = new THREE.Vector3(...fixture.mesialDir).dot(right) > 0;
-    rightLabel = mesialRight ? "근심" : "원심";
-    left = mesialRight ? "원심" : "근심";
-  }
+  const buccalGuess = arch.buccal;
+  const mesialGuess = arch.mesial;
+  const matchArch = (dir: THREE.Vector3, guess: THREE.Vector3) => {
+    if (dir.lengthSq() < 1e-8) return guess.clone();
+    dir.normalize();
+    if (dir.dot(guess) < 0) dir.negate();
+    return dir;
+  };
+  const buccal = matchArch(flatToUp(new THREE.Vector3(...fixture.labialDir), up), buccalGuess);
+
+  const self = fixture.fixturePose ? new THREE.Vector3(...fixture.fixturePose.origin) : null;
+  const otherCentral = quadrant === 1 ? 2 : quadrant === 2 ? 1 : quadrant === 3 ? 4 : 3;
+  const mesialTooth =
+    position > 1
+      ? neighborOrigin(neighbors, `${quadrant}${position - 1}`)
+      : neighborOrigin(neighbors, `${otherCentral}1`);
+  const distalTooth =
+    position < 8 ? neighborOrigin(neighbors, `${quadrant}${position + 1}`) : null;
+  const tangent =
+    mesialTooth && distalTooth
+      ? mesialTooth.clone().sub(distalTooth)
+      : mesialTooth && self
+        ? mesialTooth.clone().sub(self)
+        : distalTooth && self
+          ? self.clone().sub(distalTooth)
+          : null;
+  const mesialSource =
+    tangent && flatToUp(tangent, up).lengthSq() > 1e-8
+      ? tangent
+      : fixture.mesialDir
+        ? flatToUp(new THREE.Vector3(...fixture.mesialDir), up)
+        : mesialGuess.clone();
+  const mesial = matchArch(mesialSource, mesialGuess);
+  mesial.addScaledVector(buccal, -mesial.dot(buccal));
+  if (mesial.lengthSq() < 1e-8) mesial.crossVectors(up, buccal);
+  mesial.normalize();
+  if (mesial.dot(mesialGuess) < 0) mesial.negate();
+
+  // 오른손: 바깥(순·협)을 정면으로 볼 때 오른쪽 = 순협 × 환자 위.
+  const right = new THREE.Vector3().crossVectors(buccal, up).normalize();
+  if (right.lengthSq() < 1e-8) return null;
+  const mesialRight = mesial.dot(right) > 0;
   return {
-    frame: { up, anterior, right },
+    frame: { up, anterior: buccal, right },
     labels: {
       front: anteriorTooth ? "순측" : "협측",
       back: upper ? "구개측" : "설측",
       top: upper ? "치은" : "교합",
       bottom: upper ? "교합" : "치은",
-      left,
-      right: rightLabel,
+      left: mesialRight ? "원심" : "근심",
+      right: mesialRight ? "근심" : "원심",
     },
   };
 }
