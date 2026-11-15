@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-11-15: 홈 타일을 생산·확인·정산·이용·설정으로 나눠 한 줄에 같은 일을 둔다.
 // - 2026-10-26: 신규 회원 카드. 가입 후 7일간 표시.
 // - 2026-10-24: 런칭 - 실사용 전환 버튼. 베타 중에는 미납으로 주문을 막지 않는다.
 // - 2026-10-21: 대시보드 타일 — 잘린 막대·배송 목록을 카드 안에 맞추고, 빈 카드는 줄이고 확인할 카드만 키운다.
@@ -533,6 +534,15 @@ const UNMACHINABLE_DETAIL_BADGE_VARIANT = (
   if (code === "confirmed") return "secondary";
   return "outline";
 };
+
+function DashCluster({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h2 className="px-1 text-xs font-semibold text-slate-500">{title}</h2>
+      <div className={DASH_GRID_CLASS}>{children}</div>
+    </section>
+  );
+}
 
 function KpiTile({
   className,
@@ -2199,13 +2209,11 @@ export const AdminDashboardPage = () => {
             <AdminPracticeLaunchButton token={token} />
           ) : undefined
         }
-        statsGridClassName="flex flex-col gap-3"
+        statsGridClassName="flex flex-col gap-5"
         topSection={undefined}
         stats={
           <>
-            {/* 벤토: 진행·지연·공지 → 확인할 것 → 성장 → 금액·알림 → 통계·설정 */}
-            <div className={DASH_GRID_CLASS}>
-              {/* 1) 지금 처리·확인할 것 */}
+            <DashCluster title="생산">
               <DashTile
                 className={DASH_SPAN.c4r2}
                 title="진행 / 완료"
@@ -2240,54 +2248,6 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
               </DashTile>
-
-              <DashTile
-                className={
-                  newConnectionRequestTotal > 0
-                    ? `${DASH_SPAN.c3r2} hover:bg-amber-50/90`
-                    : DASH_SPAN.c3r2
-                }
-                title="신규 커넥션 요청"
-                tone={newConnectionRequestTotal > 0 ? "warn" : "default"}
-                icon={
-                  <PhoneCall
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "h-4 w-4 text-amber-700"
-                        : "h-4 w-4 text-muted-foreground"
-                    }
-                  />
-                }
-                onClick={() => {
-                  setNewConnectionRequestOpen(true);
-                }}
-              >
-                <div className="flex min-h-full flex-col justify-center gap-1">
-                  <div
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "text-2xl font-semibold text-amber-900"
-                        : "text-2xl font-semibold text-slate-800"
-                    }
-                  >
-                    {newConnectionRequestTotal.toLocaleString()}건
-                  </div>
-                  <p
-                    className={
-                      newConnectionRequestTotal > 0
-                        ? "text-[11px] font-medium text-amber-800"
-                        : "text-[11px] text-muted-foreground"
-                    }
-                  >
-                    {newConnectionRequestTotal > 0
-                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음`
-                      : "제조사 · 브랜드"}
-                  </p>
-                </div>
-              </DashTile>
-
-              <NoticeAdminCard className={DASH_SPAN.c5r2} />
-
               <DashTile
                 className={DASH_SPAN.c4r2}
                 title="지연 위험"
@@ -2316,375 +2276,8 @@ export const AdminDashboardPage = () => {
                   />
                 </div>
               </DashTile>
-
-              <AdminPracticeDelinquencyCard
-                className={DASH_SPAN.c6}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminDemoConversionCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminBusinessVerificationCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminNewMembersCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminAiDesignChatUsageCard
-                className={DASH_SPAN.c4}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminPopbillPointCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminPopbillBankCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <HeldSmsCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <LowFinishLineWatchCard className={DASH_SPAN.c2} />
-              <DashTile
-                className={DASH_SPAN.c2}
-                title="헥스 회전 확인"
-                tone={hexCallCount > 0 ? "warn" : "default"}
-                icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setHexVerificationDialogOpen(true)}
-              >
-                <div className="flex min-h-full flex-col justify-end gap-0.5">
-                  <DashBigNumber value={hexCallCount.toLocaleString()} unit="전화" />
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    {hexCallCount > 0
-                      ? "3.0 이하 직원이 같은지 확인"
-                      : loadingHexVerification
-                        ? "불러오는 중…"
-                        : "전화할 곳 없음"}
-                  </p>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c2}
-                title="신규 보철물 요청"
-                tone={prosthesisFeeItemRequestPending > 0 ? "warn" : "default"}
-                icon={<Layers className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => {
-                  setProsthesisFeeItemRequestFilter("all");
-                  setProsthesisFeeItemRequestDialogOpen(true);
-                }}
-              >
-                <div className="flex min-h-full flex-col justify-end gap-0.5">
-                  <DashBigNumber
-                    value={prosthesisFeeItemRequestPending.toLocaleString()}
-                    unit="대기"
-                  />
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    {prosthesisFeeItemRequestStatRows
-                      .filter((row) => row.key !== "pending")
-                      .map((row) => `${row.label} ${row.count.toLocaleString()}`)
-                      .join(" · ")}
-                  </p>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c2}
-                title="이번 주 해피콜"
-                icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => {
-                  setHappyCallReasonFilter("all");
-                  setHappyCallDialogTab("targets");
-                  setHappyCallDialogOpen(true);
-                }}
-              >
-                <div className="flex min-h-full flex-col justify-end gap-0.5">
-                  <DashBigNumber
-                    value={Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}
-                    unit="개 대상"
-                  />
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    전체 사업자{" "}
-                    {(adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0).toLocaleString()}
-                    개
-                  </p>
-                </div>
-              </DashTile>
-              <NoOrderAlertBanner
-                variant="tile"
-                className={DASH_SPAN.c2}
-                data={noOrderAlertsData}
-                loading={noOrderAlertsLoading}
-              />
-
-              {/* 2) 성장 지표 */}
-              <KpiTile
-                className={DASH_SPAN.c2}
-                title="오늘 접속"
-                icon={<Activity className="h-4 w-4 text-muted-foreground" />}
-                value={Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
-                sub="KST 오늘"
-                onClick={() => setGrowthDetailMetric("todayAccess")}
-              />
-              <KpiTile
-                className={DASH_SPAN.c2}
-                title="월간 유저"
-                icon={<Users className="h-4 w-4 text-muted-foreground" />}
-                value={Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
-                sub="이번 달 접속"
-                onClick={() => setGrowthDetailMetric("monthAccess")}
-              />
-              <KpiTile
-                className={DASH_SPAN.c2}
-                title="총 유저"
-                icon={<Users className="h-4 w-4 text-muted-foreground" />}
-                value={Number(platformGrowthStats?.totalUsers || 0).toLocaleString()}
-                sub={`치과 ${Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소 ${Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}`}
-                onClick={() => setGrowthDetailMetric("totalUsers")}
-              />
-              {/* 3) 금액 · 알림 — 거래와 같은 높이. 알림이 적어도 옆 카드와 끝이 맞는다. */}
-              <DashTile
-                className={DASH_SPAN.c6r2}
-                title={
-                  <>
-                    시스템 알림
-                    {data.systemAlerts.length > 0 ? (
-                      <span className="font-normal">{data.systemAlerts.length}건</span>
-                    ) : null}
-                  </>
-                }
-                tone={data.systemAlerts.length > 0 ? "warn" : "default"}
-                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
-                bodyClassName="overflow-y-auto px-1.5 py-1.5"
-              >
-                {data.systemAlerts.length === 0 ? (
-                  <div className="flex min-h-full items-center text-xs text-muted-foreground">
-                    이상 알림이 없습니다.
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {data.systemAlerts.map((alert) => (
-                      <div
-                        key={alert.id}
-                        className="flex items-start gap-2 rounded-lg border bg-white/70 px-2 py-1.5"
-                      >
-                        <div className="mt-0.5 shrink-0">{getAlertIcon(alert.type)}</div>
-                        <div className="min-w-0">
-                          <div className="line-clamp-2 break-words text-xs font-medium">
-                            {alert.message}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {toDateTimeLabel(alert.date)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c6r2}
-                title="거래금액"
-                icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
-              >
-                <div className="flex min-h-full flex-col justify-between gap-1.5">
-                  <div className="grid grid-cols-2 gap-2 border-b border-slate-100 pb-1.5">
-                    <button
-                      type="button"
-                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
-                      onClick={() => setGrowthDetailMetric("periodRequests")}
-                    >
-                      <div className="truncate text-[11px] text-muted-foreground">이용건수</div>
-                      <div className="truncate text-base font-bold tabular-nums">
-                        {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
-                      </div>
-                      <div className="truncate text-[10px] text-muted-foreground">
-                        누적{" "}
-                        {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
-                      onClick={() => setGrowthDetailMetric("periodRevenue")}
-                    >
-                      <div className="truncate text-[11px] text-muted-foreground">매출</div>
-                      <div className="truncate text-base font-bold tabular-nums">
-                        ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
-                      </div>
-                      <div className="truncate text-[10px] text-muted-foreground">
-                        기간 유료 주문액
-                      </div>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">유료 주문액</div>
-                      <div className="truncate text-lg font-bold">
-                        ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">평균 단가</div>
-                      <div className="truncate text-lg font-bold">
-                        ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">배송비</div>
-                      <div className="truncate text-lg font-bold">
-                        ₩{(pricingSummary?.totalShippingFeeSupply ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 border-t pt-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">무료 주문액</div>
-                      <div className="truncate text-sm font-semibold text-muted-foreground">
-                        ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">평균 무료 단가</div>
-                      <div className="truncate text-sm font-semibold text-muted-foreground">
-                        ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] text-muted-foreground">평균 배송비</div>
-                      <div className="truncate text-sm font-semibold">
-                        ₩{(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c12}
-                title="의뢰 전송"
-                icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setPracticeTransferStatsDialogOpen(true)}
-              >
-                <div className="grid min-h-full grid-cols-4 items-end gap-2">
-                  <DashStat label="전송" value={practiceTransferTotal.toLocaleString()} />
-                  <DashStat label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
-                  <DashStat
-                    label="치과"
-                    value={practiceTransferTotalPractices.toLocaleString()}
-                    tone="primary"
-                  />
-                  <DashStat
-                    label="기공소"
-                    value={practiceTransferTotalLabs.toLocaleString()}
-                    tone="primary"
-                  />
-                </div>
-              </DashTile>
-
-              {/* 4) 위험·통계는 같은 높이. 설정·바로가기는 한 줄. 목록 카드만 두 줄. */}
               <DashTile
                 className={DASH_SPAN.c4r2}
-                title="디자인 소프트웨어"
-                icon={<Code2 className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => {
-                  setDesignSoftwareStatsFilter("all");
-                  setDesignSoftwareStatsDialogOpen(true);
-                }}
-              >
-                <div className="flex min-h-full flex-col justify-between gap-1.5">
-                  {designSoftwareStatRows.map((row) => {
-                    const ratio = Math.max(0, Math.min(1, row.count / designSoftwareMaxCount));
-                    const tone = getDesignSoftwareToneClasses(row.key);
-                    return (
-                      <div key={row.key} className="min-w-0">
-                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
-                          <span className="truncate text-muted-foreground">{row.label}</span>
-                          <span className={`shrink-0 font-semibold ${tone.count}`}>
-                            {row.count.toLocaleString()}개
-                          </span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
-                          <div
-                            className={`h-full rounded ${tone.bar}`}
-                            style={{ width: `${ratio * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
-                    총 {designSoftwareTotalCount.toLocaleString()}개 사업자
-                  </div>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c4r2}
-                title="미제공 어벗"
-                icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => {
-                  setUnsupportedAbutmentStatsFilter("all");
-                  setUnsupportedAbutmentStatsDialogOpen(true);
-                }}
-              >
-                <div className="flex min-h-full flex-col justify-between gap-1.5">
-                  {unsupportedAbutmentStatRows.map((row) => {
-                    const ratio = Math.max(
-                      0,
-                      Math.min(1, row.count / unsupportedAbutmentMaxCount),
-                    );
-                    const tone = getUnsupportedAbutmentToneClasses(row.key);
-                    return (
-                      <div key={row.key} className="min-w-0">
-                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
-                          <span className="truncate text-muted-foreground">{row.label}</span>
-                          <span className={`shrink-0 font-semibold ${tone.count}`}>
-                            {row.count.toLocaleString()}건
-                          </span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
-                          <div
-                            className={`h-full rounded ${tone.bar}`}
-                            style={{ width: `${ratio * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
-                    총 {unsupportedAbutmentTotal.toLocaleString()}건
-                  </div>
-                </div>
-              </DashTile>
-              <DirectAbutmentSettingsCard className={DASH_SPAN.c3} />
-              <IndirectAbutmentCard className={DASH_SPAN.c3} />
-              <DashTile
-                className={DASH_SPAN.c3}
-                title="운영보고서"
-                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => navigate("/dashboard/ops-report")}
-              >
-                <div className="flex min-h-full flex-col justify-end gap-0.5">
-                  <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c3}
-                title="가공 통계"
-                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
-                onClick={() => setMachiningStatsDialogOpen(true)}
-              >
-                <div className="flex min-h-full flex-col justify-end gap-0.5">
-                  <div className="truncate text-sm font-semibold text-slate-800">
-                    직경별 제작 · 소요시간
-                  </div>
-                  <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
-                </div>
-              </DashTile>
-              <DashTile
-                className={DASH_SPAN.c6r2}
                 title="불완전가공 의뢰"
                 tone={Number(unmachinableSummary?.judgedCount || 0) > 0 ? "warn" : "default"}
                 bodyClassName="flex min-h-0 flex-col gap-2"
@@ -2767,8 +2360,425 @@ export const AdminDashboardPage = () => {
                   ) : null}
                 </div>
               </DashTile>
-              <RequestorShippingModeCard className={DASH_SPAN.c6r2} />
-            </div>
+              <LowFinishLineWatchCard className={DASH_SPAN.c4} />
+              <DashTile
+                className={DASH_SPAN.c4}
+                title="헥스 회전 확인"
+                tone={hexCallCount > 0 ? "warn" : "default"}
+                icon={<RotateCw className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setHexVerificationDialogOpen(true)}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber value={hexCallCount.toLocaleString()} unit="전화" />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {hexCallCount > 0
+                      ? "3.0 이하 직원이 같은지 확인"
+                      : loadingHexVerification
+                        ? "불러오는 중…"
+                        : "전화할 곳 없음"}
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c4}
+                title="가공 통계"
+                icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setMachiningStatsDialogOpen(true)}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <div className="truncate text-sm font-semibold text-slate-800">
+                    직경별 제작 · 소요시간
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
+                </div>
+              </DashTile>
+            </DashCluster>
+            <DashCluster title="확인할 일">
+              <AdminPracticeDelinquencyCard
+                className={DASH_SPAN.c6}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <DashTile
+                className={
+                  newConnectionRequestTotal > 0
+                    ? `${DASH_SPAN.c2} hover:bg-amber-50/90`
+                    : DASH_SPAN.c2
+                }
+                title="신규 커넥션 요청"
+                tone={newConnectionRequestTotal > 0 ? "warn" : "default"}
+                icon={
+                  <PhoneCall
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "h-4 w-4 text-amber-700"
+                        : "h-4 w-4 text-muted-foreground"
+                    }
+                  />
+                }
+                onClick={() => {
+                  setNewConnectionRequestOpen(true);
+                }}
+              >
+                <div className="flex min-h-full flex-col justify-center gap-1">
+                  <div
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-2xl font-semibold text-amber-900"
+                        : "text-2xl font-semibold text-slate-800"
+                    }
+                  >
+                    {newConnectionRequestTotal.toLocaleString()}건
+                  </div>
+                  <p
+                    className={
+                      newConnectionRequestTotal > 0
+                        ? "text-[11px] font-medium text-amber-800"
+                        : "text-[11px] text-muted-foreground"
+                    }
+                  >
+                    {newConnectionRequestTotal > 0
+                      ? `미완료 ${newConnectionRequestOpenGroupCount.toLocaleString()}묶음`
+                      : "제조사 · 브랜드"}
+                  </p>
+                </div>
+              </DashTile>
+              <AdminDemoConversionCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminBusinessVerificationCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <DashTile
+                className={DASH_SPAN.c4}
+                title="이번 주 해피콜"
+                icon={<PhoneCall className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setHappyCallReasonFilter("all");
+                  setHappyCallDialogTab("targets");
+                  setHappyCallDialogOpen(true);
+                }}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber
+                    value={Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}
+                    unit="개 대상"
+                  />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    전체 사업자{" "}
+                    {(adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0).toLocaleString()}
+                    개
+                  </p>
+                </div>
+              </DashTile>
+              <NoOrderAlertBanner
+                variant="tile"
+                className={DASH_SPAN.c4}
+                data={noOrderAlertsData}
+                loading={noOrderAlertsLoading}
+              />
+              <HeldSmsCard
+                className={DASH_SPAN.c4}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <NoticeAdminCard className={DASH_SPAN.c6r2} />
+
+              <DashTile
+                className={DASH_SPAN.c6r2}
+                title={
+                  <>
+                    시스템 알림
+                    {data.systemAlerts.length > 0 ? (
+                      <span className="font-normal">{data.systemAlerts.length}건</span>
+                    ) : null}
+                  </>
+                }
+                tone={data.systemAlerts.length > 0 ? "warn" : "default"}
+                icon={<AlertCircle className="h-4 w-4 text-muted-foreground" />}
+                bodyClassName="overflow-y-auto px-1.5 py-1.5"
+              >
+                {data.systemAlerts.length === 0 ? (
+                  <div className="flex min-h-full items-center text-xs text-muted-foreground">
+                    이상 알림이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {data.systemAlerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className="flex items-start gap-2 rounded-lg border bg-white/70 px-2 py-1.5"
+                      >
+                        <div className="mt-0.5 shrink-0">{getAlertIcon(alert.type)}</div>
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 break-words text-xs font-medium">
+                            {alert.message}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {toDateTimeLabel(alert.date)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DashTile>
+            </DashCluster>
+            <DashCluster title="정산">
+              <AdminPopbillPointCard
+                className={DASH_SPAN.c6}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminPopbillBankCard
+                className={DASH_SPAN.c6}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <DashTile
+                className={DASH_SPAN.c12r2}
+                title="거래금액"
+                icon={<DollarSign className="h-4 w-4 text-muted-foreground" />}
+              >
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
+                  <div className="grid grid-cols-2 gap-2 border-b border-slate-100 pb-1.5">
+                    <button
+                      type="button"
+                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
+                      onClick={() => setGrowthDetailMetric("periodRequests")}
+                    >
+                      <div className="truncate text-[11px] text-muted-foreground">이용건수</div>
+                      <div className="truncate text-base font-bold tabular-nums">
+                        {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
+                      </div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        누적{" "}
+                        {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="min-w-0 rounded-lg bg-slate-50 px-2 py-1 text-left hover:bg-slate-100/80"
+                      onClick={() => setGrowthDetailMetric("periodRevenue")}
+                    >
+                      <div className="truncate text-[11px] text-muted-foreground">매출</div>
+                      <div className="truncate text-base font-bold tabular-nums">
+                        ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
+                      </div>
+                      <div className="truncate text-[10px] text-muted-foreground">
+                        기간 유료 주문액
+                      </div>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">유료 주문액</div>
+                      <div className="truncate text-lg font-bold">
+                        ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 단가</div>
+                      <div className="truncate text-lg font-bold">
+                        ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">배송비</div>
+                      <div className="truncate text-lg font-bold">
+                        ₩{(pricingSummary?.totalShippingFeeSupply ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 border-t pt-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">무료 주문액</div>
+                      <div className="truncate text-sm font-semibold text-muted-foreground">
+                        ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 무료 단가</div>
+                      <div className="truncate text-sm font-semibold text-muted-foreground">
+                        ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] text-muted-foreground">평균 배송비</div>
+                      <div className="truncate text-sm font-semibold">
+                        ₩{(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DashTile>
+            </DashCluster>
+            <DashCluster title="이용">
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="오늘 접속"
+                icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
+                sub="KST 오늘"
+                onClick={() => setGrowthDetailMetric("todayAccess")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="월간 유저"
+                icon={<Users className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
+                sub="이번 달 접속"
+                onClick={() => setGrowthDetailMetric("monthAccess")}
+              />
+              <KpiTile
+                className={DASH_SPAN.c2}
+                title="총 유저"
+                icon={<Users className="h-4 w-4 text-muted-foreground" />}
+                value={Number(platformGrowthStats?.totalUsers || 0).toLocaleString()}
+                sub={`치과 ${Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소 ${Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}`}
+                onClick={() => setGrowthDetailMetric("totalUsers")}
+              />
+              <AdminNewMembersCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminAiDesignChatUsageCard
+                className={DASH_SPAN.c4}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <DashTile
+                className={DASH_SPAN.c12}
+                title="의뢰 전송"
+                icon={<UploadCloud className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => setPracticeTransferStatsDialogOpen(true)}
+              >
+                <div className="grid min-h-full grid-cols-4 items-end gap-2">
+                  <DashStat label="전송" value={practiceTransferTotal.toLocaleString()} />
+                  <DashStat label="파일" value={practiceTransferTotalFiles.toLocaleString()} />
+                  <DashStat
+                    label="치과"
+                    value={practiceTransferTotalPractices.toLocaleString()}
+                    tone="primary"
+                  />
+                  <DashStat
+                    label="기공소"
+                    value={practiceTransferTotalLabs.toLocaleString()}
+                    tone="primary"
+                  />
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c6r2}
+                title="디자인 소프트웨어"
+                icon={<Code2 className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setDesignSoftwareStatsFilter("all");
+                  setDesignSoftwareStatsDialogOpen(true);
+                }}
+              >
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
+                  {designSoftwareStatRows.map((row) => {
+                    const ratio = Math.max(0, Math.min(1, row.count / designSoftwareMaxCount));
+                    const tone = getDesignSoftwareToneClasses(row.key);
+                    return (
+                      <div key={row.key} className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
+                          <span className="truncate text-muted-foreground">{row.label}</span>
+                          <span className={`shrink-0 font-semibold ${tone.count}`}>
+                            {row.count.toLocaleString()}개
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                          <div
+                            className={`h-full rounded ${tone.bar}`}
+                            style={{ width: `${ratio * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
+                    총 {designSoftwareTotalCount.toLocaleString()}개 사업자
+                  </div>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c6r2}
+                title="미제공 어벗"
+                icon={<Puzzle className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setUnsupportedAbutmentStatsFilter("all");
+                  setUnsupportedAbutmentStatsDialogOpen(true);
+                }}
+              >
+                <div className="flex min-h-full flex-col justify-between gap-1.5">
+                  {unsupportedAbutmentStatRows.map((row) => {
+                    const ratio = Math.max(
+                      0,
+                      Math.min(1, row.count / unsupportedAbutmentMaxCount),
+                    );
+                    const tone = getUnsupportedAbutmentToneClasses(row.key);
+                    return (
+                      <div key={row.key} className="min-w-0">
+                        <div className="flex items-center justify-between gap-2 text-[11px] leading-none">
+                          <span className="truncate text-muted-foreground">{row.label}</span>
+                          <span className={`shrink-0 font-semibold ${tone.count}`}>
+                            {row.count.toLocaleString()}건
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-slate-100">
+                          <div
+                            className={`h-full rounded ${tone.bar}`}
+                            style={{ width: `${ratio * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="shrink-0 text-[11px] leading-none text-muted-foreground">
+                    총 {unsupportedAbutmentTotal.toLocaleString()}건
+                  </div>
+                </div>
+              </DashTile>
+            </DashCluster>
+            <DashCluster title="설정">
+              <DirectAbutmentSettingsCard className={DASH_SPAN.c3} />
+
+              <IndirectAbutmentCard className={DASH_SPAN.c3} />
+              <DashTile
+                className={DASH_SPAN.c3}
+                title="신규 보철물 요청"
+                tone={prosthesisFeeItemRequestPending > 0 ? "warn" : "default"}
+                icon={<Layers className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => {
+                  setProsthesisFeeItemRequestFilter("all");
+                  setProsthesisFeeItemRequestDialogOpen(true);
+                }}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <DashBigNumber
+                    value={prosthesisFeeItemRequestPending.toLocaleString()}
+                    unit="대기"
+                  />
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {prosthesisFeeItemRequestStatRows
+                      .filter((row) => row.key !== "pending")
+                      .map((row) => `${row.label} ${row.count.toLocaleString()}`)
+                      .join(" · ")}
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c3}
+                title="운영보고서"
+                icon={<FileText className="h-4 w-4 text-muted-foreground" />}
+                onClick={() => navigate("/dashboard/ops-report")}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <p className="truncate text-[11px] text-muted-foreground">월간 · 인쇄</p>
+                </div>
+              </DashTile>
+              <RequestorShippingModeCard className={DASH_SPAN.c12r2} />
+
+            </DashCluster>
           </>
         }
         mainLeft={undefined}
