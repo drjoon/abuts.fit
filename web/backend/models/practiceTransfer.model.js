@@ -358,6 +358,11 @@ const practiceTransferSchema = new mongoose.Schema(
        * 병렬 hold가 WriteConflict로 한 치아만 실패하는 것을 막는다.
        */
       abutmentDesignHandoffLockAt: { type: Date, default: null },
+      /**
+       * 자동 디자인으로 바꾸지 못해 치과가 기공사 수작업으로 바꾼 요청.
+       * { at, by, toothNumber, message }.
+       */
+      customAbutmentManualDesign: { type: mongoose.Schema.Types.Mixed, default: undefined },
     },
 
     billing: {

@@ -16,6 +16,12 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { recordAiDesignChatUsage } from "../../services/aiDesignChatUsage.service.js";
 import { quoteAiDesignChatUsage } from "../../services/aiDesignChatUsageCost.js";
+import {
+  findAiDesignGap,
+  recordAiDesignGap,
+  setAiDesignGapChoice,
+} from "../../services/aiDesignGap.service.js";
+import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 
 const MODEL = "gemini-3.5-flash-lite";
@@ -250,6 +256,12 @@ async function savePreferenceUpdate(anchorId, update) {
   return loadPreference(anchorId);
 }
 
+function isUnsupportedDesignRequest(parsed, changes, reply) {
+  if (changes.length > 0) return false;
+  if (parsed?.unsupported === true) return true;
+  return /지원하지 않|조정값만 변경|조정값만 바꿀|바꿀 수 없|변경할 수 없/.test(String(reply || ""));
+}
+
 function buildPrompt({ message, history, teeth, selectedTooth, preference, hasImage }) {
   const specLines = PARAM_KEYS.map((key) => {
     const s = PARAM_SPECS[key];
@@ -265,6 +277,7 @@ function buildPrompt({ message, history, teeth, selectedTooth, preference, hasIm
     "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓.\n" +
     "- 마진 깊게/치은 하방=marginDepthMm. 마진 넓게/좁게=marginShoulderMm.\n" +
     "- 질문이거나 바꿀 게 없으면 changes [].\n" +
+    "- 조정값으로 바꿀 수 없는 요청이면 unsupported true와 changes []. 질문·이미 그 값이면 unsupported false.\n" +
     (hasImage
       ? "- 첨부 그림은 현재 화면에 사용자가 빨간 펜으로 표시한 것이다. 표시 위치와 #번호 라벨로 치아·부위를 읽는다.\n"
       : "") +
@@ -272,7 +285,7 @@ function buildPrompt({ message, history, teeth, selectedTooth, preference, hasIm
     " 1회성(상대 수정·특정 치아·「이번만」)이면 null.\n" +
     "- preference.params는 절대값, scope는 all|anterior|posterior, note는 30자 안 한 문장. 지금 케이스 changes에도 넣는다.\n" +
     "- reply 한국어 1~2문장.\n" +
-    'JSON만: {"reply":string,"changes":[{"toothNumber":string,"params":{}}],' +
+    'JSON만: {"reply":string,"unsupported":boolean,"changes":[{"toothNumber":string,"params":{}}],' +
     '"preference":null|{"scope":string,"params":{},"note":string}}\n' +
     "취향:" +
     JSON.stringify(preference.scopes) +
@@ -441,9 +454,36 @@ export async function customAbutmentDesignChat(req, res) {
     const reply =
       String(parsed.reply || "").trim().slice(0, 600) ||
       (changes.length > 0 ? "디자인 값을 바꿨습니다." : "바꿀 내용이 없습니다.");
+    const unsupported = isUnsupportedDesignRequest(parsed, changes, reply);
+    let gapId = null;
+    if (unsupported) {
+      try {
+        const gap = await recordAiDesignGap({
+          practiceBusinessAnchorId: anchorId,
+          userId: req.user?._id,
+          transferId,
+          patientName: req.body?.patientName,
+          toothNumber: selectedTooth,
+          message,
+          reply,
+        });
+        gapId = gap?._id ? String(gap._id) : null;
+      } catch (err) {
+        console.warn("[AI] design gap write failed", err);
+      }
+    }
     return res.json({
       success: true,
-      data: { reply, changes, preference, preferenceSaved, model: MODEL, usage: usageView },
+      data: {
+        reply,
+        changes,
+        preference,
+        preferenceSaved,
+        model: MODEL,
+        usage: usageView,
+        unsupported,
+        gapId,
+      },
     });
   } catch (error) {
     console.error("[AI] customAbutmentDesignChat error", error);
@@ -466,9 +506,81 @@ export async function customAbutmentDesignChat(req, res) {
   }
 }
 
+/**
+ * 미지원 요청에 대해 기공사 수작업으로 바꿀지 답을 저장한다.
+ * @route POST /api/ai/custom-abutment-design-manual
+ * body: { gapId, choice: "yes"|"no" }
+ */
+export async function chooseCustomAbutmentManualDesign(req, res) {
+  try {
+    const choice = req.body?.choice === "yes" ? "yes" : req.body?.choice === "no" ? "no" : null;
+    if (!choice) {
+      return res.status(400).json({ success: false, message: "선택을 확인해 주세요." });
+    }
+    const found = await findAiDesignGap(req.body?.gapId);
+    if (!found) {
+      return res.status(404).json({ success: false, message: "요청 기록을 찾지 못했습니다." });
+    }
+    const transfer = found.transferId ? await findTransferForDesignChat(found.transferId) : null;
+    if (found.transferId) {
+      const own = String(req.user?.businessAnchorId || "").trim();
+      const parties = [
+        String(transfer?.practiceBusinessAnchorId || ""),
+        String(transfer?.targetLabAnchorId || ""),
+        String(transfer?.assigneeLabAnchorId || ""),
+      ];
+      const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+      if (!transfer || (!parties.includes(own) && !privileged)) {
+        return res.status(403).json({ success: false, message: "이 의뢰를 바꿀 수 없습니다." });
+      }
+    }
+    const already = found.manualChoice === "yes" || found.manualChoice === "no";
+    if (!already && choice === "yes" && transfer) {
+      const tooth = String(found.toothNumber || "").trim();
+      const asked = String(found.message || "").trim();
+      await PracticeTransfer.updateOne(
+        { _id: transfer._id },
+        {
+          $set: {
+            "production.customAbutmentManualDesign": {
+              at: new Date(),
+              by: req.user?._id || null,
+              toothNumber: tooth,
+              message: asked,
+            },
+          },
+        },
+      );
+      const content = [
+        "치과가 커스텀어벗을 기공사 수작업으로 바꿨습니다.",
+        tooth ? `치아 #${tooth}` : "",
+        asked ? `요청: ${asked}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: transfer._id,
+        senderUserId: req.user?._id,
+        content,
+        systemEvent: "custom_abutment_manual_design",
+      }).catch((err) => console.warn("[AI] manual design chat failed", err));
+    }
+    const { gap } = await setAiDesignGapChoice(found, choice);
+    const saved = gap?.manualChoice === "yes" || gap?.manualChoice === "no" ? gap.manualChoice : choice;
+    return res.json({
+      success: true,
+      data: { choice: saved, switched: saved === "yes" && Boolean(transfer) },
+    });
+  } catch (error) {
+    console.error("[AI] chooseCustomAbutmentManualDesign error", error);
+    return res.status(500).json({ success: false, message: "수작업 전환을 저장하지 못했습니다." });
+  }
+}
+
 export default {
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignPreference,
   clearCustomAbutmentDesignPreference,
+  chooseCustomAbutmentManualDesign,
 };

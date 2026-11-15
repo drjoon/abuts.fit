@@ -7,6 +7,7 @@ import { Router } from "express";
 import aiController from "../../controllers/ai/ai.controller.js";
 import {
   clearCustomAbutmentDesignPreference,
+  chooseCustomAbutmentManualDesign,
   customAbutmentDesignChat,
   getCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignPreference,
@@ -36,6 +37,11 @@ router.post(
   "/custom-abutment-design-chat",
   authenticate,
   customAbutmentDesignChat
+);
+router.post(
+  "/custom-abutment-design-manual",
+  authenticate,
+  chooseCustomAbutmentManualDesign
 );
 router.get(
   "/custom-abutment-design-preference",

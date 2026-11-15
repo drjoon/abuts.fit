@@ -2446,11 +2446,11 @@ export function PracticeCustomAbutmentPreviewDialog({
       setChatInput("");
       setChatBusy(true);
 
-      const finish = (reply: string, usage?: ChatTurn["usage"]) => {
-        const next: ChatTurn[] = [
-          ...chatTurnsRef.current.filter((t) => !t.pending),
-          usage ? { role: "assistant", text: reply, usage } : { role: "assistant", text: reply },
-        ];
+      const finish = (reply: string, usage?: ChatTurn["usage"], offer?: ChatTurn["offer"]) => {
+        const turn: ChatTurn = { role: "assistant", text: reply };
+        if (usage) turn.usage = usage;
+        if (offer) turn.offer = offer;
+        const next: ChatTurn[] = [...chatTurnsRef.current.filter((t) => !t.pending), turn];
         chatTurnsRef.current = next;
         setChatTurns(next);
         persistDesign(next);
@@ -2524,6 +2524,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             preference?: unknown;
             preferenceSaved?: { note?: string } | null;
             usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+            unsupported?: boolean;
+            gapId?: string | null;
           };
         }>({
           path: "/api/ai/custom-abutment-design-chat",
@@ -2533,6 +2535,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             message: text,
             history,
             selectedTooth,
+            patientName: patientName || undefined,
             transferId: transferIdParam || undefined,
             image: sketch ?? undefined,
             teeth: designedListRef.current.map((d) => ({
@@ -2581,7 +2584,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           }))
           .filter((c) => Object.keys(c.params).length > 0);
         if (changes.length === 0) {
-          finish(reply || "바꿀 내용이 없습니다.", usage);
+          const gapId = String(res.data.data.gapId || "").trim();
+          finish(
+            reply || "바꿀 내용이 없습니다.",
+            usage,
+            res.data.data.unsupported && gapId ? { kind: "manual-design", gapId } : undefined,
+          );
           return;
         }
         const before = new Map(designedListRef.current.map((d) => [d.toothNumber, d.params]));
@@ -2604,6 +2612,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       chatBusy,
       paint,
       persistChat,
+      patientName,
       persistDesign,
       savePreferenceDirect,
       selectTooth,
@@ -2611,6 +2620,64 @@ export function PracticeCustomAbutmentPreviewDialog({
       sketchUrl,
       transferIdParam,
     ],
+  );
+
+  const chooseManualDesign = useCallback(
+    async (gapId: string, choice: "yes" | "no") => {
+      const token = String(authToken || "").trim();
+      if (!token || chatBusy || !gapId) return;
+      setChatBusy(true);
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          message?: string;
+          data?: { choice?: "yes" | "no"; switched?: boolean };
+        }>({
+          path: "/api/ai/custom-abutment-design-manual",
+          method: "POST",
+          token,
+          jsonBody: { gapId, choice },
+        });
+        const saved = res.data?.data?.choice;
+        if (!res.ok || (saved !== "yes" && saved !== "no")) {
+          const next: ChatTurn[] = [
+            ...chatTurnsRef.current,
+            { role: "assistant", text: res.data?.message || "수작업 전환을 저장하지 못했습니다." },
+          ];
+          chatTurnsRef.current = next;
+          setChatTurns(next);
+          persistDesign(next);
+          return;
+        }
+        const note =
+          saved === "yes"
+            ? res.data?.data?.switched
+              ? "기공사 수작업으로 바꿨습니다.\n기공소 대화에 요청을 남겼습니다."
+              : "이 의뢰는 수작업으로 바꾸지 못했습니다."
+            : "자동 디자인을 유지합니다.";
+        const next: ChatTurn[] = [
+          ...chatTurnsRef.current.map((turn) =>
+            turn.offer?.gapId === gapId ? { ...turn, offer: { ...turn.offer, choice: saved } } : turn,
+          ),
+          { role: "assistant", text: note },
+        ];
+        chatTurnsRef.current = next;
+        setChatTurns(next);
+        persistDesign(next);
+      } catch (err) {
+        console.warn("[custom-abutment] manual design choice failed", err);
+        const next: ChatTurn[] = [
+          ...chatTurnsRef.current,
+          { role: "assistant", text: "수작업 전환을 저장하지 못했습니다." },
+        ];
+        chatTurnsRef.current = next;
+        setChatTurns(next);
+        persistDesign(next);
+      } finally {
+        setChatBusy(false);
+      }
+    },
+    [authToken, chatBusy, persistDesign],
   );
 
   const clearPreference = useCallback(async () => {
@@ -2760,6 +2827,29 @@ export function PracticeCustomAbutmentPreviewDialog({
                         입력 {turn.usage.inputTokens.toLocaleString("ko-KR")} · 출력{" "}
                         {turn.usage.outputTokens.toLocaleString("ko-KR")}
                       </p>
+                    ) : null}
+                    {turn.role === "assistant" && turn.offer && !turn.offer.choice ? (
+                      <div className="mt-2 space-y-1.5">
+                        <p>기공사 수작업으로 바꿀까요?</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            className="rounded-full border border-primary/40 bg-background px-2.5 py-1 font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                            disabled={chatBusy}
+                            onClick={() => void chooseManualDesign(turn.offer!.gapId, "yes")}
+                          >
+                            수작업으로 전환
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border bg-background px-2.5 py-1 hover:bg-muted disabled:opacity-50"
+                            disabled={chatBusy}
+                            onClick={() => void chooseManualDesign(turn.offer!.gapId, "no")}
+                          >
+                            그대로 두기
+                          </button>
+                        </div>
+                      </div>
                     ) : null}
                   </>
                 )}

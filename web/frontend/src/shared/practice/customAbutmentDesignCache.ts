@@ -12,7 +12,7 @@ import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmen
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
 
 /** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 27;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 28;
 /** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
 export const CUSTOM_ABUTMENT_FIT_VERSION = 7;
 
@@ -27,10 +27,17 @@ export type CustomAbutmentChatUsage = {
   totalTokens: number;
 };
 
+export type CustomAbutmentChatOffer = {
+  kind: "manual-design";
+  gapId: string;
+  choice?: "yes" | "no";
+};
+
 export type CustomAbutmentChatTurn = {
   role: "user" | "assistant";
   text: string;
   usage?: CustomAbutmentChatUsage;
+  offer?: CustomAbutmentChatOffer;
 };
 
 export type CachedCustomAbutmentTooth = {
@@ -109,6 +116,16 @@ export function pickCustomAbutmentChat(
   return current.length > stored.length ? current : stored;
 }
 
+function readChatOffer(raw: unknown): CustomAbutmentChatOffer | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const row = raw as { kind?: unknown; gapId?: unknown; choice?: unknown };
+  if (row.kind !== "manual-design") return undefined;
+  const gapId = String(row.gapId || "").trim();
+  if (!gapId) return undefined;
+  const choice = row.choice === "yes" || row.choice === "no" ? row.choice : undefined;
+  return choice ? { kind: "manual-design", gapId, choice } : { kind: "manual-design", gapId };
+}
+
 function readChatUsage(raw: unknown): CustomAbutmentChatUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const row = raw as { inputTokens?: unknown; outputTokens?: unknown; totalTokens?: unknown };
@@ -128,7 +145,11 @@ export function normalizeCustomAbutmentChat(raw: unknown): CustomAbutmentChatTur
     const text = String((row as { text?: unknown }).text ?? "");
     if ((role !== "user" && role !== "assistant") || !text.trim()) continue;
     const usage = readChatUsage((row as { usage?: unknown }).usage);
-    turns.push(usage ? { role, text, usage } : { role, text });
+    const offer = readChatOffer((row as { offer?: unknown }).offer);
+    const turn: CustomAbutmentChatTurn = { role, text };
+    if (usage) turn.usage = usage;
+    if (offer) turn.offer = offer;
+    turns.push(turn);
   }
   return turns.slice(-CHAT_TURN_LIMIT);
 }

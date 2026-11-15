@@ -1437,8 +1437,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 프렙 지대치(크라운·브리지 보철 대상)인지, 그리고 브리지로 연결되는지 읽어 인접 크라운 벽 두께 여유를 계산한다.
   const ownFdi = parseFdiTooth(fixture.toothNumber);
 
-  // 인접면(인접 자연치 접촉면 또는 인접 임플란트 연결면)과 포스트의 근·원심 면이 평행하도록 회전각(yaw)을 보정한다.
-  // 근심 협측만 두껍고 근심 설측이 얇아지는 비대칭 크라운 두께를 막고 일정한 인접면 두께를 만든다.
+  // 구치 포스트의 근원심은 인접 교합면 중심구(상단 띠의 협설 중앙을 이은 선)에 맞춘다.
+  // 인접 접촉면 기울기는 그보다 약하게 더해, 중심구와 함께 인접치와도 어느 정도 평행하게 둔다.
   {
     const wOccPlane = norm3(occInFix);
     let uPlane = sub3(labXY, scale3(wOccPlane, dot3(labXY, wOccPlane)));
@@ -1449,6 +1449,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const gingBaseOcc = Math.max(2.0, fixture.gingivaFloorMm + 0.4);
     let slopeWeightSum = 0;
     let slopeWeighted = 0;
+    let grooveWeight = 0;
 
     // 1) 바로 옆 사분면 인접 임플란트 픽스쳐(예: #47↔#46)가 있으면 두 픽스쳐를 잇는 중심구 방향에 맞춘다.
     if (ownFdi) {
@@ -1524,13 +1525,87 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
       const rms = Math.sqrt(errSq / strips.length);
       if (rms > 0.36 || Math.abs(rawSlope) > Math.tan(26 * DEG)) continue;
-      const wgt = 5.5 / Math.max(3.0, Math.abs(mv));
+      const wgt = 1.6 / Math.max(3.0, Math.abs(mv));
       slopeWeighted += clamp(rawSlope, -Math.tan(20 * DEG), Math.tan(20 * DEG)) * wgt;
       slopeWeightSum += wgt;
     }
 
+    // 소·대구치: 근심 방향 구간마다 교합면 상단 띠의 협설 중앙을 잡아 중심구 기울기 du/dv를 잰다.
+    // 포스트 근심축을 그 접선에 두려면 yaw = -du/dv (mes_new = mes + (du/dv) * lab).
+    if (!ownFdi || ownFdi.pos >= 4) {
+      const vMax = ownFdi && ownFdi.pos >= 6 ? 15.5 : 16.5;
+      const binMm = 2.2;
+      const binCount = Math.floor((vMax * 2) / binMm) + 1;
+      const gBins: Array<Array<{ u: number; h: number }>> = Array.from({ length: binCount }, () => []);
+      for (let i = 0; i < jawLocalPts.length; i += 3) {
+        const x = jawLocalPts[i]!;
+        const y = jawLocalPts[i + 1]!;
+        const z = jawLocalPts[i + 2]!;
+        if (Math.hypot(x, y) < sbR + 1.15 && z < sbH + 1.2) continue;
+        const p: Vec3 = [x, y, z];
+        const hOcc = dot3(p, wOccPlane);
+        if (hOcc < gingBaseOcc + 2.0 || hOcc > gingBaseOcc + 12.5) continue;
+        const pu = dot3(p, uPlane);
+        const pv = dot3(p, vPlane);
+        if (Math.abs(pv) < 3.8 || Math.abs(pv) > vMax || Math.abs(pu) > 7.0) continue;
+        const bi = Math.min(binCount - 1, Math.max(0, Math.floor((pv + vMax) / binMm)));
+        gBins[bi]!.push({ u: pu, h: hOcc });
+      }
+      const stations: Array<{ v: number; u: number; w: number }> = [];
+      let mesialStations = 0;
+      let distalStations = 0;
+      for (let bi = 0; bi < binCount; bi += 1) {
+        const list = gBins[bi]!;
+        if (list.length < 8) continue;
+        const hs = list.map((q) => q.h).sort((a, b) => a - b);
+        const hTop = hs[Math.floor(hs.length * 0.9)]!;
+        if (hTop < gingBaseOcc + 3.0) continue;
+        const band = list
+          .filter((q) => q.h >= hTop - 2.3)
+          .map((q) => q.u)
+          .sort((a, b) => a - b);
+        if (band.length < 5) continue;
+        const uLo = band[Math.floor(band.length * 0.14)]!;
+        const uHi = band[Math.floor(band.length * 0.86)]!;
+        if (uHi - uLo < 2.2 || uHi - uLo > 12) continue;
+        const vMid = -vMax + (bi + 0.5) * binMm;
+        stations.push({ v: vMid, u: (uLo + uHi) * 0.5, w: 11 / (Math.abs(vMid) + 2.2) });
+        if (vMid >= 0) mesialStations += 1;
+        else distalStations += 1;
+      }
+      if (stations.length >= 2) {
+        const vLo = Math.min(...stations.map((s) => s.v));
+        const vHi = Math.max(...stations.map((s) => s.v));
+        if (vHi - vLo >= 3.6) {
+          let v2 = 4;
+          let vu = 0;
+          for (const s of stations) {
+            v2 += s.w * s.v * s.v;
+            vu += s.w * s.v * s.u;
+          }
+          const gSlope = vu / Math.max(v2, 1e-4);
+          let err = 0;
+          let werr = 0;
+          for (const s of stations) {
+            const e = s.u - gSlope * s.v;
+            err += s.w * e * e;
+            werr += s.w;
+          }
+          const rms = Math.sqrt(err / Math.max(werr, 1e-6));
+          if (rms < 1.05 && Math.abs(gSlope) < Math.tan(34 * DEG)) {
+            const both = mesialStations >= 1 && distalStations >= 1;
+            const wgt = both ? 9.5 : 6.2;
+            slopeWeighted += clamp(-gSlope, -Math.tan(30 * DEG), Math.tan(30 * DEG)) * wgt;
+            slopeWeightSum += wgt;
+            grooveWeight += wgt;
+          }
+        }
+      }
+    }
+
     if (slopeWeightSum > 0) {
-      const sYaw = clamp(slopeWeighted / slopeWeightSum, -Math.tan(18 * DEG), Math.tan(18 * DEG));
+      const yawCap = grooveWeight > 0 ? Math.tan(30 * DEG) : Math.tan(18 * DEG);
+      const sYaw = clamp(slopeWeighted / slopeWeightSum, -yawCap, yawCap);
       const mesSignBefore = labXY[0] * mesXY[1] - labXY[1] * mesXY[0] >= 0 ? 1 : -1;
       const nextLab = norm3([
         labXY[0] + sYaw * mesXY[0],
