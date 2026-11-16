@@ -18,6 +18,10 @@ import {
   saveCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignSnapshot,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
+import {
+  getCustomAbutmentGenerationLogic,
+  recordCustomAbutmentGenerationEdits,
+} from "../../controllers/ai/abutmentDesignLogic.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -93,6 +97,16 @@ router.delete(
   "/custom-abutment-design-preference",
   authenticate,
   clearCustomAbutmentDesignPreference
+);
+router.get(
+  "/custom-abutment-design-logic",
+  authenticate,
+  getCustomAbutmentGenerationLogic
+);
+router.post(
+  "/custom-abutment-design-edits",
+  authenticate,
+  recordCustomAbutmentGenerationEdits
 );
 
 export default router;

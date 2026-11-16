@@ -4,6 +4,8 @@
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
+// 커프·대합 거리 같은 취향은 확정 때 다음 케이스 적용을 묻는다.
+// 기울기·이동·회전이 여러 케이스에서 반복되면 관리자 승인 뒤에만 생성에 더한다.
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
@@ -13,6 +15,8 @@
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignCache.ts
+// - web/frontend/src/shared/practice/abutmentDesignLogic.ts
+// - web/backend/services/abutmentDesignLogic.service.js
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentDesignTree.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentViewCube.tsx
@@ -133,6 +137,11 @@ import {
   type CustomAbutmentDesignPreference,
   type CustomAbutmentPreferenceScope,
 } from "@/shared/practice/customAbutmentDesignParams";
+import {
+  collectGenerationEditRows,
+  parseAbutmentGenerationRules,
+  type AbutmentGenerationRule,
+} from "@/shared/practice/abutmentDesignLogic";
 import {
   detectAndMatchScanbodiesOnJaw,
   matchScanbodyNearPoint,
@@ -818,6 +827,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [redesigning, setRedesigning] = useState<string[]>([]);
   const [crownDownloadBusy, setCrownDownloadBusy] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
+  const logicRulesRef = useRef<AbutmentGenerationRule[]>([]);
   const transferIdParam = String(transferId || "").trim();
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
@@ -1696,6 +1706,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...preferenceOverridesForTooth(fx.toothNumber, preference),
               ...(ctx.overrides[fx.toothNumber] ?? {}),
             },
+            logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
           });
           if (pickEpochRef.current !== epoch) {
@@ -2242,6 +2253,16 @@ export function PracticeCustomAbutmentPreviewDialog({
             canSave: Boolean(res.ok && res.data?.data?.canSave),
           }))
           .catch(() => ({ preference: EMPTY_CUSTOM_ABUTMENT_PREFERENCE, canSave: false }));
+        const logicPromise = apiFetch<{ data?: { rules?: unknown } }>({
+          path: "/api/ai/custom-abutment-design-logic",
+          token,
+        })
+          .then((res) => parseAbutmentGenerationRules(res.ok ? res.data?.data?.rules : []))
+          .catch(() => [] as AbutmentGenerationRule[]);
+        void logicPromise.then((rules) => {
+          if (cancelled) return;
+          logicRulesRef.current = rules;
+        });
         void preferencePromise.then((p) => {
           if (cancelled) return;
           canSavePreferenceRef.current = p.canSave;
@@ -2413,6 +2434,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         const pendingPickJobs: ScanbodyPickJob[] = [];
 
         let redesignedFromFit = false;
+        logicRulesRef.current = await logicPromise;
+        if (cancelled) return;
         if (restored && cached && !cached.designFresh) {
           // 정합은 그대로 쓰고 형상만 새 규칙으로 다시 만든다.
           redesignedFromFit = true;
@@ -2463,6 +2486,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
                   ...rowOverrides,
                 },
+                logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               }),
             );
@@ -2509,6 +2533,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   neighbors: cachedFixtures.filter((f) => f.jaw === jaw),
                   toothWorks: curAllToothWorks,
                   params: row.params,
+                  logicRules: logicRulesRef.current,
                   patientName: curPatientName,
                 });
                 freshSolid.worldGeometry.dispose();
@@ -2670,6 +2695,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 neighbors: jawFixtures,
                 toothWorks: curAllToothWorks,
                 params: preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               });
               if (cancelled) {
@@ -3039,6 +3065,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
             toothWorks: ctx.allToothWorks,
             params,
+            logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
           });
           ctx.overrides[tooth] = mode === "proposal" ? {} : merged;
@@ -3262,6 +3289,51 @@ export function PracticeCustomAbutmentPreviewDialog({
     return out;
   }, []);
 
+  const snapshotGenerationEdits = useCallback(() => {
+    const rows = collectGenerationEditRows({
+      teeth: designedListRef.current.map((row) => ({
+        toothNumber: row.toothNumber,
+        params: row.params,
+      })),
+      baselineParams: baselineParamsRef.current,
+      gumball: (directEditRef.current?.listEdits() ?? []).map((row) => ({
+        tooth: row.tooth,
+        edit: {
+          tiltLabialDeg: row.edit.tiltLabialDeg,
+          tiltMesialDeg: row.edit.tiltMesialDeg,
+          shiftLabialMm: row.edit.shiftLabialMm,
+          shiftMesialMm: row.edit.shiftMesialMm,
+          yawDeg: row.edit.yawDeg,
+        },
+      })),
+    });
+    const byTooth = new Map(rows.map((row) => [row.toothNumber, row.deltas]));
+    return designedListRef.current.map((row) => ({
+      toothNumber: row.toothNumber,
+      deltas: byTooth.get(row.toothNumber) ?? [],
+    }));
+  }, []);
+
+  const reportGenerationEdits = useCallback(
+    (action: "confirm" | "manual", teeth: ReturnType<typeof collectGenerationEditRows>) => {
+      const token = String(authToken || "").trim();
+      const tid = transferIdRef.current;
+      if (!token || !tid || teeth.length === 0) return;
+      void apiFetch({
+        path: "/api/ai/custom-abutment-design-edits",
+        method: "POST",
+        token,
+        jsonBody: {
+          transferId: tid,
+          action,
+          patientName: patientName || "",
+          teeth,
+        },
+      }).catch((err) => console.warn("[custom-abutment] generation edit record failed", err));
+    },
+    [authToken, patientName],
+  );
+
   const executeConfirmAndOrder = useCallback(
     async (selectedPrefChanges: readonly PendingInfoChange[]) => {
       const token = String(authToken || "").trim();
@@ -3269,6 +3341,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const list = designedListRef.current;
       const ctx = designContextRef.current;
       if (!token || !tid || list.length === 0) return;
+      const generationEdits = snapshotGenerationEdits();
 
       setActionBusy("confirm");
       try {
@@ -3330,6 +3403,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
         setConfirmPrefDialogOpen(false);
         setRemoteMode("confirmed");
+        reportGenerationEdits("confirm", generationEdits);
         toast({
           title: "커스텀어벗 확정 & 의뢰 완료",
           description: "현재 커스텀어벗 디자인으로 확정하여 의뢰했습니다.",
@@ -3346,7 +3420,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         setActionBusy(null);
       }
     },
-    [authToken, onActionComplete, onOpenChange, patientName, toast],
+    [authToken, onActionComplete, onOpenChange, patientName, reportGenerationEdits, snapshotGenerationEdits, toast],
   );
 
   const handleClickConfirmAndOrder = useCallback(() => {
@@ -3429,6 +3503,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const token = String(authToken || "").trim();
     const tid = transferIdRef.current;
     if (!token || !tid) return;
+    const generationEdits = snapshotGenerationEdits();
 
     setActionBusy("manual");
     try {
@@ -3474,6 +3549,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
 
       setRemoteMode("manual");
+      reportGenerationEdits("manual", generationEdits);
       toast({
         title: "수작업 의뢰 전달 완료",
         description: "디자인 프리뷰·페인트·전달 내용이 기공소와 공유되었습니다.",
@@ -3498,8 +3574,10 @@ export function PracticeCustomAbutmentPreviewDialog({
     onOpenChange,
     paint,
     persistDesign,
+    reportGenerationEdits,
     sendTextToSharedChat,
     sharedChatDraft,
+    snapshotGenerationEdits,
     toast,
   ]);
 

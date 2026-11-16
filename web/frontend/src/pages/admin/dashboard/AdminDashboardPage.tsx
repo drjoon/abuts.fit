@@ -98,6 +98,7 @@ import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusi
 import { AdminNewMembersCard } from "@/pages/admin/dashboard/AdminNewMembersCard";
 import { AdminAiDesignChatUsageCard } from "@/pages/admin/dashboard/AdminAiDesignChatUsageCard";
 import { AdminAiDesignGapCard } from "@/pages/admin/dashboard/AdminAiDesignGapCard";
+import { AdminAbutmentDesignLogicCard } from "@/pages/admin/dashboard/AdminAbutmentDesignLogicCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
 import { HeldSmsCard } from "@/pages/admin/dashboard/HeldSmsCard";
@@ -2646,6 +2647,10 @@ export const AdminDashboardPage = () => {
                 enabled={Boolean(token) && user?.role === "admin"}
               />
               <AdminAiDesignGapCard
+                className={DASH_SPAN.c2}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
+              <AdminAbutmentDesignLogicCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />
