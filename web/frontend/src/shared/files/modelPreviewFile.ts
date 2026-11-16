@@ -192,6 +192,23 @@ function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/** three.js ColorManagement.LinearToSRGB 와 같은 식. 정점마다 Color 객체를 만들지 않는다. */
+function linearToSrgbChannel(c: number): number {
+  return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 0.41666) - 0.055;
+}
+
+/** three.js ColorManagement.SRGBToLinear 와 같은 식. */
+function srgbToLinearChannel(c: number): number {
+  return c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4);
+}
+
+function plainColorArray(color: THREE.BufferAttribute): Float32Array | null {
+  if (!(color.array instanceof Float32Array) || color.itemSize < 3) return null;
+  if ("isInterleavedBufferAttribute" in color && color.isInterleavedBufferAttribute) return null;
+  if (color.array.length < color.count * color.itemSize) return null;
+  return color.array;
+}
+
 /** sRGB 한 픽셀(또는 버텍스) — 대비 후 잇몸 핑크·치아 화이트로 소프트 블렌드 */
 function enhanceScanSrgbChannels(
   r0: number,
@@ -255,18 +272,31 @@ function enhanceScanVertexColors(geometry: THREE.BufferGeometry) {
   const color = geometry.getAttribute("color") as THREE.BufferAttribute | null;
   if (!color || color.count <= 0) return;
 
-  const tmp = new THREE.Color();
-  for (let i = 0; i < color.count; i += 1) {
-    tmp.setRGB(
-      color.getX(i),
-      color.getY(i),
-      color.getZ(i),
-      THREE.LinearSRGBColorSpace,
+  const arr = plainColorArray(color);
+  if (!arr) {
+    const tmp = new THREE.Color();
+    for (let i = 0; i < color.count; i += 1) {
+      tmp.setRGB(color.getX(i), color.getY(i), color.getZ(i), THREE.LinearSRGBColorSpace);
+      tmp.convertLinearToSRGB();
+      const [r, g, b] = enhanceScanSrgbChannels(tmp.r, tmp.g, tmp.b);
+      tmp.setRGB(r, g, b, THREE.SRGBColorSpace);
+      color.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    }
+    color.needsUpdate = true;
+    return;
+  }
+
+  const step = color.itemSize;
+  const n = color.count * step;
+  for (let i = 0; i < n; i += step) {
+    const [r, g, b] = enhanceScanSrgbChannels(
+      linearToSrgbChannel(arr[i]!),
+      linearToSrgbChannel(arr[i + 1]!),
+      linearToSrgbChannel(arr[i + 2]!),
     );
-    tmp.convertLinearToSRGB();
-    const [r, g, b] = enhanceScanSrgbChannels(tmp.r, tmp.g, tmp.b);
-    tmp.setRGB(r, g, b, THREE.SRGBColorSpace);
-    color.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    arr[i] = srgbToLinearChannel(r);
+    arr[i + 1] = srgbToLinearChannel(g);
+    arr[i + 2] = srgbToLinearChannel(b);
   }
   color.needsUpdate = true;
 }
@@ -859,20 +889,31 @@ function normalizeVertexColorsIfNeeded(geometry: THREE.BufferGeometry) {
   // PLYLoader는 항상 /255 후 SRGBColorSpace 변환. float 0..1이면 max ≪ 0.02.
   if (!(max > 0 && max <= 0.02)) return;
 
+  const plain = plainColorArray(color);
+  if (plain) {
+    const step = color.itemSize;
+    const n = color.count * step;
+    for (let i = 0; i < n; i += step) {
+      // stored = linear(sRGB(c/255)) → sRGB ≈ c/255 → 바이트로 되돌린 뒤 다시 선형 저장
+      const r = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i]!) * 255));
+      const g = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i + 1]!) * 255));
+      const b = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i + 2]!) * 255));
+      plain[i] = srgbToLinearChannel(r);
+      plain[i + 1] = srgbToLinearChannel(g);
+      plain[i + 2] = srgbToLinearChannel(b);
+    }
+    color.needsUpdate = true;
+    return;
+  }
+
   const tmp = new THREE.Color();
   for (let i = 0; i < color.count; i += 1) {
-    // stored = linear(sRGB(c/255))
-    tmp.setRGB(
-      color.getX(i),
-      color.getY(i),
-      color.getZ(i),
-      THREE.LinearSRGBColorSpace,
-    );
-    tmp.convertLinearToSRGB(); // ≈ c/255
+    tmp.setRGB(color.getX(i), color.getY(i), color.getZ(i), THREE.LinearSRGBColorSpace);
+    tmp.convertLinearToSRGB();
     const r = Math.min(1, Math.max(0, tmp.r * 255));
     const g = Math.min(1, Math.max(0, tmp.g * 255));
     const b = Math.min(1, Math.max(0, tmp.b * 255));
-    tmp.setRGB(r, g, b, THREE.SRGBColorSpace); // → linear(sRGB(c))
+    tmp.setRGB(r, g, b, THREE.SRGBColorSpace);
     color.setXYZ(i, tmp.r, tmp.g, tmp.b);
   }
   color.needsUpdate = true;

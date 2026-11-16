@@ -3,7 +3,8 @@
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
-// 번호 뱃지의 검볼은 포스트 중심에 두고 화면을 정면으로 본다.
+// 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
+// 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
 // 화살표는 이동, 상자는 그 방향 크기, 흰 고리는 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -85,6 +86,7 @@ import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMe
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
+import { preloadMeshUnion } from "@/shared/practice/meshUnion";
 import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
   CUSTOM_ABUTMENT_FIT_VERSION,
@@ -841,6 +843,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         readOnly: false,
         selected: null,
         visible: {},
+        expanded: {},
       },
       onBadge: (tooth) => badgeClickRef.current(tooth),
       onCommit: () => {},
@@ -1211,38 +1214,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     fitCameraToTargets(targets);
   }, [fitCameraToTargets, prepJaws]);
 
-  const focusSingleTooth = useCallback(
-    (toothNumber: string) => {
-      setSelectedTooth(toothNumber);
-      const designed = designedListRef.current.find((d) => d.toothNumber === toothNumber);
-      const mesh = abutmentMeshesRef.current.get(toothNumber);
-      const frame = frameRef.current;
-      if (!designed || !mesh) return;
-      const labial = new THREE.Vector3(...designed.fixture.labialDir);
-      const occ = new THREE.Vector3(...designed.fixture.archOcclusalDir);
-      const viewDir = labial.multiplyScalar(0.82).addScaledVector(occ, 0.52).normalize();
-      const upDir = frame ? frame.up.clone() : new THREE.Vector3(0, 0, 1);
-      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-      const box = mesh.geometry.boundingBox?.clone();
-      if (box) {
-        box.expandByScalar(8);
-        const helper = new THREE.Mesh(
-          new THREE.BoxGeometry(
-            box.max.x - box.min.x,
-            box.max.y - box.min.y,
-            box.max.z - box.min.z,
-          ),
-        );
-        box.getCenter(helper.position);
-        fitCameraToTargets([helper], viewDir, upDir);
-        helper.geometry.dispose();
-        return;
-      }
-      fitCameraToTargets([mesh], viewDir, upDir);
-    },
-    [fitCameraToTargets],
-  );
-
   /** 지금 보이는 대상 그대로 화면에 맞춘다(방향 유지). */
   const fitCurrentView = useCallback(() => {
     const targets = [
@@ -1318,13 +1289,24 @@ export function PracticeCustomAbutmentPreviewDialog({
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 
-  badgeClickRef.current = (toothNumber: string) => {
-    if (selectedTooth === toothNumber) {
-      setSelectedTooth(null);
-      return;
+  const selectAbutmentOnly = (toothNumber: string) => {
+    setSelectedTooth(toothNumber);
+    viewerTouchRef.current.add("expanded");
+    const next: Record<string, boolean> = {};
+    for (const row of designedListRef.current) {
+      next[row.toothNumber] = row.toothNumber === toothNumber;
     }
-    focusSingleTooth(toothNumber);
+    viewerPrefsRef.current = {
+      ...viewerPrefsRef.current,
+      infoExpanded:
+        designedListRef.current.length > 0 &&
+        designedListRef.current.every((row) => next[row.toothNumber] !== false),
+      expandedTeeth: { ...viewerPrefsRef.current.expandedTeeth, ...next },
+    };
+    setExpandedTeeth(next);
   };
+
+  badgeClickRef.current = selectAbutmentOnly;
 
   /** 대화를 의뢰 키로 남긴다. 빈 목록은 쓰지 않아 재계산이 대화를 지우지 않는다. */
   const persistChat = useCallback((chat?: readonly ChatTurn[]) => {
@@ -1454,6 +1436,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     bridge.ui.readOnly = !canEditDesign;
     bridge.ui.selected = selectedTooth;
     bridge.ui.visible = visibleTeeth;
+    bridge.ui.expanded = expandedTeeth;
     bridge.onHistory = () => setEditRev((rev) => rev + 1);
     bridge.onShape = (summary) => {
       if (readOnlyRef.current || isLabViewerRef.current || ignoreEditCommitRef.current) return;
@@ -2073,7 +2056,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       };
     };
 
-        const runPipeline = async () => {
+    const runPipeline = async () => {
+      preloadMeshUnion();
       try {
         proposalInputRef.current = {};
         pickEpochRef.current += 1;
@@ -4002,15 +3986,32 @@ export function PracticeCustomAbutmentPreviewDialog({
                       };
                       setExpandedTeeth(next);
                     }}
-                    onSelect={(toothNumber) => {
-                      if (selectedTooth === toothNumber) {
-                        setSelectedTooth(null);
-                        fitDefaultCamera();
+                    onSelect={selectAbutmentOnly}
+                    onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
+                    onDownloadAll={() => {
+                      const items = designedListRef.current;
+                      if (items.length === 0) return;
+                      if (items.length === 1) {
+                        const only = items[0]!;
+                        saveBlobAsDownload(only.stlBlob, only.fileName);
                         return;
                       }
-                      focusSingleTooth(toothNumber);
+                      void (async () => {
+                        const { default: JSZip } = await import("jszip");
+                        const zip = new JSZip();
+                        const used = new Set<string>();
+                        for (const item of items) {
+                          let name = item.fileName || `#${item.toothNumber}.stl`;
+                          if (used.has(name)) name = `#${item.toothNumber}_${name}`;
+                          used.add(name);
+                          zip.file(name, item.stlBlob);
+                        }
+                        const blob = await zip.generateAsync({ type: "blob" });
+                        const safe =
+                          (patientName || "디자인").replace(/[\\/:*?"<>|]+/g, " ").trim() || "디자인";
+                        saveBlobAsDownload(blob, `커스텀어벗_${safe}.zip`);
+                      })();
                     }}
-                    onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
                     onRegenerate={canEditDesign ? () => void regenerateDesigns() : undefined}
                     onRegenerateTooth={
                       canEditDesign ? (tooth) => void regenerateDesigns([tooth]) : undefined

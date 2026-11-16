@@ -31,25 +31,55 @@ function loadManifold(): Promise<ManifoldToplevel> {
   return loading;
 }
 
+const floatBitsBuf = new ArrayBuffer(4);
+const floatBitsF = new Float32Array(floatBitsBuf);
+const floatBitsU = new Uint32Array(floatBitsBuf);
+
+function floatBits(v: number) {
+  floatBitsF[0] = v;
+  return floatBitsU[0] ?? 0;
+}
+
 /** 삼각형 목록(꼭짓점 3개씩)을 같은 좌표끼리 이어 색인 메시로 만든다. */
 function weld(soup: Float32Array) {
-  const ids = new Map<string, number>();
+  const buckets = new Map<number, number[]>();
   const verts: number[] = [];
   const tris = new Uint32Array(soup.length / 3);
   for (let i = 0; i < tris.length; i += 1) {
     const x = soup[i * 3]!;
     const y = soup[i * 3 + 1]!;
     const z = soup[i * 3 + 2]!;
-    const key = `${x},${y},${z}`;
-    let id = ids.get(key);
-    if (id === undefined) {
+    const h =
+      Math.imul(floatBits(x), 0x9e3779b1) ^
+      Math.imul(floatBits(y), 0x85ebca6b) ^
+      Math.imul(floatBits(z), 0xc2b2ae35);
+    let list = buckets.get(h);
+    let id = -1;
+    if (list) {
+      for (let k = 0; k < list.length; k += 1) {
+        const v = list[k]!;
+        if (verts[v * 3] === x && verts[v * 3 + 1] === y && verts[v * 3 + 2] === z) {
+          id = v;
+          break;
+        }
+      }
+    } else {
+      list = [];
+      buckets.set(h, list);
+    }
+    if (id < 0) {
       id = verts.length / 3;
-      ids.set(key, id);
+      list.push(id);
       verts.push(x, y, z);
     }
     tris[i] = id;
   }
   return { numProp: 3, vertProperties: Float32Array.from(verts), triVerts: tris };
+}
+
+/** 스캔을 읽는 동안 불리언 엔진을 미리 받아 둔다. */
+export function preloadMeshUnion(): void {
+  void loadManifold();
 }
 
 /**

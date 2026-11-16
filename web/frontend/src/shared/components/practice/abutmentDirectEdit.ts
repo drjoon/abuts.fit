@@ -226,6 +226,8 @@ export type AbutmentEditBridge = {
     readOnly: boolean;
     selected: string | null;
     visible: Record<string, boolean>;
+    /** 어벗 정보에서 펼친 치아. 검볼은 여기만 보인다. */
+    expanded: Record<string, boolean>;
   };
   onBadge: (tooth: string) => void;
   onCommit: (summary: AbutmentEditSummary) => void;
@@ -1171,6 +1173,7 @@ export class AbutmentDirectEditSession {
   private future: Array<{ tooth: string; before: AbutmentEdit; after: AbutmentEdit }> = [];
   private readonly stale = new Set<string>();
   private drag: Drag | null = null;
+  private pendingPick: { tooth: string; x: number; y: number; pointerId: number } | null = null;
   private dom: HTMLElement | null = null;
   private hover: THREE.Object3D | null = null;
   private readonly brush: THREE.Mesh;
@@ -1220,6 +1223,7 @@ export class AbutmentDirectEditSession {
       this.dom = null;
     }
     this.drag = null;
+    this.pendingPick = null;
     this.brush.visible = false;
   }
 
@@ -1361,23 +1365,23 @@ export class AbutmentDirectEditSession {
       const mesh = this.bridge.getAbutment(tooth);
       const visible = !!mesh && mesh.visible && this.bridge.ui.visible[tooth] !== false;
       const edit = this.edits.get(tooth) ?? EMPTY_EDIT;
-      const selected = this.bridge.ui.selected === tooth;
-      view.gumball.visible = show && visible;
+      const expanded = this.bridge.ui.expanded[tooth] === true;
+      view.gumball.visible = show && visible && expanded;
       view.gumball.quaternion.copy(gumballQuat);
       view.gumball.position.copy(this.gumballPosition(view, edit));
-      view.gumball.scale.setScalar(worldPerPx * (selected ? 156 : 132));
-      if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible);
+      view.gumball.scale.setScalar(worldPerPx * (expanded ? 156 : 132));
+      if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
     }
   }
 
   private readonly onDown = (event: PointerEvent) => {
     if (event.button !== 0 || !this.dom) return;
-    if (this.bridge.ui.readOnly) return;
     const camera = this.bridge.getCamera();
     if (!camera) return;
+    this.pendingPick = null;
     this.setNdc(event);
     raycaster.setFromCamera(ndc, camera);
-    if (this.bridge.ui.gumballOn) {
+    if (!this.bridge.ui.readOnly && this.bridge.ui.gumballOn) {
       const groups = [...this.views.values()].filter((view) => view.gumball.visible).map((view) => view.gumball);
       const hit = pickGumballHit(groups);
       const handle = hit ? handleFrom(hit.object) : null;
@@ -1390,14 +1394,24 @@ export class AbutmentDirectEditSession {
         return;
       }
     }
-    if (!this.bridge.ui.sculptOn) return;
+    if (!this.bridge.ui.readOnly && this.bridge.ui.sculptOn) {
+      const meshHit = this.pickAbutment();
+      if (!meshHit) return;
+      if (this.beginSculpt(event, meshHit.tooth, meshHit.hit)) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.dom.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
     const meshHit = this.pickAbutment();
     if (!meshHit) return;
-    if (this.beginSculpt(event, meshHit.tooth, meshHit.hit)) {
-      event.preventDefault();
-      event.stopPropagation();
-      this.dom.setPointerCapture(event.pointerId);
-    }
+    this.pendingPick = {
+      tooth: meshHit.tooth,
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
   };
 
   private readonly onMove = (event: PointerEvent) => {
@@ -1412,6 +1426,15 @@ export class AbutmentDirectEditSession {
   };
 
   private readonly onUp = (event: PointerEvent) => {
+    const pending = this.pendingPick;
+    if (pending && event.pointerId === pending.pointerId && !this.drag) {
+      this.pendingPick = null;
+      if (Math.abs(event.clientX - pending.x) + Math.abs(event.clientY - pending.y) < 6) {
+        this.bridge.onBadge(pending.tooth);
+      }
+      return;
+    }
+    this.pendingPick = null;
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const drag = this.drag;
     this.drag = null;

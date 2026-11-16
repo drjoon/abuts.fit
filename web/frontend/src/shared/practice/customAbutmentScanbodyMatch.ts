@@ -492,27 +492,30 @@ export async function loadCandidateScanbodyModels(args: {
   }
 
   libCandidates.sort((a, b) => a.err - b.err);
-  for (const cand of libCandidates.slice(0, 6)) {
-    try {
-      const mesh = await loadScanbodyGeometry(cand.s3Key);
-      const ext = meshExtent(mesh.positions);
-      const bodySpanMm = ext.topMm - ext.bottomMm;
-      // 3Shape 치은 상방 캡 라이브러리(예: 지오메디 GMS 2.0mm·3.0mm 캡, AR 4.5mm 캡)도 수용하되,
-      // 캡 최상단 높이(ext.topMm)가 의뢰 스캔바디 높이(orderHeight)와 맞는 부품만 채택해 플랫폼 깊이 오차를 막는다.
-      if (bodySpanMm < 1.8) continue;
-      if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 0.85) continue;
-      if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.48) continue;
-      out.push({
-        key: cand.s3Key,
-        label: cand.label,
-        isLibraryCad: true,
-        mesh,
-        topMm: ext.topMm,
-        radiusMm: ext.radiusMm,
-      });
-    } catch {
-      // 개별 부품 로드 실패는 건너뛴다.
-    }
+  const loadedCandidates = await Promise.all(
+    libCandidates.slice(0, 6).map(async (cand) => {
+      try {
+        const mesh = await loadScanbodyGeometry(cand.s3Key);
+        const ext = meshExtent(mesh.positions);
+        const bodySpanMm = ext.topMm - ext.bottomMm;
+        if (bodySpanMm < 1.8) return null;
+        if (orderHeight != null && Math.abs(ext.topMm - orderHeight) > 0.85) return null;
+        if (orderDiam != null && Math.abs(ext.radiusMm * 2 - orderDiam) > 0.48) return null;
+        return {
+          key: cand.s3Key,
+          label: cand.label,
+          isLibraryCad: true as const,
+          mesh,
+          topMm: ext.topMm,
+          radiusMm: ext.radiusMm,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  for (const row of loadedCandidates) {
+    if (row) out.push(row);
   }
 
   const fallbackConn = resolveCustomAbutmentConnectionSpec(toothWork, connections);
@@ -1397,6 +1400,55 @@ function estimateGingivaFloorMm(
   return Math.max(1.2, Math.min(scanbodyHeightMm - 1.5, quantile(floorBySector, 0.35)));
 }
 
+type JawPointGrid = {
+  xyz: Float32Array;
+  cell: number;
+  buckets: Map<number, number[]>;
+};
+
+function readPositionArray(geometry: THREE.BufferGeometry): Float32Array | null {
+  const pos = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!pos || pos.count < 3) return null;
+  if (
+    pos.array instanceof Float32Array &&
+    pos.itemSize === 3 &&
+    !pos.isInterleavedBufferAttribute &&
+    pos.array.length >= pos.count * 3
+  ) {
+    return pos.array.subarray(0, pos.count * 3);
+  }
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i += 1) {
+    out[i * 3] = pos.getX(i);
+    out[i * 3 + 1] = pos.getY(i);
+    out[i * 3 + 2] = pos.getZ(i);
+  }
+  return out;
+}
+
+function jawCellKey(ix: number, iy: number, iz: number) {
+  return (ix + 4096) + (iy + 4096) * 8193 + (iz + 4096) * 8193 * 8193;
+}
+
+/** 악궁 정점을 2mm 칸에 넣어, 치아마다 전체 스캔을 다시 훑지 않게 한다. */
+function buildJawPointGrid(geometry: THREE.BufferGeometry, cell = 2): JawPointGrid | null {
+  const xyz = readPositionArray(geometry);
+  if (!xyz || xyz.length < 90 * 3) return null;
+  const buckets = new Map<number, number[]>();
+  const n = xyz.length / 3;
+  for (let i = 0; i < n; i += 1) {
+    const key = jawCellKey(
+      Math.floor(xyz[i * 3]! / cell),
+      Math.floor(xyz[i * 3 + 1]! / cell),
+      Math.floor(xyz[i * 3 + 2]! / cell),
+    );
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(i);
+    else buckets.set(key, [i]);
+  }
+  return { xyz, cell, buckets };
+}
+
 type DetectScanbodyArgs = {
   jawGeometry: THREE.BufferGeometry;
   frame: DentalFrame;
@@ -1406,6 +1458,7 @@ type DetectScanbodyArgs = {
   excludeTops?: readonly Vec3[];
   /** 사용자가 찍은 스캔 위의 점. 있으면 그 점만 탐색 원점으로 쓴다. */
   anchorWorld?: Vec3;
+  jawGrid?: JawPointGrid | null;
 };
 
 type ScanbodyHit = {
@@ -1432,32 +1485,54 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
   const slot = anchored ? { ...nominal, center: [anchor[0], anchor[1], anchor[2]] as Vec3 } : nominal;
 
   const posAttr = jawGeometry.getAttribute("position");
-  if (!posAttr || posAttr.count < 90) return [];
+  const xyz = args.jawGrid?.xyz ?? readPositionArray(jawGeometry);
+  if (!posAttr || !xyz || xyz.length < 90 * 3) return [];
 
   const searchRadiusMm = anchored ? 12 : 26;
   const r2 = searchRadiusMm * searchRadiusMm;
   const seen = new Set<number>();
   const localPts: number[] = [];
-  for (let i = 0; i < posAttr.count; i += 1) {
-    const wx = posAttr.getX(i);
-    const wy = posAttr.getY(i);
-    const wz = posAttr.getZ(i);
+  const takePoint = (i: number) => {
+    const wx = xyz[i * 3]!;
+    const wy = xyz[i * 3 + 1]!;
+    const wz = xyz[i * 3 + 2]!;
     if (!anchored) {
       const worldR =
         wx * slot.archRight[0] + wy * slot.archRight[1] + wz * slot.archRight[2];
-      if (slot.side * worldR < -2.5) continue;
+      if (slot.side * worldR < -2.5) return;
     }
     const dx = wx - slot.center[0];
     const dy = wy - slot.center[1];
     const dz = wz - slot.center[2];
-    if (dx * dx + dy * dy + dz * dz > r2) continue;
+    if (dx * dx + dy * dy + dz * dz > r2) return;
     const voxelKey =
       (Math.floor(dx * 22) + 2048) * 16777216 +
       (Math.floor(dy * 22) + 2048) * 4096 +
       (Math.floor(dz * 22) + 2048);
-    if (seen.has(voxelKey)) continue;
+    if (seen.has(voxelKey)) return;
     seen.add(voxelKey);
     localPts.push(dx, dy, dz);
+  };
+  const grid = args.jawGrid;
+  if (grid) {
+    const [cx, cy, cz] = slot.center;
+    const ix0 = Math.floor((cx - searchRadiusMm) / grid.cell);
+    const ix1 = Math.floor((cx + searchRadiusMm) / grid.cell);
+    const iy0 = Math.floor((cy - searchRadiusMm) / grid.cell);
+    const iy1 = Math.floor((cy + searchRadiusMm) / grid.cell);
+    const iz0 = Math.floor((cz - searchRadiusMm) / grid.cell);
+    const iz1 = Math.floor((cz + searchRadiusMm) / grid.cell);
+    for (let iz = iz0; iz <= iz1; iz += 1) {
+      for (let iy = iy0; iy <= iy1; iy += 1) {
+        for (let ix = ix0; ix <= ix1; ix += 1) {
+          const bucket = grid.buckets.get(jawCellKey(ix, iy, iz));
+          if (!bucket) continue;
+          for (let k = 0; k < bucket.length; k += 1) takePoint(bucket[k]!);
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < xyz.length / 3; i += 1) takePoint(i);
   }
   if (localPts.length < 180) return [];
   const target = new Float32Array(localPts);
@@ -1813,6 +1888,7 @@ export function detectAndMatchScanbodiesOnJaw(args: {
   teeth: ReadonlyArray<{ toothWork: ToothWorkSelection; models: readonly LoadedScanbodyModel[] }>;
   connections: readonly ImplantConnection[];
 }): Map<string, MatchedScanbodyFixture> {
+  const jawGrid = buildJawPointGrid(args.jawGeometry);
   const perTooth = args.teeth.map((t) => ({
     toothNumber: t.toothWork.toothNumber,
     fdi: parseFdiTooth(t.toothWork.toothNumber),
@@ -1823,6 +1899,7 @@ export function detectAndMatchScanbodiesOnJaw(args: {
         toothWork: t.toothWork,
         models: t.models,
         connections: args.connections,
+        jawGrid,
       },
       6,
     ),
@@ -1984,7 +2061,8 @@ export function splitScanByScanbodies(
 ): { rest: THREE.BufferGeometry; scanbodies: Map<string, THREE.BufferGeometry> } {
   const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
-  if (fixtures.length === 0 || !pos || pos.count < 3) return { rest: source.clone(), scanbodies };
+  const xyz = readPositionArray(source);
+  if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) return { rest: source.clone(), scanbodies };
   const SECTORS = 24;
   const isInsideOtherScanbody = (px: number, py: number, pz: number, skipIdx: number) => {
     for (let j = 0; j < fixtures.length; j += 1) {
@@ -2015,9 +2093,9 @@ export function splitScanByScanbodies(
     const rOuterMin = f.scanbodyRadiusMm + 0.34;
     const rOuterMax = f.scanbodyRadiusMm + 1.65;
     for (let vi = 0; vi < pos.count; vi += 1) {
-      const px = pos.getX(vi);
-      const py = pos.getY(vi);
-      const pz = pos.getZ(vi);
+      const px = xyz[vi * 3]!;
+      const py = xyz[vi * 3 + 1]!;
+      const pz = xyz[vi * 3 + 2]!;
       const rx0 = px - f.fixturePose.origin[0];
       const ry0 = py - f.fixturePose.origin[1];
       const rz0 = pz - f.fixturePose.origin[2];
@@ -2072,9 +2150,9 @@ export function splitScanByScanbodies(
     }
   }
   const zoneOf = (vi: number) => {
-    const dx = pos.getX(vi);
-    const dy = pos.getY(vi);
-    const dz = pos.getZ(vi);
+    const dx = xyz[vi * 3]!;
+    const dy = xyz[vi * 3 + 1]!;
+    const dz = xyz[vi * 3 + 2]!;
     for (let k = 0; k < zones.length; k += 1) {
       const zone = zones[k]!;
       const rx0 = dx - zone.origin[0];

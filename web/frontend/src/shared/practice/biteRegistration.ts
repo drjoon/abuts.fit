@@ -69,7 +69,7 @@ function resetYieldClock() {
 async function pause(options?: AlignOptions) {
   if (options?.cancelled?.()) throw new BiteAlignCancelled();
   await yieldFrame();
-  nextYieldAt = performance.now() + 48;
+  nextYieldAt = performance.now() + 96;
   if (options?.cancelled?.()) throw new BiteAlignCancelled();
 }
 
@@ -252,12 +252,19 @@ function buildGrid(cloud: Cloud, cell: number): Grid {
     const mid2 = ((minDist + maxDist) * 0.5) ** 2;
     const min2 = minDist * minDist;
     const max2 = maxDist * maxDist;
-    visit(x, y, z, maxDist, (index, dist2) => {
-      if (dist2 < min2 || dist2 > max2) return;
-      if (dist2 <= mid2) {
-        if (inner.length < limit) inner.push(index);
-      } else if (outer.length < limit) outer.push(index);
-    });
+    visit(
+      x,
+      y,
+      z,
+      maxDist,
+      (index, dist2) => {
+        if (dist2 < min2 || dist2 > max2) return;
+        if (dist2 <= mid2) {
+          if (inner.length < limit) inner.push(index);
+        } else if (outer.length < limit) outer.push(index);
+      },
+      () => inner.length >= limit && outer.length >= limit,
+    );
     const mixed: number[] = [];
     const span = Math.max(inner.length, outer.length);
     for (let i = 0; i < span && mixed.length < limit; i += 1) {
@@ -1692,31 +1699,61 @@ function translationSeeds(
   const lo = [0, 1, 2].map((k) => tMin[k]! - sMax[k]!);
   const hi = [0, 1, 2].map((k) => tMax[k]! - sMin[k]!);
   const floor = Math.max(6, Math.floor(n * 0.12));
-  const found: Array<{ t: [number, number, number]; score: number }> = [];
-  for (let tx = lo[0]!; tx <= hi[0]!; tx += step) {
-    for (let ty = lo[1]!; ty <= hi[1]!; ty += step) {
-      for (let tz = lo[2]!; tz <= hi[2]!; tz += step) {
-        let score = 0;
-        for (let i = 0; i < n; i += 1) {
-          const ix = Math.floor((samples[i * 3]! - tx - sMin[0]!) / cell) + 1;
-          if (ix < 0 || ix >= nx) continue;
-          const iy = Math.floor((samples[i * 3 + 1]! - ty - sMin[1]!) / cell) + 1;
-          if (iy < 0 || iy >= ny) continue;
-          const iz = Math.floor((samples[i * 3 + 2]! - tz - sMin[2]!) / cell) + 1;
-          if (iz < 0 || iz >= nz) continue;
-          const at = (iz * ny + iy) * nx + ix;
-          if (!occ[at]) continue;
-          const dot =
-            occN[at * 3]! * sampleNormals[i * 3]! +
-            occN[at * 3 + 1]! * sampleNormals[i * 3 + 1]! +
-            occN[at * 3 + 2]! * sampleNormals[i * 3 + 2]!;
-          if (Math.abs(dot) > 0.55) score += 1;
+  const scoreAt = (tx: number, ty: number, tz: number) => {
+    let score = 0;
+    for (let i = 0; i < n; i += 1) {
+      const ix = Math.floor((samples[i * 3]! - tx - sMin[0]!) / cell) + 1;
+      if (ix < 0 || ix >= nx) continue;
+      const iy = Math.floor((samples[i * 3 + 1]! - ty - sMin[1]!) / cell) + 1;
+      if (iy < 0 || iy >= ny) continue;
+      const iz = Math.floor((samples[i * 3 + 2]! - tz - sMin[2]!) / cell) + 1;
+      if (iz < 0 || iz >= nz) continue;
+      const at = (iz * ny + iy) * nx + ix;
+      if (!occ[at]) continue;
+      const dot =
+        occN[at * 3]! * sampleNormals[i * 3]! +
+        occN[at * 3 + 1]! * sampleNormals[i * 3 + 1]! +
+        occN[at * 3 + 2]! * sampleNormals[i * 3 + 2]!;
+      if (Math.abs(dot) > 0.55) score += 1;
+    }
+    return score;
+  };
+  const collect = (boxLo: number[], boxHi: number[], stride: number, minScore: number) => {
+    const rows: Array<{ t: [number, number, number]; score: number }> = [];
+    const endPad = stride * 0.25;
+    for (let tx = boxLo[0]!; tx <= boxHi[0]! + endPad; tx += stride) {
+      for (let ty = boxLo[1]!; ty <= boxHi[1]! + endPad; ty += stride) {
+        for (let tz = boxLo[2]!; tz <= boxHi[2]! + endPad; tz += stride) {
+          const score = scoreAt(tx, ty, tz);
+          if (score >= minScore) rows.push({ t: [tx, ty, tz], score });
         }
-        if (score >= floor) found.push({ t: [tx, ty, tz], score });
       }
     }
+    rows.sort((a, b) => b.score - a.score);
+    return rows;
+  };
+  // 4mm 격자를 전부 돌지 않고, 8mm에서 붙은 자리만 4mm로 좁힌다. 거친 격자가 비면 예전 격자 그대로 본다.
+  const coarse = step * 2;
+  const coarseHits = collect(lo, hi, coarse, 1);
+  const bestCoarse = coarseHits[0]?.score ?? 0;
+  let found: Array<{ t: [number, number, number]; score: number }>;
+  if (bestCoarse >= floor) {
+    const seen = new Set<string>();
+    found = [];
+    for (const hit of coarseHits.slice(0, 4)) {
+      const boxLo = [0, 1, 2].map((k) => Math.max(lo[k]!, hit.t[k] - coarse));
+      const boxHi = [0, 1, 2].map((k) => Math.min(hi[k]!, hit.t[k] + coarse));
+      for (const row of collect(boxLo, boxHi, step, floor)) {
+        const key = `${Math.round(row.t[0] * 10)},${Math.round(row.t[1] * 10)},${Math.round(row.t[2] * 10)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(row);
+      }
+    }
+    found.sort((a, b) => b.score - a.score);
+  } else {
+    found = collect(lo, hi, step, floor);
   }
-  found.sort((a, b) => b.score - a.score);
   const apart = mmToUnits(7, unitToMm);
   const seeds: PoseSeed[] = [];
   for (const row of found) {

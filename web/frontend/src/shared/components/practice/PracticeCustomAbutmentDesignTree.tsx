@@ -231,10 +231,10 @@ function formatScanbodyPanelValue(label: string): string {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <span
-        className="min-w-0 truncate tabular-nums text-foreground"
+        className="ml-auto min-w-0 truncate text-right tabular-nums text-foreground"
         title={value}
       >
         {value}
@@ -382,7 +382,7 @@ function EditableNumberRow({
   };
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -398,7 +398,7 @@ function EditableNumberRow({
       </span>
       <div
         className={cn(
-          "flex h-7 w-[6.75rem] shrink-0 items-center rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           scrubValue != null && "border-primary bg-primary/5",
           disabled && "opacity-60",
         )}
@@ -517,7 +517,7 @@ function EditableAxisSourceRow({
   };
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -577,7 +577,7 @@ function EditableAxisSourceRow({
       </span>
       <div
         className={cn(
-          "flex h-7 w-[8.5rem] shrink-0 items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           disabled && "opacity-60",
         )}
       >
@@ -585,7 +585,7 @@ function EditableAxisSourceRow({
           aria-label={label}
           disabled={disabled}
           value={shown}
-          className="h-full min-w-0 flex-1 bg-transparent pr-1 text-right text-xs font-medium text-foreground outline-none"
+          className="h-full w-0 min-w-0 flex-1 truncate bg-transparent pr-1 text-right text-xs font-medium text-foreground outline-none"
           onChange={(e) => onCommit(e.target.value as AbutmentAxisSource)}
         >
           {AXIS_SOURCE_ORDER.map((src) => (
@@ -623,9 +623,9 @@ function EditableAxisSourceRow({
 
 function InfoGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="space-y-1 pt-1.5 first:pt-0">
-      <div className="text-[0.6875rem] font-medium text-muted-foreground">{title}</div>
-      {children}
+    <div className="pt-2 first:pt-0.5">
+      <div className="text-sm font-semibold leading-snug text-foreground">{title}</div>
+      <div className="mt-0.5">{children}</div>
     </div>
   );
 }
@@ -693,7 +693,7 @@ function EditableRangeRow({
   const shiftBoth = (startMin: number, startMax: number, delta: number) => {
     const gap = Math.max(0, startMax - startMin);
     let nextMin = clampEnd(startMin + delta);
-    let nextMax = clampEnd(nextMin + gap);
+    const nextMax = clampEnd(nextMin + gap);
     if (nextMax - nextMin < gap - 1e-6) nextMin = clampEnd(nextMax - gap);
     return { min: nextMin, max: Math.max(nextMin, clampEnd(nextMin + gap)) };
   };
@@ -808,12 +808,12 @@ function EditableRangeRow({
   const shownMax = scrub?.max ?? maxValue;
   const fieldClass = (active: boolean) =>
     cn(
-      "h-full w-[1.9rem] bg-transparent text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
+      "h-full min-w-0 flex-1 bg-transparent text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
       !active && !disabled && "cursor-ew-resize select-none",
     );
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -829,7 +829,7 @@ function EditableRangeRow({
       </span>
       <div
         className={cn(
-          "flex h-7 w-[7.5rem] shrink-0 items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           scrub && "border-primary bg-primary/5",
           disabled && "opacity-60",
         )}
@@ -941,6 +941,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllScanbodies,
   onSelect,
   onDownload,
+  onDownloadAll,
   onRegenerate,
   onRegenerateTooth,
   onEditField,
@@ -959,6 +960,7 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllVisible: (visible: boolean) => void;
   onSelect: (toothNumber: string) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
+  onDownloadAll?: () => void;
   onRegenerate?: () => void;
   onRegenerateTooth?: (toothNumber: string) => void;
   onEditField?: (
@@ -978,24 +980,12 @@ export function PracticeCustomAbutmentDesignTree({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex min-h-0 w-[16.75rem] shrink flex-col overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
+        "pointer-events-auto flex min-h-0 w-[17.5rem] shrink-0 flex-col overflow-x-hidden overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
     >
       <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] font-semibold text-foreground">
-        <span className="min-w-0 flex-1 truncate">어벗 정보</span>
-        {onRegenerate ? (
-          <button
-            type="button"
-            className={headerBtn}
-            aria-label="커스텀어벗 재생성"
-            title="지금 값으로 커스텀어벗을 다시 만듭니다."
-            disabled={redesigning.length > 0}
-            onClick={onRegenerate}
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", redesigning.length > 0 && "animate-spin")} />
-          </button>
-        ) : null}
+        <span className="shrink-0">어벗 정보</span>
         <ScanbodyButton
           shown={anyScanbody}
           label="모든"
@@ -1004,32 +994,57 @@ export function PracticeCustomAbutmentDesignTree({
         <button
           type="button"
           className={headerBtn}
-          aria-label={allVisible ? "모두 숨기기" : "모두 보이기"}
-          title={allVisible ? "모두 숨기기" : "모두 보이기"}
+          aria-label={allVisible ? "커스텀어벗 모두 숨기기" : "커스텀어벗 모두 보이기"}
+          title={allVisible ? "커스텀어벗 모두 숨기기" : "커스텀어벗 모두 보이기"}
           onClick={() => onSetAllVisible(!allVisible)}
         >
           {allVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </button>
-        <button
-          type="button"
-          className={headerBtn}
-          aria-label={allOpen ? "모두 접기" : "모두 펼치기"}
-          title={allOpen ? "모두 접기" : "모두 펼치기"}
-          aria-expanded={allOpen}
-          onClick={() =>
-            onExpandedChange(
-              Object.fromEntries(items.map((it) => [it.toothNumber, !allOpen])),
-            )
-          }
-        >
-          {allOpen ? (
-            <ChevronsDownUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronsUpDown className="h-3.5 w-3.5" />
-          )}
-        </button>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {onRegenerate ? (
+            <button
+              type="button"
+              className={headerBtn}
+              aria-label="커스텀어벗 재생성"
+              title="지금 값으로 커스텀어벗을 다시 만듭니다."
+              disabled={redesigning.length > 0}
+              onClick={onRegenerate}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", redesigning.length > 0 && "animate-spin")} />
+            </button>
+          ) : null}
+          {onDownloadAll ? (
+            <button
+              type="button"
+              className={headerBtn}
+              aria-label="모든 STL 다운로드"
+              title="모든 커스텀어벗 STL을 받습니다."
+              onClick={onDownloadAll}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={headerBtn}
+            aria-label={allOpen ? "모두 접기" : "모두 펼치기"}
+            title={allOpen ? "모두 접기" : "모두 펼치기"}
+            aria-expanded={allOpen}
+            onClick={() =>
+              onExpandedChange(
+                Object.fromEntries(items.map((it) => [it.toothNumber, !allOpen])),
+              )
+            }
+          >
+            {allOpen ? (
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronsUpDown className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
       </div>
-      <ul className="space-y-1 px-2 py-1.5">
+      <ul className="space-y-1 px-1.5 py-1.5">
         {items.map((item) => {
           const tooth = item.toothNumber;
           const open = Boolean(expanded[tooth]);
@@ -1044,34 +1059,13 @@ export function PracticeCustomAbutmentDesignTree({
             <li key={tooth}>
               <div
                 className={cn(
-                  "flex items-center gap-0.5 rounded-md py-0.5 pr-1 text-[0.8125rem]",
+                  "flex items-center gap-0.5 rounded-md py-0.5 pl-0.5 pr-0.5 text-[0.8125rem]",
                   selected ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-muted/60",
                 )}
               >
                 <button
                   type="button"
-                  className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
-                  aria-label={open ? `#${tooth} 접기` : `#${tooth} 펼치기`}
-                  aria-expanded={open}
-                  onClick={() => onExpandedChange({ ...expanded, [tooth]: !open })}
-                >
-                  {open ? (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={visible ? `#${tooth} 숨기기` : `#${tooth} 보이기`}
-                  onClick={() => onToggleVisible(tooth)}
-                >
-                  {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 py-0.5 text-left font-semibold text-foreground"
+                  className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left font-semibold text-foreground"
                   onClick={() => onSelect(tooth)}
                 >
                   #{tooth}
@@ -1082,29 +1076,54 @@ export function PracticeCustomAbutmentDesignTree({
                   label={`#${tooth}`}
                   onClick={() => onToggleScanbody(tooth)}
                 />
-                {onRegenerateTooth ? (
-                  <button
-                    type="button"
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                    aria-label={`#${tooth} 재생성`}
-                    title={`#${tooth}만 지금 값으로 다시 만듭니다.`}
-                    disabled={redesigning.length > 0}
-                    onClick={() => onRegenerateTooth(tooth)}
-                  >
-                    <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={`#${tooth} STL 다운로드`}
-                  onClick={() => onDownload(item)}
+                  aria-label={visible ? `#${tooth} 숨기기` : `#${tooth} 보이기`}
+                  title={visible ? `#${tooth} 커스텀어벗 숨기기` : `#${tooth} 커스텀어벗 보이기`}
+                  onClick={() => onToggleVisible(tooth)}
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                 </button>
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  {onRegenerateTooth ? (
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                      aria-label={`#${tooth} 재생성`}
+                      title={`#${tooth}만 지금 값으로 다시 만듭니다.`}
+                      disabled={redesigning.length > 0}
+                      onClick={() => onRegenerateTooth(tooth)}
+                    >
+                      <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={`#${tooth} STL 다운로드`}
+                    title={`#${tooth} STL 다운로드`}
+                    onClick={() => onDownload(item)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={open ? `#${tooth} 접기` : `#${tooth} 펼치기`}
+                    aria-expanded={open}
+                    onClick={() => onExpandedChange({ ...expanded, [tooth]: !open })}
+                  >
+                    {open ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                </div>
               </div>
               {open ? (
-                <div className="ml-4 mr-0.5 mt-1 border-l pb-2 pl-2.5">
+                <div className="ml-1 mr-0.5 mt-1 border-l pb-2 pl-2">
                   <InfoGroup title="마진">
                     {editable ? (
                       <EditableRangeRow
