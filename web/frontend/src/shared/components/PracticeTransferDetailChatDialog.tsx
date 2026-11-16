@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-16: 작업 스캔 타일 — onWorkScanTileClick이 있으면 스캔 프리뷰 대신 연다.
 // - 2026-10-24: 채팅 헤더 담당 기사 — 작업시작 계정, 수행 기공소는 변경.
 // - 2026-10-07: 작업 파일 페인트 채팅 첨부 — 썸네일 클릭 시 작업 파일을 연다.
 // - 2026-10-04: 채팅 입력 포커스 — 헬퍼 미설치·구버전이면 설치/업데이트 안내.
@@ -682,6 +683,8 @@ type PracticeTransferDetailChatDialogProps = {
   workScanFiles?: PracticeTransferDialogFileItem[];
   /** 지금 작업 스캔의 모델 정렬 기록(production.workScanAlignment). AI 디자인이 정렬 완료로 연다. */
   workScanAlignment?: WorkScanAlignment | null;
+  /** 작업 스캔 타일 클릭. 있으면 스캔 프리뷰 대신 이 콜백을 연다. */
+  onWorkScanTileClick?: () => void;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -975,6 +978,7 @@ export function PracticeTransferDetailChatDialog({
   workScanFilesLabel = "작업 스캔",
   workScanFiles = [],
   workScanAlignment = null,
+  onWorkScanTileClick,
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -3469,9 +3473,19 @@ export function PracticeTransferDetailChatDialog({
       <div className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50">
         <button
           type="button"
-          onClick={() => setRequestPreview({ initialKey: "" })}
+          onClick={() => {
+            if (onWorkScanTileClick) {
+              onWorkScanTileClick();
+              return;
+            }
+            setRequestPreview({ initialKey: "" });
+          }}
           disabled={!authToken}
-          title="클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
+          title={
+            onWorkScanTileClick
+              ? "클릭하여 커스텀어벗 디자인"
+              : "클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
+          }
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >
           <div

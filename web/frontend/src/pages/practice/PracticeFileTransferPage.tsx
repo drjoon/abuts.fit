@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-11-16: 치과 채팅 — PracticeCustomAbutmentPreviewButton 제거. 작업 스캔이 디자인 모달을 연다.
  * - 2026-11-16: 채팅 헤더 — 준비 단계 커스텀어벗 「어벗 취소」(제조사 큐에서 내림).
  * - 2026-10-27: 신규의뢰 드롭존 — ExoCAD(.dentalProject)·3Shape(.3ox·.3oxz·.dcm) 안내.
  * - 2026-11-03: 알림 보기 — 주문 변경 등 상위 모달을 닫아 채팅이 가려지지 않게.
@@ -372,7 +373,7 @@ import {
 } from "@/shared/practice/practiceRecentTransferList";
 import { parseLabTechnician } from "@/shared/practice/labTechnician";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
-import { PracticeCustomAbutmentPreviewButton } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
+import { PracticeCustomAbutmentPreviewDialog } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
   resolvePracticeTransferAlertAccountId,
@@ -1456,6 +1457,13 @@ export const PracticeFileTransferPage = ({
     useState<RecentTransferItem | null>(null);
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [abutmentDesignOpen, setAbutmentDesignOpen] = useState(false);
+  const abutmentDesignTransferKey = String(
+    selectedTransfer?.transferId || selectedTransfer?.id || "",
+  );
+  useEffect(() => {
+    setAbutmentDesignOpen(false);
+  }, [abutmentDesignTransferKey]);
   const [alertOpenPanelTab, setAlertOpenPanelTab] = useState<
     "chat" | "detail" | null
   >(null);
@@ -5530,6 +5538,11 @@ export const PracticeFileTransferPage = ({
   const selectedTransferDetailModel = useMemo(
     () => buildPracticeSenderTransferDetailModel(selectedTransfer),
     [selectedTransfer],
+  );
+  const practiceAbutmentDesignAvailable = Boolean(
+    selectedTransferDetailModel?.abutmentStageLabel ||
+      (selectedTransfer?.hasCustomAbutment &&
+        (selectedTransferDetailModel?.toothWorks || []).some((row) => row.customAbutment)),
   );
 
   const [legendLabDots, setLegendLabDots] = useState<
@@ -12232,6 +12245,25 @@ export const PracticeFileTransferPage = ({
 
         {workFolderDialogs}
 
+        {abutmentDesignOpen && selectedTransfer ? (
+          <PracticeCustomAbutmentPreviewDialog
+            open
+            onOpenChange={setAbutmentDesignOpen}
+            viewerRole="practice"
+            authToken={authToken}
+            caseTitle={selectedTransferCaseIdentity?.primary}
+            caseDatesLabel={selectedTransferCaseIdentity?.secondary}
+            patientName={selectedTransferDetailModel?.patientName}
+            toothWorks={selectedTransferDetailModel?.toothWorks || []}
+            files={selectedTransferDetailModel?.files || []}
+            workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
+            transferId={String(selectedTransfer.transferId || selectedTransfer.id || "")}
+            onActionComplete={() => {
+              void loadRecentRequests({ silent: true });
+            }}
+          />
+        ) : null}
+
         {(() => {
           const detailDialog = (
         <PracticeTransferDetailChatDialog
@@ -12242,6 +12274,7 @@ export const PracticeFileTransferPage = ({
               setTransferDialogOpen(true);
               return;
             }
+            setAbutmentDesignOpen(false);
             handleCloseTransferDialog();
           }}
           preferredDockSide={panelPreferredDockSide}
@@ -12481,28 +12514,20 @@ export const PracticeFileTransferPage = ({
           }
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
           summaryBanner={null}
+          onWorkScanTileClick={
+            practiceAbutmentDesignAvailable
+              ? () => setAbutmentDesignOpen(true)
+              : undefined
+          }
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
-            (selectedTransfer?.hasCustomAbutment &&
-              (selectedTransferDetailModel?.toothWorks || []).some((row) => row.customAbutment)) ? (
+            (selectedTransfer?.abutmentToothStages || []).some(
+              (row) => String(row.stage || "").trim() === "준비",
+            ) ? (
               <div
                 className="flex min-w-0 items-center gap-2"
                 data-no-drag
               >
-                <PracticeCustomAbutmentPreviewButton
-                  viewerRole="practice"
-                  authToken={authToken}
-                  caseTitle={selectedTransferCaseIdentity?.primary}
-                  caseDatesLabel={selectedTransferCaseIdentity?.secondary}
-                  patientName={selectedTransferDetailModel?.patientName}
-                  toothWorks={selectedTransferDetailModel?.toothWorks || []}
-                  files={selectedTransferDetailModel?.files || []}
-                  workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
-                  transferId={String(selectedTransfer?.transferId || selectedTransfer?.id || "")}
-                  onActionComplete={() => {
-                    void loadRecentRequests({ silent: true });
-                  }}
-                />
                 {selectedTransferDetailModel?.abutmentStageLabel ? (
                   <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
                     <span className="font-medium">커스텀어벗 공정</span>

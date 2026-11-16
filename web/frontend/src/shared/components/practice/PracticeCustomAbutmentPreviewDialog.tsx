@@ -1,4 +1,5 @@
-// 치과 채팅창 「디자인」 버튼 → 전체 화면 프리뷰 모달.
+// 치과 채팅의 작업 스캔 → 전체 화면 커스텀어벗 디자인 모달.
+// 헤더 다운로드는 스크류홀이 열린 어벗을 악궁에 넣은 상악·하악·바이트 STL(기공소 크라운 작업용).
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
@@ -32,6 +33,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Axis3d,
   Check,
+  Download,
   Hand,
   Loader2,
   MessageSquare,
@@ -68,7 +70,9 @@ import {
   VIEW_GESTURE_HINT_LAYER_CLASS,
   ViewGestureHint,
 } from "@/shared/components/ViewGestureHint";
+import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
+import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
@@ -184,6 +188,7 @@ import {
 } from "@/shared/components/practice/PracticeCustomAbutmentViewCube";
 import { estimateDentalFrame, type DentalFrame } from "@/shared/practice/dentalFrame";
 import {
+  isAbutsWorkScanFileName,
   isOralScanMeshName,
   preferWorkingOralScanFiles,
   resolveOralScanRole,
@@ -506,6 +511,91 @@ function HeaderIconButton({
   );
 }
 
+/** 색인 메시를 삼각형 수프로 푼다. matrix가 있으면 월드 좌표로 굽는다. 원본 지오메트리는 그대로 둔다. */
+function triangleSoup(geo: THREE.BufferGeometry, matrix?: THREE.Matrix4): Float32Array {
+  const pos = geo.getAttribute("position");
+  if (!pos || pos.count < 3) return new Float32Array();
+  const index = geo.getIndex();
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  if (triCount < 1) return new Float32Array();
+  const out = new Float32Array(triCount * 9);
+  const v = new THREE.Vector3();
+  const read = (vi: number, slot: number) => {
+    v.fromBufferAttribute(pos as THREE.BufferAttribute, vi);
+    if (matrix) v.applyMatrix4(matrix);
+    out[slot] = v.x;
+    out[slot + 1] = v.y;
+    out[slot + 2] = v.z;
+  };
+  for (let t = 0; t < triCount; t += 1) {
+    const base = t * 3;
+    const a = index ? index.getX(base) : base;
+    const b = index ? index.getX(base + 1) : base + 1;
+    const c = index ? index.getX(base + 2) : base + 2;
+    const slot = t * 9;
+    read(a, slot);
+    read(b, slot + 3);
+    read(c, slot + 6);
+  }
+  return out;
+}
+
+function concatSoups(parts: readonly Float32Array[]): Float32Array {
+  let n = 0;
+  for (const part of parts) n += part.length;
+  const out = new Float32Array(n);
+  let offset = 0;
+  for (const part of parts) {
+    if (part.length === 0) continue;
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function meshTriangleSoup(mesh: THREE.Mesh): Float32Array {
+  mesh.updateWorldMatrix(true, false);
+  return triangleSoup(mesh.geometry, mesh.matrixWorld);
+}
+
+/** 바이트 등 아직 씬에 없는 스캔. 캐시가 있으면 그걸 쓰고, 끝나면 복사본만 버린다. */
+async function loadScanTriangleSoup(
+  item: PracticeDesignPreviewFileItem,
+  token: string,
+): Promise<Float32Array | null> {
+  const s3Key = String(item.s3Key || "").trim();
+  if (!s3Key) return null;
+  const cached = await readCachedScanGeometry(s3Key);
+  if (cached) {
+    try {
+      const soup = triangleSoup(cached);
+      return soup.length >= 9 ? soup : null;
+    } finally {
+      cached.dispose();
+    }
+  }
+  const blob = await fetchS3BlobCached({
+    s3Key,
+    fileName: item.fileName,
+    token,
+    buildUrl: buildS3ProxyDownloadUrl,
+  });
+  const parsed = await parseModelPreview(fileFromModelBlob(blob, item.fileName));
+  try {
+    storeScanGeometry(s3Key, parsed.geometry);
+    const soup = triangleSoup(parsed.geometry);
+    return soup.length >= 9 ? soup : null;
+  } finally {
+    parsed.geometry.dispose();
+    parsed.texture?.dispose();
+  }
+}
+
+function crownScanFileName(patientName: string | undefined, role: string) {
+  const safe = (patientName || "스캔").replace(/[\\/:*?"<>|]+/g, " ").trim() || "스캔";
+  return `${safe}_${role}.stl`;
+}
+
 const USER_EDIT_PREF_PREFIX = "abuts.abutmentDirectPreference.v1.";
 
 function readUserEditPreference(userId: string): CustomAbutmentDesignPreference {
@@ -704,6 +794,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [redesigning, setRedesigning] = useState<string[]>([]);
+  const [crownDownloadBusy, setCrownDownloadBusy] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const transferIdParam = String(transferId || "").trim();
   const readOnlyRef = useRef(readOnly);
@@ -3554,6 +3645,87 @@ export function PracticeCustomAbutmentPreviewDialog({
       });
   }, [applyDesignChanges, persistDesign, selectedTooth]);
 
+  const crownDownloadLockRef = useRef(false);
+  const downloadCrownWorkScans = useCallback(async () => {
+    if (crownDownloadLockRef.current) return;
+    const token = String(authToken || "").trim();
+    if (!token) {
+      toast({ title: "로그인이 필요합니다." });
+      return;
+    }
+    if (designedListRef.current.length === 0) return;
+    crownDownloadLockRef.current = true;
+    setCrownDownloadBusy(true);
+    try {
+      const jawSoup = (jaw: "upper" | "lower") => {
+        const key = jaw === "upper" ? "upperTrimmed" : "lowerTrimmed";
+        const parts: Float32Array[] = [];
+        for (const mesh of jawMeshesRef.current[key]) {
+          const soup = meshTriangleSoup(mesh);
+          if (soup.length >= 9) parts.push(soup);
+        }
+        for (const design of designedListRef.current) {
+          if (design.jaw !== jaw) continue;
+          const mesh = abutmentMeshesRef.current.get(design.toothNumber);
+          const soup = mesh ? meshTriangleSoup(mesh) : triangleSoup(design.worldGeometry);
+          if (soup.length >= 9) parts.push(soup);
+        }
+        return concatSoups(parts);
+      };
+      const packed: Array<{ name: string; soup: Float32Array }> = [];
+      const upper = jawSoup("upper");
+      const lower = jawSoup("lower");
+      if (upper.length >= 9) packed.push({ name: crownScanFileName(patientName, "상악"), soup: upper });
+      if (lower.length >= 9) packed.push({ name: crownScanFileName(patientName, "하악"), soup: lower });
+
+      const usingWorkScans = workScanFiles.some((file) => isOralScanMeshName(file.fileName));
+      const biteItems = scanSources.meshes.filter((file) => {
+        if (!file.s3Key) return false;
+        const role = resolveOralScanRole({
+          fileName: file.fileName,
+          scanRole: file.scanRole ?? undefined,
+        });
+        if (role !== "bite") return false;
+        if (usingWorkScans && !isAbutsWorkScanFileName(file.fileName)) return false;
+        return true;
+      });
+      let biteMissing = false;
+      if (biteItems.length > 0) {
+        const loaded = await Promise.all(
+          biteItems.map(async (item) => {
+            try {
+              return await loadScanTriangleSoup(item, token);
+            } catch (err) {
+              console.warn("[custom-abutment] bite scan export failed", err);
+              return null;
+            }
+          }),
+        );
+        const soups = loaded.filter((soup): soup is Float32Array => Boolean(soup && soup.length >= 9));
+        if (soups.length === 0) biteMissing = true;
+        else packed.push({ name: crownScanFileName(patientName, "바이트"), soup: concatSoups(soups) });
+      }
+      if (packed.length === 0) {
+        toast({ title: "받을 스캔이 없습니다." });
+        return;
+      }
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      for (const file of packed) {
+        zip.file(file.name, encodeBinaryStl(file.soup, "abuts.fit crown scan"));
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      saveBlobAsDownload(blob, crownScanFileName(patientName, "크라운작업").replace(/\.stl$/, ".zip"));
+      if (biteMissing) toast({ title: "바이트 스캔을 넣지 못했습니다." });
+    } catch (err) {
+      console.warn("[custom-abutment] crown scan export failed", err);
+      toast({ title: "크라운 작업 스캔을 만들지 못했습니다." });
+    } finally {
+      crownDownloadLockRef.current = false;
+      setCrownDownloadBusy(false);
+    }
+  }, [authToken, patientName, scanSources.meshes, toast, workScanFiles]);
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -3678,6 +3850,24 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </div>
               </HeaderIconButton>
             ) : null}
+            <HeaderIconButton
+              label="크라운 스캔"
+              disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
+              tip={
+                <>
+                  스크류홀이 열린 어벗을 악궁에 넣어 STL로 받습니다.
+                  <br />
+                  기공소 크라운 작업용 상악·하악·바이트입니다.
+                </>
+              }
+              onClick={() => void downloadCrownWorkScans()}
+            >
+              {crownDownloadBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+            </HeaderIconButton>
           {ready ? (
             <Popover>
               <Tooltip>
@@ -3936,6 +4126,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
               </div>
             ) : null}
+
+            <AbutsLogo
+              variant="light"
+              className="pointer-events-none absolute bottom-4 left-4 z-10 opacity-80"
+              iconClassName="h-7 w-7"
+              wordmarkClassName="text-base"
+            />
 
             {viewerLive && designedList.length > 0 ? (
               <div className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex min-h-0 flex-col items-end">
