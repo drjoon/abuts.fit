@@ -1,5 +1,6 @@
 // 기공소 다운로드: 스캔을 기공소가 고른 DCM·PLY·STL로 저장한다.
 // .3ox·.3oxz는 안의 스캔을 풀어 같은 포맷으로 쓴다. .dentalProject 안의 확장자만 맞춘다.
+// 씬에 있는 스캔(어벗이 들어간 악궁)도 같은 인코더로 쓴다. 텍스처가 있으면 버텍스 칼라로 굽는다.
 // related files:
 // - web/frontend/src/shared/files/useS3FileDownload.ts
 // - web/frontend/src/shared/files/cadProjectPreview.ts
@@ -84,6 +85,171 @@ function geometryToMesh(geometry: THREE.BufferGeometry): HpsDcmMeshData {
       ? linearColorsToSrgbBytes(color)
       : null;
   return { positions, indices, colors, workCopy: true };
+}
+
+type TexturePixels = { data: Uint8ClampedArray; width: number; height: number };
+
+function texturePixels(
+  texture: THREE.Texture,
+  cache: WeakMap<object, TexturePixels>,
+): TexturePixels | null {
+  const image = texture.image as (CanvasImageSource & { width?: number; height?: number }) | null;
+  if (!image || !image.width || !image.height) return null;
+  const cached = cache.get(image);
+  if (cached) return cached;
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(image, 0, 0);
+  } catch {
+    return null;
+  }
+  const pixels = {
+    data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+    width: canvas.width,
+    height: canvas.height,
+  };
+  cache.set(image, pixels);
+  return pixels;
+}
+
+/** 프리뷰와 같다. 텍스처가 있으면 그걸, 없으면 버텍스 칼라, 둘 다 없으면 재질색. */
+function meshColors(
+  mesh: THREE.Mesh,
+  vertexCount: number,
+  cache: WeakMap<object, TexturePixels>,
+): Uint8Array {
+  const uv = mesh.geometry.getAttribute("uv");
+  const texture =
+    (mesh.userData.scanTexture as THREE.Texture | null | undefined) ||
+    (mesh.material instanceof THREE.MeshStandardMaterial ? mesh.material.map : null);
+  if (texture && uv && uv.count >= vertexCount) {
+    const pixels = texturePixels(texture, cache);
+    if (pixels) {
+      const out = new Uint8Array(vertexCount * 3);
+      const { data, width, height } = pixels;
+      const flipY = texture.flipY !== false;
+      for (let i = 0; i < vertexCount; i += 1) {
+        const u = Math.min(1, Math.max(0, uv.getX(i)));
+        const vRaw = Math.min(1, Math.max(0, uv.getY(i)));
+        const v = flipY ? 1 - vRaw : vRaw;
+        const x = Math.min(width - 1, Math.max(0, Math.round(u * (width - 1))));
+        const y = Math.min(height - 1, Math.max(0, Math.round(v * (height - 1))));
+        const p = (y * width + x) * 4;
+        const o = i * 3;
+        out[o] = data[p]!;
+        out[o + 1] = data[p + 1]!;
+        out[o + 2] = data[p + 2]!;
+      }
+      return out;
+    }
+  }
+  const color = mesh.geometry.getAttribute("color");
+  if (color && color.itemSize >= 3 && color.count >= vertexCount) {
+    return linearColorsToSrgbBytes({
+      count: vertexCount,
+      getX: (i) => color.getX(i),
+      getY: (i) => color.getY(i),
+      getZ: (i) => color.getZ(i),
+    });
+  }
+  const mat = mesh.material;
+  const solid =
+    mat instanceof THREE.MeshStandardMaterial ? mat.color : new THREE.Color(0xb9c6d6);
+  const byte = linearColorsToSrgbBytes({
+    count: 1,
+    getX: () => solid.r,
+    getY: () => solid.g,
+    getZ: () => solid.b,
+  });
+  const out = new Uint8Array(vertexCount * 3);
+  for (let i = 0; i < vertexCount; i += 1) {
+    const o = i * 3;
+    out[o] = byte[0]!;
+    out[o + 1] = byte[1]!;
+    out[o + 2] = byte[2]!;
+  }
+  return out;
+}
+
+type WorldPiece = {
+  positions: Float32Array;
+  indices: Uint32Array;
+  colors: Uint8Array;
+};
+
+function meshWorldPiece(
+  mesh: THREE.Mesh,
+  cache: WeakMap<object, TexturePixels>,
+): WorldPiece | null {
+  mesh.updateWorldMatrix(true, false);
+  const pos = mesh.geometry.getAttribute("position");
+  if (!pos || pos.count < 3) return null;
+  const index = mesh.geometry.getIndex();
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  if (triCount < 1) return null;
+  const positions = new Float32Array(pos.count * 3);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 1) {
+    v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(mesh.matrixWorld);
+    positions[i * 3] = v.x;
+    positions[i * 3 + 1] = v.y;
+    positions[i * 3 + 2] = v.z;
+  }
+  const indices = new Uint32Array(triCount * 3);
+  for (let t = 0; t < triCount; t += 1) {
+    const base = t * 3;
+    indices[base] = index ? index.getX(base) : base;
+    indices[base + 1] = index ? index.getX(base + 1) : base + 1;
+    indices[base + 2] = index ? index.getX(base + 2) : base + 2;
+  }
+  return {
+    positions,
+    indices,
+    colors: meshColors(mesh, pos.count, cache),
+  };
+}
+
+/** 월드 좌표로 합친 스캔. 칼라는 프리뷰와 같은 우선순위다. */
+export function meshesToLabMeshData(meshes: readonly THREE.Mesh[]): HpsDcmMeshData | null {
+  const cache = new WeakMap<object, TexturePixels>();
+  const pieces: WorldPiece[] = [];
+  let vertexCount = 0;
+  let indexCount = 0;
+  for (const mesh of meshes) {
+    const piece = meshWorldPiece(mesh, cache);
+    if (!piece) continue;
+    pieces.push(piece);
+    vertexCount += piece.positions.length / 3;
+    indexCount += piece.indices.length;
+  }
+  if (vertexCount < 3 || indexCount < 3) return null;
+  const positions = new Float32Array(vertexCount * 3);
+  const indices = new Uint32Array(indexCount);
+  const colors = new Uint8Array(vertexCount * 3);
+  let vertexAt = 0;
+  let indexAt = 0;
+  for (const piece of pieces) {
+    positions.set(piece.positions, vertexAt * 3);
+    colors.set(piece.colors.subarray(0, (piece.positions.length / 3) * 3), vertexAt * 3);
+    for (let i = 0; i < piece.indices.length; i += 1) {
+      indices[indexAt + i] = piece.indices[i]! + vertexAt;
+    }
+    vertexAt += piece.positions.length / 3;
+    indexAt += piece.indices.length;
+  }
+  return { positions, indices, colors, workCopy: true };
+}
+
+/** DCM·PLY(칼라)·STL. 프리뷰 다운로드와 같은 인코더. */
+export function encodeLabMeshData(mesh: HpsDcmMeshData, format: DcmDownloadFormat): Blob {
+  if (format === "dcm") return encodeHpsCaDcm(mesh);
+  if (format === "stl") return meshDataToStlBlob(mesh);
+  return meshDataToPlyBlob(mesh);
 }
 
 async function meshFromFile(file: File): Promise<HpsDcmMeshData> {

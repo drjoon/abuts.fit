@@ -1,5 +1,6 @@
 // 치과 채팅의 작업 스캔 → 전체 화면 커스텀어벗 디자인 모달.
-// 헤더 다운로드는 스크류홀이 열린 어벗을 악궁에 넣은 상악·하악·바이트 STL(기공소 크라운 작업용).
+// 헤더 다운로드는 스크류홀이 열린 어벗을 악궁에 넣은 상악·하악·바이트(기공소 크라운 작업용).
+// 포맷은 받을 포맷이 있으면 그걸, 없으면 디자인 소프트웨어 설정이다(3Shape DCM, 그 외 PLY 칼라).
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
@@ -72,7 +73,16 @@ import {
 } from "@/shared/components/ViewGestureHint";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
-import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
+import {
+  readStoredDcmDownloadFormat,
+  type DcmDownloadFormat,
+} from "@/shared/files/dcmDownloadFormat";
+import {
+  encodeLabMeshData,
+  meshesToLabMeshData,
+} from "@/shared/files/labDownloadMeshes";
+import { dcmFormatForDesignSoftware } from "@/shared/files/labWorkFolder";
+import { useAccountDesignSoftware } from "@/shared/files/useAccountDesignSoftware";
 import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
@@ -511,89 +521,100 @@ function HeaderIconButton({
   );
 }
 
-/** 색인 메시를 삼각형 수프로 푼다. matrix가 있으면 월드 좌표로 굽는다. 원본 지오메트리는 그대로 둔다. */
-function triangleSoup(geo: THREE.BufferGeometry, matrix?: THREE.Matrix4): Float32Array {
-  const pos = geo.getAttribute("position");
-  if (!pos || pos.count < 3) return new Float32Array();
-  const index = geo.getIndex();
-  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
-  if (triCount < 1) return new Float32Array();
-  const out = new Float32Array(triCount * 9);
-  const v = new THREE.Vector3();
-  const read = (vi: number, slot: number) => {
-    v.fromBufferAttribute(pos as THREE.BufferAttribute, vi);
-    if (matrix) v.applyMatrix4(matrix);
-    out[slot] = v.x;
-    out[slot + 1] = v.y;
-    out[slot + 2] = v.z;
-  };
-  for (let t = 0; t < triCount; t += 1) {
-    const base = t * 3;
-    const a = index ? index.getX(base) : base;
-    const b = index ? index.getX(base + 1) : base + 1;
-    const c = index ? index.getX(base + 2) : base + 2;
-    const slot = t * 9;
-    read(a, slot);
-    read(b, slot + 3);
-    read(c, slot + 6);
-  }
-  return out;
+function crownScanStem(patientName: string | undefined, role: string) {
+  const safe = (patientName || "스캔").replace(/[\\/:*?"<>|]+/g, " ").trim() || "스캔";
+  return `${safe}_${role}`;
 }
 
-function concatSoups(parts: readonly Float32Array[]): Float32Array {
-  let n = 0;
-  for (const part of parts) n += part.length;
-  const out = new Float32Array(n);
-  let offset = 0;
-  for (const part of parts) {
-    if (part.length === 0) continue;
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
+/** 받을 포맷이 있으면 그걸, 없으면 디자인 소프트웨어(3Shape=DCM, ExoCAD·그외=PLY). */
+function crownDownloadFormat(designSoftware: string): DcmDownloadFormat {
+  return (
+    readStoredDcmDownloadFormat() ||
+    (designSoftware.trim() ? dcmFormatForDesignSoftware(designSoftware) : "dcm")
+  );
 }
 
-function meshTriangleSoup(mesh: THREE.Mesh): Float32Array {
-  mesh.updateWorldMatrix(true, false);
-  return triangleSoup(mesh.geometry, mesh.matrixWorld);
-}
-
-/** 바이트 등 아직 씬에 없는 스캔. 캐시가 있으면 그걸 쓰고, 끝나면 복사본만 버린다. */
-async function loadScanTriangleSoup(
+/** 바이트처럼 씬에 없는 스캔. 캐시·동반 텍스처를 쓰고, 복사본은 호출부가 버린다. */
+async function loadExportScanMesh(
   item: PracticeDesignPreviewFileItem,
   token: string,
-): Promise<Float32Array | null> {
+  companions: readonly PracticeDesignPreviewFileItem[],
+): Promise<THREE.Mesh | null> {
   const s3Key = String(item.s3Key || "").trim();
   if (!s3Key) return null;
-  const cached = await readCachedScanGeometry(s3Key);
-  if (cached) {
-    try {
-      const soup = triangleSoup(cached);
-      return soup.length >= 9 ? soup : null;
-    } finally {
-      cached.dispose();
+  let geometry = await readCachedScanGeometry(s3Key);
+  let texture: THREE.Texture | null = null;
+  if (!geometry) {
+    const blob = await fetchS3BlobCached({
+      s3Key,
+      fileName: item.fileName,
+      token,
+      buildUrl: buildS3ProxyDownloadUrl,
+    });
+    const modelFile = fileFromModelBlob(blob, item.fileName);
+    const ext = getModelExtLower(item.fileName);
+    let preferredTex: string | null = null;
+    const companionFiles: File[] = [];
+    if ((ext === ".ply" || ext === ".obj") && companions.length > 0) {
+      preferredTex =
+        ext === ".ply" ? peekPlyHeaderInfo(await blob.arrayBuffer()).textureFileName : null;
+      const texName = resolveCompanionTextureFileName(
+        item.fileName,
+        preferredTex,
+        companions.map((c) => c.fileName),
+      );
+      const hit = texName ? companions.find((c) => c.fileName === texName) : null;
+      if (hit?.s3Key) {
+        const texBlob = await fetchS3BlobCached({
+          s3Key: hit.s3Key,
+          fileName: hit.fileName,
+          token,
+          buildUrl: buildS3ProxyDownloadUrl,
+        });
+        companionFiles.push(fileFromImageBlob(texBlob, hit.fileName));
+      }
+    }
+    const parsed = await parseModelPreview(modelFile, {
+      textureFile: companionFiles[0] ?? null,
+      companionFiles,
+    });
+    storeScanGeometry(s3Key, parsed.geometry);
+    geometry = parsed.geometry;
+    texture = parsed.texture;
+  } else if (geometry.getAttribute("uv") && companions.length > 0) {
+    const texName = resolveCompanionTextureFileName(
+      item.fileName,
+      null,
+      companions.map((c) => c.fileName),
+    );
+    const hit = texName ? companions.find((c) => c.fileName === texName) : null;
+    if (hit?.s3Key) {
+      try {
+        const texBlob = await fetchS3BlobCached({
+          s3Key: hit.s3Key,
+          fileName: hit.fileName,
+          token,
+          buildUrl: buildS3ProxyDownloadUrl,
+        });
+        texture = await loadTextureFromFile(fileFromImageBlob(texBlob, hit.fileName));
+      } catch {
+        texture = null;
+      }
     }
   }
-  const blob = await fetchS3BlobCached({
-    s3Key,
-    fileName: item.fileName,
-    token,
-    buildUrl: buildS3ProxyDownloadUrl,
-  });
-  const parsed = await parseModelPreview(fileFromModelBlob(blob, item.fileName));
-  try {
-    storeScanGeometry(s3Key, parsed.geometry);
-    const soup = triangleSoup(parsed.geometry);
-    return soup.length >= 9 ? soup : null;
-  } finally {
-    parsed.geometry.dispose();
-    parsed.texture?.dispose();
-  }
+  const mat = createModelPreviewMaterial(geometry, texture);
+  const mesh = new THREE.Mesh(geometry, mat);
+  if (texture) mesh.userData.scanTexture = texture;
+  return mesh;
 }
 
-function crownScanFileName(patientName: string | undefined, role: string) {
-  const safe = (patientName || "스캔").replace(/[\\/:*?"<>|]+/g, " ").trim() || "스캔";
-  return `${safe}_${role}.stl`;
+function disposeExportMesh(mesh: THREE.Mesh) {
+  mesh.geometry.dispose();
+  const mat = mesh.material as THREE.MeshStandardMaterial;
+  const tex = mesh.userData.scanTexture as THREE.Texture | undefined;
+  if (mat.map && mat.map !== tex) mat.map.dispose();
+  tex?.dispose();
+  mat.dispose();
 }
 
 const USER_EDIT_PREF_PREFIX = "abuts.abutmentDirectPreference.v1.";
@@ -711,6 +732,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   onActionComplete,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { toast } = useToast();
+  const designSoftware = useAccountDesignSoftware();
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
   const authUserId = useAuthStore((state) => {
     const user = state.user as { id?: string; _id?: string } | null;
@@ -3619,6 +3641,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   ]);
 
   const ready = status.kind === "ready" && (designedList.length > 0 || readOnly);
+  const crownFormat = crownDownloadFormat(designSoftware);
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
   const canRedoEdit = editRev >= 0 && Boolean(directEditRef.current?.canRedo());
   const hasInfoFieldEdits = designedList.some(
@@ -3670,27 +3693,33 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (designedListRef.current.length === 0) return;
     crownDownloadLockRef.current = true;
     setCrownDownloadBusy(true);
+    const format = crownDownloadFormat(designSoftware);
+    const temps: THREE.Mesh[] = [];
     try {
-      const jawSoup = (jaw: "upper" | "lower") => {
+      const jawMeshes = (jaw: "upper" | "lower") => {
         const key = jaw === "upper" ? "upperTrimmed" : "lowerTrimmed";
-        const parts: Float32Array[] = [];
-        for (const mesh of jawMeshesRef.current[key]) {
-          const soup = meshTriangleSoup(mesh);
-          if (soup.length >= 9) parts.push(soup);
-        }
+        const parts: THREE.Mesh[] = [...jawMeshesRef.current[key]];
         for (const design of designedListRef.current) {
           if (design.jaw !== jaw) continue;
           const mesh = abutmentMeshesRef.current.get(design.toothNumber);
-          const soup = mesh ? meshTriangleSoup(mesh) : triangleSoup(design.worldGeometry);
-          if (soup.length >= 9) parts.push(soup);
+          if (mesh) {
+            parts.push(mesh);
+            continue;
+          }
+          const temp = new THREE.Mesh(
+            design.worldGeometry,
+            new THREE.MeshStandardMaterial({ color: 0xd4c59e }),
+          );
+          temps.push(temp);
+          parts.push(temp);
         }
-        return concatSoups(parts);
+        return parts;
       };
-      const packed: Array<{ name: string; soup: Float32Array }> = [];
-      const upper = jawSoup("upper");
-      const lower = jawSoup("lower");
-      if (upper.length >= 9) packed.push({ name: crownScanFileName(patientName, "상악"), soup: upper });
-      if (lower.length >= 9) packed.push({ name: crownScanFileName(patientName, "하악"), soup: lower });
+      const packed: Array<{ name: string; blob: Blob }> = [];
+      const upper = meshesToLabMeshData(jawMeshes("upper"));
+      const lower = meshesToLabMeshData(jawMeshes("lower"));
+      if (upper) packed.push({ name: `${crownScanStem(patientName, "상악")}.${format}`, blob: encodeLabMeshData(upper, format) });
+      if (lower) packed.push({ name: `${crownScanStem(patientName, "하악")}.${format}`, blob: encodeLabMeshData(lower, format) });
 
       const usingWorkScans = workScanFiles.some((file) => isOralScanMeshName(file.fileName));
       const biteItems = scanSources.meshes.filter((file) => {
@@ -3708,16 +3737,26 @@ export function PracticeCustomAbutmentPreviewDialog({
         const loaded = await Promise.all(
           biteItems.map(async (item) => {
             try {
-              return await loadScanTriangleSoup(item, token);
+              return await loadExportScanMesh(item, token, scanSources.companions);
             } catch (err) {
               console.warn("[custom-abutment] bite scan export failed", err);
               return null;
             }
           }),
         );
-        const soups = loaded.filter((soup): soup is Float32Array => Boolean(soup && soup.length >= 9));
-        if (soups.length === 0) biteMissing = true;
-        else packed.push({ name: crownScanFileName(patientName, "바이트"), soup: concatSoups(soups) });
+        const bites = loaded.filter((mesh): mesh is THREE.Mesh => Boolean(mesh));
+        try {
+          const bite = meshesToLabMeshData(bites);
+          if (!bite) biteMissing = true;
+          else {
+            packed.push({
+              name: `${crownScanStem(patientName, "바이트")}.${format}`,
+              blob: encodeLabMeshData(bite, format),
+            });
+          }
+        } finally {
+          for (const mesh of bites) disposeExportMesh(mesh);
+        }
       }
       if (packed.length === 0) {
         toast({ title: "받을 스캔이 없습니다." });
@@ -3725,20 +3764,19 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
-      for (const file of packed) {
-        zip.file(file.name, encodeBinaryStl(file.soup, "abuts.fit crown scan"));
-      }
+      for (const file of packed) zip.file(file.name, file.blob);
       const blob = await zip.generateAsync({ type: "blob" });
-      saveBlobAsDownload(blob, crownScanFileName(patientName, "크라운작업").replace(/\.stl$/, ".zip"));
+      saveBlobAsDownload(blob, `${crownScanStem(patientName, "크라운작업")}.zip`);
       if (biteMissing) toast({ title: "바이트 스캔을 넣지 못했습니다." });
     } catch (err) {
       console.warn("[custom-abutment] crown scan export failed", err);
       toast({ title: "크라운 작업 스캔을 만들지 못했습니다." });
     } finally {
+      for (const mesh of temps) (mesh.material as THREE.Material).dispose();
       crownDownloadLockRef.current = false;
       setCrownDownloadBusy(false);
     }
-  }, [authToken, patientName, scanSources.meshes, toast, workScanFiles]);
+  }, [authToken, designSoftware, patientName, scanSources.companions, scanSources.meshes, toast, workScanFiles]);
 
   return (
     <>
@@ -3869,9 +3907,19 @@ export function PracticeCustomAbutmentPreviewDialog({
               disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
               tip={
                 <>
-                  스크류홀이 열린 어벗을 악궁에 넣어 STL로 받습니다.
+                  스크류홀이 열린 어벗을 악궁에 넣어 받습니다.
                   <br />
-                  기공소 크라운 작업용 상악·하악·바이트입니다.
+                  {crownFormat === "dcm" ? (
+                    "3Shape DCM으로 저장합니다."
+                  ) : crownFormat === "stl" ? (
+                    "STL로 저장합니다."
+                  ) : (
+                    <>
+                      PLY로 저장합니다.
+                      <br />
+                      칼라가 보입니다.
+                    </>
+                  )}
                 </>
               }
               onClick={() => void downloadCrownWorkScans()}
