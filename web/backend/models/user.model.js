@@ -416,6 +416,11 @@ const userSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      /** 커스텀어벗 디자인 모달 화면 설정(툴바·패널·가이드). 계정별로 다시 연다. */
+      customAbutmentViewer: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
+      },
       /** 기공의뢰·기공의뢰수신 캘린더 날짜 뱃지. 기본 치과도착일 */
       labReceiveCalendarDateKey: {
         type: String,

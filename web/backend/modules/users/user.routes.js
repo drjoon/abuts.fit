@@ -42,6 +42,10 @@ router.put("/last-dashboard-path", userController.updateLastDashboardPath);
 router.get("/sidebar-open", userController.getSidebarOpen);
 router.put("/sidebar-open", userController.updateSidebarOpen);
 
+// 커스텀어벗 디자인 모달 화면 설정
+router.get("/custom-abutment-viewer", userController.getCustomAbutmentViewerPrefs);
+router.put("/custom-abutment-viewer", userController.updateCustomAbutmentViewerPrefs);
+
 // 기공의뢰수신 캘린더 날짜 뱃지(주문일/치과도착일)
 router.get(
   "/lab-receive-calendar-date-key",

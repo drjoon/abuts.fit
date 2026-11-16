@@ -27,6 +27,7 @@ import { ensureRequestorOrgAnchor, syncPracticeUsesOralScan } from "../businesse
 import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
+import { normalizeCustomAbutmentViewerPrefs } from "../../utils/customAbutmentViewerPrefs.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
 import { normalizePracticeStatusBadgeClearedTransferIds } from "../../utils/practiceStatusBadgeClearedTransferIds.util.js";
@@ -1553,6 +1554,70 @@ async function updateGuideTour(req, res) {
   }
 }
 
+/**
+ * 커스텀어벗 디자인 모달 화면 설정
+ * @route GET /api/users/custom-abutment-viewer
+ */
+async function getCustomAbutmentViewerPrefs(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.customAbutmentViewer")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        prefs: normalizeCustomAbutmentViewerPrefs(user?.preferences?.customAbutmentViewer),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "디자인 화면 설정을 불러오지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * @route PUT /api/users/custom-abutment-viewer
+ */
+async function updateCustomAbutmentViewerPrefs(req, res) {
+  try {
+    const prefs = normalizeCustomAbutmentViewerPrefs(req.body);
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { "preferences.customAbutmentViewer": prefs } },
+      { new: true, runValidators: true },
+    ).select("preferences.customAbutmentViewer");
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        prefs: normalizeCustomAbutmentViewerPrefs(
+          updatedUser.preferences?.customAbutmentViewer,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "디자인 화면 설정을 저장하지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export {
   getProfile,
   updateProfile,
@@ -1565,6 +1630,8 @@ export {
   updateLastDashboardPath,
   getSidebarOpen,
   updateSidebarOpen,
+  getCustomAbutmentViewerPrefs,
+  updateCustomAbutmentViewerPrefs,
   getLabReceiveCalendarDateKey,
   updateLabReceiveCalendarDateKey,
   getLabReceiveCalendarHiddenWeekdays,

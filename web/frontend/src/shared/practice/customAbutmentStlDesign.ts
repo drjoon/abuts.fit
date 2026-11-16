@@ -41,6 +41,7 @@ import {
 } from "@/shared/practice/customAbutmentDesignParams";
 import { cuffProfile } from "@/shared/practice/cuffProfile";
 import { subtractTriangleSoups } from "@/shared/practice/meshUnion";
+import { shortestPostTopClearanceMm } from "@/shared/practice/occlusalClearanceRay";
 import {
   crownOcclusalReliefRatio,
   toothFormOf,
@@ -198,6 +199,66 @@ function fixtureLocalDirToWorld(dir: Vec3, pose: FixtureWorldPose): Vec3 {
 function worldPointToFixtureLocal(p: Vec3, pose: FixtureWorldPose): Vec3 {
   const rel = sub3(p, pose.origin);
   return [dot3(rel, pose.hexX), dot3(rel, pose.hexY), dot3(rel, pose.axis)];
+}
+
+/** 픽스쳐 주변 대합 스캔 삼각형을 로컬 좌표로 모은다. 9 float = 삼각형 하나. */
+function opposingTrianglesInFixtureFrame(
+  geometry: THREE.BufferGeometry | null | undefined,
+  pose: FixtureWorldPose,
+  radiusMm: number,
+): Float32Array {
+  if (!geometry) return new Float32Array(0);
+  const pos = geometry.getAttribute("position");
+  if (!pos || pos.count < 3) return new Float32Array(0);
+  const index = geometry.getIndex();
+  const triCount = Math.floor((index ? index.count : pos.count) / 3);
+  const r2 = radiusMm * radiusMm;
+  const [ox, oy, oz] = pose.origin;
+  const out: number[] = [];
+  const far = (x: number, y: number, z: number) => {
+    const dx = x - ox;
+    const dy = y - oy;
+    const dz = z - oz;
+    return dx * dx + dy * dy + dz * dz > r2;
+  };
+  for (let t = 0; t < triCount; t += 1) {
+    const i0 = index ? index.getX(t * 3) : t * 3;
+    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    const x0 = pos.getX(i0);
+    const y0 = pos.getY(i0);
+    const z0 = pos.getZ(i0);
+    const x1 = pos.getX(i1);
+    const y1 = pos.getY(i1);
+    const z1 = pos.getZ(i1);
+    const x2 = pos.getX(i2);
+    const y2 = pos.getY(i2);
+    const z2 = pos.getZ(i2);
+    if (far(x0, y0, z0) && far(x1, y1, z1) && far(x2, y2, z2)) continue;
+    const a = worldPointToFixtureLocal([x0, y0, z0], pose);
+    const b = worldPointToFixtureLocal([x1, y1, z1], pose);
+    const c = worldPointToFixtureLocal([x2, y2, z2], pose);
+    out.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  }
+  return new Float32Array(out);
+}
+
+function measurePostTopClearanceMm(
+  opposingGeometry: THREE.BufferGeometry | null | undefined,
+  pose: FixtureWorldPose,
+  columns: readonly Vec3[][],
+  apex: Vec3,
+  up: Vec3,
+): number | null {
+  const tris = opposingTrianglesInFixtureFrame(opposingGeometry, pose, 18);
+  if (tris.length < 9) return null;
+  return shortestPostTopClearanceMm({
+    columns,
+    apex,
+    roundSteps: TOP_ROUND_STEPS,
+    opposingTris: tris,
+    up,
+  });
 }
 
 function smootherstep(t: number) {
@@ -5610,27 +5671,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     marginLoopLocal[col * 3 + 2] = mp[2];
   }
 
-  // 실제 포스트 윗면(라운드 시작부터 정점까지 전체) → 대합치 최소 거리
-  let occlusalClearanceMm: number | null = null;
-  if (opposingLocalPts.length > 0) {
-    const topPts: Vec3[] = [postApex];
-    for (let col = 0; col < ANGULAR_COLS; col += 3) {
-      const post = postByCol[col]!;
-      const startIdx = Math.max(0, post.length - TOP_ROUND_STEPS - 1);
-      for (let idx = startIdx; idx < post.length; idx += 3) topPts.push(post[idx]!);
-      topPts.push(post[post.length - 1]!);
-    }
-    let best = Infinity;
-    for (let i = 0; i < opposingLocalPts.length; i += 3) {
-      const q: Vec3 = [opposingLocalPts[i]!, opposingLocalPts[i + 1]!, opposingLocalPts[i + 2]!];
-      if (q[2] < meanMarginZ) continue;
-      for (const p of topPts) {
-        const d = Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
-        if (d < best) best = d;
-      }
-    }
-    if (Number.isFinite(best) && best < 8) occlusalClearanceMm = Math.round(best * 100) / 100;
-  }
+  // 포스트 윗면 0.1mm 그리드에서 교합 방향(수직) 레이 → 대합 스캔 면까지의 최단 거리
+  const occlusalClearanceMm = measurePostTopClearanceMm(
+    opposingGeometry,
+    fixture.fixturePose,
+    postByCol,
+    postApex,
+    occInFix,
+  );
 
   let zMinLocal = Infinity;
   let zMaxLocal = -Infinity;

@@ -56,6 +56,8 @@ export type CachedCustomAbutmentTooth = {
   metrics: CustomAbutmentDesignMetrics;
   baselineMetrics?: CustomAbutmentDesignMetrics;
   baselineParams?: CustomAbutmentDesignParams;
+  /** 처음 제안할 때 넣은 조정값. 리셋은 이 입력으로만 돌아간다. */
+  proposalInput?: Partial<CustomAbutmentDesignParams>;
   editedInfoFields?: string[];
   localPositions: ArrayBuffer;
   solidBodyLocalPositions?: ArrayBuffer;

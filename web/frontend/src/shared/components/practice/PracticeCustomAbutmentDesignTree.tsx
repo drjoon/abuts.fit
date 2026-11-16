@@ -629,6 +629,8 @@ export function PracticeCustomAbutmentDesignTree({
   onRegenerate,
   onRegenerateTooth,
   onEditField,
+  expanded,
+  onExpandedChange,
   className,
 }: {
   shownScanbodies: Record<string, boolean>;
@@ -649,27 +651,10 @@ export function PracticeCustomAbutmentDesignTree({
     field: AbutmentInfoFieldKey,
     nextValue: number | AbutmentAxisSource,
   ) => void;
+  expanded: Record<string, boolean>;
+  onExpandedChange: (next: Record<string, boolean>) => void;
   className?: string;
 }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const autoExpandedTeethRef = useRef(new Set<string>());
-
-  useEffect(() => {
-    if (items.length === 0) return;
-    const freshTeeth = items
-      .map((it) => it.toothNumber)
-      .filter((t) => !autoExpandedTeethRef.current.has(t));
-    if (freshTeeth.length === 0) return;
-    for (const t of freshTeeth) autoExpandedTeethRef.current.add(t);
-    setExpanded((prev) => {
-      const next = { ...prev };
-      for (const t of freshTeeth) {
-        if (next[t] === undefined) next[t] = true;
-      }
-      return next;
-    });
-  }, [items]);
-
   const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
   const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
   const anyScanbody = items.some((it) => shownScanbodies[it.toothNumber]);
@@ -717,7 +702,9 @@ export function PracticeCustomAbutmentDesignTree({
           title={allOpen ? "모두 접기" : "모두 펼치기"}
           aria-expanded={allOpen}
           onClick={() =>
-            setExpanded(allOpen ? {} : Object.fromEntries(items.map((it) => [it.toothNumber, true])))
+            onExpandedChange(
+              Object.fromEntries(items.map((it) => [it.toothNumber, !allOpen])),
+            )
           }
         >
           {allOpen ? (
@@ -751,7 +738,7 @@ export function PracticeCustomAbutmentDesignTree({
                   className="flex h-6 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
                   aria-label={open ? `#${tooth} 접기` : `#${tooth} 펼치기`}
                   aria-expanded={open}
-                  onClick={() => setExpanded((prev) => ({ ...prev, [tooth]: !open }))}
+                  onClick={() => onExpandedChange({ ...expanded, [tooth]: !open })}
                 >
                   {open ? (
                     <ChevronDown className="h-3.5 w-3.5" />
