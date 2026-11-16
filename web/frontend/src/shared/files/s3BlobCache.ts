@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-16: 커스텀어벗 프리뷰 STL은 같은 키를 덮어쓴다. 크기·올린 시각으로 캐시를 가른다.
 // - 2026-09-30: 같은 S3 키 동시 요청은 하나. 끊김은 대기자가 없을 때만 다음 턴에 취소.
 // - 2026-09-13: IndexedDB ~10GB LRU(fileBlobCache) — 메시 선다운로드·재방문 히트.
 // - 2026-09-05: guide-tour/* — public 정적 샘플 fetch(실 PLY). 실패 시 placeholder.
@@ -24,6 +25,25 @@ export function s3FileBlobCacheKey(s3Key: string, thumbWidth?: number): string {
     return `s3thumb:${Math.floor(thumbWidth)}:${key}`;
   }
   return `s3:${key}`;
+}
+
+/**
+ * 커스텀어벗 프리뷰 STL은 의뢰·치아마다 S3 키가 고정이라 새 디자인이 같은 객체를 덮어쓴다.
+ * 그 키만 IndexedDB에 크기·올린 시각을 붙여, 공정 취소 후 다시 의뢰해도 이전 형상을 열지 않는다.
+ */
+export function s3BlobCacheRevision(file: {
+  s3Key?: string | null;
+  size?: number | null;
+  uploadedAt?: string | null;
+}): string {
+  const key = String(file.s3Key || "");
+  if (!key.includes("/custom-abutment-preview/")) return "";
+  const size = Number(file.size);
+  const at = String(file.uploadedAt || "").trim();
+  const parts: string[] = [];
+  if (Number.isFinite(size) && size > 0) parts.push(String(Math.round(size)));
+  if (at) parts.push(at);
+  return parts.length > 0 ? parts.join(":") : "1";
 }
 
 export type FetchS3BlobCachedOptions = {

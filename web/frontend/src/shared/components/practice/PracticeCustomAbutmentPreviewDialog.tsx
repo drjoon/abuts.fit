@@ -90,6 +90,7 @@ import {
   CUSTOM_ABUTMENT_FIT_VERSION,
   confirmCustomAbutmentDesignRemote,
   customAbutmentDesignCacheKey,
+  preferFresherCustomAbutmentDesign,
   fetchCustomAbutmentSnapshot,
   normalizeCustomAbutmentChat,
   pickCustomAbutmentChat,
@@ -2180,9 +2181,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         const cached =
           readOnly || isLabViewer
             ? serverDesign
-            : localCached && localCached.teeth.length > 0
-              ? localCached
-              : serverDesign;
+            : preferFresherCustomAbutmentDesign(localCached, serverDesign);
         proposalInputRef.current = {};
         for (const row of cached?.teeth ?? []) {
           const saved = row.proposalInput;

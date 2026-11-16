@@ -29,7 +29,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { fetchS3BlobCached, s3BlobCacheRevision } from "@/shared/files/s3BlobCache";
 import {
   readDcmDownloadFormat,
   writeDcmDownloadFormat,
@@ -99,6 +99,8 @@ export type S3DownloadTarget = {
   busyKey?: string;
   /** 원본 크기(byte). 진행률 가중치·이미 받은 파일 확인에 쓴다. */
   size?: number;
+  /** 같은 S3 키를 덮어쓴 커스텀어벗 프리뷰를 다시 받을 때. */
+  uploadedAt?: string | null;
   /** 받을 포맷. 생략 시 localStorage 선호. */
   dcmFormat?: DcmDownloadFormat;
   /**
@@ -229,6 +231,12 @@ export function useS3FileDownload(token?: string | null) {
         s3Key,
         fileName,
         token,
+        cacheRevision:
+          s3BlobCacheRevision({
+            s3Key,
+            size: file.size,
+            uploadedAt: file.uploadedAt,
+          }) || undefined,
         buildUrl: buildS3ProxyDownloadUrl,
         signal: file.signal,
         onProgress: (percent) => {

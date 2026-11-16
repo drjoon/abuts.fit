@@ -6791,6 +6791,8 @@ export const PracticeFileTransferPage = ({
         s3Key,
         fileName: String(file?.fileName || "첨부파일").trim() || "첨부파일",
         busyKey: s3Key,
+        size: Number(file?.size || 0),
+        uploadedAt: file?.uploadedAt,
         dcmFormat: opts?.dcmFormat,
       });
     },
@@ -6828,13 +6830,19 @@ export const PracticeFileTransferPage = ({
       if (!model?.downloadAllFiles.length || !selectedTransferCaseFolder) return;
       const sw = String(accountDesignSoftware || "").trim();
       const toTarget = (
-        file: { s3Key?: string | null; fileName?: string | null; size?: number | null },
+        file: {
+          s3Key?: string | null;
+          fileName?: string | null;
+          size?: number | null;
+          uploadedAt?: string | null;
+        },
         labFormat: boolean,
       ) => ({
         s3Key: String(file.s3Key || "").trim(),
         fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
         busyKey: String(file.s3Key || "").trim(),
         size: Number(file.size || 0),
+        uploadedAt: file.uploadedAt,
         labFormat,
       });
       await saveToLabWorkFolder({
@@ -6874,6 +6882,7 @@ export const PracticeFileTransferPage = ({
         s3Key?: string | null;
         fileName?: string | null;
         size?: number | null;
+        uploadedAt?: string | null;
         labFormat?: boolean;
       }>,
       opts?: { dcmFormat?: DcmDownloadFormat },
@@ -6885,6 +6894,7 @@ export const PracticeFileTransferPage = ({
           fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
           busyKey: String(file.s3Key || "").trim(),
           size: Number(file.size || 0),
+          uploadedAt: file.uploadedAt,
           labFormat: file.labFormat,
         })),
         dcmFormat: opts?.dcmFormat,

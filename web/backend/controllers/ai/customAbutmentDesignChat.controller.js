@@ -28,8 +28,8 @@ import { postPracticeTransferSystemChatMessage } from "../../services/chatSystem
 import {
   claimAbutmentDesignHandoffLock,
   ensureAbutmentRequestsForHandoff,
-  normalizeResultFiles,
   releaseAbutmentDesignHandoffLock,
+  stampPracticeTransferFileBatch,
 } from "../../services/practiceTransferProduction.service.js";
 import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
@@ -929,7 +929,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         (entry) => !confirmedToothSet.has(String(entry?.tooth || "").trim()),
       );
       const patientName = String(req.body?.patientName || "").trim();
-      const newMirrored = normalizeResultFiles(
+      const newMirrored = stampPracticeTransferFileBatch(
         validTeeth.map((t) => ({
           patientName,
           tooth: t.toothNumber,
@@ -940,6 +940,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
             s3Key: t.s3Key,
           },
         })),
+        { uploadedAt: now, force: true },
       );
       const mergedDesignFiles = [...keptDesignFiles, ...newMirrored];
       const prevPreview =

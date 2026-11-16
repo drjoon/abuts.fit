@@ -69,7 +69,7 @@ import {
   resolveCompanionTextureFileName,
 } from "@/shared/files/modelPreviewFile";
 import { request } from "@/shared/api/apiClient";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { fetchS3BlobCached, s3BlobCacheRevision } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
   PREVIEW_HEADER_BUTTON_CLASS,
@@ -484,7 +484,12 @@ export function RequestFilesPreviewDialog({
   const heading =
     title ||
     (items.some((i) => i.cluster !== "request") ? "케이스" : "의뢰 파일");
-  const itemsKey = items.map((i) => i.key).join("|");
+  const itemsKey = items
+    .map((i) => {
+      const revision = s3BlobCacheRevision(i.file);
+      return revision ? `${i.key}@${revision}` : i.key;
+    })
+    .join("|");
   const models = items.filter((i) => i.kind === "model");
   const requestItems = items.filter((i) => i.cluster === "request");
   const workScanItems = items.filter((i) => i.cluster === "workScan");
@@ -835,6 +840,7 @@ export function RequestFilesPreviewDialog({
         s3Key: item.file.s3Key,
         fileName: item.file.fileName,
         token,
+        cacheRevision: s3BlobCacheRevision(item.file) || undefined,
         buildUrl: buildS3ProxyDownloadUrl,
         signal: ac.signal,
         onProgress: (progress) => setProgress(item.key, progress),

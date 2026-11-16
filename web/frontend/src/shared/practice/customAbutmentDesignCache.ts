@@ -109,6 +109,19 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
+/** 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다. */
+export function preferFresherCustomAbutmentDesign<
+  T extends { savedAt?: number; teeth?: readonly unknown[] },
+>(local: T | null, server: T | null): T | null {
+  const localCount = Array.isArray(local?.teeth) ? local.teeth.length : 0;
+  const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
+  if (localCount === 0) return serverCount > 0 ? server : null;
+  if (serverCount === 0 || !server) return local;
+  const localAt = Number(local?.savedAt) || 0;
+  const serverAt = Number(server.savedAt) || 0;
+  return serverAt > localAt ? server : local;
+}
+
 /** 대화 저장 키. 정합·형상 버전과 스캔 키가 바뀌어도 같은 의뢰면 그대로다. */
 export function customAbutmentChatCacheKey(scope: string): string {
   const id = scope.trim();

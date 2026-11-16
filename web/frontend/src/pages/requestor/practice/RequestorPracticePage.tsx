@@ -1438,6 +1438,7 @@ export function RequestorPracticeReceivePage({
                         mimetype: String(f.mimetype || "application/octet-stream").trim(),
                         size: Number(f.size || 0),
                         s3Key,
+                        uploadedAt: String(f.uploadedAt || "").trim() || null,
                       };
                     })
                     .filter(Boolean) as ReceivedPracticeFile[]
@@ -1852,7 +1853,7 @@ export function RequestorPracticeReceivePage({
         const key = s3Of(row);
         const prev = key ? localByKey.get(key) : undefined;
         if (!prev) return row;
-        // 썸네일 캐시·리스트 키 안정화(로컬 id 유지)
+        // 썸네일 캐시·리스트 키 안정화(로컬 id 유지). 크기·시각은 서버가 덮어쓴 파일 기준.
         return {
           ...row,
           id: prev.id || row.id,
@@ -1860,14 +1861,18 @@ export function RequestorPracticeReceivePage({
         };
       });
       const mergedFiles = [...stableServerFiles, ...pendingLocal];
-      if (
+      const sameDesignList =
         pendingLocal.length === 0 &&
         stableServerFiles.length === localFiles.length &&
-        stableServerFiles.every(
-          (row, i) =>
-            s3Of(row) === s3Of(localFiles[i]) && row.id === localFiles[i]?.id,
-        )
-      ) {
+        stableServerFiles.every((row, i) => {
+          const prev = localFiles[i];
+          if (!prev || s3Of(row) !== s3Of(prev) || row.id !== prev.id) return false;
+          return (
+            Number(row.size || 0) === Number(prev.size || 0) &&
+            String(row.uploadedAt || "") === String(prev.uploadedAt || "")
+          );
+        });
+      if (sameDesignList) {
         // 파일 목록 동일 — production 기타 필드만 서버 반영, designFiles 참조 유지
         return {
           ...server,
@@ -8345,6 +8350,8 @@ export function RequestorPracticeReceivePage({
         s3Key,
         fileName: String(file.originalName || "download").trim() || "download",
         busyKey: s3Key,
+        size: Number(file.size || 0),
+        uploadedAt: file.uploadedAt,
         dcmFormat: opts?.dcmFormat,
       });
     },
@@ -8373,13 +8380,19 @@ export function RequestorPracticeReceivePage({
       reuseSaved: boolean;
     }) => {
       const toTarget = (
-        file: { s3Key?: string | null; originalName?: string | null; size?: number | null },
+        file: {
+          s3Key?: string | null;
+          originalName?: string | null;
+          size?: number | null;
+          uploadedAt?: string | null;
+        },
         labFormat: boolean,
       ) => ({
         s3Key: String(file.s3Key || "").trim(),
         fileName: String(file.originalName || "download").trim() || "download",
         busyKey: String(file.s3Key || "").trim(),
         size: Number(file.size || 0),
+        uploadedAt: file.uploadedAt,
         labFormat,
       });
       const files = [
@@ -10695,6 +10708,7 @@ export function RequestorPracticeReceivePage({
             fileName: file.originalName,
             size: Number(file.size || 0),
             s3Key: String(file.s3Key || "").trim(),
+            uploadedAt: file.uploadedAt || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
         workScanFiles={

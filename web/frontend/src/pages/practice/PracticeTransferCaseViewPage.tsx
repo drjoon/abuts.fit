@@ -10,7 +10,7 @@ import { ExternalLink, Loader2, Share2 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { Button } from "@/components/ui/button";
 import { request } from "@/shared/api/apiClient";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { fetchS3BlobCached, s3BlobCacheRevision } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
   CaseShareViewer,
@@ -65,6 +65,12 @@ export default function PracticeTransferCaseViewPage() {
         s3Key: file.s3Key,
         fileName: file.fileName,
         token,
+        cacheRevision:
+          s3BlobCacheRevision({
+            s3Key: file.s3Key,
+            size: file.size,
+            uploadedAt: file.uploadedAt,
+          }) || undefined,
         buildUrl: buildS3ProxyDownloadUrl,
         onProgress,
       });

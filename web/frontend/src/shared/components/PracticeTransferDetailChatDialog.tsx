@@ -323,7 +323,7 @@ import {
   buildS3ProxyDownloadUrl,
   s3DownloadBusyKey,
 } from "@/shared/files/useS3FileDownload";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { fetchS3BlobCached, s3BlobCacheRevision } from "@/shared/files/s3BlobCache";
 import { loadS3ImageThumbUrlsParallel } from "@/shared/files/s3ImageThumb";
 import {
   LabReceiveRoleBadge,
@@ -1636,6 +1636,16 @@ export function PracticeTransferDetailChatDialog({
     workScanFiles,
   ]);
 
+  const modelThumbId = (file: {
+    s3Key?: string | null;
+    size?: number | null;
+    uploadedAt?: string | null;
+  }) => {
+    const s3Key = String(file.s3Key || "").trim();
+    const revision = s3BlobCacheRevision(file);
+    return revision ? `${s3Key}@${revision}` : s3Key;
+  };
+
   const collectModelThumbFiles = useCallback(() => {
     const out: PracticeTransferDialogFileItem[] = [];
     const seen = new Set<string>();
@@ -1687,7 +1697,7 @@ export function PracticeTransferDetailChatDialog({
   const fileModelThumbKey = useMemo(() => {
     if (!open) return "";
     return collectModelThumbFiles()
-      .map((file) => String(file.s3Key || "").trim())
+      .map((file) => modelThumbId(file))
       .filter(Boolean)
       .sort()
       .join("|");
@@ -1811,7 +1821,7 @@ export function PracticeTransferDetailChatDialog({
     }
 
     const wanted = new Set(
-      modelFiles.map((file) => String(file.s3Key || "").trim()).filter(Boolean),
+      modelFiles.map((file) => modelThumbId(file)).filter(Boolean),
     );
 
     let pruned = false;
@@ -1831,8 +1841,8 @@ export function PracticeTransferDetailChatDialog({
     }
 
     const missing = modelFiles.filter((file) => {
-      const s3Key = String(file.s3Key || "").trim();
-      return s3Key && !modelThumbFilesRef.current[s3Key];
+      const id = modelThumbId(file);
+      return id && !modelThumbFilesRef.current[id];
     });
     if (!missing.length) return;
 
@@ -1843,6 +1853,7 @@ export function PracticeTransferDetailChatDialog({
       missing.map(async (file) => {
         if (cancelled || ac.signal.aborted) return;
         const s3Key = String(file.s3Key || "").trim();
+        const thumbId = modelThumbId(file);
         const fileName =
           String(file.fileName || "model.stl").trim() || "model.stl";
         try {
@@ -1850,6 +1861,7 @@ export function PracticeTransferDetailChatDialog({
             s3Key,
             fileName,
             token: authToken,
+            cacheRevision: s3BlobCacheRevision(file) || undefined,
             buildUrl: buildS3ProxyDownloadUrl,
             signal: ac.signal,
           });
@@ -1867,11 +1879,11 @@ export function PracticeTransferDetailChatDialog({
           }
           modelThumbFilesRef.current = {
             ...modelThumbFilesRef.current,
-            [s3Key]: previewFile,
+            [thumbId]: previewFile,
           };
           modelThumbExtrasRef.current = {
             ...modelThumbExtrasRef.current,
-            [s3Key]: { extras, images },
+            [thumbId]: { extras, images },
           };
           setModelThumbFiles({ ...modelThumbFilesRef.current });
           setModelThumbExtras({ ...modelThumbExtrasRef.current });
@@ -2033,6 +2045,7 @@ export function PracticeTransferDetailChatDialog({
           s3Key,
           fileName,
           token: authToken,
+          cacheRevision: s3BlobCacheRevision(file) || undefined,
           buildUrl: buildS3ProxyDownloadUrl,
           signal: ac.signal,
           onProgress: setPreviewProgress,
@@ -3235,7 +3248,10 @@ export function PracticeTransferDetailChatDialog({
       getPracticeTransferFileExtension(file.fileName),
     );
     const thumbUrl = busyKey ? fileThumbUrls[busyKey] : undefined;
-    const modelThumbFile = busyKey ? modelThumbFiles[busyKey] : undefined;
+    const modelThumbKey = modelThumbId(file);
+    const modelThumbFile = modelThumbKey
+      ? modelThumbFiles[modelThumbKey]
+      : undefined;
     const typeLabel = fileTypeLabel(file.fileName);
     const title = locked
       ? requestFilesDownloadLockedReason
@@ -3307,10 +3323,10 @@ export function PracticeTransferDetailChatDialog({
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}
-                extraFiles={modelThumbExtras[busyKey]?.extras}
+                extraFiles={modelThumbExtras[modelThumbKey]?.extras}
                 companionFiles={[
                   ...imageCompanionFiles,
-                  ...(modelThumbExtras[busyKey]?.images || []),
+                  ...(modelThumbExtras[modelThumbKey]?.images || []),
                 ]}
                 className="pointer-events-none"
               />
