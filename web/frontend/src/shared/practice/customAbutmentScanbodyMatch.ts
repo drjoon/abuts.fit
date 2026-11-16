@@ -912,6 +912,8 @@ export function locateNominalToothSlot(args: {
   geometry: THREE.BufferGeometry;
   frame: DentalFrame;
   toothNumber: string;
+  /** 클릭 재탐색만. 편측 스캔의 자동 배정에 쓰면 다른 융기가 스캔바디로 잡힌다. */
+  allowPartialArch?: boolean;
 }): {
   center: Vec3;
   occlusalDir: Vec3;
@@ -937,6 +939,18 @@ export function locateNominalToothSlot(args: {
   const usePts = band.length >= 60 ? band : pts;
   const origin = meanVec(usePts);
   if (!origin) return null;
+
+  // 편악·구치부만 있는 스캔은 말굽 각이 0.4rad가 안 되어 슬롯이 통째로 비고,
+  // 클릭 정합도 그 슬롯이 없으면 바로 포기한다. 교합 축은 있으므로 중심만 악궁 평균으로 둔다.
+  const fallbackSlot = () => ({
+    center: [origin.x, origin.y, origin.z] as Vec3,
+    occlusalDir,
+    archRight,
+    archAnterior,
+    labialDir: norm(archAnterior),
+    jaw: parsed.jaw,
+    side: parsed.side,
+  });
 
   const proj = usePts.map((p) => {
     const dx = p[0] - origin.x;
@@ -968,7 +982,7 @@ export function locateNominalToothSlot(args: {
   let spanL = quantile(lAngles, 0.92);
   if (spanR < 0.4) spanR = spanL;
   if (spanL < 0.4) spanL = spanR;
-  if (spanR < 0.4) return null;
+  if (spanR < 0.4) return args.allowPartialArch ? fallbackSlot() : null;
 
   const span = parsed.side > 0 ? spanR : spanL;
   const targetAng = parsed.side * (TOOTH_SPAN_T[parsed.pos] ?? 0.5) * span;
@@ -978,7 +992,7 @@ export function locateNominalToothSlot(args: {
     wedge = Math.max(wedge, 0.45);
     picked = pool.filter((q) => angleAbsDiff(q.ang, targetAng) <= wedge);
   }
-  if (picked.length === 0) return null;
+  if (picked.length === 0) return args.allowPartialArch ? fallbackSlot() : null;
 
   let sx = 0;
   let sy = 0;
@@ -1474,14 +1488,15 @@ type ScanbodyHit = {
 function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): ScanbodyHit[] {
   const { jawGeometry, frame, toothWork, models, connections } = args;
   if (models.length === 0) return [];
+  const anchor = args.anchorWorld;
+  const anchored = anchor != null;
   const nominal = locateNominalToothSlot({
     geometry: jawGeometry,
     frame,
     toothNumber: toothWork.toothNumber,
+    allowPartialArch: anchored,
   });
   if (!nominal) return [];
-  const anchor = args.anchorWorld;
-  const anchored = anchor != null;
   const slot = anchored ? { ...nominal, center: [anchor[0], anchor[1], anchor[2]] as Vec3 } : nominal;
 
   const posAttr = jawGeometry.getAttribute("position");
