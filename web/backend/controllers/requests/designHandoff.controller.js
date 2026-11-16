@@ -1,3 +1,4 @@
+// - 2026-11-16: 치과 발신 — 준비 단계 커스텀어벗 공정 취소(제조사 큐에서 내림). 가공 이후는 불가.
 // - 2026-11-07: PTX abutment-design-handoff — 같은 의뢰 hold를 서버 락으로 직렬화(병렬 WriteConflict로 한 치아만 탈락 방지).
 // - 2026-11-07: PTX 다치아 — 일부 STL만 업로드 시 sibling 미업로드를 준비 큐에 노출(누락 피드백).
 // - 2026-09-27: PTX CA 생산 hold — 수행 기공소(assignee) 잔액. 원청(target)으로 소유를 되돌리지 않음.
@@ -77,6 +78,7 @@ import {
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
   resolveRelatedAbutmentPastReady,
+  scheduleAbutmentStageRealtimeForTransfer,
   mirrorDesignFileToPracticeTransfer,
   practiceTransferNeedsMoreAbutmentDesigns,
   repriceAndReschedulePtxAbutmentRequest,
@@ -103,6 +105,7 @@ import {
 import { completePracticeTransferWork } from "../../services/practiceTransferComplete.service.js";
 import { isLabProsthesisUploadRequired } from "../../utils/practiceProsthesisUploadRequirement.js";
 import { isAutoMatchCompleted } from "../../utils/practiceTransferAutoMatchCore.js";
+import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
 import {
   normalizeScrewSupply,
   syncPracticeTransferScrewSupply,
@@ -2194,6 +2197,270 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
       success: false,
       message: error?.message || "어벗 디자인 핸드오프 중 오류가 발생했습니다.",
     });
+  }
+}
+
+const PRACTICE_ABUTMENT_CANCEL_PAST_READY_MESSAGE =
+  "제조사가 가공(준비 이후)에 들어가면 어벗디자인을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.";
+
+/**
+ * POST /api/practice/transfers/:transferId/custom-abutment-process/cancel
+ * 치과 발신: 제조사 준비인 커스텀어벗만 취소한다. 가공 이후 치아는 그대로 둔다.
+ * 디자인 스냅샷(형상)은 남기고, 확정 표시와 제조 큐만 내린다.
+ */
+export async function cancelPracticeCustomAbutmentProcess(req, res) {
+  let lockedId = "";
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "requestor" && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "커스텀어벗 공정 취소는 의뢰 치과만 할 수 있습니다.",
+      });
+    }
+    const userId = req.user?._id ? String(req.user._id) : "";
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    const rawTransferId = String(req.params?.transferId || "").trim();
+    if (!rawTransferId) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+    const transferIdFilter = Types.ObjectId.isValid(rawTransferId)
+      ? {
+          $or: [
+            { transferId: rawTransferId },
+            { _id: new Types.ObjectId(rawTransferId) },
+          ],
+        }
+      : { transferId: rawTransferId };
+    const anchorId = String(req.user?.businessAnchorId || "").trim();
+    const ownerOr = [];
+    if (role !== "admin") {
+      if (anchorId && Types.ObjectId.isValid(anchorId)) {
+        ownerOr.push({
+          practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+        });
+      }
+      if (req.user?._id) ownerOr.push({ practiceUserId: req.user._id });
+      if (ownerOr.length === 0) {
+        return res.status(403).json({
+          success: false,
+          message: "커스텀어벗 공정 취소는 의뢰 치과만 할 수 있습니다.",
+        });
+      }
+    }
+
+    const doc = await PracticeTransfer.findOne(
+      role === "admin"
+        ? transferIdFilter
+        : { $and: [transferIdFilter, { $or: ownerOr }] },
+    );
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 커스텀어벗 공정을 취소할 수 없습니다.",
+      });
+    }
+
+    await claimAbutmentDesignHandoffLock(doc._id);
+    lockedId = String(doc._id);
+
+    const fresh = await PracticeTransfer.findById(doc._id);
+    if (!fresh) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const { toothStages, linkedRequestIds } =
+      await resolveRelatedAbutmentPastReady(fresh);
+    const stages = Array.isArray(toothStages) ? toothStages : [];
+    const requestedTooth = String(req.body?.tooth || "").trim();
+    let readyTeeth = stages
+      .filter((row) => String(row?.stage || "").trim() === "준비")
+      .map((row) => String(row?.tooth || "").trim())
+      .filter(Boolean);
+    if (requestedTooth) {
+      if (!readyTeeth.includes(requestedTooth)) {
+        const known = stages.some(
+          (row) => String(row?.tooth || "").trim() === requestedTooth,
+        );
+        if (known) {
+          return res.status(409).json({
+            success: false,
+            code: "manufacturer_not_ready",
+            message: PRACTICE_ABUTMENT_CANCEL_PAST_READY_MESSAGE,
+          });
+        }
+        return res.status(404).json({
+          success: false,
+          message: `치아 #${requestedTooth}의 준비 단계 커스텀어벗을 찾지 못했습니다.`,
+        });
+      }
+      readyTeeth = [requestedTooth];
+    }
+    if (readyTeeth.length === 0) {
+      if (stages.length > 0) {
+        return res.status(409).json({
+          success: false,
+          code: "manufacturer_not_ready",
+          message: PRACTICE_ABUTMENT_CANCEL_PAST_READY_MESSAGE,
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: "취소할 준비 단계 커스텀어벗이 없습니다.",
+      });
+    }
+
+    const cancelSet = new Set(readyTeeth);
+    const linkedIds = (Array.isArray(linkedRequestIds) ? linkedRequestIds : [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id));
+    const feeRows =
+      linkedIds.length > 0
+        ? await Request.find({
+            _id: { $in: linkedIds.map((id) => new Types.ObjectId(id)) },
+            "caseInfos.hexVerificationSample": { $ne: true },
+            "caseInfos.tooth": { $in: readyTeeth },
+          })
+            .select({ _id: 1, businessAnchorId: 1 })
+            .lean()
+        : [];
+
+    for (const tooth of readyTeeth) {
+      await markPtxRelatedRequestsCancelled(fresh._id, {
+        tooth,
+        relatedRequestIds: linkedIds,
+      });
+    }
+
+    const prevFiles = Array.isArray(fresh.production?.designFiles)
+      ? fresh.production.designFiles
+      : [];
+    const remainingStages = stages.filter(
+      (row) => !cancelSet.has(String(row?.tooth || "").trim()),
+    );
+    const noActive = remainingStages.length === 0;
+    const nextFiles = prevFiles.filter((row) => {
+      const tooth = String(row?.tooth || "").trim();
+      if (cancelSet.has(tooth)) return false;
+      if (!tooth && noActive) return false;
+      return true;
+    });
+    const hasProsthesis =
+      (Array.isArray(fresh.resultFiles) && fresh.resultFiles.length > 0) ||
+      isAutoMatchCompleted(fresh);
+
+    if (noActive && !hasProsthesis && nextFiles.length === 0) {
+      await clearPtxDesignMirror(fresh._id);
+      await PracticeTransfer.updateOne(
+        { _id: fresh._id },
+        {
+          $unset: {
+            "production.practiceDesignConfirmedAt": "",
+            "production.practiceDesignConfirmedBy": "",
+            "production.customAbutmentPreview.confirmedAt": "",
+            "production.customAbutmentPreview.confirmedBy": "",
+          },
+        },
+      );
+    } else {
+      const update = {
+        $set: { "production.designFiles": nextFiles },
+      };
+      const unset = {};
+      if (nextFiles.length === 0) unset["production.designReadyAt"] = "";
+      if (noActive) {
+        unset["production.practiceDesignConfirmedAt"] = "";
+        unset["production.practiceDesignConfirmedBy"] = "";
+        unset["production.customAbutmentPreview.confirmedAt"] = "";
+        unset["production.customAbutmentPreview.confirmedBy"] = "";
+      }
+      if (Object.keys(unset).length > 0) update.$unset = unset;
+      await PracticeTransfer.updateOne({ _id: fresh._id }, update);
+    }
+
+    const toothListText = readyTeeth.map((tooth) => `#${tooth}`).join(", ");
+    res.status(200).json({
+      success: true,
+      message: `${toothListText} 커스텀어벗 공정을 취소했습니다.`,
+      data: {
+        transferId: String(fresh.transferId || "").trim(),
+        cancelledTeeth: readyTeeth,
+        remainingStages,
+        clearedAll: noActive,
+      },
+    });
+
+    scheduleAbutmentStageRealtimeForTransfer(fresh._id);
+    try {
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        reason: "practice-custom-abutment-cancel",
+        requestId: feeRows[0]?._id ? String(feeRows[0]._id) : null,
+      });
+      scheduleRequestReadyBadgeEmit();
+    } catch {
+      // best-effort
+    }
+    refreshLabDashboardAfterPtxDesignChange(
+      resolvePerformingLabAnchorId(fresh) || fresh.targetLabAnchorId,
+      "practice-custom-abutment-cancel",
+    );
+    void postPracticeTransferSystemChatMessage({
+      transferMongoId: fresh._id,
+      senderUserId: req.user?._id,
+      content: `치과가 커스텀어벗 공정(${toothListText})을 취소했습니다.`,
+      systemEvent: "custom_abutment_process_cancelled",
+    }).catch((err) => {
+      console.warn(
+        "[PRACTICE_ABUTMENT_CANCEL] system chat failed",
+        err?.message || err,
+      );
+    });
+    if (feeRows.length > 0) {
+      void Promise.all(
+        feeRows.map((row) =>
+          revokeAbutmentDesignLabFee({
+            requestDoc: row,
+            transferId: String(fresh._id),
+            labAnchorId: String(row?.businessAnchorId || "").trim(),
+            actorUserId: userId,
+          }),
+        ),
+      ).catch((err) => {
+        console.error("[PRACTICE_ABUTMENT_CANCEL] fee revoke failed", err);
+      });
+    }
+  } catch (error) {
+    console.error("[PRACTICE_ABUTMENT_CANCEL]", error);
+    if (!res.headersSent) {
+      return res.status(error?.statusCode || 500).json({
+        success: false,
+        message: error?.message || "커스텀어벗 공정 취소 중 오류가 발생했습니다.",
+      });
+    }
+  } finally {
+    if (lockedId) {
+      await releaseAbutmentDesignHandoffLock(lockedId).catch((err) => {
+        console.warn(
+          "[PRACTICE_ABUTMENT_CANCEL] lock release failed",
+          err?.message || err,
+        );
+      });
+    }
   }
 }
 

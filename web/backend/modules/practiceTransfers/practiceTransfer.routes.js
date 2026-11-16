@@ -69,7 +69,11 @@ import {
   restoreReceivedPracticeTransferRequestFiles,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import { setPracticeTransferScrewSupply } from "../../controllers/practiceTransfers/practiceTransferScrewSupply.controller.js";
-import { handoffPracticeTransferAbutmentDesign, reportImplantCatalogMismatch } from "../../controllers/requests/designHandoff.controller.js";
+import {
+  cancelPracticeCustomAbutmentProcess,
+  handoffPracticeTransferAbutmentDesign,
+  reportImplantCatalogMismatch,
+} from "../../controllers/requests/designHandoff.controller.js";
 import {
   getPracticeTransferSettings,
   upsertPracticeTransferSettings,
@@ -522,6 +526,13 @@ router.post(
   authenticate,
   sendAuth,
   confirmPracticeTransferProduction,
+);
+
+router.post(
+  "/:transferId/custom-abutment-process/cancel",
+  authenticate,
+  sendAuth,
+  cancelPracticeCustomAbutmentProcess,
 );
 
 router.post(

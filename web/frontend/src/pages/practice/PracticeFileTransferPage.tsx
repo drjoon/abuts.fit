@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-11-16: 채팅 헤더 — 준비 단계 커스텀어벗 「어벗 취소」(제조사 큐에서 내림).
  * - 2026-10-27: 신규의뢰 드롭존 — ExoCAD(.dentalProject)·3Shape(.3ox·.3oxz·.dcm) 안내.
  * - 2026-11-03: 알림 보기 — 주문 변경 등 상위 모달을 닫아 채팅이 가려지지 않게.
  * - 2026-11-03: 알림 보기 openTransferWorkStatusById — handleOpenTransferDialog deps 누락 보정.
@@ -1463,6 +1464,8 @@ export const PracticeFileTransferPage = ({
     useState<PracticeTransferPanelDockSide | null>(null);
   const [panelPreferredDockNonce, setPanelPreferredDockNonce] = useState(0);
   const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
+  const [abutmentProcessCancelBusy, setAbutmentProcessCancelBusy] =
+    useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -6987,6 +6990,121 @@ export const PracticeFileTransferPage = ({
     }
   }, [authToken, productionConfirmBusy, selectedTransfer, toast]);
 
+  const handleCancelCustomAbutmentProcess = useCallback(async () => {
+    if (!authToken || !selectedTransfer || abutmentProcessCancelBusy) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId || transferId === "-" || transferId === PRACTICE_DRAFT_TRANSFER_ID) {
+      return;
+    }
+    const readyTeeth = (selectedTransfer.abutmentToothStages || [])
+      .filter((row) => String(row.stage || "").trim() === "준비")
+      .map((row) => String(row.tooth || "").trim())
+      .filter(Boolean);
+    if (readyTeeth.length === 0) return;
+
+    setAbutmentProcessCancelBusy(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        code?: string;
+        data?: {
+          cancelledTeeth?: string[];
+          clearedAll?: boolean;
+        };
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/custom-abutment-process/cancel`,
+        method: "POST",
+        token: authToken,
+      });
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as {
+              message?: string;
+              code?: string;
+              data?: { cancelledTeeth?: string[]; clearedAll?: boolean };
+            })
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "어벗 취소 실패",
+          description:
+            String(body.message || "").trim() ||
+            "커스텀어벗 공정을 취소하는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        if (String(body.code || "").trim() === "manufacturer_not_ready") {
+          void loadRecentRequests({ silent: true });
+        }
+        return;
+      }
+
+      const cancelled = new Set(
+        (Array.isArray(body.data?.cancelledTeeth)
+          ? body.data.cancelledTeeth
+          : readyTeeth
+        )
+          .map((tooth) => String(tooth || "").trim())
+          .filter(Boolean),
+      );
+      const clearedAll = Boolean(body.data?.clearedAll);
+      const clearConfirmFields = clearedAll
+        ? {
+            designFiles: [] as PracticeRecentTransferItem["designFiles"],
+            designFileCount: 0,
+            designReadyAt: null,
+            practiceDesignConfirmedAt: null,
+          }
+        : {};
+      setSelectedTransfer((prev) => {
+        if (!prev || String(prev.transferId || "").trim() !== transferId) return prev;
+        return {
+          ...prev,
+          abutmentToothStages: (prev.abutmentToothStages || []).filter(
+            (stage) => !cancelled.has(String(stage.tooth || "").trim()),
+          ),
+          ...clearConfirmFields,
+        };
+      });
+      setRecentRequests((prev) =>
+        prev.map((row) => {
+          if (String(row.transferId || "").trim() !== transferId) return row;
+          return {
+            ...row,
+            abutmentToothStages: (row.abutmentToothStages || []).filter(
+              (stage) => !cancelled.has(String(stage.tooth || "").trim()),
+            ),
+            ...clearConfirmFields,
+          };
+        }),
+      );
+      toast({
+        title: "어벗 취소",
+        description:
+          String(body.message || "").trim() ||
+          "준비 단계 커스텀어벗 공정을 취소했습니다.",
+      });
+      void loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "어벗 취소 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "커스텀어벗 공정을 취소하는 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setAbutmentProcessCancelBusy(false);
+    }
+  }, [
+    abutmentProcessCancelBusy,
+    authToken,
+    loadRecentRequests,
+    selectedTransfer,
+    toast,
+  ]);
+
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
       fileId?: string;
@@ -12383,6 +12501,31 @@ export const PracticeFileTransferPage = ({
                       {selectedTransferDetailModel.abutmentStageLabel}
                     </span>
                   </p>
+                ) : null}
+                {(selectedTransfer?.abutmentToothStages || []).some(
+                  (row) => String(row.stage || "").trim() === "준비",
+                ) ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={abutmentProcessCancelBusy}
+                        className="h-7 shrink-0 gap-1 px-2.5 text-xs"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleCancelCustomAbutmentProcess();
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        {abutmentProcessCancelBusy ? "처리 중..." : "어벗 취소"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-xs">
+                      제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.
+                    </TooltipContent>
+                  </Tooltip>
                 ) : null}
               </div>
             ) : null
