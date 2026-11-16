@@ -3107,9 +3107,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           case "postTaperDeg":
             params = { postTaperDeg: p.postTaperDeg };
             break;
-          case "angulationDeg":
-            params = { axisTargetDeg: p.axisTargetDeg, axisMaxDeg: p.axisMaxDeg };
-            break;
           case "axisSource":
             params = { axisSourceCode: p.axisSourceCode, axisToOpposing: p.axisToOpposing };
             break;

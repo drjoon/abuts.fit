@@ -1,6 +1,6 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
-// 1) 피니시라인 = 둘레 치은 연하 0.5~1.0mm(얕은 끝~깊은 끝), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
+// 1) 피니시라인 = 둘레 치은 연하(얕은 끝~깊은 끝)의 완만한 스캘럽. 깊이를 옮겨도 2차 조화만 남긴다. 마진 단면 = 치종 템플릿.
 // 2) 삽입축 = 인접 자연치·인접 어벗 장축과 같은 각도(브리지는 더 정확히). 없으면 대합·악궁 방향.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
@@ -37,6 +37,7 @@ import {
 } from "@/shared/practice/customAbutmentScanbodyMatch";
 import {
   resolveCustomAbutmentParams,
+  snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
 } from "@/shared/practice/customAbutmentDesignParams";
 import { cuffProfile } from "@/shared/practice/cuffProfile";
@@ -295,6 +296,32 @@ function lowPassCircular(values: readonly number[], maxHarmonic = 3): number[] {
     }
     return sum;
   });
+}
+
+/**
+ * 커넥션(keepR 이하)은 그대로 두고, 그 바깥 반경만 최대 반경이 targetR이 되도록 줄인다.
+ * 정수 직후 최대 직경을 0.01mm 아래로 내릴 때 쓴다.
+ */
+function compressOuterRadius(
+  positions: Float32Array,
+  keepR: number,
+  maxR: number,
+  targetR: number,
+) {
+  if (!(maxR > keepR + 0.2) || !(targetR > keepR) || !(targetR < maxR - 1e-4)) return;
+  const span = maxR - keepR;
+  const nextSpan = targetR - keepR;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i]!;
+    const y = positions[i + 1]!;
+    const r = Math.hypot(x, y);
+    if (r <= keepR) continue;
+    const t = Math.min(1, (r - keepR) / span);
+    const nr = keepR + t * nextSpan;
+    const s = nr / r;
+    positions[i] = x * s;
+    positions[i + 1] = y * s;
+  }
 }
 
 /** 둘레 배열 3탭 평균(passes회). */
@@ -2673,7 +2700,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   }
   smoothMarginZ = lowPassCircular(smoothMarginZ, 2).map((z) => clamp(z, minMarginZ, maxMarginZ));
-  const meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+  let meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
   // 마진 위 0.6~1.8mm(치은정 쪽) 연조직 개구부 반경. 치종 형태를 깨뜨리는 한쪽 왜곡을 막기 위해 대칭(짝수 조화) 평균만 참고한다.
   const tissueBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
   // 치은정 부근(마진 위 0.3~1.1mm) 잇몸 안쪽 면. 스캔바디 기둥 표면(r <= sbR+0.55)을 잇몸 내벽으로 오인해
@@ -4110,6 +4137,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const hiZ = Math.min(maxMarginZ, Math.max(lo, hi));
       return clamp(mz, loZ, hiZ);
     });
+    // 치은 연하 구간을 옮기면 섹터별 클램프가 스캔 요철을 피니시라인에 붙인다.
+    // 깊이 평균과 스캘럽(1·2차)만 남겨 근·원심은 높고 협·설은 낮은 완만한 곡선으로 되돌린다.
+    smoothMarginZ = lowPassCircular(smoothMarginZ, 2);
+    meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
     marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
   }
   const finalMeanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
@@ -5432,7 +5463,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let taperSum = 0;
     let taperCols = 0;
     let crownTopSum = 0;
-    let rhoSum = 0;
     const rawEdgeH: number[] = [];
     const rawOcc1H: number[] = [];
     const rawOcc2H: number[] = [];
@@ -5450,7 +5480,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const post: Vec3[] = [];
       const colWallSlope = Math.max(0, (rs[0]! - rs[1]!) / Math.max(hs[1]! - hs[0]!, 1e-4));
       const ch = chamferPoints(c.r0, c.h0, Math.max(0.02, c.r0 - rs[0]!), hs[0]! - c.h0, colWallSlope);
-      rhoSum += ch.rho;
       for (const [r, h] of ch.pts) post.push(at(h, r));
       for (let k = 1; k <= POST_LEVELS; k += 1) post.push(at(hs[k]!, rs[k]!));
       // 윗면 라운드: 축벽 끝 기울기에서 접선으로 시작해 윗면에서 수평으로 끝난다.
@@ -5603,7 +5632,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       postApex,
       crownApex,
       meanCrownCuspH,
-      chamferRho: rhoSum / ANGULAR_COLS,
     };
   };
 
@@ -5639,7 +5667,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       shape = buildShape();
     }
   }
-  const { postByCol, crownByCol, cutbackSum, taperMean, postApex, crownApex, meanCrownCuspH, chamferRho } = shape;
+  const { postByCol, crownByCol, cutbackSum, taperMean, postApex, crownApex, meanCrownCuspH } = shape;
   // ── 8) 솔리드 외형(커넥션·커프·포스트)을 닫고, 스크류 홀은 임플란트 축 원통으로 따로 뚫는다
   const l2 = conn.l2Mm;
   const zBot = -l2;
@@ -5722,6 +5750,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (z > zMaxLocal) zMaxLocal = z;
     maxOuterR = Math.max(maxOuterR, Math.hypot(localPositions[i]!, localPositions[i + 1]!));
   }
+  const snappedDiameter = snapMaxDiameterMm(maxOuterR * 2);
+  const connectionKeepR = Math.max(hexCornerR, coneTopR) + 0.04;
+  if (
+    snappedDiameter < Math.round(maxOuterR * 2 * 100) / 100 - 1e-6 &&
+    maxOuterR > connectionKeepR + 0.25
+  ) {
+    const targetR = snappedDiameter / 2;
+    compressOuterRadius(localPositions, connectionKeepR, maxOuterR, targetR);
+    compressOuterRadius(bodySoup, connectionKeepR, maxOuterR, targetR);
+    compressOuterRadius(marginLoopLocal, connectionKeepR, maxOuterR, targetR);
+    compressOuterRadius(crownLocalPositions, connectionKeepR, maxOuterR, targetR);
+    maxOuterR = targetR;
+  }
 
   const cleanPatient = String(args.patientName || "")
     .trim()
@@ -5759,7 +5800,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       rmsMm: fixture.rmsMm,
       postTaperDeg: Math.round((taperMean / DEG) * 10) / 10,
       occlusalClearanceMm,
-      marginFilletRadiusMm: round2(chamferRho),
+      marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),
       marginSubgMaxMm: round2(subgMax),
       axisSource,

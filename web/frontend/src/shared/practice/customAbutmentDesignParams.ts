@@ -66,7 +66,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -3, max: 3, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
-  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.3, max: 1.0, step: 0.02 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.3, max: 1.0, step: 0.1 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.9, step: 0.05 },
   marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
   marginSubgMinMm: { label: "치은 연하 얕은 끝", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
@@ -148,6 +148,27 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
   };
 }
 
+/**
+ * 최대 직경이 정수 mm에서 0.1mm 이내면 그 정수보다 0.01mm 작은 값으로 내린다.
+ * 8.00~8.10 → 7.99. 가공이 정수 치수 안에 들어가게 한다.
+ */
+export function snapMaxDiameterMm(diameterMm: number): number {
+  if (!Number.isFinite(diameterMm)) return diameterMm;
+  const cents = Math.round(diameterMm * 100);
+  const base = Math.floor(cents / 100);
+  if (base < 1) return cents / 100;
+  const overCents = cents - base * 100;
+  if (overCents <= 10) return (base * 100 - 1) / 100;
+  return cents / 100;
+}
+
+function clampDesignParam(key: CustomAbutmentParamKey, raw: number): number {
+  const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
+  let next = Math.min(spec.max, Math.max(spec.min, raw));
+  if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
+  return next;
+}
+
 /** 기본값 위에 바꾼 값만 얹고 범위 안으로 자른다. */
 export function resolveCustomAbutmentParams(
   toothNumber: string,
@@ -158,8 +179,7 @@ export function resolveCustomAbutmentParams(
   for (const key of CUSTOM_ABUTMENT_PARAM_KEYS) {
     const raw = Number(overrides[key]);
     if (!Number.isFinite(raw)) continue;
-    const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
-    out[key] = Math.min(spec.max, Math.max(spec.min, raw));
+    out[key] = clampDesignParam(key, raw);
   }
   return out;
 }
@@ -173,8 +193,7 @@ export function parseCustomAbutmentParamOverrides(
   for (const key of keys) {
     const raw = Number((value as Record<string, unknown>)[key]);
     if (!Number.isFinite(raw)) continue;
-    const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
-    out[key] = Math.min(spec.max, Math.max(spec.min, raw));
+    out[key] = clampDesignParam(key, raw);
   }
   return out;
 }

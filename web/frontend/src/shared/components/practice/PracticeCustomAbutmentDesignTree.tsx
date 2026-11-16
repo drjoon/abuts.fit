@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
+  snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
   type CustomAbutmentParamKey,
 } from "@/shared/practice/customAbutmentDesignParams";
@@ -48,7 +49,6 @@ export type AbutmentInfoFieldKey =
   | "postHeightMm"
   | "postTaperDeg"
   | "occlusalClearanceMm"
-  | "angulationDeg"
   | "axisSource";
 
 export type AbutmentInfoEditValue = number | AbutmentAxisSource | { min: number; max: number };
@@ -60,7 +60,6 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   postHeightMm: "포스트 높이",
   postTaperDeg: "테이퍼",
   occlusalClearanceMm: "대합 거리",
-  angulationDeg: "삽입축 각도",
   axisSource: "삽입축 기준",
 };
 
@@ -101,15 +100,13 @@ export function formatAbutmentInfoFieldValue(
     case "maxDiameterMm":
       return `Ø${cleanNum(m.maxDiameterMm, 2)}mm`;
     case "marginFilletRadiusMm":
-      return `${cleanNum(m.marginFilletRadiusMm, 2)}mm`;
+      return `${cleanNum(m.marginFilletRadiusMm, 1)}mm`;
     case "postHeightMm":
       return `${cleanNum(m.postHeightMm, 2)}mm`;
     case "postTaperDeg":
       return `${cleanNum(m.postTaperDeg, 1)}°`;
     case "occlusalClearanceMm":
       return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
-    case "angulationDeg":
-      return `${cleanNum(m.angulationDeg, 1)}°`;
     case "axisSource":
       return AXIS_SOURCE_LABEL[m.axisSource] ?? "-";
     default:
@@ -148,8 +145,9 @@ export function computeParamsFromInfoFieldEdit(
 
   switch (field) {
     case "maxDiameterMm": {
+      const snapped = snapMaxDiameterMm(num);
       const base = Math.max(m.maxDiameterMm, 1);
-      const ratio = num / base;
+      const ratio = snapped / base;
       return {
         marginSizeScale: Number(clampParam("marginSizeScale", p.marginSizeScale * ratio).toFixed(3)),
       };
@@ -168,14 +166,6 @@ export function computeParamsFromInfoFieldEdit(
         postTaperDeg: Number(clampParam("postTaperDeg", p.postTaperDeg + delta).toFixed(2)),
       };
     }
-    case "angulationDeg": {
-      return {
-        axisTargetDeg: Number(clampParam("axisTargetDeg", Math.max(0, num)).toFixed(2)),
-        axisMaxDeg: Number(
-          clampParam("axisMaxDeg", Math.max(p.axisMaxDeg, Math.max(0, num))).toFixed(2),
-        ),
-      };
-    }
     case "occlusalClearanceMm": {
       if (m.occlusalClearanceMm == null) return {};
       const delta = num - m.occlusalClearanceMm;
@@ -185,14 +175,12 @@ export function computeParamsFromInfoFieldEdit(
         ),
       };
     }
-    case "marginFilletRadiusMm": {
-      const delta = num - m.marginFilletRadiusMm;
+    case "marginFilletRadiusMm":
       return {
         marginFilletRadiusMm: Number(
-          clampParam("marginFilletRadiusMm", p.marginFilletRadiusMm + delta).toFixed(2),
+          clampParam("marginFilletRadiusMm", Math.round(num * 10) / 10).toFixed(1),
         ),
       };
-    }
     default:
       return {};
   }
@@ -1154,8 +1142,8 @@ export function PracticeCustomAbutmentDesignTree({
                         value={m.marginFilletRadiusMm}
                         min={0.3}
                         max={1}
-                        step={0.02}
-                        digits={2}
+                        step={0.1}
+                        digits={1}
                         suffix="mm"
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "marginFilletRadiusMm", v)}
@@ -1217,21 +1205,6 @@ export function PracticeCustomAbutmentDesignTree({
                     )}
                   </InfoGroup>
                   <InfoGroup title="삽입축">
-                    {editable ? (
-                      <EditableNumberRow
-                        label="각도"
-                        value={m.angulationDeg}
-                        min={0}
-                        max={32}
-                        step={0.2}
-                        digits={1}
-                        suffix="°"
-                        disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "angulationDeg", v)}
-                      />
-                    ) : (
-                      <DetailRow label="각도" value={`${m.angulationDeg}°`} />
-                    )}
                     {editable ? (
                       <EditableAxisSourceRow
                         label="기준"

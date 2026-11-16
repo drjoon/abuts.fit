@@ -70,7 +70,7 @@ const PARAM_SPECS = {
     max: 3,
   },
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.7, max: 1.3 },
-  marginFilletRadiusMm: { label: "마진 챔퍼 R(기본 0.6)", unit: "mm", min: 0.3, max: 1.0 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R(0.1mm 단위, 기본 0.6)", unit: "mm", min: 0.3, max: 1.0 },
   marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 구치 기본 0.5·전치 기본 0.4)", unit: "mm", min: 0.2, max: 0.9 },
   marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준, 치은 연하 얕은 끝)", unit: "mm", min: -1.5, max: 2.5 },
   marginSubgMinMm: { label: "치은 연하 마진 얕은 끝(기본 0.5)", unit: "mm", min: -1.5, max: 2.5 },
@@ -103,7 +103,9 @@ const toFiniteOrNull = (v) => {
 
 const clampParam = (key, v) => {
   const spec = PARAM_SPECS[key];
-  return Math.min(spec.max, Math.max(spec.min, v));
+  const clamped = Math.min(spec.max, Math.max(spec.min, v));
+  if (key === "marginFilletRadiusMm") return Math.round(clamped * 10) / 10;
+  return clamped;
 };
 
 function sanitizeParamMap(raw, keys) {
