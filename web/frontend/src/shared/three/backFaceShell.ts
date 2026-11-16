@@ -101,3 +101,149 @@ export function withDoubleSidePick<T>(meshes: readonly THREE.Mesh[], run: () => 
     for (const row of shells) row.mesh.raycast = row.raycast;
   }
 }
+
+const normalBitsBuf = new ArrayBuffer(4);
+const normalBitsF = new Float32Array(normalBitsBuf);
+const normalBitsU = new Uint32Array(normalBitsBuf);
+
+function floatBitsKey(v: number): number {
+  // -0과 +0이 같은 해시를 갖도록 정규화한다.
+  normalBitsF[0] = v === 0 ? 0 : v;
+  return normalBitsU[0] ?? 0;
+}
+
+/**
+ * 비색인 삼각형 수프(STL/불리언 결과)에서 같은 정점을 공유하는 면들 중
+ * 사잇각이 creaseRad 이하인 면들의 면적 가중 법선만 평균해 매끄러운 정점 법선을 계산한다.
+ * 포스트 축벽·챔퍼·윗면 라운드·커프의 세로 각진 줄무늬(Mach band)는 없애고,
+ * 피니시라인·스크류 홀 테두리·헥스 모서리의 날카로운 각은 그대로 살린다.
+ */
+export function computeCreasedVertexNormals(
+  geometry: THREE.BufferGeometry,
+  creaseRad = (32 * Math.PI) / 180,
+): void {
+  if (geometry.index) geometry.setIndex(null);
+  const posAttr = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!posAttr || posAttr.count < 3) return;
+  const pos = posAttr.array as Float32Array;
+  const triCount = Math.floor(posAttr.count / 3);
+  const cornerCount = triCount * 3;
+
+  let normAttr = geometry.getAttribute("normal") as THREE.BufferAttribute | undefined;
+  if (!normAttr || normAttr.array.length !== pos.length) {
+    normAttr = new THREE.BufferAttribute(new Float32Array(pos.length), 3);
+    geometry.setAttribute("normal", normAttr);
+  }
+  const out = normAttr.array as Float32Array;
+
+  const faceWx = new Float32Array(triCount);
+  const faceWy = new Float32Array(triCount);
+  const faceWz = new Float32Array(triCount);
+  const faceUx = new Float32Array(triCount);
+  const faceUy = new Float32Array(triCount);
+  const faceUz = new Float32Array(triCount);
+
+  for (let t = 0; t < triCount; t += 1) {
+    const o = t * 9;
+    const ax = pos[o]!;
+    const ay = pos[o + 1]!;
+    const az = pos[o + 2]!;
+    const e1x = pos[o + 3]! - ax;
+    const e1y = pos[o + 4]! - ay;
+    const e1z = pos[o + 5]! - az;
+    const e2x = pos[o + 6]! - ax;
+    const e2y = pos[o + 7]! - ay;
+    const e2z = pos[o + 8]! - az;
+    const wx = e1y * e2z - e1z * e2y;
+    const wy = e1z * e2x - e1x * e2z;
+    const wz = e1x * e2y - e1y * e2x;
+    faceWx[t] = wx;
+    faceWy[t] = wy;
+    faceWz[t] = wz;
+    const len = Math.hypot(wx, wy, wz);
+    if (len > 1e-12) {
+      faceUx[t] = wx / len;
+      faceUy[t] = wy / len;
+      faceUz[t] = wz / len;
+    } else {
+      faceUx[t] = 0;
+      faceUy[t] = 0;
+      faceUz[t] = 1;
+    }
+  }
+
+  const buckets = new Map<number, number[]>();
+  const uniqueFirstCorner: number[] = [];
+  const cornerVertId = new Int32Array(cornerCount);
+  const nextCorner = new Int32Array(cornerCount).fill(-1);
+  const headCorner: number[] = [];
+
+  for (let c = 0; c < cornerCount; c += 1) {
+    const o = c * 3;
+    const x = pos[o]!;
+    const y = pos[o + 1]!;
+    const z = pos[o + 2]!;
+    const h =
+      Math.imul(floatBitsKey(x), 0x9e3779b1) ^
+      Math.imul(floatBitsKey(y), 0x85ebca6b) ^
+      Math.imul(floatBitsKey(z), 0xc2b2ae35);
+    let bucket = buckets.get(h);
+    let vid = -1;
+    if (bucket) {
+      for (let k = 0; k < bucket.length; k += 1) {
+        const cand = bucket[k]!;
+        const fo = uniqueFirstCorner[cand]! * 3;
+        if (pos[fo] === x && pos[fo + 1] === y && pos[fo + 2] === z) {
+          vid = cand;
+          break;
+        }
+      }
+    } else {
+      bucket = [];
+      buckets.set(h, bucket);
+    }
+    if (vid < 0) {
+      vid = uniqueFirstCorner.length;
+      uniqueFirstCorner.push(c);
+      headCorner.push(-1);
+      bucket.push(vid);
+    }
+    cornerVertId[c] = vid;
+    nextCorner[c] = headCorner[vid]!;
+    headCorner[vid] = c;
+  }
+
+  const cosCrease = Math.cos(creaseRad);
+  for (let c = 0; c < cornerCount; c += 1) {
+    const t = Math.floor(c / 3);
+    const ux = faceUx[t]!;
+    const uy = faceUy[t]!;
+    const uz = faceUz[t]!;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    let cur = headCorner[cornerVertId[c]!]!;
+    while (cur >= 0) {
+      const t2 = Math.floor(cur / 3);
+      if (ux * faceUx[t2]! + uy * faceUy[t2]! + uz * faceUz[t2]! >= cosCrease) {
+        nx += faceWx[t2]!;
+        ny += faceWy[t2]!;
+        nz += faceWz[t2]!;
+      }
+      cur = nextCorner[cur]!;
+    }
+    const len = Math.hypot(nx, ny, nz);
+    const o = c * 3;
+    if (len > 1e-12) {
+      out[o] = nx / len;
+      out[o + 1] = ny / len;
+      out[o + 2] = nz / len;
+    } else {
+      out[o] = ux;
+      out[o + 1] = uy;
+      out[o + 2] = uz;
+    }
+  }
+  for (let i = cornerCount * 3; i < out.length; i += 1) out[i] = 0;
+  normAttr.needsUpdate = true;
+}

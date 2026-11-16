@@ -222,7 +222,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   }
   const proposal = new Float32Array([
     2, 0, 1,
-    2.4, 0, 2,
+    cuffProfile(2, 1, 3, 3)(2), 0, 2,
     3, 0, 3,
     2.5, 0, 5,
     0.2, 0, 2,
@@ -255,6 +255,48 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   assert.ok(Math.abs(measured.cuffHeightMinMm - 2) < 1e-6 && Math.abs(measured.cuffHeightMaxMm - 2) < 1e-6, "커프 높이");
   assert.ok(Math.abs(measured.postHeightMm - 4) < 1e-6, "포스트 높이");
   assert.equal(measured.crownOverPostMm, null);
+}
+
+// 비색인 삼각형 수프에서 매끄러운 축벽은 정점 법선이 일치하고, 90° 날카로운 모서리(스크류 홀 테두리 등)는 법선이 분리되는지 검증
+{
+  // 완만하게 꺾인 두 사각 패치(사잇각 ~10°) + 90° 윗면 캡
+  const rad10 = (10 * Math.PI) / 180;
+  const x2 = 1 + Math.cos(rad10);
+  const y2 = Math.sin(rad10);
+  const geo = new THREE.BufferGeometry();
+  writeAttribute(
+    geo,
+    new Float32Array([
+      // 왼쪽 축벽 삼각형 (x=0..1, y=0, z=0..2) -> 법선 (0, -1, 0)
+      0, 0, 0, 1, 0, 0, 1, 0, 2,
+      // 오른쪽 축벽 삼각형 (x=1..x2, y=0..y2, z=0..2), 정점 (1,0,0)·(1,0,2) 공유
+      1, 0, 0, x2, y2, 0, 1, 0, 2,
+      // 90° 꺾인 윗면 캡 삼각형 (z=2), 정점 (1,0,2) 공유 -> 법선 (0, 0, 1)
+      0, 0, 2, 1, 0, 2, 0, 1, 2,
+    ]),
+  );
+  const n = geo.getAttribute("normal")!.array as Float32Array;
+  // 축벽 공유 정점 (1,0,2): tri0 corner2 (idx 6..8) vs tri1 corner2 (idx 15..17) -> 완전히 일치해야 함
+  const dotSmooth = n[6]! * n[15]! + n[7]! * n[16]! + n[8]! * n[17]!;
+  assert.ok(dotSmooth > 0.9999, "축벽 공유 정점은 매끄럽게 병합된 법선을 갖는다");
+  // 90° 캡 정점 (1,0,2): tri2 corner1 (idx 21..23) -> 윗면 법선 (0,0,1)을 유지해 모서리가 뭉개지지 않음
+  assert.ok(n[23]! > 0.99, "날카로운 윗면 모서리는 축벽 법선과 섞이지 않는다");
+}
+
+// 높이 이동 + 수직 스케일 동시 편집 시에도 포스트 상단이 평탄하게 잘리지 않고 선형 비례를 유지하는지 검증
+{
+  const src = new Float32Array([
+    2.2, 0, 3.0,
+    2.1, 0, 5.0,
+    2.0, 0, 7.0,
+    1.9, 0, 9.0,
+  ]);
+  const out = new Float32Array(src.length);
+  refitLocalPositions(src, edit({ heightMm: 1.8, scale: [1, 1, 1.35] }), { ...zone, screwR: 0 }, out);
+  const dz1 = out[5]! - out[2]!;
+  const dz2 = out[8]! - out[5]!;
+  const dz3 = out[11]! - out[8]!;
+  assert.ok(dz3 > 0.5 && Math.abs(dz1 - dz2) < 1e-4 && Math.abs(dz2 - dz3) < 1e-4, "상단 링 간격이 0으로 찌그러지지 않고 등간격을 유지한다");
 }
 
 console.log("abutment direct edit ok");

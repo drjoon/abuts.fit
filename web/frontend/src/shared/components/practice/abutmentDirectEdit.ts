@@ -20,7 +20,7 @@ import {
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
 import { subtractTriangleSoups } from "../../practice/meshUnion";
-import { withDoubleSidePick } from "../../three/backFaceShell";
+import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
 
 const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
 const SCALE_MIN = 0.65;
@@ -343,10 +343,15 @@ function computeZLift(
   const remHeightShift = edit.heightMm - cuffHeightShift;
   const postSpan = Math.max(propTop - marginZ, 0.8);
   const postProgress = z > marginZ ? clamp((z - marginZ) / postSpan, 0, 1) : 0;
+  const totalShiftAtTop = cuffHeightShift + remHeightShift;
+  const scaleTopDelta = clamp(
+    postSpan * (edit.scale[2] - 1),
+    -HEIGHT_MM - totalShiftAtTop,
+    HEIGHT_MM - totalShiftAtTop,
+  );
   const rawLift =
     cuffHeightShift * t +
-    remHeightShift * postProgress +
-    Math.max(0, z - marginZ) * (edit.scale[2] - 1);
+    (remHeightShift + scaleTopDelta) * postProgress;
   return clamp(rawLift, -HEIGHT_MM, HEIGHT_MM);
 }
 
@@ -518,15 +523,22 @@ function measureConeTopR(src: Float32Array, coneZ: number) {
   return n > 0 ? sum / n : best;
 }
 
-function marginColumn(angle: number, count: number) {
+function marginColumnBlend(angle: number, count: number): { c0: number; c1: number; frac: number } {
   const tau = Math.PI * 2;
   const wrapped = ((angle % tau) + tau) % tau;
-  return Math.round((wrapped / tau) * count) % count;
+  const f = (wrapped / tau) * count;
+  const i0 = Math.floor(f);
+  const frac = f - i0;
+  const c0 = ((i0 % count) + count) % count;
+  const c1 = (c0 + 1) % count;
+  return { c0, c1, frac };
 }
 
 /**
  * 콘 위 커프 정점을 지금 마진 열에 맞춰 다시 놓는다.
  * 2°로 시작해 오목하게 벌어지고, 끝점은 그 방향의 마진 점과 만난다. 마진 위 포스트는 그대로 둔다.
+ * 경사진 포스트(삽입축 > 0°)는 마진이 낮은 방향을 넘어 인접 열로 기울면서 로컬 z가 그 열의 마진 높이보다 낮아질 수 있으므로,
+ * 마진 곡면 위쪽(삽입축 방향)이 아닌 실제 커프 정점(오목 현 안쪽)만 재생성한다.
  */
 export function regenerateCuffToMargin(
   proposal: Float32Array,
@@ -541,32 +553,49 @@ export function regenerateCuffToMargin(
   const coneTopR = zone.coneTopR && zone.coneTopR > 0.2 ? zone.coneTopR : measureConeTopR(proposal, coneZ);
   const screwR = zone.screwR;
   const origZ = new Float32Array(count);
+  const origR = new Float32Array(count);
   const endZ = new Float32Array(count);
   const endAng = new Float32Array(count);
   const profiles: Array<(z: number) => number> = [];
   for (let col = 0; col < count; col += 1) {
     const i = col * 3;
     origZ[col] = proposalMargin[i + 2]!;
+    origR[col] = Math.hypot(proposalMargin[i]!, proposalMargin[i + 1]!);
     const x = fittedMargin[i]!;
     const y = fittedMargin[i + 1]!;
     endZ[col] = fittedMargin[i + 2]!;
     endAng[col] = Math.atan2(y, x);
     profiles.push(cuffProfile(coneTopR, coneZ, Math.hypot(x, y), endZ[col]!));
   }
+  const origProfiles = Array.from({ length: count }, (_, col) =>
+    cuffProfile(coneTopR, coneZ, origR[col]!, origZ[col]!),
+  );
   for (let i = 0; i < proposal.length; i += 3) {
     const ox = proposal[i]!;
     const oy = proposal[i + 1]!;
     const oz = proposal[i + 2]!;
     if (oz <= coneZ + 1e-3) continue;
-    if (screwR > 0.15 && Math.hypot(ox, oy) <= screwR + 0.22) continue;
-    const col = marginColumn(Math.atan2(oy, ox), count);
-    const marginZ = origZ[col]!;
+    const orad = Math.hypot(ox, oy);
+    if (screwR > 0.15 && orad <= screwR + 0.22) continue;
+    const theta0 = Math.atan2(oy, ox);
+    const { c0, c1, frac } = marginColumnBlend(theta0, count);
+    const marginZ = origZ[c0]! * (1 - frac) + origZ[c1]! * frac;
     if (!(marginZ > coneZ + 0.05) || oz >= marginZ - 1e-3) continue;
     const u = clamp((oz - coneZ) / (marginZ - coneZ), 0, 1);
-    const z2 = coneZ + u * (endZ[col]! - coneZ);
-    const r = profiles[col]!(z2);
-    const theta0 = Math.atan2(oy, ox);
-    const theta = theta0 + angleDelta(endAng[col]!, theta0) * smootherstep(u);
+    const origCuffR =
+      origProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
+      origProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
+    const origChordR =
+      coneTopR +
+      ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
+        Math.max(0.05, marginZ - coneZ);
+    if (orad > origChordR + 0.02 || Math.abs(orad - origCuffR) > 0.03) continue;
+    const zEnd0 = coneZ + u * (endZ[c0]! - coneZ);
+    const zEnd1 = coneZ + u * (endZ[c1]! - coneZ);
+    const z2 = zEnd0 * (1 - frac) + zEnd1 * frac;
+    const r = profiles[c0]!(zEnd0) * (1 - frac) + profiles[c1]!(zEnd1) * frac;
+    const targetAng = endAng[c0]! + angleDelta(endAng[c1]!, endAng[c0]!) * frac;
+    const theta = theta0 + angleDelta(targetAng, theta0) * smootherstep(u);
     fitted[i] = r * Math.cos(theta);
     fitted[i + 1] = r * Math.sin(theta);
     fitted[i + 2] = z2;
@@ -869,7 +898,7 @@ export function writeAttribute(geometry: THREE.BufferGeometry, positions: Float3
     (attr.array as Float32Array).set(positions);
     attr.needsUpdate = true;
   }
-  geometry.computeVertexNormals();
+  computeCreasedVertexNormals(geometry);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 }
@@ -1234,6 +1263,16 @@ export class AbutmentDirectEditSession {
     this.brush.geometry.dispose();
     (this.brush.material as THREE.Material).dispose();
     this.brush.removeFromParent();
+  }
+
+  /** 초기 제안과 다른 검볼. 생성 로직 패턴으로 넘긴다. */
+  listEdits(): { tooth: string; edit: AbutmentEdit }[] {
+    const out: { tooth: string; edit: AbutmentEdit }[] = [];
+    for (const [tooth, edit] of this.edits) {
+      if (editsEqual(edit, EMPTY_EDIT)) continue;
+      out.push({ tooth, edit: cloneAbutmentEdit(edit) });
+    }
+    return out;
   }
 
   canUndo() {
