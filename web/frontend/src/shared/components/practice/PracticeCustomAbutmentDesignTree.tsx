@@ -222,12 +222,19 @@ function ScanbodyButton({
   );
 }
 
+/** 「지오메디 Ø4.5×9mm (상부캡) · rms」에서 직경×길이까지만 남긴다. */
+function formatScanbodyPanelValue(label: string): string {
+  const withoutCap = label.replace(/\s*\(상부캡\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  const sized = withoutCap.match(/^(.*?Ø\s*[\d.]+\s*[×xX]\s*[\d.]+\s*mm)/);
+  return (sized?.[1] ?? withoutCap).trim();
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <span
-        className="min-w-0 truncate text-right tabular-nums text-foreground"
+        className="min-w-0 truncate tabular-nums text-foreground"
         title={value}
       >
         {value}
@@ -375,7 +382,7 @@ function EditableNumberRow({
   };
 
   return (
-    <div className="flex items-center justify-between gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -391,7 +398,7 @@ function EditableNumberRow({
       </span>
       <div
         className={cn(
-          "flex h-7 min-w-[7.25rem] items-center rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "flex h-7 w-[6.75rem] shrink-0 items-center rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           scrubValue != null && "border-primary bg-primary/5",
           disabled && "opacity-60",
         )}
@@ -510,7 +517,7 @@ function EditableAxisSourceRow({
   };
 
   return (
-    <div className="flex items-center justify-between gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -570,7 +577,7 @@ function EditableAxisSourceRow({
       </span>
       <div
         className={cn(
-          "flex h-7 min-w-[7.25rem] items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "flex h-7 w-[8.5rem] shrink-0 items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           disabled && "opacity-60",
         )}
       >
@@ -806,7 +813,7 @@ function EditableRangeRow({
     );
 
   return (
-    <div className="flex items-center justify-between gap-2 py-0.5 text-[0.8125rem] leading-snug">
+    <div className="flex items-center gap-2 py-0.5 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
@@ -822,7 +829,7 @@ function EditableRangeRow({
       </span>
       <div
         className={cn(
-          "flex h-7 min-w-[7.75rem] items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "flex h-7 w-[7.5rem] shrink-0 items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           scrub && "border-primary bg-primary/5",
           disabled && "opacity-60",
         )}
@@ -971,7 +978,7 @@ export function PracticeCustomAbutmentDesignTree({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex min-h-0 w-[19.5rem] shrink flex-col overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
+        "pointer-events-auto flex min-h-0 w-[16.75rem] shrink flex-col overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
     >
@@ -1140,7 +1147,7 @@ export function PracticeCustomAbutmentDesignTree({
                       <EditableNumberRow
                         label="마진 챔퍼 R"
                         value={m.marginFilletRadiusMm}
-                        min={0.3}
+                        min={0.5}
                         max={1}
                         step={0.1}
                         digits={1}
@@ -1223,7 +1230,7 @@ export function PracticeCustomAbutmentDesignTree({
                     />
                     <DetailRow
                       label="스캔바디"
-                      value={`${item.fixture.matchedLibraryLabel} · ${m.rmsMm}mm`}
+                      value={formatScanbodyPanelValue(item.fixture.matchedLibraryLabel)}
                     />
                   </div>
                 </div>

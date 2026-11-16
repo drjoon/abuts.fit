@@ -7,7 +7,8 @@
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
-// 6) 포스트 축벽은 솔리드로 두고, 스크류 홀은 그 다음 임플란트 축 원통으로만 뚫는다.
+// 6) 포스트 축벽은 솔리드로 두고, 화면용 메시만 임플란트 축 원통으로 스크류 홀을 뚫는다.
+//    저장·다운로드 STL은 홀을 메운 솔리드다. 가공에서 그 홀을 다시 메운다.
 //    원통이 옆면으로 나오지 않게 축벽이 채널을 윗면까지 감싼 뒤 뺀다(manifold).
 // 로컬 좌표계(제조사 STL SSOT): 플랫폼 원점(0,0,0), +Z 임플란트 장축, +X 헥스 평면 법선.
 // related files:
@@ -343,6 +344,76 @@ function evalPeriodicLinear(samples: readonly number[], theta: number): number {
   const i1 = (i0 + 1) % n;
   const t = f - Math.floor(f);
   return samples[i0]! * (1 - t) + samples[i1]! * t;
+}
+
+/** 닫힌 샘플을 Catmull-Rom으로 잇는다. 피니시라인 높이의 직선 꺾임을 없앤다. */
+function evalPeriodicSmooth(samples: readonly number[], theta: number): number {
+  const n = samples.length;
+  if (n === 0) return 0;
+  if (n === 1) return samples[0]!;
+  let u = theta / (Math.PI * 2);
+  u -= Math.floor(u);
+  const f = u * n;
+  const i1 = Math.floor(f) % n;
+  const t = f - Math.floor(f);
+  const i0 = (i1 - 1 + n) % n;
+  const i2 = (i1 + 1) % n;
+  const i3 = (i1 + 2) % n;
+  const p0 = samples[i0]!;
+  const p1 = samples[i1]!;
+  const p2 = samples[i2]!;
+  const p3 = samples[i3]!;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const v =
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+  return clamp(v, Math.min(p0, p1, p2, p3), Math.max(p0, p1, p2, p3));
+}
+
+/** 피니시라인 반경의 열별 잔떨림만 걷어 내고, 해부 단면은 유지한다. */
+function softenMarginRadii(radii: readonly number[]): number[] {
+  const smooth = lowPassCircular(radii, 5);
+  return smooth.map((v, i) => clamp(v, radii[i]! - 0.22, radii[i]! + 0.04));
+}
+
+/** 윗면 중심 근처에 꼭짓점이 있으면 스크류 채널이 막혀 있다. */
+export function abutmentTopLooksClosed(positions: Float32Array): boolean {
+  if (positions.length < 9) return false;
+  let zMax = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zMax = Math.max(zMax, positions[i]!);
+  let near = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (positions[i + 2]! < zMax - 1.1) continue;
+    if (Math.hypot(positions[i]!, positions[i + 1]!) < 0.4) near += 1;
+  }
+  return near >= 3;
+}
+
+/**
+ * 디자인 화면용으로 막힌 솔리드에 스크류 채널을 연다.
+ * 이미 열려 있으면 같은 배열을 돌려준다. 저장 STL은 이 결과를 쓰지 않는다.
+ */
+export async function openScrewChannelForView(
+  positions: Float32Array,
+  fixture: MatchedScanbodyFixture,
+): Promise<Float32Array> {
+  if (!abutmentTopLooksClosed(positions)) return positions;
+  const conn = fixture.connectionSpec;
+  const boreTopR = (conn?.screwUpperDiameterMm ?? 2.45) / 2;
+  const boreBotR = (conn?.screwLowerDiameterMm ?? boreTopR * 0.85) / 2;
+  const l2 = conn?.l2Mm ?? 2.75;
+  let zTop = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zTop = Math.max(zTop, positions[i]!);
+  const cutter = screwChannelSoup(boreBotR, boreTopR, -l2 - 1, 0.8, 1.3, zTop + 3);
+  try {
+    return await subtractTriangleSoups(positions, [cutter], `#${fixture.toothNumber} 커스텀어벗`);
+  } catch {
+    return positions;
+  }
 }
 
 /** 6각 헥스 단면 반경(모서리 라운드 포함). +X가 평면 법선(0°, 60°, ...). */
@@ -1657,8 +1728,12 @@ export function buildDesignedCustomAbutment(input: {
   metrics: CustomAbutmentDesignMetrics;
 }): DesignedCustomAbutment {
   const { fixture } = input;
+  const stlPositions =
+    input.solidBodyLocalPositions && input.solidBodyLocalPositions.length >= 9
+      ? input.solidBodyLocalPositions
+      : input.localPositions;
   const stlBlob = encodeBinaryStl(
-    input.localPositions,
+    stlPositions,
     `abuts.fit custom abutment #${fixture.toothNumber}`,
   );
   const toWorld = fixturePoseToMatrix4(fixture.fixturePose);
@@ -3554,7 +3629,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (r < sbR + 0.85 || r > 7.5) continue;
     const phi = Math.atan2(v, u);
     const thetaFix = Math.atan2(p[1], p[0]);
-    const localMarginZ = evalPeriodicLinear(smoothMarginZ, thetaFix);
+    const localMarginZ = evalPeriodicSmooth(smoothMarginZ, thetaFix);
     const hAboveMargin = p[2] - localMarginZ;
     if (hAboveMargin < 0.8 || hAboveMargin > 10.5) continue;
     const vSigned = v * crownSideSign;
@@ -3680,7 +3755,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const colProjScale: number[] = [];
   for (let col = 0; col < ANGULAR_COLS; col += 1) {
     const theta = (col / ANGULAR_COLS) * Math.PI * 2;
-    const localMarginZ = evalPeriodicLinear(smoothMarginZ, theta);
+    const localMarginZ = evalPeriodicSmooth(smoothMarginZ, theta);
     const radialFix: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
     const proj = sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)));
     const projLen = Math.max(0.25, Math.hypot(...proj));
@@ -3851,7 +3926,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const ct = Math.cos(theta);
       const st = Math.sin(theta);
       const radialFix: Vec3 = [ct, st, 0];
-      const dz0 = evalPeriodicLinear(zLoop, theta) - zRef;
+      const dz0 = evalPeriodicSmooth(zLoop, theta) - zRef;
       // 마진 점 [rFix*ct, rFix*st, zMargin]을 삽입축 평면(uLabial, vSide)에 실제로 정사영했을 때
       // (u(rFix), v(rFix))가 해석 해부 단면 위에 정확히 놓이는 rFix를 직접 푼다.
       // 경사진 전치 삽입축(15~28°)에서 dz0 * uLabial[2] 수직 이동항을 빼먹으면 설측 마진이 불룩 튀어나오므로 정사영 방정식을 그대로 푼다.
@@ -4160,10 +4235,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const initMarginRadii = [...marginRadii];
 
   const syncColsMarginGeometry = () => {
+    const softR = softenMarginRadii(marginRadii);
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const theta = (col / ANGULAR_COLS) * Math.PI * 2;
-      const rMargin = marginRadii[col]!;
-      const zMargin = evalPeriodicLinear(smoothMarginZ, theta);
+      const rMargin = softR[col]!;
+      const zMargin = evalPeriodicSmooth(smoothMarginZ, theta);
       const marginPt: Vec3 = [rMargin * Math.cos(theta), rMargin * Math.sin(theta), zMargin];
       const relM = sub3(marginPt, c0);
       const h0 = dot3(relM, frame.w);
@@ -4200,12 +4276,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     crownCenterV *= 0.82;
   }
 
+  const softMarginRadii = softenMarginRadii(marginRadii);
   for (let col = 0; col < ANGULAR_COLS; col += 1) {
     const theta = (col / ANGULAR_COLS) * Math.PI * 2;
     const ct = Math.cos(theta);
     const st = Math.sin(theta);
-    const rMargin = marginRadii[col]!;
-    const zMargin = evalPeriodicLinear(smoothMarginZ, theta);
+    const rMargin = softMarginRadii[col]!;
+    const zMargin = evalPeriodicSmooth(smoothMarginZ, theta);
     const marginPt: Vec3 = [rMargin * ct, rMargin * st, zMargin];
 
     const relM = sub3(marginPt, c0);
@@ -4934,7 +5011,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const ct = Math.cos(theta);
         const st = Math.sin(theta);
         const radialFix: Vec3 = [ct, st, 0];
-        const zM = evalPeriodicLinear(smoothMarginZ, theta);
+        const zM = evalPeriodicSmooth(smoothMarginZ, theta);
         const dz0 = zM - meanMarginZ;
         const u0Off = dz0 * frame.uLabial[2];
         const v0Off = dz0 * frame.vSide[2];

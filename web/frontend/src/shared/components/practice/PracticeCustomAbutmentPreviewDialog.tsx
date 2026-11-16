@@ -128,8 +128,10 @@ import {
   type MatchedScanbodyFixture,
 } from "@/shared/practice/customAbutmentScanbodyMatch";
 import {
+  abutmentTopLooksClosed,
   buildDesignedCustomAbutment,
   designCustomAbutmentStl,
+  openScrewChannelForView,
   type CustomAbutmentDesignMetrics,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
@@ -2383,6 +2385,23 @@ export function PracticeCustomAbutmentPreviewDialog({
             const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
             overrides[row.toothNumber] = rowOverrides;
             if (!readOnly && !row.solidBodyLocalPositions?.byteLength) {
+              const storedEarly = new Float32Array(row.localPositions);
+              if (abutmentTopLooksClosed(storedEarly)) {
+                const view = await openScrewChannelForView(storedEarly, row.fixture);
+                builtAbutments.push(
+                  buildDesignedCustomAbutment({
+                    fixture: row.fixture,
+                    fileName: row.fileName,
+                    localPositions: view,
+                    solidBodyLocalPositions: storedEarly,
+                    crownLocalPositions: new Float32Array(row.crownLocalPositions),
+                    marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                    params: row.params,
+                    metrics: row.metrics,
+                  }),
+                );
+                continue;
+              }
               const jaw = row.fixture.jaw;
               const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
               if (jawGeo) {
@@ -2412,14 +2431,20 @@ export function PracticeCustomAbutmentPreviewDialog({
                 continue;
               }
             }
+            const stored = new Float32Array(row.localPositions);
+            const closed = abutmentTopLooksClosed(stored);
+            const view = closed ? await openScrewChannelForView(stored, row.fixture) : stored;
+            const savedSolid = row.solidBodyLocalPositions?.byteLength
+              ? new Float32Array(row.solidBodyLocalPositions)
+              : closed
+                ? stored
+                : undefined;
             builtAbutments.push(
               buildDesignedCustomAbutment({
                 fixture: row.fixture,
                 fileName: row.fileName,
-                localPositions: new Float32Array(row.localPositions),
-                ...(row.solidBodyLocalPositions?.byteLength
-                  ? { solidBodyLocalPositions: new Float32Array(row.solidBodyLocalPositions) }
-                  : {}),
+                localPositions: view,
+                ...(savedSolid ? { solidBodyLocalPositions: savedSolid } : {}),
                 crownLocalPositions: new Float32Array(row.crownLocalPositions),
                 marginLoopLocal: new Float32Array(row.marginLoopLocal),
                 params: row.params,

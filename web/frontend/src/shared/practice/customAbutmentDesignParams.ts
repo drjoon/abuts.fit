@@ -66,7 +66,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -3, max: 3, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
-  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.3, max: 1.0, step: 0.1 },
+  marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.5, max: 1.0, step: 0.1 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.9, step: 0.05 },
   marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
   marginSubgMinMm: { label: "치은 연하 얕은 끝", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },

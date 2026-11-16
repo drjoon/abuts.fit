@@ -1872,7 +1872,7 @@ export class AbutmentDirectEditSession {
             );
           }
           design.localPositions = drilled;
-          design.stlBlob = encodeBinaryStl(drilled, `abuts.fit custom abutment #${tooth}`);
+          design.stlBlob = encodeBinaryStl(solidOut, `abuts.fit custom abutment #${tooth}`);
           this.bridge.onCommit(summary);
         })
         .catch(() => {
@@ -1903,7 +1903,11 @@ export class AbutmentDirectEditSession {
       view.lastDrilledEdit = identityAbutmentEdit();
     }
     design.localPositions = new Float32Array(local);
-    design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
+    const stlPositions =
+      design.solidBodyLocalPositions && design.solidBodyLocalPositions.length >= 9
+        ? design.solidBodyLocalPositions
+        : design.localPositions;
+    design.stlBlob = encodeBinaryStl(stlPositions, `abuts.fit custom abutment #${tooth}`);
     this.bridge.onCommit(summary);
   }
 
