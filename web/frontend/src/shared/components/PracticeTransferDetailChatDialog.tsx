@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-16: 치과 헤더 — 의뢰 수정 왼쪽에 「작업 스캔」(디자인 모달·프리뷰).
 // - 2026-11-16: 작업 스캔 타일 — onWorkScanTileClick이 있으면 스캔 프리뷰 대신 연다.
 // - 2026-10-24: 채팅 헤더 담당 기사 — 작업시작 계정, 수행 기공소는 변경.
 // - 2026-10-07: 작업 파일 페인트 채팅 첨부 — 썸네일 클릭 시 작업 파일을 연다.
@@ -2961,6 +2962,32 @@ export function PracticeTransferDetailChatDialog({
   const practiceHeaderActionButtons = (() => {
     if (feeViewer !== "practice") return null;
     const buttons: ReactNode[] = [];
+    const showWorkScanButton =
+      Boolean(onWorkScanTileClick) ||
+      (Array.isArray(workScanFiles) && workScanFiles.length > 0) ||
+      (Array.isArray(files) &&
+        files.some((file) => isAbutsWorkScanFileName(file.fileName)));
+    if (showWorkScanButton) {
+      buttons.push(
+        <Button
+          key="work-scan"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+          disabled={!authToken}
+          onClick={() => {
+            if (onWorkScanTileClick) {
+              onWorkScanTileClick();
+              return;
+            }
+            setRequestPreview({ initialKey: "" });
+          }}
+        >
+          작업 스캔
+        </Button>,
+      );
+    }
     if (onEditRequest) {
       buttons.push(
         <Button

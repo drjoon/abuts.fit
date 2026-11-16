@@ -18,6 +18,7 @@ import {
   ChevronUp,
   ChevronsDownUp,
   ChevronsUpDown,
+  Crown,
   Cylinder,
   Download,
   Eye,
@@ -186,17 +187,21 @@ export function computeParamsFromInfoFieldEdit(
   }
 }
 
-/** 스캔바디 표시 토글. 보일 때만 강조한다(기본은 가림). */
-function ScanbodyButton({
+/** 표시 토글. 보일 때만 강조한다(기본은 가림). */
+function VisibilityIconButton({
   shown,
   label,
+  tip,
   onClick,
+  children,
 }: {
   shown: boolean;
   label: string;
+  tip?: string;
   onClick: () => void;
+  children: ReactNode;
 }) {
-  const text = `${label} 스캔바디 ${shown ? "가리기" : "보이기"}`;
+  const text = tip ?? `${label} ${shown ? "가리기" : "보이기"}`;
   return (
     <button
       type="button"
@@ -211,7 +216,7 @@ function ScanbodyButton({
       title={text}
       onClick={onClick}
     >
-      <Cylinder className="h-3.5 w-3.5" />
+      {children}
       {shown ? null : (
         <span
           aria-hidden
@@ -219,6 +224,51 @@ function ScanbodyButton({
         />
       )}
     </button>
+  );
+}
+
+function ScanbodyButton({
+  shown,
+  label,
+  onClick,
+}: {
+  shown: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <VisibilityIconButton
+      shown={shown}
+      label={`${label} 스캔바디`}
+      onClick={onClick}
+    >
+      <Cylinder className="h-3.5 w-3.5" />
+    </VisibilityIconButton>
+  );
+}
+
+function PredictedCrownButton({
+  shown,
+  label,
+  onClick,
+}: {
+  shown: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <VisibilityIconButton
+      shown={shown}
+      label={`${label} 예측 크라운`}
+      tip={
+        shown
+          ? `${label} 예측 크라운 가리기`
+          : "컷백 기준인 예측 크라운을 반투명으로 겹칩니다."
+      }
+      onClick={onClick}
+    >
+      <Crown className="h-3.5 w-3.5" />
+    </VisibilityIconButton>
   );
 }
 
@@ -939,6 +989,9 @@ export function PracticeCustomAbutmentDesignTree({
   shownScanbodies,
   onToggleScanbody,
   onSetAllScanbodies,
+  shownPredictedCrowns,
+  onTogglePredictedCrown,
+  onSetAllPredictedCrowns,
   onSelect,
   onDownload,
   onDownloadAll,
@@ -952,6 +1005,9 @@ export function PracticeCustomAbutmentDesignTree({
   shownScanbodies: Record<string, boolean>;
   onToggleScanbody: (toothNumber: string) => void;
   onSetAllScanbodies: (shown: boolean) => void;
+  shownPredictedCrowns: Record<string, boolean>;
+  onTogglePredictedCrown: (toothNumber: string) => void;
+  onSetAllPredictedCrowns: (shown: boolean) => void;
   items: readonly DesignedCustomAbutment[];
   visibleTeeth: Record<string, boolean>;
   selectedTooth: string | null;
@@ -975,6 +1031,7 @@ export function PracticeCustomAbutmentDesignTree({
   const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
   const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
   const anyScanbody = items.some((it) => shownScanbodies[it.toothNumber]);
+  const anyPredictedCrown = items.some((it) => shownPredictedCrowns[it.toothNumber]);
   const editable = Boolean(onEditField);
 
   return (
@@ -990,6 +1047,11 @@ export function PracticeCustomAbutmentDesignTree({
           shown={anyScanbody}
           label="모든"
           onClick={() => onSetAllScanbodies(!anyScanbody)}
+        />
+        <PredictedCrownButton
+          shown={anyPredictedCrown}
+          label="모든"
+          onClick={() => onSetAllPredictedCrowns(!anyPredictedCrown)}
         />
         <button
           type="button"
@@ -1075,6 +1137,11 @@ export function PracticeCustomAbutmentDesignTree({
                   shown={Boolean(shownScanbodies[tooth])}
                   label={`#${tooth}`}
                   onClick={() => onToggleScanbody(tooth)}
+                />
+                <PredictedCrownButton
+                  shown={Boolean(shownPredictedCrowns[tooth])}
+                  label={`#${tooth}`}
+                  onClick={() => onTogglePredictedCrown(tooth)}
                 />
                 <button
                   type="button"

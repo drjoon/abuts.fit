@@ -777,7 +777,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [centerGuide, setCenterGuide] = useState<CenterGuideMode>("off");
   /** 치아별 스캔바디 표시. 기본은 가린다. */
   const [shownScanbodies, setShownScanbodies] = useState<Record<string, boolean>>({});
-  const [showPredictedCrown, setShowPredictedCrown] = useState(false);
+  const [shownPredictedCrowns, setShownPredictedCrowns] = useState<Record<string, boolean>>({});
   const [showFixtureAnalog, setShowFixtureAnalog] = useState(true);
   const [showFinishLine, setShowFinishLine] = useState(true);
   const [scanTransparency, setScanTransparency] = useState(0);
@@ -2758,6 +2758,13 @@ export function PracticeCustomAbutmentPreviewDialog({
               : {},
           );
         }
+        if (!viewerTouchRef.current.has("crown")) {
+          setShownPredictedCrowns(
+            viewerPrefsRef.current.showPredictedCrown
+              ? Object.fromEntries(builtAbutments.map((d) => [d.toothNumber, true]))
+              : {},
+          );
+        }
         if (!viewerTouchRef.current.has("jaws")) {
           setVisibleJaws(
             pendingPickJobs.length > 0
@@ -2885,7 +2892,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     transferIdParam,
   ]);
 
-  // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 상·하악 투명도, 픽스쳐, 마진선, 악·치아 토글)
+  // 표시 옵션 동기화(스캔색, 스캔바디 가리기, 상·하악 투명도, 픽스쳐, 피니시라인, 악·치아 토글)
   useEffect(() => {
     const renderer = rendererRef.current;
     const scene = sceneRef.current;
@@ -2955,7 +2962,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       mat.emissive.setHex(selectedTooth === tooth ? 0x332800 : 0x000000);
     }
     for (const [tooth, mesh] of predictedCrownMeshesRef.current.entries()) {
-      mesh.visible = showPredictedCrown && visibleTeeth[tooth] !== false;
+      mesh.visible =
+        shownPredictedCrowns[tooth] === true && visibleTeeth[tooth] !== false;
     }
     for (const [tooth, mesh] of fixtureMeshesRef.current.entries()) {
       mesh.visible = showFixtureAnalog && visibleTeeth[tooth] !== false;
@@ -2971,7 +2979,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     selectedTooth,
     showFinishLine,
     showFixtureAnalog,
-    showPredictedCrown,
+    shownPredictedCrowns,
     visibleJaws,
     visibleTeeth,
   ]);
@@ -3498,7 +3506,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!touch.has("color")) setColorMapping(prefs.colorMapping);
         if (!touch.has("guide")) setCenterGuide(prefs.centerGuide);
         if (!touch.has("transparency")) setScanTransparency(prefs.scanTransparency);
-        if (!touch.has("crown")) setShowPredictedCrown(prefs.showPredictedCrown);
         if (!touch.has("margin")) setShowFinishLine(prefs.showFinishLine);
         if (!touch.has("fixture")) setShowFixtureAnalog(prefs.showFixtureAnalog);
         if (!touch.has("gumball")) setGumballOn(prefs.gumballOn);
@@ -3510,6 +3517,13 @@ export function PracticeCustomAbutmentPreviewDialog({
           setShownScanbodies(
             Object.fromEntries(
               designedListRef.current.map((d) => [d.toothNumber, prefs.showScanbodies]),
+            ),
+          );
+        }
+        if (!touch.has("crown") && designedListRef.current.length > 0) {
+          setShownPredictedCrowns(
+            Object.fromEntries(
+              designedListRef.current.map((d) => [d.toothNumber, prefs.showPredictedCrown]),
             ),
           );
         }
@@ -3561,7 +3575,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       showUpper: touch.has("jaws") ? visibleJaws.upper : viewerPrefsRef.current.showUpper,
       showLower: touch.has("jaws") ? visibleJaws.lower : viewerPrefsRef.current.showLower,
       showScanbodies: viewerPrefsRef.current.showScanbodies,
-      showPredictedCrown,
+      showPredictedCrown: viewerPrefsRef.current.showPredictedCrown,
       showFinishLine,
       showFixtureAnalog,
       gumballOn,
@@ -3597,7 +3611,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     scanTransparency,
     showFinishLine,
     showFixtureAnalog,
-    showPredictedCrown,
+    shownPredictedCrowns,
     shownScanbodies,
     viewerHydrated,
     visibleJaws.lower,
@@ -4027,39 +4041,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                   </div>
                   <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
                     <ToolbarToggle
-                      active={
-                        designedList.length > 0 &&
-                        designedList.some((d) => shownScanbodies[d.toothNumber])
-                      }
-                      label="스캔바디"
-                      tip="스캔에 찍힌 스캔바디를 함께 표시합니다."
-                      onClick={() => {
-                        touchViewer("scanbodies");
-                        const anyShown = designedList.some((d) => shownScanbodies[d.toothNumber]);
-                        viewerPrefsRef.current = {
-                          ...viewerPrefsRef.current,
-                          showScanbodies: !anyShown,
-                        };
-                        setShownScanbodies(
-                          Object.fromEntries(designedList.map((d) => [d.toothNumber, !anyShown])),
-                        );
-                      }}
-                    />
-                    <ToolbarToggle
-                      active={showPredictedCrown}
-                      label="예측 크라운"
-                      tip="컷백 기준인 예측 크라운을 반투명으로 겹칩니다."
-                      onClick={() => {
-                        touchViewer("crown");
-                        setShowPredictedCrown((v) => {
-                          viewerPrefsRef.current = { ...viewerPrefsRef.current, showPredictedCrown: !v };
-                          return !v;
-                        });
-                      }}
-                    />
-                    <ToolbarToggle
                       active={showFinishLine}
-                      label="마진선"
+                      label="피니시라인"
                       onClick={() => {
                         touchViewer("margin");
                         setShowFinishLine((v) => {
@@ -4167,6 +4150,29 @@ export function PracticeCustomAbutmentPreviewDialog({
                       touchViewer("scanbodies");
                       viewerPrefsRef.current = { ...viewerPrefsRef.current, showScanbodies: shown };
                       setShownScanbodies(
+                        Object.fromEntries(designedList.map((d) => [d.toothNumber, shown])),
+                      );
+                    }}
+                    shownPredictedCrowns={shownPredictedCrowns}
+                    onTogglePredictedCrown={(toothNumber) => {
+                      touchViewer("crown");
+                      setShownPredictedCrowns((prev) => {
+                        const next = { ...prev, [toothNumber]: !prev[toothNumber] };
+                        const any = designedList.some((d) => next[d.toothNumber]);
+                        viewerPrefsRef.current = {
+                          ...viewerPrefsRef.current,
+                          showPredictedCrown: any,
+                        };
+                        return next;
+                      });
+                    }}
+                    onSetAllPredictedCrowns={(shown) => {
+                      touchViewer("crown");
+                      viewerPrefsRef.current = {
+                        ...viewerPrefsRef.current,
+                        showPredictedCrown: shown,
+                      };
+                      setShownPredictedCrowns(
                         Object.fromEntries(designedList.map((d) => [d.toothNumber, shown])),
                       );
                     }}
