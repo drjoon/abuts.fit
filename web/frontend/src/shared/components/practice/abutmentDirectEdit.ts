@@ -34,6 +34,7 @@ const HISTORY_LIMIT = 40;
 export type DirectEditFixture = {
   labialDir: readonly number[];
   mesialDir: readonly number[];
+  archOcclusalDir?: readonly number[];
   fixturePose: {
     hexX: readonly number[];
     hexY: readonly number[];
@@ -50,6 +51,7 @@ export type DirectEditFixture = {
 
 export type DirectEditDesign = {
   toothNumber: string;
+  jaw?: "upper" | "lower";
   fixture: DirectEditFixture;
   localPositions: Float32Array;
   solidBodyLocalPositions?: Float32Array;
@@ -57,6 +59,9 @@ export type DirectEditDesign = {
   marginLoopLocal: Float32Array;
   stlBlob: Blob;
   params?: Partial<CustomAbutmentDesignParams>;
+  metrics?: {
+    occlusalClearanceMm?: number | null;
+  };
 };
 
 export type AbutmentEdit = {
@@ -90,6 +95,7 @@ export type EditedAbutmentMetrics = {
   postTaperDeg: number;
   cutbackMm: number | null;
   crownOverPostMm: number | null;
+  occlusalClearanceMm?: number | null;
 };
 
 export type AbutmentEditSummary = {
@@ -121,6 +127,12 @@ type Zone = {
   /** 커넥션 위 2° 테이퍼가 끝나는 높이. 이 아래는 고정. */
   fixedZ: number;
   marginZ: number;
+  meanMarginZ?: number;
+  marginColZ?: Float32Array;
+  topColZ?: Float32Array;
+  topMinOuterR?: number;
+  boreTopR?: number;
+  anterior?: boolean;
   screwR: number;
   span: number;
   labial: [number, number];
@@ -131,6 +143,19 @@ type Zone = {
   coneTopR?: number;
 };
 
+type OpposingClearanceProbe = {
+  up: [number, number, number];
+  u: [number, number, number];
+  v: [number, number, number];
+  minU: number;
+  minV: number;
+  step: number;
+  cols: number;
+  rows: number;
+  grid: Float32Array;
+  measureMinClearance: (positions: Float32Array, sampleVertices: Uint32Array) => number | null;
+};
+
 type ToothView = {
   geometry: THREE.BufferGeometry;
   proposal: Float32Array;
@@ -139,7 +164,11 @@ type ToothView = {
   proposalMargin: Float32Array | null;
   lastDrilledLocal: Float32Array;
   lastDrilledEdit: AbutmentEdit;
+  lastAutoLiftMm: number;
   zone: Zone;
+  oppProbe: OpposingClearanceProbe | null;
+  topSampleVertices: Uint32Array;
+  targetClearanceMm: number | null;
   anchor: THREE.Vector3;
   midZ: number;
   topZ: number;
@@ -219,6 +248,7 @@ export type AbutmentEditBridge = {
   getAbutment: (tooth: string) => THREE.Mesh | undefined;
   getCrown: (tooth: string) => THREE.Mesh | undefined;
   getMargin: (tooth: string) => MarginLine | undefined;
+  getOpposingGeometry?: (jaw: "upper" | "lower") => THREE.BufferGeometry | null;
   ui: {
     gumballOn: boolean;
     sculptOn: boolean;
@@ -359,8 +389,49 @@ function angleDelta(a: number, b: number) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
+function samplePolarProfile(profile: Float32Array | undefined, angle: number, fallback: number): number {
+  if (!profile || profile.length < 3) return fallback;
+  const { c0, c1, frac } = marginColumnBlend(angle, profile.length);
+  return profile[c0]! * (1 - frac) + profile[c1]! * frac;
+}
+
+/**
+ * 파란 회전 핸들(tiltLabialDeg, tiltMesialDeg)로 포스트 상단이 옆으로 기우는 안전한 최대 변위.
+ * 구치부의 높은 포스트에서 과도하게 옆으로 밀리면 임플란트 축 스크류 홀이 옆벽을 뚫고 나오므로,
+ * 축벽 기울기는 스크류 벽 두께 한도 안에서 매끄럽게 포화시키고 포스트 상단 교합면 각도는 요청 각도대로 회전시킨다.
+ */
+function computeSafePostTopLean(
+  edit: AbutmentEdit,
+  zone: Zone,
+  safePropTop: number,
+  postCenterL: number,
+  postCenterM: number,
+): { topLeanL: number; topLeanM: number } {
+  const tiltSlopeL = Math.tan((edit.tiltLabialDeg * Math.PI) / 180);
+  const tiltSlopeM = Math.tan((edit.tiltMesialDeg * Math.PI) / 180);
+  const meanM = zone.meanMarginZ ?? zone.marginZ;
+  const meanSpan = Math.max(safePropTop - meanM, 1.0);
+  const wantL = tiltSlopeL * meanSpan;
+  const wantM = tiltSlopeM * meanSpan;
+  const wantR = Math.hypot(wantL, wantM);
+  if (wantR <= 1e-6) return { topLeanL: 0, topLeanM: 0 };
+
+  const boreTopR = zone.boreTopR ?? 0;
+  let maxAddR = 2.4;
+  if (boreTopR > 0.1 && !zone.anterior && zone.topMinOuterR != null && zone.topMinOuterR > 0.4) {
+    const centerDist = Math.hypot(postCenterL, postCenterM);
+    const avail = zone.topMinOuterR - (boreTopR + 0.45) - centerDist * 0.55;
+    maxAddR = clamp(avail, 0.22, 1.55);
+  }
+  const effR = maxAddR * Math.tanh(wantR / maxAddR);
+  const k = effR / wantR;
+  return { topLeanL: wantL * k, topLeanM: wantM * k };
+}
+
 /**
  * 초기 제안 정점에서 커넥션과 2° 테이퍼는 복사하고, 그 위 커프·포스트만 다시 놓는다.
+ * 파란 회전 툴(tilt)은 마진 위 포스트와 평평한 최상단 교합면을 실제로 3D 회전시켜 대합치와의 각도를 맞추고,
+ * extraPostTopLiftMm로 포스트 상단 높이를 보정해 최단 대합 거리를 유지한다.
  * 드래그 중에는 솔리드 외형(screwR=0)에 곧바로 적용하고, 드래그 종료 시 임플란트 축 원통으로 스크류 홀을 뚫는다.
  */
 export function refitLocalPositions(
@@ -368,6 +439,7 @@ export function refitLocalPositions(
   edit: AbutmentEdit,
   zone: Zone,
   out: Float32Array,
+  extraPostTopLiftMm = 0,
 ): { widthRatio: number; heightDeltaMm: number } {
   const { fixedZ, marginZ, screwR, labial, mesial } = zone;
   const yawRad = (edit.yawDeg * Math.PI) / 180;
@@ -377,7 +449,6 @@ export function refitLocalPositions(
   let widthN = 0;
   let propTop = -Infinity;
   let boreTop = -Infinity;
-  let nextTop = -Infinity;
   for (let i = 0; i < proposal.length; i += 3) {
     const z = proposal[i + 2]!;
     if (z > propTop) propTop = z;
@@ -386,8 +457,6 @@ export function refitLocalPositions(
     if (r <= screwR && z > boreTop) boreTop = z;
   }
   const safePropTop = Number.isFinite(propTop) ? propTop : marginZ + 4;
-  // 커프에서 마진 최하단(marginZ)까지 부드럽게 보간하고, 마진부터 포스트 상단까지는 동일한 강체 이동·회전·스케일·일정 기울기를
-  // 그대로 적용해 스캘럽 마진 폭 일정·포스트 직선 축벽·단면 둥근 사각형을 변형 후에도 보존한다.
   let postCenterL = zone.centerL ?? Number.NaN;
   let postCenterM = zone.centerM ?? Number.NaN;
   if (!Number.isFinite(postCenterL) || !Number.isFinite(postCenterM)) {
@@ -411,30 +480,50 @@ export function refitLocalPositions(
   }
   const tiltSlopeL = Math.tan((edit.tiltLabialDeg * Math.PI) / 180);
   const tiltSlopeM = Math.tan((edit.tiltMesialDeg * Math.PI) / 180);
+  const hasTilt = Math.abs(tiltSlopeL) > 1e-6 || Math.abs(tiltSlopeM) > 1e-6;
+  const hasTopAdjust = hasTilt || Math.abs(extraPostTopLiftMm) > 1e-5;
+  const { topLeanL, topLeanM } = hasTilt
+    ? computeSafePostTopLean(edit, zone, safePropTop, postCenterL, postCenterM)
+    : { topLeanL: 0, topLeanM: 0 };
+  const manualTopLift = computeZLift(safePropTop, fixedZ, marginZ, safePropTop, edit);
   const rimZ = (Number.isFinite(boreTop) ? boreTop : safePropTop) - 0.7;
+  const minPostWallAboveMargin = 0.85;
+
   for (let i = 0; i < proposal.length; i += 3) {
     const x = proposal[i]!;
     const y = proposal[i + 1]!;
     const z = proposal[i + 2]!;
     const rProp = Math.hypot(x, y);
     const t = blendAbove(z, fixedZ, marginZ);
-    const z2 = z + computeZLift(z, fixedZ, marginZ, safePropTop, edit);
+    const baseZLift = computeZLift(z, fixedZ, marginZ, safePropTop, edit);
     const frozenTaper = z <= fixedZ + 0.02;
     const deepBore = hole && rProp <= screwR && z < rimZ;
     if (frozenTaper || deepBore) {
       out[i] = x;
       out[i + 1] = y;
       out[i + 2] = z;
-      if (z > nextTop) nextTop = z;
       continue;
     }
+    const theta0 = Math.atan2(y, x);
+    const mZCol = samplePolarProfile(zone.marginColZ, theta0, marginZ);
+    const topZCol = Math.max(mZCol + 0.8, samplePolarProfile(zone.topColZ, theta0, safePropTop));
+    const postSpanCol = Math.max(topZCol - mZCol, 0.8);
+    const hAboveMargin = z > mZCol + 1e-4 ? z - mZCol : 0;
+    const uPost = hAboveMargin > 0 ? clamp(hAboveMargin / postSpanCol, 0, 1) : 0;
+
     if (hole && rProp <= screwR + 0.22 && z >= rimZ) {
+      let zRim = z + baseZLift;
+      if (hasTopAdjust && uPost > 0) {
+        const screwTiltZ = -((-postCenterL) * tiltSlopeL + (-postCenterM) * tiltSlopeM);
+        const minAllowedDelta = minPostWallAboveMargin - postSpanCol - manualTopLift;
+        zRim += Math.max(minAllowedDelta, extraPostTopLiftMm + screwTiltZ) * uPost;
+      }
       out[i] = x;
       out[i + 1] = y;
-      out[i + 2] = z2;
-      if (z2 > nextTop) nextTop = z2;
+      out[i + 2] = zRim;
       continue;
     }
+
     const l = x * labial[0] + y * labial[1];
     const m = x * mesial[0] + y * mesial[1];
     const yaw = yawRad * t;
@@ -443,12 +532,28 @@ export function refitLocalPositions(
     // 포스트 중심(postCenterL, postCenterM) 기준 스케일·회전을 적용하고, 마진·포스트 전체에 동일 배율이 걸려 마진 폭 비율을 유지한다.
     const dl = (l - postCenterL * t) * (1 + (edit.scale[0] - 1) * t);
     const dm = (m - postCenterM * t) * (1 + (edit.scale[1] - 1) * t);
-    const h = Math.max(z - fixedZ, 0);
-    // 월드 공간 변위: 회전은 단면 자체만 돌리고, 화살표 이동(shift)·축 회전 기울기(tilt)는 돌린 방향과 무관하게 정확한 화면 방향으로 민다.
-    const offL = (edit.shiftLabialMm + tiltSlopeL * h) * t;
-    const offM = (edit.shiftMesialMm + tiltSlopeM * h) * t;
-    let ly = postCenterL * t + dl * c - dm * s + offL;
-    let my = postCenterM * t + dl * s + dm * c + offM;
+    const lRot = dl * c - dm * s;
+    const mRot = dl * s + dm * c;
+
+    let leanL = 0;
+    let leanM = 0;
+    let postTopDeltaZ = 0;
+    if (hasTopAdjust && hAboveMargin > 0) {
+      const hSmooth = (hAboveMargin * hAboveMargin) / (hAboveMargin + 0.12);
+      const uLean = clamp(hSmooth / postSpanCol, 0, 1.15);
+      leanL = topLeanL * uLean;
+      leanM = topLeanM * uLean;
+      const rawTiltZ = -(lRot * tiltSlopeL + mRot * tiltSlopeM);
+      const minAllowedDelta = minPostWallAboveMargin - postSpanCol - manualTopLift;
+      postTopDeltaZ = Math.max(minAllowedDelta, extraPostTopLiftMm + rawTiltZ) * uPost;
+    }
+
+    const offL = edit.shiftLabialMm * t + leanL;
+    const offM = edit.shiftMesialMm * t + leanM;
+    const z2 = z + baseZLift + postTopDeltaZ;
+    let ly = postCenterL * t + lRot + offL;
+    let my = postCenterM * t + mRot + offM;
+
     if (z > marginZ && edit.partial.length > 0) {
       const ang = Math.atan2(my, ly);
       const rad = Math.max(Math.hypot(ly, my), 0.4);
@@ -485,11 +590,10 @@ export function refitLocalPositions(
         widthN += 1;
       }
     }
-    if (z2 > nextTop) nextTop = z2;
   }
   return {
     widthRatio: widthN > 0 ? widthSum / widthN : 1,
-    heightDeltaMm: Number.isFinite(propTop) ? clamp(nextTop - propTop, -HEIGHT_MM, HEIGHT_MM) : 0,
+    heightDeltaMm: Number.isFinite(propTop) ? clamp(manualTopLift, -HEIGHT_MM, HEIGHT_MM) : 0,
   };
 }
 
@@ -497,7 +601,6 @@ function cuffNeedsRegen(edit: AbutmentEdit) {
   if (Math.abs(edit.heightMm) > 1e-4) return true;
   if (Math.abs(edit.shiftLabialMm) > 1e-4 || Math.abs(edit.shiftMesialMm) > 1e-4) return true;
   if (Math.abs(edit.yawDeg) > 1e-3) return true;
-  if (Math.abs(edit.tiltLabialDeg) > 1e-3 || Math.abs(edit.tiltMesialDeg) > 1e-3) return true;
   if (Math.abs(edit.scale[0] - 1) > 1e-4) return true;
   if (Math.abs(edit.scale[1] - 1) > 1e-4) return true;
   if (Math.abs(edit.scale[2] - 1) > 1e-4) return true;
@@ -639,45 +742,70 @@ export function measureEditedAbutment(
   if (!Number.isFinite(zMax) || !Number.isFinite(zMin)) return null;
 
   const postSpan = Math.max(zMax - meanMz, 0.8);
-  let topX = 0;
-  let topY = 0;
-  let topZ = 0;
-  let topN = 0;
-  const topCut = zMax - Math.min(0.45, postSpan * 0.12);
-  for (let i = 0; i < solid.length; i += 3) {
-    const z = solid[i + 2]!;
-    if (z < topCut) continue;
-    if (Math.hypot(solid[i]!, solid[i + 1]!) < 0.35) continue;
-    topX += solid[i]!;
-    topY += solid[i + 1]!;
-    topZ += z;
-    topN += 1;
-  }
-  if (topN > 0) {
-    topX /= topN;
-    topY /= topN;
-    topZ /= topN;
-  } else {
-    topZ = zMax;
-  }
-  const ang =
-    (Math.atan2(Math.hypot(topX - mx, topY - my), Math.max(topZ - meanMz, 0.2)) * 180) / Math.PI;
-
-  const bandR = (z0: number, half: number) => {
+  const half = Math.max(0.15, postSpan * 0.08);
+  const bandSlice = (z0: number) => {
+    let cx = 0;
+    let cy = 0;
+    let cn = 0;
+    for (let i = 0; i < solid.length; i += 3) {
+      if (Math.abs(solid[i + 2]! - z0) > half) continue;
+      const x = solid[i]!;
+      const y = solid[i + 1]!;
+      if (Math.hypot(x, y) < 0.6) continue;
+      cx += x;
+      cy += y;
+      cn += 1;
+    }
+    const refX = cn >= 8 ? cx / cn : mx;
+    const refY = cn >= 8 ? cy / cn : my;
     let sum = 0;
     let n = 0;
     for (let i = 0; i < solid.length; i += 3) {
       if (Math.abs(solid[i + 2]! - z0) > half) continue;
-      const r = Math.hypot(solid[i]!, solid[i + 1]!);
-      if (r < 0.6) continue;
+      const x = solid[i]!;
+      const y = solid[i + 1]!;
+      if (Math.hypot(x, y) < 0.6) continue;
+      const r = cn >= 8 ? Math.hypot(x - refX, y - refY) : Math.hypot(x, y);
       sum += r;
       n += 1;
     }
-    return n > 0 ? sum / n : Number.NaN;
+    return { r: n > 0 ? sum / n : Number.NaN, cx: refX, cy: refY, n };
   };
-  const half = Math.max(0.15, postSpan * 0.08);
-  const rLow = bandR(meanMz + postSpan * 0.22, half);
-  const rHigh = bandR(meanMz + postSpan * 0.58, half);
+
+  const upperBandZ = meanMz + postSpan * 0.62;
+  const upperSlice = bandSlice(upperBandZ);
+  let topX = 0;
+  let topY = 0;
+  let topZ = 0;
+  if (upperSlice.n >= 8) {
+    topX = upperSlice.cx;
+    topY = upperSlice.cy;
+    topZ = upperBandZ;
+  } else {
+    let topN = 0;
+    const topCut = zMax - Math.min(0.45, postSpan * 0.12);
+    for (let i = 0; i < solid.length; i += 3) {
+      const z = solid[i + 2]!;
+      if (z < topCut) continue;
+      if (Math.hypot(solid[i]!, solid[i + 1]!) < 0.35) continue;
+      topX += solid[i]!;
+      topY += solid[i + 1]!;
+      topZ += z;
+      topN += 1;
+    }
+    if (topN > 0) {
+      topX /= topN;
+      topY /= topN;
+      topZ /= topN;
+    } else {
+      topZ = zMax;
+    }
+  }
+  const ang =
+    (Math.atan2(Math.hypot(topX - mx, topY - my), Math.max(topZ - meanMz, 0.2)) * 180) / Math.PI;
+
+  const rLow = bandSlice(meanMz + postSpan * 0.22).r;
+  const rHigh = bandSlice(meanMz + postSpan * 0.58).r;
   const taper =
     Number.isFinite(rLow) && Number.isFinite(rHigh)
       ? (Math.atan2(rLow - rHigh, postSpan * 0.36) * 180) / Math.PI
@@ -816,6 +944,8 @@ function localAxes(fixture: DirectEditFixture): { labial: [number, number]; mesi
   return { labial: [lx, ly], mesial: [mx, my] };
 }
 
+const TOP_SECTORS = 72;
+
 function zoneOf(
   design: DirectEditDesign,
   proposal: Float32Array,
@@ -824,42 +954,120 @@ function zoneOf(
 ): Zone {
   const axes = localAxes(design.fixture);
   const coneZ = design.fixture.connectionSpec?.prcConeTopMm ?? 1;
+  const boreTopR =
+    design.fixture.connectionSpec?.screwUpperDiameterMm != null
+      ? design.fixture.connectionSpec.screwUpperDiameterMm / 2
+      : 0;
   const screwR = (design.fixture.connectionSpec?.screwUpperDiameterMm ?? 2) / 2 + 0.2;
   let marginMin = Infinity;
-  if (margin && margin.length >= 3) {
-    for (let i = 2; i < margin.length; i += 3) {
-      if (margin[i]! < marginMin) marginMin = margin[i]!;
+  let marginMean = 0;
+  let marginColZ: Float32Array | undefined;
+  if (margin && margin.length >= 9) {
+    const mCount = Math.floor(margin.length / 3);
+    marginColZ = new Float32Array(mCount);
+    for (let col = 0; col < mCount; col += 1) {
+      const z = margin[col * 3 + 2]!;
+      marginColZ[col] = z;
+      if (z < marginMin) marginMin = z;
+      marginMean += z;
     }
+    marginMean /= mCount;
   }
   const src = proposalSolid && proposalSolid.length >= 9 ? proposalSolid : proposal;
   let top = coneZ + 4;
   for (let i = 2; i < src.length; i += 3) top = Math.max(top, src[i]!);
-  // 스캘럽 마진 전체(가장 낮은 협·설 마진 포함)와 포스트가 모두 t=1에서 함께 움직이도록 최하단 마진 높이를 기준으로 잡는다.
   const marginZ = Math.max(Number.isFinite(marginMin) ? marginMin : coneZ + 1.5, coneZ + 0.4);
+  const meanMarginZ = marginColZ ? Math.max(marginMean, marginZ) : marginZ;
   const spanToMargin = Math.max(0.35, marginZ - coneZ);
   let fixedZ = coneZ + Math.max(0.45, Math.min(1.35, spanToMargin * 0.25));
   if (fixedZ > marginZ - 0.25) fixedZ = Math.max(coneZ, marginZ - 0.25);
   let centerL = 0;
   let centerM = 0;
   let centerN = 0;
+  const rawTopBins = new Float32Array(TOP_SECTORS).fill(-Infinity);
   for (let i = 0; i < src.length; i += 3) {
     const z = src[i + 2]!;
     if (z <= marginZ) continue;
     const x = src[i]!;
     const y = src[i + 1]!;
-    if (!proposalSolid && Math.hypot(x, y) <= screwR + 0.12) continue;
+    const rXY = Math.hypot(x, y);
+    if (!proposalSolid && rXY <= screwR + 0.12) continue;
     centerL += x * axes.labial[0] + y * axes.labial[1];
     centerM += x * axes.mesial[0] + y * axes.mesial[1];
     centerN += 1;
+    if (rXY > 0.35) {
+      const tau = Math.PI * 2;
+      const wrapped = ((Math.atan2(y, x) % tau) + tau) % tau;
+      const bin = Math.min(TOP_SECTORS - 1, Math.floor((wrapped / tau) * TOP_SECTORS));
+      if (z > rawTopBins[bin]!) rawTopBins[bin] = z;
+    }
   }
   if (centerN > 0) {
     centerL /= centerN;
     centerM /= centerN;
   }
+
+  let topColZ: Float32Array | undefined;
+  if (rawTopBins.some((v) => Number.isFinite(v))) {
+    const filled = new Float32Array(TOP_SECTORS);
+    for (let b = 0; b < TOP_SECTORS; b += 1) {
+      if (Number.isFinite(rawTopBins[b]!)) {
+        filled[b] = rawTopBins[b]!;
+        continue;
+      }
+      let best = top;
+      for (let step = 1; step < TOP_SECTORS; step += 1) {
+        const lVal = rawTopBins[(b - step + TOP_SECTORS) % TOP_SECTORS]!;
+        const rVal = rawTopBins[(b + step) % TOP_SECTORS]!;
+        if (Number.isFinite(lVal) && Number.isFinite(rVal)) {
+          best = 0.5 * (lVal + rVal);
+          break;
+        }
+        if (Number.isFinite(lVal)) {
+          best = lVal;
+          break;
+        }
+        if (Number.isFinite(rVal)) {
+          best = rVal;
+          break;
+        }
+      }
+      filled[b] = best;
+    }
+    topColZ = new Float32Array(TOP_SECTORS);
+    for (let b = 0; b < TOP_SECTORS; b += 1) {
+      const p1 = filled[(b - 1 + TOP_SECTORS) % TOP_SECTORS]!;
+      const p0 = filled[b]!;
+      const n1 = filled[(b + 1) % TOP_SECTORS]!;
+      topColZ[b] = 0.25 * p1 + 0.5 * p0 + 0.25 * n1;
+    }
+  }
+
+  let topMinOuterR = Infinity;
+  const bandZ = meanMarginZ + Math.max(0.8, top - meanMarginZ) * 0.72;
+  const bandHalf = Math.max(0.25, (top - meanMarginZ) * 0.12);
+  for (let i = 0; i < src.length; i += 3) {
+    const z = src[i + 2]!;
+    if (Math.abs(z - bandZ) > bandHalf) continue;
+    const x = src[i]!;
+    const y = src[i + 1]!;
+    if (!proposalSolid && Math.hypot(x, y) <= screwR + 0.2) continue;
+    const l = x * axes.labial[0] + y * axes.labial[1];
+    const m = x * axes.mesial[0] + y * axes.mesial[1];
+    const rFromCenter = Math.hypot(l - centerL, m - centerM);
+    if (rFromCenter > 0.55 && rFromCenter < topMinOuterR) topMinOuterR = rFromCenter;
+  }
+
   return {
     coneZ,
     fixedZ,
     marginZ,
+    meanMarginZ,
+    marginColZ,
+    topColZ,
+    topMinOuterR: Number.isFinite(topMinOuterR) ? topMinOuterR : undefined,
+    boreTopR,
+    anterior: isAnteriorTooth(design.toothNumber),
     screwR,
     span: Math.max(0.5, top - coneZ),
     labial: axes.labial,
@@ -868,6 +1076,199 @@ function zoneOf(
     centerM,
     coneTopR: measureConeTopR(src, coneZ),
   };
+}
+
+function collectTopSampleVertices(src: Float32Array, zone: Zone): Uint32Array {
+  const out: number[] = [];
+  const vCount = Math.floor(src.length / 3);
+  let maxZ = -Infinity;
+  for (let v = 0; v < vCount; v += 1) {
+    const z = src[v * 3 + 2]!;
+    if (z > maxZ) maxZ = z;
+  }
+  if (!Number.isFinite(maxZ)) return new Uint32Array(0);
+  const stride = vCount > 6000 ? 2 : 1;
+  for (let v = 0; v < vCount; v += stride) {
+    const o = v * 3;
+    const x = src[o]!;
+    const y = src[o + 1]!;
+    const z = src[o + 2]!;
+    if (z <= zone.marginZ + 0.2) continue;
+    const colTop = samplePolarProfile(zone.topColZ, Math.atan2(y, x), maxZ);
+    if (z >= colTop - 0.55 || z >= maxZ - 0.35) {
+      out.push(v);
+    }
+  }
+  return new Uint32Array(out);
+}
+
+function buildOpposingClearanceProbe(
+  opposingGeometry: THREE.BufferGeometry | null | undefined,
+  fixture: DirectEditFixture,
+  zone: Zone,
+): OpposingClearanceProbe | null {
+  if (!opposingGeometry) return null;
+  const pos = opposingGeometry.getAttribute("position");
+  if (!pos || pos.count < 3) return null;
+  const pose = fixture.fixturePose;
+  const ox = pose.origin[0] ?? 0;
+  const oy = pose.origin[1] ?? 0;
+  const oz = pose.origin[2] ?? 0;
+  const toLocalPt = (wx: number, wy: number, wz: number): [number, number, number] => {
+    const dx = wx - ox;
+    const dy = wy - oy;
+    const dz = wz - oz;
+    return [
+      dx * (pose.hexX[0] ?? 1) + dy * (pose.hexX[1] ?? 0) + dz * (pose.hexX[2] ?? 0),
+      dx * (pose.hexY[0] ?? 0) + dy * (pose.hexY[1] ?? 1) + dz * (pose.hexY[2] ?? 0),
+      dx * (pose.axis[0] ?? 0) + dy * (pose.axis[1] ?? 0) + dz * (pose.axis[2] ?? 1),
+    ];
+  };
+
+  let up: [number, number, number] = [0, 0, 1];
+  if (fixture.archOcclusalDir && fixture.archOcclusalDir.length >= 3) {
+    const wx = fixture.archOcclusalDir[0] ?? 0;
+    const wy = fixture.archOcclusalDir[1] ?? 0;
+    const wz = fixture.archOcclusalDir[2] ?? 1;
+    const lx = wx * (pose.hexX[0] ?? 1) + wy * (pose.hexX[1] ?? 0) + wz * (pose.hexX[2] ?? 0);
+    const ly = wx * (pose.hexY[0] ?? 0) + wy * (pose.hexY[1] ?? 1) + wz * (pose.hexY[2] ?? 0);
+    const lz = wx * (pose.axis[0] ?? 0) + wy * (pose.axis[1] ?? 0) + wz * (pose.axis[2] ?? 1);
+    const len = Math.hypot(lx, ly, lz);
+    if (len > 1e-6) {
+      const sign = lz >= 0 ? 1 : -1;
+      up = [(lx * sign) / len, (ly * sign) / len, (lz * sign) / len];
+    }
+  }
+  const helper: [number, number, number] = Math.abs(up[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+  let ux = helper[1] * up[2] - helper[2] * up[1];
+  let uy = helper[2] * up[0] - helper[0] * up[2];
+  let uz = helper[0] * up[1] - helper[1] * up[0];
+  const uLen = Math.hypot(ux, uy, uz) || 1;
+  ux /= uLen;
+  uy /= uLen;
+  uz /= uLen;
+  const u: [number, number, number] = [ux, uy, uz];
+  const v: [number, number, number] = [
+    up[1] * uz - up[2] * uy,
+    up[2] * ux - up[0] * uz,
+    up[0] * uy - up[1] * ux,
+  ];
+
+  const step = 0.15;
+  const halfSpan = 8.4;
+  const minU = -halfSpan;
+  const minV = -halfSpan;
+  const cols = Math.round((halfSpan * 2) / step) + 1;
+  const rows = cols;
+  const grid = new Float32Array(cols * rows).fill(Infinity);
+
+  const index = opposingGeometry.getIndex();
+  const triCount = Math.floor((index ? index.count : pos.count) / 3);
+  const maxR2 = 16.5 * 16.5;
+  const minH = (zone.meanMarginZ ?? zone.marginZ) * up[2] + 0.8;
+  const maxH = minH + 17.5;
+  let written = 0;
+
+  for (let t = 0; t < triCount; t += 1) {
+    const i0 = index ? index.getX(t * 3) : t * 3;
+    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    const x0 = pos.getX(i0), y0 = pos.getY(i0), z0 = pos.getZ(i0);
+    const x1 = pos.getX(i1), y1 = pos.getY(i1), z1 = pos.getZ(i1);
+    const x2 = pos.getX(i2), y2 = pos.getY(i2), z2 = pos.getZ(i2);
+    if (
+      (x0 - ox) ** 2 + (y0 - oy) ** 2 + (z0 - oz) ** 2 > maxR2 &&
+      (x1 - ox) ** 2 + (y1 - oy) ** 2 + (z1 - oz) ** 2 > maxR2 &&
+      (x2 - ox) ** 2 + (y2 - oy) ** 2 + (z2 - oz) ** 2 > maxR2
+    ) {
+      continue;
+    }
+    const a = toLocalPt(x0, y0, z0);
+    const b = toLocalPt(x1, y1, z1);
+    const c = toLocalPt(x2, y2, z2);
+    const ah = a[0] * up[0] + a[1] * up[1] + a[2] * up[2];
+    const bh = b[0] * up[0] + b[1] * up[1] + b[2] * up[2];
+    const ch = c[0] * up[0] + c[1] * up[1] + c[2] * up[2];
+    if (Math.max(ah, bh, ch) < minH || Math.min(ah, bh, ch) > maxH) continue;
+
+    const au = a[0] * u[0] + a[1] * u[1] + a[2] * u[2];
+    const av = a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
+    const bu = b[0] * u[0] + b[1] * u[1] + b[2] * u[2];
+    const bv = b[0] * v[0] + b[1] * v[1] + b[2] * v[2];
+    const cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
+    const cv = c[0] * v[0] + c[1] * v[1] + c[2] * v[2];
+
+    const uLo = Math.max(0, Math.floor((Math.min(au, bu, cu) - minU) / step));
+    const uHi = Math.min(cols - 1, Math.ceil((Math.max(au, bu, cu) - minU) / step));
+    const vLo = Math.max(0, Math.floor((Math.min(av, bv, cv) - minV) / step));
+    const vHi = Math.min(rows - 1, Math.ceil((Math.max(av, bv, cv) - minV) / step));
+    const v0x = bu - au, v0y = bv - av;
+    const v1x = cu - au, v1y = cv - av;
+    const den = v0x * v1y - v1x * v0y;
+    if (Math.abs(den) < 1e-9) continue;
+    const invDen = 1 / den;
+
+    for (let iv = vLo; iv <= vHi; iv += 1) {
+      const pv = minV + iv * step;
+      const v2y = pv - av;
+      const rowOff = iv * cols;
+      for (let iu = uLo; iu <= uHi; iu += 1) {
+        const pu = minU + iu * step;
+        const v2x = pu - au;
+        const w1 = (v2x * v1y - v1x * v2y) * invDen;
+        const w2 = (v0x * v2y - v2x * v0y) * invDen;
+        const w0 = 1 - w1 - w2;
+        if (w0 < -0.04 || w1 < -0.04 || w2 < -0.04) continue;
+        const h = ah * w0 + bh * w1 + ch * w2;
+        if (h < minH || h > maxH) continue;
+        const idx = rowOff + iu;
+        if (h < grid[idx]!) {
+          grid[idx] = h;
+          written += 1;
+        }
+      }
+    }
+  }
+  if (written === 0) return null;
+
+  const measureMinClearance = (positions: Float32Array, sampleVertices: Uint32Array): number | null => {
+    if (sampleVertices.length === 0) return null;
+    let best = Infinity;
+    let apexX = 0, apexY = 0, apexZ = -Infinity;
+    for (let k = 0; k < sampleVertices.length; k += 1) {
+      const o = sampleVertices[k]! * 3;
+      const z = positions[o + 2]!;
+      if (z > apexZ) {
+        apexZ = z;
+        apexX = positions[o]!;
+        apexY = positions[o + 1]!;
+      }
+    }
+    const checkPoint = (px: number, py: number, pz: number) => {
+      const pu = px * u[0] + py * u[1] + pz * u[2];
+      const pv = px * v[0] + py * v[1] + pz * v[2];
+      const iu = Math.round((pu - minU) / step);
+      const iv = Math.round((pv - minV) / step);
+      if (iu < 0 || iu >= cols || iv < 0 || iv >= rows) return;
+      const oppH = grid[iv * cols + iu]!;
+      if (!Number.isFinite(oppH)) return;
+      const ph = px * up[0] + py * up[1] + pz * up[2];
+      const d = oppH - ph;
+      if (d < best) best = d;
+    };
+    for (let k = 0; k < sampleVertices.length; k += 1) {
+      const o = sampleVertices[k]! * 3;
+      const px = positions[o]!;
+      const py = positions[o + 1]!;
+      const pz = positions[o + 2]!;
+      checkPoint(px, py, pz);
+      checkPoint((px + apexX) * 0.5, (py + apexY) * 0.5, (pz + apexZ) * 0.5);
+    }
+    if (!Number.isFinite(best) || best >= 8) return null;
+    return best;
+  };
+
+  return { up, u, v, minU, minV, step, cols, rows, grid, measureMinClearance };
 }
 
 function applyMatrixToPositions(src: Float32Array, matrix: THREE.Matrix4, out: Float32Array) {
@@ -984,8 +1385,12 @@ export function applyWorldRotationToAbutmentEdit(
   rotCross.crossVectors(worldAxis, axes[2]);
   edit.tiltLabialDeg += deg * rotCross.dot(axes[0]);
   edit.tiltMesialDeg += deg * rotCross.dot(axes[1]);
-  rotCross.crossVectors(worldAxis, axes[0]);
-  edit.yawDeg += deg * rotCross.dot(axes[1]);
+  // 측면 뷰(근심·원심·협측·설측)에서 파란 호로 포스트 상단 각도를 맞출 때 마진 수평 비틀림(yaw)이 섞이지 않도록,
+  // 카메라가 교합면 방향에 가까울 때만 수평 회전(yaw)을 적용한다.
+  if (Math.abs(worldAxis.dot(axes[2])) > 0.55) {
+    rotCross.crossVectors(worldAxis, axes[0]);
+    edit.yawDeg += deg * rotCross.dot(axes[1]);
+  }
 }
 
 function copyPositions(attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) {
@@ -1343,9 +1748,12 @@ export class AbutmentDirectEditSession {
         continue;
       }
       const rebuilt = Boolean(prev);
+      const wasStale = this.stale.has(design.toothNumber);
       this.stale.delete(design.toothNumber);
       if (prev) this.disposeGumball(prev.gumball);
-      if (rebuilt) {
+      const preservedEdit =
+        rebuilt && !wasStale ? this.edits.get(design.toothNumber) : undefined;
+      if (rebuilt && wasStale) {
         const had =
           this.edits.has(design.toothNumber) ||
           this.history.some((step) => step.tooth === design.toothNumber) ||
@@ -1361,6 +1769,21 @@ export class AbutmentDirectEditSession {
         : null;
       const margin = design.marginLoopLocal?.length ? new Float32Array(design.marginLoopLocal) : null;
       const fixture = fixtureMatrix(design.fixture.fixturePose);
+      const zone = zoneOf(design, proposal, proposalSolid, margin);
+      const inferredJaw: "upper" | "lower" =
+        design.jaw ?? (/^[12]/.test(String(design.toothNumber || "")) ? "upper" : "lower");
+      const opposingGeometry = this.bridge.getOpposingGeometry?.(inferredJaw) ?? null;
+      const oppProbe = buildOpposingClearanceProbe(opposingGeometry, design.fixture, zone);
+      const sampleSrc = proposalSolid ?? proposal;
+      const topSampleVertices = collectTopSampleVertices(sampleSrc, zone);
+      const rawTargetClearance =
+        design.metrics?.occlusalClearanceMm ?? design.params?.occlusalClearanceMm ?? null;
+      const targetClearanceMm =
+        rawTargetClearance != null && Number.isFinite(Number(rawTargetClearance))
+          ? Number(rawTargetClearance)
+          : oppProbe
+            ? oppProbe.measureMinClearance(sampleSrc, topSampleVertices)
+            : null;
       const view: ToothView = {
         geometry: mesh.geometry,
         proposal,
@@ -1369,7 +1792,11 @@ export class AbutmentDirectEditSession {
         proposalMargin: margin,
         lastDrilledLocal: new Float32Array(proposal),
         lastDrilledEdit: identityAbutmentEdit(),
-        zone: zoneOf(design, proposal, proposalSolid, margin),
+        lastAutoLiftMm: 0,
+        zone,
+        oppProbe,
+        topSampleVertices,
+        targetClearanceMm,
         anchor: new THREE.Vector3(),
         midZ: 0,
         topZ: 0,
@@ -1384,6 +1811,9 @@ export class AbutmentDirectEditSession {
       this.placeAnchor(view, design);
       this.views.set(design.toothNumber, view);
       scene.add(view.gumball);
+      if (preservedEdit && !editsEqual(preservedEdit, EMPTY_EDIT)) {
+        this.show(design.toothNumber, true);
+      }
     }
     for (const [tooth, view] of this.views) {
       if (seen.has(tooth)) continue;
@@ -1797,11 +2227,38 @@ export class AbutmentDirectEditSession {
         { ...edit, partial: [] },
         { ...view.zone, screwR: 0 },
         marginLocal,
+        0,
       );
     }
     let measured = this.summary;
+    let autoLiftMm = cached ? view.lastAutoLiftMm : 0;
     if (!cached) {
-      measured = refitLocalPositions(previewSrc, edit, previewZone, local);
+      measured = refitLocalPositions(previewSrc, edit, previewZone, local, 0);
+      const hasRotation =
+        Math.abs(edit.tiltLabialDeg) > 1e-3 ||
+        Math.abs(edit.tiltMesialDeg) > 1e-3 ||
+        Math.abs(edit.yawDeg) > 1e-3;
+      if (
+        hasRotation &&
+        view.oppProbe &&
+        view.targetClearanceMm != null &&
+        view.topSampleVertices.length > 0 &&
+        previewSrc.length === (view.proposalSolid ?? view.proposal).length
+      ) {
+        const manualLift = computeZLift(view.topZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
+        const desiredClearance = Math.max(0.7, view.targetClearanceMm - manualLift);
+        const axialCos = Math.max(view.oppProbe.up[2], 0.35);
+        for (let pass = 0; pass < 2; pass += 1) {
+          const curClear = view.oppProbe.measureMinClearance(local, view.topSampleVertices);
+          if (curClear == null) break;
+          const stepLift = (curClear - desiredClearance) / axialCos;
+          const nextLift = clamp(autoLiftMm + stepLift, -2.8, 2.8);
+          if (Math.abs(nextLift - autoLiftMm) < 0.008) break;
+          autoLiftMm = nextLift;
+          measured = refitLocalPositions(previewSrc, edit, previewZone, local, autoLiftMm);
+        }
+      }
+      view.lastAutoLiftMm = autoLiftMm;
       this.summary = measured;
       if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
         regenerateCuffToMargin(previewSrc, local, view.proposalMargin, marginLocal, previewZone);
@@ -1814,7 +2271,13 @@ export class AbutmentDirectEditSession {
     let crownLocal: Float32Array | null = null;
     if (crown && view.proposalCrown) {
       crownLocal = new Float32Array(view.proposalCrown.length);
-      refitLocalPositions(view.proposalCrown, { ...edit, partial: [] }, { ...view.zone, screwR: 0 }, crownLocal);
+      refitLocalPositions(
+        view.proposalCrown,
+        { ...edit, partial: [] },
+        { ...view.zone, screwR: 0 },
+        crownLocal,
+        autoLiftMm,
+      );
       writeAttribute(
         crown.geometry,
         applyMatrixToPositions(crownLocal, view.fixture, new Float32Array(crownLocal.length)),
@@ -1867,12 +2330,29 @@ export class AbutmentDirectEditSession {
       const proposalSurface = view.proposalSolid ?? view.proposal;
       if (!baselineMeasured) {
         baselineMeasured = measureEditedAbutment(proposalSurface, view.proposalMargin, view.proposalCrown);
+        if (baselineMeasured && view.oppProbe && view.topSampleVertices.length > 0) {
+          const baseClear = view.oppProbe.measureMinClearance(proposalSurface, view.topSampleVertices);
+          if (baseClear != null) {
+            baselineMeasured.occlusalClearanceMm = Math.max(0, Math.round(baseClear * 100) / 100);
+          }
+        }
         view.baselineMeasure = baselineMeasured;
       }
       const savedSolid = design.solidBodyLocalPositions;
       const surface =
         cached && savedSolid && savedSolid.length >= 9 ? savedSolid : local;
       measured = measureEditedAbutment(surface, marginLocal, crownLocal ?? view.proposalCrown);
+      if (
+        measured &&
+        view.oppProbe &&
+        view.topSampleVertices.length > 0 &&
+        surface.length === proposalSurface.length
+      ) {
+        const liveClear = view.oppProbe.measureMinClearance(surface, view.topSampleVertices);
+        if (liveClear != null) {
+          measured.occlusalClearanceMm = Math.max(0, Math.round(liveClear * 100) / 100);
+        }
+      }
     }
     return {
       tooth: design.toothNumber,
@@ -1907,7 +2387,13 @@ export class AbutmentDirectEditSession {
       const solidOut =
         previewSrc === view.proposalSolid ? new Float32Array(local) : new Float32Array(view.proposalSolid.length);
       if (previewSrc !== view.proposalSolid) {
-        refitLocalPositions(view.proposalSolid, edit, { ...view.zone, screwR: 0 }, solidOut);
+        refitLocalPositions(
+          view.proposalSolid,
+          edit,
+          { ...view.zone, screwR: 0 },
+          solidOut,
+          view.lastAutoLiftMm,
+        );
         if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
           regenerateCuffToMargin(view.proposalSolid, solidOut, view.proposalMargin, marginLocal, view.zone);
         }
@@ -1940,7 +2426,7 @@ export class AbutmentDirectEditSession {
         .catch(() => {
           if (view.bakeEpoch !== epoch) return;
           const fallback = new Float32Array(view.proposal.length);
-          refitLocalPositions(view.proposal, edit, view.zone, fallback);
+          refitLocalPositions(view.proposal, edit, view.zone, fallback, view.lastAutoLiftMm);
           if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
             regenerateCuffToMargin(view.proposal, fallback, view.proposalMargin, marginLocal, view.zone);
           }
@@ -1963,6 +2449,7 @@ export class AbutmentDirectEditSession {
       design.solidBodyLocalPositions = new Float32Array(view.proposalSolid);
       view.lastDrilledLocal = new Float32Array(view.proposal);
       view.lastDrilledEdit = identityAbutmentEdit();
+      view.lastAutoLiftMm = 0;
     }
     design.localPositions = new Float32Array(local);
     const stlPositions =
@@ -2046,10 +2533,23 @@ export class AbutmentDirectEditSession {
   }
 
   private gumballPosition(view: ToothView, edit: AbutmentEdit) {
-    const h = Math.max(view.midZ - view.zone.fixedZ, 0);
-    const offL = edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * h;
-    const offM = edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * h;
-    const zLift = computeZLift(view.midZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
+    const meanM = view.zone.meanMarginZ ?? view.zone.marginZ;
+    const postSpan = Math.max(view.topZ - meanM, 0.8);
+    const hAbove = Math.max(view.midZ - meanM, 0);
+    const uLean = hAbove > 0 ? clamp(((hAbove * hAbove) / (hAbove + 0.12)) / postSpan, 0, 1.15) : 0;
+    const { topLeanL, topLeanM } = computeSafePostTopLean(
+      edit,
+      view.zone,
+      view.topZ,
+      view.zone.centerL ?? 0,
+      view.zone.centerM ?? 0,
+    );
+    const offL = edit.shiftLabialMm + topLeanL * uLean;
+    const offM = edit.shiftMesialMm + topLeanM * uLean;
+    const uPost = hAbove > 0 ? clamp(hAbove / postSpan, 0, 1) : 0;
+    const zLift =
+      computeZLift(view.midZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit) +
+      view.lastAutoLiftMm * uPost;
     return view.anchor
       .clone()
       .addScaledVector(view.axes[0], offL)

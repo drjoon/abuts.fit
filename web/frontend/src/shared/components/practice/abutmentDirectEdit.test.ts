@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 
 import { cuffProfile } from "../../practice/cuffProfile";
+import { designCustomAbutmentStl } from "../../practice/customAbutmentStlDesign";
 import {
+  AbutmentDirectEditSession,
   applyWorldDeltaToAbutmentEdit,
   applyWorldRotationToAbutmentEdit,
   buildAbutmentPreferenceUpdate,
@@ -17,6 +19,7 @@ import {
   sculptFalloff,
   writeAttribute,
   type AbutmentEdit,
+  type AbutmentEditSummary,
 } from "./abutmentDirectEdit";
 
 const zone = {
@@ -76,9 +79,13 @@ assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4
 const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
 assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
 
-const tiltDeg = (Math.atan2(1, 6 - zone.fixedZ) * 180) / Math.PI;
-const tilted = one([2, 0, 6], edit({ tiltLabialDeg: tiltDeg }));
-assert.ok(Math.abs(tilted[0]! - 3) < 1e-3 && Math.abs(tilted[2]! - 6) < 1e-4, "기울이면 윗면이 순측으로");
+const tiltDeg = 12;
+const tiltedPair = many([2, 0, 6, -2, 0, 6, 2.5, 0, 3], edit({ tiltLabialDeg: tiltDeg }));
+assert.ok(
+  tiltedPair[0]! > 2.3 && tiltedPair[2]! < 6 - 0.3 && tiltedPair[8]! === 3,
+  "파란 회전툴 기울기 시 순측 상단은 내려가고 설측 상단은 올라가며 마진은 고정된다",
+);
+assert.ok(tiltedPair[5]! > 6 + 0.3, "반대쪽(설측) 상단은 대칭으로 올라가 평평한 경사면을 유지한다");
 const tiltConnection = one([1, 0, 0.2], edit({ tiltLabialDeg: tiltDeg }));
 assert.ok(Math.abs(tiltConnection[0]! - 1) < 1e-6, "기울여도 커넥션은 그대로");
 
@@ -152,13 +159,16 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   const rotY = edit();
   applyWorldRotationToAbutmentEdit(rotY, new THREE.Vector3(0, 1, 0), 10, axes);
   const topRotY = one([1, 0, 6.6], rotY);
-  assert.ok(topRotY[0]! > 1.7 && Math.abs(topRotY[1]!) < 1e-4, "+Y 축 오른손 회전은 상단을 +X로 기울인다");
+  assert.ok(
+    topRotY[0]! > 1.45 && Math.abs(topRotY[1]!) < 1e-4 && topRotY[2]! < 6.6 - 0.1,
+    "+Y 축 오른손 회전은 상단을 +X로 기울이고 +X 모서리를 낮춘다",
+  );
 
   // 오른손 법칙: worldAxis = +X 주위로 +10° 회전하면 +Z 정점(1, 0, h)은 +X × +Z = -Y 방향으로 이동해야 한다.
   const rotX = edit();
   applyWorldRotationToAbutmentEdit(rotX, new THREE.Vector3(1, 0, 0), 10, axes);
   const topRotX = one([1, 0, 6.6], rotX);
-  assert.ok(topRotX[1]! < -0.7 && Math.abs(topRotX[0]! - 1) < 1e-4, "+X 축 오른손 회전은 상단을 -Y로 기울인다");
+  assert.ok(topRotX[1]! < -0.45 && Math.abs(topRotX[0]! - 1) < 1e-4, "+X 축 오른손 회전은 상단을 -Y로 기울인다");
 
   // 좌수계 사분면(#38 하악 좌측: labial = +X, mesial = -Y, axis = +Z → labial × mesial = -Z)에서도
   // 화면 밖(협측 +X) 주위로 반시계(+10°) 회전하면 상단(+Z)이 화면 왼쪽(근심, -Y)으로 정확히 기울어야 한다.
@@ -172,7 +182,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   applyWorldRotationToAbutmentEdit(rot38, new THREE.Vector3(1, 0, 0), 10, leftHandAxes);
   const out38 = new Float32Array(3);
   refitLocalPositions(new Float32Array([1.5, 0, 6.6]), rot38, leftHandZone, out38);
-  assert.ok(out38[1]! < -0.7 && Math.abs(out38[0]! - 1.5) < 1e-4, "#38 좌수계 협측 뷰에서도 반시계 회전이 화면 왼쪽(근심)으로 기울인다");
+  assert.ok(out38[1]! < -0.45 && Math.abs(out38[0]! - 1.5) < 1e-4, "#38 좌수계 협측 뷰에서도 반시계 회전이 화면 왼쪽(근심)으로 기울인다");
 }
 
 // 정점 배열 크기가 솔리드 ↔ 스크류 홀 부울 메시로 바뀔 때 normal 버퍼 크기가 어긋나지 않는지 검증
@@ -297,6 +307,225 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   const dz2 = out[8]! - out[5]!;
   const dz3 = out[11]! - out[8]!;
   assert.ok(dz3 > 0.5 && Math.abs(dz1 - dz2) < 1e-4 && Math.abs(dz2 - dz3) < 1e-4, "상단 링 간격이 0으로 찌그러지지 않고 등간격을 유지한다");
+}
+
+// #36 대구치에서 협측 대합치가 낮고 설측 대합치가 높은 경우:
+// 1) 초기 생성부터 포스트 최상단은 평평한 면을 유지하면서 대합치와 협·설 거리가 비슷하도록 각도가 잡히고 최단 거리는 설정값(1.3 / 1.5mm)에 맞춰진다.
+// 2) 파란 회전 툴로 각도를 돌릴 때도 마진 왜곡·음수 테이퍼 없이 평평한 상단 각도가 회전하며 최단 대합 거리가 유지된다.
+{
+  const makeGridSurface = (
+    xMin: number,
+    xMax: number,
+    yMin: number,
+    yMax: number,
+    steps: number,
+    zFn: (x: number, y: number) => number,
+  ) => {
+    const tris: number[] = [];
+    const dx = (xMax - xMin) / steps;
+    const dy = (yMax - yMin) / steps;
+    for (let ix = 0; ix < steps; ix += 1) {
+      for (let iy = 0; iy < steps; iy += 1) {
+        const x0 = xMin + ix * dx;
+        const x1 = x0 + dx;
+        const y0 = yMin + iy * dy;
+        const y1 = y0 + dy;
+        const z00 = zFn(x0, y0);
+        const z10 = zFn(x1, y0);
+        const z11 = zFn(x1, y1);
+        const z01 = zFn(x0, y1);
+        tris.push(x0, y0, z00, x1, y0, z10, x1, y1, z11);
+        tris.push(x0, y0, z00, x1, y1, z11, x0, y1, z01);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  // 하악 치은 스캔 (평균 치은 높이 z ≈ 3.2mm)
+  const jawGeo = makeGridSurface(-12, 12, -12, 12, 32, (x, y) => {
+    const r = Math.hypot(x, y);
+    return 3.2 - 0.4 * Math.exp(-(r * r) / 8);
+  });
+
+  // 대합치(#26): 협측(+X)은 낮고(z ≈ 9.2mm) 설측(-X)으로 갈수록 높아지는(기울기 ~16°) 교합면
+  const oppSlope = -Math.tan((16 * Math.PI) / 180);
+  const oppZAt = (x: number, y: number) => 10.2 + oppSlope * x + 0.03 * y * y;
+  const oppGeo = makeGridSurface(-8, 8, -8, 8, 28, oppZAt);
+
+  const fixture36 = {
+    toothNumber: "36",
+    jaw: "lower" as const,
+    fixturePose: {
+      origin: [0, 0, 0] as [number, number, number],
+      axis: [0, 0, 1] as [number, number, number],
+      hexX: [1, 0, 0] as [number, number, number],
+      hexY: [0, 1, 0] as [number, number, number],
+    },
+    scanbodyTop: [0, 0, 7] as [number, number, number],
+    scanbodyRadiusMm: 2.25,
+    scanbodyHeightMm: 7.0,
+    gingivaFloorMm: 2.8,
+    rmsMm: 0.02,
+    topCoverage: 0.95,
+    matchedLibraryLabel: "지오메디 Ø4.5×7mm",
+    connectionSpec: {
+      manufacturer: "NEOBIOTECH",
+      brand: "IS2",
+      family: "IS",
+      type: "Hex",
+      originDiameterMm: 3.5,
+      hexSizeMm: 2.5,
+      l2Mm: 2.75,
+      prcConeTopMm: 1.0,
+      screwLowerDiameterMm: 2.0,
+      screwUpperDiameterMm: 2.4,
+    },
+    archOcclusalDir: [0, 0, 1] as [number, number, number],
+    labialDir: [1, 0, 0] as [number, number, number],
+    mesialDir: [0, 1, 0] as [number, number, number],
+  };
+
+  for (const targetClear of [1.3, 1.5]) {
+    const designed = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: oppGeo,
+      params: { occlusalClearanceMm: targetClear },
+    });
+    assert.ok(designed.metrics.occlusalClearanceMm != null, "대합 거리가 측정된다");
+    assert.ok(
+      Math.abs(designed.metrics.occlusalClearanceMm! - targetClear) <= 0.08,
+      `최단 대합 거리(${designed.metrics.occlusalClearanceMm}mm)가 설정값(${targetClear}mm)에 맞춰진다`,
+    );
+
+    // 협측(+X) 상단과 설측(-X) 상단에서 대합치까지의 거리가 고르게 형성되는지 검증
+    const solid = designed.solidBodyLocalPositions!;
+    let topZMax = -Infinity;
+    for (let i = 2; i < solid.length; i += 3) topZMax = Math.max(topZMax, solid[i]!);
+    let topCx = 0;
+    let topCn = 0;
+    for (let i = 0; i < solid.length; i += 3) {
+      if (solid[i + 2]! < topZMax - 2.0) continue;
+      topCx += solid[i]!;
+      topCn += 1;
+    }
+    topCx = topCn > 0 ? topCx / topCn : 0;
+    let minBuccalGap = Infinity;
+    let minLingualGap = Infinity;
+    for (let i = 0; i < solid.length; i += 3) {
+      const x = solid[i]!;
+      const y = solid[i + 1]!;
+      const z = solid[i + 2]!;
+      if (z < topZMax - 2.4 || Math.abs(y) > 0.8) continue;
+      const dx = x - topCx;
+      if (dx > 1.2 && dx < 2.8) minBuccalGap = Math.min(minBuccalGap, oppZAt(x, y) - z);
+      if (dx < -1.2 && dx > -2.8) minLingualGap = Math.min(minLingualGap, oppZAt(x, y) - z);
+    }
+    assert.ok(
+      Number.isFinite(minBuccalGap) &&
+        Number.isFinite(minLingualGap) &&
+        Math.abs(minBuccalGap - minLingualGap) < 0.35,
+      `초기 생성 포스트 상단의 협측(${minBuccalGap.toFixed(2)}mm)·설측(${minLingualGap.toFixed(2)}mm) 대합 거리가 비슷하다`,
+    );
+
+    if (targetClear === 1.5) {
+      // 파란 회전 툴 세션 검증: 회전 후에도 테이퍼 양수, 직경 폭증 없음, 최단 대합 거리 ~1.5mm 유지
+      const scene = new THREE.Scene();
+      const mesh = new THREE.Mesh(designed.worldGeometry.clone(), new THREE.MeshBasicMaterial());
+      scene.add(mesh);
+      let lastSummary: AbutmentEditSummary | null = null;
+      const session = new AbutmentDirectEditSession({
+        getScene: () => scene,
+        getCamera: () => null,
+        getRenderer: () => null,
+        getHost: () => null,
+        getDesigns: () => [designed],
+        getAbutment: () => mesh,
+        getCrown: () => undefined,
+        getMargin: () => undefined,
+        getOpposingGeometry: () => oppGeo,
+        ui: {
+          gumballOn: true,
+          sculptOn: false,
+          radiusMm: 2.4,
+          readOnly: false,
+          selected: "36",
+          visible: { "36": true },
+          expanded: { "36": true },
+        },
+        onBadge: () => {},
+        onCommit: (s) => {
+          lastSummary = s;
+        },
+        onShape: (s) => {
+          lastSummary = s;
+        },
+        onHistory: () => {},
+      });
+      session.sync();
+      // 세션 내부 edit에 직접 회전(양방향 -12°, +12°)을 걸어 show 검증
+      const internalEdits = session as unknown as {
+        edits: Map<string, AbutmentEdit>;
+        show: (t: string, b: boolean, s?: boolean) => void;
+      };
+      for (const deg of [-12, 12]) {
+        internalEdits.edits.set("36", edit({ tiltLabialDeg: deg }));
+        internalEdits.show("36", false);
+        assert.ok(lastSummary?.measured != null, "회전 중 측정값이 계산된다");
+        const mRot = lastSummary!.measured!;
+        assert.ok(
+          mRot.postTaperDeg > 0.3,
+          `${deg}° 회전 후에도 음수 언더컷 없이 양수 테이퍼(${mRot.postTaperDeg.toFixed(1)}°) 유지`,
+        );
+        assert.ok(
+          mRot.maxDiameterMm < designed.metrics.maxDiameterMm + 1.2,
+          `${deg}° 회전 후에도 최대 직경(${mRot.maxDiameterMm.toFixed(2)}mm)이 마진 바깥으로 폭증하지 않는다`,
+        );
+        assert.ok(
+          mRot.occlusalClearanceMm != null && Math.abs(mRot.occlusalClearanceMm - 1.5) <= 0.12,
+          `${deg}° 회전 후에도 최단 대합 거리(${mRot.occlusalClearanceMm}mm)가 설정값(1.5mm)에 맞춰 유지된다`,
+        );
+      }
+      session.dispose();
+    }
+  }
+
+  // 대합치(#26)가 협측으로 치우쳐 설측 끝(x < -1.2mm)에 대합 스캔이 비어 있는 경우(첨1 케이스)에도
+  // 빈 열 때문에 상단이 반대로 기울지 않고 협측·중央·설측 경사를 따라 평평하게 정렬되는지 검증
+  const partialOppGeo = makeGridSurface(-1.2, 7.5, -8, 8, 24, oppZAt);
+  const partialDesigned = await designCustomAbutmentStl({
+    fixture: fixture36,
+    jawGeometry: jawGeo,
+    opposingGeometry: partialOppGeo,
+    params: { occlusalClearanceMm: 1.3 },
+  });
+  assert.ok(
+    partialDesigned.metrics.occlusalClearanceMm != null &&
+      Math.abs(partialDesigned.metrics.occlusalClearanceMm - 1.3) <= 0.08,
+    `부분 대합 스캔에서도 최단 대합 거리(${partialDesigned.metrics.occlusalClearanceMm}mm)가 1.3mm에 맞춰진다`,
+  );
+  {
+    const solid = partialDesigned.solidBodyLocalPositions!;
+    let topZMax = -Infinity;
+    for (let i = 2; i < solid.length; i += 3) topZMax = Math.max(topZMax, solid[i]!);
+    let buccalTopZ = -Infinity;
+    let lingualTopZ = -Infinity;
+    for (let i = 0; i < solid.length; i += 3) {
+      const x = solid[i]!;
+      const y = solid[i + 1]!;
+      const z = solid[i + 2]!;
+      if (Math.abs(y) > 0.8 || z < topZMax - 2.6) continue;
+      if (x > 1.8 && x < 2.8) buccalTopZ = Math.max(buccalTopZ, z);
+      if (x < -0.6 && x > -1.5) lingualTopZ = Math.max(lingualTopZ, z);
+    }
+    assert.ok(
+      lingualTopZ > buccalTopZ + 0.35,
+      `설측 대합 스캔 일부가 비어 있어도 설측 상단(${lingualTopZ.toFixed(2)}mm)이 협측 상단(${buccalTopZ.toFixed(2)}mm)보다 높게 기울어 대합치 경사를 따른다`,
+    );
+  }
 }
 
 console.log("abutment direct edit ok");

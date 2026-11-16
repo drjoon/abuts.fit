@@ -686,7 +686,9 @@ function metricsFromGumball(
     occlusalClearanceMm:
       base.occlusalClearanceMm == null
         ? null
-        : Math.round(Math.max(0, base.occlusalClearanceMm - summary.heightDeltaMm) * 100) / 100,
+        : now.occlusalClearanceMm != null && orig.occlusalClearanceMm != null
+          ? Math.max(0, shiftMetric(base.occlusalClearanceMm, now.occlusalClearanceMm, orig.occlusalClearanceMm))
+          : Math.round(Math.max(0, base.occlusalClearanceMm - summary.heightDeltaMm) * 100) / 100,
   };
 }
 
@@ -959,6 +961,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       getAbutment: (tooth) => abutmentMeshesRef.current.get(tooth),
       getCrown: (tooth) => predictedCrownMeshesRef.current.get(tooth),
       getMargin: (tooth) => marginLinesRef.current.get(tooth),
+      getOpposingGeometry: (jaw) => {
+        const oppJaw = jaw === "upper" ? "lower" : "upper";
+        return (
+          designContextRef.current?.jawGeometry[oppJaw] ??
+          rawJawScansRef.current.find((s) => s.jaw === oppJaw)?.geometry ??
+          null
+        );
+      },
       ui: {
         gumballOn: true,
         sculptOn: false,
@@ -3226,6 +3236,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       set.add(field);
       const patch = computeParamsFromInfoFieldEdit(item, field, nextValue);
       if (Object.keys(patch).length === 0) return;
+      if (field === "axisSource") {
+        directEditRef.current?.clear([tooth]);
+      }
       void applyDesignChanges([{ toothNumber: tooth, params: patch }]).then(() => {
         persistDesign();
       });

@@ -77,8 +77,8 @@ const TOP_ROUND_ANTERIOR_MM = 0.45;
 const TOP_ROUND_STEPS = 10;
 /** 픽스쳐 사이가 이 안이면 붙은 치아로 보고 삽입축을 평행하게 맞춘다. */
 const PARALLEL_GROUP_MM = 13;
-/** 소·대구치 평평한 윗면의 최대 기울기. */
-const FLAT_TOP_MAX_TILT = Math.tan(7 * DEG);
+/** 소·대구치 평평한 윗면의 최대 기울기(대합치 교합면 경사에 맞춰 협·설·근·원심 거리가 고르게 되도록 허용). */
+const FLAT_TOP_MAX_TILT = Math.tan(18 * DEG);
 /** 전치에서 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
 /** 전치에서 크라운 공간 때문에 깎은 축벽이 아래 원래 벽으로 돌아가는 사선. */
@@ -1592,6 +1592,100 @@ function buildOpposingHeightField(
     return best;
   };
   return { list, heightAt };
+}
+
+/**
+ * 포스트 상단 영역 위의 대합치 교합면(하한 포락면)에 평행하면서 가장 높은 평면 기울기(gu, gv)를 구한다.
+ * 대합치가 한쪽(예: 설측)에 비어 있어도 Infinity 열에 끌려 기울기가 반대로 눕지 않고,
+ * 양쪽 교두가 있으면 두 교두 모두 비슷한 대합 거리를 갖도록 평평한 경사면을 맞춘다.
+ */
+function estimateOpposingOcclusalPlane(
+  field: ReturnType<typeof buildOpposingHeightField>,
+  opts: {
+    centerU: number;
+    centerV: number;
+    halfU: number;
+    halfV: number;
+    maxTilt: number;
+  },
+): { gu: number; gv: number; lowH: number } | null {
+  let pool = field.list.filter(
+    (c) => Math.abs(c.u - opts.centerU) <= opts.halfU && Math.abs(c.v - opts.centerV) <= opts.halfV,
+  );
+  if (pool.length < 6) {
+    const rWide = Math.max(opts.halfU, opts.halfV) + 1.2;
+    pool = field.list.filter((c) => Math.hypot(c.u - opts.centerU, c.v - opts.centerV) <= rWide);
+  }
+  if (pool.length < 5) return null;
+
+  const hs = pool.map((c) => c.h).sort((a, b) => a - b);
+  // 단일 먼지 정점 하나에 기울기가 휘둘리지 않도록 최하단 두 번째 셀을 기준으로 이상치를 거른다.
+  const secondH = hs[Math.min(1, hs.length - 1)]!;
+  const floorNoiseH = secondH - 0.55;
+  const lowH = Math.max(hs[Math.floor(hs.length * 0.04)]!, floorNoiseH);
+  const band = pool.filter((c) => c.h >= floorNoiseH && c.h <= lowH + 3.6);
+  if (band.length < 5) return null;
+
+  let uMin = Infinity;
+  let uMax = -Infinity;
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (const c of band) {
+    if (c.u < uMin) uMin = c.u;
+    if (c.u > uMax) uMax = c.u;
+    if (c.v < vMin) vMin = c.v;
+    if (c.v > vMax) vMax = c.v;
+  }
+  const uSpan = uMax - uMin;
+  const vSpan = vMax - vMin;
+
+  const maxTilt = opts.maxTilt;
+  const regWeight = 0.28;
+  const evalScore = (gu: number, gv: number) => {
+    let minA = Infinity;
+    for (const c of band) {
+      const a = c.h - gu * (c.u - opts.centerU) - gv * (c.v - opts.centerV);
+      if (a < minA) minA = a;
+    }
+    return minA - regWeight * (gu * gu + gv * gv);
+  };
+
+  let bestGu = 0;
+  let bestGv = 0;
+  let bestScore = evalScore(0, 0);
+  let step = maxTilt / 4;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const cGu = bestGu;
+    const cGv = bestGv;
+    const gridN = pass === 0 ? 4 : 2;
+    for (let iu = -gridN; iu <= gridN; iu += 1) {
+      for (let iv = -gridN; iv <= gridN; iv += 1) {
+        let gu = cGu + iu * step;
+        let gv = cGv + iv * step;
+        const g = Math.hypot(gu, gv);
+        if (g > maxTilt) {
+          gu *= maxTilt / g;
+          gv *= maxTilt / g;
+        }
+        const s = evalScore(gu, gv);
+        if (s > bestScore) {
+          bestScore = s;
+          bestGu = gu;
+          bestGv = gv;
+        }
+      }
+    }
+    step /= 2.6;
+  }
+
+  // 대합치가 포스트 한쪽 끝에만 살짝 스치는 경우(폭 < 0.7mm)에는 빈 공간 쪽으로 과도하게 기울이지 않는다.
+  const dampU = clamp((uSpan - 0.7) / 1.4, 0, 1);
+  const dampV = clamp((vSpan - 0.7) / 1.4, 0, 1);
+  return {
+    gu: bestGu * dampU,
+    gv: bestGv * dampV,
+    lowH,
+  };
 }
 
 /**
@@ -3141,21 +3235,41 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let wantV = nearV;
     if (opposingLocalPts.length > 0 && effectiveAxisToOpposing > 0) {
       const frameOccRef = insertionFrame(occInFix, labXY);
+      const labSignOcc = dot3(frameOccRef.uLabial, labXY) >= 0 ? 1 : -1;
       const mesSignOcc = dot3(frameOccRef.vSide, mesXY) >= 0 ? 1 : -1;
       const center = opposingCenterPoint(opposingLocalPts, c0, frameOccRef, {
         vCrownMm: crownShiftMesMm * mesSignOcc,
         halfMdMm: crownHalfMd,
         constrainMesiodistal: hasProximalBound,
       });
-      if (center) {
-        const relOpp = sub3(center, c0);
-        const scaleH = H / Math.max(relOpp[2], H + 1.2);
-        const oppU = dot3(relOpp, labXY) * scaleH;
-        const oppV = dot3(relOpp, mesXY) * scaleH;
-        const wOppU = (isBridgedToScanned ? 0.5 : 0.62) * effectiveAxisToOpposing;
-        const wOppV = (isBridgedToScanned ? 0.28 : 0.42) * effectiveAxisToOpposing;
-        wantU = oppU * wOppU + nearU * (1 - wOppU);
-        wantV = oppV * wOppV + nearV * (1 - wOppV);
+      const oppFieldOcc = buildOpposingHeightField(opposingLocalPts, c0, frameOccRef, 9.0);
+      const oppPlaneOcc = estimateOpposingOcclusalPlane(oppFieldOcc, {
+        centerU: 0,
+        centerV: crownShiftMesMm * mesSignOcc,
+        halfU: Math.max(2.6, marginA - shoulderW + 0.8),
+        halfV: Math.max(2.4, Math.min(marginB - shoulderW + 0.7, crownHalfMd * 0.88)),
+        maxTilt: FLAT_TOP_MAX_TILT,
+      });
+      if (center || oppPlaneOcc) {
+        let oppTargetU = nearU;
+        let oppTargetV = nearV;
+        if (center) {
+          const relOpp = sub3(center, c0);
+          const scaleH = H / Math.max(relOpp[2], H + 1.2);
+          oppTargetU = dot3(relOpp, labXY) * scaleH;
+          oppTargetV = dot3(relOpp, mesXY) * scaleH;
+        }
+        if (oppPlaneOcc) {
+          // 대합치 교합면이 +u 쪽으로 낮고 -u 쪽으로 높으면(gu < 0), 그 면에 수직인 포스트 축은 +u(-gu > 0)로 기운다.
+          const normU = occU + clamp(-oppPlaneOcc.gu * labSignOcc, -0.36, 0.36) * H * 0.65;
+          const normV = occV + clamp(-oppPlaneOcc.gv * mesSignOcc, -0.3, 0.3) * H * 0.55;
+          oppTargetU = center ? oppTargetU * 0.42 + normU * 0.58 : normU;
+          oppTargetV = center ? oppTargetV * 0.45 + normV * 0.55 : normV;
+        }
+        const wOppU = (isBridgedToScanned ? 0.52 : 0.68) * effectiveAxisToOpposing;
+        const wOppV = (isBridgedToScanned ? 0.32 : 0.48) * effectiveAxisToOpposing;
+        wantU = oppTargetU * wOppU + nearU * (1 - wOppU);
+        wantV = oppTargetV * wOppV + nearV * (1 - wOppV);
         axisSource = "opposing";
       }
     } else if (explicitSourceCode === 0) {
@@ -3163,8 +3277,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     const wantLat = Math.hypot(wantU, wantV);
-    const effLat = wantLat > deadzoneMm ? (wantLat - deadzoneMm) * 0.72 : 0;
-    const postAutoTiltCap = Math.min(tiltCapRad, 7.0 * DEG);
+    const effDeadzone = axisSource === "opposing" ? deadzoneMm * 0.6 : deadzoneMm;
+    const effLat = wantLat > effDeadzone ? (wantLat - effDeadzone) * 0.82 : 0;
+    const postAutoTiltCap = Math.min(tiltCapRad, 8.0 * DEG);
     if (effLat > 1e-4 && wantLat > 1e-6) {
       const dirX = (labXY[0] * wantU + mesXY[0] * wantV) / wantLat;
       const dirY = (labXY[1] * wantU + mesXY[1] * wantV) / wantLat;
@@ -3385,7 +3500,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
   const postTopMax = Math.max(
     minSafePostHeightMm,
-    hasOpposing ? Math.min(baseCap + offsetH, oppRefH - clearance + 0.8) : baseCap + offsetH,
+    hasOpposing ? Math.min(baseCap + offsetH + 0.6, oppRefH - clearance + 2.4) : baseCap + offsetH,
   );
   const hasExplicitClearance =
     args.params?.occlusalClearanceMm != null && Number.isFinite(Number(args.params.occlusalClearanceMm));
@@ -4257,6 +4372,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     crownCenterV *= 0.82;
   }
 
+  const colHasOpp: boolean[] = [];
   for (let col = 0; col < ANGULAR_COLS; col += 1) {
     const theta = (col / ANGULAR_COLS) * Math.PI * 2;
     const ct = Math.cos(theta);
@@ -4273,8 +4389,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const phi = Math.atan2(dot3(dir, frame.vSide), dot3(dir, frame.uLabial));
     const cLab = Math.cos(phi);
 
-    const topDrop = cLab < 0 ? tpl.lingualTopDropMm * -cLab : 0;
+    const topDrop = !posterior && cLab < 0 ? tpl.lingualTopDropMm * -cLab : 0;
     let hTop = postTopH;
+    let hasColOpp = false;
     const tipR = posterior
       ? Math.max(0.6, r0 - targetShoulderW - 0.8)
       : cLab >= 0
@@ -4283,13 +4400,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const tu = dot3(dir, frame.uLabial) * tipR;
     const tv = dot3(dir, frame.vSide) * tipR;
     if (oppField) {
-      const oppH = oppField.heightAt(tu, tv, 1.0);
+      const oppH = oppField.heightAt(tu, tv, 1.05);
       if (Number.isFinite(oppH)) {
-        hTop = posterior ? Math.max(postTopH, oppH - clearance) : Math.min(hTop, oppH - clearance);
+        hasColOpp = true;
+        hTop = posterior ? oppH - clearance + Math.max(0, offsetH) : Math.min(hTop, oppH - clearance);
       }
     }
     hTop = Math.min(hTop, postTopMax) - topDrop;
     topRaw.push(hTop);
+    colHasOpp.push(hasColOpp);
 
     const rBase0 = Math.max(0.75, r0 - targetShoulderW);
     const hBase = h0 + chamfer.height;
@@ -4367,46 +4486,120 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     return best;
   };
-  let apexDrop = 0;
+  let planeShift = 0;
+  const oppTopFootU = Math.max(2.4, marginA - targetShoulderW + 0.55);
+  const oppTopFootV = Math.max(2.2, Math.min(marginB - targetShoulderW + 0.55, crownHalfMd * 0.88));
+  const oppTopPlane =
+    hasOpposing && oppField
+      ? estimateOpposingOcclusalPlane(oppField, {
+          centerU: initMarginCu,
+          centerV: initMarginCv,
+          halfU: oppTopFootU,
+          halfV: oppTopFootV,
+          maxTilt: posterior ? FLAT_TOP_MAX_TILT : Math.tan(13 * DEG),
+        })
+      : null;
 
-  /** 윗면 높이. 구치 교합면과 전치 절단연 모두 두 뿔·움푹 패임이 생기지 않도록 하나의 매끄러운 경사 평면으로 맞춘다. */
+  /**
+   * 윗면 높이. 구치 교합면과 전치 절단연 모두 두 뿔·움푹 패임이 생기지 않도록 하나의 평평한 경사 평면으로 맞추되,
+   * 대합치 교합면 기울기(oppTopPlane)를 따라 협·설·근·원심 거리가 고르게 되고 최단 지점이 설정된 대합 거리(clearance)에 맞도록 둔다.
+   */
   const fitTopSurface = () => {
-    let s1 = 0, su = 0, sv = 0, suu = 0, svv = 0, suv = 0, sh = 0, suh = 0, svh = 0;
-    for (let col = 0; col < ANGULAR_COLS; col += 1) {
-      const c = cols[col]!;
-      const h = topRaw[col]!;
-      s1 += 1; su += c.tipU; sv += c.tipV;
-      suu += c.tipU * c.tipU; svv += c.tipV * c.tipV; suv += c.tipU * c.tipV;
-      sh += h; suh += c.tipU * h; svh += c.tipV * h;
-    }
-    const mu = su / s1, mv = sv / s1, mh = sh / s1;
-    const cuu = suu / s1 - mu * mu, cvv = svv / s1 - mv * mv, cuv = suv / s1 - mu * mv;
-    const cuh = suh / s1 - mu * mh, cvh = svh / s1 - mv * mh;
-    const det = cuu * cvv - cuv * cuv;
-    let gu = det > 1e-9 ? (cuh * cvv - cvh * cuv) / det : 0;
-    let gv = det > 1e-9 ? (cvh * cuu - cuh * cuv) / det : 0;
+    let gu = 0;
+    let gv = 0;
     if (posterior) {
+      if (oppTopPlane) {
+        gu = oppTopPlane.gu;
+        gv = oppTopPlane.gv;
+      }
       const g = Math.hypot(gu, gv);
       if (g > FLAT_TOP_MAX_TILT) {
         gu *= FLAT_TOP_MAX_TILT / g;
         gv *= FLAT_TOP_MAX_TILT / g;
       }
     } else {
-      // 전치 절단연: 순측이 살짝 높고 설측으로 완만히 낮아지는 경사 평면, 근원심은 수평에 가깝게 유지(양옆 뿔·가운데 홈 방지).
+      const hasEnoughOppCols = colHasOpp.filter(Boolean).length >= 12;
+      let s1 = 0, su = 0, sv = 0, suu = 0, svv = 0, suv = 0, sh = 0, suh = 0, svh = 0;
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        if (hasEnoughOppCols && !colHasOpp[col]) continue;
+        const c = cols[col]!;
+        const h = topRaw[col]!;
+        s1 += 1; su += c.tipU; sv += c.tipV;
+        suu += c.tipU * c.tipU; svv += c.tipV * c.tipV; suv += c.tipU * c.tipV;
+        sh += h; suh += c.tipU * h; svh += c.tipV * h;
+      }
+      if (s1 >= 4) {
+        const mu = su / s1, mv = sv / s1, mh = sh / s1;
+        const cuu = suu / s1 - mu * mu, cvv = svv / s1 - mv * mv, cuv = suv / s1 - mu * mv;
+        const cuh = suh / s1 - mu * mh, cvh = svh / s1 - mv * mh;
+        const det = cuu * cvv - cuv * cuv;
+        gu = det > 1e-9 ? (cuh * cvv - cvh * cuv) / det : 0;
+        gv = det > 1e-9 ? (cvh * cuu - cuh * cuv) / det : 0;
+      }
+      if (oppTopPlane) {
+        gv = oppTopPlane.gv;
+      }
+      // 전치 절단연: 순측이 살짝 높고 설측으로 완만히 낮아지는 경사 평면, 근원심은 대합 절단연 경사를 완만히 반영.
       gu = clamp(gu, 0.04, Math.tan(13 * DEG));
-      gv = clamp(gv, -Math.tan(6 * DEG), Math.tan(6 * DEG));
+      gv = clamp(gv, -Math.tan(8 * DEG), Math.tan(8 * DEG));
     }
-    let a = Infinity;
-    for (let col = 0; col < ANGULAR_COLS; col += 1) {
-      const c = cols[col]!;
-      a = Math.min(a, topRaw[col]! - gu * c.tipU - gv * c.tipV);
-    }
-    a -= apexDrop;
+
+    const effClearance =
+      offsetH >= 0
+        ? Math.max(CROWN_THICKNESS_FLOOR_MM, clearance - offsetH)
+        : clearance - offsetH;
+    const evalOpposingCaps = (slopeU: number, slopeV: number) => {
+      let aClear = Infinity;
+      let aHard = Infinity;
+      if (hasOpposing && oppField) {
+        for (const cell of oppField.list) {
+          if (
+            Math.abs(cell.u - initMarginCu) > oppTopFootU ||
+            Math.abs(cell.v - initMarginCv) > oppTopFootV
+          ) {
+            continue;
+          }
+          const planeSub = slopeU * cell.u + slopeV * cell.v;
+          aClear = Math.min(aClear, cell.h - effClearance - planeSub);
+          aHard = Math.min(aHard, cell.h - CROWN_THICKNESS_FLOOR_MM - planeSub);
+        }
+      }
+      if (!Number.isFinite(aClear) && hasOpposing && Number.isFinite(oppRefH)) {
+        aClear = oppRefH - effClearance;
+        aHard = oppRefH - CROWN_THICKNESS_FLOOR_MM;
+      }
+      return { aClear, aHard };
+    };
+
+    let { aClear, aHard } = evalOpposingCaps(gu, gv);
     const minPostWall = hasOpposing ? (posterior ? 1.15 : 1.4) : 2.2;
-    const minTop = Math.max(...cols.map((c) => c.h0 + chamfer.height + minPostWall - gu * c.tipU - gv * c.tipV));
+    let minTop = Math.max(
+      ...cols.map((c) => c.h0 + chamfer.height + minPostWall - gu * c.tipU - gv * c.tipV),
+    );
+    if (hasOpposing && Number.isFinite(aHard) && minTop > aHard && Math.hypot(gu, gv) > 1e-4) {
+      gu *= 0.45;
+      gv *= 0.45;
+      ({ aClear, aHard } = evalOpposingCaps(gu, gv));
+      minTop = Math.max(
+        ...cols.map((c) => c.h0 + chamfer.height + minPostWall - gu * c.tipU - gv * c.tipV),
+      );
+    }
+
+    let a = Infinity;
+    if (hasOpposing && Number.isFinite(aClear)) {
+      const maxEdgeRise = Math.max(0, ...cols.map((c) => gu * c.tipU + gv * c.tipV));
+      const aHeightCap = baseCap + offsetH + 0.65 - maxEdgeRise * 0.65;
+      a = Math.min(aClear, aHeightCap);
+    } else {
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const c = cols[col]!;
+        a = Math.min(a, topRaw[col]! - gu * c.tipU - gv * c.tipV);
+      }
+    }
+    a += planeShift;
     a = Math.max(a, minTop);
-    if (hasOpposing && Number.isFinite(oppRefH)) {
-      a = Math.min(a, oppRefH - CROWN_THICKNESS_FLOOR_MM);
+    if (hasOpposing && Number.isFinite(aHard)) {
+      a = Math.min(a, aHard);
     }
     return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a };
   };
@@ -5813,35 +6006,51 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     };
   };
 
-  // 축 방향 높이만으로는 비스듬한 대합 교두가 옆에서 더 가깝거나 멀다.
-  // 실제 포스트 윗면 전체(라운드 곡면 + 가장자리 + 정점)에서 대합치까지 거리를 재서 열마다 올리고 내린다.
+  // 평평한 포스트 상단 경사(gu, gv)를 그대로 유지한 채, 실제 포스트 상단(라운드·정점 포함)에서
+  // 대합치까지의 최단 거리가 설정한 대합 거리(clearance)에 정확히 맞도록 상단 평면 높이(planeShift)만 평행이동한다.
+  const oppTrisLocal = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
   let shape = buildShape();
-  if (oppNear.length > 0) {
-    for (let pass = 0; pass < 7; pass += 1) {
-      let changed = false;
-      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+  if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
+    const targetClear =
+      offsetH >= 0
+        ? Math.max(CROWN_THICKNESS_FLOOR_MM, clearance - offsetH)
+        : clearance - offsetH;
+    const min3DFloor = Math.max(CROWN_THICKNESS_FLOOR_MM, targetClear - 0.22);
+    const axialCos = Math.max(dot3(frame.w, occInFix), 0.35);
+    for (let pass = 0; pass < 4; pass += 1) {
+      const rayClear =
+        oppTrisLocal.length >= 9
+          ? shortestPostTopClearanceMm({
+              columns: shape.postByCol,
+              apex: shape.postApex,
+              roundSteps: TOP_ROUND_STEPS,
+              opposingTris: oppTrisLocal,
+              up: occInFix,
+            })
+          : null;
+      let min3D = nearestOpp(shape.postApex);
+      for (let col = 0; col < ANGULAR_COLS; col += 2) {
         const post = shape.postByCol[col]!;
-        let d = Infinity;
         const sampleStart = Math.max(0, post.length - TOP_ROUND_STEPS - 2);
         for (let idx = sampleStart; idx < post.length; idx += 2) {
-          d = Math.min(d, nearestOpp(post[idx]!));
+          min3D = Math.min(min3D, nearestOpp(post[idx]!));
         }
-        d = Math.min(d, nearestOpp(post[post.length - 1]!));
-        if (!Number.isFinite(d)) continue;
-        if (d < clearance - 0.03) {
-          topRaw[col] = topRaw[col]! - (clearance - d + 0.04);
-          changed = true;
-        } else if (d > clearance + 0.25 && topRaw[col]! < postTopMax - 0.01) {
-          topRaw[col] = Math.min(postTopMax, topRaw[col]! + (d - clearance) * 0.65);
-          changed = true;
-        }
+        min3D = Math.min(min3D, nearestOpp(post[post.length - 1]!));
       }
-      const dApex = nearestOpp(shape.postApex);
-      if (Number.isFinite(dApex) && dApex < clearance - 0.03) {
-        apexDrop += clearance - dApex + 0.04;
-        changed = true;
+      let delta = 0;
+      if (rayClear != null) {
+        delta = (rayClear - targetClear) / axialCos;
+      } else if (Number.isFinite(min3D)) {
+        delta = min3D - targetClear;
+      } else {
+        break;
       }
-      if (!changed) break;
+      if (Number.isFinite(min3D) && min3D - delta < min3DFloor) {
+        delta = Math.min(delta, min3D - min3DFloor);
+      }
+      const nextShift = clamp(planeShift + delta, -3.5, 2.5);
+      if (Math.abs(nextShift - planeShift) < 0.01) break;
+      planeShift = nextShift;
       shape = buildShape();
     }
   }
@@ -5902,13 +6111,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
 
   // 포스트 윗면 0.1mm 그리드에서 교합 방향(수직) 레이 → 대합 스캔 면까지의 최단 거리
-  const occlusalClearanceMm = measurePostTopClearanceMm(
-    opposingGeometry,
-    fixture.fixturePose,
-    postByCol,
-    postApex,
-    occInFix,
-  );
+  const occlusalClearanceMm =
+    oppTrisLocal.length >= 9
+      ? shortestPostTopClearanceMm({
+          columns: postByCol,
+          apex: postApex,
+          roundSteps: TOP_ROUND_STEPS,
+          opposingTris: oppTrisLocal,
+          up: occInFix,
+        })
+      : measurePostTopClearanceMm(
+          opposingGeometry,
+          fixture.fixturePose,
+          postByCol,
+          postApex,
+          occInFix,
+        );
 
   let zMinLocal = Infinity;
   let zMaxLocal = -Infinity;
