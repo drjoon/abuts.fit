@@ -2,8 +2,9 @@
 // 검볼은 포스트 중심에 둔다. 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 화살표는 그 방향으로 포스트를 옮긴다. 축 상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기다.
-// 커넥션과 그 위 2° 테이퍼는 고정이다. 그 위 커프부터 포스트만 허용 범위 안에서 다시 계산한다.
+// 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
 // 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
+// 검볼을 움직이면 어벗 정보 수치를 다시 읽고, 손을 떼면 되돌리기 기록에 남긴다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
@@ -12,6 +13,7 @@
 import * as THREE from "three";
 
 import { encodeBinaryStl } from "../../files/stlBinaryWrite";
+import { cuffProfile } from "../../practice/cuffProfile";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   isAnteriorTooth,
@@ -77,6 +79,19 @@ export type AbutmentPartial = {
   grow: number;
 };
 
+/** 검볼로 바뀐 외형에서 다시 읽은 수치. 정보 패널은 초기 측정과의 차이만 더한다. */
+export type EditedAbutmentMetrics = {
+  maxDiameterMm: number;
+  cuffHeightMinMm: number;
+  cuffHeightMaxMm: number;
+  postHeightMm: number;
+  totalLengthMm: number;
+  angulationDeg: number;
+  postTaperDeg: number;
+  cutbackMm: number | null;
+  crownOverPostMm: number | null;
+};
+
 export type AbutmentEditSummary = {
   tooth: string;
   widthRatio: number;
@@ -84,6 +99,10 @@ export type AbutmentEditSummary = {
   yawDeg: number;
   shiftLabialMm: number;
   shiftMesialMm: number;
+  /** 손을 떼도 초기 제안과 같다. 정보 패널은 그때 수치로 되돌린다. */
+  neutral: boolean;
+  measured: EditedAbutmentMetrics | null;
+  baselineMeasured: EditedAbutmentMetrics | null;
 };
 
 export type AbutmentPreferenceUpdate = {
@@ -108,6 +127,8 @@ type Zone = {
   mesial: [number, number];
   centerL?: number;
   centerM?: number;
+  /** PRC 면 반지름. 커프가 여기서 마진으로 벌어진다. */
+  coneTopR?: number;
 };
 
 type ToothView = {
@@ -128,6 +149,7 @@ type ToothView = {
   fixture: THREE.Matrix4;
   gumball: THREE.Group;
   bakeEpoch: number;
+  baselineMeasure: EditedAbutmentMetrics | null;
 };
 
 type HandleHit = {
@@ -207,6 +229,8 @@ export type AbutmentEditBridge = {
   };
   onBadge: (tooth: string) => void;
   onCommit: (summary: AbutmentEditSummary) => void;
+  /** 드래그 중과 확정 직후. 어벗 정보 패널만 고치고 저장은 onCommit이 한다. */
+  onShape?: (summary: AbutmentEditSummary) => void;
   onHistory: () => void;
 };
 
@@ -462,6 +486,215 @@ export function refitLocalPositions(
   };
 }
 
+function cuffNeedsRegen(edit: AbutmentEdit) {
+  if (Math.abs(edit.heightMm) > 1e-4) return true;
+  if (Math.abs(edit.shiftLabialMm) > 1e-4 || Math.abs(edit.shiftMesialMm) > 1e-4) return true;
+  if (Math.abs(edit.yawDeg) > 1e-3) return true;
+  if (Math.abs(edit.tiltLabialDeg) > 1e-3 || Math.abs(edit.tiltMesialDeg) > 1e-3) return true;
+  if (Math.abs(edit.scale[0] - 1) > 1e-4) return true;
+  if (Math.abs(edit.scale[1] - 1) > 1e-4) return true;
+  if (Math.abs(edit.scale[2] - 1) > 1e-4) return true;
+  return false;
+}
+
+function measureConeTopR(src: Float32Array, coneZ: number) {
+  let best = 0;
+  for (let i = 0; i < src.length; i += 3) {
+    if (Math.abs(src[i + 2]! - coneZ) > 0.08) continue;
+    best = Math.max(best, Math.hypot(src[i]!, src[i + 1]!));
+  }
+  if (!(best > 0.2)) return 1.6;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < src.length; i += 3) {
+    if (Math.abs(src[i + 2]! - coneZ) > 0.08) continue;
+    const r = Math.hypot(src[i]!, src[i + 1]!);
+    if (r < best - 0.12) continue;
+    sum += r;
+    n += 1;
+  }
+  return n > 0 ? sum / n : best;
+}
+
+function marginColumn(angle: number, count: number) {
+  const tau = Math.PI * 2;
+  const wrapped = ((angle % tau) + tau) % tau;
+  return Math.round((wrapped / tau) * count) % count;
+}
+
+/**
+ * 콘 위 커프 정점을 지금 마진 열에 맞춰 다시 놓는다.
+ * 2°로 시작해 오목하게 벌어지고, 끝점은 그 방향의 마진 점과 만난다. 마진 위 포스트는 그대로 둔다.
+ */
+export function regenerateCuffToMargin(
+  proposal: Float32Array,
+  fitted: Float32Array,
+  proposalMargin: Float32Array,
+  fittedMargin: Float32Array,
+  zone: Zone,
+) {
+  const count = Math.floor(proposalMargin.length / 3);
+  if (count < 3 || fittedMargin.length < count * 3 || proposal.length !== fitted.length) return;
+  const coneZ = zone.coneZ;
+  const coneTopR = zone.coneTopR && zone.coneTopR > 0.2 ? zone.coneTopR : measureConeTopR(proposal, coneZ);
+  const screwR = zone.screwR;
+  const origZ = new Float32Array(count);
+  const endZ = new Float32Array(count);
+  const endAng = new Float32Array(count);
+  const profiles: Array<(z: number) => number> = [];
+  for (let col = 0; col < count; col += 1) {
+    const i = col * 3;
+    origZ[col] = proposalMargin[i + 2]!;
+    const x = fittedMargin[i]!;
+    const y = fittedMargin[i + 1]!;
+    endZ[col] = fittedMargin[i + 2]!;
+    endAng[col] = Math.atan2(y, x);
+    profiles.push(cuffProfile(coneTopR, coneZ, Math.hypot(x, y), endZ[col]!));
+  }
+  for (let i = 0; i < proposal.length; i += 3) {
+    const ox = proposal[i]!;
+    const oy = proposal[i + 1]!;
+    const oz = proposal[i + 2]!;
+    if (oz <= coneZ + 1e-3) continue;
+    if (screwR > 0.15 && Math.hypot(ox, oy) <= screwR + 0.22) continue;
+    const col = marginColumn(Math.atan2(oy, ox), count);
+    const marginZ = origZ[col]!;
+    if (!(marginZ > coneZ + 0.05) || oz >= marginZ - 1e-3) continue;
+    const u = clamp((oz - coneZ) / (marginZ - coneZ), 0, 1);
+    const z2 = coneZ + u * (endZ[col]! - coneZ);
+    const r = profiles[col]!(z2);
+    const theta0 = Math.atan2(oy, ox);
+    const theta = theta0 + angleDelta(endAng[col]!, theta0) * smootherstep(u);
+    fitted[i] = r * Math.cos(theta);
+    fitted[i + 1] = r * Math.sin(theta);
+    fitted[i + 2] = z2;
+  }
+}
+
+/** 솔리드 외형과 마진 루프에서 정보 패널에 올릴 수치를 읽는다. */
+export function measureEditedAbutment(
+  solid: Float32Array,
+  margin: Float32Array,
+  crown: Float32Array | null,
+): EditedAbutmentMetrics | null {
+  const count = Math.floor(margin.length / 3);
+  if (count < 3 || solid.length < 9) return null;
+  let minMz = Infinity;
+  let maxMz = -Infinity;
+  let meanMz = 0;
+  let mx = 0;
+  let my = 0;
+  for (let i = 0; i < count * 3; i += 3) {
+    const z = margin[i + 2]!;
+    if (z < minMz) minMz = z;
+    if (z > maxMz) maxMz = z;
+    meanMz += z;
+    mx += margin[i]!;
+    my += margin[i + 1]!;
+  }
+  meanMz /= count;
+  mx /= count;
+  my /= count;
+
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  let maxR = 0;
+  for (let i = 0; i < solid.length; i += 3) {
+    const z = solid[i + 2]!;
+    if (z < zMin) zMin = z;
+    if (z > zMax) zMax = z;
+    maxR = Math.max(maxR, Math.hypot(solid[i]!, solid[i + 1]!));
+  }
+  if (!Number.isFinite(zMax) || !Number.isFinite(zMin)) return null;
+
+  const postSpan = Math.max(zMax - meanMz, 0.8);
+  let topX = 0;
+  let topY = 0;
+  let topZ = 0;
+  let topN = 0;
+  const topCut = zMax - Math.min(0.45, postSpan * 0.12);
+  for (let i = 0; i < solid.length; i += 3) {
+    const z = solid[i + 2]!;
+    if (z < topCut) continue;
+    if (Math.hypot(solid[i]!, solid[i + 1]!) < 0.35) continue;
+    topX += solid[i]!;
+    topY += solid[i + 1]!;
+    topZ += z;
+    topN += 1;
+  }
+  if (topN > 0) {
+    topX /= topN;
+    topY /= topN;
+    topZ /= topN;
+  } else {
+    topZ = zMax;
+  }
+  const ang =
+    (Math.atan2(Math.hypot(topX - mx, topY - my), Math.max(topZ - meanMz, 0.2)) * 180) / Math.PI;
+
+  const bandR = (z0: number, half: number) => {
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < solid.length; i += 3) {
+      if (Math.abs(solid[i + 2]! - z0) > half) continue;
+      const r = Math.hypot(solid[i]!, solid[i + 1]!);
+      if (r < 0.6) continue;
+      sum += r;
+      n += 1;
+    }
+    return n > 0 ? sum / n : Number.NaN;
+  };
+  const half = Math.max(0.15, postSpan * 0.08);
+  const rLow = bandR(meanMz + postSpan * 0.22, half);
+  const rHigh = bandR(meanMz + postSpan * 0.58, half);
+  const taper =
+    Number.isFinite(rLow) && Number.isFinite(rHigh)
+      ? (Math.atan2(rLow - rHigh, postSpan * 0.36) * 180) / Math.PI
+      : 0;
+
+  let crownOver: number | null = null;
+  let cutback: number | null = null;
+  if (crown && crown.length >= 9) {
+    let crownTop = -Infinity;
+    for (let i = 2; i < crown.length; i += 3) crownTop = Math.max(crownTop, crown[i]!);
+    if (Number.isFinite(crownTop)) crownOver = crownTop - zMax;
+    const zMid = meanMz + postSpan * 0.45;
+    let postSum = 0;
+    let postN = 0;
+    let crownSum = 0;
+    let crownN = 0;
+    const collect = (src: Float32Array, kind: "post" | "crown") => {
+      for (let i = 0; i < src.length; i += 3) {
+        if (Math.abs(src[i + 2]! - zMid) > half) continue;
+        const r = Math.hypot(src[i]!, src[i + 1]!);
+        if (r < 0.6) continue;
+        if (kind === "post") {
+          postSum += r;
+          postN += 1;
+        } else {
+          crownSum += r;
+          crownN += 1;
+        }
+      }
+    };
+    collect(solid, "post");
+    collect(crown, "crown");
+    if (postN > 0 && crownN > 0) cutback = crownSum / crownN - postSum / postN;
+  }
+
+  return {
+    maxDiameterMm: maxR * 2,
+    cuffHeightMinMm: minMz,
+    cuffHeightMaxMm: maxMz,
+    postHeightMm: zMax - meanMz,
+    totalLengthMm: zMax - zMin,
+    angulationDeg: ang,
+    postTaperDeg: taper,
+    cutbackMm: cutback,
+    crownOverPostMm: crownOver,
+  };
+}
+
 export function buildAbutmentPreferenceUpdate(args: {
   tooth: string;
   baseWidth: number;
@@ -602,6 +835,7 @@ function zoneOf(
     mesial: axes.mesial,
     centerL,
     centerM,
+    coneTopR: measureConeTopR(src, coneZ),
   };
 }
 
@@ -943,6 +1177,7 @@ export class AbutmentDirectEditSession {
   private localBuf = new Float32Array(0);
   private worldBuf = new Float32Array(0);
   private summary: { widthRatio: number; heightDeltaMm: number } = { widthRatio: 1, heightDeltaMm: 0 };
+  private shapeAt = 0;
   private readonly camRight = new THREE.Vector3();
   private readonly camUp = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
@@ -1101,6 +1336,7 @@ export class AbutmentDirectEditSession {
         fixture,
         gumball: makeGumball(design.toothNumber),
         bakeEpoch: 0,
+        baselineMeasure: null,
       };
       this.placeAnchor(view, design);
       this.views.set(design.toothNumber, view);
@@ -1489,28 +1725,41 @@ export class AbutmentDirectEditSession {
       }
     }
 
-    const local =
-      bake && view.proposalSolid && editsEqual(edit, view.lastDrilledEdit)
-        ? new Float32Array(view.lastDrilledLocal)
-        : this.take("local", previewSrc.length);
+    const cached = Boolean(bake && view.proposalSolid && editsEqual(edit, view.lastDrilledEdit));
+    const local = cached ? new Float32Array(view.lastDrilledLocal) : this.take("local", previewSrc.length);
+    let marginLocal: Float32Array | null = null;
+    if (view.proposalMargin) {
+      marginLocal = new Float32Array(view.proposalMargin.length);
+      refitLocalPositions(
+        view.proposalMargin,
+        { ...edit, partial: [] },
+        { ...view.zone, screwR: 0 },
+        marginLocal,
+      );
+    }
     let measured = this.summary;
-    if (!(bake && view.proposalSolid && editsEqual(edit, view.lastDrilledEdit))) {
+    if (!cached) {
       measured = refitLocalPositions(previewSrc, edit, previewZone, local);
       this.summary = measured;
+      if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+        regenerateCuffToMargin(previewSrc, local, view.proposalMargin, marginLocal, previewZone);
+      }
     }
     const world = applyMatrixToPositions(local, view.fixture, this.take("world", local.length));
     writeAttribute(mesh.geometry, world);
 
     const crown = this.bridge.getCrown(tooth);
+    let crownLocal: Float32Array | null = null;
     if (crown && view.proposalCrown) {
-      const crownLocal = new Float32Array(view.proposalCrown.length);
+      crownLocal = new Float32Array(view.proposalCrown.length);
       refitLocalPositions(view.proposalCrown, { ...edit, partial: [] }, { ...view.zone, screwR: 0 }, crownLocal);
-      writeAttribute(crown.geometry, applyMatrixToPositions(crownLocal, view.fixture, new Float32Array(crownLocal.length)));
+      writeAttribute(
+        crown.geometry,
+        applyMatrixToPositions(crownLocal, view.fixture, new Float32Array(crownLocal.length)),
+      );
       if (bake && !silent) design.crownLocalPositions = crownLocal;
     }
-    if (view.proposalMargin) {
-      const marginLocal = new Float32Array(view.proposalMargin.length);
-      refitLocalPositions(view.proposalMargin, { ...edit, partial: [] }, { ...view.zone, screwR: 0 }, marginLocal);
+    if (marginLocal) {
       const marginWorld = applyMatrixToPositions(marginLocal, view.fixture, new Float32Array(marginLocal.length));
       const margin = this.bridge.getMargin(tooth);
       if (margin) {
@@ -1525,76 +1774,137 @@ export class AbutmentDirectEditSession {
       if (bake && !silent) design.marginLoopLocal = marginLocal;
     }
 
-    if (bake && !silent) {
-      const epoch = ++view.bakeEpoch;
-      const postSpan = Math.max(view.topZ - view.zone.fixedZ, 1.5);
-      const commitSummary: AbutmentEditSummary = {
-        tooth,
-        widthRatio: measured.widthRatio,
-        heightDeltaMm: measured.heightDeltaMm,
-        yawDeg: edit.yawDeg,
-        shiftLabialMm:
-          edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * postSpan,
-        shiftMesialMm:
-          edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * postSpan,
-      };
-      if (view.proposalSolid && !editsEqual(edit, EMPTY_EDIT)) {
-        const solidOut = new Float32Array(view.proposalSolid.length);
-        refitLocalPositions(view.proposalSolid, edit, { ...view.zone, screwR: 0 }, solidOut);
-        design.solidBodyLocalPositions = solidOut;
-        const conn = design.fixture.connectionSpec;
-        const l2 = conn?.l2Mm ?? 2.75;
-        const zBot = -l2;
-        const boreTopR = (conn?.screwUpperDiameterMm ?? 2.45) / 2;
-        const boreBotR = (conn?.screwLowerDiameterMm ?? boreTopR * 0.85) / 2;
-        let zTopMax = -Infinity;
-        for (let i = 2; i < solidOut.length; i += 3) zTopMax = Math.max(zTopMax, solidOut[i]!);
-        const cutter = screwChannelCutterSoup(boreBotR, boreTopR, zBot - 1, zTopMax + 3);
-        void subtractTriangleSoups(solidOut, [cutter], `#${tooth} 커스텀어벗`)
-          .then((drilled) => {
-            if (view.bakeEpoch !== epoch) return;
-            view.lastDrilledLocal = drilled;
-            view.lastDrilledEdit = cloneAbutmentEdit(edit);
-            const curMesh = this.bridge.getAbutment(tooth);
-            if (curMesh) {
-              writeAttribute(
-                curMesh.geometry,
-                applyMatrixToPositions(drilled, view.fixture, new Float32Array(drilled.length)),
-              );
-            }
-            design.localPositions = drilled;
-            design.stlBlob = encodeBinaryStl(drilled, `abuts.fit custom abutment #${tooth}`);
-            this.bridge.onCommit(commitSummary);
-          })
-          .catch(() => {
-            if (view.bakeEpoch !== epoch) return;
-            const fallback = new Float32Array(view.proposal.length);
-            refitLocalPositions(view.proposal, edit, view.zone, fallback);
-            view.lastDrilledLocal = fallback;
-            view.lastDrilledEdit = cloneAbutmentEdit(edit);
-            const curMesh = this.bridge.getAbutment(tooth);
-            if (curMesh) {
-              writeAttribute(
-                curMesh.geometry,
-                applyMatrixToPositions(fallback, view.fixture, new Float32Array(fallback.length)),
-              );
-            }
-            design.localPositions = fallback;
-            design.stlBlob = encodeBinaryStl(fallback, `abuts.fit custom abutment #${tooth}`);
-            this.bridge.onCommit(commitSummary);
-          });
-      } else {
-        if (view.proposalSolid && editsEqual(edit, EMPTY_EDIT)) {
-          design.solidBodyLocalPositions = new Float32Array(view.proposalSolid);
-          view.lastDrilledLocal = new Float32Array(view.proposal);
-          view.lastDrilledEdit = identityAbutmentEdit();
-        }
-        design.localPositions = new Float32Array(local);
-        design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
-        this.bridge.onCommit(commitSummary);
-      }
-    }
+    const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
+    this.publishShape(summary, bake);
+    if (bake && !silent) this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary);
     this.moveBadge(mesh, this.gumballPosition(view, edit), view.gumball.visible);
+  }
+
+  private publishShape(summary: AbutmentEditSummary, bake: boolean) {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!bake && now - this.shapeAt < 90) return;
+    this.shapeAt = now;
+    this.bridge.onShape?.(summary);
+  }
+
+  private shapeSummary(
+    view: ToothView,
+    design: DirectEditDesign,
+    edit: AbutmentEdit,
+    fit: { widthRatio: number; heightDeltaMm: number },
+    local: Float32Array,
+    marginLocal: Float32Array | null,
+    crownLocal: Float32Array | null,
+    cached: boolean,
+  ): AbutmentEditSummary {
+    const neutral = editsEqual(edit, EMPTY_EDIT);
+    const postSpan = Math.max(view.topZ - view.zone.fixedZ, 1.5);
+    let measured: EditedAbutmentMetrics | null = null;
+    let baselineMeasured = view.baselineMeasure;
+    if (marginLocal && view.proposalMargin) {
+      const proposalSurface = view.proposalSolid ?? view.proposal;
+      if (!baselineMeasured) {
+        baselineMeasured = measureEditedAbutment(proposalSurface, view.proposalMargin, view.proposalCrown);
+        view.baselineMeasure = baselineMeasured;
+      }
+      const savedSolid = design.solidBodyLocalPositions;
+      const surface =
+        cached && savedSolid && savedSolid.length >= 9 ? savedSolid : local;
+      measured = measureEditedAbutment(surface, marginLocal, crownLocal ?? view.proposalCrown);
+    }
+    return {
+      tooth: design.toothNumber,
+      widthRatio: fit.widthRatio,
+      heightDeltaMm: fit.heightDeltaMm,
+      yawDeg: edit.yawDeg,
+      shiftLabialMm: edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * postSpan,
+      shiftMesialMm: edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * postSpan,
+      neutral,
+      measured,
+      baselineMeasured,
+    };
+  }
+
+  private commitShape(
+    tooth: string,
+    view: ToothView,
+    design: DirectEditDesign,
+    edit: AbutmentEdit,
+    local: Float32Array,
+    marginLocal: Float32Array | null,
+    previewSrc: Float32Array,
+    summary: AbutmentEditSummary,
+  ) {
+    const epoch = ++view.bakeEpoch;
+    const neutral = editsEqual(edit, EMPTY_EDIT);
+    if (view.proposalSolid && editsEqual(edit, view.lastDrilledEdit)) {
+      this.bridge.onCommit(summary);
+      return;
+    }
+    if (view.proposalSolid && !neutral) {
+      const solidOut =
+        previewSrc === view.proposalSolid ? new Float32Array(local) : new Float32Array(view.proposalSolid.length);
+      if (previewSrc !== view.proposalSolid) {
+        refitLocalPositions(view.proposalSolid, edit, { ...view.zone, screwR: 0 }, solidOut);
+        if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+          regenerateCuffToMargin(view.proposalSolid, solidOut, view.proposalMargin, marginLocal, view.zone);
+        }
+      }
+      design.solidBodyLocalPositions = solidOut;
+      const conn = design.fixture.connectionSpec;
+      const l2 = conn?.l2Mm ?? 2.75;
+      const zBot = -l2;
+      const boreTopR = (conn?.screwUpperDiameterMm ?? 2.45) / 2;
+      const boreBotR = (conn?.screwLowerDiameterMm ?? boreTopR * 0.85) / 2;
+      let zTopMax = -Infinity;
+      for (let i = 2; i < solidOut.length; i += 3) zTopMax = Math.max(zTopMax, solidOut[i]!);
+      const cutter = screwChannelCutterSoup(boreBotR, boreTopR, zBot - 1, zTopMax + 3);
+      void subtractTriangleSoups(solidOut, [cutter], `#${tooth} 커스텀어벗`)
+        .then((drilled) => {
+          if (view.bakeEpoch !== epoch) return;
+          view.lastDrilledLocal = drilled;
+          view.lastDrilledEdit = cloneAbutmentEdit(edit);
+          const curMesh = this.bridge.getAbutment(tooth);
+          if (curMesh) {
+            writeAttribute(
+              curMesh.geometry,
+              applyMatrixToPositions(drilled, view.fixture, new Float32Array(drilled.length)),
+            );
+          }
+          design.localPositions = drilled;
+          design.stlBlob = encodeBinaryStl(drilled, `abuts.fit custom abutment #${tooth}`);
+          this.bridge.onCommit(summary);
+        })
+        .catch(() => {
+          if (view.bakeEpoch !== epoch) return;
+          const fallback = new Float32Array(view.proposal.length);
+          refitLocalPositions(view.proposal, edit, view.zone, fallback);
+          if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+            regenerateCuffToMargin(view.proposal, fallback, view.proposalMargin, marginLocal, view.zone);
+          }
+          view.lastDrilledLocal = fallback;
+          view.lastDrilledEdit = cloneAbutmentEdit(edit);
+          const curMesh = this.bridge.getAbutment(tooth);
+          if (curMesh) {
+            writeAttribute(
+              curMesh.geometry,
+              applyMatrixToPositions(fallback, view.fixture, new Float32Array(fallback.length)),
+            );
+          }
+          design.localPositions = fallback;
+          design.stlBlob = encodeBinaryStl(fallback, `abuts.fit custom abutment #${tooth}`);
+          this.bridge.onCommit(summary);
+        });
+      return;
+    }
+    if (view.proposalSolid && neutral) {
+      design.solidBodyLocalPositions = new Float32Array(view.proposalSolid);
+      view.lastDrilledLocal = new Float32Array(view.proposal);
+      view.lastDrilledEdit = identityAbutmentEdit();
+    }
+    design.localPositions = new Float32Array(local);
+    design.stlBlob = encodeBinaryStl(design.localPositions, `abuts.fit custom abutment #${tooth}`);
+    this.bridge.onCommit(summary);
   }
 
   private take(slot: "local" | "world", length: number) {

@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/practice/toothMorphology.ts
 // - web/frontend/src/shared/practice/meshUnion.ts
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
+// - web/frontend/src/shared/practice/cuffProfile.ts
 // - web/backend/services/abutmentStl/cuffBlend.js
 
 import * as THREE from "three";
@@ -38,6 +39,7 @@ import {
   resolveCustomAbutmentParams,
   type CustomAbutmentDesignParams,
 } from "@/shared/practice/customAbutmentDesignParams";
+import { cuffProfile } from "@/shared/practice/cuffProfile";
 import { subtractTriangleSoups } from "@/shared/practice/meshUnion";
 import {
   crownOcclusalReliefRatio,
@@ -52,15 +54,6 @@ import type { Vec3 } from "@/shared/practice/scanbodyRegistration";
 
 const DEG = Math.PI / 180;
 const TAPER_11_SLOPE = Math.tan(11 * DEG);
-/**
- * cuffBlend: PRC 면 위 2°로 시작해 골 높이까지 4°를 유지한 뒤 오목하게 벌어진다.
- * 추적관리 실측 마진 직하방 커프는 약 25~30°로 피니시라인에 닿는다(마진 모서리 약 110°).
- */
-const CUFF_START_SLOPE = Math.tan(2 * DEG);
-const CUFF_HOLD_SLOPE = Math.tan(4 * DEG);
-const CUFF_END_SLOPE_MAX = Math.tan(65 * DEG);
-const CUFF_BONE_MM = 1.35;
-const CUFF_EASE_MM = 0.5;
 /** 지르코니아 크라운 두께 하한. 공간이 좁아도 이보다 얇게 두지 않는다(적절 두께 1.0~1.5mm). */
 const CROWN_THICKNESS_FLOOR_MM = 0.7;
 /** 스크류 채널 둘레 포스트 벽 최소 두께(구치부 360° 칼라 및 전치부 순·근·원심 칼라). 인접 임플란트 근접 시 tight 하한까지 허용. */
@@ -212,12 +205,6 @@ function smootherstep(t: number) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-/** ∫₀ˣ smootherstep. x=1이면 0.5. */
-function smootherstepIntegral(t: number) {
-  const x = clamp(t, 0, 1);
-  return x ** 4 * (x * x - 3 * x + 2.5);
-}
-
 /** 저차 푸리에 조화함수(0~maxHarmonic차)로 둘레 배열을 매끄럽게 고른다. */
 function lowPassCircular(values: readonly number[], maxHarmonic = 3): number[] {
   const n = values.length;
@@ -367,56 +354,6 @@ function analyticSectionRay(
     else hi = mid;
   }
   return (lo + hi) * 0.5;
-}
-
-/**
- * cuffBlend 커프 단면 r(z). PRC 면에서 2°(곡률 0)로 시작해 골 높이까지 4°를 유지하고,
- * 오목하게 기울기를 올린 뒤(r'' ≥ 0, 볼록 없음) 같은 기울기로 피니시라인에 닿는다.
- * 끝 기울기는 필요한 만큼만 둔다(실측 25~30°). 칼날 마진을 만드는 65° 플레어는 피한다.
- */
-function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: number) {
-  const span = Math.max(0.35, zEnd - zStart);
-  const delta = rEnd - rStart;
-  if (delta <= 0) {
-    return (z: number) => rStart + delta * clamp((z - zStart) / span, 0, 1);
-  }
-  const s0 = CUFF_START_SLOPE;
-  const s1 = CUFF_HOLD_SLOPE;
-  type Plan = { e: number; zh: number; lead: number; lr: number; sEnd: number; scale: number };
-  const planFor = (holdMm: number): Plan => {
-    const zh = Math.min(holdMm, span * 0.25);
-    const e = Math.min(CUFF_EASE_MM, zh * 0.6);
-    const lead = (e * (s0 + s1)) / 2 + (zh - e) * s1;
-    const L = span - zh;
-    const need = delta - lead;
-    if (L <= 1e-6 || need <= L * s1) {
-      // 마진이 가까워 벌어질 필요가 없다. 같은 모양을 비례로 줄인다.
-      const full = lead + L * s1;
-      return { e, zh, lead, lr: 0, sEnd: s1, scale: full > 0 ? delta / full : 1 };
-    }
-    const lr = Math.min(L, Math.max(0.4, L * 0.3));
-    const sEnd = (need - (lr * s1) / 2) / (L - lr / 2);
-    return { e, zh, lead, lr, sEnd, scale: 1 };
-  };
-  let plan = planFor(CUFF_BONE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(CUFF_EASE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(0);
-  const { e, zh, lead, lr, sEnd, scale } = plan;
-  return (z: number) => {
-    const u = clamp(z - zStart, 0, span);
-    let r: number;
-    if (u <= e) {
-      r = s0 * u + (e > 0 ? (s1 - s0) * e * smootherstepIntegral(u / e) : 0);
-    } else if (u <= zh) {
-      r = (e * (s0 + s1)) / 2 + s1 * (u - e);
-    } else {
-      const x = u - zh;
-      if (lr <= 0) r = lead + s1 * x;
-      else if (x <= lr) r = lead + s1 * x + (sEnd - s1) * lr * smootherstepIntegral(x / lr);
-      else r = lead + s1 * lr + (sEnd - s1) * lr * 0.5 + sEnd * (x - lr);
-    }
-    return rStart + r * scale;
-  };
 }
 
 /**

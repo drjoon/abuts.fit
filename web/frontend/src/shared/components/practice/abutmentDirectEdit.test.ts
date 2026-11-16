@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import * as THREE from "three";
 
+import { cuffProfile } from "../../practice/cuffProfile";
 import {
   applyWorldDeltaToAbutmentEdit,
   applyWorldRotationToAbutmentEdit,
@@ -9,7 +10,9 @@ import {
   clampAbutmentEdit,
   identityAbutmentEdit,
   makeGumball,
+  measureEditedAbutment,
   refitLocalPositions,
+  regenerateCuffToMargin,
   screenGumballQuaternion,
   sculptFalloff,
   writeAttribute,
@@ -200,6 +203,58 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   checkRay(0.47, 0, "scale");
   checkRay(0, 0.47, "scale");
   checkRay(0.41, 0.41, "scale2");
+}
+
+// 검볼이 마진을 옮기면 커프는 그 마진까지 오목하게 다시 깔리고, 콘·포스트·스크류 벽은 그대로다.
+{
+  const count = 8;
+  const proposalMargin = new Float32Array(count * 3);
+  const fittedMargin = new Float32Array(count * 3);
+  for (let col = 0; col < count; col += 1) {
+    const angle = (col / count) * Math.PI * 2;
+    const shifted = col === 0;
+    proposalMargin[col * 3] = Math.cos(angle) * 3;
+    proposalMargin[col * 3 + 1] = Math.sin(angle) * 3;
+    proposalMargin[col * 3 + 2] = 3;
+    fittedMargin[col * 3] = Math.cos(angle) * (shifted ? 4 : 3);
+    fittedMargin[col * 3 + 1] = Math.sin(angle) * (shifted ? 4 : 3);
+    fittedMargin[col * 3 + 2] = shifted ? 3.6 : 3;
+  }
+  const proposal = new Float32Array([
+    2, 0, 1,
+    2.4, 0, 2,
+    3, 0, 3,
+    2.5, 0, 5,
+    0.2, 0, 2,
+  ]);
+  const fitted = new Float32Array(proposal);
+  regenerateCuffToMargin(proposal, fitted, proposalMargin, fittedMargin, {
+    ...zone,
+    screwR: 0.5,
+    coneTopR: 2,
+  });
+  assert.ok(Math.abs(fitted[0]! - 2) < 1e-6 && Math.abs(fitted[2]! - 1) < 1e-6, "콘 링은 그대로");
+  assert.ok(Math.abs(fitted[6]! - 3) < 1e-6 && Math.abs(fitted[8]! - 3) < 1e-6, "마진 정점은 커프 재생성이 그대로 둔다");
+  assert.ok(Math.abs(fitted[9]! - 2.5) < 1e-6 && Math.abs(fitted[11]! - 5) < 1e-6, "포스트는 그대로");
+  assert.ok(Math.abs(fitted[12]! - 0.2) < 1e-6 && Math.abs(fitted[14]! - 2) < 1e-6, "스크류 벽은 그대로");
+  const z2 = 1 + 0.5 * (3.6 - 1);
+  const radius = cuffProfile(2, 1, 4, 3.6)(z2);
+  const chord = 2 + (4 - 2) * ((z2 - 1) / (3.6 - 1));
+  assert.ok(radius < chord - 0.02, "커프는 직선보다 오목하다");
+  assert.ok(Math.abs(fitted[3]! - radius) < 1e-4, "커프 반지름은 마진까지 단면을 따른다");
+  assert.ok(Math.abs(fitted[4]!) < 1e-4, "순측 마진으로 커프가 따라간다");
+  assert.ok(Math.abs(fitted[5]! - z2) < 1e-4, "커프 높이는 지금 마진 높이에 맞춘다");
+}
+
+{
+  const margin = new Float32Array([3, 0, 2, 0, 3, 2, -3, 0, 2]);
+  const solid = new Float32Array([0, 0, 0, 3, 0, 6, 1, 0, 3]);
+  const measured = measureEditedAbutment(solid, margin, null);
+  assert.ok(measured);
+  assert.ok(Math.abs(measured.maxDiameterMm - 6) < 1e-6, "최대 직경");
+  assert.ok(Math.abs(measured.cuffHeightMinMm - 2) < 1e-6 && Math.abs(measured.cuffHeightMaxMm - 2) < 1e-6, "커프 높이");
+  assert.ok(Math.abs(measured.postHeightMm - 4) < 1e-6, "포스트 높이");
+  assert.equal(measured.crownOverPostMm, null);
 }
 
 console.log("abutment direct edit ok");

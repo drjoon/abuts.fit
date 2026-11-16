@@ -524,6 +524,58 @@ function mergeEditPreference(
   };
 }
 
+function shiftMetric(base: number, now: number, orig: number, digits = 2) {
+  const scale = 10 ** digits;
+  return Math.round((base + (now - orig)) * scale) / scale;
+}
+
+/** 검볼로 움직인 만큼만 초기 정보 수치에 더한다. 손을 떼고 원위치면 처음 수치다. */
+function metricsFromGumball(
+  base: CustomAbutmentDesignMetrics,
+  summary: AbutmentEditSummary,
+): CustomAbutmentDesignMetrics {
+  if (summary.neutral || !summary.measured || !summary.baselineMeasured) return base;
+  const now = summary.measured;
+  const orig = summary.baselineMeasured;
+  return {
+    ...base,
+    maxDiameterMm: shiftMetric(base.maxDiameterMm, now.maxDiameterMm, orig.maxDiameterMm),
+    cuffHeightMinMm: shiftMetric(base.cuffHeightMinMm, now.cuffHeightMinMm, orig.cuffHeightMinMm),
+    cuffHeightMaxMm: shiftMetric(base.cuffHeightMaxMm, now.cuffHeightMaxMm, orig.cuffHeightMaxMm),
+    postHeightMm: shiftMetric(base.postHeightMm, now.postHeightMm, orig.postHeightMm),
+    totalLengthMm: shiftMetric(base.totalLengthMm, now.totalLengthMm, orig.totalLengthMm),
+    angulationDeg: shiftMetric(base.angulationDeg, now.angulationDeg, orig.angulationDeg, 1),
+    postTaperDeg: shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1),
+    cutbackMm:
+      now.cutbackMm == null || orig.cutbackMm == null
+        ? base.cutbackMm
+        : shiftMetric(base.cutbackMm, now.cutbackMm, orig.cutbackMm),
+    crownOverPostMm:
+      base.crownOverPostMm == null || now.crownOverPostMm == null || orig.crownOverPostMm == null
+        ? base.crownOverPostMm
+        : shiftMetric(base.crownOverPostMm, now.crownOverPostMm, orig.crownOverPostMm),
+    occlusalClearanceMm:
+      base.occlusalClearanceMm == null
+        ? null
+        : Math.round(Math.max(0, base.occlusalClearanceMm - summary.heightDeltaMm) * 100) / 100,
+  };
+}
+
+function sameAbutmentMetrics(a: CustomAbutmentDesignMetrics, b: CustomAbutmentDesignMetrics) {
+  return (
+    a.maxDiameterMm === b.maxDiameterMm &&
+    a.cuffHeightMinMm === b.cuffHeightMinMm &&
+    a.cuffHeightMaxMm === b.cuffHeightMaxMm &&
+    a.postHeightMm === b.postHeightMm &&
+    a.totalLengthMm === b.totalLengthMm &&
+    a.angulationDeg === b.angulationDeg &&
+    a.postTaperDeg === b.postTaperDeg &&
+    a.cutbackMm === b.cutbackMm &&
+    a.crownOverPostMm === b.crownOverPostMm &&
+    a.occlusalClearanceMm === b.occlusalClearanceMm
+  );
+}
+
 function writeUserEditPreference(
   userId: string,
   scope: CustomAbutmentPreferenceScope,
@@ -661,6 +713,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const pendingRemotePaintRef = useRef<CustomAbutmentPaintRecord | null>(null);
   const paintSaveTimerRef = useRef(0);
   const baselineMetricsRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
+  const gumballMetricBaseRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
   const baselineParamsRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
   const editedInfoFieldsRef = useRef<Record<string, Set<AbutmentInfoFieldKey>>>({});
 
@@ -1330,6 +1383,20 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [authToken, persistChat]);
 
   const editedTeethRef = useRef(new Set<string>());
+  const applyGumballMetrics = useCallback((summary: AbutmentEditSummary) => {
+    const design = designedListRef.current.find((row) => row.toothNumber === summary.tooth);
+    if (!design) return;
+    if (!gumballMetricBaseRef.current[summary.tooth]) {
+      gumballMetricBaseRef.current[summary.tooth] = design.metrics;
+    }
+    const base = gumballMetricBaseRef.current[summary.tooth]!;
+    const nextMetrics = metricsFromGumball(base, summary);
+    if (sameAbutmentMetrics(design.metrics, nextMetrics)) return;
+    design.metrics = nextMetrics;
+    const list = designedListRef.current.map((row) => (row.toothNumber === summary.tooth ? design : row));
+    designedListRef.current = list;
+    setDesignedList(list);
+  }, []);
   const stripDirectEditShiftOverrides = (
     raw: Partial<CustomAbutmentDesignParams>,
   ): Partial<CustomAbutmentDesignParams> => {
@@ -1416,8 +1483,13 @@ export function PracticeCustomAbutmentPreviewDialog({
     bridge.ui.selected = selectedTooth;
     bridge.ui.visible = visibleTeeth;
     bridge.onHistory = () => setEditRev((rev) => rev + 1);
+    bridge.onShape = (summary) => {
+      if (readOnlyRef.current || isLabViewerRef.current) return;
+      applyGumballMetrics(summary);
+    };
     bridge.onCommit = (summary) => {
       if (readOnlyRef.current || isLabViewerRef.current) return;
+      applyGumballMetrics(summary);
       rememberAbutmentEdit(summary);
       window.clearTimeout(editCommitTimerRef.current);
       editCommitTimerRef.current = window.setTimeout(() => persistDesign(), 400);
@@ -2818,6 +2890,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             patientName: ctx.patientName,
           });
           ctx.overrides[tooth] = merged;
+          delete gumballMetricBaseRef.current[tooth];
           if (mode === "replace") directEditRef.current?.clear([tooth]);
           removeDesignFromScene(tooth);
           prev.worldGeometry.dispose();
