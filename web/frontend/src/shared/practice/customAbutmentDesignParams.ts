@@ -22,8 +22,12 @@ export type CustomAbutmentDesignParams = {
   marginFilletRadiusMm: number;
   /** 마진 챔퍼 폭(mm). 피니시라인에서 포스트 축벽까지 안쪽으로 들어가는 양. */
   marginShoulderMm: number;
-  /** 치은연 아래 피니시라인 깊이(mm). 협·설측 기준이며 근·원심은 치은 라인 스캘럽을 따른다. */
+  /** 치은연 아래 피니시라인 깊이(mm). 치은 연하 얕은 끝과 같다. */
   marginDepthMm: number;
+  /** 치은 연하 마진 얕은 끝(mm). 치은선에 가장 가까운 깊이. 기본 0.5. */
+  marginSubgMinMm: number;
+  /** 치은 연하 마진 깊은 끝(mm). 치은선에서 가장 먼 깊이. 기본 1.0. */
+  marginSubgMaxMm: number;
   /** 근·원심 마진이 협·설 대비 치관 쪽(치은 라인)으로 올라가는 스캘럽 양(mm). */
   marginScallopMm: number;
   /** 마진 단면 크기 배율. */
@@ -65,6 +69,8 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   marginFilletRadiusMm: { label: "마진 챔퍼 R", unit: "mm", min: 0.3, max: 1.0, step: 0.02 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.9, step: 0.05 },
   marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
+  marginSubgMinMm: { label: "치은 연하 얕은 끝", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
+  marginSubgMaxMm: { label: "치은 연하 깊은 끝", unit: "mm", min: -1.5, max: 2.5, step: 0.1 },
   marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.7, max: 1.4, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
@@ -127,6 +133,8 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     marginFilletRadiusMm: 0.6,
     marginShoulderMm: anterior ? 0.4 : 0.5,
     marginDepthMm: 0.5,
+    marginSubgMinMm: 0.5,
+    marginSubgMaxMm: 1.0,
     marginScallopMm: anterior ? 0.75 : 0.55,
     marginSizeScale: 1,
     crownContactMm: 0.05,

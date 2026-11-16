@@ -1,6 +1,6 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
-// 1) 피니시라인 = 둘레 치은연 아래 marginDepth(기본 0.5mm), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
+// 1) 피니시라인 = 둘레 치은 연하 0.5~1.0mm(얕은 끝~깊은 끝), 마진 단면 = 치종 템플릿(잇몸 개구부로 크기 보정)
 // 2) 삽입축 = 인접 자연치·인접 어벗 장축과 같은 각도(브리지는 더 정확히). 없으면 대합·악궁 방향.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
@@ -108,9 +108,8 @@ const NEIGHBOR_PLANE_MARGIN_GAP_MM = 0.9;
 const MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM = 0.62;
 /** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
 const GINGIVA_INSET_MM = 0.2;
-/** 픽스쳐가 깊게 식립되어 커프 여유가 있을 때 우선 확보할 최소 포스트 높이(mm)와 최대 치은 하방 깊이(mm). */
+/** 픽스쳐가 깊게 식립되어 커프 여유가 있을 때 우선 확보할 최소 포스트 높이(mm). 마진은 치은 연하 깊은 끝을 넘지 않는다. */
 const TARGET_RETENTION_POST_HEIGHT_MM = 4.5;
-const MARGIN_SUBG_MAX_MM = 2.0;
 /** 치은선을 초기 추정하는 범위: 스캔바디 면에서 바깥으로 이만큼(출현 소켓 테두리까지 보되 가파른 인접치 벽 직전에서 멈춘다). */
 const GINGIVA_RIM_REACH_MM = 2.1;
 const GINGIVA_RIM_BIN_MM = 0.4;
@@ -144,6 +143,10 @@ export type CustomAbutmentDesignMetrics = {
   adjacentOcclusalMm?: number | null;
   /** 예측 크라운 교합면 − 포스트 윗면(mm). */
   crownOverPostMm?: number;
+  /** 치은 연하 마진 얕은 끝(mm). 설정값. */
+  marginSubgMinMm?: number;
+  /** 치은 연하 마진 깊은 끝(mm). 설정값. */
+  marginSubgMaxMm?: number;
 };
 
 export type DesignedCustomAbutment = {
@@ -1703,6 +1706,8 @@ async function autoAxisWorld(args: DesignArgs): Promise<Vec3> {
     args.fixture.fixturePose.axis,
     args.opposingGeometry?.uuid ?? null,
     p.marginDepthMm,
+    p.marginSubgMinMm,
+    p.marginSubgMaxMm,
     p.marginScallopMm,
     p.postYawDeg,
     p.axisToOpposing,
@@ -2541,8 +2546,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   );
 
   // 피니시라인 = 근·원심은 높고 협·설측은 낮은 완만한 scalloped pattern.
-  // 치은선의 자잘한 굴곡을 그대로 따르지 않고 서브 0.5~1.0mm(기본 marginDepthMm=0.5~0.8)를 기준으로
-  // 저차 조화(k ≤ 2: 평균 + 전후/근원심 기울기 + cos 2φ 스캘럽)만 남긴다.
+  // 치은 연하 얕은 끝~깊은 끝(기본 0.5~1.0mm) 안에 두고, 저차 조화만 남긴다.
+  // 대화의 마진 깊이는 얕은 끝이다. 범위와 어긋나면 구간 폭을 유지한 채 그 끝을 따라간다.
+  let subgMin = Math.min(params.marginSubgMinMm, params.marginSubgMaxMm);
+  let subgMax = Math.max(params.marginSubgMinMm, params.marginSubgMaxMm);
+  if (Math.abs(params.marginDepthMm - params.marginSubgMinMm) > 0.02) {
+    const width = Math.max(0, subgMax - subgMin);
+    subgMin = params.marginDepthMm;
+    subgMax = Math.min(2.5, Math.max(subgMin, subgMin + width));
+  }
   const minMarginZ = Math.max(1.5, coneTopZ + 1.1);
   let oppMarginCapZ = Infinity;
   if (opposingLocalPts.length > 0) {
@@ -2590,7 +2602,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     return true;
   })();
-  const targetSubgDepth = clamp(params.marginDepthMm + 0.15, params.marginDepthMm, 1.0);
+  const targetSubgDepth = (subgMin + subgMax) * 0.5;
   const rimFourier = lowPassCircular(rimZ, 2);
   let c2Scallop = 0;
   let c1Lab = 0;
@@ -2631,12 +2643,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 협·설측이 높게 솟은 치은선이어도 스캘럽 곡선이 눌려 거꾸로 되지 않게 하한 여유를 둔다.
   const rimLow = lowPassCircular(rimZ, 2);
   const bandedDraft = scallopDraft.map((z, b) => {
-    const hi = Math.max(minMarginZ, rimLow[b]! - Math.max(0.4, params.marginDepthMm - 0.05));
-    const lo = rimLow[b]! - Math.max(1.35, params.marginDepthMm + 0.75);
-    return clamp(Math.min(hi, Math.max(lo, z)), minMarginZ, maxMarginZ);
+    const hi = Math.max(minMarginZ, rimLow[b]! - subgMin);
+    const lo = rimLow[b]! - subgMax;
+    const loZ = Math.min(hi, lo);
+    const hiZ = Math.max(hi, lo);
+    return clamp(z, Math.max(minMarginZ, loZ), Math.min(maxMarginZ, hiZ));
   });
   let smoothMarginZ = lowPassCircular(bandedDraft, 2).map((z, b) => {
-    const supragingivalCap = Math.max(minMarginZ, rimLow[b]! - Math.min(0.35, params.marginDepthMm));
+    const supragingivalCap = Math.max(minMarginZ, rimLow[b]! - subgMin);
     return clamp(Math.min(z, supragingivalCap), minMarginZ, maxMarginZ);
   });
   // 최종 마진에서도 cos 2φ 스캘럽 성분이 최소치 이상 유지되도록 보강한다(근·원심 평균 > 협·설 평균).
@@ -2652,7 +2666,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const baseWithScallop = smoothMarginZ.map((z, b) => {
         const phi = ((b + 0.5) / SECTORS) * Math.PI * 2 - labialAngleFix;
         // 근·원심(cos 2φ = -1)은 살짝 올리고(치은선 -0.35mm 상한 안), 협·설(cos 2φ = +1)은 내리는 대칭 스캘럽.
-        const supragingivalCap = Math.max(minMarginZ, rimLow[b]! - Math.min(0.35, params.marginDepthMm));
+        const supragingivalCap = Math.max(minMarginZ, rimLow[b]! - subgMin);
         return clamp(Math.min(supragingivalCap, z - addAmp * Math.cos(2 * phi) * 0.5), minMarginZ, maxMarginZ);
       });
       smoothMarginZ = lowPassCircular(baseWithScallop, 2).map((z) => clamp(z, minMarginZ, maxMarginZ));
@@ -3842,7 +3856,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
 
   // 마진 반경(marginRadii)과 예측 크라운 치경부 출현 윤곽이 확정된 뒤, 실제 치은 라인(출현 소켓 테두리·치간유두 능선)을 따라
-  // 협·설측은 치은 하방(params.marginDepthMm)으로 내리고 근·원심은 치관 쪽으로 올라가는 스캘럽 마진을 잡는다.
+  // 협·설측은 치은 연하 얕은 끝만큼 내리고 근·원심은 치관 쪽으로 올라가는 스캘럽 마진을 잡는다. 최종은 얕은 끝~깊은 끝 안이다.
   {
     const CREST_BIN_MM = 0.35;
     const CREST_BINS = 6;
@@ -3981,7 +3995,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const defaultScallop = posterior ? 0.55 : 0.75;
     const scallopRatio = clamp(params.marginScallopMm / defaultScallop, 0, 2.4);
     const followScale = scallopRatio <= 1 ? scallopRatio : 1 + (scallopRatio - 1) * 0.25;
-    const proxDepthRelief = Math.min(params.marginDepthMm * 0.62, params.marginScallopMm * 0.55);
+    const proxDepthRelief = Math.min(Math.max(0, subgMin) * 0.62, params.marginScallopMm * 0.55);
     const extraUserProxLift = Math.max(0, params.marginScallopMm - defaultScallop) * 0.55;
 
     const baseMaxSpan = tpl.kind === "molar" ? 1.45 : tpl.kind === "premolar" ? 1.75 : 2.35;
@@ -4006,23 +4020,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         params.marginScallopMm <= 0.02
           ? gingRise * scallopRatio
           : Math.max(naturalLift, minScallopLift);
-      const zFl = flBase - params.marginDepthMm;
-      const supragingivalLift = Math.max(0, -params.marginDepthMm);
+      const zFl = flBase - subgMin;
+      const supragingivalLift = Math.max(0, -subgMin);
       const maxSpanAboveFl =
         (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
       const highCap = Math.min(maxMarginZ, zFl + maxSpanAboveFl);
 
       // 치은 상방 노출 방지: 협측은 마진 반경 직상방 치은(gingAtM) 아래로 감추고, 근·원심은 치간유두 치은 라인 바로 아래까지 따라 올라간다.
       const crestSubgMin =
-        params.marginDepthMm < 0
-          ? params.marginDepthMm
-          : Math.min(0.38, params.marginDepthMm * 0.82) * (1 - proxW) +
-            Math.min(0.28, params.marginDepthMm * 0.45) * proxW;
+        subgMin < 0
+          ? subgMin
+          : Math.min(subgMin, Math.min(0.38, subgMin * 0.82) * (1 - proxW) + Math.min(0.28, subgMin * 0.45) * proxW);
       const crestCeil = gCrest - crestSubgMin + extraUserProxLift * proxW;
       const facialSurfaceCeil =
-        params.marginDepthMm < 0
+        subgMin < 0
           ? gingAtM[b]! + supragingivalLift
-          : gingAtM[b]! - Math.min(0.32, params.marginDepthMm * 0.72);
+          : gingAtM[b]! - Math.min(subgMax, Math.max(subgMin, subgMin * 0.72));
       const ceilZ =
         facialW > 0.15
           ? Math.min(highCap, crestCeil * (1 - facialW * 0.75) + Math.min(crestCeil, facialSurfaceCeil) * (facialW * 0.75))
@@ -4036,22 +4049,32 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const proxW = sMes * sMes;
       const facialW = Math.max(0, cLab) ** 2;
       const flBase = flMean + flSlope * cLab;
-      const supragingivalLift = Math.max(0, -params.marginDepthMm);
+      const supragingivalLift = Math.max(0, -subgMin);
       const maxSpanAboveFl =
         (sectorRetromolar[b] ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
-      const highCap = Math.min(maxMarginZ, flBase - params.marginDepthMm + maxSpanAboveFl);
+      const highCap = Math.min(maxMarginZ, flBase - subgMin + maxSpanAboveFl);
       const facialGuard =
-        facialW > 0.25 && params.marginDepthMm > 0.05
-          ? gingAtM[b]! - Math.min(0.28, params.marginDepthMm * 0.65) * facialW
+        facialW > 0.25 && subgMin > 0.05
+          ? gingAtM[b]! - Math.min(subgMax, Math.max(subgMin, subgMin * 0.65)) * facialW
           : Infinity;
       return clamp(Math.min(mz, facialGuard), minMarginZ, highCap);
     });
-    smoothMarginZ = lowPassCircular(pass1, 3).map((z) => clamp(z, minMarginZ, maxMarginZ));
+    smoothMarginZ = lowPassCircular(pass1, 3).map((z, b) => {
+      const gingCandidates = [gingSmooth[b], gingAtM[b]].filter((v): v is number => Number.isFinite(v));
+      const bounded = clamp(z, minMarginZ, maxMarginZ);
+      if (gingCandidates.length === 0) return bounded;
+      const ging = Math.min(...gingCandidates);
+      const hi = ging - subgMin;
+      const lo = ging - subgMax;
+      const loZ = Math.max(minMarginZ, Math.min(lo, hi));
+      const hiZ = Math.min(maxMarginZ, Math.max(lo, hi));
+      return clamp(bounded, loZ, hiZ);
+    });
+    // 사용자가 치은 연하를 지정하지 않았고 포스트가 짧으면, 깊은 끝(기본 1.0mm)까지 마진을 내려 유지 높이를 채운다.
     const hasExplicitMarginDepth =
-      args.params?.marginDepthMm != null && Number.isFinite(Number(args.params.marginDepthMm));
-    // 픽스쳐가 깊게 식립되어 커프를 줄이고 포스트를 늘릴 수 있는 경우, 치은 하방 0.5~1.0mm 규정보다 우선해
-    // 포스트 높이(기준 평균 마진 → 포스트 상단)가 4.5mm 이상이 되도록 치은 하방 최대 2.0mm까지 마진을 낮춘다.
-    // 협측이 이미 치은 하방 2.0mm에 닿았으면 스캘럽으로 높게 올라간 근·원심 마진도 치은 하방 2.0mm 한도 안에서 추가로 낮춰 평균 포스트 높이를 채운다.
+      [args.params?.marginDepthMm, args.params?.marginSubgMinMm, args.params?.marginSubgMaxMm].some(
+        (v) => v != null && Number.isFinite(Number(v)),
+      );
     if (!hasExplicitMarginDepth && params.postHeightOffsetMm >= -0.05) {
       const axialCosM = Math.max(frame.w[2], 0.2);
       const subgLine = gingSmooth.map((gc, b) => Math.min(gc, gingAtM[b]!));
@@ -4062,21 +4085,31 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const needMeanDrop = curMeanM - wantMeanMarginZ;
         let slackSectors = 0;
         for (let b = 0; b < SECTORS; b += 1) {
-          const floorB = Math.max(minMarginZ, subgLine[b]! - MARGIN_SUBG_MAX_MM);
+          const floorB = Math.max(minMarginZ, subgLine[b]! - subgMax);
           if (smoothMarginZ[b]! > floorB + 0.03) slackSectors += 1;
         }
         if (slackSectors === 0) break;
         const stepDrop = Math.min(2.4, (needMeanDrop * SECTORS) / Math.max(slackSectors, 4) + 0.04);
         const shifted = smoothMarginZ.map((mz, b) => {
-          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - MARGIN_SUBG_MAX_MM);
+          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - subgMax);
           return Math.max(minMarginZ, Math.min(mz, Math.max(maxSubgFloor, mz - stepDrop)));
         });
         smoothMarginZ = lowPassCircular(shifted, 3).map((mz, b) => {
-          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - MARGIN_SUBG_MAX_MM);
+          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - subgMax);
           return clamp(Math.max(maxSubgFloor, mz), minMarginZ, maxMarginZ);
         });
       }
     }
+    smoothMarginZ = smoothMarginZ.map((mz, b) => {
+      const gingCandidates = [gingSmooth[b], gingAtM[b]].filter((v): v is number => Number.isFinite(v));
+      if (gingCandidates.length === 0) return clamp(mz, minMarginZ, maxMarginZ);
+      const ging = Math.min(...gingCandidates);
+      const hi = ging - subgMin;
+      const lo = ging - subgMax;
+      const loZ = Math.max(minMarginZ, Math.min(lo, hi));
+      const hiZ = Math.min(maxMarginZ, Math.max(lo, hi));
+      return clamp(mz, loZ, hiZ);
+    });
     marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
   }
   const finalMeanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
@@ -5698,6 +5731,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     : `custom_abutment_${fixture.toothNumber}.stl`;
 
   const round2 = (v: number) => Math.round(v * 100) / 100;
+  params.marginSubgMinMm = round2(subgMin);
+  params.marginSubgMaxMm = round2(subgMax);
+  params.marginDepthMm = round2(subgMin);
   const design = buildDesignedCustomAbutment({
     fixture: {
       ...fixture,
@@ -5724,6 +5760,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       postTaperDeg: Math.round((taperMean / DEG) * 10) / 10,
       occlusalClearanceMm,
       marginFilletRadiusMm: round2(chamferRho),
+      marginSubgMinMm: round2(subgMin),
+      marginSubgMaxMm: round2(subgMax),
       axisSource,
       adjacentOcclusalMm: Number.isFinite(archCrownTopH) ? round2(archCrownTopH) : null,
       crownOverPostMm: round2(meanCrownCuspH - dot3(sub3(postApex, c0), frame.w)),

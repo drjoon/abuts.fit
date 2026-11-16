@@ -3052,7 +3052,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     (
       item: DesignedCustomAbutment,
       field: AbutmentInfoFieldKey,
-      nextValue: number | AbutmentAxisSource,
+      nextValue: number | AbutmentAxisSource | { min: number; max: number },
     ) => {
       if (!canEditDesign) return;
       const tooth = item.toothNumber;
@@ -3084,20 +3084,24 @@ export function PracticeCustomAbutmentPreviewDialog({
       const baseM = baselineMetricsRef.current[d.toothNumber];
       if (!fields || fields.size === 0 || !baseM) continue;
       for (const field of fields) {
+        if (!(field in ABUTMENT_INFO_FIELD_LABELS)) continue;
         const beforeText = formatAbutmentInfoFieldValue(baseM, field);
         const afterText = formatAbutmentInfoFieldValue(d.metrics, field);
         if (beforeText === afterText) continue;
         const p = d.params;
         let params: Partial<CustomAbutmentDesignParams> = {};
         switch (field) {
+          case "marginSubgMm":
+            params = {
+              marginSubgMinMm: p.marginSubgMinMm,
+              marginSubgMaxMm: p.marginSubgMaxMm,
+              marginDepthMm: p.marginSubgMinMm,
+            };
+            break;
           case "maxDiameterMm":
             params = { marginSizeScale: p.marginSizeScale };
             break;
-          case "cuffHeightMinMm":
-            params = { marginDepthMm: p.marginDepthMm };
-            break;
           case "postHeightMm":
-          case "crownOverPostMm":
             params = { postHeightOffsetMm: p.postHeightOffsetMm };
             break;
           case "postTaperDeg":
@@ -3112,15 +3116,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           case "occlusalClearanceMm":
             params = { occlusalClearanceMm: p.occlusalClearanceMm };
             break;
-          case "cutbackMm":
-            params = {
-              minCrownThicknessMm: p.minCrownThicknessMm,
-              postWidthScale: p.postWidthScale,
-            };
-            break;
           case "marginFilletRadiusMm":
             params = { marginFilletRadiusMm: p.marginFilletRadiusMm };
             break;
+          default:
+            continue;
         }
         out.push({
           id: `${d.toothNumber}:${field}`,

@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   ChevronDown,
@@ -41,28 +42,26 @@ const headerBtn =
 export type AbutmentAxisSource = CustomAbutmentDesignMetrics["axisSource"];
 
 export type AbutmentInfoFieldKey =
+  | "marginSubgMm"
   | "maxDiameterMm"
-  | "cuffHeightMinMm"
+  | "marginFilletRadiusMm"
   | "postHeightMm"
-  | "crownOverPostMm"
   | "postTaperDeg"
-  | "angulationDeg"
-  | "axisSource"
   | "occlusalClearanceMm"
-  | "cutbackMm"
-  | "marginFilletRadiusMm";
+  | "angulationDeg"
+  | "axisSource";
+
+export type AbutmentInfoEditValue = number | AbutmentAxisSource | { min: number; max: number };
 
 export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = {
+  marginSubgMm: "치은 연하",
   maxDiameterMm: "최대 직경",
-  cuffHeightMinMm: "커프 높이",
+  marginFilletRadiusMm: "마진 챔퍼 R",
   postHeightMm: "포스트 높이",
-  crownOverPostMm: "크라운 − 포스트",
   postTaperDeg: "테이퍼",
+  occlusalClearanceMm: "대합 거리",
   angulationDeg: "삽입축 각도",
   axisSource: "삽입축 기준",
-  occlusalClearanceMm: "대합 거리",
-  cutbackMm: "평균 컷백",
-  marginFilletRadiusMm: "마진 챔퍼 R",
 };
 
 export const AXIS_SOURCE_LABEL: Record<AbutmentAxisSource, string> = {
@@ -97,26 +96,24 @@ export function formatAbutmentInfoFieldValue(
   field: AbutmentInfoFieldKey,
 ): string {
   switch (field) {
+    case "marginSubgMm":
+      return `${(m.marginSubgMinMm ?? 0.5).toFixed(1)}~${(m.marginSubgMaxMm ?? 1).toFixed(1)}mm`;
     case "maxDiameterMm":
       return `Ø${cleanNum(m.maxDiameterMm, 2)}mm`;
-    case "cuffHeightMinMm":
-      return `${cleanNum(m.cuffHeightMinMm, 2)}~${cleanNum(m.cuffHeightMaxMm, 2)}mm`;
+    case "marginFilletRadiusMm":
+      return `${cleanNum(m.marginFilletRadiusMm, 2)}mm`;
     case "postHeightMm":
       return `${cleanNum(m.postHeightMm, 2)}mm`;
-    case "crownOverPostMm":
-      return m.crownOverPostMm != null ? `${cleanNum(m.crownOverPostMm, 2)}mm` : "-";
     case "postTaperDeg":
       return `${cleanNum(m.postTaperDeg, 1)}°`;
+    case "occlusalClearanceMm":
+      return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
     case "angulationDeg":
       return `${cleanNum(m.angulationDeg, 1)}°`;
     case "axisSource":
       return AXIS_SOURCE_LABEL[m.axisSource] ?? "-";
-    case "occlusalClearanceMm":
-      return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
-    case "cutbackMm":
-      return `${cleanNum(m.cutbackMm, 2)}mm`;
-    case "marginFilletRadiusMm":
-      return `${cleanNum(m.marginFilletRadiusMm, 2)}mm`;
+    default:
+      return "-";
   }
 }
 
@@ -124,7 +121,7 @@ export function formatAbutmentInfoFieldValue(
 export function computeParamsFromInfoFieldEdit(
   item: DesignedCustomAbutment,
   field: AbutmentInfoFieldKey,
-  nextValue: number | AbutmentAxisSource,
+  nextValue: AbutmentInfoEditValue,
 ): Partial<CustomAbutmentDesignParams> {
   const m = item.metrics;
   const p = item.params;
@@ -133,6 +130,17 @@ export function computeParamsFromInfoFieldEdit(
     return {
       axisSourceCode: AXIS_SOURCE_TO_CODE[src] ?? 1,
       axisToOpposing: src === "arch" ? 0 : 1,
+    };
+  }
+  if (field === "marginSubgMm") {
+    const range = nextValue as { min: number; max: number };
+    if (!Number.isFinite(range?.min) || !Number.isFinite(range?.max)) return {};
+    const minV = Number(clampParam("marginSubgMinMm", Math.min(range.min, range.max)).toFixed(2));
+    const maxV = Number(clampParam("marginSubgMaxMm", Math.max(minV, range.min, range.max)).toFixed(2));
+    return {
+      marginSubgMinMm: minV,
+      marginSubgMaxMm: maxV,
+      marginDepthMm: minV,
     };
   }
   const num = Number(nextValue);
@@ -146,26 +154,11 @@ export function computeParamsFromInfoFieldEdit(
         marginSizeScale: Number(clampParam("marginSizeScale", p.marginSizeScale * ratio).toFixed(3)),
       };
     }
-    case "cuffHeightMinMm": {
-      const delta = num - m.cuffHeightMinMm;
-      return {
-        marginDepthMm: Number(clampParam("marginDepthMm", p.marginDepthMm - delta).toFixed(2)),
-      };
-    }
     case "postHeightMm": {
       const delta = num - m.postHeightMm;
       return {
         postHeightOffsetMm: Number(
           clampParam("postHeightOffsetMm", p.postHeightOffsetMm + delta).toFixed(2),
-        ),
-      };
-    }
-    case "crownOverPostMm": {
-      if (m.crownOverPostMm == null) return {};
-      const delta = num - m.crownOverPostMm;
-      return {
-        postHeightOffsetMm: Number(
-          clampParam("postHeightOffsetMm", p.postHeightOffsetMm - delta).toFixed(2),
         ),
       };
     }
@@ -192,17 +185,6 @@ export function computeParamsFromInfoFieldEdit(
         ),
       };
     }
-    case "cutbackMm": {
-      const delta = num - m.cutbackMm;
-      return {
-        minCrownThicknessMm: Number(
-          clampParam("minCrownThicknessMm", p.minCrownThicknessMm + delta * 0.75).toFixed(2),
-        ),
-        postWidthScale: Number(
-          clampParam("postWidthScale", p.postWidthScale - delta * 0.1).toFixed(3),
-        ),
-      };
-    }
     case "marginFilletRadiusMm": {
       const delta = num - m.marginFilletRadiusMm;
       return {
@@ -211,6 +193,8 @@ export function computeParamsFromInfoFieldEdit(
         ),
       };
     }
+    default:
+      return {};
   }
 }
 
@@ -292,7 +276,8 @@ function EditableNumberRow({
   const [editing, setEditing] = useState(false);
   const [scrubValue, setScrubValue] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const scrubTimerRef = useRef(0);
+  const holdRef = useRef(false);
+  const seenValueRef = useRef(value);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -300,19 +285,17 @@ function EditableNumberRow({
     startVal: number;
     moved: boolean;
     fromInput: boolean;
-    lastCommitted: number;
+    pending: number;
   } | null>(null);
 
   useEffect(() => {
-    if (!editing && scrubValue == null) {
-      setDraft(formatVal(value));
-    }
+    const changed = Math.abs(seenValueRef.current - value) > 1e-6;
+    seenValueRef.current = value;
+    if (changed) holdRef.current = false;
+    if (editing || scrubValue != null || holdRef.current) return;
+    setDraft(formatVal(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, scrubValue, value, digits]);
-
-  useEffect(() => {
-    return () => window.clearTimeout(scrubTimerRef.current);
-  }, []);
 
   const clampVal = (raw: number) => {
     const snapped = Number((Math.round(raw / step) * step).toFixed(digits + 1));
@@ -354,7 +337,7 @@ function EditableNumberRow({
       startVal: value,
       moved: false,
       fromInput,
-      lastCommitted: value,
+      pending: value,
     };
   };
 
@@ -369,22 +352,15 @@ function EditableNumberRow({
     const fine = e.shiftKey ? 0.2 : 1;
     const steps = (deltaPx / 6) * fine;
     const next = clampVal(drag.startVal + steps * step);
+    drag.pending = next;
     setScrubValue(next);
     setDraft(formatVal(next));
-    window.clearTimeout(scrubTimerRef.current);
-    scrubTimerRef.current = window.setTimeout(() => {
-      if (Math.abs(next - drag.lastCommitted) >= 1e-4) {
-        drag.lastCommitted = next;
-        onCommit(next);
-      }
-    }, 110);
   };
 
   const endScrub = (e: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     dragRef.current = null;
-    window.clearTimeout(scrubTimerRef.current);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
@@ -401,9 +377,11 @@ function EditableNumberRow({
       }
       return;
     }
-    const finalVal = scrubValue ?? drag.startVal;
+    const finalVal = drag.pending;
     setScrubValue(null);
-    if (Math.abs(finalVal - drag.lastCommitted) >= 1e-4) {
+    setDraft(formatVal(finalVal));
+    if (Math.abs(finalVal - drag.startVal) >= 1e-4) {
+      holdRef.current = true;
       onCommit(finalVal);
     }
   };
@@ -522,8 +500,19 @@ function EditableAxisSourceRow({
   disabled?: boolean;
   onCommit: (next: AbutmentAxisSource) => void;
 }) {
-  const dragRef = useRef<{ pointerId: number; startX: number; startIdx: number } | null>(null);
-  const curIdx = Math.max(0, AXIS_SOURCE_ORDER.indexOf(value));
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startIdx: number;
+    pending: AbutmentAxisSource;
+  } | null>(null);
+  const [pending, setPending] = useState<AbutmentAxisSource | null>(null);
+  const shown = pending ?? value;
+  const curIdx = Math.max(0, AXIS_SOURCE_ORDER.indexOf(shown));
+
+  useEffect(() => {
+    if (pending != null && pending === value) setPending(null);
+  }, [pending, value]);
 
   const stepBy = (dir: 1 | -1) => {
     if (disabled) return;
@@ -544,7 +533,12 @@ function EditableAxisSourceRow({
           if (disabled || e.button !== 0) return;
           e.preventDefault();
           e.currentTarget.setPointerCapture(e.pointerId);
-          dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startIdx: curIdx };
+          dragRef.current = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startIdx: Math.max(0, AXIS_SOURCE_ORDER.indexOf(value)),
+            pending: value,
+          };
         }}
         onPointerMove={(e) => {
           const drag = dragRef.current;
@@ -554,15 +548,33 @@ function EditableAxisSourceRow({
             ((drag.startIdx + steps) % AXIS_SOURCE_ORDER.length + AXIS_SOURCE_ORDER.length) %
             AXIS_SOURCE_ORDER.length;
           const next = AXIS_SOURCE_ORDER[idx]!;
-          if (next !== value) onCommit(next);
+          drag.pending = next;
+          setPending(next);
         }}
         onPointerUp={(e) => {
-          if (dragRef.current?.pointerId !== e.pointerId) return;
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== e.pointerId) return;
           dragRef.current = null;
+          setPending(null);
           try {
             e.currentTarget.releasePointerCapture(e.pointerId);
           } catch {
             // 이미 해제됨
+          }
+          if (drag.pending !== value) {
+            setPending(drag.pending);
+            onCommit(drag.pending);
+          }
+        }}
+        onPointerCancel={(e) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== e.pointerId) return;
+          dragRef.current = null;
+          if (drag.pending !== value) {
+            setPending(drag.pending);
+            onCommit(drag.pending);
+          } else {
+            setPending(null);
           }
         }}
       >
@@ -577,7 +589,7 @@ function EditableAxisSourceRow({
         <select
           aria-label={label}
           disabled={disabled}
-          value={value}
+          value={shown}
           className="h-full min-w-0 flex-1 bg-transparent pr-1 text-right text-xs font-medium text-foreground outline-none"
           onChange={(e) => onCommit(e.target.value as AbutmentAxisSource)}
         >
@@ -605,6 +617,314 @@ function EditableAxisSourceRow({
             aria-label={`${label} 다음`}
             className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             onClick={() => stepBy(1)}
+          >
+            <ChevronDown className="h-2.5 w-2.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1 pt-1.5 first:pt-0">
+      <div className="text-[0.6875rem] font-medium text-muted-foreground">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function EditableRangeRow({
+  label,
+  minValue,
+  maxValue,
+  min,
+  max,
+  step,
+  digits = 1,
+  suffix,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  minValue: number;
+  maxValue: number;
+  min: number;
+  max: number;
+  step: number;
+  digits?: number;
+  suffix?: string;
+  disabled?: boolean;
+  onCommit: (minV: number, maxV: number) => void;
+}) {
+  const formatVal = (v: number) => v.toFixed(digits);
+  const [draftMin, setDraftMin] = useState(() => formatVal(minValue));
+  const [draftMax, setDraftMax] = useState(() => formatVal(maxValue));
+  const [editing, setEditing] = useState<null | "min" | "max">(null);
+  const [scrub, setScrub] = useState<{ min: number; max: number } | null>(null);
+  const minInputRef = useRef<HTMLInputElement | null>(null);
+  const maxInputRef = useRef<HTMLInputElement | null>(null);
+  const holdRef = useRef(false);
+  const seenRef = useRef({ min: minValue, max: maxValue });
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    startMin: number;
+    startMax: number;
+    moved: boolean;
+    target: "min" | "max" | "both";
+    pending: { min: number; max: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const changed =
+      Math.abs(seenRef.current.min - minValue) > 1e-6 ||
+      Math.abs(seenRef.current.max - maxValue) > 1e-6;
+    seenRef.current = { min: minValue, max: maxValue };
+    if (changed) holdRef.current = false;
+    if (editing || scrub || holdRef.current) return;
+    setDraftMin(formatVal(minValue));
+    setDraftMax(formatVal(maxValue));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, scrub, minValue, maxValue, digits]);
+
+  const clampEnd = (raw: number) => {
+    const snapped = Number((Math.round(raw / step) * step).toFixed(digits + 1));
+    return Number(Math.min(max, Math.max(min, snapped)).toFixed(digits));
+  };
+
+  const shiftBoth = (startMin: number, startMax: number, delta: number) => {
+    const gap = Math.max(0, startMax - startMin);
+    let nextMin = clampEnd(startMin + delta);
+    let nextMax = clampEnd(nextMin + gap);
+    if (nextMax - nextMin < gap - 1e-6) nextMin = clampEnd(nextMax - gap);
+    return { min: nextMin, max: Math.max(nextMin, clampEnd(nextMin + gap)) };
+  };
+
+  const stepBoth = (dir: 1 | -1) => {
+    if (disabled) return;
+    const baseMin = scrub?.min ?? minValue;
+    const baseMax = scrub?.max ?? maxValue;
+    const next = shiftBoth(baseMin, baseMax, dir * step);
+    if (Math.abs(next.min - baseMin) < 1e-4 && Math.abs(next.max - baseMax) < 1e-4) return;
+    setDraftMin(formatVal(next.min));
+    setDraftMax(formatVal(next.max));
+    holdRef.current = true;
+    onCommit(next.min, next.max);
+  };
+
+  const commitDraft = () => {
+    setEditing(null);
+    const rawMin = Number(draftMin.trim());
+    const rawMax = Number(draftMax.trim());
+    let nextMin = clampEnd(Number.isFinite(rawMin) ? rawMin : minValue);
+    let nextMax = clampEnd(Number.isFinite(rawMax) ? rawMax : maxValue);
+    if (nextMax < nextMin) {
+      const swap = nextMin;
+      nextMin = nextMax;
+      nextMax = swap;
+    }
+    setDraftMin(formatVal(nextMin));
+    setDraftMax(formatVal(nextMax));
+    if (Math.abs(nextMin - minValue) >= 1e-4 || Math.abs(nextMax - maxValue) >= 1e-4) {
+      holdRef.current = true;
+      onCommit(nextMin, nextMax);
+    }
+  };
+
+  const startScrub = (target: "min" | "max" | "both") => (e: ReactPointerEvent<HTMLElement>) => {
+    if (disabled || e.button !== 0) return;
+    if (target !== "both" && editing === target) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startMin: minValue,
+      startMax: maxValue,
+      moved: false,
+      target,
+      pending: { min: minValue, max: maxValue },
+    };
+  };
+
+  const moveScrub = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = drag.startY - e.clientY;
+    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+    drag.moved = true;
+    const deltaPx = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+    const fine = e.shiftKey ? 0.2 : 1;
+    const delta = (deltaPx / 6) * fine * step;
+    const next =
+      drag.target === "both"
+        ? shiftBoth(drag.startMin, drag.startMax, delta)
+        : drag.target === "min"
+          ? { min: clampEnd(Math.min(drag.startMax, drag.startMin + delta)), max: drag.startMax }
+          : { min: drag.startMin, max: clampEnd(Math.max(drag.startMin, drag.startMax + delta)) };
+    drag.pending = next;
+    setScrub(next);
+    setDraftMin(formatVal(next.min));
+    setDraftMax(formatVal(next.max));
+  };
+
+  const endScrub = (e: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    dragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // 이미 해제됨
+    }
+    if (!drag.moved) {
+      setScrub(null);
+      if (drag.target === "min" || drag.target === "max") {
+        const which = drag.target;
+        setEditing(which);
+        window.requestAnimationFrame(() => {
+          const node = which === "min" ? minInputRef.current : maxInputRef.current;
+          node?.focus();
+          node?.select();
+        });
+      }
+      return;
+    }
+    const finalPair = drag.pending;
+    setScrub(null);
+    setDraftMin(formatVal(finalPair.min));
+    setDraftMax(formatVal(finalPair.max));
+    if (
+      Math.abs(finalPair.min - drag.startMin) >= 1e-4 ||
+      Math.abs(finalPair.max - drag.startMax) >= 1e-4
+    ) {
+      holdRef.current = true;
+      onCommit(finalPair.min, finalPair.max);
+    }
+  };
+
+  const shownMin = scrub?.min ?? minValue;
+  const shownMax = scrub?.max ?? maxValue;
+  const fieldClass = (active: boolean) =>
+    cn(
+      "h-full w-[1.9rem] bg-transparent text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
+      !active && !disabled && "cursor-ew-resize select-none",
+    );
+
+  return (
+    <div className="flex items-center justify-between gap-2 py-0.5 text-[0.8125rem] leading-snug">
+      <span
+        className={cn(
+          "shrink-0 select-none text-muted-foreground",
+          !disabled && "cursor-ew-resize hover:text-foreground",
+        )}
+        title={disabled ? undefined : "좌우로 드래그하면 구간이 같이 움직입니다"}
+        onPointerDown={startScrub("both")}
+        onPointerMove={moveScrub}
+        onPointerUp={endScrub}
+        onPointerCancel={endScrub}
+      >
+        {label}
+      </span>
+      <div
+        className={cn(
+          "flex h-7 min-w-[7.75rem] items-center rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          scrub && "border-primary bg-primary/5",
+          disabled && "opacity-60",
+        )}
+      >
+        <input
+          ref={minInputRef}
+          type="text"
+          inputMode="decimal"
+          aria-label={`${label} 얕은 끝`}
+          disabled={disabled}
+          value={draftMin}
+          readOnly={editing !== "min"}
+          className={fieldClass(editing === "min")}
+          title={disabled ? undefined : "얕은 끝. 드래그하거나 입력"}
+          onPointerDown={startScrub("min")}
+          onPointerMove={moveScrub}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+          onFocus={() => {
+            if (!dragRef.current) setEditing("min");
+          }}
+          onBlur={commitDraft}
+          onChange={(e) => setDraftMin(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(null);
+              setDraftMin(formatVal(minValue));
+              setDraftMax(formatVal(maxValue));
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+        <span className="shrink-0 px-0.5 text-xs text-muted-foreground">~</span>
+        <input
+          ref={maxInputRef}
+          type="text"
+          inputMode="decimal"
+          aria-label={`${label} 깊은 끝`}
+          disabled={disabled}
+          value={draftMax}
+          readOnly={editing !== "max"}
+          className={fieldClass(editing === "max")}
+          title={disabled ? undefined : "깊은 끝. 드래그하거나 입력"}
+          onPointerDown={startScrub("max")}
+          onPointerMove={moveScrub}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+          onFocus={() => {
+            if (!dragRef.current) setEditing("max");
+          }}
+          onBlur={commitDraft}
+          onChange={(e) => setDraftMax(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(null);
+              setDraftMin(formatVal(minValue));
+              setDraftMax(formatVal(maxValue));
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+        {suffix ? (
+          <span className="shrink-0 select-none pr-1 text-xs text-muted-foreground">{suffix}</span>
+        ) : null}
+        <div className="flex h-full shrink-0 flex-col justify-center border-l pl-0.5">
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled || shownMax >= max - 1e-5}
+            aria-label={`${label} 깊게`}
+            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            onClick={() => stepBoth(1)}
+          >
+            <ChevronUp className="h-2.5 w-2.5" />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled || shownMin <= min + 1e-5}
+            aria-label={`${label} 얕게`}
+            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            onClick={() => stepBoth(-1)}
           >
             <ChevronDown className="h-2.5 w-2.5" />
           </button>
@@ -649,7 +969,7 @@ export function PracticeCustomAbutmentDesignTree({
   onEditField?: (
     item: DesignedCustomAbutment,
     field: AbutmentInfoFieldKey,
-    nextValue: number | AbutmentAxisSource,
+    nextValue: AbutmentInfoEditValue,
   ) => void;
   expanded: Record<string, boolean>;
   onExpandedChange: (next: Record<string, boolean>) => void;
@@ -789,9 +1109,30 @@ export function PracticeCustomAbutmentDesignTree({
                 </button>
               </div>
               {open ? (
-                <div className="ml-4 mr-0.5 mt-1 space-y-1 border-l pb-2 pl-2.5">
-                  {editable ? (
-                    <>
+                <div className="ml-4 mr-0.5 mt-1 border-l pb-2 pl-2.5">
+                  <InfoGroup title="마진">
+                    {editable ? (
+                      <EditableRangeRow
+                        label="치은 연하"
+                        minValue={m.marginSubgMinMm ?? item.params.marginSubgMinMm ?? 0.5}
+                        maxValue={m.marginSubgMaxMm ?? item.params.marginSubgMaxMm ?? 1}
+                        min={-1.5}
+                        max={2.5}
+                        step={0.1}
+                        digits={1}
+                        suffix="mm"
+                        disabled={rowDisabled}
+                        onCommit={(minV, maxV) =>
+                          onEditField?.(item, "marginSubgMm", { min: minV, max: maxV })
+                        }
+                      />
+                    ) : (
+                      <DetailRow
+                        label="치은 연하"
+                        value={formatAbutmentInfoFieldValue(m, "marginSubgMm")}
+                      />
+                    )}
+                    {editable ? (
                       <EditableNumberRow
                         label="최대 직경"
                         value={m.maxDiameterMm}
@@ -804,19 +1145,29 @@ export function PracticeCustomAbutmentDesignTree({
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "maxDiameterMm", v)}
                       />
+                    ) : (
+                      <DetailRow label="최대 직경" value={`Ø${m.maxDiameterMm}mm`} />
+                    )}
+                    {editable ? (
                       <EditableNumberRow
-                        label="커프 높이"
-                        value={m.cuffHeightMinMm}
+                        label="마진 챔퍼 R"
+                        value={m.marginFilletRadiusMm}
                         min={0.3}
-                        max={12}
-                        step={0.1}
+                        max={1}
+                        step={0.02}
                         digits={2}
-                        suffix={`~${cleanNum(m.cuffHeightMaxMm, 2)}mm`}
+                        suffix="mm"
                         disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "cuffHeightMinMm", v)}
+                        onCommit={(v) => onEditField?.(item, "marginFilletRadiusMm", v)}
                       />
+                    ) : (
+                      <DetailRow label="마진 챔퍼 R" value={`${m.marginFilletRadiusMm}mm`} />
+                    )}
+                  </InfoGroup>
+                  <InfoGroup title="포스트">
+                    {editable ? (
                       <EditableNumberRow
-                        label="포스트 높이"
+                        label="높이"
                         value={m.postHeightMm}
                         min={2.2}
                         max={12}
@@ -826,22 +1177,10 @@ export function PracticeCustomAbutmentDesignTree({
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "postHeightMm", v)}
                       />
-                      {m.adjacentOcclusalMm != null ? (
-                        <DetailRow label="인접치 교합면" value={`${m.adjacentOcclusalMm}mm`} />
-                      ) : null}
-                      {m.crownOverPostMm != null ? (
-                        <EditableNumberRow
-                          label="크라운 − 포스트"
-                          value={m.crownOverPostMm}
-                          min={0.7}
-                          max={6}
-                          step={0.1}
-                          digits={2}
-                          suffix="mm"
-                          disabled={rowDisabled}
-                          onCommit={(v) => onEditField?.(item, "crownOverPostMm", v)}
-                        />
-                      ) : null}
+                    ) : (
+                      <DetailRow label="높이" value={`${m.postHeightMm}mm`} />
+                    )}
+                    {editable ? (
                       <EditableNumberRow
                         label="테이퍼"
                         value={m.postTaperDeg}
@@ -853,8 +1192,34 @@ export function PracticeCustomAbutmentDesignTree({
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "postTaperDeg", v)}
                       />
+                    ) : (
+                      <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
+                    )}
+                    {m.occlusalClearanceMm != null && editable ? (
                       <EditableNumberRow
-                        label="삽입축 각도"
+                        label="대합 거리"
+                        value={m.occlusalClearanceMm}
+                        min={0.7}
+                        max={3.5}
+                        step={0.05}
+                        digits={2}
+                        suffix="mm"
+                        disabled={rowDisabled}
+                        onCommit={(v) => onEditField?.(item, "occlusalClearanceMm", v)}
+                      />
+                    ) : (
+                      <DetailRow
+                        label="대합 거리"
+                        value={
+                          m.occlusalClearanceMm != null ? `${m.occlusalClearanceMm}mm` : "대합치 없음"
+                        }
+                      />
+                    )}
+                  </InfoGroup>
+                  <InfoGroup title="삽입축">
+                    {editable ? (
+                      <EditableNumberRow
+                        label="각도"
                         value={m.angulationDeg}
                         min={0}
                         max={32}
@@ -864,90 +1229,30 @@ export function PracticeCustomAbutmentDesignTree({
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "angulationDeg", v)}
                       />
+                    ) : (
+                      <DetailRow label="각도" value={`${m.angulationDeg}°`} />
+                    )}
+                    {editable ? (
                       <EditableAxisSourceRow
-                        label="삽입축 기준"
+                        label="기준"
                         value={m.axisSource}
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "axisSource", v)}
                       />
-                      {m.occlusalClearanceMm != null ? (
-                        <EditableNumberRow
-                          label="대합 거리"
-                          value={m.occlusalClearanceMm}
-                          min={0.7}
-                          max={3.5}
-                          step={0.05}
-                          digits={2}
-                          suffix="mm"
-                          disabled={rowDisabled}
-                          onCommit={(v) => onEditField?.(item, "occlusalClearanceMm", v)}
-                        />
-                      ) : (
-                        <DetailRow label="대합 거리" value="대합치 없음" />
-                      )}
-                      <EditableNumberRow
-                        label="평균 컷백"
-                        value={m.cutbackMm}
-                        min={0.7}
-                        max={3.5}
-                        step={0.05}
-                        digits={2}
-                        suffix="mm"
-                        disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "cutbackMm", v)}
-                      />
-                      <EditableNumberRow
-                        label="마진 챔퍼 R"
-                        value={m.marginFilletRadiusMm}
-                        min={0.3}
-                        max={1.0}
-                        step={0.02}
-                        digits={2}
-                        suffix="mm"
-                        disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "marginFilletRadiusMm", v)}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <DetailRow label="최대 직경" value={`Ø${m.maxDiameterMm}mm`} />
-                      <DetailRow
-                        label="커프 높이"
-                        value={`${m.cuffHeightMinMm}~${m.cuffHeightMaxMm}mm`}
-                      />
-                      <DetailRow label="포스트 높이" value={`${m.postHeightMm}mm`} />
-                      {m.adjacentOcclusalMm != null ? (
-                        <DetailRow label="인접치 교합면" value={`${m.adjacentOcclusalMm}mm`} />
-                      ) : null}
-                      {m.crownOverPostMm != null ? (
-                        <DetailRow label="크라운 − 포스트" value={`${m.crownOverPostMm}mm`} />
-                      ) : null}
-                      <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
-                      <DetailRow label="삽입축 각도" value={`${m.angulationDeg}°`} />
-                      <DetailRow
-                        label="삽입축 기준"
-                        value={AXIS_SOURCE_LABEL[m.axisSource] ?? "-"}
-                      />
-                      <DetailRow
-                        label="대합 거리"
-                        value={
-                          m.occlusalClearanceMm != null
-                            ? `${m.occlusalClearanceMm}mm`
-                            : "대합치 없음"
-                        }
-                      />
-                      <DetailRow label="평균 컷백" value={`${m.cutbackMm}mm`} />
-                      <DetailRow label="마진 챔퍼 R" value={`${m.marginFilletRadiusMm}mm`} />
-                    </>
-                  )}
-                  <DetailRow
-                    label="커넥션"
-                    value={[conn.manufacturer, conn.brand, conn.type].filter(Boolean).join(" ") || "-"}
-                  />
-                  <DetailRow
-                    label="스캔바디"
-                    value={`${item.fixture.matchedLibraryLabel} · ${m.rmsMm}mm`}
-                  />
+                    ) : (
+                      <DetailRow label="기준" value={AXIS_SOURCE_LABEL[m.axisSource] ?? "-"} />
+                    )}
+                  </InfoGroup>
+                  <div className="mt-1.5 space-y-1 border-t pt-1.5">
+                    <DetailRow
+                      label="커넥션"
+                      value={[conn.manufacturer, conn.brand, conn.type].filter(Boolean).join(" ") || "-"}
+                    />
+                    <DetailRow
+                      label="스캔바디"
+                      value={`${item.fixture.matchedLibraryLabel} · ${m.rmsMm}mm`}
+                    />
+                  </div>
                 </div>
               ) : null}
             </li>

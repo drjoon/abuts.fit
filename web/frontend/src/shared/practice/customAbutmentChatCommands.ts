@@ -60,6 +60,32 @@ const FILLER_RE =
 const has = (s: string, re: RegExp) => re.test(s);
 
 const RULES: Rule[] = [
+  // 「치은 연하 0.5~1.0」은 구간, 숫자 하나는 얕은 끝.
+  {
+    match: (c, num) => {
+      if (!has(c, /치은\s*연하/)) return null;
+      const strip = [/치은\s*연하/g, /마진/g, /(깊|얕)[게이]?/g];
+      const range = /(\d+(?:\.\d+)?)\s*[~～\-]\s*(\d+(?:\.\d+)?)/.exec(c);
+      if (range) {
+        const a = Number(range[1]);
+        const b = Number(range[2]);
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        return {
+          strip: [...strip, /(\d+(?:\.\d+)?)\s*[~～\-]\s*(\d+(?:\.\d+)?)/g],
+          deltas: [
+            { key: "marginSubgMinMm", mode: "set", value: lo },
+            { key: "marginSubgMaxMm", mode: "set", value: hi },
+            { key: "marginDepthMm", mode: "set", value: lo },
+          ],
+        };
+      }
+      if (num != null) {
+        return { strip, deltas: [{ key: "marginDepthMm", mode: "set", value: num }] };
+      }
+      return null;
+    },
+  },
   // 피니시라인 깊이: 깊게/얕게, 「치은 하방 0.8」
   {
     match: (c, num, amount) => {
@@ -408,6 +434,32 @@ export function parseLocalDesignCommand(
     for (const d of deltas) {
       const base = params[d.key] ?? cur.params[d.key];
       params[d.key] = clampParam(d.key, d.mode === "set" ? d.value : base + d.value);
+    }
+    if (
+      params.marginDepthMm != null ||
+      params.marginSubgMinMm != null ||
+      params.marginSubgMaxMm != null
+    ) {
+      const prevMin = Number(cur.params.marginSubgMinMm);
+      const prevMax = Number(cur.params.marginSubgMaxMm);
+      const min0 = Number.isFinite(prevMin) ? prevMin : 0.5;
+      const max0 = Number.isFinite(prevMax) ? prevMax : 1;
+      let minV = params.marginSubgMinMm ?? min0;
+      let maxV = params.marginSubgMaxMm ?? max0;
+      if (
+        params.marginDepthMm != null &&
+        params.marginSubgMinMm == null &&
+        params.marginSubgMaxMm == null
+      ) {
+        const width = Math.max(0, max0 - min0);
+        minV = params.marginDepthMm;
+        maxV = minV + width;
+      }
+      minV = clampParam("marginSubgMinMm", Math.min(minV, maxV));
+      maxV = clampParam("marginSubgMaxMm", Math.max(minV, maxV));
+      params.marginSubgMinMm = minV;
+      params.marginSubgMaxMm = maxV;
+      params.marginDepthMm = minV;
     }
     changes.push({ toothNumber: tooth, params });
   }
