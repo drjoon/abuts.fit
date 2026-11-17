@@ -694,12 +694,12 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     );
     assert.ok(
       singleTall.metrics.postHeightMm > singleShort.metrics.postHeightMm + 2.0 &&
-        singleTall.metrics.postTaperDeg > singleShort.metrics.postTaperDeg + 1.5,
+        singleTall.metrics.postTaperDeg > singleShort.metrics.postTaperDeg + 0.4,
       `포스트 높이가 높아지면(${singleShort.metrics.postHeightMm}mm → ${singleTall.metrics.postHeightMm}mm) 최적 접착력을 맞추기 위해 테이퍼(${singleShort.metrics.postTaperDeg}° → ${singleTall.metrics.postTaperDeg}°)도 커진다`,
     );
 
     // 링크 연결 상태에서 테이퍼를 낮추면 포스트 높이도 함께 낮아진다.
-    const linkedTaperPatch = computeParamsFromInfoFieldEdit(singleTall, "postTaperDeg", 4.0);
+    const linkedTaperPatch = computeParamsFromInfoFieldEdit(singleTall, "postTaperDeg", 2.0);
     const afterLinkedTaperEdit = await designCustomAbutmentStl({
       fixture: fixture36,
       jawGeometry: jawGeo,
@@ -709,8 +709,8 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     });
     assert.ok(
       Math.abs(afterLinkedTaperEdit.metrics.postHeightMm - 5.0) <= 0.25 &&
-        Math.abs(afterLinkedTaperEdit.metrics.postTaperDeg - 4.0) <= 0.3,
-      `연결 상태에서 테이퍼를 4.0°로 맞추면 포스트 높이(${afterLinkedTaperEdit.metrics.postHeightMm}mm)가 기준 5mm 근처로 함께 조절되고 테이퍼(${afterLinkedTaperEdit.metrics.postTaperDeg}°)도 4°로 맞춰진다`,
+        Math.abs(afterLinkedTaperEdit.metrics.postTaperDeg - 2.0) <= 0.3,
+      `연결 상태에서 테이퍼를 2.0°로 맞추면 포스트 높이(${afterLinkedTaperEdit.metrics.postHeightMm}mm)가 기준 5mm 근처로 함께 조절되고 테이퍼(${afterLinkedTaperEdit.metrics.postTaperDeg}°)도 2°로 맞춰진다`,
     );
 
     // 링크를 끊으면(postTaperLink=0) 높이와 테이퍼가 각각 독립적으로 조절된다.
@@ -736,7 +736,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       `연결 해제 상태에서는 높이를 줄여도(${unlinked.metrics.postHeightMm}mm → ${unlinkedHeightEdited.metrics.postHeightMm}mm) 테이퍼(${unlinked.metrics.postTaperDeg}° → ${unlinkedHeightEdited.metrics.postTaperDeg}°)는 그대로 유지된다`,
     );
 
-    // 브리지 케이스는 같은 높이에서도 싱글보다 테이퍼가 더 크고, 짧아도 최소 4° 이상을 유지한다.
+    // 브리지 케이스는 같은 높이에서도 싱글보다 테이퍼가 더 크고, 짧아도 최소 2° 이상을 유지한다.
     const bridgeTall = await designCustomAbutmentStl({
       fixture: fixture36,
       jawGeometry: jawGeo,
@@ -751,12 +751,12 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     });
     assert.equal(bridgeTall.metrics.isBridge, true, "브리지 메타데이터는 브리지로 판별된다");
     assert.ok(
-      bridgeTall.metrics.postTaperDeg > singleTall.metrics.postTaperDeg + 1.2,
+      bridgeTall.metrics.postTaperDeg > singleTall.metrics.postTaperDeg + 0.6,
       `같은 조건에서 브리지 테이퍼(${bridgeTall.metrics.postTaperDeg}°)가 싱글 테이퍼(${singleTall.metrics.postTaperDeg}°)보다 크게 조절된다`,
     );
     assert.ok(
-      bridgeShort.metrics.postTaperDeg >= 3.8,
-      `짧은 브리지 포스트(${bridgeShort.metrics.postHeightMm}mm)에서도 착탈 편의를 위해 테이퍼(${bridgeShort.metrics.postTaperDeg}°)가 높게 유지된다`,
+      bridgeShort.metrics.postTaperDeg >= 2.0,
+      `짧은 브리지 포스트(${bridgeShort.metrics.postHeightMm}mm)에서도 테이퍼(${bridgeShort.metrics.postTaperDeg}°)는 최소 2° 이상이다`,
     );
   }
 }

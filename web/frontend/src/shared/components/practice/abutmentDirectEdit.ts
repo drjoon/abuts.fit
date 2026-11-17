@@ -18,6 +18,7 @@ import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   computeOptimalPostTaperDeg,
   isAnteriorTooth,
+  RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
 import { subtractTriangleSoups } from "../../practice/meshUnion";
@@ -988,7 +989,7 @@ function taperLinkOfDesign(design: DirectEditDesign): Zone["taperLink"] {
   return {
     isBridge,
     retainerCount: design.metrics?.bridgeRetainerCount ?? (isBridge ? 2 : 1),
-    baseTaperDeg: design.metrics?.postTaperDeg ?? design.params?.postTaperDeg ?? 4,
+    baseTaperDeg: design.metrics?.postTaperDeg ?? design.params?.postTaperDeg ?? RETENTION_SINGLE_REF_TAPER_DEG,
   };
 }
 

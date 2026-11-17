@@ -128,14 +128,18 @@ export function isAnteriorTooth(toothNumber: string): boolean {
   return kind === "incisor" || kind === "canine";
 }
 
-/** 포스트 최적 접착력 연동 기준: 기본 높이 5mm · 싱글 기본 4°(최소 2°) · 브리지 기본 6°(최소 4°). */
+/**
+ * 포스트 등유지력 연동 기준.
+ * 기울기 tanθ/H 가 일정하면 높이별 접착력이 같다.
+ * 싱글 앵커는 5mm · 2°(최소 2°). 브리지는 이전 4°→6° 기울기 비(tan 6°/tan 4°)를 유지해 5mm · 3.0°(최소 2°).
+ */
 export const RETENTION_REF_POST_HEIGHT_MM = 5;
-export const RETENTION_SINGLE_REF_TAPER_DEG = 4;
+export const RETENTION_SINGLE_REF_TAPER_DEG = 2;
 export const RETENTION_SINGLE_MIN_TAPER_DEG = 2;
-export const RETENTION_BRIDGE_REF_TAPER_DEG = 6;
-export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.5;
-export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 7;
-export const RETENTION_BRIDGE_MIN_TAPER_DEG = 4;
+export const RETENTION_BRIDGE_REF_TAPER_DEG = 3;
+export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.25;
+export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 3.5;
+export const RETENTION_BRIDGE_MIN_TAPER_DEG = 2;
 export const RETENTION_MIN_POST_HEIGHT_MM = 2.2;
 export const RETENTION_MAX_POST_HEIGHT_MM = 12;
 
@@ -309,8 +313,8 @@ export function resolveAbutmentBridgeRetentionSpec(
 
 /**
  * 포스트 높이와 싱글/브리지 여부에 따라 보철물 최적 접착력이 일정해지는 편측 테이퍼(°)를 계산한다.
- * - 싱글: 높이 5mm 기준 4.0°, 최소 2.0°
- * - 브리지: 착탈 편의성과 다수 지대주 접착력 증가를 반영해 높이 5mm 기준 6.0°+(3지대주 이상 소폭 가산), 최소 4.0°
+ * - 싱글: 높이 5mm 기준 2.0°, 최소 2.0° (5mm보다 짧으면 2°에 머문다)
+ * - 브리지: 착탈·다수 지대주 여유를 싱글 대비 같은 기울기 비로 유지. 5mm 기준 3.0°+(3지대주 이상 +0.25°), 최소 2.0°
  */
 export function computeOptimalPostTaperDeg(
   postHeightMm: number,
