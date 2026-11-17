@@ -23,11 +23,19 @@ import {
   Download,
   Eye,
   EyeOff,
+  Link2,
+  Link2Off,
   Loader2,
   RefreshCw,
 } from "lucide-react";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
+  RETENTION_BRIDGE_MIN_TAPER_DEG,
+  RETENTION_MAX_POST_HEIGHT_MM,
+  RETENTION_MIN_POST_HEIGHT_MM,
+  RETENTION_SINGLE_MIN_TAPER_DEG,
+  computeOptimalPostHeightMmFromTaper,
+  computeOptimalPostTaperDeg,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
   type CustomAbutmentParamKey,
@@ -49,6 +57,7 @@ export type AbutmentInfoFieldKey =
   | "marginFilletRadiusMm"
   | "postHeightMm"
   | "postTaperDeg"
+  | "postTaperLink"
   | "occlusalClearanceMm"
   | "axisSource";
 
@@ -60,6 +69,7 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   marginFilletRadiusMm: "마진 챔퍼 R",
   postHeightMm: "포스트 높이",
   postTaperDeg: "테이퍼",
+  postTaperLink: "높이·테이퍼 연결",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
@@ -144,6 +154,12 @@ export function computeParamsFromInfoFieldEdit(
   const num = Number(nextValue);
   if (!Number.isFinite(num)) return {};
 
+  const linked = (p.postTaperLink ?? 1) >= 0.5;
+  const bridgeCtx = {
+    isBridge: Boolean(m.isBridge),
+    retainerCount: m.bridgeRetainerCount ?? (m.isBridge ? 2 : 1),
+  };
+
   switch (field) {
     case "maxDiameterMm": {
       const snapped = snapMaxDiameterMm(num);
@@ -153,15 +169,48 @@ export function computeParamsFromInfoFieldEdit(
         marginSizeScale: Number(clampParam("marginSizeScale", p.marginSizeScale * ratio).toFixed(3)),
       };
     }
+    case "postTaperLink": {
+      const nextLinked = num >= 0.5 ? 1 : 0;
+      if (nextLinked === 0) {
+        return {
+          postTaperLink: 0,
+          postTaperDeg: Number(clampParam("postTaperDeg", m.postTaperDeg).toFixed(2)),
+        };
+      }
+      return {
+        postTaperLink: 1,
+        postTaperDeg: computeOptimalPostTaperDeg(m.postHeightMm, bridgeCtx),
+      };
+    }
     case "postHeightMm": {
       const delta = num - m.postHeightMm;
+      const nextOffset = Number(
+        clampParam("postHeightOffsetMm", p.postHeightOffsetMm + delta).toFixed(2),
+      );
+      if (linked) {
+        return {
+          postHeightOffsetMm: nextOffset,
+          postTaperDeg: computeOptimalPostTaperDeg(num, bridgeCtx),
+          postTaperLink: 1,
+        };
+      }
       return {
-        postHeightOffsetMm: Number(
-          clampParam("postHeightOffsetMm", p.postHeightOffsetMm + delta).toFixed(2),
-        ),
+        postHeightOffsetMm: nextOffset,
       };
     }
     case "postTaperDeg": {
+      if (linked) {
+        const targetTaper = Number(clampParam("postTaperDeg", num).toFixed(2));
+        const targetHeight = computeOptimalPostHeightMmFromTaper(targetTaper, bridgeCtx);
+        const deltaH = targetHeight - m.postHeightMm;
+        return {
+          postTaperDeg: targetTaper,
+          postHeightOffsetMm: Number(
+            clampParam("postHeightOffsetMm", p.postHeightOffsetMm + deltaH).toFixed(2),
+          ),
+          postTaperLink: 1,
+        };
+      }
       const delta = num - m.postTaperDeg;
       return {
         postTaperDeg: Number(clampParam("postTaperDeg", p.postTaperDeg + delta).toFixed(2)),
@@ -185,6 +234,69 @@ export function computeParamsFromInfoFieldEdit(
     default:
       return {};
   }
+}
+
+function PostHeightTaperLinkButton({
+  linked,
+  isBridge,
+  disabled,
+  onToggle,
+}: {
+  linked: boolean;
+  isBridge: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  const title = linked
+    ? isBridge
+      ? "높이·테이퍼 연결됨 · 브리지 보정 (클릭하면 개별 조절)"
+      : "높이·테이퍼 연결됨 (클릭하면 개별 조절)"
+    : "높이·테이퍼 연결 해제됨 (클릭하면 최적 접착력으로 자동 조절)";
+  const lineClass = linked
+    ? "border-primary/45"
+    : "border-dashed border-muted-foreground/35";
+
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute bottom-4 right-[8.875rem] top-4 flex w-[0.8125rem] flex-col"
+      >
+        <span
+          className={cn(
+            "block h-[calc(50%-0.625rem)] w-full rounded-tl-[0.2rem] border-l border-t",
+            lineClass,
+          )}
+        />
+        <span
+          className={cn(
+            "mt-auto block h-[calc(50%-0.625rem)] w-full rounded-bl-[0.2rem] border-b border-l",
+            lineClass,
+          )}
+        />
+      </div>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label={linked ? "포스트 높이와 테이퍼 연결 해제" : "포스트 높이와 테이퍼 연결"}
+        aria-pressed={linked}
+        title={disabled ? undefined : title}
+        onClick={onToggle}
+        className={cn(
+          "absolute right-[9.0625rem] top-1/2 z-[1] flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded transition-colors disabled:opacity-50",
+          linked
+            ? "bg-primary/10 text-primary ring-1 ring-primary/30 hover:bg-primary/20"
+            : "bg-background text-muted-foreground/70 ring-1 ring-border hover:bg-muted hover:text-foreground",
+        )}
+      >
+        {linked ? (
+          <Link2 className="h-3 w-3 rotate-90" />
+        ) : (
+          <Link2Off className="h-3 w-3 rotate-90" />
+        )}
+      </button>
+    </>
+  );
 }
 
 /** 표시 토글. 보일 때만 강조한다(기본은 가림). */
@@ -1273,36 +1385,57 @@ export function PracticeCustomAbutmentDesignTree({
                     )}
                   </InfoGroup>
                   <InfoGroup title="포스트">
-                    {editable ? (
-                      <EditableNumberRow
-                        label="높이"
-                        value={m.postHeightMm}
-                        min={2.2}
-                        max={12}
-                        step={0.1}
-                        digits={2}
-                        suffix="mm"
-                        disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "postHeightMm", v)}
-                      />
-                    ) : (
-                      <DetailRow label="높이" value={`${m.postHeightMm}mm`} />
-                    )}
-                    {editable ? (
-                      <EditableNumberRow
-                        label="테이퍼"
-                        value={m.postTaperDeg}
-                        min={0.5}
-                        max={8}
-                        step={0.1}
-                        digits={1}
-                        suffix="°"
-                        disabled={rowDisabled}
-                        onCommit={(v) => onEditField?.(item, "postTaperDeg", v)}
-                      />
-                    ) : (
-                      <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
-                    )}
+                    {(() => {
+                      const postTaperLinked = (item.params.postTaperLink ?? 1) >= 0.5;
+                      const taperMin =
+                        postTaperLinked && m.isBridge
+                          ? RETENTION_BRIDGE_MIN_TAPER_DEG
+                          : RETENTION_SINGLE_MIN_TAPER_DEG;
+                      return (
+                        <div className="relative">
+                          {editable ? (
+                            <EditableNumberRow
+                              label="높이"
+                              value={m.postHeightMm}
+                              min={RETENTION_MIN_POST_HEIGHT_MM}
+                              max={RETENTION_MAX_POST_HEIGHT_MM}
+                              step={0.1}
+                              digits={2}
+                              suffix="mm"
+                              disabled={rowDisabled}
+                              onCommit={(v) => onEditField?.(item, "postHeightMm", v)}
+                            />
+                          ) : (
+                            <DetailRow label="높이" value={`${m.postHeightMm}mm`} />
+                          )}
+                          {editable ? (
+                            <PostHeightTaperLinkButton
+                              linked={postTaperLinked}
+                              isBridge={Boolean(m.isBridge)}
+                              disabled={rowDisabled}
+                              onToggle={() =>
+                                onEditField?.(item, "postTaperLink", postTaperLinked ? 0 : 1)
+                              }
+                            />
+                          ) : null}
+                          {editable ? (
+                            <EditableNumberRow
+                              label="테이퍼"
+                              value={m.postTaperDeg}
+                              min={taperMin}
+                              max={CUSTOM_ABUTMENT_PARAM_SPECS.postTaperDeg.max}
+                              step={0.1}
+                              digits={1}
+                              suffix="°"
+                              disabled={rowDisabled}
+                              onCommit={(v) => onEditField?.(item, "postTaperDeg", v)}
+                            />
+                          ) : (
+                            <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
+                          )}
+                        </div>
+                      );
+                    })()}
                     {m.occlusalClearanceMm != null && editable ? (
                       <EditableNumberRow
                         label="대합 거리"

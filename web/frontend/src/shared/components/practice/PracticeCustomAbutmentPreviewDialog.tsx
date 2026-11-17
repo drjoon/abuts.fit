@@ -130,6 +130,7 @@ import {
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
+  computeOptimalPostTaperDeg,
   parseCustomAbutmentParamOverrides,
   parseCustomAbutmentPreference,
   preferenceOverridesForTooth,
@@ -662,19 +663,28 @@ function shiftMetric(base: number, now: number, orig: number, digits = 2) {
 function metricsFromGumball(
   base: CustomAbutmentDesignMetrics,
   summary: AbutmentEditSummary,
+  taperLinked = true,
 ): CustomAbutmentDesignMetrics {
   if (summary.neutral || !summary.measured || !summary.baselineMeasured) return base;
   const now = summary.measured;
   const orig = summary.baselineMeasured;
+  const nextPostHeightMm = shiftMetric(base.postHeightMm, now.postHeightMm, orig.postHeightMm);
+  const nextPostTaperDeg =
+    taperLinked && Math.abs(nextPostHeightMm - base.postHeightMm) >= 0.02
+      ? computeOptimalPostTaperDeg(nextPostHeightMm, {
+          isBridge: Boolean(base.isBridge),
+          retainerCount: base.bridgeRetainerCount,
+        })
+      : shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1);
   return {
     ...base,
     maxDiameterMm: shiftMetric(base.maxDiameterMm, now.maxDiameterMm, orig.maxDiameterMm),
     cuffHeightMinMm: shiftMetric(base.cuffHeightMinMm, now.cuffHeightMinMm, orig.cuffHeightMinMm),
     cuffHeightMaxMm: shiftMetric(base.cuffHeightMaxMm, now.cuffHeightMaxMm, orig.cuffHeightMaxMm),
-    postHeightMm: shiftMetric(base.postHeightMm, now.postHeightMm, orig.postHeightMm),
+    postHeightMm: nextPostHeightMm,
     totalLengthMm: shiftMetric(base.totalLengthMm, now.totalLengthMm, orig.totalLengthMm),
     angulationDeg: shiftMetric(base.angulationDeg, now.angulationDeg, orig.angulationDeg, 1),
-    postTaperDeg: shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1),
+    postTaperDeg: nextPostTaperDeg,
     cutbackMm:
       now.cutbackMm == null || orig.cutbackMm == null
         ? base.cutbackMm
@@ -1526,7 +1536,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       gumballMetricBaseRef.current[summary.tooth] = design.metrics;
     }
     const base = gumballMetricBaseRef.current[summary.tooth]!;
-    const nextMetrics = metricsFromGumball(base, summary);
+    const taperLinked = (design.params.postTaperLink ?? 1) >= 0.5;
+    const nextMetrics = metricsFromGumball(base, summary, taperLinked);
     if (sameAbutmentMetrics(design.metrics, nextMetrics)) return;
     design.metrics = nextMetrics;
     const list = designedListRef.current.map((row) => (row.toothNumber === summary.tooth ? design : row));
@@ -1555,10 +1566,17 @@ export function PracticeCustomAbutmentPreviewDialog({
         gumballParamBaseRef.current[summary.tooth] = { ...design.params };
       }
       const base = gumballParamBaseRef.current[summary.tooth]!;
+      const taperLinked = (design.params.postTaperLink ?? 1) >= 0.5;
       const next: Partial<CustomAbutmentDesignParams> = {
         postWidthScale: clampKey("postWidthScale", base.postWidthScale * summary.widthRatio),
         postHeightOffsetMm: clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm),
       };
+      if (taperLinked && Math.abs(summary.heightDeltaMm) >= 0.02) {
+        next.postTaperDeg = computeOptimalPostTaperDeg(design.metrics.postHeightMm, {
+          isBridge: Boolean(design.metrics.isBridge),
+          retainerCount: design.metrics.bridgeRetainerCount,
+        });
+      }
       design.params = { ...design.params, ...next };
       ctx.overrides[summary.tooth] = {
         ...stripDirectEditShiftOverrides(ctx.overrides[summary.tooth] ?? {}),
@@ -2488,6 +2506,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             const rowOverrides = stripDirectEditShiftOverrides(
               parseCustomAbutmentParamOverrides(row.overrides),
             );
+            if ((rowOverrides.postTaperLink ?? 1) >= 0.5) {
+              delete rowOverrides.postTaperDeg;
+            }
             overrides[row.toothNumber] = rowOverrides;
             if (!proposalInputRef.current[row.toothNumber]) {
               proposalInputRef.current[row.toothNumber] = {
@@ -3252,19 +3273,51 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!baselineParamsRef.current[tooth]) {
         baselineParamsRef.current[tooth] = { ...item.params };
       }
+      const patch = computeParamsFromInfoFieldEdit(item, field, nextValue);
+      if (Object.keys(patch).length === 0) return;
+
+      if (field === "postTaperLink") {
+        const nextLinked = (patch.postTaperLink ?? 1) >= 0.5;
+        const targetDeg = patch.postTaperDeg ?? item.metrics.postTaperDeg;
+        const needsRedesign =
+          nextLinked && Math.abs(targetDeg - item.metrics.postTaperDeg) >= 0.05;
+        if (!needsRedesign) {
+          const ctx = designContextRef.current;
+          const updated: DesignedCustomAbutment = {
+            ...item,
+            params: { ...item.params, ...patch },
+          };
+          if (ctx) {
+            ctx.overrides[tooth] = { ...(ctx.overrides[tooth] ?? {}), ...patch };
+          }
+          const list = designedListRef.current.map((d) => (d.toothNumber === tooth ? updated : d));
+          designedListRef.current = list;
+          setDesignedList(list);
+          directEditRef.current?.sync();
+          persistDesign();
+          return;
+        }
+        void applyDesignChanges([{ toothNumber: tooth, params: patch }]).then(() => {
+          persistDesign();
+        });
+        return;
+      }
+
       let set = editedInfoFieldsRef.current[tooth];
       if (!set) {
         set = new Set();
         editedInfoFieldsRef.current[tooth] = set;
       }
+      const linked = (item.params.postTaperLink ?? 1) >= 0.5;
       if (field === "occlusalClearanceMm") {
         set.delete("postHeightMm");
       } else if (field === "postHeightMm") {
         set.delete("occlusalClearanceMm");
+      } else if (field === "postTaperDeg" && linked) {
+        set.delete("occlusalClearanceMm");
+        set.add("postHeightMm");
       }
       set.add(field);
-      const patch = computeParamsFromInfoFieldEdit(item, field, nextValue);
-      if (Object.keys(patch).length === 0) return;
       if (field === "axisSource") {
         directEditRef.current?.clear([tooth]);
       }
@@ -3281,12 +3334,15 @@ export function PracticeCustomAbutmentPreviewDialog({
       const fields = editedInfoFieldsRef.current[d.toothNumber];
       const baseM = baselineMetricsRef.current[d.toothNumber];
       if (!fields || fields.size === 0 || !baseM) continue;
+      const p = d.params;
+      const linked = (p.postTaperLink ?? 1) >= 0.5;
       for (const field of fields) {
+        if (field === "postTaperLink") continue;
+        if (field === "postTaperDeg" && linked) continue;
         if (!(field in ABUTMENT_INFO_FIELD_LABELS)) continue;
         const beforeText = formatAbutmentInfoFieldValue(baseM, field);
         const afterText = formatAbutmentInfoFieldValue(d.metrics, field);
         if (beforeText === afterText) continue;
-        const p = d.params;
         let params: Partial<CustomAbutmentDesignParams> = {};
         switch (field) {
           case "marginSubgMm":

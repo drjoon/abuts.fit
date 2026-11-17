@@ -640,6 +640,125 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       `포스트 상단 라운드 테두리의 실제 3D 최단 대합 거리(${minTrue3DGap.toFixed(2)}mm)도 0.7mm 근처로 확보된다`,
     );
   }
+
+  // 5) 포스트 높이·테이퍼 연결 링크(최적 접착력 자동 조절) 및 싱글/브리지 메타데이터 반영 검증
+  {
+    const flatOppTall = makeGridSurface(-8, 8, -8, 8, 28, () => 11.4);
+    const flatOppShort = makeGridSurface(-8, 8, -8, 8, 28, () => 6.4);
+
+    const singleWorks = [
+      {
+        toothNumber: "36",
+        prosthesisType: "크라운",
+        customAbutment: true,
+        bridgeLinkedTeeth: [] as string[],
+      },
+    ];
+    const bridgeWorks = [
+      {
+        toothNumber: "35",
+        prosthesisType: "브리지",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["35", "36", "37"],
+      },
+      {
+        toothNumber: "36",
+        prosthesisType: "브리지",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["35", "36", "37"],
+      },
+      {
+        toothNumber: "37",
+        prosthesisType: "결손",
+        customAbutment: false,
+        bridgeLinkedTeeth: ["35", "36", "37"],
+      },
+    ];
+
+    const singleTall = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: singleWorks,
+    });
+    const singleShort = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppShort,
+      toothWorks: singleWorks,
+    });
+    assert.equal(singleTall.metrics.isBridge, false, "크라운 메타데이터는 싱글로 판별된다");
+    assert.ok(
+      singleShort.metrics.postTaperDeg >= 2.0,
+      `짧은 포스트(${singleShort.metrics.postHeightMm}mm)에서도 테이퍼(${singleShort.metrics.postTaperDeg}°)는 최소 2° 이상이다`,
+    );
+    assert.ok(
+      singleTall.metrics.postHeightMm > singleShort.metrics.postHeightMm + 2.0 &&
+        singleTall.metrics.postTaperDeg > singleShort.metrics.postTaperDeg + 1.5,
+      `포스트 높이가 높아지면(${singleShort.metrics.postHeightMm}mm → ${singleTall.metrics.postHeightMm}mm) 최적 접착력을 맞추기 위해 테이퍼(${singleShort.metrics.postTaperDeg}° → ${singleTall.metrics.postTaperDeg}°)도 커진다`,
+    );
+
+    // 링크 연결 상태에서 테이퍼를 낮추면 포스트 높이도 함께 낮아진다.
+    const linkedTaperPatch = computeParamsFromInfoFieldEdit(singleTall, "postTaperDeg", 4.0);
+    const afterLinkedTaperEdit = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: singleWorks,
+      params: linkedTaperPatch,
+    });
+    assert.ok(
+      Math.abs(afterLinkedTaperEdit.metrics.postHeightMm - 5.0) <= 0.25 &&
+        Math.abs(afterLinkedTaperEdit.metrics.postTaperDeg - 4.0) <= 0.3,
+      `연결 상태에서 테이퍼를 4.0°로 맞추면 포스트 높이(${afterLinkedTaperEdit.metrics.postHeightMm}mm)가 기준 5mm 근처로 함께 조절되고 테이퍼(${afterLinkedTaperEdit.metrics.postTaperDeg}°)도 4°로 맞춰진다`,
+    );
+
+    // 링크를 끊으면(postTaperLink=0) 높이와 테이퍼가 각각 독립적으로 조절된다.
+    const unlinkPatch = computeParamsFromInfoFieldEdit(singleTall, "postTaperLink", 0);
+    const unlinked = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: singleWorks,
+      params: unlinkPatch,
+    });
+    const unlinkedHeightPatch = computeParamsFromInfoFieldEdit(unlinked, "postHeightMm", 5.0);
+    const unlinkedHeightEdited = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: singleWorks,
+      params: { ...unlinkPatch, ...unlinkedHeightPatch },
+    });
+    assert.ok(
+      Math.abs(unlinkedHeightEdited.metrics.postTaperDeg - unlinked.metrics.postTaperDeg) <= 0.35 &&
+        unlinkedHeightEdited.metrics.postHeightMm < unlinked.metrics.postHeightMm - 1.5,
+      `연결 해제 상태에서는 높이를 줄여도(${unlinked.metrics.postHeightMm}mm → ${unlinkedHeightEdited.metrics.postHeightMm}mm) 테이퍼(${unlinked.metrics.postTaperDeg}° → ${unlinkedHeightEdited.metrics.postTaperDeg}°)는 그대로 유지된다`,
+    );
+
+    // 브리지 케이스는 같은 높이에서도 싱글보다 테이퍼가 더 크고, 짧아도 최소 4° 이상을 유지한다.
+    const bridgeTall = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: bridgeWorks,
+    });
+    const bridgeShort = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppShort,
+      toothWorks: bridgeWorks,
+    });
+    assert.equal(bridgeTall.metrics.isBridge, true, "브리지 메타데이터는 브리지로 판별된다");
+    assert.ok(
+      bridgeTall.metrics.postTaperDeg > singleTall.metrics.postTaperDeg + 1.2,
+      `같은 조건에서 브리지 테이퍼(${bridgeTall.metrics.postTaperDeg}°)가 싱글 테이퍼(${singleTall.metrics.postTaperDeg}°)보다 크게 조절된다`,
+    );
+    assert.ok(
+      bridgeShort.metrics.postTaperDeg >= 3.8,
+      `짧은 브리지 포스트(${bridgeShort.metrics.postHeightMm}mm)에서도 착탈 편의를 위해 테이퍼(${bridgeShort.metrics.postTaperDeg}°)가 높게 유지된다`,
+    );
+  }
 }
 
 console.log("abutment direct edit ok");

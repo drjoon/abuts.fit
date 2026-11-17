@@ -37,7 +37,9 @@ import {
   type MatchedScanbodyFixture,
 } from "@/shared/practice/customAbutmentScanbodyMatch";
 import {
+  computeOptimalPostTaperDeg,
   resolveCustomAbutmentParams,
+  resolveToothBridgeRetentionContext,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
 } from "@/shared/practice/customAbutmentDesignParams";
@@ -159,6 +161,10 @@ export type CustomAbutmentDesignMetrics = {
   marginSubgMinMm?: number;
   /** 치은 연하 마진 깊은 끝(mm). 설정값. */
   marginSubgMaxMm?: number;
+  /** 의뢰 치식 메타데이터 기준 브리지 연결 여부. */
+  isBridge?: boolean;
+  /** 브리지 스팬 내 연결 지대치 수(싱글은 1). */
+  bridgeRetainerCount?: number;
 };
 
 export type DesignedCustomAbutment = {
@@ -3527,15 +3533,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
     postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
   }
-  // 사용자가 테이퍼를 직접 지정하지 않았으면 포스트 길이에 맞춰 유지력(retention) 테이퍼를 자동 조절한다:
-  // 짧은 포스트(≤4.0mm → 1.5°, ~5.0mm → 2.0°)는 크라운 탈락을 막기 위해 평행에 가깝게 세우고, 긴 포스트(≥6.8mm → 2.6°)만 완만히 준다.
-  const hasExplicitTaper =
-    args.params?.postTaperDeg != null && Number.isFinite(Number(args.params.postTaperDeg));
-  const effectiveTaperDeg = hasExplicitTaper
-    ? params.postTaperDeg
-    : mode.groupAxisWorld
-      ? 2.0
-      : clamp(1.5 + Math.max(0, postTopH - 3.8) * 0.36, 1.5, 2.6);
+  // 높이·테이퍼 연결(postTaperLink=1)이면 포스트 높이와 싱글/브리지 여부에 맞춰 최적 접착력 테이퍼를 자동 조절한다.
+  // 연결이 끊어져 있으면(postTaperLink=0) 설정된 테이퍼(최소 2°)를 그대로 쓴다.
+  const bridgeRetention = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
+  const isTaperLinked = (params.postTaperLink ?? 1) >= 0.5;
+  let effectiveTaperDeg = isTaperLinked
+    ? computeOptimalPostTaperDeg(postTopH, bridgeRetention)
+    : params.postTaperDeg;
   params.postTaperDeg = Math.round(effectiveTaperDeg * 10) / 10;
   taperSlope = Math.tan(effectiveTaperDeg * DEG);
   chamfer = chamferGeometry(shoulderW, R, taperSlope);
@@ -4454,13 +4458,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 소·대구치와 전치부 모두 숄더 끝에서 윗면 라운드 시작까지 중간 단차 없는 매끄러운 모선으로 올라간다.
       // 사용자가 테이퍼를 직접 조절한 경우에는 그 테이퍼 기울기를 우선 따른다.
       postDesired: (h: number) => {
-        const straight = rBase0 - taperSlope * Math.max(0, h - hBase);
+        const curHBase = plan.h0 + chamfer.height;
+        const straight = rBase0 - taperSlope * Math.max(0, h - curHBase);
         if (posterior) return straight;
-        const span = Math.max(0.5, plan.hTop - topRoundMm - hBase);
-        const u = clamp((h - hBase) / span, 0, 1);
+        const span = Math.max(0.5, plan.hTop - topRoundMm - curHBase);
+        const u = clamp((h - curHBase) / span, 0, 1);
         const rStart = rBase0;
-        const tallScale = hasExplicitTaper ? 0 : smootherstep(clamp((postTopH - 4.4) / 2.2, 0, 1));
-        const convergeW = Math.max(linW * (hasExplicitTaper ? 0.45 : 1), tallScale * 0.85);
+        const convergeW = linW * 0.45;
         const rKeep = rStart - taperSlope * span;
         const rEndTarget = rKeep - Math.max(0, rKeep - rTpl) * convergeW;
         return rStart - Math.max(0, rStart - rEndTarget) * u;
@@ -4803,6 +4807,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let meanSpanSum = 0;
     let meanHBaseSum = 0;
     let meanRoundStartSum = 0;
+    let minHBaseEst = Infinity;
     for (const c of cols) {
       const estRTop = Math.max(0.75, c.r0 - shoulderW - 0.35);
       const colEdgeTop = top.heightAt(
@@ -4817,6 +4822,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         maxRoundStart,
         Math.max(hBase + 0.36, colEdgeTop - topRoundMm * 0.9),
       );
+      minHBaseEst = Math.min(minHBaseEst, hBase);
       meanHBaseSum += hBase / ANGULAR_COLS;
       meanRoundStartSum += roundStart / ANGULAR_COLS;
       meanSpanSum += Math.max(0.4, roundStart - hBase) / ANGULAR_COLS;
@@ -4906,6 +4912,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const mExtNegV = -mCv + mHalfMd;
     const postUnitLab = toothSectionRadius(tpl.kind, "post", 1, 1, 0);
     const postUnitLin = toothSectionRadius(tpl.kind, "post", 1, 1, Math.PI);
+    let meanPostUnitR = 0;
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      meanPostUnitR +=
+        evalPostSectionRadiusAtPhi(
+          tpl.kind,
+          1 / postUnitLab,
+          1 / postUnitLin,
+          1,
+          (col / ANGULAR_COLS) * Math.PI * 2,
+        ) / ANGULAR_COLS;
+    }
+    meanPostUnitR = Math.max(0.85, meanPostUnitR);
+    const hRefSpanEst = Math.max(
+      0.5,
+      meanRoundStartSum - (Number.isFinite(minHBaseEst) ? minHBaseEst : meanHBaseSum),
+    );
 
     const postWallPtsByCol: Vec3[][] = Array.from({ length: ANGULAR_COLS }, () => []);
     let pTopCu = mCu;
@@ -4915,11 +4937,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 마진 중심(mCu, mCv)과 같은 중심·동일 마진 폭(targetShoulderW)에서 출발하고,
       // 스크류 홀 벽 두께(screwReqR)나 한쪽 크라운 두께 한도에 실제로 걸리는 방위만 필요한 만큼 이동한다.
       const maxStraightSlope = Math.tan(
-        (mode.groupAxisWorld ? Math.min(2.8, effectiveTaperDeg + 0.4) : Math.min(3.8, effectiveTaperDeg + 1.0)) * DEG,
+        Math.min(12.5, effectiveTaperDeg + (mode.groupAxisWorld ? 0.4 : 1.0)) * DEG,
       );
-      let taperDeltaBl = taperSlope * meanSpanSum;
-      let taperDeltaMd = taperSlope * meanSpanSum;
-      let uniformW = targetShoulderW;
+      let taperDeltaBl = (taperSlope / meanPostUnitR) * hRefSpanEst;
+      let taperDeltaMd = (taperSlope / meanPostUnitR) * hRefSpanEst;
+      const uniformW = targetShoulderW;
       const extraW = { posU: 0, negU: 0, posV: 0, negV: 0 };
       const reliefW = { posU: 0, negU: 0, posV: 0, negV: 0 };
 
@@ -5069,29 +5091,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               remEx = Math.max(0, remEx - addTaper * worstU);
             }
           }
-          if (remEx > 1e-4 && !hasExplicitTaper) {
-            // 사용자가 테이퍼를 직접 지정하지 않은 경우에만 상단 축소 대신 마진 폭을 넓히거나 방위별 숄더를 추가한다.
-            // 명시적 테이퍼(postTaperDeg)가 있으면 base와 top이 함께 줄어들어 테이퍼 각도가 변하지 않는다.
-            const minScrewMaxW = Math.min(maxW.posU, maxW.negU, maxW.posV, maxW.negV);
-            const maxUniformW = Math.min(targetShoulderW + 0.14, minScrewMaxW - 0.02);
-            if (uniformW < maxUniformW && Math.min(pTopBl, pTopMd) > minPostR + 0.45) {
-              const uniStep = Math.min(remEx * 0.85, maxUniformW - uniformW);
-              uniformW += uniStep;
-              remEx = Math.max(0, remEx - uniStep);
-            }
-            if (remEx > 1e-4) {
-              const wu = worstDu * worstDu;
-              const wv = worstDv * worstDv;
-              if (wu >= 0.06) {
-                if (worstDu >= 0) extraW.posU += remEx * (0.35 + 0.55 * wu);
-                else extraW.negU += remEx * (0.35 + 0.55 * wu);
-              }
-              if (wv >= 0.06) {
-                if (worstDv >= 0) extraW.posV += remEx * (0.35 + 0.55 * wv);
-                else extraW.negV += remEx * (0.35 + 0.55 * wv);
-              }
-            }
-          } else if (remEx > 1e-4 && hasExplicitTaper) {
+          if (remEx > 1e-4) {
+            // 목표 테이퍼 각도가 변하지 않도록 방위별 숄더를 추가해 하단과 상단이 함께 줄어들게 한다.
             const wu = worstDu * worstDu;
             const wv = worstDv * worstDv;
             if (wu >= 0.06) {
@@ -5179,12 +5180,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const prevDropMd = convexBaseMd - convexTopMd;
           convexTopBl = Math.min(convexBaseBl - 0.02, convexTopBl * Math.min(1.06, topScaleUp + 0.002));
           convexTopMd = Math.min(convexBaseMd - 0.02, convexTopMd * Math.min(1.06, topScaleUp + 0.002));
-          if (hasExplicitTaper) {
-            const maxBaseBl = Math.max(convexBaseBl, mHalfBl - MIN_MARGIN_SHOULDER_MM);
-            const maxBaseMd = Math.max(convexBaseMd, mHalfMd - MIN_MARGIN_SHOULDER_MM);
-            convexBaseBl = Math.min(maxBaseBl, Math.max(convexBaseBl, convexTopBl + prevDropBl));
-            convexBaseMd = Math.min(maxBaseMd, Math.max(convexBaseMd, convexTopMd + prevDropMd));
-          }
+          const maxBaseBl = Math.max(convexBaseBl, mHalfBl - MIN_MARGIN_SHOULDER_MM);
+          const maxBaseMd = Math.max(convexBaseMd, mHalfMd - MIN_MARGIN_SHOULDER_MM);
+          convexBaseBl = Math.min(maxBaseBl, Math.max(convexBaseBl, convexTopBl + prevDropBl));
+          convexBaseMd = Math.min(maxBaseMd, Math.max(convexBaseMd, convexTopMd + prevDropMd));
         }
         convexTopBl = Math.min(convexTopBl, convexBaseBl - 0.02);
         convexTopMd = Math.min(convexTopMd, convexBaseMd - 0.02);
@@ -5225,8 +5224,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
       const finalBaseBl = Math.max(minPostR + 0.08, convexBaseBl * syncedBaseScale);
       const finalBaseMd = Math.max(minPostR + 0.08, convexBaseMd * syncedBaseScale);
-      const finalTopBlScaled = Math.min(finalBaseBl - 0.02, Math.max(minPostR, convexTopBl * syncedBaseScale));
-      const finalTopMdScaled = Math.min(finalBaseMd - 0.02, Math.max(minPostR, convexTopMd * syncedBaseScale));
+      const wantDropBl = convexBaseBl - convexTopBl;
+      const wantDropMd = convexBaseMd - convexTopMd;
+      const finalTopBlScaled = Math.min(
+        finalBaseBl - 0.02,
+        Math.max(minPostR, Math.min(convexTopBl * syncedBaseScale, finalBaseBl - wantDropBl)),
+      );
+      const finalTopMdScaled = Math.min(
+        finalBaseMd - 0.02,
+        Math.max(minPostR, Math.min(convexTopMd * syncedBaseScale, finalBaseMd - wantDropMd)),
+      );
       const effUniformShoulder = uniformShoulder * syncedBaseScale;
 
       // 각 열 θ에서 실제 마진 높이 zMargin(θ)의 정사영 점이 해당 열의 축벽 시작 반경 + 동일 챔퍼 폭(effUniformShoulder)에
@@ -5414,16 +5421,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         pTopCv + minMdCollar() + 0.08,
         -pTopCv + minMdCollar() + 0.08,
       );
-      const tallScale = hasExplicitTaper ? 0 : smootherstep(clamp((postTopH - 4.3) / 2.2, 0, 1));
-      const tplLabHalf = Math.max(tpl.topLabialHalfMm * blScale * params.postWidthScale, minLabCollar());
       const tplLinHalf = Math.max(tpl.topLingualHalfMm * blScale * params.postWidthScale, minLinCollar());
-      const tplMdHalf = Math.max(topB, minMdCollar());
-      const keepBl = Math.max(1.05, pBaseBl - taperSlope * meanSpanSum);
-      const keepMd = Math.max(1.25, pBaseMd - taperSlope * meanSpanSum);
-      const linConvW = hasExplicitTaper ? 0.35 : 0.55 + 0.45 * tallScale;
-      let topLabHalf = Math.max(minLabCollar(), keepBl - Math.max(0, keepBl - tplLabHalf) * (0.35 + 0.65 * tallScale));
-      let topLinHalf = Math.max(minLinCollar(), keepBl - Math.max(0, keepBl - tplLinHalf) * linConvW);
-      let topMdHalf = Math.max(minMdCollar(), keepMd - Math.max(0, keepMd - tplMdHalf) * (0.3 + 0.6 * tallScale));
+      const keepBl = Math.max(1.05, pBaseBl - (taperSlope / meanPostUnitR) * hRefSpanEst);
+      const keepMd = Math.max(1.25, pBaseMd - (taperSlope / meanPostUnitR) * hRefSpanEst);
+      let topLabHalf = Math.max(minLabCollar(), keepBl);
+      let topLinHalf = Math.max(minLinCollar(), keepBl - Math.max(0, keepBl - tplLinHalf) * 0.35);
+      let topMdHalf = Math.max(minMdCollar(), keepMd);
 
       // 하단·중단·상단 모두 크라운 목표 두께(capR, 1.0mm)와 최소 지르코니아 두께(hardCapR, 0.7mm)를 침범하지 않도록
       // 반복 루프 안에서 타원 반축과 중심(pTopCu, pTopCv)을 함께 조정한다(루프 밖 열별 클리핑 금지 → 100% 볼록 단면 유지).
@@ -6028,8 +6031,30 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     };
   };
 
+  const measureShapePostHeightMm = (s: ReturnType<typeof buildShape>) => {
+    let maxZ = s.postApex[2];
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      const post = s.postByCol[col]!;
+      for (let idx = Math.max(0, post.length - TOP_ROUND_STEPS - 2); idx < post.length; idx += 1) {
+        if (post[idx]![2] > maxZ) maxZ = post[idx]![2];
+      }
+    }
+    return Math.round((maxZ - finalMeanMarginZ) * 100) / 100;
+  };
+  const syncLinkedTaperForHeight = (heightMm: number): boolean => {
+    if (!isTaperLinked) return false;
+    const nextDeg = computeOptimalPostTaperDeg(heightMm, bridgeRetention);
+    if (Math.abs(nextDeg - effectiveTaperDeg) < 0.05) return false;
+    effectiveTaperDeg = nextDeg;
+    params.postTaperDeg = nextDeg;
+    taperSlope = Math.tan(effectiveTaperDeg * DEG);
+    chamfer = chamferGeometry(targetShoulderW, R, taperSlope);
+    return true;
+  };
+
   // 평평한 포스트 상단 경사(gu, gv)를 그대로 유지한 채, 실제 포스트 상단(라운드·정점 포함)에서
   // 대합치까지의 최단 거리가 설정한 대합 거리(clearance)에 정확히 맞도록 상단 평면 높이(planeShift)만 평행이동한다.
+  // 높이·테이퍼가 연결되어 있으면 실제 포스트 높이에 맞춰 최적 접착력 테이퍼도 함께 수렴시킨다.
   const oppTrisLocal = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
   let shape = buildShape();
   if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
@@ -6039,8 +6064,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         : clearance - offsetH;
     const axialCos = Math.max(dot3(frame.w, occInFix), 0.35);
     const maxShiftUp = hasExplicitClearance || offsetH > 0 ? 6.0 : 2.5;
-    for (let pass = 0; pass < 5; pass += 1) {
+    for (let pass = 0; pass < 6; pass += 1) {
+      const taperChanged = syncLinkedTaperForHeight(measureShapePostHeightMm(shape));
       let delta = 0;
+      let hasDelta = true;
       if (oppTrisLocal.length >= 9) {
         const occShift = solvePostTopClearanceShiftMm({
           columns: shape.postByCol,
@@ -6050,8 +6077,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           up: occInFix,
           targetClearanceMm: targetClear,
         });
-        if (occShift == null) break;
-        delta = occShift / axialCos;
+        if (occShift == null) hasDelta = false;
+        else delta = occShift / axialCos;
       } else {
         let min3D = nearestOpp(shape.postApex);
         for (let col = 0; col < ANGULAR_COLS; col += 2) {
@@ -6062,14 +6089,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           }
           min3D = Math.min(min3D, nearestOpp(post[post.length - 1]!));
         }
-        if (!Number.isFinite(min3D)) break;
-        delta = min3D - targetClear;
+        if (!Number.isFinite(min3D)) hasDelta = false;
+        else delta = min3D - targetClear;
       }
-      const nextShift = clamp(planeShift + delta, -6.0, maxShiftUp);
-      if (Math.abs(nextShift - planeShift) < 0.008) break;
+      const nextShift = hasDelta ? clamp(planeShift + delta, -6.0, maxShiftUp) : planeShift;
+      if (!taperChanged && (!hasDelta || Math.abs(nextShift - planeShift) < 0.008)) break;
       planeShift = nextShift;
       shape = buildShape();
     }
+    if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
+      shape = buildShape();
+    }
+  } else if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
+    shape = buildShape();
   }
   const { postByCol, crownByCol, cutbackSum, taperMean, postApex, crownApex, meanCrownCuspH } = shape;
   // ── 8) 솔리드 외형(커넥션·커프·포스트)을 닫고, 스크류 홀은 임플란트 축 원통으로 따로 뚫는다
@@ -6216,6 +6248,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),
       marginSubgMaxMm: round2(subgMax),
+      isBridge: bridgeRetention.isBridge,
+      bridgeRetainerCount: bridgeRetention.retainerCount,
       axisSource,
       adjacentOcclusalMm: Number.isFinite(archCrownTopH) ? round2(archCrownTopH) : null,
       crownOverPostMm: round2(meanCrownCuspH - dot3(sub3(postApex, c0), frame.w)),

@@ -12,6 +12,8 @@ export type CustomAbutmentDesignParams = {
   occlusalClearanceMm: number;
   /** 포스트 축벽 편측 테이퍼(°). */
   postTaperDeg: number;
+  /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
+  postTaperLink: number;
   /** 악궁 접선 기준 포스트 수평 회전 보정(°, 교합면 시점 +=반시계, -=시계). */
   postYawDeg: number;
   /** 대합치가 없을 때 포스트 높이 보정(mm). 대합치가 있으면 낮추기만 한다. */
@@ -62,7 +64,8 @@ export type CustomAbutmentParamSpec = {
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.5, max: 6, step: 0.05 },
-  postTaperDeg: { label: "테이퍼", unit: "°", min: 0.5, max: 8, step: 0.1 },
+  postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 12, step: 0.1 },
+  postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
@@ -87,10 +90,13 @@ export const CUSTOM_ABUTMENT_PARAM_KEYS = Object.keys(
   CUSTOM_ABUTMENT_PARAM_SPECS,
 ) as CustomAbutmentParamKey[];
 
-/** 치과 취향으로 저장할 수 있는 값. 윗면 이동·개별 수평 회전은 케이스마다 달라 뺀다. */
+/** 치과 취향으로 저장할 수 있는 값. 윗면 이동·개별 수평 회전·연결 토글은 케이스마다 달라 뺀다. */
 export const CUSTOM_ABUTMENT_PREFERENCE_KEYS = CUSTOM_ABUTMENT_PARAM_KEYS.filter(
   (key) =>
-    key !== "axisShiftLabialMm" && key !== "axisShiftMesialMm" && key !== "postYawDeg",
+    key !== "axisShiftLabialMm" &&
+    key !== "axisShiftMesialMm" &&
+    key !== "postYawDeg" &&
+    key !== "postTaperLink",
 );
 
 export type CustomAbutmentPreferenceScope = "all" | "anterior" | "posterior";
@@ -122,11 +128,224 @@ export function isAnteriorTooth(toothNumber: string): boolean {
   return kind === "incisor" || kind === "canine";
 }
 
+/** 포스트 최적 접착력 연동 기준: 기본 높이 5mm · 싱글 기본 4°(최소 2°) · 브리지 기본 6°(최소 4°). */
+export const RETENTION_REF_POST_HEIGHT_MM = 5;
+export const RETENTION_SINGLE_REF_TAPER_DEG = 4;
+export const RETENTION_SINGLE_MIN_TAPER_DEG = 2;
+export const RETENTION_BRIDGE_REF_TAPER_DEG = 6;
+export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.5;
+export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 7;
+export const RETENTION_BRIDGE_MIN_TAPER_DEG = 4;
+export const RETENTION_MIN_POST_HEIGHT_MM = 2.2;
+export const RETENTION_MAX_POST_HEIGHT_MM = 12;
+
+export type ToothBridgeMetaItem = {
+  toothNumber?: string | null;
+  prosthesisType?: string | null;
+  bridgeLinkedTeeth?: readonly string[] | null;
+};
+
+export type ToothBridgeRetentionContext = {
+  isBridge: boolean;
+  retainerCount: number;
+};
+
+export type AbutmentBridgeRetentionSpec = {
+  isBridge: boolean;
+  retainerCount: number;
+  refTaperDeg: number;
+  minTaperDeg: number;
+  maxTaperDeg: number;
+};
+
+function fdiDigitsOf(raw: unknown): string | null {
+  const digits = String(raw || "")
+    .trim()
+    .replace(/^#/, "");
+  return /^[1-4][1-8]$/.test(digits) ? digits : null;
+}
+
+function isMissingOrNoWorkProsthesis(type: string): boolean {
+  return (
+    !type ||
+    type === "결손" ||
+    type === "결손치" ||
+    type === "자연치" ||
+    /^pontic$/i.test(type) ||
+    /작업\s*(안\s*함|없음|x)/i.test(type)
+  );
+}
+
+function isExplicitBridgeProsthesis(type: string): boolean {
+  return (
+    type === "브리지" ||
+    type === "브릿지" ||
+    /^pontic$/i.test(type) ||
+    /유지\s*장치/i.test(type)
+  );
+}
+
+function isSingleOnlyProsthesis(type: string): boolean {
+  if (!type) return false;
+  if (type === "인레이" || type === "온레이" || type === "크라운") return true;
+  if (/커스텀\s*어벗|어벗\s*디자인/i.test(type)) return true;
+  if (/가철/i.test(type)) return true;
+  return false;
+}
+
+/**
+ * 의뢰자 치식 메타데이터(`toothWorks`)를 참조해 해당 치아가 싱글인지 브리지로 연결되는지 판별한다.
+ * - 브리지 보철 형태이거나, 연결 가능 형태(임시치아·랩어라운드 등)에서 2치 이상 연결 스팬을 이루면 브리지로 본다.
+ * - 브리지 스팬 내 결손·폰틱을 제외한 실제 지대치 수(`retainerCount`)도 함께 돌려준다.
+ */
+export function resolveToothBridgeRetentionContext(
+  toothNumber: string,
+  toothWorks?: readonly ToothBridgeMetaItem[] | null,
+): ToothBridgeRetentionContext {
+  const ownDigits = fdiDigitsOf(toothNumber);
+  if (!ownDigits || !toothWorks || toothWorks.length === 0) {
+    return { isBridge: false, retainerCount: 1 };
+  }
+  const byDigits = new Map<string, ToothBridgeMetaItem>();
+  for (const row of toothWorks) {
+    const d = fdiDigitsOf(row?.toothNumber);
+    if (d && !byDigits.has(d)) byDigits.set(d, row);
+  }
+  const ownWork = byDigits.get(ownDigits);
+  const ownType = String(ownWork?.prosthesisType || "").trim();
+  if (ownType && isSingleOnlyProsthesis(ownType) && !isExplicitBridgeProsthesis(ownType)) {
+    return { isBridge: false, retainerCount: 1 };
+  }
+
+  const canParticipateInSpan = (digits: string): boolean => {
+    const row = byDigits.get(digits);
+    const t = String(row?.prosthesisType || "").trim();
+    if (!t) return true;
+    return !isSingleOnlyProsthesis(t) || isExplicitBridgeProsthesis(t);
+  };
+
+  const span = new Set<string>([ownDigits]);
+  const queue: string[] = [ownDigits];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const curRow = byDigits.get(cur);
+    const curType = String(curRow?.prosthesisType || "").trim();
+    if (curType && isSingleOnlyProsthesis(curType) && !isExplicitBridgeProsthesis(curType)) {
+      continue;
+    }
+    for (const linked of curRow?.bridgeLinkedTeeth ?? []) {
+      const d = fdiDigitsOf(linked);
+      if (d && !span.has(d) && canParticipateInSpan(d)) {
+        span.add(d);
+        queue.push(d);
+      }
+    }
+    for (const [otherDigits, otherRow] of byDigits) {
+      if (span.has(otherDigits)) continue;
+      if (!canParticipateInSpan(otherDigits)) continue;
+      const otherLinks = otherRow.bridgeLinkedTeeth ?? [];
+      if (otherLinks.some((t) => fdiDigitsOf(t) === cur)) {
+        span.add(otherDigits);
+        queue.push(otherDigits);
+      }
+    }
+  }
+
+  if (span.size < 2 && isExplicitBridgeProsthesis(ownType)) {
+    const sameJawUpper = ownDigits[0] === "1" || ownDigits[0] === "2";
+    for (const [otherDigits, otherRow] of byDigits) {
+      if (otherDigits === ownDigits) continue;
+      const otherUpper = otherDigits[0] === "1" || otherDigits[0] === "2";
+      if (otherUpper !== sameJawUpper) continue;
+      if (isExplicitBridgeProsthesis(String(otherRow.prosthesisType || "").trim())) {
+        span.add(otherDigits);
+      }
+    }
+  }
+
+  const isBridge = isExplicitBridgeProsthesis(ownType) || span.size >= 2;
+  if (!isBridge) return { isBridge: false, retainerCount: 1 };
+
+  let activeRetainers = 0;
+  for (const d of span) {
+    const t = String(byDigits.get(d)?.prosthesisType || "").trim();
+    if (!isMissingOrNoWorkProsthesis(t)) activeRetainers += 1;
+  }
+  return {
+    isBridge: true,
+    retainerCount: Math.max(2, activeRetainers),
+  };
+}
+
+export function resolveAbutmentBridgeRetentionSpec(
+  bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+): AbutmentBridgeRetentionSpec {
+  const isBridge = typeof bridge === "boolean" ? bridge : Boolean(bridge?.isBridge);
+  const retainerCount = isBridge
+    ? Math.max(2, Math.round(Number(typeof bridge === "object" && bridge ? bridge.retainerCount : 2) || 2))
+    : 1;
+  const maxTaperDeg = CUSTOM_ABUTMENT_PARAM_SPECS.postTaperDeg.max;
+  if (!isBridge) {
+    return {
+      isBridge: false,
+      retainerCount: 1,
+      refTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
+      minTaperDeg: RETENTION_SINGLE_MIN_TAPER_DEG,
+      maxTaperDeg,
+    };
+  }
+  const refTaperDeg = Math.min(
+    RETENTION_BRIDGE_MAX_REF_TAPER_DEG,
+    RETENTION_BRIDGE_REF_TAPER_DEG + Math.max(0, retainerCount - 2) * RETENTION_BRIDGE_EXTRA_RETAINER_DEG,
+  );
+  return {
+    isBridge: true,
+    retainerCount,
+    refTaperDeg,
+    minTaperDeg: RETENTION_BRIDGE_MIN_TAPER_DEG,
+    maxTaperDeg,
+  };
+}
+
+/**
+ * 포스트 높이와 싱글/브리지 여부에 따라 보철물 최적 접착력이 일정해지는 편측 테이퍼(°)를 계산한다.
+ * - 싱글: 높이 5mm 기준 4.0°, 최소 2.0°
+ * - 브리지: 착탈 편의성과 다수 지대주 접착력 증가를 반영해 높이 5mm 기준 6.0°+(3지대주 이상 소폭 가산), 최소 4.0°
+ */
+export function computeOptimalPostTaperDeg(
+  postHeightMm: number,
+  bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+): number {
+  const spec = resolveAbutmentBridgeRetentionSpec(bridge);
+  const h = Math.max(0.5, Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_REF_POST_HEIGHT_MM);
+  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
+  const rawDeg = (Math.atan(refSlope * (h / RETENTION_REF_POST_HEIGHT_MM)) * 180) / Math.PI;
+  const clamped = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, rawDeg));
+  return Math.round(clamped * 10) / 10;
+}
+
+/**
+ * 링크가 연결된 상태에서 테이퍼 각도를 바꿨을 때 최적 접착력이 비슷하게 유지되는 목표 포스트 높이(mm)를 역산한다.
+ */
+export function computeOptimalPostHeightMmFromTaper(
+  taperDeg: number,
+  bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+): number {
+  const spec = resolveAbutmentBridgeRetentionSpec(bridge);
+  const deg = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, taperDeg));
+  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
+  const targetSlope = Math.tan((deg * Math.PI) / 180);
+  const rawH = RETENTION_REF_POST_HEIGHT_MM * (targetSlope / Math.max(refSlope, 1e-6));
+  const clamped = Math.min(RETENTION_MAX_POST_HEIGHT_MM, Math.max(RETENTION_MIN_POST_HEIGHT_MM, rawH));
+  return Math.round(clamped * 100) / 100;
+}
+
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   const anterior = isAnteriorTooth(toothNumber);
   return {
     occlusalClearanceMm: 1.3,
-    postTaperDeg: 2,
+    postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
+    postTaperLink: 1,
     postYawDeg: 0,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
@@ -166,6 +385,7 @@ function clampDesignParam(key: CustomAbutmentParamKey, raw: number): number {
   const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
   let next = Math.min(spec.max, Math.max(spec.min, raw));
   if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
+  if (key === "postTaperLink") next = next >= 0.5 ? 1 : 0;
   return next;
 }
 

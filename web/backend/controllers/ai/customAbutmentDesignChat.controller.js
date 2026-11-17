@@ -56,7 +56,8 @@ const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
   occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리", unit: "mm", min: 0.5, max: 6 },
-  postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 0.5, max: 8 },
+  postTaperDeg: { label: "포스트 축벽 편측 테이퍼(최소 2°)", unit: "°", min: 2, max: 12 },
+  postTaperLink: { label: "포스트 높이·테이퍼 접착력 연결(1=연결, 0=해제)", unit: "", min: 0, max: 1 },
   postYawDeg: {
     label: "포스트 수평 회전 보정(교합면 시점 +=반시계, -=시계, 기본 0=악궁·중심구 평행)",
     unit: "°",
@@ -88,9 +89,13 @@ const PARAM_SPECS = {
 };
 
 const PARAM_KEYS = Object.keys(PARAM_SPECS);
-/** 케이스마다 다른 윗면 이동·수평 회전은 취향으로 저장하지 않는다. */
+/** 케이스마다 다른 윗면 이동·수평 회전·연결 토글은 취향으로 저장하지 않는다. */
 const PREFERENCE_KEYS = PARAM_KEYS.filter(
-  (k) => k !== "axisShiftLabialMm" && k !== "axisShiftMesialMm" && k !== "postYawDeg",
+  (k) =>
+    k !== "axisShiftLabialMm" &&
+    k !== "axisShiftMesialMm" &&
+    k !== "postYawDeg" &&
+    k !== "postTaperLink",
 );
 const SCOPES = ["all", "anterior", "posterior"];
 const TOOTH_RE = /^[1-4][1-8]$/;
@@ -105,6 +110,7 @@ const clampParam = (key, v) => {
   const spec = PARAM_SPECS[key];
   const clamped = Math.min(spec.max, Math.max(spec.min, v));
   if (key === "marginFilletRadiusMm") return Math.round(clamped * 10) / 10;
+  if (key === "postTaperLink") return clamped >= 0.5 ? 1 : 0;
   return clamped;
 };
 

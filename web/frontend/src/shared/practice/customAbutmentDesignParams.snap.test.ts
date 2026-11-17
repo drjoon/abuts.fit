@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  computeOptimalPostHeightMmFromTaper,
+  computeOptimalPostTaperDeg,
   resolveCustomAbutmentParams,
+  resolveToothBridgeRetentionContext,
   snapMaxDiameterMm,
 } from "./customAbutmentDesignParams";
 
@@ -23,4 +26,47 @@ test("마진 챔퍼는 0.1mm 단위이고 기본값은 0.6mm, 최소는 0.5mm", 
   assert.equal(resolveCustomAbutmentParams("36", { marginFilletRadiusMm: 0.66 }).marginFilletRadiusMm, 0.7);
   assert.equal(resolveCustomAbutmentParams("36", { marginFilletRadiusMm: 0.4 }).marginFilletRadiusMm, 0.5);
   assert.equal(resolveCustomAbutmentParams("36", { marginFilletRadiusMm: 0.3 }).marginFilletRadiusMm, 0.5);
+});
+
+test("포스트 높이·테이퍼 최적 접착력 연동은 기본 5mm · 4° 기준, 최소 2°, 브리지 가중을 따른다", () => {
+  const def = resolveCustomAbutmentParams("36");
+  assert.equal(def.postTaperDeg, 4);
+  assert.equal(def.postTaperLink, 1);
+  assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 0.8 }).postTaperDeg, 2);
+
+  // 싱글: 5mm -> 4.0°, 짧으면 최소 2.0°, 높으면 비례 증가
+  assert.equal(computeOptimalPostTaperDeg(5.0, false), 4.0);
+  assert.equal(computeOptimalPostTaperDeg(2.2, false), 2.0);
+  assert.equal(computeOptimalPostTaperDeg(2.5, false), 2.0);
+  assert.equal(computeOptimalPostTaperDeg(6.0, false), 4.8);
+  assert.equal(computeOptimalPostTaperDeg(7.73, false), 6.2);
+  assert.equal(computeOptimalPostHeightMmFromTaper(4.0, false), 5.0);
+
+  // 의뢰자 메타데이터 싱글/브리지 판별
+  assert.deepEqual(
+    resolveToothBridgeRetentionContext("36", [
+      { toothNumber: "36", prosthesisType: "크라운", bridgeLinkedTeeth: [] },
+    ]),
+    { isBridge: false, retainerCount: 1 },
+  );
+  const twoUnitBridge = resolveToothBridgeRetentionContext("35", [
+    { toothNumber: "35", prosthesisType: "브리지", bridgeLinkedTeeth: ["35", "36", "37"] },
+    { toothNumber: "36", prosthesisType: "결손", bridgeLinkedTeeth: ["35", "36", "37"] },
+    { toothNumber: "37", prosthesisType: "브리지", bridgeLinkedTeeth: ["35", "36", "37"] },
+  ]);
+  assert.deepEqual(twoUnitBridge, { isBridge: true, retainerCount: 2 });
+
+  const threeRetainerBridge = resolveToothBridgeRetentionContext("36", [
+    { toothNumber: "35", prosthesisType: "브리지", bridgeLinkedTeeth: ["35", "36", "37"] },
+    { toothNumber: "36", prosthesisType: "브리지", bridgeLinkedTeeth: ["35", "36", "37"] },
+    { toothNumber: "37", prosthesisType: "브리지", bridgeLinkedTeeth: ["35", "36", "37"] },
+  ]);
+  assert.deepEqual(threeRetainerBridge, { isBridge: true, retainerCount: 3 });
+
+  // 브리지: 착탈 편의 최소 4.0°, 5mm 기준 6.0°(3지대주는 6.5°)
+  assert.equal(computeOptimalPostTaperDeg(2.5, twoUnitBridge), 4.0);
+  assert.equal(computeOptimalPostTaperDeg(5.0, twoUnitBridge), 6.0);
+  assert.equal(computeOptimalPostTaperDeg(6.0, twoUnitBridge), 7.2);
+  assert.equal(computeOptimalPostTaperDeg(5.0, threeRetainerBridge), 6.5);
+  assert.equal(computeOptimalPostHeightMmFromTaper(6.0, twoUnitBridge), 5.0);
 });

@@ -16,6 +16,7 @@ import { encodeBinaryStl } from "../../files/stlBinaryWrite";
 import { cuffProfile } from "../../practice/cuffProfile";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
+  computeOptimalPostTaperDeg,
   isAnteriorTooth,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
@@ -61,6 +62,9 @@ export type DirectEditDesign = {
   params?: Partial<CustomAbutmentDesignParams>;
   metrics?: {
     occlusalClearanceMm?: number | null;
+    postTaperDeg?: number;
+    isBridge?: boolean;
+    bridgeRetainerCount?: number;
   };
 };
 
@@ -141,6 +145,11 @@ type Zone = {
   centerM?: number;
   /** PRC 면 반지름. 커프가 여기서 마진으로 벌어진다. */
   coneTopR?: number;
+  taperLink?: {
+    isBridge: boolean;
+    retainerCount: number;
+    baseTaperDeg: number;
+  };
 };
 
 type OpposingClearanceProbe = {
@@ -486,6 +495,17 @@ export function refitLocalPositions(
     ? computeSafePostTopLean(edit, zone, safePropTop, postCenterL, postCenterM)
     : { topLeanL: 0, topLeanM: 0 };
   const manualTopLift = computeZLift(safePropTop, fixedZ, marginZ, safePropTop, edit);
+  const marginLiftRef = computeZLift(zone.meanMarginZ ?? marginZ, fixedZ, marginZ, safePropTop, edit);
+  const postHeightLift = manualTopLift - marginLiftRef;
+  const basePostHeight = Math.max(2.2, safePropTop - (zone.meanMarginZ ?? marginZ));
+  const nextLinkedPostHeight = Math.max(2.2, basePostHeight + postHeightLift);
+  const taperLinkSlopeOld = zone.taperLink
+    ? Math.tan((zone.taperLink.baseTaperDeg * Math.PI) / 180)
+    : 0;
+  const taperLinkSlopeNew = zone.taperLink
+    ? Math.tan((computeOptimalPostTaperDeg(nextLinkedPostHeight, zone.taperLink) * Math.PI) / 180)
+    : 0;
+  const hasTaperLinkAdjust = Boolean(zone.taperLink && Math.abs(postHeightLift) > 0.02);
   const rimZ = (Number.isFinite(boreTop) ? boreTop : safePropTop) - 0.7;
   const minPostWallAboveMargin = 0.85;
 
@@ -551,8 +571,24 @@ export function refitLocalPositions(
     const offL = edit.shiftLabialMm * t + leanL;
     const offM = edit.shiftMesialMm * t + leanM;
     const z2 = z + baseZLift + postTopDeltaZ;
-    let ly = postCenterL * t + lRot + offL;
-    let my = postCenterM * t + mRot + offM;
+    let adjLRot = lRot;
+    let adjMRot = mRot;
+    if (hasTaperLinkAdjust && hAboveMargin > 0.22 && (!hole || rProp > screwR + 0.12)) {
+      const mColLift = computeZLift(mZCol, fixedZ, marginZ, safePropTop, edit);
+      const newHAbove = Math.max(0, z2 - (mZCol + mColLift));
+      const ramp = clamp((hAboveMargin - 0.22) / 0.28, 0, 1);
+      const extraInward = (taperLinkSlopeNew * newHAbove - taperLinkSlopeOld * hAboveMargin) * ramp;
+      const rRot = Math.hypot(adjLRot, adjMRot);
+      if (rRot > 0.25) {
+        const minSafeR = Math.max(0.65, (zone.boreTopR ?? screwR) + 0.36);
+        const nextR = clamp(rRot - extraInward, Math.min(rRot, minSafeR), rRot + 0.65);
+        const k = nextR / rRot;
+        adjLRot *= k;
+        adjMRot *= k;
+      }
+    }
+    let ly = postCenterL * t + adjLRot + offL;
+    let my = postCenterM * t + adjMRot + offM;
 
     if (z > marginZ && edit.partial.length > 0) {
       const ang = Math.atan2(my, ly);
@@ -946,6 +982,16 @@ function localAxes(fixture: DirectEditFixture): { labial: [number, number]; mesi
 
 const TOP_SECTORS = 72;
 
+function taperLinkOfDesign(design: DirectEditDesign): Zone["taperLink"] {
+  if ((design.params?.postTaperLink ?? 1) < 0.5) return undefined;
+  const isBridge = Boolean(design.metrics?.isBridge);
+  return {
+    isBridge,
+    retainerCount: design.metrics?.bridgeRetainerCount ?? (isBridge ? 2 : 1),
+    baseTaperDeg: design.metrics?.postTaperDeg ?? design.params?.postTaperDeg ?? 4,
+  };
+}
+
 function zoneOf(
   design: DirectEditDesign,
   proposal: Float32Array,
@@ -1075,6 +1121,7 @@ function zoneOf(
     centerL,
     centerM,
     coneTopR: measureConeTopR(src, coneZ),
+    taperLink: taperLinkOfDesign(design),
   };
 }
 
@@ -2248,6 +2295,7 @@ export class AbutmentDirectEditSession {
     const design = this.bridge.getDesigns().find((row) => row.toothNumber === tooth);
     const mesh = this.bridge.getAbutment(tooth);
     if (!view || !design || !mesh) return;
+    view.zone.taperLink = taperLinkOfDesign(design);
     const edit = this.edits.get(tooth) ?? EMPTY_EDIT;
 
     // 드래그 중(bake=false)에는 스크류 홀이 없는 솔리드 외형(proposalSolid)을 곧바로 변형해 그리고,
