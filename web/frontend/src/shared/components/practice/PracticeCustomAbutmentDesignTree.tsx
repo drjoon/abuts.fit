@@ -420,20 +420,21 @@ function DetailRow({
       {value}
     </span>
   );
-  return (
+  const row = (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      {warningTooltip ? (
-        <Tooltip>
-          <TooltipTrigger asChild>{valueNode}</TooltipTrigger>
-          <TooltipContent side="left" align="center" className="text-xs leading-relaxed">
-            {warningTooltip}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        valueNode
-      )}
+      {valueNode}
     </div>
+  );
+  // 풀스크린 디자인 다이얼로그(z-480) 위에 보이려면 z-520이 필요하다.
+  if (!warningTooltip) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent side="left" align="center" className="z-[520] text-xs leading-relaxed">
+        {warningTooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -719,14 +720,20 @@ function EditableNumberRow({
     </div>
   );
 
-  return (
+  const row = (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
           !disabled && "cursor-ew-resize hover:text-foreground",
         )}
-        title={disabled ? undefined : "좌우로 드래그해 값 조절"}
+        title={
+          warningTooltip
+            ? undefined
+            : disabled
+              ? undefined
+              : "좌우로 드래그해 값 조절"
+        }
         onPointerDown={startScrub(false)}
         onPointerMove={moveScrub}
         onPointerUp={endScrub}
@@ -734,17 +741,18 @@ function EditableNumberRow({
       >
         {label}
       </span>
-      {warningTooltip ? (
-        <Tooltip>
-          <TooltipTrigger asChild>{inputBox}</TooltipTrigger>
-          <TooltipContent side="left" align="center" className="text-xs leading-relaxed">
-            {warningTooltip}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        inputBox
-      )}
+      {inputBox}
     </div>
+  );
+  // 풀스크린 디자인 다이얼로그(z-480) 위에 보이려면 z-520이 필요하다.
+  if (!warningTooltip) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent side="left" align="center" className="z-[520] text-xs leading-relaxed">
+        {warningTooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
