@@ -161,6 +161,7 @@ import {
   type CustomAbutmentDesignMetrics,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
+import { hydrateToothAnatomyCatalog } from "@/shared/practice/toothAnatomy";
 import {
   loadCustomAbutmentViewerPrefs,
   saveCustomAbutmentViewerPrefs,
@@ -2301,6 +2302,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         })
           .then((res) => parseAbutmentGenerationRules(res.ok ? res.data?.data?.rules : []))
           .catch(() => [] as AbutmentGenerationRule[]);
+        const anatomyPromise = hydrateToothAnatomyCatalog(token);
         void logicPromise.then((rules) => {
           if (cancelled) return;
           logicRulesRef.current = rules;
@@ -2476,7 +2478,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         const pendingPickJobs: ScanbodyPickJob[] = [];
 
         let redesignedFromFit = false;
-        logicRulesRef.current = await logicPromise;
+        const [loadedRules] = await Promise.all([logicPromise, anatomyPromise]);
+        logicRulesRef.current = loadedRules;
         if (cancelled) return;
         if (restored && cached && !cached.designFresh) {
           // 정합은 그대로 쓰고 형상만 새 규칙으로 다시 만든다.

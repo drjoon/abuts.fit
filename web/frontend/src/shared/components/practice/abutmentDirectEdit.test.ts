@@ -4,6 +4,7 @@ import * as THREE from "three";
 
 import { cuffProfile } from "../../practice/cuffProfile";
 import { designCustomAbutmentStl } from "../../practice/customAbutmentStlDesign";
+import { getToothAnatomy } from "../../practice/toothAnatomy";
 import { computeParamsFromInfoFieldEdit } from "./PracticeCustomAbutmentDesignTree";
 import {
   AbutmentDirectEditSession,
@@ -995,6 +996,136 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
         designedTallClear25.metrics.idealPostTaperDeg < 2.0 &&
         designedTallClear25.metrics.postTaperDeg >= 2.0,
       `포스트 높이가 길어 상단 여유 기준 적정 테이퍼(${designedTallClear25.metrics.idealPostTaperDeg}°)가 2.0° 미만인 경우에도 포스트 높이는 유지하고 적정값을 기록한다`,
+    );
+
+    // 8) ToothAnatomy 카탈로그(32개 FDI 영구치) 및 순측 경사 하악 견치(#33) 형상 검증:
+    // - 정상 크라운 크기보다 편측 ~1mm 작게 형성되어 경사 식립에서도 순설 과팽창(8~10mm)이 없다.
+    // - 인접치(#32·#34)와 피니시라인·포스트 모두 충분한 보철 두께 유격을 지킨다.
+    // - 교합면 단면은 땅콩형 오목이 없는 엄밀 볼록 역삼각형/마름모(순측 반쪽이 넓고 설측이 좁음)이고,
+    // - 설측은 보철 싱귤럼 형성을 위해 치경부 칼라 위부터 사선으로 충분히 깎인다.
+    for (const q of [1, 2, 3, 4] as const) {
+      for (let p = 1; p <= 8; p += 1) {
+        const spec = getToothAnatomy(`${q}${p}`);
+        assert.equal(spec.toothNumber, `${q}${p}`);
+        assert.ok(
+          spec.abutmentCutback.marginBlMm <= spec.crown.equator.blMm - 1.5 &&
+            spec.abutmentCutback.marginMdMm <= spec.crown.equator.mdMm - 1.3,
+          `#${q}${p} 커스텀어벗 마진 기준치는 정상 크라운보다 편측 ~1mm 작다`,
+        );
+      }
+    }
+    assert.equal(
+      getToothAnatomy("33").morphology.sectionShape,
+      "rounded_inverted_triangle_diamond",
+      "견치 단면 형태는 모서리가 둥근 역삼각형/마름모로 정의된다",
+    );
+
+    const tilt33Rad = (19 * Math.PI) / 180;
+    // +Z 임플란트 축이 순측(+X)으로 19° 경사지게 식립된 하악 좌측 견치(#33)
+    const axis33: [number, number, number] = [Math.sin(tilt33Rad), 0, Math.cos(tilt33Rad)];
+    const hexX33: [number, number, number] = [Math.cos(tilt33Rad), 0, -Math.sin(tilt33Rad)];
+    const jawCanine33 = makeGridSurface(-14, 14, -14, 14, 52, (x, y) => {
+      const ging = 3.2 - 0.18 * Math.exp(-(x * x) / 10);
+      // 근심 #32(y ≈ +5.2)와 원심 #34(y ≈ -5.0) 자연치 치관
+      const incisor32 = 6.8 * Math.exp(-((x * x) / 7.5 + ((y - 5.2) * (y - 5.2)) / 4.2));
+      const premolar34 = 6.9 * Math.exp(-((x * x) / 9.5 + ((y + 5.0) * (y + 5.0)) / 4.4));
+      return ging + incisor32 + premolar34;
+    });
+    const oppCanine33 = makeGridSurface(-12, 12, -12, 12, 32, () => 14.2);
+    const fixture33 = {
+      ...fixture36,
+      toothNumber: "33",
+      jaw: "lower" as const,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: axis33,
+        hexX: hexX33,
+        hexY: [0, 1, 0] as [number, number, number],
+      },
+      scanbodyTop: [7 * axis33[0], 0, 7 * axis33[2]] as [number, number, number],
+      archOcclusalDir: [0, 0, 1] as [number, number, number],
+      labialDir: [1, 0, 0] as [number, number, number],
+      mesialDir: [0, 1, 0] as [number, number, number],
+    };
+    const designed33 = await designCustomAbutmentStl({
+      fixture: fixture33,
+      jawGeometry: jawCanine33,
+      opposingGeometry: oppCanine33,
+      toothWorks: [
+        {
+          toothNumber: "33",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          bridgeLinkedTeeth: [],
+        },
+      ],
+      params: { marginDepthMm: 0.8, marginSubgMinMm: 0.8, marginSubgMaxMm: 0.8 },
+    });
+    assert.ok(
+      designed33.metrics.maxDiameterMm >= 4.2 && designed33.metrics.maxDiameterMm <= 6.2,
+      `순측 19° 경사 #33 커스텀어벗 최대 직경(${designed33.metrics.maxDiameterMm}mm)은 정상 견치 - 1mm 범위(4.2~6.2mm) 안이다`,
+    );
+    // 교합면 시점(월드 Z=교합, X=순측, Y=근심)에서 마진 루프 엄밀 볼록성·역삼각/마름모 비율 검사
+    const mWorld33 = designed33.marginLoopWorld;
+    const mRing33: Array<[number, number]> = [];
+    for (let i = 0; i < mWorld33.length; i += 3) {
+      mRing33.push([mWorld33[i]!, mWorld33[i + 1]!]);
+    }
+    let minCross33 = Infinity;
+    let uMin33 = Infinity;
+    let uMax33 = -Infinity;
+    for (let i = 0; i < mRing33.length; i += 1) {
+      const p0 = mRing33[(i - 1 + mRing33.length) % mRing33.length]!;
+      const p1 = mRing33[i]!;
+      const p2 = mRing33[(i + 1) % mRing33.length]!;
+      const cr = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+      minCross33 = Math.min(minCross33, cr);
+      uMin33 = Math.min(uMin33, p1[0]);
+      uMax33 = Math.max(uMax33, p1[0]);
+    }
+    assert.ok(
+      Math.abs(minCross33) > -1e-4,
+      `#33 견치 마진 단면에 땅콩형 오목이 없다(minCross=${minCross33.toFixed(6)})`,
+    );
+    const sliceWidth33 = (uTarget: number) => {
+      const ys: number[] = [];
+      for (let i = 0; i < mRing33.length; i += 1) {
+        const [x0, y0] = mRing33[i]!;
+        const [x1, y1] = mRing33[(i + 1) % mRing33.length]!;
+        if ((x0 - uTarget) * (x1 - uTarget) <= 0 && Math.abs(x1 - x0) > 1e-6) {
+          ys.push(y0 + ((y1 - y0) * (uTarget - x0)) / (x1 - x0));
+        }
+      }
+      return ys.length >= 2 ? Math.max(...ys) - Math.min(...ys) : 0;
+    };
+    const uMid33 = (uMin33 + uMax33) * 0.5;
+    const uSpan33 = uMax33 - uMin33;
+    const labThirdW33 = sliceWidth33(uMid33 + uSpan33 * 0.25);
+    const linThirdW33 = sliceWidth33(uMid33 - uSpan33 * 0.28);
+    assert.ok(
+      linThirdW33 < labThirdW33 * 0.94,
+      `#33 견치는 설측 1/3 폭(${linThirdW33.toFixed(2)}mm)이 순측 1/3 폭(${labThirdW33.toFixed(2)}mm)보다 좁은 역삼각형/마름모 형상이다`,
+    );
+
+    // 설측 싱귤럼 사선 삭제 검증: 하단 칼라(zWorld=4.2mm) 대비 상단(zWorld=8.0mm)에서 설측 외벽 후퇴량이 뚜렷하다.
+    const worldPos33 = designed33.worldGeometry.getAttribute("position")!;
+    const worldXBoundsAtZ = (z0: number) => {
+      let xLo = Infinity;
+      let xHi = -Infinity;
+      for (let i = 0; i < worldPos33.count; i += 1) {
+        if (Math.abs(worldPos33.getZ(i) - z0) <= 0.25 && Math.abs(worldPos33.getY(i)) <= 0.9) {
+          xLo = Math.min(xLo, worldPos33.getX(i));
+          xHi = Math.max(xHi, worldPos33.getX(i));
+        }
+      }
+      return { xLo, xHi };
+    };
+    const lowBand33 = worldXBoundsAtZ(4.0);
+    const highBand33 = worldXBoundsAtZ(7.8);
+    const lingualBevelInwardMm = highBand33.xLo - lowBand33.xLo;
+    assert.ok(
+      lingualBevelInwardMm >= 0.75,
+      `#33 견치 설측은 보철 싱귤럼 형성을 위해 치경부 대비 상단으로 사선 삭제(${lingualBevelInwardMm.toFixed(2)}mm)된다`,
     );
   }
 }

@@ -22,6 +22,7 @@ import {
   getCustomAbutmentGenerationLogic,
   recordCustomAbutmentGenerationEdits,
 } from "../../controllers/ai/abutmentDesignLogic.controller.js";
+import { getToothAnatomyCatalog } from "../../controllers/ai/toothAnatomy.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -107,6 +108,11 @@ router.post(
   "/custom-abutment-design-edits",
   authenticate,
   recordCustomAbutmentGenerationEdits
+);
+router.get(
+  "/tooth-anatomy",
+  authenticate,
+  getToothAnatomyCatalog
 );
 
 export default router;
