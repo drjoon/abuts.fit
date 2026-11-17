@@ -15,6 +15,10 @@ import * as THREE from "three";
 import { encodeBinaryStl } from "../../files/stlBinaryWrite";
 import { cuffProfile } from "../../practice/cuffProfile";
 import {
+  buildMinkowskiCuffRadiusEvaluator,
+  resolveScrewChannelProfile,
+} from "../../practice/customAbutmentStlDesign";
+import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   computeOptimalPostTaperDeg,
   isAnteriorTooth,
@@ -48,6 +52,9 @@ export type DirectEditFixture = {
     prcConeTopMm: number;
     screwLowerDiameterMm?: number;
     screwUpperDiameterMm: number;
+    screwTopMouthDiameterMm?: number;
+    screwSeatBottomZMm?: number;
+    screwSeatTopZMm?: number;
   };
 };
 
@@ -696,20 +703,43 @@ export function regenerateCuffToMargin(
   const origR = new Float32Array(count);
   const endZ = new Float32Array(count);
   const endAng = new Float32Array(count);
-  const profiles: Array<(z: number) => number> = [];
+  const origMarginXY: Array<[number, number]> = [];
+  const fittedMarginXY: Array<[number, number]> = [];
+  let origSpan = 0.45;
+  let origDelta = 0.35;
+  let fitSpan = 0.45;
+  let fitDelta = 0.35;
   for (let col = 0; col < count; col += 1) {
     const i = col * 3;
+    const ox = proposalMargin[i]!;
+    const oy = proposalMargin[i + 1]!;
     origZ[col] = proposalMargin[i + 2]!;
-    origR[col] = Math.hypot(proposalMargin[i]!, proposalMargin[i + 1]!);
+    origR[col] = Math.hypot(ox, oy);
+    origMarginXY.push([ox, oy]);
+    if (origR[col]! - coneTopR > origDelta) {
+      origDelta = origR[col]! - coneTopR;
+      origSpan = Math.max(0.35, origZ[col]! - coneZ);
+    }
     const x = fittedMargin[i]!;
     const y = fittedMargin[i + 1]!;
     endZ[col] = fittedMargin[i + 2]!;
     endAng[col] = Math.atan2(y, x);
-    profiles.push(cuffProfile(coneTopR, coneZ, Math.hypot(x, y), endZ[col]!));
+    fittedMarginXY.push([x, y]);
+    const fitR = Math.hypot(x, y);
+    if (fitR - coneTopR > fitDelta) {
+      fitDelta = fitR - coneTopR;
+      fitSpan = Math.max(0.35, endZ[col]! - coneZ);
+    }
   }
-  const origProfiles = Array.from({ length: count }, (_, col) =>
+  const origShared = cuffProfile(0, 0, origDelta, origSpan);
+  const evalOrigMink = buildMinkowskiCuffRadiusEvaluator(coneTopR, origMarginXY);
+  const origLegacyProfiles = Array.from({ length: count }, (_, col) =>
     cuffProfile(coneTopR, coneZ, origR[col]!, origZ[col]!),
   );
+
+  const fitShared = cuffProfile(0, 0, fitDelta, fitSpan);
+  const evalFitMink = buildMinkowskiCuffRadiusEvaluator(coneTopR, fittedMarginXY);
+
   for (let i = 0; i < proposal.length; i += 3) {
     const ox = proposal[i]!;
     const oy = proposal[i + 1]!;
@@ -722,20 +752,28 @@ export function regenerateCuffToMargin(
     const marginZ = origZ[c0]! * (1 - frac) + origZ[c1]! * frac;
     if (!(marginZ > coneZ + 0.05) || oz >= marginZ - 1e-3) continue;
     const u = clamp((oz - coneZ) / (marginZ - coneZ), 0, 1);
-    const origCuffR =
-      origProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
-      origProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
+    const origAlpha = clamp(origShared(u * origSpan) / origDelta, 0, 1);
+    const origMinkR = evalOrigMink(theta0, origAlpha);
+    const origLegacyR =
+      origLegacyProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
+      origLegacyProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
     const origChordR =
       coneTopR +
       ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
         Math.max(0.05, marginZ - coneZ);
-    if (orad > origChordR + 0.02 || Math.abs(orad - origCuffR) > 0.03) continue;
+    if (
+      orad > Math.max(origChordR, origMinkR) + 0.04 ||
+      Math.min(Math.abs(orad - origMinkR), Math.abs(orad - origLegacyR)) > 0.08
+    ) {
+      continue;
+    }
     const zEnd0 = coneZ + u * (endZ[c0]! - coneZ);
     const zEnd1 = coneZ + u * (endZ[c1]! - coneZ);
     const z2 = zEnd0 * (1 - frac) + zEnd1 * frac;
-    const r = profiles[c0]!(zEnd0) * (1 - frac) + profiles[c1]!(zEnd1) * frac;
     const targetAng = endAng[c0]! + angleDelta(endAng[c1]!, endAng[c0]!) * frac;
     const theta = theta0 + angleDelta(targetAng, theta0) * smootherstep(u);
+    const fitAlpha = clamp(fitShared(u * fitSpan) / fitDelta, 0, 1);
+    const r = evalFitMink(theta, fitAlpha);
     fitted[i] = r * Math.cos(theta);
     fitted[i + 1] = r * Math.sin(theta);
     fitted[i + 2] = z2;
@@ -1379,22 +1417,26 @@ export function writeAttribute(geometry: THREE.BufferGeometry, positions: Float3
   geometry.computeBoundingSphere();
 }
 
-/** 임플란트 로컬 Z축을 따르는 단일 계단형 닫힌 스크류 채널 절삭 입체. */
+/** 임플란트 로컬 Z축을 따르는 실측 계단형 닫힌 스크류 채널 절삭 입체. */
 function screwChannelCutterSoup(
-  rBot: number,
-  rTop: number,
+  conn: DirectEditFixture["connectionSpec"],
   zBot: number,
+  zMouthSurface: number | null,
   zTop: number,
   segments = 64,
 ): Float32Array {
-  const seatZ0 = 0.8;
-  const seatZ1 = 1.3;
+  const bore = resolveScrewChannelProfile(conn, zMouthSurface);
   const rings: Array<[number, number]> = [
-    [rBot, zBot],
-    [rBot, seatZ0],
-    [rTop, seatZ1],
-    [rTop, zTop],
+    [bore.rBot, zBot],
+    [bore.rBot, bore.seatZ0],
+    [bore.rUpper, bore.seatZ1],
   ];
+  if (bore.hasMouth && bore.mouthZ0 > bore.seatZ1 + 0.05 && bore.mouthZ1 < zTop - 0.05) {
+    rings.push([bore.rUpper, bore.mouthZ0], [bore.rMouth, bore.mouthZ1], [bore.rMouth, zTop]);
+  } else {
+    rings.push([bore.rUpper, zTop]);
+  }
+  const rCapTop = rings[rings.length - 1]![0];
   const trisPerSeg = 2 + (rings.length - 1) * 2;
   const out = new Float32Array(segments * trisPerSeg * 9);
   let o = 0;
@@ -1411,8 +1453,8 @@ function screwChannelCutterSoup(
     const c1 = Math.cos(a1);
     const s1 = Math.sin(a1);
     put(0, 0, zBot);
-    put(rBot * c1, rBot * s1, zBot);
-    put(rBot * c0, rBot * s0, zBot);
+    put(bore.rBot * c1, bore.rBot * s1, zBot);
+    put(bore.rBot * c0, bore.rBot * s0, zBot);
     for (let k = 0; k < rings.length - 1; k += 1) {
       const [ra, za] = rings[k]!;
       const [rb, zb] = rings[k + 1]!;
@@ -1424,8 +1466,8 @@ function screwChannelCutterSoup(
       put(rb * c0, rb * s0, zb);
     }
     put(0, 0, zTop);
-    put(rTop * c0, rTop * s0, zTop);
-    put(rTop * c1, rTop * s1, zTop);
+    put(rCapTop * c0, rCapTop * s0, zTop);
+    put(rCapTop * c1, rCapTop * s1, zTop);
   }
   return out;
 }
@@ -2501,11 +2543,17 @@ export class AbutmentDirectEditSession {
       const conn = design.fixture.connectionSpec;
       const l2 = conn?.l2Mm ?? 2.75;
       const zBot = -l2;
-      const boreTopR = (conn?.screwUpperDiameterMm ?? 2.45) / 2;
-      const boreBotR = (conn?.screwLowerDiameterMm ?? boreTopR * 0.85) / 2;
       let zTopMax = -Infinity;
-      for (let i = 2; i < solidOut.length; i += 3) zTopMax = Math.max(zTopMax, solidOut[i]!);
-      const cutter = screwChannelCutterSoup(boreBotR, boreTopR, zBot - 1, zTopMax + 3);
+      let centralMouthZ = -Infinity;
+      for (let i = 0; i < solidOut.length; i += 3) {
+        const z = solidOut[i + 2]!;
+        if (z > zTopMax) zTopMax = z;
+        if (Math.hypot(solidOut[i]!, solidOut[i + 1]!) <= 0.45 && z > centralMouthZ) {
+          centralMouthZ = z;
+        }
+      }
+      const mouthZ = Number.isFinite(centralMouthZ) && centralMouthZ > 1.5 ? centralMouthZ : zTopMax;
+      const cutter = screwChannelCutterSoup(conn, zBot - 1, mouthZ, zTopMax + 3);
       void subtractTriangleSoups(solidOut, [cutter], `#${tooth} 커스텀어벗`)
         .then((drilled) => {
           if (view.bakeEpoch !== epoch) return;

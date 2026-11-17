@@ -50,8 +50,21 @@ export function cuffProfile(rStart: number, zStart: number, rEnd: number, zEnd: 
     return { e, zh, lead, lr, sEnd, scale: 1 };
   };
   let plan = planFor(CUFF_BONE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(CUFF_EASE_MM);
-  if (plan.sEnd > CUFF_END_SLOPE_MAX) plan = planFor(0);
+  if (plan.sEnd > CUFF_END_SLOPE_MAX) {
+    const zeroPlan = planFor(0);
+    if (zeroPlan.sEnd >= CUFF_END_SLOPE_MAX) {
+      plan = zeroPlan;
+    } else {
+      let lo = 0;
+      let hi = CUFF_BONE_MM;
+      for (let it = 0; it < 18; it += 1) {
+        const mid = (lo + hi) * 0.5;
+        if (planFor(mid).sEnd > CUFF_END_SLOPE_MAX) hi = mid;
+        else lo = mid;
+      }
+      plan = planFor(lo);
+    }
+  }
   const { e, zh, lead, lr, sEnd, scale } = plan;
   return (z: number) => {
     const u = clamp(z - zStart, 0, span);

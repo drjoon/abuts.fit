@@ -45,6 +45,11 @@ export type CustomAbutmentConnectionSpec = {
   prcConeTopMm: number;
   screwLowerDiameterMm: number;
   screwUpperDiameterMm: number;
+  /** 포스트 최상단 개구 입구 베벨 직경(mm). 우리기공소 샘플·FaceHole 센터드릴 실측 ~2.50mm. */
+  screwTopMouthDiameterMm?: number;
+  /** 스크류 시트(45° 턱) 하단·상단 Z 높이(플랫폼 원점 기준 mm). */
+  screwSeatBottomZMm?: number;
+  screwSeatTopZMm?: number;
 };
 
 export type FixtureWorldPose = {
@@ -219,14 +224,46 @@ const norm = (a: Vec3): Vec3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 
-function screwBoresForOrigin(originDiameterMm: number) {
+/**
+ * 우리치과기공소 커스텀어벗 STL 실측(이지선 #25 NEOBIOTECH IS2 Regular, 배종만 #47 OSSTEM TS3 Regular,
+ * 남덕순 #43 MEGAGEN AnyOne Regular, 박형순 #46 DENTIS SQ Regular, 박봉희 #27 DENTIUM Implantium Regular 등)
+ * 및 AcroDent FaceHole PRC(T41 D6.0*A90 센터드릴 입구 ~2.50mm + T45 D2.015/D2.35·T44 D1.615/D2.25·T43 D1.415/D2.25 스텝드릴) 기준 스크류 채널 치수.
+ */
+function screwBoresForOrigin(originDiameterMm: number, manufacturerToken = "") {
   if (originDiameterMm <= 2.45) {
-    return { screwLowerDiameterMm: 1.45, screwUpperDiameterMm: 1.85 };
+    return {
+      screwLowerDiameterMm: 1.45,
+      screwUpperDiameterMm: 2.05,
+      screwTopMouthDiameterMm: 2.25,
+      screwSeatBottomZMm: 1.4,
+      screwSeatTopZMm: 1.65,
+    };
   }
   if (originDiameterMm <= 2.95) {
-    return { screwLowerDiameterMm: 1.75, screwUpperDiameterMm: 2.15 };
+    return {
+      screwLowerDiameterMm: 1.69,
+      screwUpperDiameterMm: 2.34,
+      screwTopMouthDiameterMm: 2.48,
+      screwSeatBottomZMm: 1.4,
+      screwSeatTopZMm: 1.6,
+    };
   }
-  return { screwLowerDiameterMm: 2.08, screwUpperDiameterMm: 2.45 };
+  if (manufacturerToken === "OSSTEM") {
+    return {
+      screwLowerDiameterMm: 2.05,
+      screwUpperDiameterMm: 2.4,
+      screwTopMouthDiameterMm: 2.5,
+      screwSeatBottomZMm: 0.84,
+      screwSeatTopZMm: 1.01,
+    };
+  }
+  return {
+    screwLowerDiameterMm: 2.1,
+    screwUpperDiameterMm: 2.45,
+    screwTopMouthDiameterMm: 2.5,
+    screwSeatBottomZMm: 0.7,
+    screwSeatTopZMm: 0.87,
+  };
 }
 
 export function resolveCustomAbutmentConnectionSpec(
@@ -241,6 +278,7 @@ export function resolveCustomAbutmentConnectionSpec(
   const family = String(row.implantFamily || "").trim();
   const type = String(row.implantType || "Hex").trim();
   const nonHex = /non/i.test(type);
+  const makerToken = SPEC_TOKEN(manufacturer);
   const key = [manufacturer, brand, family].map(SPEC_TOKEN).join("|");
   const hit = SPEC_MAP.get(key);
   if (hit) {
@@ -253,7 +291,7 @@ export function resolveCustomAbutmentConnectionSpec(
       hexSizeMm: nonHex ? null : hit.hexSizeMm,
       l2Mm: hit.l2Mm,
       prcConeTopMm: hit.prcConeTopMm,
-      ...screwBoresForOrigin(hit.originDiameterMm),
+      ...screwBoresForOrigin(hit.originDiameterMm, makerToken),
     };
   }
   const libs = buildImplantLibraries(connections);
@@ -270,7 +308,7 @@ export function resolveCustomAbutmentConnectionSpec(
     hexSizeMm: nonHex ? null : defaultHex,
     l2Mm: originDiameterMm <= 2.95 ? 2.2 : 2.65,
     prcConeTopMm: 0.3,
-    ...screwBoresForOrigin(originDiameterMm),
+    ...screwBoresForOrigin(originDiameterMm, makerToken),
   };
 }
 

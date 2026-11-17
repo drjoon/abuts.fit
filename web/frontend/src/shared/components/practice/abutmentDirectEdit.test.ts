@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 
 import { cuffProfile } from "../../practice/cuffProfile";
-import { designCustomAbutmentStl } from "../../practice/customAbutmentStlDesign";
+import { resolveCustomAbutmentConnectionSpec } from "../../practice/customAbutmentScanbodyMatch";
+import {
+  designCustomAbutmentStl,
+  resolveScrewChannelProfile,
+} from "../../practice/customAbutmentStlDesign";
 import { getToothAnatomy } from "../../practice/toothAnatomy";
 import { computeParamsFromInfoFieldEdit } from "./PracticeCustomAbutmentDesignTree";
 import {
@@ -1084,7 +1088,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       uMax33 = Math.max(uMax33, p1[0]);
     }
     assert.ok(
-      Math.abs(minCross33) > -1e-4,
+      minCross33 >= -1e-5,
       `#33 견치 마진 단면에 땅콩형 오목이 없다(minCross=${minCross33.toFixed(6)})`,
     );
     const sliceWidth33 = (uTarget: number) => {
@@ -1238,6 +1242,161 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
         (tightDesigned33.enameloplastyWorldGeometry.getAttribute("position")?.count ?? 0) >= 9,
       `좁은 근심 인접치(#32)의 편측 ≤0.2mm 삭제량(${mesialGuide32?.maxDepthMm}mm)과 3D 표시 메시가 생성된다`,
     );
+
+    // 10) CNC 가공성 및 마진 안착 불변식 검증:
+    // - 피니시라인 수평 단면과 커프 전 높이 수평 단면(Z=const)은 내측으로 꺾인 오목이 전혀 없는 볼록(convex) 단면이어야 한다.
+    // - 근심·원심이 협소한 케이스에서도 360° 모든 열에서 마진이 역전(상방 볼록 오버행)되지 않고 양수 보철 안착 마진 폭을 유지해야 한다.
+    // - 스크류 홀 스펙은 우리치과기공소 실측 샘플 및 FaceHole 센터드릴 입구(~2.50mm) → 상부 채널 → 45° 시트 턱 → 하부 관통홀 단차를 따른다.
+    const neoSpec = resolveCustomAbutmentConnectionSpec({
+      implantManufacturer: "NEOBIOTECH",
+      implantBrand: "IS2",
+      implantFamily: "Regular",
+      implantType: "Hex",
+    });
+    const ossSpec = resolveCustomAbutmentConnectionSpec({
+      implantManufacturer: "OSSTEM",
+      implantBrand: "TS3",
+      implantFamily: "Regular",
+      implantType: "Hex",
+    });
+    const boreNeo = resolveScrewChannelProfile(neoSpec, 8.6);
+    assert.equal(neoSpec.screwLowerDiameterMm, 2.1);
+    assert.equal(neoSpec.screwUpperDiameterMm, 2.45);
+    assert.equal(neoSpec.screwTopMouthDiameterMm, 2.5);
+    assert.equal(ossSpec.screwLowerDiameterMm, 2.05);
+    assert.equal(ossSpec.screwUpperDiameterMm, 2.4);
+    assert.ok(
+      Math.abs(boreNeo.radiusAtZ(8.6) * 2 - 2.5) < 1e-6 &&
+        Math.abs(boreNeo.radiusAtZ(4.0) * 2 - 2.45) < 1e-6 &&
+        Math.abs(boreNeo.radiusAtZ(0.2) * 2 - 2.1) < 1e-6,
+      "스크류 홀 프로파일이 최상단 입구 2.50mm → 상부 채널 2.45mm → 시트 아래 2.10mm 단차를 정확히 따른다",
+    );
+
+    for (const [caseLabel, d] of [
+      ["#24 경사 인접", designed24],
+      ["#24 계란형", designedPair24],
+      ["#25 계란형", designedPair25],
+      ["#33 순측 경사 견치", designed33],
+      ["#33 근심 협소 치은연상 견치", tightDesigned33],
+    ] as const) {
+      const ml = d.marginLoopLocal;
+      const nCols = ml.length / 3;
+      let worstMarginCr = Infinity;
+      for (let c = 0; c < nCols; c += 1) {
+        const pr = (c - 1 + nCols) % nCols;
+        const nx = (c + 1) % nCols;
+        const cr =
+          (ml[c * 3]! - ml[pr * 3]!) * (ml[nx * 3 + 1]! - ml[c * 3 + 1]!) -
+          (ml[c * 3 + 1]! - ml[pr * 3 + 1]!) * (ml[nx * 3]! - ml[c * 3]!);
+        worstMarginCr = Math.min(worstMarginCr, cr);
+      }
+      assert.ok(
+        worstMarginCr >= -1e-5,
+        `${caseLabel}: 피니시라인 수평 단면에 내측으로 꺾인 오목 구간이 없다(minCross=${worstMarginCr.toFixed(6)})`,
+      );
+
+      const soup = d.solidBodyLocalPositions!;
+      const trisPerCol = soup.length / 9 / nCols;
+      const ringCount = (trisPerCol + 2) / 2 + 1;
+      const columns: Array<Array<[number, number, number]>> = [];
+      for (let col = 0; col < nCols; col += 1) {
+        const base = col * trisPerCol * 9;
+        const pts: Array<[number, number, number]> = [
+          [soup[base]!, soup[base + 1]!, soup[base + 2]!],
+          [soup[base + 6]!, soup[base + 7]!, soup[base + 8]!],
+        ];
+        let off = base + 9;
+        for (let r = 1; r < ringCount - 2; r += 1) {
+          pts.push([soup[off + 15]!, soup[off + 16]!, soup[off + 17]!]);
+          off += 18;
+        }
+        pts.push([soup[off + 6]!, soup[off + 7]!, soup[off + 8]!]);
+        columns.push(pts);
+      }
+      const sampleAtZ = (pts: ReadonlyArray<[number, number, number]>, z0: number): [number, number] | null => {
+        for (let r = 0; r < pts.length - 1; r += 1) {
+          const a = pts[r]!;
+          const b = pts[r + 1]!;
+          if ((a[2] <= z0 && z0 <= b[2]) || (b[2] <= z0 && z0 <= a[2])) {
+            const dz = b[2] - a[2];
+            const t = Math.abs(dz) > 1e-9 ? (z0 - a[2]) / dz : 0;
+            return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+          }
+        }
+        return null;
+      };
+      const coneZ = d.fixture.connectionSpec.prcConeTopMm;
+      for (let z = coneZ + 0.12; z <= d.metrics.cuffHeightMinMm - 0.1; z += 0.3) {
+        const poly = columns.map((pts) => sampleAtZ(pts, z));
+        if (poly.some((p) => !p)) continue;
+        for (let i = 0; i < nCols; i += 1) {
+          const p0 = poly[(i - 1 + nCols) % nCols]!;
+          const p1 = poly[i]!;
+          const p2 = poly[(i + 1) % nCols]!;
+          const cr = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+          assert.ok(
+            cr >= -1e-5,
+            `${caseLabel}: 커프 수평 단면(z=${z.toFixed(2)})이 내측으로 꺾이지 않고 볼록하다(cr=${cr.toFixed(6)})`,
+          );
+        }
+      }
+
+      // 삽입축 기준 360° 모든 열에서 양수 마진 폭 확보 및 마진 역전(오버행) 0건 확인
+      const centroidRing = (rIdx: number): [number, number, number] => {
+        let sx = 0;
+        let sy = 0;
+        let sz = 0;
+        for (let col = 0; col < nCols; col += 1) {
+          sx += columns[col]![rIdx]![0] / nCols;
+          sy += columns[col]![rIdx]![1] / nCols;
+          sz += columns[col]![rIdx]![2] / nCols;
+        }
+        return [sx, sy, sz];
+      };
+      const cLo = centroidRing(38);
+      const cHi = centroidRing(52);
+      const wDx = cHi[0] - cLo[0];
+      const wDy = cHi[1] - cLo[1];
+      const wDz = cHi[2] - cLo[2];
+      const wLen = Math.hypot(wDx, wDy, wDz) || 1;
+      const wx = wDx / wLen;
+      const wy = wDy / wLen;
+      const wz = wDz / wLen;
+      let minShoulderMm = Infinity;
+      for (let col = 0; col < nCols; col += 1) {
+        const pts = columns[col]!;
+        const mPt = pts[28]!;
+        const pBase = pts[36]!;
+        const outX = mPt[0] - cLo[0];
+        const outY = mPt[1] - cLo[1];
+        const outL = Math.hypot(outX, outY) || 1;
+        const ox = outX / outL;
+        const oy = outY / outL;
+        const dxB = pBase[0] - mPt[0];
+        const dyB = pBase[1] - mPt[1];
+        const dzB = pBase[2] - mPt[2];
+        const dotWB = dxB * wx + dyB * wy + dzB * wz;
+        const sh = -((dxB - dotWB * wx) * ox + (dyB - dotWB * wy) * oy);
+        minShoulderMm = Math.min(minShoulderMm, sh);
+        const checkMaxRing = d === designed24 ? 37 : 56;
+        for (let r = 29; r <= checkMaxRing; r += 1) {
+          const q = pts[r]!;
+          const dx = q[0] - mPt[0];
+          const dy = q[1] - mPt[1];
+          const dz = q[2] - mPt[2];
+          const dotW = dx * wx + dy * wy + dz * wz;
+          const over = (dx - dotW * wx) * ox + (dy - dotW * wy) * oy;
+          assert.ok(
+            over <= 0.01,
+            `${caseLabel}: 열 ${col} 링 ${r}에서 마진 상방 볼록 역전(overhang=${over.toFixed(3)}mm)이 없다`,
+          );
+        }
+      }
+      assert.ok(
+        minShoulderMm >= 0.18,
+        `${caseLabel}: 전 둘레 최소 마진 챔퍼 폭(${minShoulderMm.toFixed(2)}mm)이 확보된다`,
+      );
+    }
   }
 }
 
