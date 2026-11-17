@@ -55,7 +55,9 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   assert.equal(computeOptimalPostTaperDeg(2.5, false), 2.0);
   assert.equal(computeOptimalPostTaperDeg(6.0, false), 2.4);
   assert.equal(computeOptimalPostTaperDeg(7.73, false), 3.1);
+  assert.equal(computeOptimalPostTaperDeg(16, false), 5, "긴 포스트도 편측 5°를 넘기지 않는다");
   assert.equal(computeOptimalPostHeightMmFromTaper(2.0, false), 5.0);
+  assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 8 }).postTaperDeg, 5);
 
   // 의뢰자 메타데이터 싱글/브리지 판별
   assert.deepEqual(
@@ -82,6 +84,7 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   assert.equal(computeOptimalPostTaperDeg(2.5, twoUnitBridge), 2.0);
   assert.equal(computeOptimalPostTaperDeg(5.0, twoUnitBridge), 3.0);
   assert.equal(computeOptimalPostTaperDeg(6.0, twoUnitBridge), 3.6);
+  assert.equal(computeOptimalPostTaperDeg(16, twoUnitBridge), 5, "긴 브리지 포스트도 편측 5°를 넘기지 않는다");
   assert.equal(computeOptimalPostTaperDeg(5.0, threeRetainerBridge), 3.3);
   assert.equal(computeOptimalPostHeightMmFromTaper(3.0, twoUnitBridge), 5.0);
 

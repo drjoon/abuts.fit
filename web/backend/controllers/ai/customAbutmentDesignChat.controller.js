@@ -56,7 +56,7 @@ const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
   occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리(기본 1.5mm, 최소 0.7mm)", unit: "mm", min: 0.7, max: Infinity },
-  postTaperDeg: { label: "포스트 축벽 편측 테이퍼(최소 2°)", unit: "°", min: 2, max: 12 },
+  postTaperDeg: { label: "포스트 축벽 편측 테이퍼(2°~5°)", unit: "°", min: 2, max: 5 },
   postTaperLink: { label: "포스트 높이·테이퍼 접착력 연결(1=연결, 0=해제)", unit: "", min: 0, max: 1 },
   postYawDeg: {
     label: "포스트 수평 회전 보정(교합면 시점 +=반시계, -=시계, 기본 0=악궁·중심구 평행)",

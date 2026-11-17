@@ -17,7 +17,9 @@ import {
   buildAbutmentPreferenceUpdate,
   clampAbutmentEdit,
   identityAbutmentEdit,
+  gumballPatchSetsPostHeight,
   makeGumball,
+  retainLiveGumballParams,
   measureEditedAbutment,
   refitLocalPositions,
   regenerateCuffToMargin,
@@ -129,6 +131,44 @@ const pref = buildAbutmentPreferenceUpdate({
 assert.equal(pref?.scope, "posterior");
 assert.equal(pref?.params.postWidthScale, 1.1);
 assert.equal(pref?.params.postHeightOffsetMm, 0.6);
+
+const widened = edit({ scale: [1.18, 1.12, 1.04], heightMm: 0.4 });
+const clearancePatch = { occlusalClearanceMm: 1.2, postHeightOffsetMm: 0 };
+const clearanceMerged = {
+  postWidthScale: 1.2,
+  postHeightOffsetMm: 0.4,
+  occlusalClearanceMm: 1.05,
+  marginFilletRadiusMm: 0.8,
+  ...clearancePatch,
+};
+const widthKept = retainLiveGumballParams(
+  clearanceMerged,
+  { postWidthScale: 1, postHeightOffsetMm: 0 },
+  widened,
+  clearancePatch,
+);
+assert.equal(widthKept.postWidthScale, 1, "대합 거리를 고쳐도 검볼 굵기 배율은 생성값에 다시 넣지 않는다");
+assert.equal(widthKept.postHeightOffsetMm, 0, "대합 거리 패치의 높이 보정은 유지한다");
+assert.equal(widthKept.marginFilletRadiusMm, 0.8, "다른 항목은 그대로다");
+assert.equal(widthKept.occlusalClearanceMm, 1.2);
+assert.equal(gumballPatchSetsPostHeight(clearancePatch), true);
+const marginPatch = { marginFilletRadiusMm: 0.9 };
+const marginMerged = {
+  postWidthScale: 1.2,
+  postHeightOffsetMm: 0.4,
+  marginFilletRadiusMm: 0.7,
+  ...marginPatch,
+};
+const marginKept = retainLiveGumballParams(
+  marginMerged,
+  { postWidthScale: 1, postHeightOffsetMm: 0 },
+  widened,
+  marginPatch,
+);
+assert.equal(marginKept.postWidthScale, 1);
+assert.equal(marginKept.postHeightOffsetMm, 0, "높이를 안 바꾸는 수정은 검볼 높이 보정을 생성에 중복하지 않는다");
+assert.equal(marginKept.marginFilletRadiusMm, 0.9);
+assert.equal(gumballPatchSetsPostHeight(marginPatch), false);
 assert.equal(
   buildAbutmentPreferenceUpdate({ tooth: "11", baseWidth: 1, baseHeight: 0, widthRatio: 1, heightDeltaMm: 0 }),
   null,

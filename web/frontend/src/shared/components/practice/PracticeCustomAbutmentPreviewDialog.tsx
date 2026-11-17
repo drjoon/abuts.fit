@@ -170,6 +170,8 @@ import {
 } from "@/shared/practice/customAbutmentViewerPrefs";
 import {
   AbutmentDirectEditSession,
+  gumballPatchSetsPostHeight,
+  retainLiveGumballParams,
   type AbutmentEditBridge,
   type AbutmentEditSummary,
 } from "@/shared/components/practice/abutmentDirectEdit";
@@ -3127,10 +3129,22 @@ export function PracticeCustomAbutmentPreviewDialog({
             if (!jawGeo) continue;
             const merged: Partial<CustomAbutmentDesignParams> =
               mode === "merge" ? { ...(ctx.overrides[tooth] ?? {}) } : {};
+            const patch: Partial<CustomAbutmentDesignParams> = {};
             if (mode !== "proposal") {
               for (const change of changes) {
-                if (change.toothNumber === tooth) Object.assign(merged, change.params);
+                if (change.toothNumber === tooth) Object.assign(patch, change.params);
               }
+              Object.assign(merged, patch);
+            }
+            if (mode === "merge") {
+              const kept = retainLiveGumballParams(
+                merged,
+                gumballParamBaseRef.current[tooth],
+                directEditRef.current?.editOf(tooth) ?? null,
+                patch,
+              );
+              if (kept.postWidthScale != null) merged.postWidthScale = kept.postWidthScale;
+              if (kept.postHeightOffsetMm != null) merged.postHeightOffsetMm = kept.postHeightOffsetMm;
             }
             const proposal = proposalInputRef.current[tooth];
             const params =
@@ -3154,8 +3168,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             delete gumballParamBaseRef.current[tooth];
             if (mode === "replace" || mode === "proposal") {
               directEditRef.current?.clear([tooth]);
-            } else {
-              directEditRef.current?.clearBakedScaleAndHeight([tooth]);
+            } else if (gumballPatchSetsPostHeight(patch)) {
+              directEditRef.current?.clearBakedVertical([tooth]);
             }
             removeDesignFromScene(tooth);
             prev.worldGeometry.dispose();

@@ -64,7 +64,7 @@ export type CustomAbutmentParamSpec = {
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
-  postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 12, step: 0.1 },
+  postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 5, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
@@ -134,6 +134,7 @@ export function isAnteriorTooth(toothNumber: string): boolean {
  * 포스트 등유지력 연동 기준.
  * 기울기 tanθ/H 가 일정하면 높이별 접착력이 같다.
  * 싱글 앵커는 5mm · 2°(최소 2°). 브리지는 이전 4°→6° 기울기 비(tan 6°/tan 4°)를 유지해 5mm · 3.0°(최소 2°).
+ * 포스트가 더 길면 기울기 tanθ/H 를 유지해 각을 키우되, 편측 5°는 넘기지 않는다.
  */
 export const RETENTION_REF_POST_HEIGHT_MM = 5;
 export const RETENTION_SINGLE_REF_TAPER_DEG = 2;
@@ -357,6 +358,7 @@ export function evaluatePostTaperRetention(
  * 포스트 높이와 싱글/브리지 여부에 따라 보철물 최적 접착력이 일정해지는 편측 테이퍼(°)를 계산한다.
  * - 싱글: 높이 5mm 기준 2.0°, 최소 2.0° (5mm보다 짧으면 2°에 머문다)
  * - 브리지: 착탈·다수 지대주 여유를 싱글 대비 같은 기울기 비로 유지. 5mm 기준 3.0°+(3지대주 이상 +0.25°), 최소 2.0°
+ * - 편측 최대 5.0°. 포스트가 아무리 길어도 이 각을 넘기지 않는다.
  */
 export function computeOptimalPostTaperDeg(
   postHeightMm: number,

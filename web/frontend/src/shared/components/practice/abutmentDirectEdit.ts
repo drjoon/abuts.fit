@@ -330,6 +330,46 @@ export function cloneAbutmentEdit(edit: AbutmentEdit): AbutmentEdit {
   };
 }
 
+const LIVE_GUMBALL_EPS = 1e-3;
+
+function hasOwnParam(
+  patch: Partial<CustomAbutmentDesignParams>,
+  key: keyof CustomAbutmentDesignParams,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+/**
+ * 검볼로 키운 굵기·높이는 메시에 남아 있다.
+ * 대합 거리처럼 다른 항목만 다시 만들 때는 그 배율을 파라미터에 한 번 더 넣지 않는다.
+ * 높이를 다시 정하는 패치(대합 거리·포스트 높이)는 높이 보정만 패치 값을 쓴다.
+ */
+export function retainLiveGumballParams(
+  merged: Partial<CustomAbutmentDesignParams>,
+  base: Partial<CustomAbutmentDesignParams> | null | undefined,
+  edit: AbutmentEdit | null,
+  patch: Partial<CustomAbutmentDesignParams>,
+): Partial<CustomAbutmentDesignParams> {
+  if (!edit || !base) return merged;
+  const next = { ...merged };
+  const radial =
+    Math.abs(edit.scale[0] - 1) > LIVE_GUMBALL_EPS || Math.abs(edit.scale[1] - 1) > LIVE_GUMBALL_EPS;
+  const vertical =
+    Math.abs(edit.heightMm) > LIVE_GUMBALL_EPS || Math.abs(edit.scale[2] - 1) > LIVE_GUMBALL_EPS;
+  if (radial && !hasOwnParam(patch, "postWidthScale") && base.postWidthScale != null) {
+    next.postWidthScale = base.postWidthScale;
+  }
+  const patchSetsHeight = hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
+  if (vertical && !patchSetsHeight && base.postHeightOffsetMm != null) {
+    next.postHeightOffsetMm = base.postHeightOffsetMm;
+  }
+  return next;
+}
+
+export function gumballPatchSetsPostHeight(patch: Partial<CustomAbutmentDesignParams>): boolean {
+  return hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
+}
+
 function editsEqual(a: AbutmentEdit, b: AbutmentEdit) {
   if (Math.abs(a.heightMm - b.heightMm) > 1e-4) return false;
   if (Math.abs(a.shiftLabialMm - b.shiftLabialMm) > 1e-4) return false;
@@ -1849,26 +1889,27 @@ export class AbutmentDirectEditSession {
     this.bridge.onHistory();
   }
 
-  /** 재생성된 치아에 이미 반영된 높이·크기 스케일만 검볼 누적분에서 빼 이중 적용을 막는다. */
-  clearBakedScaleAndHeight(teeth: readonly string[]) {
-    const drop = new Set(teeth);
+  editOf(tooth: string): AbutmentEdit | null {
+    const edit = this.edits.get(tooth);
+    return edit ? cloneAbutmentEdit(edit) : null;
+  }
+
+  /**
+   * 대합 거리·포스트 높이로 세로만 다시 만든 뒤, 그 세로 스케일을 검볼에서 뺀다.
+   * 순측·근심 굵기 스케일은 남겨 다른 항목을 고쳐도 키운 크기가 유지된다.
+   */
+  clearBakedVertical(teeth: readonly string[]) {
     for (const tooth of teeth) {
       const cur = this.edits.get(tooth);
       if (!cur) continue;
+      if (Math.abs(cur.heightMm) <= LIVE_GUMBALL_EPS && Math.abs(cur.scale[2] - 1) <= LIVE_GUMBALL_EPS) {
+        continue;
+      }
       const next = cloneAbutmentEdit(cur);
       next.heightMm = 0;
-      next.scale = [1, 1, 1];
-      if (editsEqual(next, EMPTY_EDIT)) {
-        this.edits.delete(tooth);
-      } else {
-        this.edits.set(tooth, next);
-      }
-    }
-    const prevLen = this.history.length + this.future.length;
-    this.history = this.history.filter((step) => !drop.has(step.tooth));
-    this.future = this.future.filter((step) => !drop.has(step.tooth));
-    if (this.history.length + this.future.length !== prevLen) {
-      this.bridge.onHistory();
+      next.scale = [cur.scale[0], cur.scale[1], 1];
+      if (editsEqual(next, EMPTY_EDIT)) this.edits.delete(tooth);
+      else this.edits.set(tooth, next);
     }
   }
 
@@ -1978,7 +2019,7 @@ export class AbutmentDirectEditSession {
       view.gumball.visible = show && visible && expanded;
       view.gumball.quaternion.copy(gumballQuat);
       view.gumball.position.copy(this.gumballPosition(view, edit));
-      view.gumball.scale.setScalar(worldPerPx * (expanded ? 156 : 132));
+      view.gumball.scale.setScalar(worldPerPx * (expanded ? 78 : 66));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
     }
   }
