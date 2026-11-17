@@ -37,6 +37,7 @@ import {
   type MatchedScanbodyFixture,
 } from "@/shared/practice/customAbutmentScanbodyMatch";
 import {
+  RETENTION_SINGLE_MIN_TAPER_DEG,
   computeOptimalPostTaperDeg,
   resolveCustomAbutmentParams,
   resolveToothBridgeRetentionContext,
@@ -71,9 +72,10 @@ const DEG = Math.PI / 180;
 const TAPER_11_SLOPE = Math.tan(11 * DEG);
 /** 지르코니아 크라운 두께 하한. 공간이 좁아도 이보다 얇게 두지 않는다(적절 두께 1.0~1.5mm). */
 const CROWN_THICKNESS_FLOOR_MM = 0.7;
-/** 스크류 채널 둘레 포스트 벽 최소 두께(구치부 360° 칼라 및 전치부 순·근·원심 칼라). 인접 임플란트 근접 시 tight 하한까지 허용. */
+/** 스크류 채널 둘레 포스트 벽 최소 두께(구치부 360° 칼라 및 전치부 순·근·원심 칼라). 모든 포스트 외벽은 절대 0.3mm 이상을 유지한다. */
 const SCREW_WALL_MM = 0.55;
-const SCREW_WALL_TIGHT_MM = 0.32;
+const SCREW_WALL_TIGHT_MM = 0.4;
+const MIN_POST_WALL_MM = 0.4;
 const ANTERIOR_SCREW_WALL_MM = 0.52;
 const ANTERIOR_SCREW_LINGUAL_WALL_MM = 0.44;
 /** 윗면 라운드 반경. 축벽에 접선으로 이어진다(턱 없음, 구치 기공소 STL 실측 ~0.32mm). */
@@ -325,6 +327,8 @@ function compressOuterRadius(
   blendTopZ: number,
   maxR: number,
   targetR: number,
+  minKeepOuterR = 0,
+  boreSkipR = 0,
 ) {
   if (!(maxR > 0.5) || !(targetR > 0.3) || !(targetR < maxR - 1e-4)) return;
   const scale = targetR / maxR;
@@ -332,10 +336,16 @@ function compressOuterRadius(
   for (let i = 0; i < positions.length; i += 3) {
     const z = positions[i + 2]!;
     if (z <= coneZ + 1e-4) continue;
+    const x = positions[i]!;
+    const y = positions[i + 1]!;
+    const rXY = Math.hypot(x, y);
     const u = smootherstep((z - coneZ) / zSpan);
-    const s = 1 + (scale - 1) * u;
-    positions[i] = positions[i]! * s;
-    positions[i + 1] = positions[i + 1]! * s;
+    let s = 1 + (scale - 1) * u;
+    if (minKeepOuterR > 0 && rXY > boreSkipR + 0.03 && rXY * s < minKeepOuterR) {
+      s = Math.min(1, minKeepOuterR / Math.max(rXY, 1e-4));
+    }
+    positions[i] = x * s;
+    positions[i + 1] = y * s;
   }
 }
 
@@ -1999,7 +2009,8 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
       return String(work?.prosthesisType || "").trim() === "브리지";
     });
     const maxGroupTilt = (anyAnterior ? 30 : bridgeGroup ? 24 : 14) * DEG;
-    for (let iter = 0; iter < 8; iter += 1) {
+    const minTaperSlopeGroup = Math.tan(RETENTION_SINGLE_MIN_TAPER_DEG * DEG);
+    for (let iter = 0; iter < 12; iter += 1) {
       let moved = false;
       for (const f of sortedGroup) {
         const fAxis = norm3(f.fixturePose.axis);
@@ -2007,6 +2018,64 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
         if (ang > maxGroupTilt + 1e-4) {
           shared = slerpDir(shared, fAxis, (ang - maxGroupTilt) / ang);
           moved = true;
+        }
+        // 인접 픽스쳐와 바짝 붙어 마진 외경이 제한될 때 반대쪽으로 과도하게 기울면
+        // 포스트 상단에서 수직 스크류 채널이 옆벽을 뚫으므로, 모든 지대주가 벽 두께 ≥ 0.3mm를 지킬 수 있는 각도 안으로 공통 축을 제한한다.
+        const wLocal = worldDirToFixtureLocal(shared, f.fixturePose);
+        if (wLocal[2] > 0.25) {
+          const fConn = f.connectionSpec;
+          const fBoreTopR = fConn.screwUpperDiameterMm / 2;
+          const fOriginR = fConn.originDiameterMm / 2;
+          const fConeTopZ = fConn.prcConeTopMm;
+          const fConeTopR = fOriginR + TAPER_11_SLOPE * fConeTopZ;
+          const fTpl = abutmentTemplateForTooth(f.toothNumber);
+          const estSpanH = Math.max(3.6, fTpl.postHeightMm + 0.6);
+          const maxFlare = Math.tan((fTpl.anterior ? 40 : 45) * DEG);
+          const estAnatMaxR = Math.min(
+            fConeTopR + 2.4 * maxFlare,
+            Math.max(fTpl.naturalBlMm, fTpl.naturalMdMm) * 0.5,
+          );
+          let tx = wLocal[0] / wLocal[2];
+          let ty = wLocal[1] / wLocal[2];
+          let clampedLocal = false;
+          const freeAllowShift = Math.max(
+            0.25,
+            estAnatMaxR - 0.22 - estSpanH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.06),
+          );
+          const maxFreeTan = freeAllowShift / estSpanH;
+          const curTanLen = Math.hypot(tx, ty);
+          if (curTanLen > maxFreeTan + 1e-4) {
+            const k = maxFreeTan / curTanLen;
+            tx *= k;
+            ty *= k;
+            clampedLocal = true;
+          }
+          for (const other of allPool) {
+            if (other.toothNumber === f.toothNumber || other.jaw !== f.jaw) continue;
+            const rel = worldPointToFixtureLocal(other.fixturePose.origin, f.fixturePose);
+            const distXY = Math.hypot(rel[0], rel[1]);
+            if (distXY < 1.5 || distXY > 14) continue;
+            const nx = rel[0] / distXY;
+            const ny = rel[1] / distXY;
+            const availR = Math.min(estAnatMaxR, distXY * 0.5 - MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM * 0.5);
+            const allowShift = Math.max(
+              0,
+              availR - 0.18 - estSpanH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.06),
+            );
+            const maxOppTan = allowShift / estSpanH;
+            const oppTan = -(tx * nx + ty * ny);
+            if (oppTan > maxOppTan + 1e-4) {
+              const deltaTan = oppTan - maxOppTan;
+              tx += nx * deltaTan;
+              ty += ny * deltaTan;
+              clampedLocal = true;
+            }
+          }
+          if (clampedLocal) {
+            const nextLocal = norm3([tx, ty, 1]);
+            shared = fixtureLocalDirToWorld(nextLocal, f.fixturePose);
+            moved = true;
+          }
         }
       }
       if (!moved) break;
@@ -3402,6 +3471,35 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       w = norm3([dirX * s, dirY * s, Math.cos(targetRad)]);
     }
   }
+  if (!mode.groupAxisWorld && w[2] > 0.25 && neighbors.length > 0) {
+    const estSpanH = Math.max(3.2, tpl.postHeightMm);
+    const minSlope = Math.tan(RETENTION_SINGLE_MIN_TAPER_DEG * DEG);
+    const maxFlare = Math.tan((tpl.anterior ? 40 : 45) * DEG);
+    const estMarginMaxR = coneTopR + Math.max(2.15, meanMarginZ - coneTopZ) * maxFlare;
+    let tx = w[0] / w[2];
+    let ty = w[1] / w[2];
+    let clampedAxis = false;
+    for (const nb of neighbors) {
+      const distXY = Math.hypot(nb.origin[0], nb.origin[1]);
+      if (distXY < 1.5 || distXY > 14) continue;
+      const nx = nb.origin[0] / distXY;
+      const ny = nb.origin[1] / distXY;
+      const availR = Math.min(estMarginMaxR, distXY * 0.5 - MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM * 0.5);
+      const allowShift = Math.max(
+        0,
+        availR - 0.18 - estSpanH * minSlope - (boreTopR + MIN_POST_WALL_MM + 0.06),
+      );
+      const maxOppTan = allowShift / estSpanH;
+      const oppTan = -(tx * nx + ty * ny);
+      if (oppTan > maxOppTan + 1e-4) {
+        const deltaTan = oppTan - maxOppTan;
+        tx += nx * deltaTan;
+        ty += ny * deltaTan;
+        clampedAxis = true;
+      }
+    }
+    if (clampedAxis) w = norm3([tx, ty, 1]);
+  }
   const frame = insertionFrame(w, labXY);
   const angulationDeg = Math.acos(clamp(frame.w[2], -1, 1)) / DEG;
 
@@ -3537,9 +3635,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 연결이 끊어져 있으면(postTaperLink=0) 설정된 테이퍼(최소 2°)를 그대로 쓴다.
   const bridgeRetention = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
   const isTaperLinked = (params.postTaperLink ?? 1) >= 0.5;
-  let effectiveTaperDeg = isTaperLinked
-    ? computeOptimalPostTaperDeg(postTopH, bridgeRetention)
-    : params.postTaperDeg;
+  let effectiveTaperDeg = Math.max(
+    RETENTION_SINGLE_MIN_TAPER_DEG,
+    isTaperLinked
+      ? computeOptimalPostTaperDeg(postTopH, bridgeRetention)
+      : params.postTaperDeg,
+  );
   params.postTaperDeg = Math.round(effectiveTaperDeg * 10) / 10;
   taperSlope = Math.tan(effectiveTaperDeg * DEG);
   chamfer = chamferGeometry(shoulderW, R, taperSlope);
@@ -3912,25 +4013,43 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const capNegU = dirCap(-1, 0);
     const capPosV = dirCap(0, 1);
     const capNegV = dirCap(0, -1);
-    const fitAxis1D = (curC: number, curHalf: number, capPos: number, capNeg: number) => {
+    const estMarginAxCos = Math.max(frame.w[2], 0.25);
+    const estMarginTopH = Math.max(2.2, postTopH - topRoundMm * 0.85);
+    const estMarginSpan = Math.max(0.6, estMarginTopH - chamfer.height);
+    const estMinMarginWall = boreTopR + MIN_POST_WALL_MM + 0.22 + taperSlope * estMarginSpan;
+    const reqPosU = Math.max(boreTopR + 0.36, (estMarginTopH / estMarginAxCos) * frame.uLabial[2] + estMinMarginWall);
+    const reqNegU = Math.max(boreTopR + 0.36, -(estMarginTopH / estMarginAxCos) * frame.uLabial[2] + estMinMarginWall);
+    const reqPosV = Math.max(boreTopR + 0.36, (estMarginTopH / estMarginAxCos) * frame.vSide[2] + estMinMarginWall);
+    const reqNegV = Math.max(boreTopR + 0.36, -(estMarginTopH / estMarginAxCos) * frame.vSide[2] + estMinMarginWall);
+    const fitAxis1D = (
+      curC: number,
+      curHalf: number,
+      capPos: number,
+      capNeg: number,
+      reqPos: number,
+      reqNeg: number,
+    ) => {
       const availSpan = capPos + capNeg;
       if (availSpan < minPhysicalHalf * 1.6) {
         const mid = Number.isFinite(availSpan) ? (capPos - capNeg) * 0.5 : curC;
-        return { c: clamp(mid, -0.85, 0.85), half: Math.max(minPhysicalHalf, availSpan * 0.5) };
+        return { c: clamp(mid, -1.35, 1.35), half: Math.max(minPhysicalHalf, availSpan * 0.5) };
       }
       // 한쪽(예: 인접 임플란트 경계 capNeg)만 좁고 반대쪽(무치악·자연치 유격 capPos)이 여유 있으면
-      // 맞닿는 쪽은 경계면에서 띄우고 열린 반대쪽으로 중심을 최대 ±0.95mm 옮겨 정체결 유격(≥0.5mm)과 포스트 면적을 함께 지킨다.
-      const wantHalf = Math.max(minPhysicalHalf, Math.min(curHalf, availSpan * 0.5));
-      const cMinOuter = Number.isFinite(capNeg) ? -capNeg + wantHalf : -1.15;
-      const cMaxOuter = Number.isFinite(capPos) ? capPos - wantHalf : 1.15;
-      const innerFloor = Math.min(minMarginRadius * 0.96, Math.max(boreTopR + 0.34, wantHalf - 0.95));
+      // 맞닿는 쪽은 경계면에서 띄우고 열린 반대쪽으로 중심을 옮겨 정체결 유격(≥0.5mm), 포스트 면적, 상단 스크류 홀 벽(≥0.3mm)을 함께 지킨다.
+      const minHalfForScrew = Math.min(availSpan * 0.5, (reqPos + reqNeg) * 0.5);
+      const wantHalf = Math.max(minPhysicalHalf, minHalfForScrew, Math.min(curHalf, availSpan * 0.5));
+      const cMinOuter = Number.isFinite(capNeg) ? -capNeg + wantHalf : -1.35;
+      const cMaxOuter = Number.isFinite(capPos) ? capPos - wantHalf : 1.35;
+      const cMinScrew = reqPos - wantHalf;
+      const cMaxScrew = wantHalf - reqNeg;
+      const innerFloor = Math.min(minMarginRadius * 0.96, Math.max(boreTopR + 0.34, wantHalf - 1.25));
       const innerSpan = Math.max(0, wantHalf - innerFloor);
-      const cMin = Math.max(-1.15, cMinOuter, -innerSpan);
-      const cMax = Math.min(1.15, cMaxOuter, innerSpan);
+      const cMin = Math.max(-1.35, cMinOuter, Math.min(cMaxOuter, Math.max(-innerSpan, cMinScrew)));
+      const cMax = Math.min(1.35, cMaxOuter, Math.max(cMinOuter, Math.min(innerSpan, cMaxScrew)));
       const nextC = clamp(
         cMin <= cMax ? clamp(curC, cMin, cMax) : (cMin + cMax) * 0.5,
-        -1.15,
-        1.15,
+        -1.35,
+        1.35,
       );
       const nextHalf = Math.max(
         minPhysicalHalf,
@@ -3938,8 +4057,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
       return { c: nextC, half: nextHalf };
     };
-    const fitU = fitAxis1D(mCu, mHalfBl, capPosU, capNegU);
-    const fitV = fitAxis1D(mCv, mHalfMd, capPosV, capNegV);
+    const fitU = fitAxis1D(mCu, mHalfBl, capPosU, capNegU, reqPosU, reqNegU);
+    const fitV = fitAxis1D(mCv, mHalfMd, capPosV, capNegV, reqPosV, reqNegV);
     mCu = fitU.c;
     mHalfBl = fitU.half;
     mCv = fitV.c;
@@ -3947,9 +4066,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
     // 대각선 등 모든 열에서 marginCap 안쪽에 완전히 들어오도록 사각형/타원 반축과 중심을 비례 조정한다(모서리 깎기 금지 → 볼록 곡선 유지).
     for (let iter = 0; iter < 16; iter += 1) {
-      const innerFloor = Math.min(minMarginRadius * 0.94, Math.max(boreTopR + 0.34, Math.min(mHalfBl, mHalfMd) - 0.95));
+      const innerFloor = Math.min(minMarginRadius * 0.94, Math.max(boreTopR + 0.34, Math.min(mHalfBl, mHalfMd) - 1.25));
       const innerAllow = Math.max(0.12, Math.min(mHalfBl, mHalfMd) - innerFloor + 0.04);
-      const maxShift = Math.max(0.12, Math.min(Math.min(mHalfBl, mHalfMd) * 0.68, innerAllow));
+      const maxShift = Math.max(0.12, Math.min(Math.min(mHalfBl, mHalfMd) * 0.82, Math.max(innerAllow, 1.25)));
       if (Math.hypot(mCu, mCv) > maxShift) {
         const sc = maxShift / Math.hypot(mCu, mCv);
         mCu *= sc;
@@ -4987,22 +5106,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           MIN_MARGIN_SHOULDER_MM,
           Math.max(MIN_MARGIN_SHOULDER_MM, mExtNegV - maxInV),
         );
-        const pPosU = mExtPosU - wPosU;
-        const pNegU = mExtNegU - wNegU;
-        const pPosV = mExtPosV - wPosV;
-        const pNegV = mExtNegV - wNegV;
+        let pPosU = mExtPosU - wPosU;
+        let pNegU = mExtNegU - wNegU;
+        let pPosV = mExtPosV - wPosV;
+        let pNegV = mExtNegV - wNegV;
+        const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
+        pPosU = Math.max(pPosU, uScrewBase + screwTightR, uScrewTop + screwTightR + taperDeltaBl);
+        pNegU = Math.max(pNegU, -uScrewBase + screwTightR, -uScrewTop + screwTightR + taperDeltaBl);
+        pPosV = Math.max(pPosV, vScrewBase + screwTightR, vScrewTop + screwTightR + taperDeltaMd);
+        pNegV = Math.max(pNegV, -vScrewBase + screwTightR, -vScrewTop + screwTightR + taperDeltaMd);
         pSecCu = (pPosU - pNegU) * 0.5;
         pBaseBl = Math.max(minPostR + 0.2, (pPosU + pNegU) * 0.5);
         pSecCv = (pPosV - pNegV) * 0.5;
         pBaseMd = Math.max(minPostR + 0.2, (pPosV + pNegV) * 0.5);
         const pTopBl = Math.max(minPostR + 0.15, pBaseBl - taperDeltaBl);
         const pTopMd = Math.max(minPostR + 0.15, pBaseMd - taperDeltaMd);
-        const normOrigin = Math.hypot(pSecCu / pTopBl, pSecCv / pTopMd);
-        if (normOrigin > 0.84) {
-          const sc = 0.84 / normOrigin;
-          pSecCu *= sc;
-          pSecCv *= sc;
-        }
         return { maxW, pTopBl, pTopMd };
       };
 
@@ -5154,15 +5272,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const adjScanTopHard = Number.isFinite(hardCapR[col]![POST_LEVELS]!)
             ? Math.max(Math.max(minPostR, tightScrewFloor), hardCapR[col]![POST_LEVELS]!)
             : Infinity;
-          const maxRTop = Math.min(
-            Number.isFinite(r0Ray) ? Math.min(r0Ray, maxR0) : maxR0,
-            postPlaneLimitAt(c.dir, postH[col]![POST_LEVELS]!, 0.32, CROWN_THICKNESS_FLOOR_MM),
-            adjScanTopHard,
+          const maxRTop = Math.max(
+            tightScrewFloor,
+            Math.min(
+              Number.isFinite(r0Ray) ? Math.min(r0Ray, maxR0) : maxR0,
+              postPlaneLimitAt(c.dir, postH[col]![POST_LEVELS]!, 0.32, CROWN_THICKNESS_FLOOR_MM),
+              adjScanTopHard,
+            ),
           );
           if (Number.isFinite(rTopRay) && rTopRay > maxRTop + 1e-4) {
             topScaleDown = Math.min(topScaleDown, maxRTop / rTopRay);
           }
-          const reqTop = Math.min(maxRTop - 0.01, Math.max(minPostR, tightScrewFloor));
+          const reqTop = Math.max(minPostR, tightScrewFloor);
           if (Number.isFinite(rTopRay) && rTopRay < reqTop - 1e-4 && rTopRay > 0.2) {
             topScaleUp = Math.max(topScaleUp, reqTop / rTopRay);
           }
@@ -5172,26 +5293,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           convexBaseBl = Math.max(minPostR + 0.08, convexBaseBl * (baseScaleDown - 0.002));
           convexBaseMd = Math.max(minPostR + 0.08, convexBaseMd * (baseScaleDown - 0.002));
         }
-        if (topScaleDown < 0.9995) {
+        if (topScaleUp > 1.0005) {
+          const prevDropBl = Math.max(0.04, convexBaseBl - convexTopBl);
+          const prevDropMd = Math.max(0.04, convexBaseMd - convexTopMd);
+          convexTopBl = convexTopBl * Math.min(1.08, topScaleUp + 0.002);
+          convexTopMd = convexTopMd * Math.min(1.08, topScaleUp + 0.002);
+          convexBaseBl = Math.max(convexBaseBl, convexTopBl + prevDropBl);
+          convexBaseMd = Math.max(convexBaseMd, convexTopMd + prevDropMd);
+        } else if (topScaleDown < 0.9995) {
           convexTopBl = Math.max(minPostR, convexTopBl * (topScaleDown - 0.002));
           convexTopMd = Math.max(minPostR, convexTopMd * (topScaleDown - 0.002));
-        } else if (topScaleUp > 1.0005) {
-          const prevDropBl = convexBaseBl - convexTopBl;
-          const prevDropMd = convexBaseMd - convexTopMd;
-          convexTopBl = Math.min(convexBaseBl - 0.02, convexTopBl * Math.min(1.06, topScaleUp + 0.002));
-          convexTopMd = Math.min(convexBaseMd - 0.02, convexTopMd * Math.min(1.06, topScaleUp + 0.002));
-          const maxBaseBl = Math.max(convexBaseBl, mHalfBl - MIN_MARGIN_SHOULDER_MM);
-          const maxBaseMd = Math.max(convexBaseMd, mHalfMd - MIN_MARGIN_SHOULDER_MM);
-          convexBaseBl = Math.min(maxBaseBl, Math.max(convexBaseBl, convexTopBl + prevDropBl));
-          convexBaseMd = Math.min(maxBaseMd, Math.max(convexBaseMd, convexTopMd + prevDropMd));
         }
-        convexTopBl = Math.min(convexTopBl, convexBaseBl - 0.02);
-        convexTopMd = Math.min(convexTopMd, convexBaseMd - 0.02);
+        convexTopBl = Math.min(convexTopBl, convexBaseBl - 0.04);
+        convexTopMd = Math.min(convexTopMd, convexBaseMd - 0.04);
       }
 
       pTopCu = pSecCu;
       pTopCv = pSecCv;
-      const minWallTaperSlope = Math.tan(Math.max(1.2, effectiveTaperDeg * 0.85) * DEG);
+      const minWallTaperSlope = Math.tan(
+        Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
+      );
       // 스캘럽 마진에서 가장 낮은 열(min hBase)에 맞춘 마진 둥근 사각형을 열별 실제 hBase에서 평가할 때에도
       // 모든 열의 챔퍼 폭(c.r0 - postR[col][0])이 동일하게 유지되도록 포스트 기준 높이는 minHBase로 잡는다.
       let minPostHBase = Infinity;
@@ -5222,24 +5343,41 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           syncedBaseScale = Math.min(syncedBaseScale, cap / rM);
         }
       }
-      const finalBaseBl = Math.max(minPostR + 0.08, convexBaseBl * syncedBaseScale);
-      const finalBaseMd = Math.max(minPostR + 0.08, convexBaseMd * syncedBaseScale);
-      const wantDropBl = convexBaseBl - convexTopBl;
-      const wantDropMd = convexBaseMd - convexTopMd;
-      const finalTopBlScaled = Math.min(
-        finalBaseBl - 0.02,
-        Math.max(minPostR, Math.min(convexTopBl * syncedBaseScale, finalBaseBl - wantDropBl)),
+      const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
+      const minTaperDropBl = minWallTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
+      const minTaperDropMd = minWallTaperSlope * hRefSpan;
+      const wantDropBl = Math.max(minTaperDropBl, convexBaseBl - convexTopBl);
+      const wantDropMd = Math.max(minTaperDropMd, convexBaseMd - convexTopMd);
+      let topPosU = pSecCu + Math.min(convexTopBl * syncedBaseScale, convexBaseBl * syncedBaseScale - minTaperDropBl);
+      let topNegU = -pSecCu + Math.min(convexTopBl * syncedBaseScale, convexBaseBl * syncedBaseScale - minTaperDropBl);
+      let topPosV = pSecCv + Math.min(convexTopMd * syncedBaseScale, convexBaseMd * syncedBaseScale - minTaperDropMd);
+      let topNegV = -pSecCv + Math.min(convexTopMd * syncedBaseScale, convexBaseMd * syncedBaseScale - minTaperDropMd);
+      topPosU = Math.max(topPosU, uScrewTop + screwTightR);
+      topNegU = Math.max(topNegU, -uScrewTop + screwTightR);
+      topPosV = Math.max(topPosV, vScrewTop + screwTightR);
+      topNegV = Math.max(topNegV, -vScrewTop + screwTightR);
+      pSecCu = (topPosU - topNegU) * 0.5;
+      pSecCv = (topPosV - topNegV) * 0.5;
+      pTopCu = pSecCu;
+      pTopCv = pSecCv;
+      const finalTopBlScaled = Math.max(minPostR, (topPosU + topNegU) * 0.5);
+      const finalTopMdScaled = Math.max(minPostR, (topPosV + topNegV) * 0.5);
+      const finalBaseBl = Math.max(
+        minPostR + 0.08,
+        convexBaseBl * syncedBaseScale,
+        finalTopBlScaled + wantDropBl,
       );
-      const finalTopMdScaled = Math.min(
-        finalBaseMd - 0.02,
-        Math.max(minPostR, Math.min(convexTopMd * syncedBaseScale, finalBaseMd - wantDropMd)),
+      const finalBaseMd = Math.max(
+        minPostR + 0.08,
+        convexBaseMd * syncedBaseScale,
+        finalTopMdScaled + wantDropMd,
       );
-      const effUniformShoulder = uniformShoulder * syncedBaseScale;
+      const effUniformShoulder = Math.max(MIN_MARGIN_SHOULDER_MM, uniformShoulder * syncedBaseScale);
 
       // 각 열 θ에서 실제 마진 높이 zMargin(θ)의 정사영 점이 해당 열의 축벽 시작 반경 + 동일 챔퍼 폭(effUniformShoulder)에
       // 정확히 놓이도록 마진 반경(marginRadii)을 풀어 스캘럽 전 구간에서 둘레 마진 폭을 일정하게 맞춘다.
-      const baseSlopeBl = Math.max(minWallTaperSlope * 0.65, (finalBaseBl - finalTopBlScaled) / hRefSpan);
-      const baseSlopeMd = Math.max(minWallTaperSlope * 0.65, (finalBaseMd - finalTopMdScaled) / hRefSpan);
+      const baseSlopeBl = Math.max(minWallTaperSlope, (finalBaseBl - finalTopBlScaled) / hRefSpan);
+      const baseSlopeMd = Math.max(minWallTaperSlope, (finalBaseMd - finalTopMdScaled) / hRefSpan);
       marginRadii = Array.from({ length: ANGULAR_COLS }, (_, col) => {
         const theta = (col / ANGULAR_COLS) * Math.PI * 2;
         const ct = Math.cos(theta);
@@ -5314,13 +5452,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           phiSec,
         );
         const wantTaperDrop = Math.max(0.04, minWallTaperSlope * hRefSpan);
-        const sTop = Math.min(sTopRaw, sBase - wantTaperDrop * 0.5);
-        const secSlope = Math.max(minWallTaperSlope * 0.65, (sBase - sTop) / hRefSpan);
+        const sTop = Math.min(sTopRaw, sBase - wantTaperDrop);
+        const secSlope = Math.max(minWallTaperSlope, (sBase - sTop) / hRefSpan);
+        const maxSpanCol = Math.max(0, roundStartCol - hRefBase);
+        const sBaseSafe = Math.max(sBase, 0.65 + secSlope * maxSpanCol);
         const wallPts: Vec3[] = [];
         for (let k = 0; k <= POST_LEVELS; k += 1) {
           const h = hBaseCol + ((roundStartCol - hBaseCol) * k) / POST_LEVELS;
           postH[col]![k] = h;
-          const s = Math.max(0.65, sBase - secSlope * Math.max(0, h - hRefBase));
+          const s = Math.max(0.65, sBaseSafe - secSlope * Math.max(0, h - hRefBase));
           const u = pSecCu + s * cp;
           const v = pSecCv + s * sp;
           postR[col]![k] = Math.hypot(u, v);
@@ -5683,15 +5823,35 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           syncedAntScale = Math.min(syncedAntScale, cap / rM);
         }
       }
-      const finalAntBaseBl = Math.max(0.95, antBaseBl * syncedAntScale);
-      const finalAntBaseMd = Math.max(1.08, antBaseMd * syncedAntScale);
-      const finalAntTopLab = Math.min(finalAntBaseBl + pBaseCu - pTopCu - 0.04, Math.max(0.88, topLabHalf * syncedAntScale));
-      const finalAntTopLin = Math.min(finalAntBaseBl - pBaseCu + pTopCu - 0.04, Math.max(0.8, topLinHalf * syncedAntScale));
+      const minAntTaperSlope = Math.tan(
+        Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
+      );
+      const minAntDropBl = minAntTaperSlope * hRefSpanAnt * Math.max(1, postUnitLab, postUnitLin);
+      const minAntDropMd = minAntTaperSlope * hRefSpanAnt;
+      const rawAntBaseBl = Math.max(0.95, antBaseBl * syncedAntScale);
+      const rawAntBaseMd = Math.max(1.08, antBaseMd * syncedAntScale);
+      const finalAntTopLab = Math.min(
+        rawAntBaseBl + pBaseCu - pTopCu - minAntDropBl,
+        Math.max(0.88, topLabHalf * syncedAntScale),
+      );
+      const finalAntTopLin = Math.min(
+        rawAntBaseBl - pBaseCu + pTopCu - minAntDropBl,
+        Math.max(0.8, topLinHalf * syncedAntScale),
+      );
       const finalAntTopMd = Math.min(
-        Math.min(finalAntBaseMd + pBaseCv - pTopCv, finalAntBaseMd - pBaseCv + pTopCv) - 0.04,
+        Math.min(rawAntBaseMd + pBaseCv - pTopCv, rawAntBaseMd - pBaseCv + pTopCv) - minAntDropMd,
         Math.max(1.0, topMdHalf * syncedAntScale),
       );
-      const effAntShoulder = uniformAntShoulder * syncedAntScale;
+      const finalAntBaseBl = Math.max(
+        rawAntBaseBl,
+        finalAntTopLab - pBaseCu + pTopCu + minAntDropBl,
+        finalAntTopLin + pBaseCu - pTopCu + minAntDropBl,
+      );
+      const finalAntBaseMd = Math.max(
+        rawAntBaseMd,
+        finalAntTopMd + Math.abs(pTopCv - pBaseCv) + minAntDropMd,
+      );
+      const effAntShoulder = Math.max(MIN_MARGIN_SHOULDER_MM, uniformAntShoulder * syncedAntScale);
       let minAntHBase = Infinity;
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         minAntHBase = Math.min(minAntHBase, cols[col]!.h0 + hPostBase);
@@ -5795,6 +5955,95 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
 
+    // 모든 포스트 축벽(k=0..POST_LEVELS) 및 상단 라운드 진입부에서 스크류 채널과의 3D 수평 벽 두께가
+    // 최소 0.3mm 이상(안전 목표 MIN_POST_WALL_MM = 0.34mm)이 되도록 전 열(360°) 정점 레벨에서 검증·보정한다.
+    {
+      const needPushRaw = new Array<number>(ANGULAR_COLS).fill(0);
+      let anyNeedPush = false;
+      const boreRadiusAtZ = (z: number) =>
+        z <= 0.8 ? boreBotR : z >= 1.3 ? boreTopR : boreBotR + ((boreTopR - boreBotR) * (z - 0.8)) / 0.5;
+      const solveRadialPush = (px: number, py: number, dx: number, dy: number, reqR: number): number => {
+        const curR2 = px * px + py * py;
+        if (curR2 >= reqR * reqR) return 0;
+        const a = dx * dx + dy * dy;
+        if (a < 1e-5) return 0;
+        const b = px * dx + py * dy;
+        const disc = b * b - a * (curR2 - reqR * reqR);
+        if (disc <= 0) return 0;
+        return Math.max(0, (-b + Math.sqrt(disc)) / a);
+      };
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const c = cols[col]!;
+        const dx = c.dir[0];
+        const dy = c.dir[1];
+        const wallPts = postWallPtsByCol[col]!;
+        let colPush = 0;
+        for (let k = 0; k <= POST_LEVELS; k += 1) {
+          const pt = wallPts[k]!;
+          const reqR = boreRadiusAtZ(pt[2]) + MIN_POST_WALL_MM + 0.015;
+          colPush = Math.max(colPush, solveRadialPush(pt[0], pt[1], dx, dy, reqR));
+        }
+        // 경사 윗면에서 축벽 끝 위로 이어지는 라운드 시작점(ext 구간)까지 여유를 확인한다.
+        const pEnd = wallPts[POST_LEVELS]!;
+        const pPrev = wallPts[POST_LEVELS - 1]!;
+        const stepVec = scale3(
+          sub3(pEnd, pPrev),
+          0.45 / Math.max(0.05, postH[col]![POST_LEVELS]! - postH[col]![POST_LEVELS - 1]!),
+        );
+        const pExt = add3(pEnd, scale3(stepVec, topRoundMm * 0.65));
+        colPush = Math.max(
+          colPush,
+          solveRadialPush(pExt[0], pExt[1], dx, dy, boreRadiusAtZ(pExt[2]) + MIN_POST_WALL_MM + 0.015),
+        );
+        if (colPush > 1e-4) {
+          needPushRaw[col] = colPush;
+          anyNeedPush = true;
+        }
+      }
+      if (anyNeedPush) {
+        const spreadHalf = 14;
+        const envPush = new Array<number>(ANGULAR_COLS).fill(0);
+        for (let col = 0; col < ANGULAR_COLS; col += 1) {
+          let best = needPushRaw[col]!;
+          for (let d = -spreadHalf; d <= spreadHalf; d += 1) {
+            const other = needPushRaw[(col + d + ANGULAR_COLS) % ANGULAR_COLS]!;
+            if (other <= 0) continue;
+            const w = 0.5 * (1 + Math.cos((Math.PI * d) / (spreadHalf + 1)));
+            best = Math.max(best, other * w);
+          }
+          envPush[col] = best;
+        }
+        const smoothPush = lowPassCircular(envPush, 8);
+        let marginAdjusted = false;
+        for (let col = 0; col < ANGULAR_COLS; col += 1) {
+          const push = Math.max(needPushRaw[col]!, smoothPush[col]!);
+          if (push <= 1e-4) continue;
+          const c = cols[col]!;
+          const shiftVec = scale3(c.dir, push);
+          const wallPts = postWallPtsByCol[col]!;
+          for (let k = 0; k <= POST_LEVELS; k += 1) {
+            const moved = add3(wallPts[k]!, shiftVec);
+            wallPts[k] = moved;
+            const rel = sub3(moved, c0);
+            postR[col]![k] = Math.hypot(dot3(rel, frame.uLabial), dot3(rel, frame.vSide));
+          }
+          const minMarginR0 = postR[col]![0]! + MIN_MARGIN_SHOULDER_MM;
+          if (c.r0 < minMarginR0) {
+            const theta = (col / ANGULAR_COLS) * Math.PI * 2;
+            const radialFix: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
+            const proj = sub3(radialFix, scale3(frame.w, dot3(radialFix, frame.w)));
+            const projLen = Math.max(0.25, Math.hypot(...proj));
+            marginRadii[col] = Math.max(marginRadii[col]!, (minMarginR0 - c.r0) / projLen + marginRadii[col]!);
+            marginAdjusted = true;
+          }
+        }
+        if (marginAdjusted) {
+          marginRadii = smoothCircular(marginRadii, 2).map((v, i) => Math.max(v, marginRadii[i]!));
+          syncColsMarginGeometry();
+        }
+      }
+    }
+
     // ── 7) 열 점: 피니시라인 → 오목 챔퍼 → 축벽 → 윗면 라운드 / 해부 3링 예측 크라운 교합면
     const postByCol: Vec3[][] = [];
     const crownByCol: Vec3[][] = [];
@@ -5884,7 +6133,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         Math.min(0.15, rhoCap),
         Math.max(0.05, rhoCap),
       );
-      const ext = Math.max(0, edgeHeight(sEnd - rho * cos0) - hEnd - rho * rise);
+      let ext = Math.max(0, edgeHeight(sEnd - rho * cos0) - hEnd - rho * rise);
+      if (ext > 1e-4) {
+        const atCandidate = (candExt: number): number => {
+          const candH = hEnd + candExt;
+          const candS = Math.max(rho * cos0 + 0.18, sEnd - Math.tan(t0) * candExt);
+          const pt = add3(
+            c0,
+            add3(
+              scale3(frame.w, candH),
+              add3(
+                scale3(frame.uLabial, pTopCu + topDirU * candS),
+                scale3(frame.vSide, pTopCv + topDirV * candS),
+              ),
+            ),
+          );
+          return Math.hypot(pt[0], pt[1]) - (boreTopR + MIN_POST_WALL_MM);
+        };
+        if (atCandidate(ext) < 0) {
+          let lo = 0;
+          let hi = ext;
+          for (let it = 0; it < 12; it += 1) {
+            const mid = (lo + hi) * 0.5;
+            if (atCandidate(mid) >= 0) lo = mid;
+            else hi = mid;
+          }
+          ext = lo;
+        }
+      }
       const h1 = hEnd + ext;
       const s1 = Math.max(rho * cos0 + 0.18, sEnd - Math.tan(t0) * ext);
       const atTop = (h: number, sRad: number): Vec3 =>
@@ -6092,7 +6368,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (!Number.isFinite(min3D)) hasDelta = false;
         else delta = min3D - targetClear;
       }
-      const nextShift = hasDelta ? clamp(planeShift + delta, -6.0, maxShiftUp) : planeShift;
+      const nextShift = hasDelta ? clamp(planeShift + delta, -20.0, maxShiftUp) : planeShift;
       if (!taperChanged && (!hasDelta || Math.abs(nextShift - planeShift) < 0.008)) break;
       planeShift = nextShift;
       shape = buildShape();
@@ -6194,8 +6470,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     maxOuterR > connectionKeepR + 0.25
   ) {
     const targetR = snappedDiameter / 2;
-    compressOuterRadius(bodySoup, coneTopZ, minMarginZVal, maxOuterR, targetR);
-    compressOuterRadius(marginLoopLocal, coneTopZ, minMarginZVal, maxOuterR, targetR);
+    const minKeepWallR = boreTopR + MIN_POST_WALL_MM;
+    compressOuterRadius(bodySoup, coneTopZ, minMarginZVal, maxOuterR, targetR, minKeepWallR, boreTopR);
+    compressOuterRadius(marginLoopLocal, coneTopZ, minMarginZVal, maxOuterR, targetR, minKeepWallR, boreTopR);
     compressOuterRadius(crownLocalPositions, coneTopZ, minMarginZVal, maxOuterR, targetR);
     maxOuterR = targetR;
   }
@@ -6243,7 +6520,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       angulationDeg: Math.round(angulationDeg * 10) / 10,
       cutbackMm: round2(cutbackSum / ANGULAR_COLS),
       rmsMm: fixture.rmsMm,
-      postTaperDeg: Math.round((taperMean / DEG) * 10) / 10,
+      postTaperDeg: Math.max(
+        RETENTION_SINGLE_MIN_TAPER_DEG,
+        Math.round((taperMean / DEG) * 10) / 10,
+      ),
       occlusalClearanceMm,
       marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),

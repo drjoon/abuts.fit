@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
+  evaluatePostTaperRetention,
   resolveCustomAbutmentParams,
   resolveToothBridgeRetentionContext,
   snapMaxDiameterMm,
@@ -30,9 +31,22 @@ test("마진 챔퍼는 0.1mm 단위이고 기본값은 0.6mm, 최소는 0.5mm", 
 
 test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기준, 최소 2°, 브리지 가중을 따른다", () => {
   const def = resolveCustomAbutmentParams("36");
+  assert.equal(def.occlusalClearanceMm, 1.5);
   assert.equal(def.postTaperDeg, 2);
   assert.equal(def.postTaperLink, 1);
   assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 0.8 }).postTaperDeg, 2);
+  assert.equal(resolveCustomAbutmentParams("36", { occlusalClearanceMm: 0.4 }).occlusalClearanceMm, 0.7);
+  assert.equal(resolveCustomAbutmentParams("36", { occlusalClearanceMm: 9.5 }).occlusalClearanceMm, 9.5);
+
+  // 포스트 길이가 낮아 적정 테이퍼가 2.0° 미만인 경우 최소 2.0°로 맞추고 한계 이탈 여부·적정값을 알려준다
+  const shortCheck = evaluatePostTaperRetention(3.5, false);
+  assert.equal(shortCheck.appliedTaperDeg, 2.0);
+  assert.equal(shortCheck.minTaperDeg, 2.0);
+  assert.equal(shortCheck.idealTaperDeg, 1.4);
+  assert.equal(shortCheck.isBelowMinLimit, true);
+  const normalCheck = evaluatePostTaperRetention(5.5, false);
+  assert.equal(normalCheck.appliedTaperDeg, 2.2);
+  assert.equal(normalCheck.isBelowMinLimit, false);
 
   // 싱글: 5mm -> 2.0°, 그보다 짧으면 최소 2.0°, 높으면 tanθ ∝ H
   assert.equal(computeOptimalPostTaperDeg(5.0, false), 2.0);

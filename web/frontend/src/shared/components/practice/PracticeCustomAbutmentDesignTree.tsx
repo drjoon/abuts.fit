@@ -29,6 +29,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   RETENTION_BRIDGE_MIN_TAPER_DEG,
   RETENTION_MAX_POST_HEIGHT_MM,
@@ -36,6 +41,7 @@ import {
   RETENTION_SINGLE_MIN_TAPER_DEG,
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
+  evaluatePostTaperRetention,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
   type CustomAbutmentParamKey,
@@ -391,16 +397,42 @@ function formatScanbodyPanelValue(label: string): string {
   return (sized?.[1] ?? withoutCap).trim();
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({
+  label,
+  value,
+  warning,
+  warningTooltip,
+}: {
+  label: string;
+  value: string;
+  warning?: boolean;
+  warningTooltip?: ReactNode;
+}) {
+  const valueNode = (
+    <span
+      className={cn(
+        "ml-auto min-w-0 truncate text-right tabular-nums text-foreground",
+        warning &&
+          "rounded border border-amber-400/90 bg-amber-500/10 px-1.5 py-0.5 font-medium text-amber-700 dark:text-amber-300",
+      )}
+      title={warningTooltip ? undefined : value}
+    >
+      {value}
+    </span>
+  );
   return (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span
-        className="ml-auto min-w-0 truncate text-right tabular-nums text-foreground"
-        title={value}
-      >
-        {value}
-      </span>
+      {warningTooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{valueNode}</TooltipTrigger>
+          <TooltipContent side="left" align="center" className="text-xs leading-relaxed">
+            {warningTooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        valueNode
+      )}
     </div>
   );
 }
@@ -409,23 +441,27 @@ function EditableNumberRow({
   label,
   value,
   min,
-  max,
+  max = Infinity,
   step,
   digits = 2,
   prefix,
   suffix,
   disabled,
+  warning,
+  warningTooltip,
   onCommit,
 }: {
   label: string;
   value: number;
   min: number;
-  max: number;
+  max?: number;
   step: number;
   digits?: number;
   prefix?: string;
   suffix?: string;
   disabled?: boolean;
+  warning?: boolean;
+  warningTooltip?: ReactNode;
   onCommit: (next: number) => void;
 }) {
   const formatVal = (v: number) => cleanNum(v, digits);
@@ -458,13 +494,15 @@ function EditableNumberRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, scrubValue, value, digits]);
 
+  const hasMax = Number.isFinite(max);
+
   // 직접 입력 중 Enter·포커스 이동 전이라도 유효 범위 숫자를 입력하고 잠시 멈추면 형상에 바로 반영한다.
   useEffect(() => {
     if (!editing) return;
     const trimmed = draft.trim();
     if (!trimmed || /[.\-+]$/.test(trimmed)) return;
     const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return;
+    if (!Number.isFinite(parsed) || parsed < min || (hasMax && parsed > max)) return;
     const rounded = Number(parsed.toFixed(digits));
     if (Math.abs(rounded - lastCommittedRef.current) < 1e-4) return;
     const timer = window.setTimeout(() => {
@@ -473,11 +511,12 @@ function EditableNumberRow({
       onCommitRef.current(rounded);
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [draft, editing, min, max, digits]);
+  }, [draft, editing, min, max, hasMax, digits]);
 
   const clampVal = (raw: number) => {
     const snapped = Number((Math.round(raw / step) * step).toFixed(digits + 1));
-    return Number(Math.min(max, Math.max(min, snapped)).toFixed(digits));
+    const bounded = hasMax ? Math.min(max, Math.max(min, snapped)) : Math.max(min, snapped);
+    return Number(bounded.toFixed(digits));
   };
 
   const stepBy = (dir: 1 | -1) => {
@@ -497,7 +536,8 @@ function EditableNumberRow({
       setDraft(formatVal(value));
       return;
     }
-    const clamped = Number(Math.min(max, Math.max(min, parsed)).toFixed(digits));
+    const bounded = hasMax ? Math.min(max, Math.max(min, parsed)) : Math.max(min, parsed);
+    const clamped = Number(bounded.toFixed(digits));
     setDraft(formatVal(clamped));
     if (Math.abs(clamped - lastCommittedRef.current) >= 1e-4) {
       lastCommittedRef.current = clamped;
@@ -569,6 +609,116 @@ function EditableNumberRow({
     }
   };
 
+  const inputBox = (
+    <div
+      className={cn(
+        "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+        warning &&
+          "border-amber-400/90 bg-amber-500/10 focus-within:border-amber-500 focus-within:ring-amber-500/40",
+        scrubValue != null &&
+          (warning ? "border-amber-500 bg-amber-500/15" : "border-primary bg-primary/5"),
+        disabled && "opacity-60",
+      )}
+    >
+      {prefix ? (
+        <span
+          className={cn(
+            "shrink-0 select-none text-xs text-muted-foreground",
+            warning && "text-amber-700/80 dark:text-amber-300/80",
+          )}
+        >
+          {prefix}
+        </span>
+      ) : null}
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        aria-label={label}
+        disabled={disabled && !editing}
+        value={draft}
+        readOnly={!editing}
+        className={cn(
+          "h-full w-full min-w-[2.5rem] flex-1 bg-transparent px-1 text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
+          warning && "text-amber-700 dark:text-amber-300",
+          !editing && !disabled && "cursor-ew-resize select-none",
+        )}
+        title={
+          warningTooltip
+            ? undefined
+            : disabled
+              ? undefined
+              : editing
+                ? "숫자 입력 후 Enter"
+                : "클릭하여 직접 입력 · 드래그하여 조절"
+        }
+        onPointerDown={startScrub(true)}
+        onPointerMove={moveScrub}
+        onPointerUp={endScrub}
+        onPointerCancel={endScrub}
+        onFocus={() => {
+          if (!dragRef.current) setEditing(true);
+        }}
+        onBlur={commitDraft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setEditing(false);
+            setDraft(formatVal(value));
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            stepBy(1);
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            stepBy(-1);
+          }
+        }}
+      />
+      {suffix ? (
+        <span
+          className={cn(
+            "shrink-0 select-none pr-1 text-xs tabular-nums text-muted-foreground",
+            warning && "text-amber-700/80 dark:text-amber-300/80",
+          )}
+        >
+          {suffix}
+        </span>
+      ) : null}
+      <div
+        className={cn(
+          "flex h-full shrink-0 flex-col justify-center border-l pl-0.5",
+          warning && "border-amber-400/60",
+        )}
+      >
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled || (hasMax && value >= max - 1e-5)}
+          aria-label={`${label} 올리기`}
+          className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+          onClick={() => stepBy(1)}
+        >
+          <ChevronUp className="h-2.5 w-2.5" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          disabled={disabled || value <= min + 1e-5}
+          aria-label={`${label} 내리기`}
+          className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+          onClick={() => stepBy(-1)}
+        >
+          <ChevronDown className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
@@ -584,90 +734,16 @@ function EditableNumberRow({
       >
         {label}
       </span>
-      <div
-        className={cn(
-          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
-          scrubValue != null && "border-primary bg-primary/5",
-          disabled && "opacity-60",
-        )}
-      >
-        {prefix ? (
-          <span className="shrink-0 select-none text-xs text-muted-foreground">{prefix}</span>
-        ) : null}
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="decimal"
-          aria-label={label}
-          disabled={disabled && !editing}
-          value={draft}
-          readOnly={!editing}
-          className={cn(
-            "h-full w-full min-w-[2.5rem] flex-1 bg-transparent px-1 text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
-            !editing && !disabled && "cursor-ew-resize select-none",
-          )}
-          title={
-            disabled
-              ? undefined
-              : editing
-                ? "숫자 입력 후 Enter"
-                : "클릭하여 직접 입력 · 드래그하여 조절"
-          }
-          onPointerDown={startScrub(true)}
-          onPointerMove={moveScrub}
-          onPointerUp={endScrub}
-          onPointerCancel={endScrub}
-          onFocus={() => {
-            if (!dragRef.current) setEditing(true);
-          }}
-          onBlur={commitDraft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              (e.target as HTMLInputElement).blur();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              setEditing(false);
-              setDraft(formatVal(value));
-              (e.target as HTMLInputElement).blur();
-            } else if (e.key === "ArrowUp") {
-              e.preventDefault();
-              stepBy(1);
-            } else if (e.key === "ArrowDown") {
-              e.preventDefault();
-              stepBy(-1);
-            }
-          }}
-        />
-        {suffix ? (
-          <span className="shrink-0 select-none pr-1 text-xs tabular-nums text-muted-foreground">
-            {suffix}
-          </span>
-        ) : null}
-        <div className="flex h-full shrink-0 flex-col justify-center border-l pl-0.5">
-          <button
-            type="button"
-            tabIndex={-1}
-            disabled={disabled || value >= max - 1e-5}
-            aria-label={`${label} 올리기`}
-            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-            onClick={() => stepBy(1)}
-          >
-            <ChevronUp className="h-2.5 w-2.5" />
-          </button>
-          <button
-            type="button"
-            tabIndex={-1}
-            disabled={disabled || value <= min + 1e-5}
-            aria-label={`${label} 내리기`}
-            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-            onClick={() => stepBy(-1)}
-          >
-            <ChevronDown className="h-2.5 w-2.5" />
-          </button>
-        </div>
-      </div>
+      {warningTooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{inputBox}</TooltipTrigger>
+          <TooltipContent side="left" align="center" className="text-xs leading-relaxed">
+            {warningTooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        inputBox
+      )}
     </div>
   );
 }
@@ -1391,6 +1467,21 @@ export function PracticeCustomAbutmentDesignTree({
                         postTaperLinked && m.isBridge
                           ? RETENTION_BRIDGE_MIN_TAPER_DEG
                           : RETENTION_SINGLE_MIN_TAPER_DEG;
+                      const taperCheck = evaluatePostTaperRetention(m.postHeightMm, {
+                        isBridge: Boolean(m.isBridge),
+                        retainerCount: m.bridgeRetainerCount,
+                      });
+                      const taperLimitClamped =
+                        taperCheck.isBelowMinLimit &&
+                        (postTaperLinked || m.postTaperDeg <= taperCheck.minTaperDeg + 0.05);
+                      const taperLimitTooltip = taperLimitClamped ? (
+                        <>
+                          적정값 {cleanNum(taperCheck.idealTaperDeg, 1)}° · 최소값{" "}
+                          {cleanNum(taperCheck.minTaperDeg, 1)}°
+                          <br />
+                          포스트 높이가 낮아 편측 최소값({cleanNum(taperCheck.minTaperDeg, 1)}°)으로 맞췄습니다.
+                        </>
+                      ) : undefined;
                       return (
                         <div className="relative">
                           {editable ? (
@@ -1428,10 +1519,17 @@ export function PracticeCustomAbutmentDesignTree({
                               digits={1}
                               suffix="°"
                               disabled={rowDisabled}
+                              warning={taperLimitClamped}
+                              warningTooltip={taperLimitTooltip}
                               onCommit={(v) => onEditField?.(item, "postTaperDeg", v)}
                             />
                           ) : (
-                            <DetailRow label="테이퍼" value={`${m.postTaperDeg}°`} />
+                            <DetailRow
+                              label="테이퍼"
+                              value={`${m.postTaperDeg}°`}
+                              warning={taperLimitClamped}
+                              warningTooltip={taperLimitTooltip}
+                            />
                           )}
                         </div>
                       );
@@ -1440,8 +1538,7 @@ export function PracticeCustomAbutmentDesignTree({
                       <EditableNumberRow
                         label="대합 거리"
                         value={m.occlusalClearanceMm}
-                        min={0.5}
-                        max={6}
+                        min={CUSTOM_ABUTMENT_PARAM_SPECS.occlusalClearanceMm.min}
                         step={0.05}
                         digits={2}
                         suffix="mm"

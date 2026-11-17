@@ -55,7 +55,7 @@ const MAX_IMAGE_CHARS = 2_000_000;
 const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
-  occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리", unit: "mm", min: 0.5, max: 6 },
+  occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리(기본 1.5mm, 최소 0.7mm)", unit: "mm", min: 0.7, max: Infinity },
   postTaperDeg: { label: "포스트 축벽 편측 테이퍼(최소 2°)", unit: "°", min: 2, max: 12 },
   postTaperLink: { label: "포스트 높이·테이퍼 접착력 연결(1=연결, 0=해제)", unit: "", min: 0, max: 1 },
   postYawDeg: {
@@ -408,7 +408,8 @@ function isUnsupportedDesignRequest(parsed, changes, reply) {
 function buildPrompt({ message, history, teeth, selectedTooth, preference, hasImage }) {
   const specLines = PARAM_KEYS.map((key) => {
     const s = PARAM_SPECS[key];
-    return `${key}: ${s.label} ${s.min}~${s.max}${s.unit}`;
+    const rangeLabel = Number.isFinite(s.max) ? `${s.min}~${s.max}${s.unit}` : `${s.min}${s.unit} 이상`;
+    return `${key}: ${s.label} ${rangeLabel}`;
   }).join("\n");
   return (
     "커스텀어벗 디자인 조정값만 바꾸는 도우미. 조정값 밖 요청(재질·색·납기)은 못 한다고 짧게 답한다.\n" +

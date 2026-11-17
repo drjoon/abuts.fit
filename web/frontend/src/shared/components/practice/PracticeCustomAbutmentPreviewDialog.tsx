@@ -669,13 +669,15 @@ function metricsFromGumball(
   const now = summary.measured;
   const orig = summary.baselineMeasured;
   const nextPostHeightMm = shiftMetric(base.postHeightMm, now.postHeightMm, orig.postHeightMm);
-  const nextPostTaperDeg =
+  const nextPostTaperDeg = Math.max(
+    CUSTOM_ABUTMENT_PARAM_SPECS.postTaperDeg.min,
     taperLinked && Math.abs(nextPostHeightMm - base.postHeightMm) >= 0.02
       ? computeOptimalPostTaperDeg(nextPostHeightMm, {
           isBridge: Boolean(base.isBridge),
           retainerCount: base.bridgeRetainerCount,
         })
-      : shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1);
+      : shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1),
+  );
   return {
     ...base,
     maxDiameterMm: shiftMetric(base.maxDiameterMm, now.maxDiameterMm, orig.maxDiameterMm),

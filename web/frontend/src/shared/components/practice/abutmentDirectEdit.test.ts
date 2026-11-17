@@ -68,7 +68,7 @@ assert.ok(Math.abs(hole[3]! - 0.3) < 1e-6 && Math.abs(hole[5]! - 8.6) < 1e-3, "�
 assert.ok(hole[6]! > 2.8 && Math.abs(hole[8]! - 8.6) < 1e-3, "포스트 윗면은 화살표 방향");
 
 const wall = one([0.9, 0, 6], edit({ shiftLabialMm: -0.5 }));
-assert.ok(Math.abs(wall[0]! - 0.58) < 1e-3, "스크류 벽 두께를 넘지 않음");
+assert.ok(Math.abs(wall[0]! - 0.64) < 1e-3, "스크류 벽 최소 두께(0.3mm 이상)를 넘지 않음");
 
 const linear = one([2, 1, 6], edit({ scale: [1.1, 1, 1] }));
 assert.ok(Math.abs(linear[0]! - 2.2) < 1e-4, "선형은 순측만");
@@ -566,34 +566,38 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       `대합 거리 1mm(${at1.metrics.postHeightMm}mm) → 3mm(${at3.metrics.postHeightMm}mm) 변경 시 포스트 길이가 실제로 줄어든다`,
     );
 
-    // postHeightOffsetMm=+3, occlusalClearanceMm=3.5로 0.7mm에 걸려 있던 상태에서도 0.5mm·2.0mm로 자유롭게 풀린다.
+    // postHeightOffsetMm=+3, occlusalClearanceMm=3.5로 0.7mm에 걸려 있던 상태에서:
+    // 0.5mm 입력 시 최소 하한 0.7mm로 보호되고, 7.5mm(기존 상한 6mm 초과) 입력도 제한 없이 적용된다.
+    const hiOppGeo = makeGridSurface(-8, 8, -8, 8, 28, () => 14.5);
     const stuckAt07 = await designCustomAbutmentStl({
       fixture: fixture36,
       jawGeometry: jawGeo,
-      opposingGeometry: tallOppGeo,
-      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3 },
+      opposingGeometry: hiOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 9 },
     });
     const patch05 = computeParamsFromInfoFieldEdit(stuckAt07, "occlusalClearanceMm", 0.5);
-    const at05 = await designCustomAbutmentStl({
+    assert.equal(patch05.occlusalClearanceMm, 0.7, "대합 거리는 최소 0.7mm 아래로 내려가지 않는다");
+    const at07 = await designCustomAbutmentStl({
       fixture: fixture36,
       jawGeometry: jawGeo,
-      opposingGeometry: tallOppGeo,
-      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3, ...patch05 },
+      opposingGeometry: hiOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 9, ...patch05 },
     });
-    const patch20 = computeParamsFromInfoFieldEdit(stuckAt07, "occlusalClearanceMm", 2.0);
-    const at20 = await designCustomAbutmentStl({
+    const patch75 = computeParamsFromInfoFieldEdit(stuckAt07, "occlusalClearanceMm", 7.5);
+    assert.equal(patch75.occlusalClearanceMm, 7.5, "대합 거리는 상한 없이 7.5mm도 그대로 반영된다");
+    const at75 = await designCustomAbutmentStl({
       fixture: fixture36,
       jawGeometry: jawGeo,
-      opposingGeometry: tallOppGeo,
-      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3, ...patch20 },
+      opposingGeometry: hiOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 9, ...patch75 },
     });
     assert.ok(
-      at05.metrics.occlusalClearanceMm != null && Math.abs(at05.metrics.occlusalClearanceMm - 0.5) <= 0.08,
-      `0.7mm 상태에서 0.5mm로 내리면 최단 대합 거리(${at05.metrics.occlusalClearanceMm}mm)가 0.5mm로 바뀐다`,
+      at07.metrics.occlusalClearanceMm != null && Math.abs(at07.metrics.occlusalClearanceMm - 0.7) <= 0.08,
+      `0.5mm 입력 시 최소값 0.7mm로 클램프되어 최단 대합 거리(${at07.metrics.occlusalClearanceMm}mm)가 0.7mm로 맞춰진다`,
     );
     assert.ok(
-      at20.metrics.occlusalClearanceMm != null && Math.abs(at20.metrics.occlusalClearanceMm - 2.0) <= 0.08,
-      `0.7mm 상태에서 2.0mm로 올리면 최단 대합 거리(${at20.metrics.occlusalClearanceMm}mm)가 2.0mm로 바뀐다`,
+      at75.metrics.occlusalClearanceMm != null && Math.abs(at75.metrics.occlusalClearanceMm - 7.5) <= 0.12,
+      `상한 없이 7.5mm로 올리면 최단 대합 거리(${at75.metrics.occlusalClearanceMm}mm)가 7.5mm로 맞춰진다`,
     );
   }
 
@@ -757,6 +761,90 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     assert.ok(
       bridgeShort.metrics.postTaperDeg >= 2.0,
       `짧은 브리지 포스트(${bridgeShort.metrics.postHeightMm}mm)에서도 테이퍼(${bridgeShort.metrics.postTaperDeg}°)는 최소 2° 이상이다`,
+    );
+
+    // 6) #24·#25처럼 바짝 붙어 있고 픽스쳐 장축이 서로 어긋난 소구치 공통 삽입축 케이스에서도
+    // 측면 벽 천공 없이 모든 포스트 외벽이 ≥ 0.3mm이고 편측 테이퍼도 ≥ 2.0°로 생성된다.
+    const tilt24Rad = (13 * Math.PI) / 180;
+    const axis24: [number, number, number] = [0, Math.sin(tilt24Rad), -Math.cos(tilt24Rad)];
+    const hexY24: [number, number, number] = [0, -Math.cos(tilt24Rad), -Math.sin(tilt24Rad)];
+    const tilt25Rad = (-5 * Math.PI) / 180;
+    const axis25: [number, number, number] = [0, Math.sin(tilt25Rad), -Math.cos(tilt25Rad)];
+    const hexY25: [number, number, number] = [0, -Math.cos(tilt25Rad), -Math.sin(tilt25Rad)];
+    const upperJawGeo = makeGridSurface(-12, 12, -12, 12, 32, (x, y) => -3.1 + 0.25 * Math.exp(-(x * x + y * y) / 9));
+    const upperOppGeo = makeGridSurface(-10, 10, -10, 10, 28, () => -10.2);
+    const fixture24 = {
+      ...fixture36,
+      toothNumber: "24",
+      jaw: "upper" as const,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: axis24,
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: hexY24,
+      },
+      scanbodyTop: [0, 7 * axis24[1], 7 * axis24[2]] as [number, number, number],
+      archOcclusalDir: [0, 0, -1] as [number, number, number],
+      labialDir: [1, 0, 0] as [number, number, number],
+      mesialDir: [0, -1, 0] as [number, number, number],
+      connectionSpec: {
+        ...fixture36.connectionSpec,
+        screwUpperDiameterMm: 2.45,
+      },
+    };
+    const fixture25 = {
+      ...fixture24,
+      toothNumber: "25",
+      fixturePose: {
+        origin: [0, 4.9, 0] as [number, number, number],
+        axis: axis25,
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: hexY25,
+      },
+      scanbodyTop: [0, 4.9 + 7 * axis25[1], 7 * axis25[2]] as [number, number, number],
+    };
+    const designed24 = await designCustomAbutmentStl({
+      fixture: fixture24,
+      neighbors: [fixture25],
+      jawGeometry: upperJawGeo,
+      opposingGeometry: upperOppGeo,
+      toothWorks: [
+        { toothNumber: "24", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+        { toothNumber: "25", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+      ],
+    });
+    assert.ok(
+      designed24.metrics.postTaperDeg >= 2.0,
+      `#24 편측 테이퍼(${designed24.metrics.postTaperDeg}°)는 최소 2.0° 이상이다`,
+    );
+    assert.ok(
+      designed24.metrics.maxDiameterMm <= 9.2,
+      `#24 마진 최대 직경(${designed24.metrics.maxDiameterMm}mm)이 과도하게 커지지 않는다`,
+    );
+    assert.ok(
+      designed24.metrics.occlusalClearanceMm != null &&
+        Math.abs(designed24.metrics.occlusalClearanceMm - 1.5) <= 0.1,
+      `기본 대합 거리 설정 없이 생성해도 기본값 1.5mm(${designed24.metrics.occlusalClearanceMm}mm)에 맞춰진다`,
+    );
+    const localGeo24 = new THREE.BufferGeometry();
+    localGeo24.setAttribute("position", new THREE.BufferAttribute(designed24.solidBodyLocalPositions!, 3));
+    localGeo24.computeVertexNormals();
+    const pos24 = localGeo24.getAttribute("position")!.array as Float32Array;
+    const nrm24 = localGeo24.getAttribute("normal")!.array as Float32Array;
+    const boreTopR24 = fixture24.connectionSpec.screwUpperDiameterMm / 2;
+    let minPostWallMm = Infinity;
+    for (let i = 0; i < pos24.length; i += 3) {
+      const x = pos24[i]!;
+      const y = pos24[i + 1]!;
+      const z = pos24[i + 2]!;
+      const nz = nrm24[i + 2]!;
+      // 마진 위 모든 외측 벽면(축벽 + 상단 라운드 코너, 윗면 평탄부 nz > 0.68 제외)의 스크류 채널 벽 두께 검사
+      if (z < 2.6 || nz > 0.68) continue;
+      minPostWallMm = Math.min(minPostWallMm, Math.hypot(x, y) - boreTopR24);
+    }
+    assert.ok(
+      minPostWallMm >= 0.3,
+      `인접 어벗(#25)과 바짝 붙은 기울어진 #24 포스트에서도 모든 측면 벽 두께(최소 ${minPostWallMm.toFixed(3)}mm)가 0.3mm 이상 유지되어 뚫리지 않는다`,
     );
   }
 }

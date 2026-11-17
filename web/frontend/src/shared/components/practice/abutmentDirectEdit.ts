@@ -454,7 +454,7 @@ export function refitLocalPositions(
   const { fixedZ, marginZ, screwR, labial, mesial } = zone;
   const yawRad = (edit.yawDeg * Math.PI) / 180;
   const hole = screwR > 0.15;
-  const minWallR = screwR + 0.08;
+  const minWallR = Math.max(screwR + 0.14, (zone.boreTopR ?? Math.max(0, screwR - 0.2)) + 0.34);
   let widthSum = 0;
   let widthN = 0;
   let propTop = -Infinity;

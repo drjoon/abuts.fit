@@ -63,7 +63,7 @@ export type CustomAbutmentParamSpec = {
 };
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
-  occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.5, max: 6, step: 0.05 },
+  occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
   postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 12, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
@@ -311,6 +311,39 @@ export function resolveAbutmentBridgeRetentionSpec(
   };
 }
 
+export type PostTaperRetentionCheck = {
+  /** 높이 기준 등유지력 적정 편측 테이퍼(°, 클램프 전). */
+  idealTaperDeg: number;
+  /** 최소·최대 한계를 반영한 실제 적용 편측 테이퍼(°). */
+  appliedTaperDeg: number;
+  /** 편측 최소 허용 테이퍼(°, 2.0°). */
+  minTaperDeg: number;
+  /** 편측 최대 허용 테이퍼(°). */
+  maxTaperDeg: number;
+  /** 포스트 높이가 낮아 등유지력 적정값이 편측 최소값(2°)보다 낮아 최소값으로 맞춰졌는지 여부. */
+  isBelowMinLimit: boolean;
+};
+
+export function evaluatePostTaperRetention(
+  postHeightMm: number,
+  bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+): PostTaperRetentionCheck {
+  const spec = resolveAbutmentBridgeRetentionSpec(bridge);
+  const h = Math.max(0.5, Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_REF_POST_HEIGHT_MM);
+  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
+  const rawDeg = (Math.atan(refSlope * (h / RETENTION_REF_POST_HEIGHT_MM)) * 180) / Math.PI;
+  const idealTaperDeg = Math.max(0.1, Math.round(rawDeg * 10) / 10);
+  const clamped = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, rawDeg));
+  const appliedTaperDeg = Math.round(clamped * 10) / 10;
+  return {
+    idealTaperDeg,
+    appliedTaperDeg,
+    minTaperDeg: spec.minTaperDeg,
+    maxTaperDeg: spec.maxTaperDeg,
+    isBelowMinLimit: idealTaperDeg < spec.minTaperDeg - 1e-6,
+  };
+}
+
 /**
  * 포스트 높이와 싱글/브리지 여부에 따라 보철물 최적 접착력이 일정해지는 편측 테이퍼(°)를 계산한다.
  * - 싱글: 높이 5mm 기준 2.0°, 최소 2.0° (5mm보다 짧으면 2°에 머문다)
@@ -320,12 +353,7 @@ export function computeOptimalPostTaperDeg(
   postHeightMm: number,
   bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
 ): number {
-  const spec = resolveAbutmentBridgeRetentionSpec(bridge);
-  const h = Math.max(0.5, Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_REF_POST_HEIGHT_MM);
-  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
-  const rawDeg = (Math.atan(refSlope * (h / RETENTION_REF_POST_HEIGHT_MM)) * 180) / Math.PI;
-  const clamped = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, rawDeg));
-  return Math.round(clamped * 10) / 10;
+  return evaluatePostTaperRetention(postHeightMm, bridge).appliedTaperDeg;
 }
 
 /**
@@ -347,7 +375,7 @@ export function computeOptimalPostHeightMmFromTaper(
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   const anterior = isAnteriorTooth(toothNumber);
   return {
-    occlusalClearanceMm: 1.3,
+    occlusalClearanceMm: 1.5,
     postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
     postTaperLink: 1,
     postYawDeg: 0,
