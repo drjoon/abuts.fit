@@ -848,7 +848,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   const paintSaveTimerRef = useRef(0);
   const baselineMetricsRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
   const gumballMetricBaseRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
+  const gumballParamBaseRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
   const baselineParamsRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
+  const designRunChainRef = useRef<Promise<void>>(Promise.resolve());
+  const activeRedesignCountRef = useRef(0);
   /** 치아를 처음 제안할 때 넘긴 조정값. 리셋은 여기로만 돌아간다. */
   const proposalInputRef = useRef<Record<string, Partial<CustomAbutmentDesignParams>>>({});
   const ignoreEditCommitRef = useRef(false);
@@ -1548,11 +1551,15 @@ export function PracticeCustomAbutmentPreviewDialog({
         const row = CUSTOM_ABUTMENT_PARAM_SPECS[key];
         return Math.min(row.max, Math.max(row.min, value));
       };
-      const base = design.params;
+      if (!gumballParamBaseRef.current[summary.tooth]) {
+        gumballParamBaseRef.current[summary.tooth] = { ...design.params };
+      }
+      const base = gumballParamBaseRef.current[summary.tooth]!;
       const next: Partial<CustomAbutmentDesignParams> = {
         postWidthScale: clampKey("postWidthScale", base.postWidthScale * summary.widthRatio),
         postHeightOffsetMm: clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm),
       };
+      design.params = { ...design.params, ...next };
       ctx.overrides[summary.tooth] = {
         ...stripDirectEditShiftOverrides(ctx.overrides[summary.tooth] ?? {}),
         ...next,
@@ -2194,6 +2201,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       preloadMeshUnion();
       try {
         proposalInputRef.current = {};
+        gumballMetricBaseRef.current = {};
+        gumballParamBaseRef.current = {};
         pickEpochRef.current += 1;
         scanbodyPickRef.current = null;
         clearSceneObjects();
@@ -3045,54 +3054,69 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 치아별 조정값을 바꿔 다시 디자인하고 씬·목록·저장본을 바꾼다. */
   const applyDesignChanges = useCallback(
     async (changes: readonly DesignChange[], mode: "merge" | "replace" | "proposal" = "merge") => {
-      const ctx = designContextRef.current;
-      if (!ctx || changes.length === 0) return;
-      const teeth = [...new Set(changes.map((c) => c.toothNumber))];
-      setRedesigning(teeth);
-      try {
-        for (const tooth of teeth) {
-          const prev = designedListRef.current.find((d) => d.toothNumber === tooth);
-          if (!prev) continue;
-          const jawGeo = ctx.jawGeometry[prev.jaw];
-          if (!jawGeo) continue;
-          const merged: Partial<CustomAbutmentDesignParams> =
-            mode === "merge" ? { ...(ctx.overrides[tooth] ?? {}) } : {};
-          if (mode !== "proposal") {
-            for (const change of changes) {
-              if (change.toothNumber === tooth) Object.assign(merged, change.params);
+      if (changes.length === 0) return;
+      const run = async () => {
+        const ctx = designContextRef.current;
+        if (!ctx) return;
+        const teeth = [...new Set(changes.map((c) => c.toothNumber))];
+        activeRedesignCountRef.current += 1;
+        setRedesigning((prev) => [...new Set([...prev, ...teeth])]);
+        try {
+          for (const tooth of teeth) {
+            const prev = designedListRef.current.find((d) => d.toothNumber === tooth);
+            if (!prev) continue;
+            const jawGeo = ctx.jawGeometry[prev.jaw];
+            if (!jawGeo) continue;
+            const merged: Partial<CustomAbutmentDesignParams> =
+              mode === "merge" ? { ...(ctx.overrides[tooth] ?? {}) } : {};
+            if (mode !== "proposal") {
+              for (const change of changes) {
+                if (change.toothNumber === tooth) Object.assign(merged, change.params);
+              }
             }
+            const proposal = proposalInputRef.current[tooth];
+            const params =
+              mode === "proposal"
+                ? { ...(proposal ?? preferenceOverridesForTooth(tooth, preferenceRef.current)) }
+                : { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged };
+            await new Promise<void>((r) => window.setTimeout(r, 16));
+            const next = await designCustomAbutmentStl({
+              fixture: prev.fixture,
+              jawGeometry: jawGeo,
+              opposingGeometry: ctx.jawGeometry[prev.jaw === "upper" ? "lower" : "upper"],
+              neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
+              toothWorks: ctx.allToothWorks,
+              params,
+              logicRules: logicRulesRef.current,
+              patientName: ctx.patientName,
+            });
+            ctx.overrides[tooth] = mode === "proposal" ? {} : merged;
+            delete gumballMetricBaseRef.current[tooth];
+            delete gumballParamBaseRef.current[tooth];
+            if (mode === "replace" || mode === "proposal") {
+              directEditRef.current?.clear([tooth]);
+            } else {
+              directEditRef.current?.clearBakedScaleAndHeight([tooth]);
+            }
+            removeDesignFromScene(tooth);
+            prev.worldGeometry.dispose();
+            prev.predictedCrownWorldGeometry.dispose();
+            addDesignToScene(next);
+            const list = designedListRef.current.map((d) => (d.toothNumber === tooth ? next : d));
+            designedListRef.current = list;
+            setDesignedList(list);
           }
-          const proposal = proposalInputRef.current[tooth];
-          const params =
-            mode === "proposal"
-              ? { ...(proposal ?? preferenceOverridesForTooth(tooth, preferenceRef.current)) }
-              : { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged };
-          await new Promise<void>((r) => window.setTimeout(r, 16));
-          const next = await designCustomAbutmentStl({
-            fixture: prev.fixture,
-            jawGeometry: jawGeo,
-            opposingGeometry: ctx.jawGeometry[prev.jaw === "upper" ? "lower" : "upper"],
-            neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
-            toothWorks: ctx.allToothWorks,
-            params,
-            logicRules: logicRulesRef.current,
-            patientName: ctx.patientName,
-          });
-          ctx.overrides[tooth] = mode === "proposal" ? {} : merged;
-          delete gumballMetricBaseRef.current[tooth];
-          if (mode === "replace" || mode === "proposal") directEditRef.current?.clear([tooth]);
-          removeDesignFromScene(tooth);
-          prev.worldGeometry.dispose();
-          prev.predictedCrownWorldGeometry.dispose();
-          addDesignToScene(next);
-          const list = designedListRef.current.map((d) => (d.toothNumber === tooth ? next : d));
-          designedListRef.current = list;
-          setDesignedList(list);
+          directEditRef.current?.sync();
+        } finally {
+          activeRedesignCountRef.current = Math.max(0, activeRedesignCountRef.current - 1);
+          if (activeRedesignCountRef.current === 0) {
+            setRedesigning([]);
+          }
         }
-        directEditRef.current?.sync();
-      } finally {
-        setRedesigning([]);
-      }
+      };
+      const nextChain = designRunChainRef.current.then(run, run);
+      designRunChainRef.current = nextChain;
+      await nextChain;
     },
     [addDesignToScene, removeDesignFromScene],
   );
@@ -3233,6 +3257,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         set = new Set();
         editedInfoFieldsRef.current[tooth] = set;
       }
+      if (field === "occlusalClearanceMm") {
+        set.delete("postHeightMm");
+      } else if (field === "postHeightMm") {
+        set.delete("occlusalClearanceMm");
+      }
       set.add(field);
       const patch = computeParamsFromInfoFieldEdit(item, field, nextValue);
       if (Object.keys(patch).length === 0) return;
@@ -3280,7 +3309,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             params = { axisSourceCode: p.axisSourceCode, axisToOpposing: p.axisToOpposing };
             break;
           case "occlusalClearanceMm":
-            params = { occlusalClearanceMm: p.occlusalClearanceMm };
+            params = { occlusalClearanceMm: p.occlusalClearanceMm, postHeightOffsetMm: 0 };
             break;
           case "marginFilletRadiusMm":
             params = { marginFilletRadiusMm: p.marginFilletRadiusMm };
@@ -3880,6 +3909,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         )}
         overlayClassName="z-[475]"
         hideClose
+        onContextMenu={(e) => e.preventDefault()}
       >
         <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-5 pr-14 text-left">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
@@ -4627,7 +4657,11 @@ export function PracticeCustomAbutmentPreviewDialog({
     </Dialog>
 
     <Dialog open={confirmPrefDialogOpen} onOpenChange={setConfirmPrefDialogOpen}>
-        <DialogContent className="z-[540] max-w-md space-y-3 p-5" overlayClassName="z-[535]">
+        <DialogContent
+          className="z-[540] max-w-md space-y-3 p-5"
+          overlayClassName="z-[535]"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           <DialogHeader className="space-y-1 text-left">
             <DialogTitle className="text-base font-semibold">
               다음 케이스에도 적용할까요?

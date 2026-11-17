@@ -1231,6 +1231,19 @@ function buildOpposingClearanceProbe(
   }
   if (written === 0) return null;
 
+  const probeDiskOffsets: Array<{ di: number; dj: number; dLatSq: number; dLat: number }> = [];
+  const latCells = Math.round(0.9 / step);
+  const latR2 = 0.9 * 0.9 + 1e-6;
+  for (let dj = -latCells; dj <= latCells; dj += 1) {
+    for (let di = -latCells; di <= latCells; di += 1) {
+      if (di === 0 && dj === 0) continue;
+      const dLatSq = (di * step) ** 2 + (dj * step) ** 2;
+      if (dLatSq > latR2) continue;
+      probeDiskOffsets.push({ di, dj, dLatSq, dLat: Math.sqrt(dLatSq) });
+    }
+  }
+  probeDiskOffsets.sort((a, b) => a.dLatSq - b.dLatSq);
+
   const measureMinClearance = (positions: Float32Array, sampleVertices: Uint32Array): number | null => {
     if (sampleVertices.length === 0) return null;
     let best = Infinity;
@@ -1250,11 +1263,24 @@ function buildOpposingClearanceProbe(
       const iu = Math.round((pu - minU) / step);
       const iv = Math.round((pv - minV) / step);
       if (iu < 0 || iu >= cols || iv < 0 || iv >= rows) return;
-      const oppH = grid[iv * cols + iu]!;
-      if (!Number.isFinite(oppH)) return;
       const ph = px * up[0] + py * up[1] + pz * up[2];
-      const d = oppH - ph;
-      if (d < best) best = d;
+      const oppH0 = grid[iv * cols + iu]!;
+      if (Number.isFinite(oppH0)) {
+        const d0 = oppH0 - ph;
+        if (d0 < best) best = d0;
+      }
+      if (best <= 0) return;
+      for (const off of probeDiskOffsets) {
+        if (off.dLat >= best) break;
+        const ci = iu + off.di;
+        const rj = iv + off.dj;
+        if (ci < 0 || ci >= cols || rj < 0 || rj >= rows) continue;
+        const oppH = grid[rj * cols + ci]!;
+        if (!Number.isFinite(oppH)) continue;
+        const dzPos = oppH > ph ? oppH - ph : 0;
+        const d3 = Math.sqrt(off.dLatSq + dzPos * dzPos);
+        if (d3 < best) best = d3;
+      }
     };
     for (let k = 0; k < sampleVertices.length; k += 1) {
       const o = sampleVertices[k]! * 3;
@@ -1262,9 +1288,10 @@ function buildOpposingClearanceProbe(
       const py = positions[o + 1]!;
       const pz = positions[o + 2]!;
       checkPoint(px, py, pz);
+      checkPoint(px * 0.75 + apexX * 0.25, py * 0.75 + apexY * 0.25, pz * 0.75 + apexZ * 0.25);
       checkPoint((px + apexX) * 0.5, (py + apexY) * 0.5, (pz + apexZ) * 0.5);
     }
-    if (!Number.isFinite(best) || best >= 8) return null;
+    if (!Number.isFinite(best) || best >= 15) return null;
     return best;
   };
 
@@ -1730,6 +1757,29 @@ export class AbutmentDirectEditSession {
     this.future = this.future.filter((step) => !drop.has(step.tooth));
     for (const tooth of teeth) this.stale.add(tooth);
     this.bridge.onHistory();
+  }
+
+  /** 재생성된 치아에 이미 반영된 높이·크기 스케일만 검볼 누적분에서 빼 이중 적용을 막는다. */
+  clearBakedScaleAndHeight(teeth: readonly string[]) {
+    const drop = new Set(teeth);
+    for (const tooth of teeth) {
+      const cur = this.edits.get(tooth);
+      if (!cur) continue;
+      const next = cloneAbutmentEdit(cur);
+      next.heightMm = 0;
+      next.scale = [1, 1, 1];
+      if (editsEqual(next, EMPTY_EDIT)) {
+        this.edits.delete(tooth);
+      } else {
+        this.edits.set(tooth, next);
+      }
+    }
+    const prevLen = this.history.length + this.future.length;
+    this.history = this.history.filter((step) => !drop.has(step.tooth));
+    this.future = this.future.filter((step) => !drop.has(step.tooth));
+    if (this.history.length + this.future.length !== prevLen) {
+      this.bridge.onHistory();
+    }
   }
 
   sync() {
@@ -2246,7 +2296,7 @@ export class AbutmentDirectEditSession {
         previewSrc.length === (view.proposalSolid ?? view.proposal).length
       ) {
         const manualLift = computeZLift(view.topZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
-        const desiredClearance = Math.max(0.7, view.targetClearanceMm - manualLift);
+        const desiredClearance = Math.max(0.5, view.targetClearanceMm - manualLift);
         const axialCos = Math.max(view.oppProbe.up[2], 0.35);
         for (let pass = 0; pass < 2; pass += 1) {
           const curClear = view.oppProbe.measureMinClearance(local, view.topSampleVertices);

@@ -1,15 +1,33 @@
-// 포스트 윗면 → 대합치 수직 거리.
-// 윗면에 0.1mm 그리드를 놓고, 교합 방향(수직)으로 레이를 쏴 스캔 삼각형에 닿는 거리 중 가장 짧은 값.
+// 포스트 윗면(평탄면 + 상단 라운드 테두리) → 대합치 최단 거리.
+// 윗면 전체를 0.1mm 격자로 샘플링하고, 교합 방향 침투(< 0)와 주변 대합 교두 경사벽(3D 거리)을 함께 잰다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 
 type V = readonly [number, number, number];
 
 const STEP_MM = 0.1;
-const MAX_MM = 8;
-const MIN_T_MM = 0.015;
-const MAX_SAMPLES = 12000;
-const CELL_MM = 1;
+const MAX_MM = 15;
+const MIN_OPP_H_MM = 1.5;
+const LATERAL_3D_MM = 0.9;
+const LATERAL_CELLS = Math.round(LATERAL_3D_MM / STEP_MM);
+const MAX_SAMPLES = 16000;
+
+type DiskOffset = { di: number; dj: number; dLatSq: number; dLat: number };
+
+const DISK_OFFSETS: readonly DiskOffset[] = (() => {
+  const list: DiskOffset[] = [];
+  const r2Max = LATERAL_3D_MM * LATERAL_3D_MM + 1e-6;
+  for (let dj = -LATERAL_CELLS; dj <= LATERAL_CELLS; dj += 1) {
+    for (let di = -LATERAL_CELLS; di <= LATERAL_CELLS; di += 1) {
+      if (di === 0 && dj === 0) continue;
+      const dLatSq = (di * STEP_MM) ** 2 + (dj * STEP_MM) ** 2;
+      if (dLatSq > r2Max) continue;
+      list.push({ di, dj, dLatSq, dLat: Math.sqrt(dLatSq) });
+    }
+  }
+  list.sort((a, b) => a.dLatSq - b.dLatSq);
+  return list;
+})();
 
 function sub(a: V, b: V): [number, number, number] {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -68,23 +86,6 @@ function bary(
   return [w0, w1, w2];
 }
 
-function rayT(orig: V, dir: V, a: V, b: V, c: V): number | null {
-  const e1 = sub(b, a);
-  const e2 = sub(c, a);
-  const pvec = cross(dir, e2);
-  const det = dot(e1, pvec);
-  if (Math.abs(det) < 1e-8) return null;
-  const inv = 1 / det;
-  const tvec = sub(orig, a);
-  const bu = dot(tvec, pvec) * inv;
-  if (bu < -1e-5 || bu > 1 + 1e-5) return null;
-  const qvec = cross(tvec, e1);
-  const bv = dot(dir, qvec) * inv;
-  if (bv < -1e-5 || bu + bv > 1 + 1e-5) return null;
-  const t = dot(e2, qvec) * inv;
-  return t;
-}
-
 function pushTop(
   out: [V, V, V][],
   a: V,
@@ -94,22 +95,26 @@ function pushTop(
 ) {
   const n = cross(sub(b, a), sub(c, a));
   const len = Math.hypot(n[0], n[1], n[2]);
-  if (len < 1e-8 || dot(n, up) <= 0.2 * len) return;
+  if (len < 1e-8 || Math.abs(dot(n, up)) <= 0.12 * len) return;
   out.push([a, b, c]);
 }
 
-/**
- * 포스트 윗면 그리드에서 교합 방향 레이가 대합 스캔 면에 닿기까지의 최단 거리(mm).
- * 닿는 면이 없으면 null.
- * opposingTris: 픽스쳐 로컬 좌표의 삼각형. 9 float = 꼭짓점 3개.
- */
-export function shortestPostTopClearanceMm(args: {
+type CapOpposingField = {
+  sampleList: Array<{ iu: number; iv: number; h: number }>;
+  iuMin: number;
+  ivMin: number;
+  gCols: number;
+  gRows: number;
+  oppGrid: Float32Array;
+};
+
+function buildCapOpposingField(args: {
   columns: readonly (readonly V[])[];
   apex: V;
   roundSteps: number;
   opposingTris: Float32Array;
   up: V;
-}): number | null {
+}): CapOpposingField | null {
   const cols = args.columns;
   if (cols.length < 3 || args.opposingTris.length < 9) return null;
   const { up, u, v } = basis(args.up);
@@ -126,8 +131,8 @@ export function shortestPostTopClearanceMm(args: {
       const b = post[start + s + 1]!;
       const c = next[start2 + s + 1]!;
       const d = next[start2 + s]!;
-      pushTop(cap, a, b, c, up);
-      pushTop(cap, a, c, d, up);
+      pushTop(cap, a, d, c, up);
+      pushTop(cap, a, c, b, up);
     }
     const last = post[post.length - 1];
     const last2 = next[next.length - 1];
@@ -135,16 +140,25 @@ export function shortestPostTopClearanceMm(args: {
   }
   if (cap.length === 0) return null;
 
-  const samples = new Map<string, { p: [number, number, number]; h: number }>();
-  const keep = (p: [number, number, number]) => {
-    if (samples.size >= MAX_SAMPLES && !samples.has(`${Math.round(dot(p, u) / STEP_MM)}:${Math.round(dot(p, v) / STEP_MM)}`)) {
-      return;
-    }
+  const samples = new Map<string, { iu: number; iv: number; h: number }>();
+  const keep = (p: V) => {
+    const iu = Math.round(dot(p, u) / STEP_MM);
+    const iv = Math.round(dot(p, v) / STEP_MM);
+    const key = `${iu}:${iv}`;
+    if (samples.size >= MAX_SAMPLES && !samples.has(key)) return;
     const h = dot(p, up);
-    const key = `${Math.round(dot(p, u) / STEP_MM)}:${Math.round(dot(p, v) / STEP_MM)}`;
     const prev = samples.get(key);
-    if (!prev || h > prev.h) samples.set(key, { p, h });
+    if (!prev || h > prev.h) samples.set(key, { iu, iv, h });
   };
+
+  keep(args.apex);
+  for (let col = 0; col < cols.length; col += 1) {
+    const post = cols[col]!;
+    const start = Math.max(0, post.length - args.roundSteps - 1);
+    for (let idx = start; idx < post.length; idx += 1) {
+      keep(post[idx]!);
+    }
+  }
 
   for (const [a, b, c] of cap) {
     const au = uv(a, u, v);
@@ -171,53 +185,163 @@ export function shortestPostTopClearanceMm(args: {
   }
   if (samples.size === 0) return null;
 
-  const buckets = new Map<string, number[]>();
+  const sampleList = [...samples.values()];
+  let sIuMin = Infinity;
+  let sIuMax = -Infinity;
+  let sIvMin = Infinity;
+  let sIvMax = -Infinity;
+  let maxSampleH = -Infinity;
+  for (const s of sampleList) {
+    if (s.iu < sIuMin) sIuMin = s.iu;
+    if (s.iu > sIuMax) sIuMax = s.iu;
+    if (s.iv < sIvMin) sIvMin = s.iv;
+    if (s.iv > sIvMax) sIvMax = s.iv;
+    if (s.h > maxSampleH) maxSampleH = s.h;
+  }
+
+  const iuMin = sIuMin - LATERAL_CELLS;
+  const iuMax = sIuMax + LATERAL_CELLS;
+  const ivMin = sIvMin - LATERAL_CELLS;
+  const ivMax = sIvMax + LATERAL_CELLS;
+  const gCols = iuMax - iuMin + 1;
+  const gRows = ivMax - ivMin + 1;
+  if (gCols <= 0 || gRows <= 0 || gCols * gRows > 250000) return null;
+
+  const oppGrid = new Float32Array(gCols * gRows).fill(Infinity);
+  const maxOppH = maxSampleH + MAX_MM;
   const tris = args.opposingTris;
   const triCount = Math.floor(tris.length / 9);
+  let written = 0;
+
   for (let i = 0; i < triCount; i += 1) {
     const o = i * 9;
-    const pts: V[] = [
-      [tris[o]!, tris[o + 1]!, tris[o + 2]!],
-      [tris[o + 3]!, tris[o + 4]!, tris[o + 5]!],
-      [tris[o + 6]!, tris[o + 7]!, tris[o + 8]!],
-    ];
-    const us = pts.map((p) => dot(p, u));
-    const vs = pts.map((p) => dot(p, v));
-    const i0 = Math.floor(Math.min(us[0]!, us[1]!, us[2]!) / CELL_MM);
-    const i1 = Math.floor(Math.max(us[0]!, us[1]!, us[2]!) / CELL_MM);
-    const j0 = Math.floor(Math.min(vs[0]!, vs[1]!, vs[2]!) / CELL_MM);
-    const j1 = Math.floor(Math.max(vs[0]!, vs[1]!, vs[2]!) / CELL_MM);
-    if (i1 - i0 > 24 || j1 - j0 > 24) continue;
-    for (let ix = i0; ix <= i1; ix += 1) {
-      for (let jy = j0; jy <= j1; jy += 1) {
-        const key = `${ix}:${jy}`;
-        let list = buckets.get(key);
-        if (!list) {
-          list = [];
-          buckets.set(key, list);
+    const ax = tris[o]!, ay = tris[o + 1]!, az = tris[o + 2]!;
+    const bx = tris[o + 3]!, by = tris[o + 4]!, bz = tris[o + 5]!;
+    const cx = tris[o + 6]!, cy = tris[o + 7]!, cz = tris[o + 8]!;
+    const ah = ax * up[0] + ay * up[1] + az * up[2];
+    const bh = bx * up[0] + by * up[1] + bz * up[2];
+    const ch = cx * up[0] + cy * up[1] + cz * up[2];
+    if (Math.max(ah, bh, ch) < MIN_OPP_H_MM || Math.min(ah, bh, ch) > maxOppH) continue;
+
+    const au = ax * u[0] + ay * u[1] + az * u[2];
+    const av = ax * v[0] + ay * v[1] + az * v[2];
+    const bu = bx * u[0] + by * u[1] + bz * u[2];
+    const bv = bx * v[0] + by * v[1] + bz * v[2];
+    const cu = cx * u[0] + cy * u[1] + cz * u[2];
+    const cv = cx * v[0] + cy * v[1] + cz * v[2];
+
+    const cLo = Math.max(0, Math.floor(Math.min(au, bu, cu) / STEP_MM - 1e-4) - iuMin);
+    const cHi = Math.min(gCols - 1, Math.ceil(Math.max(au, bu, cu) / STEP_MM + 1e-4) - iuMin);
+    const rLo = Math.max(0, Math.floor(Math.min(av, bv, cv) / STEP_MM - 1e-4) - ivMin);
+    const rHi = Math.min(gRows - 1, Math.ceil(Math.max(av, bv, cv) / STEP_MM + 1e-4) - ivMin);
+    if (cLo > cHi || rLo > rHi) continue;
+
+    const v0x = bu - au, v0y = bv - av;
+    const v1x = cu - au, v1y = cv - av;
+    const den = v0x * v1y - v1x * v0y;
+    if (Math.abs(den) < 1e-10) continue;
+    const invDen = 1 / den;
+
+    for (let r = rLo; r <= rHi; r += 1) {
+      const pv = (ivMin + r) * STEP_MM;
+      const v2y = pv - av;
+      const rowOff = r * gCols;
+      for (let c = cLo; c <= cHi; c += 1) {
+        const pu = (iuMin + c) * STEP_MM;
+        const v2x = pu - au;
+        const w1 = (v2x * v1y - v1x * v2y) * invDen;
+        const w2 = (v0x * v2y - v2x * v0y) * invDen;
+        const w0 = 1 - w1 - w2;
+        if (w0 < -1e-3 || w1 < -1e-3 || w2 < -1e-3) continue;
+        const h = ah * w0 + bh * w1 + ch * w2;
+        if (h < MIN_OPP_H_MM || h > maxOppH) continue;
+        const idx = rowOff + c;
+        if (h < oppGrid[idx]!) {
+          oppGrid[idx] = h;
+          written += 1;
         }
-        list.push(i);
       }
     }
   }
+  if (written === 0) return null;
+  return { sampleList, iuMin, ivMin, gCols, gRows, oppGrid };
+}
+
+/**
+ * 포스트 윗면(상단 라운드 포함)에서 대합 스캔 면까지의 최단 거리(mm).
+ * 수직 침투 시 0을 돌려주고, 급경사 대합 교두벽·오버행 교두까지의 3D 거리도 반영한다.
+ * 닿는 면이 없으면 null.
+ */
+export function shortestPostTopClearanceMm(args: {
+  columns: readonly (readonly V[])[];
+  apex: V;
+  roundSteps: number;
+  opposingTris: Float32Array;
+  up: V;
+}): number | null {
+  const field = buildCapOpposingField(args);
+  if (!field) return null;
+  const { sampleList, iuMin, ivMin, gCols, oppGrid } = field;
 
   let best = Infinity;
-  for (const sample of samples.values()) {
-    const key = `${Math.floor(dot(sample.p, u) / CELL_MM)}:${Math.floor(dot(sample.p, v) / CELL_MM)}`;
-    const list = buckets.get(key);
-    if (!list) continue;
-    for (const i of list) {
-      const o = i * 9;
-      const t = rayT(
-        sample.p,
-        up,
-        [tris[o]!, tris[o + 1]!, tris[o + 2]!],
-        [tris[o + 3]!, tris[o + 4]!, tris[o + 5]!],
-        [tris[o + 6]!, tris[o + 7]!, tris[o + 8]!],
-      );
-      if (t != null && t > MIN_T_MM && t < best) best = t;
+  for (const s of sampleList) {
+    const c = s.iu - iuMin;
+    const r = s.iv - ivMin;
+    const h0 = oppGrid[r * gCols + c]!;
+    if (Number.isFinite(h0)) {
+      const dz0 = h0 - s.h;
+      if (dz0 < best) best = dz0;
+    }
+    if (best <= 0) continue;
+    for (const off of DISK_OFFSETS) {
+      if (off.dLat >= best) break;
+      const oppH = oppGrid[(r + off.dj) * gCols + (c + off.di)]!;
+      if (!Number.isFinite(oppH)) continue;
+      const dzPos = oppH > s.h ? oppH - s.h : 0;
+      const d3 = Math.sqrt(off.dLatSq + dzPos * dzPos);
+      if (d3 < best) best = d3;
     }
   }
   if (!Number.isFinite(best) || best >= MAX_MM) return null;
-  return Math.round(best * 100) / 100;
+  return Math.max(0, Math.round(best * 100) / 100);
+}
+
+/**
+ * 포스트 윗면(상단 라운드 포함) 전체가 대합 스캔과 최소 targetClearanceMm(3D + 수직)를 확보하도록
+ * 교합 방향(up)으로 옮겨야 하는 정확한 이동량(mm). 양수면 올리고 음수면 내린다.
+ */
+export function solvePostTopClearanceShiftMm(args: {
+  columns: readonly (readonly V[])[];
+  apex: V;
+  roundSteps: number;
+  opposingTris: Float32Array;
+  up: V;
+  targetClearanceMm: number;
+}): number | null {
+  const field = buildCapOpposingField(args);
+  if (!field) return null;
+  const { sampleList, iuMin, ivMin, gCols, oppGrid } = field;
+  const target = Math.max(0, args.targetClearanceMm);
+  const rCheck = Math.min(LATERAL_3D_MM, target);
+
+  let minAllowShift = Infinity;
+  for (const s of sampleList) {
+    const c = s.iu - iuMin;
+    const r = s.iv - ivMin;
+    const h0 = oppGrid[r * gCols + c]!;
+    if (Number.isFinite(h0)) {
+      const allow = h0 - s.h - target;
+      if (allow < minAllowShift) minAllowShift = allow;
+    }
+    for (const off of DISK_OFFSETS) {
+      if (off.dLat >= rCheck) break;
+      const oppH = oppGrid[(r + off.dj) * gCols + (c + off.di)]!;
+      if (!Number.isFinite(oppH)) continue;
+      const reqDz = Math.sqrt(Math.max(0, target * target - off.dLatSq));
+      const allow = oppH - s.h - reqDz;
+      if (allow < minAllowShift) minAllowShift = allow;
+    }
+  }
+  if (!Number.isFinite(minAllowShift)) return null;
+  return minAllowShift;
 }

@@ -169,11 +169,11 @@ export function computeParamsFromInfoFieldEdit(
     }
     case "occlusalClearanceMm": {
       if (m.occlusalClearanceMm == null) return {};
-      const delta = num - m.occlusalClearanceMm;
       return {
         occlusalClearanceMm: Number(
-          clampParam("occlusalClearanceMm", p.occlusalClearanceMm + delta).toFixed(2),
+          clampParam("occlusalClearanceMm", num).toFixed(2),
         ),
+        postHeightOffsetMm: 0,
       };
     }
     case "marginFilletRadiusMm":
@@ -323,6 +323,9 @@ function EditableNumberRow({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const holdRef = useRef(false);
   const seenValueRef = useRef(value);
+  const lastCommittedRef = useRef(value);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -336,11 +339,29 @@ function EditableNumberRow({
   useEffect(() => {
     const changed = Math.abs(seenValueRef.current - value) > 1e-6;
     seenValueRef.current = value;
+    lastCommittedRef.current = value;
     if (changed) holdRef.current = false;
     if (editing || scrubValue != null || holdRef.current) return;
     setDraft(formatVal(value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, scrubValue, value, digits]);
+
+  // 직접 입력 중 Enter·포커스 이동 전이라도 유효 범위 숫자를 입력하고 잠시 멈추면 형상에 바로 반영한다.
+  useEffect(() => {
+    if (!editing) return;
+    const trimmed = draft.trim();
+    if (!trimmed || /[.\-+]$/.test(trimmed)) return;
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) return;
+    const rounded = Number(parsed.toFixed(digits));
+    if (Math.abs(rounded - lastCommittedRef.current) < 1e-4) return;
+    const timer = window.setTimeout(() => {
+      lastCommittedRef.current = rounded;
+      holdRef.current = true;
+      onCommitRef.current(rounded);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [draft, editing, min, max, digits]);
 
   const clampVal = (raw: number) => {
     const snapped = Number((Math.round(raw / step) * step).toFixed(digits + 1));
@@ -351,6 +372,8 @@ function EditableNumberRow({
     if (disabled) return;
     const base = scrubValue ?? value;
     const next = clampVal(base + dir * step);
+    lastCommittedRef.current = next;
+    holdRef.current = true;
     setDraft(formatVal(next));
     onCommit(next);
   };
@@ -364,7 +387,9 @@ function EditableNumberRow({
     }
     const clamped = Number(Math.min(max, Math.max(min, parsed)).toFixed(digits));
     setDraft(formatVal(clamped));
-    if (Math.abs(clamped - value) >= 1e-4) {
+    if (Math.abs(clamped - lastCommittedRef.current) >= 1e-4) {
+      lastCommittedRef.current = clamped;
+      holdRef.current = true;
       onCommit(clamped);
     }
   };
@@ -426,6 +451,7 @@ function EditableNumberRow({
     setScrubValue(null);
     setDraft(formatVal(finalVal));
     if (Math.abs(finalVal - drag.startVal) >= 1e-4) {
+      lastCommittedRef.current = finalVal;
       holdRef.current = true;
       onCommit(finalVal);
     }
@@ -461,7 +487,7 @@ function EditableNumberRow({
           type="text"
           inputMode="decimal"
           aria-label={label}
-          disabled={disabled}
+          disabled={disabled && !editing}
           value={draft}
           readOnly={!editing}
           className={cn(
@@ -1040,6 +1066,7 @@ export function PracticeCustomAbutmentDesignTree({
         "pointer-events-auto flex min-h-0 w-[17.5rem] shrink-0 flex-col overflow-x-hidden overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] font-semibold text-foreground">
         <span className="shrink-0">어벗 정보</span>
@@ -1280,8 +1307,8 @@ export function PracticeCustomAbutmentDesignTree({
                       <EditableNumberRow
                         label="대합 거리"
                         value={m.occlusalClearanceMm}
-                        min={0.7}
-                        max={3.5}
+                        min={0.5}
+                        max={6}
                         step={0.05}
                         digits={2}
                         suffix="mm"

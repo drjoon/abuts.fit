@@ -49,7 +49,10 @@ import {
 } from "@/shared/practice/abutmentDesignLogic";
 import { cuffProfile } from "@/shared/practice/cuffProfile";
 import { subtractTriangleSoups } from "@/shared/practice/meshUnion";
-import { shortestPostTopClearanceMm } from "@/shared/practice/occlusalClearanceRay";
+import {
+  shortestPostTopClearanceMm,
+  solvePostTopClearanceShiftMm,
+} from "@/shared/practice/occlusalClearanceRay";
 import {
   crownOcclusalReliefRatio,
   toothFormOf,
@@ -3498,12 +3501,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         tpl.postHeightMm + 3.0,
         Number.isFinite(archCrownTopH) ? archCrownTopH - desiredOccThickness : Infinity,
       );
-  const postTopMax = Math.max(
-    minSafePostHeightMm,
-    hasOpposing ? Math.min(baseCap + offsetH + 0.6, oppRefH - clearance + 2.4) : baseCap + offsetH,
-  );
   const hasExplicitClearance =
     args.params?.occlusalClearanceMm != null && Number.isFinite(Number(args.params.occlusalClearanceMm));
+  const minClearanceFloor = hasExplicitClearance
+    ? Math.min(CROWN_THICKNESS_FLOOR_MM, clearance)
+    : CROWN_THICKNESS_FLOOR_MM;
+  const postTopMax = Math.max(
+    minSafePostHeightMm,
+    hasOpposing
+      ? hasExplicitClearance
+        ? oppRefH - clearance + Math.max(0, offsetH) + 3.2
+        : Math.min(baseCap + offsetH + 0.6, oppRefH - clearance + 2.4)
+      : baseCap + offsetH,
+  );
   const noOppTop = Number.isFinite(archCrownTopH) ? baseCap : Math.min(baseCap, tpl.postHeightMm);
   let postTopH =
     (hasOpposing
@@ -3514,8 +3524,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   if (hasOpposing && offsetH <= 0) postTopH = Math.min(postTopH, oppRefH - clearance);
   postTopH = Math.max(minSafePostHeightMm, postTopH);
   if (hasOpposing) {
-    // 뼈대 최소 높이(2.2mm)에서도 최소 지르코니아 두께(0.7mm)는 반드시 남긴다.
-    postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - CROWN_THICKNESS_FLOOR_MM));
+    // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
+    postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
   }
   // 사용자가 테이퍼를 직접 지정하지 않았으면 포스트 길이에 맞춰 유지력(retention) 테이퍼를 자동 조절한다:
   // 짧은 포스트(≤4.0mm → 1.5°, ~5.0mm → 2.0°)는 크라운 탈락을 막기 위해 평행에 가깝게 세우고, 긴 포스트(≥6.8mm → 2.6°)만 완만히 준다.
@@ -4464,11 +4474,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
 
   const oppNear: Vec3[] = [];
+  const maxOppNearH = Math.max(postTopMax + clearance + 4, 16);
   for (let i = 0; i < opposingLocalPts.length; i += 3) {
     const q: Vec3 = [opposingLocalPts[i]!, opposingLocalPts[i + 1]!, opposingLocalPts[i + 2]!];
     const rel = sub3(q, c0);
     const h = dot3(rel, frame.w);
-    if (h < 2 || h > postTopMax + clearance + 3) continue;
+    if (h < 2 || h > maxOppNearH) continue;
     // 포스트 자체 수평 반경 + 여유(0.9mm) 안의 대합치만 본다. 인접치(#37 등) 상방으로 내려온 옆 치아 대합 교두에 걸려 내 포스트가 낮아지지 않게 한다.
     if (Math.hypot(dot3(rel, frame.uLabial), dot3(rel, frame.vSide)) > footR + 0.9) continue;
     oppNear.push(q);
@@ -4489,6 +4500,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let planeShift = 0;
   const oppTopFootU = Math.max(2.4, marginA - targetShoulderW + 0.55);
   const oppTopFootV = Math.max(2.2, Math.min(marginB - targetShoulderW + 0.55, crownHalfMd * 0.88));
+  const topCapHalfU = Math.max(
+    1.6,
+    Math.max(...cols.map((c) => Math.abs(c.tipU - initMarginCu))) + 0.75,
+  );
+  const topCapHalfV = Math.max(
+    1.5,
+    Math.max(...cols.map((c) => Math.abs(c.tipV - initMarginCv))) + 0.75,
+  );
   const oppTopPlane =
     hasOpposing && oppField
       ? estimateOpposingOcclusalPlane(oppField, {
@@ -4546,27 +4565,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
     const effClearance =
       offsetH >= 0
-        ? Math.max(CROWN_THICKNESS_FLOOR_MM, clearance - offsetH)
+        ? Math.max(minClearanceFloor, clearance - offsetH)
         : clearance - offsetH;
     const evalOpposingCaps = (slopeU: number, slopeV: number) => {
       let aClear = Infinity;
       let aHard = Infinity;
       if (hasOpposing && oppField) {
         for (const cell of oppField.list) {
-          if (
-            Math.abs(cell.u - initMarginCu) > oppTopFootU ||
-            Math.abs(cell.v - initMarginCv) > oppTopFootV
-          ) {
+          const du = (cell.u - initMarginCu) / topCapHalfU;
+          const dv = (cell.v - initMarginCv) / topCapHalfV;
+          if (du * du + dv * dv > 1) {
             continue;
           }
           const planeSub = slopeU * cell.u + slopeV * cell.v;
           aClear = Math.min(aClear, cell.h - effClearance - planeSub);
-          aHard = Math.min(aHard, cell.h - CROWN_THICKNESS_FLOOR_MM - planeSub);
+          aHard = Math.min(aHard, cell.h - minClearanceFloor - planeSub);
         }
       }
       if (!Number.isFinite(aClear) && hasOpposing && Number.isFinite(oppRefH)) {
         aClear = oppRefH - effClearance;
-        aHard = oppRefH - CROWN_THICKNESS_FLOOR_MM;
+        aHard = oppRefH - minClearanceFloor;
       }
       return { aClear, aHard };
     };
@@ -4587,9 +4605,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
     let a = Infinity;
     if (hasOpposing && Number.isFinite(aClear)) {
-      const maxEdgeRise = Math.max(0, ...cols.map((c) => gu * c.tipU + gv * c.tipV));
-      const aHeightCap = baseCap + offsetH + 0.65 - maxEdgeRise * 0.65;
-      a = Math.min(aClear, aHeightCap);
+      if (hasExplicitClearance && Math.abs(offsetH) < 1e-3) {
+        a = aClear;
+      } else {
+        const maxEdgeRise = Math.max(0, ...cols.map((c) => gu * c.tipU + gv * c.tipV));
+        const aHeightCap = baseCap + offsetH + 0.65 - maxEdgeRise * 0.65;
+        a = Math.min(aClear, aHeightCap);
+      }
+      if (Number.isFinite(aHard)) {
+        a = Math.min(a, aHard);
+      }
     } else {
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const c = cols[col]!;
@@ -4598,9 +4623,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     a += planeShift;
     a = Math.max(a, minTop);
-    if (hasOpposing && Number.isFinite(aHard)) {
-      a = Math.min(a, aHard);
-    }
     return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a };
   };
 
@@ -6013,43 +6035,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
     const targetClear =
       offsetH >= 0
-        ? Math.max(CROWN_THICKNESS_FLOOR_MM, clearance - offsetH)
+        ? Math.max(minClearanceFloor, clearance - offsetH)
         : clearance - offsetH;
-    const min3DFloor = Math.max(CROWN_THICKNESS_FLOOR_MM, targetClear - 0.22);
     const axialCos = Math.max(dot3(frame.w, occInFix), 0.35);
-    for (let pass = 0; pass < 4; pass += 1) {
-      const rayClear =
-        oppTrisLocal.length >= 9
-          ? shortestPostTopClearanceMm({
-              columns: shape.postByCol,
-              apex: shape.postApex,
-              roundSteps: TOP_ROUND_STEPS,
-              opposingTris: oppTrisLocal,
-              up: occInFix,
-            })
-          : null;
-      let min3D = nearestOpp(shape.postApex);
-      for (let col = 0; col < ANGULAR_COLS; col += 2) {
-        const post = shape.postByCol[col]!;
-        const sampleStart = Math.max(0, post.length - TOP_ROUND_STEPS - 2);
-        for (let idx = sampleStart; idx < post.length; idx += 2) {
-          min3D = Math.min(min3D, nearestOpp(post[idx]!));
-        }
-        min3D = Math.min(min3D, nearestOpp(post[post.length - 1]!));
-      }
+    const maxShiftUp = hasExplicitClearance || offsetH > 0 ? 6.0 : 2.5;
+    for (let pass = 0; pass < 5; pass += 1) {
       let delta = 0;
-      if (rayClear != null) {
-        delta = (rayClear - targetClear) / axialCos;
-      } else if (Number.isFinite(min3D)) {
-        delta = min3D - targetClear;
+      if (oppTrisLocal.length >= 9) {
+        const occShift = solvePostTopClearanceShiftMm({
+          columns: shape.postByCol,
+          apex: shape.postApex,
+          roundSteps: TOP_ROUND_STEPS,
+          opposingTris: oppTrisLocal,
+          up: occInFix,
+          targetClearanceMm: targetClear,
+        });
+        if (occShift == null) break;
+        delta = occShift / axialCos;
       } else {
-        break;
+        let min3D = nearestOpp(shape.postApex);
+        for (let col = 0; col < ANGULAR_COLS; col += 2) {
+          const post = shape.postByCol[col]!;
+          const sampleStart = Math.max(0, post.length - TOP_ROUND_STEPS - 2);
+          for (let idx = sampleStart; idx < post.length; idx += 2) {
+            min3D = Math.min(min3D, nearestOpp(post[idx]!));
+          }
+          min3D = Math.min(min3D, nearestOpp(post[post.length - 1]!));
+        }
+        if (!Number.isFinite(min3D)) break;
+        delta = min3D - targetClear;
       }
-      if (Number.isFinite(min3D) && min3D - delta < min3DFloor) {
-        delta = Math.min(delta, min3D - min3DFloor);
-      }
-      const nextShift = clamp(planeShift + delta, -3.5, 2.5);
-      if (Math.abs(nextShift - planeShift) < 0.01) break;
+      const nextShift = clamp(planeShift + delta, -6.0, maxShiftUp);
+      if (Math.abs(nextShift - planeShift) < 0.008) break;
       planeShift = nextShift;
       shape = buildShape();
     }

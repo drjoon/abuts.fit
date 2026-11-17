@@ -55,7 +55,7 @@ const MAX_IMAGE_CHARS = 2_000_000;
 const IMAGE_RE = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const PARAM_SPECS = {
-  occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리", unit: "mm", min: 0.5, max: 3.5 },
+  occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리", unit: "mm", min: 0.5, max: 6 },
   postTaperDeg: { label: "포스트 축벽 편측 테이퍼", unit: "°", min: 0.5, max: 8 },
   postYawDeg: {
     label: "포스트 수평 회전 보정(교합면 시점 +=반시계, -=시계, 기본 0=악궁·중심구 평행)",
@@ -66,8 +66,8 @@ const PARAM_SPECS = {
   postHeightOffsetMm: {
     label: "포스트 높이 보정",
     unit: "mm",
-    min: -3,
-    max: 3,
+    min: -6,
+    max: 6,
   },
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.7, max: 1.3 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R(0.1mm 단위, 최소 0.5, 기본 0.6)", unit: "mm", min: 0.5, max: 1.0 },

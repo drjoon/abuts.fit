@@ -4,6 +4,7 @@ import * as THREE from "three";
 
 import { cuffProfile } from "../../practice/cuffProfile";
 import { designCustomAbutmentStl } from "../../practice/customAbutmentStlDesign";
+import { computeParamsFromInfoFieldEdit } from "./PracticeCustomAbutmentDesignTree";
 import {
   AbutmentDirectEditSession,
   applyWorldDeltaToAbutmentEdit,
@@ -524,6 +525,119 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     assert.ok(
       lingualTopZ > buccalTopZ + 0.35,
       `설측 대합 스캔 일부가 비어 있어도 설측 상단(${lingualTopZ.toFixed(2)}mm)이 협측 상단(${buccalTopZ.toFixed(2)}mm)보다 높게 기울어 대합치 경사를 따른다`,
+    );
+  }
+
+  // 3) 넓은 악간 거리 + 기존 postHeightOffsetMm(-2.49 / +3.0)이 남아 있는 상태에서도
+  // 어벗 정보의 대합 거리를 1 → 3 → 0.5 → 2.0mm로 바꾸면 포스트 높이와 최단 대합 거리가 즉시 함께 변한다.
+  {
+    const tallOppGeo = makeGridSurface(-8, 8, -8, 8, 28, (x, y) => 13.4 + oppSlope * x + 0.03 * y * y);
+    const basePref = { postHeightOffsetMm: -2.49, postWidthScale: 1.08 };
+    const initial = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: basePref,
+    });
+    const patch1 = computeParamsFromInfoFieldEdit(initial, "occlusalClearanceMm", 1);
+    const at1 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { ...basePref, ...patch1 },
+    });
+    const patch3 = computeParamsFromInfoFieldEdit(at1, "occlusalClearanceMm", 3);
+    const at3 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { ...basePref, ...patch1, ...patch3 },
+    });
+    assert.ok(
+      at1.metrics.occlusalClearanceMm != null && Math.abs(at1.metrics.occlusalClearanceMm - 1.0) <= 0.08,
+      `대합 거리 1mm 입력 시 최단 대합 거리(${at1.metrics.occlusalClearanceMm}mm)가 1.0mm에 맞춰진다`,
+    );
+    assert.ok(
+      at3.metrics.occlusalClearanceMm != null && Math.abs(at3.metrics.occlusalClearanceMm - 3.0) <= 0.08,
+      `대합 거리 3mm 입력 시 최단 대합 거리(${at3.metrics.occlusalClearanceMm}mm)가 3.0mm에 맞춰진다`,
+    );
+    assert.ok(
+      at1.metrics.postHeightMm - at3.metrics.postHeightMm > 1.75,
+      `대합 거리 1mm(${at1.metrics.postHeightMm}mm) → 3mm(${at3.metrics.postHeightMm}mm) 변경 시 포스트 길이가 실제로 줄어든다`,
+    );
+
+    // postHeightOffsetMm=+3, occlusalClearanceMm=3.5로 0.7mm에 걸려 있던 상태에서도 0.5mm·2.0mm로 자유롭게 풀린다.
+    const stuckAt07 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3 },
+    });
+    const patch05 = computeParamsFromInfoFieldEdit(stuckAt07, "occlusalClearanceMm", 0.5);
+    const at05 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3, ...patch05 },
+    });
+    const patch20 = computeParamsFromInfoFieldEdit(stuckAt07, "occlusalClearanceMm", 2.0);
+    const at20 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { occlusalClearanceMm: 3.5, postHeightOffsetMm: 3, ...patch20 },
+    });
+    assert.ok(
+      at05.metrics.occlusalClearanceMm != null && Math.abs(at05.metrics.occlusalClearanceMm - 0.5) <= 0.08,
+      `0.7mm 상태에서 0.5mm로 내리면 최단 대합 거리(${at05.metrics.occlusalClearanceMm}mm)가 0.5mm로 바뀐다`,
+    );
+    assert.ok(
+      at20.metrics.occlusalClearanceMm != null && Math.abs(at20.metrics.occlusalClearanceMm - 2.0) <= 0.08,
+      `0.7mm 상태에서 2.0mm로 올리면 최단 대합 거리(${at20.metrics.occlusalClearanceMm}mm)가 2.0mm로 바뀐다`,
+    );
+  }
+
+  // 4) 중앙 와는 높고 협·설 교두가 상단 라운드 테두리 위로 낮게 내려온 대합치에서도
+  // 설정한 대합 거리(0.7mm)가 상단 테두리까지 실제 3D 거리로 확보된다(0.7mm보다 짧게 파고들지 않는다).
+  {
+    const cuspZAt = (x: number, y: number) => {
+      // 중앙 와(x=0)는 z=11.0으로 높고, |x|≈2.4mm 협·설 교두가 z=9.7로 내려오는 형태
+      const cuspDrop = 1.3 * Math.exp(-((Math.abs(x) - 2.35) ** 2) / 0.55);
+      return 11.0 - cuspDrop + 0.03 * y * y;
+    };
+    const cuspOppGeo = makeGridSurface(-7, 7, -7, 7, 48, cuspZAt);
+    const cuspDesigned = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: cuspOppGeo,
+      params: { occlusalClearanceMm: 0.7 },
+    });
+    assert.ok(
+      cuspDesigned.metrics.occlusalClearanceMm != null &&
+        Math.abs(cuspDesigned.metrics.occlusalClearanceMm - 0.7) <= 0.08,
+      `협·설 돌출 교두 대합치에서도 최단 대합 거리(${cuspDesigned.metrics.occlusalClearanceMm}mm)가 0.7mm에 맞춰진다`,
+    );
+    const solid = cuspDesigned.solidBodyLocalPositions!;
+    let zMax = -Infinity;
+    for (let i = 2; i < solid.length; i += 3) zMax = Math.max(zMax, solid[i]!);
+    let minTrue3DGap = Infinity;
+    for (let i = 0; i < solid.length; i += 3) {
+      const px = solid[i]!;
+      const py = solid[i + 1]!;
+      const pz = solid[i + 2]!;
+      if (pz < zMax - 0.8) continue;
+      for (let dx = -0.8; dx <= 0.8001; dx += 0.1) {
+        for (let dy = -0.8; dy <= 0.8001; dy += 0.1) {
+          const oz = cuspZAt(px + dx, py + dy);
+          const dz = oz > pz ? oz - pz : 0;
+          const d3 = oz < pz && dx === 0 && dy === 0 ? oz - pz : Math.hypot(dx, dy, dz);
+          if (d3 < minTrue3DGap) minTrue3DGap = d3;
+        }
+      }
+    }
+    assert.ok(
+      minTrue3DGap >= 0.62,
+      `포스트 상단 라운드 테두리의 실제 3D 최단 대합 거리(${minTrue3DGap.toFixed(2)}mm)도 0.7mm 근처로 확보된다`,
     );
   }
 }
