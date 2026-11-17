@@ -1127,6 +1127,117 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       lingualBevelInwardMm >= 0.75,
       `#33 견치 설측은 보철 싱귤럼 형성을 위해 치경부 대비 상단으로 사선 삭제(${lingualBevelInwardMm.toFixed(2)}mm)된다`,
     );
+
+    // 9) 좁은 인접 공간으로 인해 치은연하에서 포스트 벽 두께(< 0.3mm)가 무너질 위험이 있는 케이스:
+    // - 치은 연상(-2.0 ~ -1.5mm)으로 마진을 자동 상승시키고(치은 연하 직접 편집도 -2.5mm까지 허용),
+    // - 스크류 홀을 뚫어도 모든 외벽 두께 ≥ 0.30mm를 확보하며,
+    // - 부족한 크라운 두께를 메우기 위해 인접치 인접면을 편측 ≤ 0.20mm 갈아낼 부위를 3D 패치와 치아번호로 표시한다.
+    const supraRangePatch = computeParamsFromInfoFieldEdit(designed33, "marginSubgMm", {
+      min: -1.5,
+      max: -2.0,
+    });
+    assert.equal(supraRangePatch.marginSubgMinMm, -2);
+    assert.equal(supraRangePatch.marginSubgMaxMm, -1.5);
+
+    const tightTiltRad = (11 * Math.PI) / 180;
+    const tightAxis33: [number, number, number] = [
+      Math.sin(tightTiltRad) * 0.86,
+      Math.sin(tightTiltRad) * 0.5,
+      Math.cos(tightTiltRad),
+    ];
+    const tightHexY33: [number, number, number] = (() => {
+      const rx = -tightAxis33[1];
+      const ry = tightAxis33[0];
+      const l = Math.hypot(rx, ry) || 1;
+      return [rx / l, ry / l, 0];
+    })();
+    const tightHexX33: [number, number, number] = [
+      tightHexY33[1] * tightAxis33[2] - tightHexY33[2] * tightAxis33[1],
+      tightHexY33[2] * tightAxis33[0] - tightHexY33[0] * tightAxis33[2],
+      tightHexY33[0] * tightAxis33[1] - tightHexY33[1] * tightAxis33[0],
+    ];
+    // 근심 #32(y ≈ +3.65, 인접면이 y ≈ +2.02mm까지 접근)가 스크류 채널(boreTopR=1.225mm) 가까이에 바짝 서 있는 협소 케이스
+    const tightJawCanine33 = makeGridSurface(-12, 12, -12, 12, 64, (x, y) => {
+      const ging = 3.4 - 0.15 * Math.exp(-(x * x) / 10);
+      const tightMesial32 = 8.4 * Math.exp(-((x * x) / 7.2 + ((y - 3.65) * (y - 3.65)) / 2.65));
+      const distal34 = 8.0 * Math.exp(-((x * x) / 9.0 + ((y + 4.9) * (y + 4.9)) / 3.8));
+      return ging + tightMesial32 + distal34;
+    });
+    const tightFixture33 = {
+      ...fixture33,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: tightAxis33,
+        hexX: tightHexX33,
+        hexY: tightHexY33,
+      },
+      scanbodyTop: [7 * tightAxis33[0], 7 * tightAxis33[1], 7 * tightAxis33[2]] as [
+        number,
+        number,
+        number,
+      ],
+      connectionSpec: {
+        ...fixture33.connectionSpec,
+        screwUpperDiameterMm: 2.45,
+      },
+    };
+    const tightDesigned33 = await designCustomAbutmentStl({
+      fixture: tightFixture33,
+      jawGeometry: tightJawCanine33,
+      opposingGeometry: oppCanine33,
+      toothWorks: [
+        {
+          toothNumber: "33",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          bridgeLinkedTeeth: [],
+        },
+      ],
+      params: { marginDepthMm: 0.8, marginSubgMinMm: 0.8, marginSubgMaxMm: 0.8 },
+      explicitParams: {},
+    });
+    assert.equal(
+      tightDesigned33.metrics.supragingivalRaisedForStrength,
+      true,
+      "좁은 인접 공간에서 포스트 파절 위험이 있으면 치과 기본 취향(0.8mm)이 있어도 치은 연상으로 자동 전환된다",
+    );
+    assert.ok(
+      (tightDesigned33.metrics.marginSubgMinMm ?? 0) <= -1.5 &&
+        (tightDesigned33.metrics.marginSubgMaxMm ?? 0) <= -1.4,
+      `치은 연상 마진 구간(${tightDesigned33.metrics.marginSubgMinMm}~${tightDesigned33.metrics.marginSubgMaxMm}mm)이 -2.0~-1.5mm에 맞춰진다`,
+    );
+    const boreR33 = tightFixture33.connectionSpec.screwUpperDiameterMm / 2;
+    const tightSolidGeo33 = new THREE.BufferGeometry();
+    tightSolidGeo33.setAttribute(
+      "position",
+      new THREE.BufferAttribute(tightDesigned33.solidBodyLocalPositions!, 3),
+    );
+    tightSolidGeo33.computeVertexNormals();
+    const tightPos33 = tightSolidGeo33.getAttribute("position")!.array as Float32Array;
+    const tightNrm33 = tightSolidGeo33.getAttribute("normal")!.array as Float32Array;
+    let minDrilledPostWall33 = Infinity;
+    for (let i = 0; i < tightPos33.length; i += 3) {
+      const px = tightPos33[i]!;
+      const py = tightPos33[i + 1]!;
+      const pz = tightPos33[i + 2]!;
+      const nz = tightNrm33[i + 2]!;
+      if (pz < tightDesigned33.metrics.cuffHeightMinMm + 0.15 || nz > 0.68) continue;
+      minDrilledPostWall33 = Math.min(minDrilledPostWall33, Math.hypot(px, py) - boreR33);
+    }
+    assert.ok(
+      minDrilledPostWall33 >= 0.3 && (tightDesigned33.metrics.minPostWallThicknessMm ?? 0) >= 0.3,
+      `스크류 홀을 뚫은 뒤에도 포스트 외벽 최소 두께(${minDrilledPostWall33.toFixed(2)}mm)가 0.3mm 이상 확보된다`,
+    );
+    const guides33 = tightDesigned33.metrics.adjacentEnameloplasty ?? [];
+    const mesialGuide32 = guides33.find((g) => g.adjacentToothNumber === "32");
+    assert.ok(
+      mesialGuide32 != null &&
+        mesialGuide32.maxDepthMm > 0 &&
+        mesialGuide32.maxDepthMm <= 0.2 &&
+        tightDesigned33.enameloplastyWorldGeometry != null &&
+        (tightDesigned33.enameloplastyWorldGeometry.getAttribute("position")?.count ?? 0) >= 9,
+      `좁은 근심 인접치(#32)의 편측 ≤0.2mm 삭제량(${mesialGuide32?.maxDepthMm}mm)과 3D 표시 메시가 생성된다`,
+    );
   }
 }
 

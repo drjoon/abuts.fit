@@ -19,7 +19,7 @@ import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutme
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 
 /** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 47;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 48;
 /** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
 export const CUSTOM_ABUTMENT_FIT_VERSION = 9;
 
@@ -63,6 +63,7 @@ export type CachedCustomAbutmentTooth = {
   solidBodyLocalPositions?: ArrayBuffer;
   crownLocalPositions: ArrayBuffer;
   marginLoopLocal: ArrayBuffer;
+  enameloplastyLocalPositions?: ArrayBuffer;
 };
 
 /** 바이트 정렬로 옮긴 스캔 정점. 다시 열 때 정렬을 건너뛴다. */
@@ -372,6 +373,7 @@ export type CustomAbutmentSnapshotUploadTooth = {
   stlBlob: Blob;
   crownLocalPositions: Float32Array;
   marginLoopLocal: Float32Array;
+  enameloplastyLocalPositions?: Float32Array;
 };
 
 export type UploadedCustomAbutmentSnapshotTooth = {
@@ -385,6 +387,7 @@ export type UploadedCustomAbutmentSnapshotTooth = {
   crownS3Key: string;
   size: number;
   marginLoopLocal: string;
+  enameloplastyLocal?: string;
 };
 
 async function positionsFromStl(
@@ -514,6 +517,7 @@ export async function fetchCustomAbutmentSnapshot(
           )
         : null;
       let marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
+      const enameloplastyLocalPositions = base64ToBuffer(String(row.enameloplastyLocal || ""));
       if (!localPositions) localPositions = base64ToBuffer(String(row.localPositions || ""));
       if (!crownLocalPositions) crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
       if (!localPositions) continue;
@@ -529,6 +533,7 @@ export async function fetchCustomAbutmentSnapshot(
         localPositions,
         crownLocalPositions,
         marginLoopLocal,
+        ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
       });
     }
     if (teeth.length === 0) {
@@ -615,6 +620,10 @@ export async function uploadCustomAbutmentSnapshotTeeth(
         byScope.set(cacheScope, job);
       }
       const { s3Key, crownS3Key, size } = await job;
+      const enameloplastyLocal =
+        row.enameloplastyLocalPositions && row.enameloplastyLocalPositions.length >= 9
+          ? bytesToBase64(toArrayBuffer(row.enameloplastyLocalPositions))
+          : undefined;
       return {
         toothNumber: row.toothNumber,
         fileName,
@@ -626,6 +635,7 @@ export async function uploadCustomAbutmentSnapshotTeeth(
         crownS3Key,
         size,
         marginLoopLocal: bytesToBase64(toArrayBuffer(row.marginLoopLocal)),
+        ...(enameloplastyLocal ? { enameloplastyLocal } : {}),
       };
     }),
   );

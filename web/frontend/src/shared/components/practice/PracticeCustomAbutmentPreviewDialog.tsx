@@ -1507,6 +1507,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             : {}),
           crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
           marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
+          ...(d.enameloplastyLocalPositions?.length
+            ? { enameloplastyLocalPositions: toArrayBuffer(d.enameloplastyLocalPositions) }
+            : {}),
         })),
         chat: savedChat,
       });
@@ -1525,6 +1528,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             stlBlob: d.stlBlob,
             crownLocalPositions: d.crownLocalPositions,
             marginLoopLocal: d.marginLoopLocal,
+            ...(d.enameloplastyLocalPositions?.length
+              ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+              : {}),
           })),
           chat: savedChat,
         });
@@ -1729,6 +1735,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           for (const made of built.values()) {
             made.worldGeometry.dispose();
             made.predictedCrownWorldGeometry.dispose();
+            made.enameloplastyWorldGeometry?.dispose();
           }
         };
         for (const fx of jawFixtures) {
@@ -1737,6 +1744,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...preferenceOverridesForTooth(fx.toothNumber, preference),
             };
           }
+          const fxOverrides = ctx.overrides[fx.toothNumber] ?? {};
           const designed = await designCustomAbutmentStl({
             fixture: fx,
             jawGeometry: matchedGeo || jawGeo,
@@ -1745,14 +1753,16 @@ export function PracticeCustomAbutmentPreviewDialog({
             toothWorks: ctx.allToothWorks,
             params: {
               ...preferenceOverridesForTooth(fx.toothNumber, preference),
-              ...(ctx.overrides[fx.toothNumber] ?? {}),
+              ...fxOverrides,
             },
+            explicitParams: fxOverrides,
             logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
           });
           if (pickEpochRef.current !== epoch) {
             designed.worldGeometry.dispose();
             designed.predictedCrownWorldGeometry.dispose();
+            designed.enameloplastyWorldGeometry?.dispose();
             discardBuilt();
             return;
           }
@@ -1768,6 +1778,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             removeDesignFromScene(tooth);
             prev.worldGeometry.dispose();
             prev.predictedCrownWorldGeometry.dispose();
+            prev.enameloplastyWorldGeometry?.dispose();
           }
           addDesignToScene(built.get(tooth)!);
         }
@@ -1805,6 +1816,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           for (const made of built.values()) {
             made.worldGeometry.dispose();
             made.predictedCrownWorldGeometry.dispose();
+            made.enameloplastyWorldGeometry?.dispose();
           }
           built.clear();
         }
@@ -2534,6 +2546,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
                   ...rowOverrides,
                 },
+                explicitParams: rowOverrides,
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               }),
@@ -2565,6 +2578,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                     solidBodyLocalPositions: storedEarly,
                     crownLocalPositions: new Float32Array(row.crownLocalPositions),
                     marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                    ...(row.enameloplastyLocalPositions?.byteLength
+                      ? { enameloplastyLocalPositions: new Float32Array(row.enameloplastyLocalPositions) }
+                      : {}),
                     params: row.params,
                     metrics: row.metrics,
                   }),
@@ -2581,11 +2597,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                   neighbors: cachedFixtures.filter((f) => f.jaw === jaw),
                   toothWorks: curAllToothWorks,
                   params: row.params,
+                  explicitParams: rowOverrides,
                   logicRules: logicRulesRef.current,
                   patientName: curPatientName,
                 });
                 freshSolid.worldGeometry.dispose();
                 freshSolid.predictedCrownWorldGeometry.dispose();
+                freshSolid.enameloplastyWorldGeometry?.dispose();
                 builtAbutments.push(
                   buildDesignedCustomAbutment({
                     fixture: row.fixture,
@@ -2594,6 +2612,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                     solidBodyLocalPositions: freshSolid.solidBodyLocalPositions,
                     crownLocalPositions: new Float32Array(row.crownLocalPositions),
                     marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                    ...(row.enameloplastyLocalPositions?.byteLength
+                      ? { enameloplastyLocalPositions: new Float32Array(row.enameloplastyLocalPositions) }
+                      : freshSolid.enameloplastyLocalPositions
+                        ? { enameloplastyLocalPositions: freshSolid.enameloplastyLocalPositions }
+                        : {}),
                     params: row.params,
                     metrics: row.metrics,
                   }),
@@ -2617,6 +2640,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ...(savedSolid ? { solidBodyLocalPositions: savedSolid } : {}),
                 crownLocalPositions: new Float32Array(row.crownLocalPositions),
                 marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                ...(row.enameloplastyLocalPositions?.byteLength
+                  ? { enameloplastyLocalPositions: new Float32Array(row.enameloplastyLocalPositions) }
+                  : {}),
                 params: row.params,
                 metrics: row.metrics,
               }),
@@ -2743,12 +2769,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 neighbors: jawFixtures,
                 toothWorks: curAllToothWorks,
                 params: preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                explicitParams: {},
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               });
               if (cancelled) {
                 designed.worldGeometry.dispose();
                 designed.predictedCrownWorldGeometry.dispose();
+                designed.enameloplastyWorldGeometry?.dispose();
                 break;
               }
               builtAbutments.push(designed);
@@ -2765,6 +2793,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           for (const d of builtAbutments) {
             d.worldGeometry.dispose();
             d.predictedCrownWorldGeometry.dispose();
+            d.enameloplastyWorldGeometry?.dispose();
           }
           for (const s of jawScans) {
             s.geometry.dispose();
@@ -3116,6 +3145,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               neighbors: ctx.fixtures.filter((f) => f.jaw === prev.jaw),
               toothWorks: ctx.allToothWorks,
               params,
+              explicitParams: mode === "proposal" ? {} : merged,
               logicRules: logicRulesRef.current,
               patientName: ctx.patientName,
             });
@@ -3130,6 +3160,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             removeDesignFromScene(tooth);
             prev.worldGeometry.dispose();
             prev.predictedCrownWorldGeometry.dispose();
+            prev.enameloplastyWorldGeometry?.dispose();
             addDesignToScene(next);
             const list = designedListRef.current.map((d) => (d.toothNumber === tooth ? next : d));
             designedListRef.current = list;
@@ -3504,6 +3535,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             stlBlob: d.stlBlob,
             crownLocalPositions: d.crownLocalPositions,
             marginLoopLocal: d.marginLoopLocal,
+            ...(d.enameloplastyLocalPositions?.length
+              ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+              : {}),
           })),
         });
 
@@ -3647,6 +3681,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           stlBlob: d.stlBlob,
           crownLocalPositions: d.crownLocalPositions,
           marginLoopLocal: d.marginLoopLocal,
+          ...(d.enameloplastyLocalPositions?.length
+            ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+            : {}),
         })),
         paint: {
           shapes,

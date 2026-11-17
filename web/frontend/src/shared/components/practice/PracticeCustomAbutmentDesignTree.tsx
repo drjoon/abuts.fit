@@ -912,6 +912,8 @@ function EditableRangeRow({
   digits = 1,
   suffix,
   disabled,
+  warning,
+  warningTooltip,
   onCommit,
 }: {
   label: string;
@@ -923,6 +925,8 @@ function EditableRangeRow({
   digits?: number;
   suffix?: string;
   disabled?: boolean;
+  warning?: boolean;
+  warningTooltip?: ReactNode;
   onCommit: (minV: number, maxV: number) => void;
 }) {
   const formatVal = (v: number) => v.toFixed(digits);
@@ -1081,17 +1085,24 @@ function EditableRangeRow({
   const fieldClass = (active: boolean) =>
     cn(
       "h-full min-w-0 flex-1 bg-transparent text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
+      warning && "text-amber-700 dark:text-amber-300",
       !active && !disabled && "cursor-ew-resize select-none",
     );
 
-  return (
+  const row = (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
           "shrink-0 select-none text-muted-foreground",
           !disabled && "cursor-ew-resize hover:text-foreground",
         )}
-        title={disabled ? undefined : "좌우로 드래그하면 구간이 같이 움직입니다"}
+        title={
+          warningTooltip
+            ? undefined
+            : disabled
+              ? undefined
+              : "좌우로 드래그하면 구간이 같이 움직입니다"
+        }
         onPointerDown={startScrub("both")}
         onPointerMove={moveScrub}
         onPointerUp={endScrub}
@@ -1102,7 +1113,10 @@ function EditableRangeRow({
       <div
         className={cn(
           "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
-          scrub && "border-primary bg-primary/5",
+          warning &&
+            "border-amber-400/90 bg-amber-500/10 focus-within:border-amber-500 focus-within:ring-amber-500/40",
+          scrub &&
+            (warning ? "border-amber-500 bg-amber-500/15" : "border-primary bg-primary/5"),
           disabled && "opacity-60",
         )}
       >
@@ -1198,6 +1212,15 @@ function EditableRangeRow({
         </div>
       </div>
     </div>
+  );
+  if (!warningTooltip) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent side="left" align="center" className="z-[520] text-xs leading-relaxed">
+        {warningTooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1415,27 +1438,40 @@ export function PracticeCustomAbutmentDesignTree({
               {open ? (
                 <div className="ml-1 mr-0.5 mt-1 border-l pb-2 pl-2">
                   <InfoGroup title="마진">
-                    {editable ? (
-                      <EditableRangeRow
-                        label="치은 연하"
-                        minValue={m.marginSubgMinMm ?? item.params.marginSubgMinMm ?? 0.5}
-                        maxValue={m.marginSubgMaxMm ?? item.params.marginSubgMaxMm ?? 1}
-                        min={-1.5}
-                        max={2.5}
-                        step={0.1}
-                        digits={1}
-                        suffix="mm"
-                        disabled={rowDisabled}
-                        onCommit={(minV, maxV) =>
-                          onEditField?.(item, "marginSubgMm", { min: minV, max: maxV })
-                        }
-                      />
-                    ) : (
-                      <DetailRow
-                        label="치은 연하"
-                        value={formatAbutmentInfoFieldValue(m, "marginSubgMm")}
-                      />
-                    )}
+                    {(() => {
+                      const supraTooltip = m.supragingivalRaisedForStrength ? (
+                        <>
+                          포스트 파절 방지 두께 확보를 위해 치은 연상으로 올렸습니다.
+                          <br />
+                          음수는 치은선 위 높이입니다.
+                        </>
+                      ) : undefined;
+                      return editable ? (
+                        <EditableRangeRow
+                          label="치은 연하"
+                          minValue={m.marginSubgMinMm ?? item.params.marginSubgMinMm ?? 0.5}
+                          maxValue={m.marginSubgMaxMm ?? item.params.marginSubgMaxMm ?? 1}
+                          min={CUSTOM_ABUTMENT_PARAM_SPECS.marginSubgMinMm.min}
+                          max={CUSTOM_ABUTMENT_PARAM_SPECS.marginSubgMaxMm.max}
+                          step={0.1}
+                          digits={1}
+                          suffix="mm"
+                          disabled={rowDisabled}
+                          warning={Boolean(m.supragingivalRaisedForStrength)}
+                          warningTooltip={supraTooltip}
+                          onCommit={(minV, maxV) =>
+                            onEditField?.(item, "marginSubgMm", { min: minV, max: maxV })
+                          }
+                        />
+                      ) : (
+                        <DetailRow
+                          label="치은 연하"
+                          value={formatAbutmentInfoFieldValue(m, "marginSubgMm")}
+                          warning={Boolean(m.supragingivalRaisedForStrength)}
+                          warningTooltip={supraTooltip}
+                        />
+                      );
+                    })()}
                     {editable ? (
                       <EditableNumberRow
                         label="최대 직경"

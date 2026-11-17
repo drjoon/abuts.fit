@@ -60,19 +60,25 @@ const FILLER_RE =
 const has = (s: string, re: RegExp) => re.test(s);
 
 const RULES: Rule[] = [
-  // 「치은 연하 0.5~1.0」은 구간, 숫자 하나는 얕은 끝.
+  // 「치은 연하 0.5~1.0」, 「치은 연하 -1.5~-2.0」, 「치은 연상 1.5~2.0」은 구간, 숫자 하나는 얕은 끝.
   {
     match: (c, num) => {
-      if (!has(c, /치은\s*연하/)) return null;
-      const strip = [/치은\s*연하/g, /마진/g, /(깊|얕)[게이]?/g];
-      const range = /(\d+(?:\.\d+)?)\s*[~～\-]\s*(\d+(?:\.\d+)?)/.exec(c);
+      const isSupra = has(c, /치은\s*연상/);
+      if (!has(c, /치은\s*연하/) && !isSupra) return null;
+      const strip = [/치은\s*연[하상]/g, /마진/g, /(깊|얕)[게이]?/g];
+      const range = /(-?\d+(?:\.\d+)?)\s*[~～]\s*(-?\d+(?:\.\d+)?)/.exec(c) ||
+        (!c.includes("-") || /-\d+(?:\.\d+)?\s*-\s*-\d+/.test(c)
+          ? /(-?\d+(?:\.\d+)?)\s*-\s*(-?\d+(?:\.\d+)?)/.exec(c)
+          : null);
       if (range) {
-        const a = Number(range[1]);
-        const b = Number(range[2]);
+        const rawA = Number(range[1]);
+        const rawB = Number(range[2]);
+        const a = isSupra && rawA > 0 ? -rawA : rawA;
+        const b = isSupra && rawB > 0 ? -rawB : rawB;
         const lo = Math.min(a, b);
         const hi = Math.max(a, b);
         return {
-          strip: [...strip, /(\d+(?:\.\d+)?)\s*[~～\-]\s*(\d+(?:\.\d+)?)/g],
+          strip: [...strip, /(-?\d+(?:\.\d+)?)\s*[~～\-]\s*(-?\d+(?:\.\d+)?)/g],
           deltas: [
             { key: "marginSubgMinMm", mode: "set", value: lo },
             { key: "marginSubgMaxMm", mode: "set", value: hi },
@@ -80,8 +86,11 @@ const RULES: Rule[] = [
           ],
         };
       }
-      if (num != null) {
-        return { strip, deltas: [{ key: "marginDepthMm", mode: "set", value: num }] };
+      const signedMatch = /(-?\d+(?:\.\d+)?)/.exec(c);
+      const signedNum = signedMatch ? Number(signedMatch[1]) : num;
+      if (signedNum != null && Number.isFinite(signedNum)) {
+        const v = isSupra && signedNum > 0 ? -signedNum : signedNum;
+        return { strip: [...strip, /-/g], deltas: [{ key: "marginDepthMm", mode: "set", value: v }] };
       }
       return null;
     },

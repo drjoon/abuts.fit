@@ -73,9 +73,9 @@ const PARAM_SPECS = {
   postWidthScale: { label: "포스트 굵기 배율", unit: "배", min: 0.7, max: 1.3 },
   marginFilletRadiusMm: { label: "마진 챔퍼 R(0.1mm 단위, 최소 0.5, 기본 0.6)", unit: "mm", min: 0.5, max: 1.0 },
   marginShoulderMm: { label: "마진 챔퍼 폭(피니시라인에서 축벽까지, 구치 기본 0.5·전치 기본 0.4)", unit: "mm", min: 0.2, max: 0.9 },
-  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준, 치은 연하 얕은 끝)", unit: "mm", min: -1.5, max: 2.5 },
-  marginSubgMinMm: { label: "치은 연하 마진 얕은 끝(기본 0.5)", unit: "mm", min: -1.5, max: 2.5 },
-  marginSubgMaxMm: { label: "치은 연하 마진 깊은 끝(기본 1.0)", unit: "mm", min: -1.5, max: 2.5 },
+  marginDepthMm: { label: "피니시라인 치은 하방 깊이(협·설 기준, 치은 연하 얕은 끝)", unit: "mm", min: -2.5, max: 2.5 },
+  marginSubgMinMm: { label: "치은 연하 마진 얕은 끝(기본 0.5, 음수는 치은 연상)", unit: "mm", min: -2.5, max: 2.5 },
+  marginSubgMaxMm: { label: "치은 연하 마진 깊은 끝(기본 1.0, 음수는 치은 연상)", unit: "mm", min: -2.5, max: 2.5 },
   marginScallopMm: { label: "근·원심 마진 스캘럽(치관측 상승·치은 라인 추종, 전치 기본 0.75·구치 기본 0.55)", unit: "mm", min: 0, max: 1.6 },
   marginSizeScale: { label: "마진 단면 크기 배율", unit: "배", min: 0.7, max: 1.4 },
   crownContactMm: { label: "예측 크라운 접촉량", unit: "mm", min: 0, max: 0.2 },
@@ -219,20 +219,29 @@ function snapshotTeeth(raw, transferId) {
     const s3Key = String(row?.s3Key || "").trim();
     const crownS3Key = String(row?.crownS3Key || "").trim();
     if (s3Key === previewStlKey(transferId, toothNumber, "abutment")) {
+      const enameloplastyLocal = snapshotMargin(row?.enameloplastyLocal);
       teeth.push({
         ...base,
         s3Key,
         crownS3Key: crownS3Key === previewStlKey(transferId, toothNumber, "crown") ? crownS3Key : "",
         size: Number(row?.size) || 0,
         marginLoopLocal: snapshotMargin(row?.marginLoopLocal),
+        ...(enameloplastyLocal ? { enameloplastyLocal } : {}),
       });
       continue;
     }
     const localPositions = snapshotBuffer(row?.localPositions);
     const crownLocalPositions = snapshotBuffer(row?.crownLocalPositions);
     const marginLoopLocal = snapshotBuffer(row?.marginLoopLocal);
+    const enameloplastyLocal = snapshotMargin(row?.enameloplastyLocal);
     if (!localPositions || !crownLocalPositions || !marginLoopLocal) continue;
-    teeth.push({ ...base, localPositions, crownLocalPositions, marginLoopLocal });
+    teeth.push({
+      ...base,
+      localPositions,
+      crownLocalPositions,
+      marginLoopLocal,
+      ...(enameloplastyLocal ? { enameloplastyLocal } : {}),
+    });
   }
   return teeth;
 }
