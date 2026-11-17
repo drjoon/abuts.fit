@@ -846,6 +846,156 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       minPostWallMm >= 0.3,
       `인접 어벗(#25)과 바짝 붙은 기울어진 #24 포스트에서도 모든 측면 벽 두께(최소 ${minPostWallMm.toFixed(3)}mm)가 0.3mm 이상 유지되어 뚫리지 않는다`,
     );
+
+    // 7) 소구치(#14·#24·#25) 단면은 협설로 약간 길고(BL > MD), 협측이 볼록하게 넓고 설측이 덜 돌출된 계란-사각형이며,
+    //    근심에 #24가 붙고 원심이 열린 #25도 원심 볼록 없이 균형 잡힌 계란형·대합거리 1.5mm 우선순위를 지킨다.
+    const baseUpperPremolar = {
+      ...fixture36,
+      toothNumber: "24",
+      jaw: "upper" as const,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: [0, 0, -1] as [number, number, number],
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: [0, -1, 0] as [number, number, number],
+      },
+      scanbodyTop: [0, 0, -7] as [number, number, number],
+      archOcclusalDir: [0, 0, -1] as [number, number, number],
+      labialDir: [1, 0, 0] as [number, number, number],
+      mesialDir: [0, 1, 0] as [number, number, number],
+    };
+    const nb24 = { ...baseUpperPremolar, toothNumber: "24" };
+    const nb25 = {
+      ...baseUpperPremolar,
+      toothNumber: "25",
+      fixturePose: {
+        ...baseUpperPremolar.fixturePose,
+        origin: [0, -5.1, 0] as [number, number, number],
+      },
+      scanbodyTop: [0, -5.1, -7] as [number, number, number],
+    };
+    // 원심(#26, y ≈ -10.2)에 먼 자연치가 있고 대합치도 여유 있는 소구치(#24·#25) 실측 조건
+    const jawWith26 = makeGridSurface(-18, 18, -16, 14, 44, (x, y) => {
+      const ging = -3.1 + 0.2 * Math.exp(-(x * x) / 12);
+      const molar26 = -4.8 * Math.exp(-((x * x) / 14 + ((y + 11.2) * (y + 11.2)) / 9));
+      const canine23 = -4.5 * Math.exp(-((x * x) / 11 + ((y - 6.8) * (y - 6.8)) / 7));
+      return ging + molar26 + canine23;
+    });
+    const premolarOpp = makeGridSurface(-12, 12, -14, 12, 32, () => -9.9);
+    const veryTallOpp = makeGridSurface(-12, 12, -14, 12, 32, () => -13.2);
+    const designedTallClear25 = await designCustomAbutmentStl({
+      fixture: nb25,
+      neighbors: [nb24],
+      jawGeometry: jawWith26,
+      opposingGeometry: veryTallOpp,
+      toothWorks: [
+        { toothNumber: "24", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+        { toothNumber: "25", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+      ],
+    });
+    assert.ok(
+      designedTallClear25.metrics.occlusalClearanceMm != null &&
+        Math.abs(designedTallClear25.metrics.occlusalClearanceMm - 1.5) <= 0.1,
+      `대합치가 멀어도 초기 생성·재생성에서 대합 거리 1.5mm가 1순위로 유지된다(실측 ${designedTallClear25.metrics.occlusalClearanceMm}mm)`,
+    );
+    const designedPair24 = await designCustomAbutmentStl({
+      fixture: nb24,
+      neighbors: [nb25],
+      jawGeometry: jawWith26,
+      opposingGeometry: premolarOpp,
+      toothWorks: [
+        { toothNumber: "24", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+        { toothNumber: "25", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+      ],
+    });
+    const designedPair25 = await designCustomAbutmentStl({
+      fixture: nb25,
+      neighbors: [nb24],
+      jawGeometry: jawWith26,
+      opposingGeometry: premolarOpp,
+      toothWorks: [
+        { toothNumber: "24", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+        { toothNumber: "25", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+      ],
+    });
+    for (const [label, d] of [
+      ["#24", designedPair24],
+      ["#25", designedPair25],
+    ] as const) {
+      assert.ok(
+        d.metrics.occlusalClearanceMm != null && Math.abs(d.metrics.occlusalClearanceMm - 1.5) <= 0.1,
+        `${label} 재생성/초기 생성에서 대합 거리 1.5mm가 1순위로 맞춰진다(실측 ${d.metrics.occlusalClearanceMm}mm)`,
+      );
+      const { hexX, hexY, axis, origin } = d.fixture.fixturePose;
+      const lab = d.fixture.labialDir;
+      const mes = d.fixture.mesialDir;
+      const mLoop = d.marginLoopLocal;
+      const uvPts: Array<[number, number]> = [];
+      let uMin = Infinity;
+      let uMax = -Infinity;
+      let vMin = Infinity;
+      let vMax = -Infinity;
+      for (let i = 0; i < mLoop.length; i += 3) {
+        const lx = mLoop[i]!;
+        const ly = mLoop[i + 1]!;
+        const lz = mLoop[i + 2]!;
+        const wx = lx * hexX[0]! + ly * hexY[0]! + lz * axis[0]!;
+        const wy = lx * hexX[1]! + ly * hexY[1]! + lz * axis[1]!;
+        const wz = lx * hexX[2]! + ly * hexY[2]! + lz * axis[2]!;
+        const u = wx * lab[0]! + wy * lab[1]! + wz * lab[2]!;
+        const v = wx * mes[0]! + wy * mes[1]! + wz * mes[2]!;
+        uvPts.push([u, v]);
+        if (u < uMin) uMin = u;
+        if (u > uMax) uMax = u;
+        if (v < vMin) vMin = v;
+        if (v > vMax) vMax = v;
+      }
+      const blSpan = uMax - uMin;
+      const mdSpan = vMax - vMin;
+      assert.ok(
+        blSpan > mdSpan * 1.08,
+        `${label} 소구치 마진은 협설(${blSpan.toFixed(2)}mm)이 근원심(${mdSpan.toFixed(2)}mm)보다 약간 길다(원점=${origin.join(",")})`,
+      );
+      assert.ok(
+        Math.abs(vMax + vMin) <= 0.55,
+        `${label} 소구치는 원심/근심 한쪽으로 과도하게 볼록해지지 않는다(vMin=${vMin.toFixed(2)}, vMax=${vMax.toFixed(2)})`,
+      );
+      const uMid = (uMin + uMax) * 0.5;
+      const halfBl = blSpan * 0.5;
+      const widthAtSlice = (uTarget: number) => {
+        const hits: number[] = [];
+        for (let i = 0; i < uvPts.length; i += 1) {
+          const [u0, v0] = uvPts[i]!;
+          const [u1, v1] = uvPts[(i + 1) % uvPts.length]!;
+          if ((u0 - uTarget) * (u1 - uTarget) <= 0 && Math.abs(u1 - u0) > 1e-6) {
+            const t = (uTarget - u0) / (u1 - u0);
+            hits.push(v0 + (v1 - v0) * t);
+          }
+        }
+        return hits.length >= 2 ? Math.max(...hits) - Math.min(...hits) : 0;
+      };
+      const buccalW = widthAtSlice(uMid + halfBl * 0.45);
+      const lingualW = widthAtSlice(uMid - halfBl * 0.45);
+      const ratio = lingualW / Math.max(buccalW, 1e-6);
+      assert.ok(
+        ratio >= 0.8 && ratio <= 0.96,
+        `${label} 소구치는 설측 폭(${lingualW.toFixed(2)}mm)이 협측 폭(${buccalW.toFixed(2)}mm)보다 살짝 좁은 사각-계란형(비율 ${ratio.toFixed(2)})이다`,
+      );
+    }
+    assert.ok(
+      singleShort.metrics.occlusalClearanceMm != null &&
+        Math.abs(singleShort.metrics.occlusalClearanceMm - 1.5) <= 0.1 &&
+        singleShort.metrics.postTaperDeg === 2.0 &&
+        singleShort.metrics.idealPostTaperDeg != null &&
+        singleShort.metrics.idealPostTaperDeg < 2.0,
+      `적정 테이퍼(${singleShort.metrics.idealPostTaperDeg}°)가 2.0° 미만이어도 대합거리(${singleShort.metrics.occlusalClearanceMm}mm)·포스트 높이는 유지하고 테이퍼만 2.0°로 맞추며 적정값을 기록한다`,
+    );
+    assert.ok(
+      designedTallClear25.metrics.idealPostTaperDeg != null &&
+        designedTallClear25.metrics.idealPostTaperDeg < 2.0 &&
+        designedTallClear25.metrics.postTaperDeg >= 2.0,
+      `포스트 높이가 길어 상단 여유 기준 적정 테이퍼(${designedTallClear25.metrics.idealPostTaperDeg}°)가 2.0° 미만인 경우에도 포스트 높이는 유지하고 적정값을 기록한다`,
+    );
   }
 }
 

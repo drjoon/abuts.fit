@@ -90,13 +90,15 @@ export const CUSTOM_ABUTMENT_PARAM_KEYS = Object.keys(
   CUSTOM_ABUTMENT_PARAM_SPECS,
 ) as CustomAbutmentParamKey[];
 
-/** 치과 취향으로 저장할 수 있는 값. 윗면 이동·개별 수평 회전·연결 토글은 케이스마다 달라 뺀다. */
+/** 치과 취향으로 저장할 수 있는 값. 윗면 이동·개별 수평 회전·연결 토글·높이 보정·테이퍼는 케이스별 대합거리·높이에 종속되어 뺀다. */
 export const CUSTOM_ABUTMENT_PREFERENCE_KEYS = CUSTOM_ABUTMENT_PARAM_KEYS.filter(
   (key) =>
     key !== "axisShiftLabialMm" &&
     key !== "axisShiftMesialMm" &&
     key !== "postYawDeg" &&
-    key !== "postTaperLink",
+    key !== "postTaperLink" &&
+    key !== "postHeightOffsetMm" &&
+    key !== "postTaperDeg",
 );
 
 export type CustomAbutmentPreferenceScope = "all" | "anterior" | "posterior";
@@ -332,7 +334,14 @@ export function evaluatePostTaperRetention(
   const h = Math.max(0.5, Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_REF_POST_HEIGHT_MM);
   const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
   const rawDeg = (Math.atan(refSlope * (h / RETENTION_REF_POST_HEIGHT_MM)) * 180) / Math.PI;
-  const idealTaperDeg = Math.max(0.1, Math.round(rawDeg * 10) / 10);
+  const isBelowMinLimit = rawDeg < spec.minTaperDeg - 0.02;
+  const roundedRaw = Math.round(rawDeg * 10) / 10;
+  const idealTaperDeg = Math.max(
+    0.1,
+    isBelowMinLimit && roundedRaw >= spec.minTaperDeg
+      ? Math.max(0.1, Math.floor(rawDeg * 10) / 10)
+      : roundedRaw,
+  );
   const clamped = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, rawDeg));
   const appliedTaperDeg = Math.round(clamped * 10) / 10;
   return {
@@ -340,7 +349,7 @@ export function evaluatePostTaperRetention(
     appliedTaperDeg,
     minTaperDeg: spec.minTaperDeg,
     maxTaperDeg: spec.maxTaperDeg,
-    isBelowMinLimit: idealTaperDeg < spec.minTaperDeg - 1e-6,
+    isBelowMinLimit,
   };
 }
 

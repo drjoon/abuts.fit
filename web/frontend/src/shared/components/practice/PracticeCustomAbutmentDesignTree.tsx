@@ -1471,15 +1471,19 @@ export function PracticeCustomAbutmentDesignTree({
                         isBridge: Boolean(m.isBridge),
                         retainerCount: m.bridgeRetainerCount,
                       });
+                      const effectiveIdealDeg =
+                        m.idealPostTaperDeg != null
+                          ? Math.min(m.idealPostTaperDeg, taperCheck.idealTaperDeg)
+                          : taperCheck.idealTaperDeg;
                       const taperLimitClamped =
-                        taperCheck.isBelowMinLimit &&
-                        (postTaperLinked || m.postTaperDeg <= taperCheck.minTaperDeg + 0.05);
+                        effectiveIdealDeg < taperCheck.minTaperDeg - 1e-4 &&
+                        (postTaperLinked || m.postTaperDeg <= taperCheck.minTaperDeg + 0.12);
                       const taperLimitTooltip = taperLimitClamped ? (
                         <>
-                          적정값 {cleanNum(taperCheck.idealTaperDeg, 1)}° · 최소값{" "}
+                          적정값 {cleanNum(effectiveIdealDeg, 1)}° · 최소값{" "}
                           {cleanNum(taperCheck.minTaperDeg, 1)}°
                           <br />
-                          포스트 높이가 낮아 편측 최소값({cleanNum(taperCheck.minTaperDeg, 1)}°)으로 맞췄습니다.
+                          포스트 높이는 유지하고 테이퍼만 최소값으로 맞췄습니다.
                         </>
                       ) : undefined;
                       return (

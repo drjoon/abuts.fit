@@ -1569,15 +1569,18 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       const base = gumballParamBaseRef.current[summary.tooth]!;
       const taperLinked = (design.params.postTaperLink ?? 1) >= 0.5;
-      const next: Partial<CustomAbutmentDesignParams> = {
-        postWidthScale: clampKey("postWidthScale", base.postWidthScale * summary.widthRatio),
-        postHeightOffsetMm: clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm),
-      };
-      if (taperLinked && Math.abs(summary.heightDeltaMm) >= 0.02) {
-        next.postTaperDeg = computeOptimalPostTaperDeg(design.metrics.postHeightMm, {
-          isBridge: Boolean(design.metrics.isBridge),
-          retainerCount: design.metrics.bridgeRetainerCount,
-        });
+      const next: Partial<CustomAbutmentDesignParams> = {};
+      if (Math.abs(summary.widthRatio - 1) >= 0.005) {
+        next.postWidthScale = clampKey("postWidthScale", base.postWidthScale * summary.widthRatio);
+      }
+      if (Math.abs(summary.heightDeltaMm) >= 0.02) {
+        next.postHeightOffsetMm = clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm);
+        if (taperLinked) {
+          next.postTaperDeg = computeOptimalPostTaperDeg(design.metrics.postHeightMm, {
+            isBridge: Boolean(design.metrics.isBridge),
+            retainerCount: design.metrics.bridgeRetainerCount,
+          });
+        }
       }
       design.params = { ...design.params, ...next };
       ctx.overrides[summary.tooth] = {
@@ -3144,7 +3147,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     [addDesignToScene, removeDesignFromScene],
   );
 
-  /** 저장본이 아니라 지금 조정값으로 형상을 다시 만든다. 선택된 말이 있으면 그 치아만. */
+  /** 저장본이 아니라 지금 조정값으로 형상을 다시 만든다. 대합거리(기본 1.5mm)를 1순위로 잡아 포스트 높이·테이퍼를 새로 결정한다. */
   const regenerateDesigns = useCallback(
     async (teeth?: readonly string[]) => {
       const ctx = designContextRef.current;
@@ -3154,10 +3157,19 @@ export function PracticeCustomAbutmentPreviewDialog({
       );
       if (!ctx || targets.length === 0) return;
       await applyDesignChanges(
-        targets.map((toothNumber) => ({
-          toothNumber,
-          params: stripDirectEditShiftOverrides(ctx.overrides[toothNumber] ?? {}),
-        })),
+        targets.map((toothNumber) => {
+          const clean = stripDirectEditShiftOverrides(ctx.overrides[toothNumber] ?? {});
+          delete clean.postHeightOffsetMm;
+          delete clean.postWidthScale;
+          if ((clean.postTaperLink ?? 1) >= 0.5) {
+            delete clean.postTaperDeg;
+          }
+          editedInfoFieldsRef.current[toothNumber]?.delete("postHeightMm");
+          return {
+            toothNumber,
+            params: clean,
+          };
+        }),
         "replace",
       );
       persistDesign();

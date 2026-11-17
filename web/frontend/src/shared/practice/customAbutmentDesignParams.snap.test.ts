@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CUSTOM_ABUTMENT_PREFERENCE_KEYS,
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
   evaluatePostTaperRetention,
@@ -83,4 +84,14 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   assert.equal(computeOptimalPostTaperDeg(6.0, twoUnitBridge), 3.6);
   assert.equal(computeOptimalPostTaperDeg(5.0, threeRetainerBridge), 3.3);
   assert.equal(computeOptimalPostHeightMmFromTaper(3.0, twoUnitBridge), 5.0);
+
+  // 경계선(1.95° < 2.0°)도 반올림으로 누락되지 않고 최소값 클램프로 판별된다
+  const borderlineBridge = evaluatePostTaperRetention(3.25, twoUnitBridge);
+  assert.equal(borderlineBridge.appliedTaperDeg, 2.0);
+  assert.equal(borderlineBridge.idealTaperDeg, 1.9);
+  assert.equal(borderlineBridge.isBelowMinLimit, true);
+
+  // 케이스별 높이 보정·테이퍼는 치과 전역 취향에서 제외해 대합거리 1.5mm 우선순위를 해치지 않는다
+  assert.equal(CUSTOM_ABUTMENT_PREFERENCE_KEYS.includes("postHeightOffsetMm"), false);
+  assert.equal(CUSTOM_ABUTMENT_PREFERENCE_KEYS.includes("postTaperDeg"), false);
 });
