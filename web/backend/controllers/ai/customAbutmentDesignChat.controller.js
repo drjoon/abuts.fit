@@ -34,7 +34,22 @@ import {
 import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
-import { getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
+import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
+import {
+  DESIGN_ROUTE_PLATFORM,
+  abutmentLabCheckDeadline,
+  clearMachiningBind,
+  currentDesignRoute,
+  designRouteBlockMessage,
+  oralSourcesOnly,
+  platformProductionKey,
+  newDesignGeneration,
+} from "../../services/abutmentDesignRoute.js";
+import { syncPracticeTransferAbutmentFeeRoute } from "../../services/practiceTransferBilling.service.js";
+import {
+  quoteCustomAbutmentRouteFees,
+  resolveLabFeeScheduleSource,
+} from "../../utils/labFeeSchedule.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
 import {
   assertWorkFilePaintSize,
@@ -371,15 +386,19 @@ async function resolvePreferenceAnchor(req, rawTransferId) {
     const parties = [practiceId, String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")];
     const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
     if (parties.includes(own) || privileged) {
+      const labIds = [String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")].filter(
+        Boolean,
+      );
       return {
         anchorId: practiceId,
         canSave: own === practiceId,
+        canEditShared: labIds.includes(own),
         transferId: String(t.transferId || transferId),
       };
     }
   }
-  if (Types.ObjectId.isValid(own)) return { anchorId: own, canSave: true, transferId };
-  return { anchorId: null, canSave: false, transferId };
+  if (Types.ObjectId.isValid(own)) return { anchorId: own, canSave: true, canEditShared: false, transferId };
+  return { anchorId: null, canSave: false, canEditShared: false, transferId };
 }
 
 async function loadPreference(anchorId) {
@@ -528,9 +547,9 @@ export async function clearCustomAbutmentDesignPreference(req, res) {
  */
 export async function presignCustomAbutmentDesignSnapshot(req, res) {
   try {
-    const { canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
-    if (!transferId || !canSave) {
-      return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
+    const { canSave, canEditShared, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    if (!transferId || (!canSave && !canEditShared)) {
+      return res.status(403).json({ success: false, message: "이 디자인을 저장할 수 없습니다." });
     }
     const toothNumber = String(req.body?.toothNumber || "").trim();
     const kind = req.body?.kind === "crown" ? "crown" : req.body?.kind === "abutment" ? "abutment" : "";
@@ -566,6 +585,13 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
         "production.customAbutmentPreview": 1,
         "production.customAbutmentManualDesign": 1,
         "production.practiceDesignConfirmedAt": 1,
+        "production.abutmentFeeRoute": 1,
+        "production.abutmentCancelDeadlineAt": 1,
+        "production.labDesignConfirmedAt": 1,
+        toothWorks: 1,
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        "billing.lines": 1,
       })
       .lean();
     const stored = transfer?.production?.customAbutmentPreview;
@@ -602,9 +628,42 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
             teeth,
           }
         : null;
+    const billedLines = Array.isArray(transfer?.billing?.lines) ? transfer.billing.lines : [];
+    const lineTeeth = billedLines
+      .filter((line) => Math.round(Number(line?.labAbutmentFee || 0)) > 0)
+      .map((line) => ({
+        toothNumber: String(line?.toothNumber || "").trim(),
+        feeName: String(line?.prosthesisType || "").trim(),
+        unit: Math.round(Number(line.labAbutmentFee || 0)),
+      }))
+      .filter((line) => /^[1-4][1-8]$/.test(line.toothNumber));
+    let feeGuide = null;
+    if (lineTeeth.length > 0) {
+      feeGuide = {
+        platformUnit: quoteCustomAbutmentRouteFees({ toothWorks: [] }).platformUnit,
+        labTeeth: lineTeeth,
+      };
+    } else {
+      const labId = String(transfer?.assigneeLabAnchorId || transfer?.targetLabAnchorId || "").trim();
+      let schedule = null;
+      if (labId && Types.ObjectId.isValid(labId)) {
+        const lab = await BusinessAnchor.findById(labId).select({ labFeeSchedule: 1 }).lean();
+        if (lab?.labFeeSchedule) schedule = resolveLabFeeScheduleSource(lab.labFeeSchedule);
+      }
+      feeGuide = schedule
+        ? quoteCustomAbutmentRouteFees({
+            toothWorks: transfer?.toothWorks,
+            labFeeSchedule: schedule,
+          })
+        : quoteCustomAbutmentRouteFees({ toothWorks: [] });
+    }
+    const choice = {
+      cancelDeadlineAt: transfer?.production?.abutmentCancelDeadlineAt || null,
+      labCheckedAt: transfer?.production?.labDesignConfirmedAt || null,
+    };
     return res.json({
       success: true,
-      data: { design, chat, paint, mode, manualDesign },
+      data: { design, chat, paint, mode, manualDesign, feeGuide, choice },
     });
   } catch (error) {
     console.error("[AI] getCustomAbutmentDesignSnapshot error", error);
@@ -618,9 +677,12 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
  */
 export async function saveCustomAbutmentDesignSnapshot(req, res) {
   try {
-    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
-    if (!transferId || !anchorId || !canSave) {
-      return res.status(403).json({ success: false, message: "의뢰 치과만 저장할 수 있습니다." });
+    const { anchorId, canSave, canEditShared, transferId } = await resolvePreferenceAnchor(
+      req,
+      req.body?.transferId,
+    );
+    if (!transferId || !anchorId || (!canSave && !canEditShared)) {
+      return res.status(403).json({ success: false, message: "이 디자인을 저장할 수 없습니다." });
     }
     const chat = snapshotChat(req.body?.chat);
     const incoming = snapshotTeeth(req.body?.teeth, transferId);
@@ -814,9 +876,13 @@ function buildConfirmedRhinoFileName(requestDoc) {
  */
 export async function confirmCustomAbutmentDesign(req, res) {
   try {
-    const { anchorId, canSave, transferId } = await resolvePreferenceAnchor(req, req.body?.transferId);
+    const { anchorId, canSave, canEditShared, transferId } = await resolvePreferenceAnchor(
+      req,
+      req.body?.transferId,
+    );
     const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
-    if (!transferId || (!canSave && !privileged) || !anchorId) {
+    const labRevision = Boolean(canEditShared) && !canSave && !privileged;
+    if (!transferId || (!canSave && !privileged && !labRevision) || !anchorId) {
       return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
     }
     const userId = String(req.user?._id || "").trim();
@@ -858,6 +924,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
     const now = new Date();
     const userOid = new Types.ObjectId(userId);
     const updatedRequests = [];
+    let cancelDeadlineAt = null;
 
     await claimAbutmentDesignHandoffLock(transferDoc._id);
     try {
@@ -873,26 +940,47 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const requestDocs =
         relatedIds.length > 0 ? await Request.find({ _id: { $in: relatedIds } }) : [];
 
+      const productionTargets = [];
       for (const toothRow of validTeeth) {
         const reqDoc = requestDocs.find(
           (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothRow.toothNumber,
         );
         if (!reqDoc) continue;
+        const blocked = designRouteBlockMessage(reqDoc, DESIGN_ROUTE_PLATFORM);
+        if (blocked) {
+          return res.status(409).json({ success: false, message: blocked });
+        }
+        if (labRevision && currentDesignRoute(reqDoc) !== DESIGN_ROUTE_PLATFORM) {
+          return res.status(409).json({
+            success: false,
+            message: "의뢰자가 확정한 디자인만 수정할 수 있습니다.",
+          });
+        }
+        productionTargets.push({ toothRow, reqDoc });
+      }
+
+      const productionTeeth = [];
+      for (const { toothRow, reqDoc } of productionTargets) {
+        const generation = newDesignGeneration();
+        const destKey = platformProductionKey(reqDoc.requestId, generation);
+        await copyObjectInS3(toothRow.s3Key, destKey);
+        productionTeeth.push({
+          toothRow,
+          reqDoc,
+          generation,
+          destKey,
+        });
+      }
+
+      for (const { toothRow, reqDoc, generation, destKey } of productionTeeth) {
         if (!reqDoc.caseInfos) reqDoc.caseInfos = {};
         if (!reqDoc.rnd) reqDoc.rnd = {};
 
-        const prevPrimary = reqDoc.caseInfos.file?.s3Key ? reqDoc.caseInfos.file : null;
+        const prevPrimaryKey = String(reqDoc.caseInfos.file?.s3Key || "").trim();
         const prevSources = Array.isArray(reqDoc.caseInfos.designSourceFiles)
           ? reqDoc.caseInfos.designSourceFiles
           : [];
-        const seenKeys = new Set();
-        const sourceFiles = [];
-        for (const src of [...prevSources, prevPrimary]) {
-          const k = String(src?.s3Key || "").trim();
-          if (!k || k === toothRow.s3Key || seenKeys.has(k)) continue;
-          seenKeys.add(k);
-          sourceFiles.push(src);
-        }
+        const sourceFiles = oralSourcesOnly(prevSources, [prevPrimaryKey, toothRow.s3Key, destKey]);
         const fileName = toothRow.fileName || `custom_abutment_${toothRow.toothNumber}.stl`;
         reqDoc.caseInfos.designSourceFiles = sourceFiles;
         reqDoc.caseInfos.files = sourceFiles;
@@ -900,8 +988,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
           originalName: fileName,
           fileType: "model/stl",
           fileSize: toothRow.size,
-          s3Key: toothRow.s3Key,
+          s3Key: destKey,
         };
+        reqDoc.caseInfos.designGeneration = generation;
+        reqDoc.caseInfos.designRoute = DESIGN_ROUTE_PLATFORM;
+        reqDoc.caseInfos.machiningSourceS3Key = destKey;
         reqDoc.caseInfos.productMode = "custom_abutment";
         if (!String(reqDoc.caseInfos.designSoftware || "").trim()) {
           reqDoc.caseInfos.designSoftware = "3Shape";
@@ -942,6 +1033,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
             updatedAt: now,
           };
         }
+        clearMachiningBind(reqDoc);
         await reqDoc.save();
         updatedRequests.push({ reqDoc, rhinoName });
       }
@@ -955,14 +1047,14 @@ export async function confirmCustomAbutmentDesign(req, res) {
       );
       const patientName = String(req.body?.patientName || "").trim();
       const newMirrored = stampPracticeTransferFileBatch(
-        validTeeth.map((t) => ({
+        productionTeeth.map(({ toothRow, destKey }) => ({
           patientName,
-          tooth: t.toothNumber,
+          tooth: toothRow.toothNumber,
           file: {
-            originalName: t.fileName || `custom_abutment_${t.toothNumber}.stl`,
+            originalName: toothRow.fileName || `custom_abutment_${toothRow.toothNumber}.stl`,
             mimetype: "model/stl",
-            size: t.size,
-            s3Key: t.s3Key,
+            size: toothRow.size,
+            s3Key: destKey,
           },
         })),
         { uploadedAt: now, force: true },
@@ -983,25 +1075,54 @@ export async function confirmCustomAbutmentDesign(req, res) {
         teeth: validTeeth,
       };
 
+      const feeRevision = labRevision
+        ? Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0)))
+        : Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0))) + 1;
+      cancelDeadlineAt = transferDoc.production?.abutmentCancelDeadlineAt || null;
+      if (!labRevision && !cancelDeadlineAt) {
+        cancelDeadlineAt = await abutmentLabCheckDeadline(now);
+      }
+      const productionSet = {
+        "production.designFiles": mergedDesignFiles,
+        "production.designReadyAt": now,
+        "production.practiceDesignConfirmedAt": now,
+        "production.practiceDesignConfirmedBy": userOid,
+        "production.confirmedAt": now,
+        "production.confirmedBy": userOid,
+        "production.customAbutmentPreview": nextPreview,
+      };
+      if (!labRevision) {
+        productionSet["production.abutmentFeeRoute"] = "platform";
+        productionSet["production.abutmentFeeRouteRevision"] = feeRevision;
+        if (cancelDeadlineAt) {
+          productionSet["production.abutmentCancelDeadlineAt"] = cancelDeadlineAt;
+        }
+      }
       await PracticeTransfer.updateOne(
         { _id: transferDoc._id },
         {
-          $set: {
-            "production.designFiles": mergedDesignFiles,
-            "production.designReadyAt": now,
-            "production.practiceDesignConfirmedAt": now,
-            "production.practiceDesignConfirmedBy": userOid,
-            "production.confirmedAt": now,
-            "production.confirmedBy": userOid,
-            "production.customAbutmentPreview": nextPreview,
-          },
+          $set: productionSet,
           $unset: {
             "production.customAbutmentManualDesign": "",
           },
         },
       );
+      if (!transferDoc.production) transferDoc.production = {};
+      if (!labRevision) {
+        transferDoc.production.abutmentFeeRoute = "platform";
+        transferDoc.production.abutmentFeeRouteRevision = feeRevision;
+        if (cancelDeadlineAt) {
+          transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
+        }
+      }
     } finally {
       await releaseAbutmentDesignHandoffLock(transferDoc._id);
+    }
+    if (!labRevision) {
+      await syncPracticeTransferAbutmentFeeRoute({
+        transfer: transferDoc,
+        actorUserId: userId,
+      });
     }
 
     res.json({
@@ -1011,6 +1132,9 @@ export async function confirmCustomAbutmentDesign(req, res) {
         transferId,
         requestCount: updatedRequests.length,
         teeth: validTeeth.map((t) => t.toothNumber),
+        cancelDeadlineAt: cancelDeadlineAt
+          ? new Date(cancelDeadlineAt).toISOString()
+          : null,
       },
     });
 
@@ -1081,19 +1205,34 @@ export async function requestManualCustomAbutmentDesign(req, res) {
     if (!transferId || (!canSave && !privileged) || !anchorId) {
       return res.status(403).json({ success: false, message: "의뢰 치과만 요청할 수 있습니다." });
     }
-    const transferDoc = await PracticeTransfer.findOne({ transferId })
-      .select({
-        _id: 1,
-        transferId: 1,
-        practiceUserId: 1,
-        practiceBusinessAnchorId: 1,
-        targetLabAnchorId: 1,
-        assigneeLabAnchorId: 1,
-        "production.customAbutmentPreview": 1,
-      })
-      .lean();
+    const transferDoc = await PracticeTransfer.findOne({ transferId });
     if (!transferDoc) {
       return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+    const relatedIds = (Array.isArray(transferDoc.production?.relatedRequestIds)
+      ? transferDoc.production.relatedRequestIds
+      : []
+    )
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id));
+    if (relatedIds.length > 0) {
+      const related = await Request.find({
+        _id: { $in: relatedIds.map((id) => new Types.ObjectId(id)) },
+      })
+        .select({
+          "caseInfos.designRoute": 1,
+          "caseInfos.file.s3Key": 1,
+          designCompletedAt: 1,
+          "partnerBilling.practiceConfirmedAiDesign": 1,
+          "partnerBilling.relatedPracticeTransferId": 1,
+        })
+        .lean();
+      if (related.some((row) => currentDesignRoute(row) === DESIGN_ROUTE_PLATFORM)) {
+        return res.status(409).json({
+          success: false,
+          message: "의뢰자가 확정한 디자인입니다. 수작업으로 바꾸지 않습니다.",
+        });
+      }
     }
 
     const now = new Date();
@@ -1154,15 +1293,30 @@ export async function requestManualCustomAbutmentDesign(req, res) {
       hasPaint: shapes.length > 0,
     };
 
+    const feeRevision =
+      Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0))) + 1;
     await PracticeTransfer.updateOne(
       { _id: transferDoc._id },
       {
         $set: {
           "production.customAbutmentManualDesign": manualDesign,
           "production.customAbutmentPreview": nextPreview,
+          "production.abutmentFeeRoute": "lab",
+          "production.abutmentFeeRouteRevision": feeRevision,
+        },
+        $unset: {
+          "production.abutmentCancelDeadlineAt": "",
         },
       },
     );
+    if (!transferDoc.production) transferDoc.production = {};
+    transferDoc.production.abutmentFeeRoute = "lab";
+    transferDoc.production.abutmentFeeRouteRevision = feeRevision;
+    transferDoc.production.abutmentCancelDeadlineAt = null;
+    await syncPracticeTransferAbutmentFeeRoute({
+      transfer: transferDoc,
+      actorUserId: req.user?._id,
+    });
 
     res.json({
       success: true,

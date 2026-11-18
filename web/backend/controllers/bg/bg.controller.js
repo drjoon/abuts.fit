@@ -35,6 +35,10 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/files/fileBlobCache.ts
 import { Types } from "mongoose";
+import {
+  acceptFilledCallback,
+  acceptNcCallback,
+} from "../../services/abutmentDesignRoute.js";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -604,6 +608,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     skipCuffBlend,
     // JS 파이프라인이 잰 filled·cuff 시간. 의뢰 메타에만 남긴다.
     jsDuration,
+    designGeneration: incomingDesignGeneration,
   } = req.body;
 
   if (!fileName || !sourceStep) {
@@ -933,6 +938,54 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     }
   }
 
+  const callbackStepEarly = String(sourceStep || "").trim();
+  const callbackOk =
+    String(status || "")
+      .trim()
+      .toLowerCase() === "success";
+  if (
+    callbackOk &&
+    callbackStepEarly === "2-filled" &&
+    !acceptFilledCallback(request, incomingDesignGeneration)
+  ) {
+    console.warn("[BG-Callback] Ignored filled STL from another design", {
+      requestId: request?.requestId || null,
+      incomingDesignGeneration: incomingDesignGeneration || null,
+      currentDesignGeneration: request?.caseInfos?.designGeneration || null,
+    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          found: true,
+          ignored: true,
+          reason: "design_generation_mismatch",
+          requestId: request?.requestId || null,
+        },
+        "다른 디자인 세대의 Filled STL은 저장하지 않습니다.",
+      ),
+    );
+  }
+  if (callbackOk && callbackStepEarly === "3-nc" && !acceptNcCallback(request)) {
+    console.warn("[BG-Callback] Ignored NC from another design", {
+      requestId: request?.requestId || null,
+      designGeneration: request?.caseInfos?.designGeneration || null,
+      ncBind: request?.productionSchedule?.ncBind || null,
+    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          found: true,
+          ignored: true,
+          reason: "design_generation_mismatch",
+          requestId: request?.requestId || null,
+        },
+        "다른 디자인 세대의 NC는 저장하지 않습니다.",
+      ),
+    );
+  }
+
   // 2. S3 업로드 (성공 시에만, 로컬 스토리지에서 읽어서)
   let s3Info = null;
   // cnc/cnc-preload는 3-nc에서 이미 S3에 올린 NC를 브리지가 통지만 한다. 브리지에는 /files 라우트가 없다.
@@ -1185,6 +1238,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             },
           };
         }
+        const filledGeneration = String(incomingDesignGeneration || "").trim();
+        if (filledGeneration) filledMeta.designGeneration = filledGeneration;
         Object.assign(updateData, mongoSetFilledStlFile(filledMeta));
         // 준비 탭「라이노 작업중」— 생성 완료 시 GENERATING 해제
         updateData["productionSchedule.stlPreload"] = {
@@ -1236,6 +1291,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             compositeStepGingivaMm: bakedSteps.gingiva,
             gingivaStepRule: GINGIVA_STEP_RULE_CUFF_ANGLE,
           };
+          const ncGeneration = String(request?.caseInfos?.designGeneration || "").trim();
+          const ncFilledKey = String(
+            resolveFilledStlFile(request?.caseInfos)?.s3Key || "",
+          ).trim();
+          if (ncGeneration) {
+            updateData["caseInfos.ncFile"].designGeneration = ncGeneration;
+            if (ncFilledKey) updateData["caseInfos.ncFile"].filledS3Key = ncFilledKey;
+          }
         }
         updateData["productionSchedule.actualCamComplete"] = now;
         const espFileName = String(req.body?.espFileName || "").trim();

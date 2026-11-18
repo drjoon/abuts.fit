@@ -1475,6 +1475,15 @@ export function RequestorPracticeReceivePage({
               practiceDesignConfirmedAt: productionRaw.practiceDesignConfirmedAt
                 ? String(productionRaw.practiceDesignConfirmedAt)
                 : null,
+              abutmentFeeRoute:
+                productionRaw.abutmentFeeRoute === "platform" ||
+                productionRaw.abutmentFeeRoute === "lab" ||
+                productionRaw.abutmentFeeRoute === "pending"
+                  ? productionRaw.abutmentFeeRoute
+                  : null,
+              abutmentCancelDeadlineAt: productionRaw.abutmentCancelDeadlineAt
+                ? String(productionRaw.abutmentCancelDeadlineAt)
+                : null,
               abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
                 ? String(productionRaw.abutmentProductionStartedAt)
                 : null,
@@ -10462,6 +10471,23 @@ export function RequestorPracticeReceivePage({
                   uploadedAt: f.uploadedAt || null,
                 }))}
                 transferId={String(selectedTransfer.transferId || selectedTransfer._id || "")}
+                onActionComplete={(action) => {
+                  if (action !== "checked") return;
+                  const nowIso = new Date().toISOString();
+                  const id = String(selectedTransfer.transferId || selectedTransfer._id || "");
+                  const patch = (row: ReceivedPracticeTransfer) =>
+                    String(row.transferId || row._id || "") === id
+                      ? {
+                          ...row,
+                          production: {
+                            ...row.production,
+                            labDesignConfirmedAt: nowIso,
+                          },
+                        }
+                      : row;
+                  setTransfers((prev) => prev.map(patch));
+                  setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+                }}
               />
               {selectedTransfer.production?.customAbutmentManualDesign ? (
                 <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">

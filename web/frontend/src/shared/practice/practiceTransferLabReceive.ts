@@ -192,6 +192,9 @@ export type PracticeTransferLabReceiveItem = {
     workScanAlignment?: WorkScanAlignment | null;
     labDesignConfirmedAt?: string | null;
     practiceDesignConfirmedAt?: string | null;
+    abutmentFeeRoute?: "platform" | "lab" | "pending" | null;
+    /** 확정 후 기공소 확인 마감(ISO). */
+    abutmentCancelDeadlineAt?: string | null;
     abutmentProductionStartedAt?: string | null;
     /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 도착−3영업일 기본. */
     abutmentShipYmd?: string | null;

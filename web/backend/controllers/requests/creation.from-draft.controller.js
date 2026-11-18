@@ -33,6 +33,7 @@ import mongoose, { Types } from "mongoose";
 import { normalizeScrewSupply } from "../../utils/labPracticeScrewSupply.js";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
+import { stampDirectDesignRoute } from "../../services/abutmentDesignRoute.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import User from "../../models/user.model.js";
@@ -2102,6 +2103,7 @@ export async function createRequestsFromDraft(req, res) {
             });
           }
 
+          stampDirectDesignRoute(newRequest);
           requestDocs.push(newRequest);
         }
 

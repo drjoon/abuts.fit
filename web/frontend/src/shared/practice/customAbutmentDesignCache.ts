@@ -357,6 +357,16 @@ export type CustomAbutmentPaintRecord = {
   updatedSide?: string | null;
 };
 
+export type CustomAbutmentRouteFeeGuide = {
+  platformUnit: number;
+  labTeeth: Array<{ toothNumber: string; feeName: string; unit: number }>;
+};
+
+export type CustomAbutmentChoice = {
+  cancelDeadlineAt: string | null;
+  labCheckedAt: string | null;
+};
+
 export type RemoteCustomAbutmentSnapshot = {
   design: (CachedCustomAbutmentDesign & { designFresh: boolean }) | null;
   chat: CustomAbutmentChatTurn[];
@@ -365,6 +375,8 @@ export type RemoteCustomAbutmentSnapshot = {
   paint: CustomAbutmentPaintRecord | null;
   mode: "confirmed" | "manual" | null;
   manualDesign: { at?: string; message?: string; hasPaint?: boolean } | null;
+  feeGuide: CustomAbutmentRouteFeeGuide | null;
+  choice: CustomAbutmentChoice;
 };
 
 export type CustomAbutmentSnapshotUploadTooth = {
@@ -478,6 +490,11 @@ export async function fetchCustomAbutmentSnapshot(
         } | null;
         mode?: "confirmed" | "manual" | null;
         manualDesign?: { at?: string; message?: string; hasPaint?: boolean } | null;
+        feeGuide?: {
+          platformUnit?: number;
+          labTeeth?: Array<{ toothNumber?: string; feeName?: string; unit?: number }>;
+        } | null;
+        choice?: { cancelDeadlineAt?: string | null; labCheckedAt?: string | null } | null;
       };
     }>({
       path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -501,9 +518,29 @@ export async function fetchCustomAbutmentSnapshot(
         ? res.data.data.mode
         : null;
     const manualDesign = res.data.data.manualDesign ?? null;
+    const rawGuide = res.data.data.feeGuide;
+    const feeGuide: CustomAbutmentRouteFeeGuide | null = rawGuide
+      ? {
+          platformUnit: Math.max(0, Math.round(Number(rawGuide.platformUnit || 0))),
+          labTeeth: (Array.isArray(rawGuide.labTeeth) ? rawGuide.labTeeth : [])
+            .map((row) => ({
+              toothNumber: String(row?.toothNumber || "").trim(),
+              feeName: String(row?.feeName || "").trim(),
+              unit: Math.max(0, Math.round(Number(row?.unit || 0))),
+            }))
+            .filter((row) => row.toothNumber && row.unit > 0),
+        }
+      : null;
+    const rawChoice = res.data.data.choice;
+    const choice: CustomAbutmentChoice = {
+      cancelDeadlineAt: rawChoice?.cancelDeadlineAt
+        ? String(rawChoice.cancelDeadlineAt)
+        : null,
+      labCheckedAt: rawChoice?.labCheckedAt ? String(rawChoice.labCheckedAt) : null,
+    };
     const raw = res.data.data.design;
     if (!raw || !Array.isArray(raw.teeth) || raw.teeth.length === 0) {
-      return { design: null, chat, hasStl: false, paint, mode, manualDesign };
+      return { design: null, chat, hasStl: false, paint, mode, manualDesign, feeGuide, choice };
     }
     const teeth: CachedCustomAbutmentTooth[] = [];
     let hasStl = false;
@@ -556,7 +593,7 @@ export async function fetchCustomAbutmentSnapshot(
       });
     }
     if (teeth.length === 0) {
-      return { design: null, chat, hasStl: false, paint, mode, manualDesign };
+      return { design: null, chat, hasStl: false, paint, mode, manualDesign, feeGuide, choice };
     }
     const version = Number(raw.version) || 0;
     const fitVersion = Number(raw.fitVersion) || 0;
@@ -567,6 +604,8 @@ export async function fetchCustomAbutmentSnapshot(
       paint,
       mode,
       manualDesign,
+      feeGuide,
+      choice,
       design: {
         key: id,
         version,
@@ -725,11 +764,14 @@ export async function confirmCustomAbutmentDesignRemote(
     fitVersion: number;
     teeth: readonly CustomAbutmentSnapshotUploadTooth[];
   },
-): Promise<{ ok: boolean; message?: string }> {
+): Promise<{ ok: boolean; message?: string; cancelDeadlineAt?: string | null }> {
   const id = transferId.trim();
   if (!token || !id) return { ok: false, message: "의뢰 정보가 없습니다." };
   const teeth = await uploadCustomAbutmentSnapshotTeeth(token, id, payload.teeth);
-  const res = await request<{ message?: string }>({
+  const res = await request<{
+    message?: string;
+    data?: { cancelDeadlineAt?: string | null };
+  }>({
     path: "/api/ai/custom-abutment-design-confirm",
     method: "POST",
     token,
@@ -741,7 +783,12 @@ export async function confirmCustomAbutmentDesignRemote(
       teeth,
     },
   });
-  return { ok: res.ok, message: res.data?.message };
+  const deadline = res.data?.data?.cancelDeadlineAt;
+  return {
+    ok: res.ok,
+    message: res.data?.message,
+    cancelDeadlineAt: deadline ? String(deadline) : null,
+  };
 }
 
 export async function requestManualCustomAbutmentDesignRemote(

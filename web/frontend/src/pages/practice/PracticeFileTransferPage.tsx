@@ -1474,6 +1474,18 @@ export const PracticeFileTransferPage = ({
   const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
   const [abutmentProcessCancelBusy, setAbutmentProcessCancelBusy] =
     useState(false);
+  const practiceAbutmentCancelOpen = useMemo(() => {
+    const ready = (selectedTransfer?.abutmentToothStages || []).some(
+      (row) => String(row.stage || "").trim() === "준비",
+    );
+    if (!ready) return false;
+    if (selectedTransfer?.abutmentFeeRoute !== "platform") return true;
+    if (selectedTransfer.labDesignConfirmedAt) return false;
+    const deadline = selectedTransfer.abutmentCancelDeadlineAt;
+    if (!deadline) return true;
+    const at = new Date(deadline).getTime();
+    return Number.isNaN(at) || Date.now() <= at;
+  }, [selectedTransfer]);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -7077,6 +7089,9 @@ export const PracticeFileTransferPage = ({
             designFileCount: 0,
             designReadyAt: null,
             practiceDesignConfirmedAt: null,
+            abutmentFeeRoute: "pending" as const,
+            abutmentCancelDeadlineAt: null,
+            labDesignConfirmedAt: null,
           }
         : {};
       setSelectedTransfer((prev) => {
@@ -12521,9 +12536,7 @@ export const PracticeFileTransferPage = ({
           }
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
-            (selectedTransfer?.abutmentToothStages || []).some(
-              (row) => String(row.stage || "").trim() === "준비",
-            ) ? (
+            practiceAbutmentCancelOpen ? (
               <div
                 className="flex min-w-0 items-center gap-2"
                 data-no-drag
@@ -12537,9 +12550,7 @@ export const PracticeFileTransferPage = ({
                     </span>
                   </p>
                 ) : null}
-                {(selectedTransfer?.abutmentToothStages || []).some(
-                  (row) => String(row.stage || "").trim() === "준비",
-                ) ? (
+                {practiceAbutmentCancelOpen ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -12558,7 +12569,15 @@ export const PracticeFileTransferPage = ({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-xs text-xs">
-                      제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.
+                      {selectedTransfer?.abutmentFeeRoute === "platform" ? (
+                        <>
+                          기공소가 확인하기 전까지 취소할 수 있습니다.
+                          <br />
+                          확인은 확정 후 1영업일 안입니다.
+                        </>
+                      ) : (
+                        <>제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.</>
+                      )}
                     </TooltipContent>
                   </Tooltip>
                 ) : null}

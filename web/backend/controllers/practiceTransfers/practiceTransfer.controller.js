@@ -1057,6 +1057,8 @@ const toProductionApiFields = (
     workScanAlignment: toWorkScanAlignmentApi(p),
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
+    abutmentFeeRoute: String(p.abutmentFeeRoute || "").trim() || null,
+    abutmentCancelDeadlineAt: p.abutmentCancelDeadlineAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
     /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 FE는 도착−3영업일 기본. */
     abutmentShipYmd: (() => {

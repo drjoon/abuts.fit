@@ -513,6 +513,17 @@ const requestSchema = new mongoose.Schema(
         default: undefined,
       },
 
+      // 가공 원본 경로. platform=의뢰자 확정, lab=기공소 수작업, direct=커스텀어벗 의뢰하기.
+      // 다른 경로의 STL을 이 의뢰의 file·filled·NC에 넣지 않는다.
+      designRoute: {
+        type: String,
+        enum: ["platform", "lab", "direct"],
+      },
+      // 가공 원본이 바뀔 때마다 증가. filled·NC 콜백은 이 값과 같을 때만 저장한다.
+      designGeneration: String,
+      // 이 세대의 가공 원본 S3 키. 프리뷰 키를 그대로 두지 않는다.
+      machiningSourceS3Key: String,
+
       // 디자인 핸드오프 전 구강스캔/원본 primary 스냅샷 (생산 primary 교체 후 보존)
       designSourceFiles: {
         type: [
@@ -547,6 +558,7 @@ const requestSchema = new mongoose.Schema(
         s3Key: String,
         s3Url: String,
         uploadedAt: Date,
+        designGeneration: String,
       },
       // [LEGACY] filled STL 옛 필드명. stlFile과 동일 의미.
       // 신규 코드는 stlFile / resolveFilledStlFile() 사용. camFile만 단독 쓰지 말 것.
@@ -558,6 +570,7 @@ const requestSchema = new mongoose.Schema(
         s3Key: String,
         s3Url: String,
         uploadedAt: Date,
+        designGeneration: String,
       },
       // Esprit(3-nc) 결과 NC 파일. filled STL(stlFile)과 별개.
       ncFile: {
@@ -574,6 +587,9 @@ const requestSchema = new mongoose.Schema(
         compositeStepGingivaMm: Number,
         // cuff-angle-v1: 치은 스텝이 실제 Finish_Back 값. 없으면 예전 0.05 스탬프는 PRC 0.07.
         gingivaStepRule: String,
+        // 이 NC를 만든 디자인 세대와 filled S3 키. 다르면 재생성한다.
+        designGeneration: String,
+        filledS3Key: String,
         // NC 사후 분석(좌표 범위·용량). flags가 있으면 자동 연속 가공이 건너뛴다.
         // related: web/backend/utils/ncProgramCheck.js
         analysis: { type: {}, default: undefined },
@@ -1260,6 +1276,12 @@ const requestSchema = new mongoose.Schema(
         // 수동「Rhino 실행」이면 "rhino" (준비 카드 오버레이 문구)
         engine: String,
       },
+      // NC 트리거가 어떤 filled 세대를 가공하는지. 늦은 NC 콜백 거절용.
+      ncBind: {
+        generation: String,
+        filledS3Key: String,
+        at: Date,
+      },
       // 백엔드 JS 파이프라인이 실패해 원격 Rhino로 넘긴 기록(준비 페이지 상단 alert)
       stlJsFallback: {
         reason: String,
@@ -1345,6 +1367,8 @@ const requestSchema = new mongoose.Schema(
       },
       // PTX CA: 기공소 디자인·제조 생산만. 스키마에 명시해 저장이 깨지지 않게 한다.
       labDesignedAbutment: { type: Boolean, default: false },
+      // 의뢰자가 디자인 화면에서 확정한 생산 건.
+      practiceConfirmedAiDesign: { type: Boolean, default: false },
       // PTX 다치아: 형제 중 일부만 어벗 STL 업로드 → 미업로드 sibling을 준비 큐에 노출.
       ptxDesignUploadMissingVisible: { type: Boolean, default: false },
       // PTX 직납 수취 치과 BusinessAnchor

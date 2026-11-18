@@ -28,6 +28,7 @@ import { runFilledStlOffRequest } from "./filledLambda.service.js";
 import { describeJsPipelineFailure } from "./runPipelineInWorker.js";
 import { fillUpperScrewHoleInWorker } from "../../utils/screwHoleFill.service.js";
 import { elapsedMs, jsStageTiming } from "./jsDuration.js";
+import { filledStlS3Key } from "../abutmentDesignRoute.js";
 
 /** 끄기: ABUTMENT_STL_JS_PRIMARY=false (Rhino만 사용) */
 export function isAbutmentStlJsPrimaryEnabled() {
@@ -152,7 +153,8 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   if (String(request.manufacturerStage || "").trim() === "취소") return { skipped: "cancelled" };
 
   const ci = request.caseInfos || {};
-  const originalS3Key = String(ci.file?.s3Key || "").trim();
+  const generationAtStart = String(ci.designGeneration || "").trim();
+  const originalS3Key = String(ci.machiningSourceS3Key || ci.file?.s3Key || "").trim();
   if (!originalS3Key) throw new JsPipelineProblem("original_missing", "원본 STL(S3)이 없습니다.");
   const designAlreadyCorrected = isPersistedCorrectedDesignKey(originalS3Key);
 
@@ -199,7 +201,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
 
   const originalName = sanitizeStlName(fileName || ci.file?.filePath || ci.file?.originalName || "input.stl");
   const outName = filledNameOf(originalName);
-  const s3Key = `requests/${requestId}/2-filled/${outName}`;
+  const s3Key = filledStlS3Key(requestId, outName, generationAtStart);
   // 마진 코너는 그대로 두고, 커프·커넥션·포스트 다듬기는 제조사 준비에서만 한다.
   // 스크류홀은 그 다듬기 다음에 막는다. 파이프라인 출력은 개구가 열려 있다.
   let output = js.outputBuffer;
@@ -234,8 +236,22 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
   }
   lap("cuff");
   const cancelled = await Request.findOne({ requestId })
-    .select({ "productionSchedule.stlPreload.status": 1 })
+    .select({
+      "productionSchedule.stlPreload.status": 1,
+      "caseInfos.designGeneration": 1,
+      "caseInfos.machiningSourceS3Key": 1,
+    })
     .lean();
+  if (
+    generationAtStart &&
+    String(cancelled?.caseInfos?.designGeneration || "").trim() !== generationAtStart
+  ) {
+    return { skipped: "design_changed", perf: js.perf, stages, jsDuration };
+  }
+  const sourceNow = String(cancelled?.caseInfos?.machiningSourceS3Key || "").trim();
+  if (sourceNow && sourceNow !== originalS3Key) {
+    return { skipped: "design_changed", perf: js.perf, stages, jsDuration };
+  }
   if (
     String(cancelled?.productionSchedule?.stlPreload?.status || "")
       .trim()
@@ -291,6 +307,7 @@ export async function processRequestWithJsPipeline({ requestId, fileName }) {
       ...(js.hexRotation ? { hexRotation: js.hexRotation } : {}),
     },
     jsDuration,
+    ...(generationAtStart ? { designGeneration: generationAtStart } : {}),
   });
   lap("register");
   await Request.updateOne({ requestId }, { $unset: { "productionSchedule.stlJsFallback": "" } }).catch(() => null);

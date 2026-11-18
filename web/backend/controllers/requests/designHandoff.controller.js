@@ -60,8 +60,20 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import { syncPracticeTransferAbutmentFeeRoute } from "../../services/practiceTransferBilling.service.js";
 import User from "../../models/user.model.js";
 import { clearFilledStlFileOnCaseInfos, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
+import {
+  DESIGN_ROUTE_LAB,
+  abutmentCancelClosedMessage,
+  bindMachiningSource,
+  clearMachiningBind,
+  designRouteBlockMessage,
+  isPlatformPreviewKey,
+  isPlatformProductionKey,
+  newDesignGeneration,
+  oralSourcesOnly,
+} from "../../services/abutmentDesignRoute.js";
 import {
   canClaimOrHandoffDesignRequest,
   isAcceptingLabForPtxDesignRequest,
@@ -535,7 +547,12 @@ const applyPtxDesignCancelFields = (request) => {
     : [];
   const restorePrimary = sourceRows[0] || null;
   if (!request.caseInfos) request.caseInfos = {};
-  if (restorePrimary?.s3Key) {
+  const restoreKey = String(restorePrimary?.s3Key || "").trim();
+  if (
+    restoreKey &&
+    !isPlatformPreviewKey(restoreKey) &&
+    !isPlatformProductionKey(restoreKey)
+  ) {
     request.caseInfos.file = restorePrimary;
     request.caseInfos.files = sourceRows.slice(1);
     request.caseInfos.designSourceFiles = [];
@@ -550,6 +567,14 @@ const applyPtxDesignCancelFields = (request) => {
     request.caseInfos.ncFile = undefined;
   }
   request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
+  request.set("caseInfos.designRoute", undefined);
+  // 취소 전에 돌던 filled·NC가 나중에 도착해도 저장되지 않게 세대를 버린다.
+  request.caseInfos.designGeneration = newDesignGeneration();
+  request.set("caseInfos.machiningSourceS3Key", undefined);
+  clearMachiningBind(request);
+  if (request.partnerBilling) {
+    request.set("partnerBilling.practiceConfirmedAiDesign", false);
+  }
   request.designCompletedAt = undefined;
   request.designCompletedBy = undefined;
   request.manufacturerStage = "취소";
@@ -810,6 +835,14 @@ export async function handoffDesignToProduction(req, res) {
 
     if (!request.caseInfos) request.caseInfos = {};
 
+    const designRouteBlock = designRouteBlockMessage(request, DESIGN_ROUTE_LAB);
+    if (designRouteBlock) {
+      return res.status(409).json({
+        success: false,
+        message: designRouteBlock,
+      });
+    }
+
     // 기공소 3D 확인 모달에서 caseInfos/유지홈을 넘긴 경우만 갱신·검증.
     // 디자인 파트너 등 기존 파일-only 핸드오프는 의뢰에 저장된 값을 유지한다.
     if (hasCaseInfosPatch || retentionGrooveFromBody) {
@@ -929,29 +962,30 @@ export async function handoffDesignToProduction(req, res) {
         String(request.businessAnchorId || "").trim()
       : "";
 
-    const prevPrimary = toStoredFileMeta(request.caseInfos.file);
-    const prevExtras = Array.isArray(request.caseInfos.files)
-      ? request.caseInfos.files
-      : [];
-    const existingSources = Array.isArray(request.caseInfos.designSourceFiles)
-      ? request.caseInfos.designSourceFiles
-      : [];
-    const sourceRows = [];
-    const seen = new Set();
-    for (const row of [
-      ...existingSources.map(toStoredFileMeta),
-      prevPrimary,
-      ...prevExtras.map(toStoredFileMeta),
-    ]) {
-      if (!row?.s3Key || seen.has(row.s3Key)) continue;
-      if (row.s3Key === nextPrimary.s3Key) continue;
-      seen.add(row.s3Key);
-      sourceRows.push(row);
-    }
+    const prevPrimaryKey = String(request.caseInfos.file?.s3Key || "").trim();
+    const existingSources = [
+      ...(Array.isArray(request.caseInfos.designSourceFiles)
+        ? request.caseInfos.designSourceFiles
+        : []),
+      ...(Array.isArray(request.caseInfos.files) ? request.caseInfos.files : []),
+    ];
+    const sourceRows = oralSourcesOnly(
+      existingSources.map(toStoredFileMeta).filter(Boolean),
+      [prevPrimaryKey, nextPrimary.s3Key],
+    );
 
     request.caseInfos.designSourceFiles = sourceRows;
     request.caseInfos.files = sourceRows;
     request.caseInfos.file = nextPrimary;
+    bindMachiningSource(request.caseInfos, {
+      route: DESIGN_ROUTE_LAB,
+      sourceS3Key: nextPrimary.s3Key,
+    });
+    if (!request.partnerBilling || typeof request.partnerBilling !== "object") {
+      request.partnerBilling = {};
+    }
+    request.partnerBilling.practiceConfirmedAiDesign = false;
+    request.markModified("partnerBilling");
     // 구강스캔 기준 filled STL(stlFile)/NC는 무효 — 완성 어벗으로 재생성
     clearFilledStlFileOnCaseInfos(request.caseInfos);
     request.caseInfos.ncFile = undefined;
@@ -1045,6 +1079,7 @@ export async function handoffDesignToProduction(req, res) {
           updatedAt: now,
         };
       }
+      clearMachiningBind(request);
       await request.save();
       let unsupportedRnd = null;
       if (unsupportedConnectionLabel) {
@@ -1564,6 +1599,7 @@ export async function handoffDesignToProduction(req, res) {
       return;
     }
 
+    clearMachiningBind(request);
     await request.save();
 
     if (unsupportedConnectionLabel) {
@@ -2206,7 +2242,8 @@ const PRACTICE_ABUTMENT_CANCEL_PAST_READY_MESSAGE =
 /**
  * POST /api/practice/transfers/:transferId/custom-abutment-process/cancel
  * 치과 발신: 제조사 준비인 커스텀어벗만 취소한다. 가공 이후 치아는 그대로 둔다.
- * 디자인 스냅샷(형상)은 남기고, 확정 표시와 제조 큐만 내린다.
+ * 확정(platform)은 기공소가 확인하기 전, 그리고 확정 후 1영업일 안에만 취소한다.
+ * 전부 취소하면 어벗 비용은 비우고, 의뢰자가 어벗츠와 기공소 중 다시 고른다.
  */
 export async function cancelPracticeCustomAbutmentProcess(req, res) {
   let lockedId = "";
@@ -2281,6 +2318,14 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
       return res.status(404).json({
         success: false,
         message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    const cancelClosed = abutmentCancelClosedMessage(fresh.production);
+    if (cancelClosed) {
+      return res.status(409).json({
+        success: false,
+        code: "abutment_cancel_closed",
+        message: cancelClosed,
       });
     }
 
@@ -2393,10 +2438,37 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
       await PracticeTransfer.updateOne({ _id: fresh._id }, update);
     }
 
+    if (noActive && String(fresh.production?.abutmentFeeRoute || "") === "platform") {
+      const feeRevision =
+        Math.max(0, Math.floor(Number(fresh.production?.abutmentFeeRouteRevision || 0))) + 1;
+      if (!fresh.production) fresh.production = {};
+      fresh.production.abutmentFeeRoute = "pending";
+      fresh.production.abutmentFeeRouteRevision = feeRevision;
+      fresh.production.abutmentCancelDeadlineAt = null;
+      await PracticeTransfer.updateOne(
+        { _id: fresh._id },
+        {
+          $set: {
+            "production.abutmentFeeRoute": "pending",
+            "production.abutmentFeeRouteRevision": feeRevision,
+          },
+          $unset: { "production.abutmentCancelDeadlineAt": "" },
+        },
+      );
+      await syncPracticeTransferAbutmentFeeRoute({
+        transfer: fresh,
+        actorUserId: req.user?._id,
+      }).catch((err) => {
+        console.error("[design-handoff] abutment fee route pending failed", err);
+      });
+    }
+
     const toothListText = readyTeeth.map((tooth) => `#${tooth}`).join(", ");
     res.status(200).json({
       success: true,
-      message: `${toothListText} 커스텀어벗 공정을 취소했습니다.`,
+      message: noActive
+        ? `${toothListText} 커스텀어벗 공정을 취소했습니다. 어벗츠와 기공소 중 다시 고르세요.`
+        : `${toothListText} 커스텀어벗 공정을 취소했습니다.`,
       data: {
         transferId: String(fresh.transferId || "").trim(),
         cancelledTeeth: readyTeeth,

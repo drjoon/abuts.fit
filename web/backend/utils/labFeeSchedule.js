@@ -47,6 +47,7 @@
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) — 할인율 또는 항목별 할인금액.
 // - 2026-08-31: 특별공급가 — 의뢰 billing 스냅샷·updatedAt as-of(소급 금지). 신규 견적은 live.
 // - 2026-09-07: 기공비·특별공급가 pendingChange(즉시/특정일) + 작업시작 시점 유효 수가.
+import { ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE } from "./abutsAbutmentService.js";
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
 import { isFollowUpProsthesisPhase, isFinalProsthesisType, hasFollowUpProsthesisForTooth } from "./practiceTransferProsthesisFollowUp.js";
 import { normalizeFreeRemakeYears } from "./remakePricingPolicy.js";
@@ -1624,6 +1625,32 @@ function labAbutmentFeeNameForRow(row) {
   return LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME;
 }
 
+/**
+ * 확정·수작업 확인 모달에 보여줄 단가.
+ * 플랫폼은 고시 디자인+생산. 기공소는 이 의뢰 치아의 커스텀어벗 수가.
+ */
+export function quoteCustomAbutmentRouteFees({ toothWorks, labFeeSchedule } = {}) {
+  const items = normalizeLabFeeItems(labFeeSchedule);
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const labTeeth = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!isCustomAbutmentWork(row) || isSimpleAbutmentModeForFee(row)) continue;
+    const toothNumber = String(row?.toothNumber || row?.tooth || "").trim();
+    if (!/^[1-4][1-8]$/.test(toothNumber) || seen.has(toothNumber)) continue;
+    seen.add(toothNumber);
+    labTeeth.push({
+      toothNumber,
+      feeName: labAbutmentFeeNameForRow(row),
+      unit: resolveLabAbutmentUnitPriceForRow(items, false, row),
+    });
+  }
+  return {
+    platformUnit: ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+    labTeeth,
+  };
+}
+
 function resolveLabAbutmentUnitPriceForRow(items, useRemake, row) {
   const withJig =
     !isCustomAbutmentProsthesisType(
@@ -2521,8 +2548,9 @@ export function normalizeLabFeeScheduleEnabled(input) {
 /**
  * toothWorks 행 기준 기공비·기공소 커스텀어벗 수가 합산.
  * PTX CA: 단독=「커스텀어벗(지그제외)」, 보철+어벗=「커스텀어벗(지그포함)」.
- * 어벗츠 플랫폼 단가(생산 1.5만 / 디자인+생산 2.5만)는 기공소→어벗츠 Request 과금.
- * 환봉 요청중(헥스 사이즈 미정, 미도입)도 기공소 어벗(pending).
+ * abutmentFeeRoute=platform: 확정 & 의뢰. 어벗은 어벗츠 디자인+생산(2.5만), 기공소 어벗 수가는 0.
+ * 그 외(수작업): 기공소 커스텀어벗 수가. 어벗츠 플랫폼 단가는 Request 생산비.
+ * 환봉 요청중(헥스 사이즈 미정, 미도입)도 기공소 어벗(pending). 확정 경로는 예외.
  * 크라운·브리지·임시치아 등에 어벗을 붙이면 기공수가 + 지그포함 수가.
  * @returns {{ labFeeTotal, labAbutmentTotal, labAbutmentPending, abutmentRetailTotal, abutmentQuotePending, abutmentQty, total, lines }}
  */
@@ -2542,6 +2570,8 @@ export function computePracticeTransferRetailFees({
   includeLabShippingFee = false,
   /** 3D 스캔(STL·PLY·OBJ·DCM)이 있으면 스캔제작. 없으면 impr제작. */
   scanFabrication = false,
+  /** platform: 확정 & 의뢰(어벗츠 2.5만). lab·빈 값: 기공소 커스텀어벗 수가. */
+  abutmentFeeRoute = "",
 }) {
   void _abutmentPricingTier;
   void _abutmentPrices;
@@ -2579,6 +2609,18 @@ export function computePracticeTransferRetailFees({
       isSimpleAbutmentModeForFee(row)
     ) {
       return { abuts: 0, lab: 0, pending: false, quote: false, feeName: "" };
+    }
+    if (String(abutmentFeeRoute || "") === "pending" && !useRemake) {
+      return { abuts: 0, lab: 0, pending: false, quote: false, feeName: "" };
+    }
+    if (String(abutmentFeeRoute || "") === "platform" && !useRemake) {
+      return {
+        abuts: ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+        lab: 0,
+        pending: false,
+        quote: false,
+        feeName: "어벗츠 어벗",
+      };
     }
     const feeName = labAbutmentFeeNameForRow(row);
     const lab = resolveLabAbutmentUnitPriceForRow(items, useRemake, row);

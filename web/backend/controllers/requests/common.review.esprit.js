@@ -13,6 +13,7 @@ import {
 import { resolveCaseInfosHexRotationMode } from "./common.requests.controller.js";
 import { persistDummySampleHexRotation } from "../cnc/dummyProduct.js";
 import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
+import { ncMatchesCurrentDesign } from "../../services/abutmentDesignRoute.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -127,7 +128,7 @@ export async function triggerEspritForNc({
 
   const existingNc =
     request?.caseInfos?.ncFile?.fileName || request?.caseInfos?.ncFile?.s3Key;
-  if (existingNc && !force) {
+  if (existingNc && !force && ncMatchesCurrentDesign(request?.caseInfos)) {
     console.log("[ESPRIT] skip trigger (existing NC, not forced)", {
       requestId: request?.requestId,
       existingNc,
@@ -207,6 +208,18 @@ export async function triggerEspritForNc({
   });
 
   await persistDummySampleHexRotation(request);
+  const designGeneration = String(request?.caseInfos?.designGeneration || "").trim();
+  if (designGeneration && request?._id) {
+    const ncBind = {
+      generation: designGeneration,
+      filledS3Key: String(filledStl?.s3Key || "").trim(),
+      at: new Date(),
+    };
+    if (!request.productionSchedule) request.productionSchedule = {};
+    request.productionSchedule.ncBind = ncBind;
+    const { default: Request } = await import("../../models/request.model.js");
+    await Request.updateOne({ _id: request._id }, { $set: { "productionSchedule.ncBind": ncBind } });
+  }
   const hexRotationMode = resolveCaseInfosHexRotationMode(request);
   const frontPoint = await ensureFiniteFrontPoint(request);
 

@@ -94,6 +94,21 @@ export type PracticeLabReceiveWorkActionsBarProps = {
 const ctaButtonClass =
   "h-8 shrink-0 px-2.5 text-xs focus-visible:ring-0 focus-visible:ring-offset-0";
 
+function formatAbutmentCheckDeadline(iso: string | null | undefined) {
+  const raw = String(iso || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 /** 어벗 — 채팅 드롭존 안내 SSOT */
 export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
   "커스텀 어벗 STL만. 구강 스캔(PLY·큰 파일)은 안 됩니다.";
@@ -399,6 +414,32 @@ export function PracticeLabReceiveWorkActionsBar({
     </div>
   );
 
+  const platformCheckLabel =
+    transfer.production?.abutmentFeeRoute === "platform"
+      ? formatAbutmentCheckDeadline(transfer.production?.abutmentCancelDeadlineAt)
+      : "";
+  const platformCheckPassed = (() => {
+    if (transfer.production?.abutmentFeeRoute !== "platform") return false;
+    const raw = String(transfer.production?.abutmentCancelDeadlineAt || "").trim();
+    if (!raw) return false;
+    const at = new Date(raw).getTime();
+    return !Number.isNaN(at) && Date.now() > at;
+  })();
+  const platformCheckNote =
+    state.showDesignConfirm && platformCheckLabel ? (
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {platformCheckPassed ? (
+          <>
+            확인 기한이 지났습니다.
+            <br />
+            지금 확인해도 의뢰자 취소는 닫혀 있습니다.
+          </>
+        ) : (
+          <>{platformCheckLabel}까지 확인해 주세요.</>
+        )}
+      </p>
+    ) : null;
+
   const designConfirmButton =
     state.showDesignConfirm && onDesignConfirm ? (
       <Button
@@ -422,6 +463,7 @@ export function PracticeLabReceiveWorkActionsBar({
         {standaloneOverdue}
         {abutmentShipBufferAlert}
         {pendingLabGuide}
+        {designConfirmButton && platformCheckNote}
         {renderActionRow(designConfirmButton)}
       </div>
     );

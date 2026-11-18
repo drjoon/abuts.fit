@@ -101,6 +101,7 @@ import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   pickAbutsAbutmentCreditPrices,
 } from "../../utils/abutsAbutmentService.js";
+import { currentDesignRoute, DESIGN_ROUTE_PLATFORM } from "../../services/abutmentDesignRoute.js";
 import {
   SHIPPING_LEDGER_LABELS,
   resolveCustomerShippingLabel,
@@ -1107,6 +1108,19 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
     // SSOT 정책: 샘플(rnd/copied)은 무자료/무상 처리한다.
     // 어떤 크레딧 장부/정산 장부에도 기록하지 않는다.
+    return;
+  }
+
+  // 확정 & 의뢰: 치과가 어벗츠에 디자인+생산(2.5만)을 낸다. 기공소 Request에 생산비를 또 매기지 않는다.
+  if (currentDesignRoute(request) === DESIGN_ROUTE_PLATFORM) {
+    request.price = {
+      ...toPlainRequestPrice(request.price),
+      baseAmount: 0,
+      discountAmount: 0,
+      amount: 0,
+      designFee: null,
+      rule: "practice_platform_abutment_fee",
+    };
     return;
   }
 

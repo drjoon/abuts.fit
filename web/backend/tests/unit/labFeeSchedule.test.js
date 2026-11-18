@@ -134,6 +134,40 @@ describe("labFeeSchedule", () => {
     });
   });
 
+  test("확정 경로는 어벗츠 2.5만, 수작업은 기공소 어벗 수가", () => {
+    const toothWorks = [
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        customAbutment: true,
+      },
+    ];
+    const manual = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+    });
+    expect(manual.abutmentRetailTotal).toBe(0);
+    expect(manual.labAbutmentTotal).toBeGreaterThan(0);
+
+    const platform = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentFeeRoute: "platform",
+    });
+    expect(platform.abutmentRetailTotal).toBe(25000);
+    expect(platform.labAbutmentTotal).toBe(0);
+    expect(platform.labFeeTotal).toBe(manual.labFeeTotal - manual.labAbutmentTotal);
+
+    const pending = computePracticeTransferRetailFees({
+      toothWorks,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentFeeRoute: "pending",
+    });
+    expect(pending.abutmentRetailTotal).toBe(0);
+    expect(pending.labAbutmentTotal).toBe(0);
+    expect(pending.labFeeTotal).toBe(manual.labFeeTotal - manual.labAbutmentTotal);
+  });
+
   test("치과별 기공수가 할증은 기공비·기공소 어벗만 배수한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
