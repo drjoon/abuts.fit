@@ -5413,25 +5413,34 @@ export function PracticeCustomAbutmentPreviewDialog({
                       </TooltipProvider>
                     ) : null}
                     {canChooseAbutmentRoute && remoteMode !== "confirmed" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={manualChatOpen ? "secondary" : "outline"}
-                        disabled={!transferIdParam || actionBusy !== null}
-                        className={cn(
-                          "h-9 gap-1.5 px-4 text-sm font-semibold",
-                          manualChatOpen &&
-                            "border border-primary/50 bg-primary/10 text-primary hover:bg-primary/15",
-                        )}
-                        onClick={() => void handleClickManualDesign()}
-                      >
-                        {actionBusy === "manual" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Hand className="h-4 w-4" />
-                        )}
-                        <span>{manualChatOpen ? "수작업 의뢰 전달" : "수작업 의뢰"}</span>
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={manualChatOpen ? "secondary" : "outline"}
+                            disabled={!transferIdParam || actionBusy !== null}
+                            className={cn(
+                              "h-9 gap-1.5 px-4 text-sm font-semibold",
+                              manualChatOpen &&
+                                "border border-primary/50 bg-primary/10 text-primary hover:bg-primary/15",
+                            )}
+                            onClick={() => void handleClickManualDesign()}
+                          >
+                            {actionBusy === "manual" ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Hand className="h-4 w-4" />
+                            )}
+                            <span>{manualChatOpen ? "수작업 의뢰 전달" : "수작업 의뢰"}</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
+                          현재 디자인은 무시하고 기공소가 새로 디자인합니다.
+                          <br />
+                          기공비는 작업 기공소 수가를 적용합니다.
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
                     {canEditDesign && isLabViewer && remoteMode === "confirmed" ? (
                       <Button
