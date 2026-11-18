@@ -36,6 +36,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-11-19: 정산·문의·설정 — 상단 기공소 중요 안내 공지 바 숨김.
 // - 2026-11-19: practice-transfers — 크레딧·공지는 헤더 중요 공지 레일. 전폭 바·상단 배너 숨김.
 // - 2026-11-19: PTX·커스텀어벗 의뢰 — 최근 충전 1/4 이하 크레딧 경고. 기공사도 본다.
 // - 2026-10-26: 치과 사이드「스토어」숨김 — PRACTICE_STORE_OPEN.
@@ -1677,8 +1678,16 @@ export const DashboardLayout = () => {
     (isPracticeTransfersRoute && requestorKind === "lab");
   const isPracticeOralScanWorkArea =
     isPracticeTransfersRoute && requestorKind === "practice";
-  /** 기공의뢰 화면은 헤더 중요 공지 레일이 공지·크레딧을 맡는다. */
-  const hideTopNoticeAndCreditBanner = isPracticeTransfersRoute;
+  /** 기공의뢰·커스텀어벗 의뢰는 헤더 중요 공지 레일이 공지·크레딧을 맡는다. */
+  const hideTopNoticeAndCreditBanner =
+    isPracticeTransfersRoute ||
+    location.pathname.startsWith("/dashboard/new-request");
+  /** 정산·문의·설정은 전폭 공지 바를 쓰지 않는다. */
+  const hideTopNoticeBar =
+    hideTopNoticeAndCreditBanner ||
+    location.pathname.startsWith("/dashboard/credits") ||
+    location.pathname.startsWith("/dashboard/inquiries") ||
+    location.pathname.startsWith("/dashboard/settings");
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -2043,7 +2052,7 @@ export const DashboardLayout = () => {
               hideBanner={hideTopNoticeAndCreditBanner}
             >
             <div className="relative flex h-full flex-col">
-              {hideTopNoticeAndCreditBanner ? null : <DashboardNoticeBar />}
+              {hideTopNoticeBar ? null : <DashboardNoticeBar />}
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
                   <div
