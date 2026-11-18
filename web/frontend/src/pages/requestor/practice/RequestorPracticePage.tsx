@@ -9660,19 +9660,16 @@ export function RequestorPracticeReceivePage({
         compact
         alwaysLabeled
       />
-      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2">
-        <DashboardImportantNoticesRail />
-        <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
-          {shipLabelButton}
-          {bookmarkNavigateButton()}
-          {labAbutmentInProgressTrigger}
-          <LabReceiveAlarmSettingsButton
-            viewMode={viewMode}
-            onViewModeChange={handleViewModeChange}
-            hiddenWeekdays={hiddenWeekdays}
-            onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
-          />
-        </div>
+      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
+        {shipLabelButton}
+        {bookmarkNavigateButton()}
+        {labAbutmentInProgressTrigger}
+        <LabReceiveAlarmSettingsButton
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          hiddenWeekdays={hiddenWeekdays}
+          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+        />
       </div>
     </div>
   );
@@ -9991,15 +9988,18 @@ export function RequestorPracticeReceivePage({
               colorLegendTitle="치과"
               pinAbutsInColorLegend={false}
               toolbarMiddle={
-                <LabPartialAbutmentUploadToolbarAlert
-                  transfers={sameDayPartialAbutmentUploads}
-                  catalog={implantCatalog}
-                  onSelect={(transfer) => {
-                    selectTransferFromCalendar(
-                      transfer as ReceivedPracticeTransfer,
-                    );
-                  }}
-                />
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <LabPartialAbutmentUploadToolbarAlert
+                    transfers={sameDayPartialAbutmentUploads}
+                    catalog={implantCatalog}
+                    onSelect={(transfer) => {
+                      selectTransferFromCalendar(
+                        transfer as ReceivedPracticeTransfer,
+                      );
+                    }}
+                  />
+                  <DashboardImportantNoticesRail />
+                </div>
               }
             />
           )}

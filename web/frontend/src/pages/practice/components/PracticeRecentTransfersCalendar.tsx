@@ -2067,7 +2067,7 @@ export function PracticeRecentTransfersCalendar({
           ) : null}
         </div>
         {toolbarMiddle ? (
-          <div className="flex min-w-0 shrink-0 items-center md:ml-auto md:max-w-sm lg:max-w-md">
+          <div className="flex min-w-0 shrink-0 items-center justify-end md:ml-auto md:max-w-[min(100%,28rem)]">
             {toolbarMiddle}
           </div>
         ) : null}
