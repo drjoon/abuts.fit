@@ -87,7 +87,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.72,
       lingualExponent: 1.28,
       lateralExponent: 1.55,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.17, bevelAngleDeg: 23, lingualFossaDepthMm: 0.65 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 31, lingualFossaDepthMm: 0.65 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.15,
@@ -123,7 +123,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.68,
       lingualExponent: 1.26,
       lateralExponent: 1.52,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.17, bevelAngleDeg: 22, lingualFossaDepthMm: 0.58 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 29, lingualFossaDepthMm: 0.58 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.1,
@@ -159,7 +159,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.34,
       lingualExponent: 1.18,
       lateralExponent: 1.4,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.16, bevelAngleDeg: 24, lingualFossaDepthMm: 0.72 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 32, lingualFossaDepthMm: 0.72 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.15,
@@ -375,7 +375,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.68,
       lingualExponent: 1.26,
       lateralExponent: 1.5,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.17, bevelAngleDeg: 21, lingualFossaDepthMm: 0.45 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 28, lingualFossaDepthMm: 0.45 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.05,
@@ -411,7 +411,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.68,
       lingualExponent: 1.26,
       lateralExponent: 1.52,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.17, bevelAngleDeg: 22, lingualFossaDepthMm: 0.5 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 30, lingualFossaDepthMm: 0.5 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.05,
@@ -447,7 +447,7 @@ const DEFAULT_TOOTH_CLASS_SPECS: readonly ToothClassSeed[] = [
       labialExponent: 1.34,
       lingualExponent: 1.18,
       lateralExponent: 1.4,
-      cingulum: { hasCingulum: true, collarHeightRatio: 0.16, bevelAngleDeg: 24, lingualFossaDepthMm: 0.65 },
+      cingulum: { hasCingulum: true, collarHeightRatio: 0.58, bevelAngleDeg: 32, lingualFossaDepthMm: 0.65 },
     },
     abutmentCutback: {
       crownWallLabialMm: 1.1,

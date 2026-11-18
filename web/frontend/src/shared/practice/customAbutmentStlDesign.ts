@@ -638,16 +638,43 @@ function smoothRamp09(u: number): number {
 }
 
 /**
- * 전치·견치 설측 싱귤럼 사선 삭제 램프:
- * 마진 챔퍼 위 짧은 치경부 유지 칼라(u ≤ collarRatio)를 지킨 뒤 C¹ 완만 진입 후 상단(u = 1)까지
- * 일직선 사선 평면으로 깎아 보철물의 정상 싱귤럼·설면와 공간을 만든다.
+ * 전치·견치 설측 싱귤럼 사선.
+ * 카탈로그 각이 28° 미만이면 예전 완만 값으로 보고 상단 사선용으로 8°를 더한다.
+ * 인접치 측면 기울기(°, 순측으로 누우면 +)만큼 치아마다 다르게 기울인다. 인접치가 곧으면 카탈로그 사선을 유지한다.
  */
-function smoothCingulumBevelRamp(u: number, collarRatio = 0.16): number {
-  const c = clamp(collarRatio, 0.08, 0.3);
+function anteriorCingulumPlan(bevelAngleDeg: number, collarRatio: number, neighborSideDeg: number) {
+  const catalog = Number.isFinite(bevelAngleDeg) && bevelAngleDeg > 0 ? bevelAngleDeg : 30;
+  const steepBase = catalog < 28 ? catalog + 8 : catalog;
+  const tilt = clamp(neighborSideDeg, -16, 12);
+  const angleDeg = clamp(steepBase - tilt * 0.6, 22, 38);
+  const collar = clamp(Math.max(collarRatio || 0, 0.58), 0.54, 0.68);
+  return { angleDeg, collar, slope: Math.tan(angleDeg * DEG) };
+}
+
+/** 치경부 칼라는 2° 테이퍼만 유지하고, 그 위부터 상단까지 직선 사선으로 설측을 깎는다. */
+function cingulumTopHalfMm(
+  plan: { collar: number; slope: number },
+  lingualRoomMm: number,
+  minDropMm: number,
+  spanMm: number,
+  minHalfMm: number,
+): number {
+  const collarLin = lingualRoomMm - minDropMm * plan.collar;
+  const steepTop = collarLin - plan.slope * spanMm * (1 - plan.collar);
+  // 단면 모서리가 반폭보다 안쪽이므로, 스크류 벽 0.3mm가 남도록 최소 반폭을 조금 띄운다.
+  return Math.max(minHalfMm + 0.08, steepTop);
+}
+
+/**
+ * 전치·견치 설측 싱귤럼 사선 삭제 램프:
+ * 포스트 아래쪽(u ≤ collar)은 0이라 2° 축벽이 유지되고, 그 위는 짧은 진입 뒤 상단까지 직선 사선이다.
+ */
+function smoothCingulumBevelRamp(u: number, collarRatio = 0.58): number {
+  const c = clamp(collarRatio, 0.4, 0.72);
   if (u <= c) return 0;
-  const t = (u - c) / Math.max(0.2, 1 - c);
+  const t = (u - c) / Math.max(0.16, 1 - c);
   if (t >= 1) return 1;
-  const knee = 0.14;
+  const knee = 0.06;
   if (t < knee) {
     return (t * t) / (knee * (2 - knee));
   }
@@ -4210,6 +4237,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   };
 
   let w: Vec3 = [0, 0, 1];
+  /** 인접 자연치 순측 기울기(°). 전치·견치 싱귤럼 사선을 치아마다 다르게 기울일 때 쓴다. 0이면 곧은 인접치. */
+  let anteriorNeighborSideDeg = 0;
   let axisSource: CustomAbutmentDesignMetrics["axisSource"] = "arch";
   let neighborLockRad: number | null = null;
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
@@ -4228,7 +4257,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const uHi = labialLimit(zHi);
       if (Number.isFinite(uLo) && Number.isFinite(uHi)) {
         const adjLabSlope = clamp((uHi - uLo) / (zHi - zLo), -Math.tan(26 * DEG), Math.tan(10 * DEG));
-        blendedLabSlope = occLabSlope * 0.65 + adjLabSlope * 0.35;
+        // 측면에서 본 각도는 인접치 치축을 따른다. 치아마다 다르고, 인접치가 곧으면 거의 꺾지 않는다.
+        anteriorNeighborSideDeg = Math.atan(adjLabSlope) / DEG;
+        blendedLabSlope = occLabSlope * 0.4 + adjLabSlope * 0.6;
       }
     }
     let blendedMesSlope: number;
@@ -7501,7 +7532,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 2) 근원심·순설 공간이 좁아 스크류 홀 360° 외벽을 끝까지 감싸면 마진 폭이 죽거나 마진 위가 역전되는 케이스(이춘식 #33 알토란기공소 STL 실측)에서는
       //    전 둘레 보철물 안착 마진 폭(≥ MIN_MARGIN_SHOULDER_MM, ~0.30~0.40mm)과 치관 중앙 테이퍼 포스트를 최우선으로 지키고
       //    스크류 홀은 가까운 사면(순측·근심순측 사면)으로 자연스럽게 비스듬히 개구시킨다.
-      // 3) 설측은 하단 볼록 단면에서 상단 설측 사선 단면까지 직선 모선으로 충분히 깎아 보철물의 싱귤럼·설면와 공간을 확보한다.
+      // 3) 설측은 포스트 아래는 2° 축벽을 유지하고, 위쪽만 인접치 측면 각도에 맞춘 가파른 직선 사선으로 싱귤럼을 깎는다.
+      const cingulumPlan = anteriorCingulumPlan(
+        tpl.anatomy.morphology.cingulum.bevelAngleDeg,
+        tpl.anatomy.morphology.cingulum.collarHeightRatio,
+        anteriorNeighborSideDeg,
+      );
       const estAntTaperSlope = Math.tan(
         Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
       );
@@ -7976,17 +8012,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           wrapAnteriorScrew360 ? minLabCollar() : 0.78,
           Math.min(finalAntBaseBl + pBaseCu - pTopCu - minAntDropBl, Math.max(0.78, topLabHalf)),
         );
-        const cingulumCollarPre = tpl.anatomy.morphology.cingulum.collarHeightRatio || 0.16;
-        const targetCingulumSlopePre = Math.tan(
-          clamp(tpl.anatomy.morphology.cingulum.bevelAngleDeg || 23, 16, 28) * DEG,
-        );
-        const cingulumBevelTopPre = Math.max(
+        const cingulumBevelTopPre = cingulumTopHalfMm(
+          cingulumPlan,
+          finalAntBaseBl - pBaseCu + pTopCu,
+          minAntDropBl,
+          hRefSpanAnt,
           minLinCollar(),
-          finalAntBaseBl -
-            pBaseCu +
-            pTopCu -
-            minAntDropBl * cingulumCollarPre * 0.6 -
-            targetCingulumSlopePre * hRefSpanAnt * (1 - cingulumCollarPre * 0.5) * 0.56,
         );
         const curTopLinPre = Math.max(
           minLinCollar(),
@@ -8130,19 +8161,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               wrapAnteriorScrew360 ? minLabCollar() : 0.78,
               Math.min(taperLab, Math.max(0.78, topLabHalf * syncedAntScaleBl)),
             );
-        // 설측 싱귤럼 사선 삭제: 치경부 유지 칼라 위에서 상단 설측 반폭(finalAntTopLin)까지 사선 평면으로 충분히 깎되,
-        // 스크류 홀 최소 벽 두께(minLinCollar)는 침범하지 않아 포스트 파절을 막는다.
-        const cingulumCollarRatio = tpl.anatomy.morphology.cingulum.collarHeightRatio || 0.16;
-        const targetCingulumSlope = Math.tan(
-          clamp(tpl.anatomy.morphology.cingulum.bevelAngleDeg || 23, 16, 28) * DEG,
-        );
-        const cingulumBevelTopLin = Math.max(
+        // 설측 싱귤럼: 칼라 위 상단만 가파른 직선 사선으로 깎고, 스크류 홀 최소 벽(minLinCollar)은 남긴다.
+        const cingulumBevelTopLin = cingulumTopHalfMm(
+          cingulumPlan,
+          finalAntBaseBl - pBaseCu + pTopCu,
+          minAntDropBl,
+          hRefSpanAnt,
           minLinCollar(),
-          finalAntBaseBl -
-            pBaseCu +
-            pTopCu -
-            minAntDropBl * cingulumCollarRatio * 0.6 -
-            targetCingulumSlope * hRefSpanAnt * (1 - cingulumCollarRatio * 0.5) * 0.56,
         );
         const tLin = Math.max(
           minLinCollar(),
@@ -8203,7 +8228,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             const cuH = pBaseCu + (pTopCu - pBaseCu) * uSpan;
             const cvH = pBaseCv + (pTopCv - pBaseCv) * uSpan;
             const aLabH = Math.max(0.68, baseLabParam + (topLabParam - baseLabParam) * uSpan);
-            const aLinH = Math.max(0.58, baseLinParam + (targetTopLinParam - baseLinParam) * uSpan);
+            const taperOnlyTopLinParam = Math.max(0.58, baseLinParam - minAntDropBl / Math.max(postUnitLin, 0.4));
+            const collarU = cingulumPlan.collar;
+            const linAtCollar = baseLinParam + (taperOnlyTopLinParam - baseLinParam) * collarU;
+            const aLinRaw =
+              uSpan <= collarU
+                ? baseLinParam + (taperOnlyTopLinParam - baseLinParam) * uSpan
+                : linAtCollar +
+                  (targetTopLinParam - linAtCollar) * smoothCingulumBevelRamp(uSpan, collarU);
+            const aLinH = Math.max(0.58, aLinRaw);
             const bMdH = Math.max(0.82, finalAntBaseMd + (tMd - finalAntBaseMd) * uSpan);
             const s = evalPostSectionRadiusAtPhi(tpl.kind, aLabH, aLinH, bMdH, phiSec);
             const u = cuH + s * cp;
@@ -8812,7 +8845,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             add3(scale3(frame.uLabial, topFaceCu + topDirU * sRad), scale3(frame.vSide, topFaceCv + topDirV * sRad)),
           ),
         );
-      post.push(atTop(h1, s1));
+      const minRoundR = boreTopR + 0.32;
+      const keepRoundOutsideScrew = (pt: Vec3): Vec3 => {
+        const r = Math.hypot(pt[0], pt[1]);
+        if (r >= minRoundR || r < 1e-4) return pt;
+        const scale = minRoundR / r;
+        return [pt[0] * scale, pt[1] * scale, pt[2]];
+      };
+      post.push(keepRoundOutsideScrew(atTop(h1, s1)));
       const radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
       const arcS = Math.max(0.08, s1 - radialRho * cos0);
       const arcH = h1 - rho * sin0;
@@ -8823,7 +8863,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const uFrac = s / TOP_ROUND_STEPS;
         const hArc = arcH + rho * Math.sin(t);
         const hPlane = edgeHeight(sPos);
-        post.push(atTop(hArc + (hPlane - (arcH + rho)) * uFrac * uFrac, sPos));
+        post.push(keepRoundOutsideScrew(atTop(hArc + (hPlane - (arcH + rho)) * uFrac * uFrac, sPos)));
       }
       postByCol.push(post);
 

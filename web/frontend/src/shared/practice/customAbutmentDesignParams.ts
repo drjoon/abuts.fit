@@ -64,7 +64,7 @@ export type CustomAbutmentParamSpec = {
 
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
-  postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 5, step: 0.1 },
+  postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 4.2, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
@@ -137,26 +137,27 @@ export function isAnteriorTooth(toothNumber: string): boolean {
  * 2. 길이 — Kaufman 1961, Bernal 2003, Bresciano 2005. 2–8mm에서는 높이에 거의 비례한다.
  * 3. 표면적 — Kaufman 1961은 면적이 유지력을 올린다고 했고, Saleh Saber 2012는 높이를 고정하면
  *    총면적·폭의 효과가 그보다 약하다고 했다. 길이에 이미 들어 있는 높이를 다시 세지 않고
- *    축벽 평균 반지름(둘레)만 약한 지수로 더한다. 반지름이 작으면 접착력도 작아 테이퍼를 더 닫는다.
+ *    축벽 평균 반지름(둘레)을 길이보다 약하게 더한다. 반지름이 작으면 테이퍼를 2° 가까이 닫는다.
+ *    반지름이 크거나 브리지 지대치가 여러 개면 조금 더 연다. 편측 5°까지는 열지 않는다.
  *
- * 지수: 테이퍼 1.35, 길이 1, 표면적 0.4.
- * 싱글 기준은 5mm · 편측 2°. 브리지는 착탈 여유로 더 열린 기준각을 쓴다.
+ * 지수: 테이퍼 1.35, 길이 0.55, 표면적 0.55.
+ * 싱글 기준은 5mm · 반지름 2.5mm · 편측 2°. 브리지는 그 기준보다 조금만 더 연다.
  */
 export const RETENTION_REF_POST_HEIGHT_MM = 5;
 export const RETENTION_REF_WALL_RADIUS_MM = 2.5;
-/** 테이퍼가 접착 지수에서 차지하는 비중. 길이(1)보다 크다. */
+/** 테이퍼가 접착 지수에서 차지하는 비중. 길이·표면적보다 크다. */
 export const RETENTION_TAPER_EXPONENT = 1.35;
-export const RETENTION_HEIGHT_EXPONENT = 1;
-/** 축벽 둘레(평균 반지름)가 접착 지수에서 차지하는 비중. 길이보다 작다. */
-export const RETENTION_AREA_EXPONENT = 0.4;
+export const RETENTION_HEIGHT_EXPONENT = 0.55;
+/** 축벽 둘레(평균 반지름). 길이와 비슷하게 보되, 작은 면적은 2°에 머문다. */
+export const RETENTION_AREA_EXPONENT = 0.55;
 export const RETENTION_SINGLE_REF_TAPER_DEG = 2;
 export const RETENTION_SINGLE_MIN_TAPER_DEG = 2;
-export const RETENTION_SINGLE_MAX_TAPER_DEG = 5;
-export const RETENTION_BRIDGE_REF_TAPER_DEG = 3.2;
+export const RETENTION_SINGLE_MAX_TAPER_DEG = 3.8;
+export const RETENTION_BRIDGE_REF_TAPER_DEG = 2.4;
 export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.3;
-export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 3.8;
-export const RETENTION_BRIDGE_MIN_TAPER_DEG = 2.8;
-export const RETENTION_BRIDGE_MAX_TAPER_DEG = 6.5;
+export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 3.2;
+export const RETENTION_BRIDGE_MIN_TAPER_DEG = 2;
+export const RETENTION_BRIDGE_MAX_TAPER_DEG = 4.2;
 export const RETENTION_MIN_POST_HEIGHT_MM = 2.2;
 export const RETENTION_MAX_POST_HEIGHT_MM = 12;
 
@@ -457,8 +458,9 @@ export function evaluatePostTaperRetention(
 
 /**
  * 포스트 높이·축벽 반지름·싱글/브리지에 따라 접착 지수가 기준과 같아지는 편측 테이퍼(°)를 계산한다.
- * 테이퍼를 가장 크게 보고, 그다음 길이, 축벽 둘레는 그보다 약하게 반영한다.
- * 싱글은 최소 2°·최대 5°, 브리지는 착탈 여유만큼 더 열린 범위를 넘기지 않는다.
+ * 테이퍼를 가장 크게 보고, 길이와 축벽 둘레는 그보다 약하게, 서로 비슷하게 반영한다.
+ * 표면적이 작으면 2°에 가깝고, 면적이 크거나 브리지 지대치가 많으면 조금 더 연다.
+ * 싱글은 최대 3.8°, 브리지는 최대 4.2°. 5°까지는 열지 않는다.
  */
 export function computeOptimalPostTaperDeg(
   postHeightMm: number,
