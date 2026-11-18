@@ -99,8 +99,10 @@ const TOP_ROUND_ANTERIOR_MM = 0.45;
 const TOP_ROUND_STEPS = 10;
 /** 픽스쳐 사이가 이 안이면 붙은 치아로 보고 삽입축을 평행하게 맞춘다. */
 const PARALLEL_GROUP_MM = 13;
-/** 소·대구치 평평한 윗면의 최대 기울기(대합치 교합면 경사에 맞춰 협·설·근·원심 거리가 고르게 되도록 허용). */
+/** 소·대구치 윗면이 대합 경사를 따르는 삽입축 프레임 기울기 상한. */
 const FLAT_TOP_MAX_TILT = Math.tan(18 * DEG);
+/** 교합 방향에서 본 구치 윗면 기울기. 이보다 크면 교합면에 홈처럼 보인다. */
+const FLAT_TOP_ARCH_MAX_TILT = Math.tan(5 * DEG);
 /** 전치에서 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
 /** 전치에서 크라운 공간 때문에 깎은 축벽이 아래 원래 벽으로 돌아가는 사선. */
@@ -6128,8 +6130,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : null;
 
   /**
-   * 윗면 높이. 구치 교합면과 전치 절단연 모두 두 뿔·움푹 패임이 생기지 않도록 하나의 평평한 경사 평면으로 맞추되,
-   * 대합치 교합면 기울기(oppTopPlane)를 따라 협·설·근·원심 거리가 고르게 되고 최단 지점이 설정된 대합 거리(clearance)에 맞도록 둔다.
+   * 윗면 높이. 구치 교합면과 전치 절단연 모두 하나의 평면이다.
+   * 구치는 대합 경사를 조금 따르되, 교합 방향 기울기는 5°를 넘기지 않아 홈처럼 파이지 않는다.
    */
   const fitTopSurface = (opts?: {
     clearanceMm?: number;
@@ -6157,6 +6159,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (g > FLAT_TOP_MAX_TILT) {
         gu *= FLAT_TOP_MAX_TILT / g;
         gv *= FLAT_TOP_MAX_TILT / g;
+      }
+      // 삽입축에 수직인 윗면은 교합 시점에서 한쪽으로 파인다. 그 기울기를 5° 안으로 되돌린다.
+      const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
+      const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
+      const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
+      const dHu = gu * wOcc + dot3(frame.uLabial, occInFix);
+      const dHv = gv * wOcc + dot3(frame.vSide, occInFix);
+      const gArch = Math.hypot(dHu, dHv);
+      if (gArch > FLAT_TOP_ARCH_MAX_TILT) {
+        const t = FLAT_TOP_ARCH_MAX_TILT / gArch;
+        gu = levelGu + (gu - levelGu) * t;
+        gv = levelGv + (gv - levelGv) * t;
       }
     } else {
       const hasEnoughOppCols = colHasOpp.filter(Boolean).length >= 12;
