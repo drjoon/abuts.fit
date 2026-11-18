@@ -268,7 +268,7 @@ import {
   assignCalendarRainbowDotColors,
   type CalendarLabDotAssignment,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
-import { GriboEventToolbarAlert } from "@/shared/events/GriboEventToolbarAlert";
+import { DashboardImportantNoticesRail } from "@/shared/notices/DashboardImportantNoticesRail";
 import {
   useChatRooms,
   requestChatRoomsRefresh,
@@ -11288,7 +11288,9 @@ export const PracticeFileTransferPage = ({
           initialLoading={recentRequestsLoading}
           initialError={recentRequestsError}
           headerActions={calendarHeaderActions}
-          calendarToolbarMiddle={<GriboEventToolbarAlert />}
+          calendarToolbarMiddle={
+            <DashboardImportantNoticesRail includeEvent />
+          }
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
           onSelectTransfer={(transfer, options) => {

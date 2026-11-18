@@ -3779,6 +3779,7 @@ export async function createPracticeTransfer(req, res) {
         balanceMode: "snapshot",
         remake: remakePricing,
         enforceSettlementLock: true,
+        allowCreditOverdraft: false,
       });
       createShippingFees = creditCheck?.shipping || null;
     } catch (creditErr) {
@@ -3960,6 +3961,7 @@ export async function createPracticeTransfer(req, res) {
     // hold 실패 시 전송만 삭제되고 draft는 남아 「임시저장만 됨」처럼 보인다.
     // 수락 전 정산 페이지「결제 보류」/「적립 보류」는 heldAt + SPEND_HOLD 저널이 있어야 노출된다.
     let holdOk = true;
+    let holdFailErr = null;
     try {
       const holdResult = await holdPracticeTransferCredits({
         transfer: transferDoc,
@@ -3970,6 +3972,7 @@ export async function createPracticeTransfer(req, res) {
         actorUserId: req.user?._id,
         shipping: createShippingFees,
         skipExistingHoldCheck: true,
+        allowCreditOverdraft: false,
       });
       if (holdResult?.held || holdResult?.reason === "already_held") {
         const heldAt = new Date();
@@ -4014,6 +4017,7 @@ export async function createPracticeTransfer(req, res) {
       }
     } catch (holdErr) {
       holdOk = false;
+      holdFailErr = holdErr;
       console.warn(
         "[practiceTransfer] create hold failed",
         String(transferDoc?._id || ""),
@@ -4033,11 +4037,17 @@ export async function createPracticeTransfer(req, res) {
         // ignore
       }
       // draft는 유지 — 잔액 충전 후 같은 작성 내용으로 재전송 가능
+      const shortfallMessage = String(holdFailErr?.message || "").trim();
       return res.status(402).json({
         success: false,
-        message:
-          "크레딧 보류에 실패해 의뢰를 접수하지 못했습니다. 잔액을 확인한 뒤 다시 전송해 주세요.",
-        reason: "practice_transfer_hold_failed",
+        message: shortfallMessage
+          ? shortfallMessage
+          : "크레딧 보류에 실패해 의뢰를 접수하지 못했습니다.\n이번 전송은 접수되지 않았습니다.",
+        reason:
+          holdFailErr?.payload?.reason || "practice_transfer_hold_failed",
+        ...(holdFailErr?.payload && typeof holdFailErr.payload === "object"
+          ? holdFailErr.payload
+          : {}),
         transferId,
       });
     }
@@ -4637,6 +4647,7 @@ export async function updatePracticeTransferContent(req, res) {
           skipJig,
           fees: feeQuote.fees,
           remake: remakePricing,
+          allowCreditOverdraft: false,
         });
       } catch (creditErr) {
         try {
@@ -4647,6 +4658,7 @@ export async function updatePracticeTransferContent(req, res) {
             holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
             holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
             actorUserId: req.user?._id,
+            allowCreditOverdraft: true,
           });
         } catch {
           // ignore restore failure
@@ -4833,6 +4845,7 @@ export async function updatePracticeTransferContent(req, res) {
             holdLabAmount: Number(previousBilling?.labFeeTotal || 0),
             holdAbutmentAmount: Number(previousBilling?.abutmentRetailTotal || 0),
             actorUserId: req.user?._id,
+            allowCreditOverdraft: true,
           });
         } catch {
           // ignore
@@ -4856,6 +4869,7 @@ export async function updatePracticeTransferContent(req, res) {
           holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
           holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
           actorUserId: req.user?._id,
+          allowCreditOverdraft: false,
         });
         if (holdResult?.held || holdResult?.reason === "already_held") {
           const heldBilling = {
@@ -5568,6 +5582,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
         toothWorks: followUpRows,
         skipAbutmentFees: true,
         fees: deltaFees,
+        allowCreditOverdraft: false,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -6423,6 +6438,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
             toothWorks: updatedFollowUpRows,
             skipAbutmentFees: true,
             fees: feeQuote?.fees || { labFeeTotal: deltaLabFee, total: deltaTotal },
+            allowCreditOverdraft: false,
           });
         } catch (creditErr) {
           const status = Number(creditErr?.statusCode || 500);
@@ -7568,6 +7584,7 @@ export async function remakePracticeTransfers(req, res) {
           toothWorks,
           remake: remakePricing,
           fees: feeQuote.fees,
+          allowCreditOverdraft: false,
         });
       } catch (creditErr) {
         const status = Number(creditErr?.statusCode || 500);
@@ -13436,6 +13453,7 @@ export async function retargetPracticeTransferLab(req, res) {
         catalog: autoMatchCatalog,
         skipJig: Boolean(doc?.production?.skipJig),
         fees: feeQuote.fees,
+        allowCreditOverdraft: false,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -13559,6 +13577,7 @@ export async function retargetPracticeTransferLab(req, res) {
         holdLabAmount: Number(billingPreview?.labFeeTotal || 0),
         holdAbutmentAmount: Number(billingPreview?.abutmentRetailTotal || 0),
         actorUserId: req.user?._id,
+        allowCreditOverdraft: false,
       });
       if (holdResult?.held || holdResult?.reason === "already_held") {
         const heldBilling = {
@@ -13636,9 +13655,15 @@ export async function retargetPracticeTransferLab(req, res) {
           revertErr?.message || revertErr,
         );
       }
-      return res.status(500).json({
+      const status = Number(holdErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
         success: false,
-        message: holdErr?.message || "기공소 변경 전송 과금 보류에 실패했습니다.",
+        message:
+          holdErr?.message ||
+          "기공소 변경 전송 과금 보류에 실패했습니다.\n이번 전송은 접수되지 않았습니다.",
+        ...(holdErr?.payload && typeof holdErr.payload === "object"
+          ? holdErr.payload
+          : {}),
       });
     }
 

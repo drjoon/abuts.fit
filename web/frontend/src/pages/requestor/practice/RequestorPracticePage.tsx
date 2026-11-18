@@ -1,4 +1,6 @@
 // related files:
+// - 2026-11-19: 헤더 오른쪽 — 중요 사항 공지 레일(크레딧·공지 5초 롤링).
+// - 2026-11-19: 크레딧 hold 성공 전에는 어벗 STL을 업로드된 것으로 보이지 않는다.
 // - 2026-11-19: 다치아 어벗 STL — 확인 모달을 치아마다 언마운트하지 않는다. 포커스가 빠지며 다음 치아 핸드오프가 끊기던 문제.
 // - 2026-11-19: 무료 크레딧 402는 충전 화면으로 보내지 않는다.
 // - 2026-11-07: 수신 캘린더 툴바 — 당일 어벗 STL 일부 미업로드 깜빡임 경고.
@@ -522,6 +524,7 @@ import { LabReceiveSubcontractPoolAlert } from "@/pages/practice/components/LabR
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
 import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
 import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
+import { DashboardImportantNoticesRail } from "@/shared/notices/DashboardImportantNoticesRail";
 import { LabReceiveAlarmSettingsButton } from "@/shared/components/practice/LabReceiveAlarmSettingsButton";
 import {
   labFeeSettingsFromAcceptPath,
@@ -7126,42 +7129,13 @@ export function RequestorPracticeReceivePage({
           };
         };
 
-        let patchedForQueue: ReceivedPracticeTransfer | null = null;
-        setTransfers((prev) =>
-          prev.map((row) => {
-            if (
-              row._id !== transfer._id &&
-              row.transferId !== transfer.transferId
-            ) {
-              return row;
-            }
-            const next = mergeOptimisticDesignFile(row);
-            patchedForQueue = next;
-            return next;
-          }),
-        );
-        setSelectedTransfer((prev) => {
-          if (
-            !prev ||
-            (prev._id !== transfer._id &&
-              prev.transferId !== transfer.transferId)
-          ) {
-            return prev;
-          }
-          const next = mergeOptimisticDesignFile(prev);
-          patchedForQueue = next;
-          return next;
-        });
-
         const nextIndex = queueIndex + 1;
         const isLast = nextIndex >= queueTotal;
         if (isLast) {
           // handoff settle 후 성공/실패 토스트 — 모달만 닫고 체인은 유지
           clearDesignConfirmState({ keepHandoffChain: true });
         } else {
-          setDesignConfirmTransfer(
-            patchedForQueue || mergeOptimisticDesignFile(transfer),
-          );
+          setDesignConfirmTransfer(transfer);
           setDesignConfirmQueueIndex(nextIndex);
           toast({
             title: `어벗디자인 업로드 (${nextIndex}/${queueTotal})`,
@@ -7169,7 +7143,7 @@ export function RequestorPracticeReceivePage({
           });
         }
 
-        // S3·낙관 패치 끝 — 「처리 중」해제. handoff는 크레딧 hold 직렬 체인.
+        // S3 업로드 끝 — 「처리 중」해제. 목록의 디자인 파일은 hold 성공 뒤에만 붙인다.
         designHandoffInFlightRef.current = false;
         setDesignConfirmBusy(false);
         setCardActionBusyId("");
@@ -7322,6 +7296,22 @@ export function RequestorPracticeReceivePage({
               variant: "destructive",
             });
           }
+          const mergeUploadedDesign = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer => mergeOptimisticDesignFile(row);
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row._id === transfer._id || row.transferId === transfer.transferId
+                ? mergeUploadedDesign(row)
+                : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev &&
+            (prev._id === transfer._id || prev.transferId === transfer.transferId)
+              ? mergeUploadedDesign(prev)
+              : prev,
+          );
           if (relatedFromRes.length > 0 || createdRequestId) {
             const mergeRelatedOnly = (
               row: ReceivedPracticeTransfer,
@@ -9670,16 +9660,19 @@ export function RequestorPracticeReceivePage({
         compact
         alwaysLabeled
       />
-      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
-        {shipLabelButton}
-        {bookmarkNavigateButton()}
-        {labAbutmentInProgressTrigger}
-        <LabReceiveAlarmSettingsButton
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          hiddenWeekdays={hiddenWeekdays}
-          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
-        />
+      <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2">
+        <DashboardImportantNoticesRail />
+        <div className="flex shrink-0 flex-nowrap items-center gap-1.5">
+          {shipLabelButton}
+          {bookmarkNavigateButton()}
+          {labAbutmentInProgressTrigger}
+          <LabReceiveAlarmSettingsButton
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            hiddenWeekdays={hiddenWeekdays}
+            onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+          />
+        </div>
       </div>
     </div>
   );

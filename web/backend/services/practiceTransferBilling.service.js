@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-11-19: 신규 PTX는 잔액이 견적 미만이면 접수하지 않는다. 후불 overdraft로 전송 완료가 되지 않는다.
 // - 2026-11-03: 장부 목록 견적=billing 스냅샷. CA 게이트는 designFiles.tooth·transferIds 스코프.
 // - 2026-10-11: 데모 가상 잔고는 기공비만. 커스텀어벗(디자인+생산 소매)은 충전 잔액 필요.
 // - 2026-10-07: remakeFeeQuote — 어벗츠로부터 리메이크=무료(월 3건 유료 구간 폐지).
@@ -419,10 +420,11 @@ function throwPracticeTransferCreditShortfall(result, extra = {}) {
   const available = Math.max(0, Math.round(Number(result?.available) || 0));
   const required = Math.max(0, Math.round(Number(result?.required) || 0));
   const isAbutment = result?.failedKind === "abutment";
+  const detail = `잔액 ${formatWon(available)}원 / 필요 ${formatWon(required)}원`;
   const err = new Error(
     isAbutment
-      ? `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다. (잔액 ${formatWon(available)}원 / 필요 ${formatWon(required)}원)`
-      : `크레딧이 부족합니다. (잔액 ${formatWon(available)}원 / 필요 ${formatWon(required)}원)`,
+      ? `커스텀어벗 의뢰는 충전된 크레딧이 있어야 합니다.\n${detail}\n이번 전송은 접수되지 않았습니다.`
+      : `크레딧이 부족합니다.\n${detail}\n이번 전송은 접수되지 않았습니다.`,
   );
   err.statusCode = 402;
   err.payload = {
@@ -753,6 +755,11 @@ export async function assertPracticeTransferPaidCreditSufficient({
   balanceMode = "ledger",
   /** 신규 기공의뢰 생성 시에만 true. 작업시작·확정 등 기존 의뢰 진행은 막지 않는다. */
   enforceSettlementLock = false,
+  /**
+   * false면 후불 overdraft로 견적을 넘기지 않는다.
+   * 잔액이 부족하면 402. 신규 전송·수정·리메이크·후속·기공소 변경.
+   */
+  allowCreditOverdraft = undefined,
   /** 3D 스캔 첨부가 있으면 크라운 스캔제작 수가. */
   scanFabrication = false,
 }) {
@@ -903,8 +910,13 @@ export async function assertPracticeTransferPaidCreditSufficient({
     };
   }
 
+  const enforceCoveredCredit = allowCreditOverdraft === false;
   let balance;
-  if (practiceRequired > 0 && String(balanceMode || "").trim() === "snapshot") {
+  if (
+    practiceRequired > 0 &&
+    !enforceCoveredCredit &&
+    String(balanceMode || "").trim() === "snapshot"
+  ) {
     const snap = await BusinessCreditBalance.findOne({
       businessAnchorId: new Types.ObjectId(practiceId),
     })
@@ -923,14 +935,37 @@ export async function assertPracticeTransferPaidCreditSufficient({
       });
     }
   } else if (practiceRequired > 0) {
+    // 접수 차단은 장부 잔액. 캐시가 높으면 부족인데도 전송 완료가 된다.
     balance = await computeBusinessCreditBalanceFromLedger({
       businessAnchorId: practiceId,
     });
   }
 
-  if (practiceRequired > 0 && balance) {
-    const allowOverdraft =
-      await practiceAllowsFreeRequestOverdraft(practiceId);
+  if (practiceRequired > 0 && !balance && !enforceCoveredCredit) {
+    return {
+      ok: true,
+      fees,
+      shipping,
+      paidCredit: null,
+      freeCredit: null,
+      required: practiceRequired,
+      skippedBalanceCheck: true,
+      abutmentPricingTier,
+      abutmentPrices,
+    };
+  }
+
+  if (practiceRequired > 0) {
+    if (!balance) {
+      balance = {
+        paidCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
+      };
+    }
+    const allowOverdraft = enforceCoveredCredit
+      ? false
+      : await practiceAllowsFreeRequestOverdraft(practiceId);
     const abutmentRequired = Math.max(
       0,
       Math.round(Number(fees?.abutmentRetailTotal || 0)),
@@ -951,18 +986,6 @@ export async function assertPracticeTransferPaidCreditSufficient({
         autoMatchBudget: budget,
       });
     }
-  } else if (practiceRequired > 0 && !balance) {
-    return {
-      ok: true,
-      fees,
-      shipping,
-      paidCredit: null,
-      freeCredit: null,
-      required: practiceRequired,
-      skippedBalanceCheck: true,
-      abutmentPricingTier,
-      abutmentPrices,
-    };
   }
 
   // 제조사→기공소 배송비는 주문 기공소 크레딧(실유료/무료만).
@@ -2071,6 +2094,8 @@ export async function holdPracticeTransferCredits({
   shipping: shippingInput = null,
   /** 방금 create한 전송 등, 기존 hold 저널이 없음이 확실한 경우 조회 스킵 */
   skipExistingHoldCheck = false,
+  /** false면 잔액이 견적 미만일 때 hold하지 않고 402 */
+  allowCreditOverdraft = undefined,
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
@@ -2203,30 +2228,38 @@ export async function holdPracticeTransferCredits({
 
   try {
     await lockGuard(practiceAnchorId, session);
-    // txn 안 LedgerLine aggregate는 Atlas에서 수 초. 스냅샷 단건을 우선하고 없을 때만 GL.
-    const practiceOid = new Types.ObjectId(String(practiceAnchorId));
-    const snap = await BusinessCreditBalance.findOne({
-      businessAnchorId: practiceOid,
-    })
-      .select({
-        paidCredit: 1,
-        freeRequestCredit: 1,
-        freeShippingCredit: 1,
-      })
-      .session(session)
-      .lean();
+    const allowOverdraft =
+      allowCreditOverdraft === false
+        ? false
+        : await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
     let balance;
-    if (snap) {
-      balance = normalizePracticeBalanceBuckets(snap);
-    } else {
+    if (!allowOverdraft) {
       balance = await computeBusinessCreditBalanceFromLedger({
         businessAnchorId: practiceAnchorId,
         session,
       });
+    } else {
+      // txn 안 LedgerLine aggregate는 Atlas에서 수 초. 후불은 스냅샷을 우선한다.
+      const practiceOid = new Types.ObjectId(String(practiceAnchorId));
+      const snap = await BusinessCreditBalance.findOne({
+        businessAnchorId: practiceOid,
+      })
+        .select({
+          paidCredit: 1,
+          freeRequestCredit: 1,
+          freeShippingCredit: 1,
+        })
+        .session(session)
+        .lean();
+      if (snap) {
+        balance = normalizePracticeBalanceBuckets(snap);
+      } else {
+        balance = await computeBusinessCreditBalanceFromLedger({
+          businessAnchorId: practiceAnchorId,
+          session,
+        });
+      }
     }
-
-    const allowOverdraft =
-      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
     // 디자인비는 lab 슬라이스에 합쳐지지만, 소매 전체(디자인+생산)는 충전 잔액만.
     const customAbutmentRequired =
       Math.max(0, Math.round(Number(shares.abut || 0))) +
@@ -5467,8 +5500,8 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
       businessAnchorId: practiceAnchorId,
       session,
     });
-    const allowOverdraft =
-      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
+    // 후속 보철도 잔액이 부족하면 추가 주문으로 접수하지 않는다.
+    const allowOverdraft = false;
     const prepared = prepareHoldSliceEntry({
       transferId,
       practiceAnchorId,
@@ -5596,8 +5629,8 @@ export async function holdPracticeTransferRemakeChargeCredits({
       businessAnchorId: practiceAnchorId,
       session,
     });
-    const allowOverdraft =
-      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
+    // 리메이크 청구도 잔액이 부족하면 접수하지 않는다.
+    const allowOverdraft = false;
     const prepared = prepareHoldSliceEntry({
       transferId,
       practiceAnchorId,

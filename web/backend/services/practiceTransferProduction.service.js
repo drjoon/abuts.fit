@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
 // - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
 // - 2026-11-07: ensureAbutmentRequestsForHandoff — 다치아 병렬 handoff 시 생성 락(relatedRequestIds 이중 생성·빈 stub 방지).
 // - 2026-10-21: 미제공 커넥션도 CA Request를 만든다. R&D 보관·해당 치아 취소는 design-handoff.
@@ -1080,12 +1081,65 @@ async function cancelOrphanAbutmentRequestsOutsideCanonical({
  * 커스텀어벗 → 어벗츠 생산 의뢰 생성(어벗 STL handoff 직전).
  * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 custom_abutment(생산만).
  */
+async function activeRequestCoversTooth(requestIds, tooth) {
+  const toothKey = String(tooth || "").trim();
+  if (!toothKey) return false;
+  const ids = (Array.isArray(requestIds) ? requestIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!ids.length) return false;
+  const toothValues = [toothKey];
+  if (/^\d+$/.test(toothKey)) toothValues.push(Number(toothKey));
+  const hit = await Request.exists({
+    _id: { $in: ids },
+    "caseInfos.tooth": { $in: toothValues },
+    manufacturerStage: { $ne: "취소" },
+    "caseInfos.hexVerificationSample": { $ne: true },
+  });
+  return Boolean(hit);
+}
+
+/**
+ * hold 전에 만든 준비 단계 Request. 크레딧이 부족하면 제조사 큐에 남기지 않는다.
+ * 이미 디자인이 저장된 재업로드는 취소하지 않는다.
+ */
+export async function cancelUnheldPtxAbutmentRequest(requestId) {
+  const id = String(requestId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return { cancelled: false };
+  const doc = await Request.findById(id)
+    .select({
+      designCompletedAt: 1,
+      manufacturerStage: 1,
+      "caseInfos.hexVerificationSample": 1,
+      "partnerBilling.relatedPracticeTransferId": 1,
+    })
+    .lean();
+  if (!doc || doc.designCompletedAt || doc.caseInfos?.hexVerificationSample) {
+    return { cancelled: false };
+  }
+  if (String(doc.manufacturerStage || "").trim() !== "준비") {
+    return { cancelled: false };
+  }
+  await markAbutmentRequestsCancelledByIds([id]);
+  const transferId = doc.partnerBilling?.relatedPracticeTransferId;
+  if (transferId && Types.ObjectId.isValid(String(transferId))) {
+    await PracticeTransfer.updateOne(
+      { _id: transferId },
+      { $pull: { "production.relatedRequestIds": new Types.ObjectId(id) } },
+    );
+  }
+  return { cancelled: true };
+}
+
 export async function createAbutmentRequestsFromPracticeTransfer({
   transferDoc,
   shippingMode: _shippingModeRaw = null,
   actorUserId = null,
   allowPracticeConfirmed = false,
+  onlyTooth = null,
 }) {
+  const onlyToothKey = String(onlyTooth || "").trim();
   const customRows = listCustomAbutmentToothWorks(
     transferDoc?.toothWorks,
     transferDoc?.implantFavorites ||
@@ -1102,18 +1156,22 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .filter((id) => Types.ObjectId.isValid(id))
     : [];
   if (existingIds.length > 0) {
-    // 신규 생성은 스킵. related 밖 partnerBilling 잔존(레이스 중복)만 취소.
-    await cancelOrphanAbutmentRequestsOutsideCanonical({
-      transferDoc,
-      canonicalRequestIds: existingIds,
-    });
-    // 헥스 확인 샘플은 designCompletedAt(어벗 STL handoff) 이후
-    // designHandoff / worksheet backfill에서만 만든다.
-    return {
-      created: [],
-      skippedReason: "already_created",
-      requestIds: existingIds,
-    };
+    const covered =
+      !onlyToothKey || (await activeRequestCoversTooth(existingIds, onlyToothKey));
+    if (covered) {
+      // 신규 생성은 스킵. related 밖 partnerBilling 잔존(레이스 중복)만 취소.
+      await cancelOrphanAbutmentRequestsOutsideCanonical({
+        transferDoc,
+        canonicalRequestIds: existingIds,
+      });
+      // 헥스 확인 샘플은 designCompletedAt(어벗 STL handoff) 이후
+      // designHandoff / worksheet backfill에서만 만든다.
+      return {
+        created: [],
+        skippedReason: "already_created",
+        requestIds: existingIds,
+      };
+    }
   }
 
   // relatedRequestIds가 비어도 partnerBilling에 준비 잔존이 있으면 재사용(레이스/취소 누락 heal).
@@ -1121,15 +1179,20 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     transferDoc?._id,
   );
   if (activePartnerIds.length > 0) {
-    const reconciledIds = await reconcileActiveAbutmentRequestsPerTooth({
-      transferDoc,
-      candidateRequestIds: activePartnerIds,
-    });
-    return {
-      created: [],
-      skippedReason: "already_created",
-      requestIds: reconciledIds,
-    };
+    const covered =
+      !onlyToothKey ||
+      (await activeRequestCoversTooth(activePartnerIds, onlyToothKey));
+    if (covered) {
+      const reconciledIds = await reconcileActiveAbutmentRequestsPerTooth({
+        transferDoc,
+        candidateRequestIds: activePartnerIds,
+      });
+      return {
+        created: [],
+        skippedReason: "already_created",
+        requestIds: reconciledIds,
+      };
+    }
   }
 
   // 구강스캔은 선택 — 없어도 CA Request 생성(어벗 STL 핸드오프용 relatedRequestIds).
@@ -1288,9 +1351,17 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
   const leadTimes = manufacturerSettings?.leadTimes || {};
   const created = [];
+  const rowsToCreate = onlyToothKey
+    ? customRows.filter(
+        (row) => String(row.toothNumber || "").trim() === onlyToothKey,
+      )
+    : customRows;
+  if (onlyToothKey && rowsToCreate.length === 0) {
+    throw new Error(`치아 #${onlyToothKey} 커스텀어벗 정보가 없습니다.`);
+  }
 
-  for (let i = 0; i < customRows.length; i += 1) {
-    const row = customRows[i];
+  for (let i = 0; i < rowsToCreate.length; i += 1) {
+    const row = rowsToCreate[i];
     const tooth = String(row.toothNumber || "").trim();
     const scanFile = pickFileForTooth(scanFiles, tooth, i);
     if (scanFiles.length > 0 && !scanFile?.file?.s3Key) {
@@ -1739,21 +1810,48 @@ export async function ensureAbutmentRequestsForHandoff({
   transferDoc,
   actorUserId = null,
   allowPracticeConfirmed = false,
+  tooth = null,
 }) {
   if (!hasCustomAbutmentToothWorks(transferDoc?.toothWorks)) {
     return { created: false, requestIds: [], shippingMode: null };
   }
 
+  const onlyTooth = String(tooth || "").trim();
   const gate = await claimOrWaitAbutmentRequestEnsureLock(transferDoc);
   const workingTransfer = gate.transferDoc || transferDoc;
 
   if (gate.mode === "already") {
+    let requestIds = gate.requestIds;
+    if (
+      onlyTooth &&
+      !(await activeRequestCoversTooth(requestIds, onlyTooth))
+    ) {
+      const createdMissing = await createAbutmentRequestsFromPracticeTransfer({
+        transferDoc: workingTransfer,
+        actorUserId,
+        allowPracticeConfirmed,
+        onlyTooth,
+      });
+      if (
+        Array.isArray(createdMissing?.requestIds) &&
+        createdMissing.requestIds.length > 0
+      ) {
+        requestIds = createdMissing.requestIds;
+      }
+      const oidList = requestIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      await PracticeTransfer.updateOne(
+        { _id: workingTransfer._id },
+        { $set: { "production.relatedRequestIds": oidList } },
+      );
+    }
     workingTransfer.production = {
       ...(workingTransfer.production &&
       typeof workingTransfer.production === "object"
         ? workingTransfer.production
         : {}),
-      relatedRequestIds: gate.requestIds
+      relatedRequestIds: requestIds
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id)),
     };
@@ -1762,7 +1860,7 @@ export async function ensureAbutmentRequestsForHandoff({
     return {
       created: false,
       skippedReason: "already_created",
-      requestIds: gate.requestIds,
+      requestIds,
       shippingMode: workingTransfer.production?.shippingMode || null,
     };
   }
@@ -1773,6 +1871,7 @@ export async function ensureAbutmentRequestsForHandoff({
       transferDoc: workingTransfer,
       actorUserId,
       allowPracticeConfirmed,
+      onlyTooth: onlyTooth || null,
     });
   } catch (createErr) {
     await clearAbutmentRequestEnsureLock(workingTransfer._id);

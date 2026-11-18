@@ -51,21 +51,33 @@ export function resolvePracticeBilling402Dialog(
     };
   }
 
+  const rejectedSend =
+    message.includes("이번 전송은 접수되지 않았습니다") ||
+    message.includes("접수하지 못했습니다");
+  const isCustomAbutmentCredit =
+    !rejectedSend &&
+    (message.includes("커스텀어벗") || message.includes("무료 크레딧"));
   if (
+    !isCustomAbutmentCredit &&
     status === 402 &&
     (reason === "insufficient_credit_for_practice_transfer" ||
       reason === "insufficient_credit_for_hold" ||
-      message.includes("크레딧이 부족"))
+      reason === "practice_transfer_hold_failed" ||
+      message.includes("크레딧이 부족") ||
+      message.includes("접수되지 않았습니다") ||
+      message.includes("접수하지 못했습니다"))
   ) {
+    const lines = message
+      ? message.split(/\n+/).filter(Boolean)
+      : ["크레딧이 부족합니다."];
+    if (!lines.some((line) => line.includes("접수"))) {
+      lines.push("이번 전송은 접수되지 않았습니다.");
+    }
     return {
-      title: "정산 안내",
-      descriptionLines: [
-        "기공료는 후불입니다.",
-        "정산 탭에서 이번 달 사용분과 입금 계좌를 확인하실 수 있습니다.",
-        "기한을 두 번 넘기거나 일부만 입금하면 이후 주문은 선불 크레딧입니다.",
-      ],
-      confirmLabel: "정산 안내",
-      href: CREDITS_PRACTICE_AUTOPAY_HREF,
+      title: "의뢰가 전송되지 않았습니다",
+      descriptionLines: lines,
+      confirmLabel: "확인",
+      href: "",
     };
   }
 

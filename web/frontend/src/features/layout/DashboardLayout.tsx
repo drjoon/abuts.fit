@@ -20,7 +20,7 @@ import {
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
-import { RequestorLowCreditWarning } from "@/shared/credits/RequestorLowCreditWarning";
+import { RequestorLowCreditWarningProvider } from "@/shared/credits/RequestorLowCreditWarning";
 import {
   DashboardNoticeBar,
   DashboardNoticeHostProvider,
@@ -36,6 +36,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-11-19: practice-transfers — 크레딧·공지는 헤더 중요 공지 레일. 전폭 바·상단 배너 숨김.
 // - 2026-11-19: PTX·커스텀어벗 의뢰 — 최근 충전 1/4 이하 크레딧 경고. 기공사도 본다.
 // - 2026-10-26: 치과 사이드「스토어」숨김 — PRACTICE_STORE_OPEN.
 // - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `커스텀어벗 의뢰하기`.
@@ -1668,13 +1669,16 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/printer");
   const isWorksheetRoute =
     isManufacturer && location.pathname.startsWith("/dashboard/worksheet");
+  const isPracticeTransfersRoute = location.pathname.startsWith(
+    "/dashboard/practice-transfers",
+  );
   const isLabReceiveWorkArea =
     location.pathname.startsWith("/dashboard/lab-work") ||
-    (location.pathname.startsWith("/dashboard/practice-transfers") &&
-      requestorKind === "lab");
+    (isPracticeTransfersRoute && requestorKind === "lab");
   const isPracticeOralScanWorkArea =
-    location.pathname.startsWith("/dashboard/practice-transfers") &&
-    requestorKind === "practice";
+    isPracticeTransfersRoute && requestorKind === "practice";
+  /** 기공의뢰 화면은 헤더 중요 공지 레일이 공지·크레딧을 맡는다. */
+  const hideTopNoticeAndCreditBanner = isPracticeTransfersRoute;
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStageRaw = worksheetParams.get("stage") || "request";
@@ -2035,9 +2039,11 @@ export const DashboardLayout = () => {
             )}
           <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
             <DashboardNoticeHostProvider>
+            <RequestorLowCreditWarningProvider
+              hideBanner={hideTopNoticeAndCreditBanner}
+            >
             <div className="relative flex h-full flex-col">
-              <DashboardNoticeBar />
-              <RequestorLowCreditWarning />
+              {hideTopNoticeAndCreditBanner ? null : <DashboardNoticeBar />}
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
                   <div
@@ -2318,6 +2324,7 @@ export const DashboardLayout = () => {
                 </div>
               </div>
             </div>
+            </RequestorLowCreditWarningProvider>
             </DashboardNoticeHostProvider>
           </div>
         </main>

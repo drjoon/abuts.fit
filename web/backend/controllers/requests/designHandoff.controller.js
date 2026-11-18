@@ -1,3 +1,4 @@
+// - 2026-11-19: PTX CA 크레딧 부족이면 그 치아 Request를 준비 큐에 남기지 않는다.
 // - 2026-11-19: PTX CA 402 — 무료크레딧 잔액 문구를 「충전하세요」로 바꾸지 않는다.
 // - 2026-11-16: 치과 발신 — 준비 단계 커스텀어벗 공정 취소(제조사 큐에서 내림). 가공 이후는 불가.
 // - 2026-11-07: PTX abutment-design-handoff — 같은 의뢰 hold를 서버 락으로 직렬화(병렬 WriteConflict로 한 치아만 탈락 방지).
@@ -82,6 +83,7 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  cancelUnheldPtxAbutmentRequest,
   claimAbutmentDesignHandoffLock,
   collectLinkedAbutmentRequestObjectIds,
   ensureAbutmentRequestsForHandoff,
@@ -167,12 +169,16 @@ function isPtxCaInsufficientCreditError(err) {
 
 function rejectPtxCaInsufficientCredit(res, err) {
   const status = Number(err?.statusCode || 402);
+  let message = resolvePtxCaInsufficientCreditClientMessage(
+    err,
+    PTX_CA_INSUFFICIENT_CREDIT_MESSAGE,
+  );
+  if (!message.includes("등록되지") && !message.includes("접수되지")) {
+    message = `${message}\n이 치아는 제조사에 등록되지 않았습니다.`;
+  }
   return res.status(status >= 400 && status < 600 ? status : 402).json({
     success: false,
-    message: resolvePtxCaInsufficientCreditClientMessage(
-      err,
-      PTX_CA_INSUFFICIENT_CREDIT_MESSAGE,
-    ),
+    message,
     reason: PTX_CA_INSUFFICIENT_CREDIT_REASON,
     ...(err?.payload && typeof err.payload === "object" ? err.payload : {}),
   });
@@ -1060,6 +1066,14 @@ export async function handoffDesignToProduction(req, res) {
         request.designCompletedAt = undefined;
         request.designCompletedBy = undefined;
         if (isPtxCaInsufficientCreditError(holdErr)) {
+          try {
+            await cancelUnheldPtxAbutmentRequest(request._id);
+          } catch (cancelErr) {
+            console.error(
+              "[DESIGN_HANDOFF] unheld PTX request cancel failed",
+              cancelErr?.message || cancelErr,
+            );
+          }
           return rejectPtxCaInsufficientCredit(res, holdErr);
         }
         throw holdErr;
@@ -2127,6 +2141,7 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
       ensure = await ensureAbutmentRequestsForHandoff({
         transferDoc,
         actorUserId: userId,
+        tooth,
       });
     } catch (createErr) {
       if (
