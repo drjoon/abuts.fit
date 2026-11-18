@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { cuffProfile } from "../../practice/cuffProfile";
 import { resolveCustomAbutmentConnectionSpec } from "../../practice/customAbutmentScanbodyMatch";
 import {
+  designCustomAbutmentCandidates,
   designCustomAbutmentStl,
   resolveScrewChannelProfile,
 } from "../../practice/customAbutmentStlDesign";
@@ -12,6 +13,7 @@ import { getToothAnatomy } from "../../practice/toothAnatomy";
 import { computeParamsFromInfoFieldEdit } from "./PracticeCustomAbutmentDesignTree";
 import {
   AbutmentDirectEditSession,
+  GUMBALL_SIZE_PX,
   applyWorldDeltaToAbutmentEdit,
   applyWorldRotationToAbutmentEdit,
   buildAbutmentPreferenceUpdate,
@@ -19,6 +21,7 @@ import {
   identityAbutmentEdit,
   gumballPatchSetsPostHeight,
   makeGumball,
+  normalizeAbutmentEdit,
   retainLiveGumballParams,
   measureEditedAbutment,
   refitLocalPositions,
@@ -1436,6 +1439,209 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
         minShoulderMm >= 0.18,
         `${caseLabel}: 전 둘레 최소 마진 챔퍼 폭(${minShoulderMm.toFixed(2)}mm)이 확보된다`,
       );
+    }
+
+    // 11) 검볼 60px 크기, 비등방 협설 스케일 복원·유지, 개별 요소 변경 시 무관 치수 불변 및 원심 먼 치은 대구치(#37) 매끈함 검증
+    assert.equal(GUMBALL_SIZE_PX, 60, "검볼 기준 크기는 60px이다");
+    assert.equal(normalizeAbutmentEdit(identityAbutmentEdit()), null, "항등 검볼 편집은 null로 정규화된다");
+    const savedAnisoEdit = normalizeAbutmentEdit({
+      heightMm: 0.25,
+      shiftLabialMm: 0.15,
+      shiftMesialMm: -0.1,
+      yawDeg: 0,
+      tiltLabialDeg: 0,
+      tiltMesialDeg: 0,
+      scale: [1.34, 1.0, 1.08],
+      partial: [],
+    });
+    assert.ok(savedAnisoEdit != null && Math.abs(savedAnisoEdit.scale[0] - 1.34) < 1e-6);
+
+    // 대합 거리·포스트 높이·테이퍼·마진 챔퍼 R 개별 수정 시 피니시라인·협설/근원심 폭·최대 직경 불변 검증
+    const distalOpenJaw37 = makeGridSurface(-12, 12, -12, 12, 56, (x, y) => {
+      const mesial36 = 7.8 * Math.exp(-((x * x) / 8.5 + ((y - 6.2) * (y - 6.2)) / 1.8));
+      // 원심(y < 0)은 스캔바디 근처가 낮고 멀리(y ≈ -5.2)서야 치은 둔덕이 올라오는 지형
+      const farDistalPad = 2.6 * Math.exp(-((x * x) / 14 + ((y + 5.2) * (y + 5.2)) / 3.0));
+      return 2.7 + mesial36 + farDistalPad;
+    });
+    const tilt37 = (12 * Math.PI) / 180;
+    const fixture37 = {
+      ...fixture36,
+      toothNumber: "37",
+      jaw: "lower" as const,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: [0, Math.sin(tilt37), Math.cos(tilt37)] as [number, number, number],
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: [0, Math.cos(tilt37), -Math.sin(tilt37)] as [number, number, number],
+      },
+      scanbodyTop: [0, 5 * Math.sin(tilt37), 5 * Math.cos(tilt37)] as [number, number, number],
+      archOcclusalDir: [0, 0, 1] as [number, number, number],
+      labialDir: [1, 0, 0] as [number, number, number],
+      mesialDir: [0, 1, 0] as [number, number, number],
+    };
+    const opp37 = makeGridSurface(-10, 10, -10, 10, 28, () => 7.4);
+    const base37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: distalOpenJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.0, marginFilletRadiusMm: 0.7 },
+    });
+    const clearChanged37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: distalOpenJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.6, marginFilletRadiusMm: 0.7 },
+    });
+    const filletChanged37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: distalOpenJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.0, marginFilletRadiusMm: 0.5 },
+    });
+    const taperChanged37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: distalOpenJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.0, marginFilletRadiusMm: 0.7, postTaperLink: 0, postTaperDeg: 4.0 },
+    });
+    assert.equal(base37.metrics.maxDiameterMm, clearChanged37.metrics.maxDiameterMm, "대합 거리 변경 시 최대 직경이 변하지 않는다");
+    assert.equal(base37.metrics.maxDiameterMm, filletChanged37.metrics.maxDiameterMm, "마진 챔퍼 R 변경 시 최대 직경이 변하지 않는다");
+    assert.equal(base37.metrics.maxDiameterMm, taperChanged37.metrics.maxDiameterMm, "테이퍼 변경 시 최대 직경이 변하지 않는다");
+    for (let i = 0; i < base37.marginLoopLocal.length; i += 1) {
+      assert.ok(
+        Math.abs(base37.marginLoopLocal[i]! - clearChanged37.marginLoopLocal[i]!) < 1e-6 &&
+          Math.abs(base37.marginLoopLocal[i]! - filletChanged37.marginLoopLocal[i]!) < 1e-6 &&
+          Math.abs(base37.marginLoopLocal[i]! - taperChanged37.marginLoopLocal[i]!) < 1e-6,
+        "대합 거리·챔퍼 R·테이퍼 변경 시 피니시라인과 협설·근원심 외경이 그대로 유지된다",
+      );
+    }
+
+    // 원심 먼 치은 #37 케이스의 포스트 축벽 Z-단면 엄밀 볼록성 및 마진 폭 균일도 검증
+    const soup37 = base37.solidBodyLocalPositions!;
+    const nCols37 = base37.marginLoopLocal.length / 3;
+    const trisPerCol37 = soup37.length / 9 / nCols37;
+    const ringCount37 = (trisPerCol37 + 2) / 2 + 1;
+    const cols37: Array<Array<[number, number, number]>> = [];
+    for (let col = 0; col < nCols37; col += 1) {
+      const b = col * trisPerCol37 * 9;
+      const pts: Array<[number, number, number]> = [
+        [soup37[b]!, soup37[b + 1]!, soup37[b + 2]!],
+        [soup37[b + 6]!, soup37[b + 7]!, soup37[b + 8]!],
+      ];
+      let off = b + 9;
+      for (let r = 1; r < ringCount37 - 2; r += 1) {
+        pts.push([soup37[off + 15]!, soup37[off + 16]!, soup37[off + 17]!]);
+        off += 18;
+      }
+      pts.push([soup37[off + 6]!, soup37[off + 7]!, soup37[off + 8]!]);
+      cols37.push(pts);
+    }
+    let cLo37X = 0, cLo37Y = 0, cLo37Z = 0;
+    let cHi37X = 0, cHi37Y = 0, cHi37Z = 0;
+    for (let col = 0; col < nCols37; col += 1) {
+      cLo37X += cols37[col]![38]![0] / nCols37;
+      cLo37Y += cols37[col]![38]![1] / nCols37;
+      cLo37Z += cols37[col]![38]![2] / nCols37;
+      cHi37X += cols37[col]![52]![0] / nCols37;
+      cHi37Y += cols37[col]![52]![1] / nCols37;
+      cHi37Z += cols37[col]![52]![2] / nCols37;
+    }
+    const w37Dx = cHi37X - cLo37X;
+    const w37Dy = cHi37Y - cLo37Y;
+    const w37Dz = cHi37Z - cLo37Z;
+    const w37Len = Math.hypot(w37Dx, w37Dy, w37Dz) || 1;
+    const wx37 = w37Dx / w37Len;
+    const wy37 = w37Dy / w37Len;
+    const wz37 = w37Dz / w37Len;
+    const proj37 = (p: readonly [number, number, number]): [number, number, number] => {
+      const dw = p[0] * wx37 + p[1] * wy37 + p[2] * wz37;
+      return [p[0] - dw * wx37, p[1] - dw * wy37, p[2] - dw * wz37];
+    };
+    const mPoly37 = cols37.map((c) => proj37(c[28]!));
+    const pPoly37 = cols37.map((c) => proj37(c[36]!));
+    let minSh37 = Infinity;
+    let maxSh37 = 0;
+    for (let col = 0; col < nCols37; col += 1) {
+      const mp = mPoly37[col]!;
+      let sh = Infinity;
+      for (let j = 0; j < nCols37; j += 1) {
+        const a = pPoly37[j]!;
+        const b = pPoly37[(j + 1) % nCols37]!;
+        const abx = b[0] - a[0];
+        const aby = b[1] - a[1];
+        const abz = b[2] - a[2];
+        const l2 = abx * abx + aby * aby + abz * abz || 1;
+        const t = Math.max(
+          0,
+          Math.min(1, ((mp[0] - a[0]) * abx + (mp[1] - a[1]) * aby + (mp[2] - a[2]) * abz) / l2),
+        );
+        const d3 = Math.hypot(mp[0] - (a[0] + abx * t), mp[1] - (a[1] + aby * t), mp[2] - (a[2] + abz * t));
+        if (d3 < sh) sh = d3;
+      }
+      minSh37 = Math.min(minSh37, sh);
+      maxSh37 = Math.max(maxSh37, sh);
+    }
+    assert.ok(
+      maxSh37 - minSh37 <= 0.08,
+      `원심 먼 치은 #37 케이스에서도 둘레 법선 마진 폭 편차(${(maxSh37 - minSh37).toFixed(3)}mm)가 고르게 유지된다`,
+    );
+    for (let r = 36; r < ringCount37 - 2; r += 1) {
+      for (let c = 0; c < nCols37; c += 1) {
+        const p0 = cols37[(c - 1 + nCols37) % nCols37]![r]!;
+        const p1 = cols37[c]![r]!;
+        const p2 = cols37[(c + 1) % nCols37]![r]!;
+        const cr = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+        assert.ok(
+          cr >= -1e-5,
+          `#37 포스트 링 ${r} 열 ${c}에 오목 패임이 없다(cr=${cr.toFixed(6)})`,
+        );
+      }
+    }
+
+    // 12) 싱글 짧은 포스트(3.5mm, 굵기 배율 적용 포함)는 테이퍼가 [2.0°, 5.0°]로 정확히 클램프되어 2.0°가 되고,
+    //     근심 공간이 넓고 치조제 잇몸 능선이 있는 충돌 지형에서는 우선순위 후보가 최대 3개까지 생성된다.
+    const widePostShort37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: distalOpenJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.5, postWidthScale: 1.2 },
+    });
+    assert.equal(
+      widePostShort37.metrics.postTaperDeg,
+      2.0,
+      `포스트 높이 ${widePostShort37.metrics.postHeightMm}mm(<5mm)에서 굵기 배율이 커도 싱글 테이퍼는 2.0°로 맞춰진다`,
+    );
+
+    const conflictJaw37 = makeGridSurface(-12, 12, -12, 12, 56, (x, y) => {
+      // 근심 #36 자연치는 y ≈ +7.5mm에 멀리 서 있고, 중간 y ≈ +3.2mm에는 치조제 잇몸 능선이 올라온 충돌 지형
+      const farMesial36 = 7.8 * Math.exp(-((x * x) / 8.5 + ((y - 7.6) * (y - 7.6)) / 1.5));
+      const ridgeCrest = 1.15 * Math.exp(-((x * x) / 12 + ((y - 3.3) * (y - 3.3)) / 1.4));
+      return 2.7 + farMesial36 + ridgeCrest;
+    });
+    const cands37 = await designCustomAbutmentCandidates({
+      fixture: fixture37,
+      jawGeometry: conflictJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: { occlusalClearanceMm: 1.0, marginFilletRadiusMm: 0.7 },
+    });
+    assert.ok(
+      cands37.length >= 2 && cands37.length <= 3,
+      `조건 충돌 시 우선순위 높은 후보가 2~3개 생성된다(count=${cands37.length})`,
+    );
+    assert.ok(
+      cands37[0]!.design.metrics.maxDiameterMm > cands37[1]!.design.metrics.maxDiameterMm + 0.35,
+      `(1) 인접 공간 균형 후보(Ø${cands37[0]!.design.metrics.maxDiameterMm}mm)가 (2) 치은 연하 우선 후보(Ø${cands37[1]!.design.metrics.maxDiameterMm}mm)보다 빈 공간을 더 채운다`,
+    );
+    for (const c of cands37) {
+      c.design.worldGeometry.dispose();
+      c.design.predictedCrownWorldGeometry.dispose();
+      c.design.enameloplastyWorldGeometry?.dispose();
     }
   }
 }

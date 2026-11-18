@@ -29,6 +29,7 @@ import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
 
 const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
+export const GUMBALL_SIZE_PX = 60;
 const SCALE_MIN = 0.65;
 const SCALE_MAX = 1.45;
 const SHIFT_MM = 2.5;
@@ -368,6 +369,45 @@ export function retainLiveGumballParams(
 
 export function gumballPatchSetsPostHeight(patch: Partial<CustomAbutmentDesignParams>): boolean {
   return hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
+}
+
+export function normalizeAbutmentEdit(raw: unknown): AbutmentEdit | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const num = (v: unknown, fallback = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const rawScale = Array.isArray(r.scale) ? r.scale : [];
+  const rawPartial = Array.isArray(r.partial) ? r.partial : [];
+  const partial: AbutmentPartial[] = [];
+  for (const item of rawPartial.slice(-24)) {
+    if (!item || typeof item !== "object") continue;
+    const p = item as Record<string, unknown>;
+    const grow = num(p.grow, 0);
+    if (Math.abs(grow) < 1e-4) continue;
+    partial.push({
+      z: num(p.z, 0),
+      angle: clamp(num(p.angle, 0), -Math.PI * 2, Math.PI * 2),
+      reach: clamp(num(p.reach, 1.5), 0.4, 8),
+      grow: clamp(grow, SCALE_MIN - 1, SCALE_MAX - 1),
+    });
+  }
+  const parsed: AbutmentEdit = {
+    heightMm: clamp(num(r.heightMm, 0), -HEIGHT_MM, HEIGHT_MM),
+    shiftLabialMm: clamp(num(r.shiftLabialMm, 0), -SHIFT_MM, SHIFT_MM),
+    shiftMesialMm: clamp(num(r.shiftMesialMm, 0), -SHIFT_MM, SHIFT_MM),
+    yawDeg: clamp(num(r.yawDeg, 0), -YAW_DEG, YAW_DEG),
+    tiltLabialDeg: clamp(num(r.tiltLabialDeg, 0), -TILT_DEG, TILT_DEG),
+    tiltMesialDeg: clamp(num(r.tiltMesialDeg, 0), -TILT_DEG, TILT_DEG),
+    scale: [
+      clamp(num(rawScale[0], 1), SCALE_MIN, SCALE_MAX),
+      clamp(num(rawScale[1], 1), SCALE_MIN, SCALE_MAX),
+      clamp(num(rawScale[2], 1), SCALE_MIN, SCALE_MAX),
+    ],
+    partial,
+  };
+  return editsEqual(parsed, identityAbutmentEdit()) ? null : parsed;
 }
 
 function editsEqual(a: AbutmentEdit, b: AbutmentEdit) {
@@ -1891,7 +1931,15 @@ export class AbutmentDirectEditSession {
 
   editOf(tooth: string): AbutmentEdit | null {
     const edit = this.edits.get(tooth);
-    return edit ? cloneAbutmentEdit(edit) : null;
+    return edit && !editsEqual(edit, EMPTY_EDIT) ? cloneAbutmentEdit(edit) : null;
+  }
+
+  setEdit(tooth: string, edit: AbutmentEdit | null) {
+    if (!edit || editsEqual(edit, EMPTY_EDIT)) {
+      this.edits.delete(tooth);
+    } else {
+      this.edits.set(tooth, cloneAbutmentEdit(edit));
+    }
   }
 
   /**
@@ -1932,8 +1980,7 @@ export class AbutmentDirectEditSession {
       const wasStale = this.stale.has(design.toothNumber);
       this.stale.delete(design.toothNumber);
       if (prev) this.disposeGumball(prev.gumball);
-      const preservedEdit =
-        rebuilt && !wasStale ? this.edits.get(design.toothNumber) : undefined;
+      const preservedEdit = !wasStale ? this.edits.get(design.toothNumber) : undefined;
       if (rebuilt && wasStale) {
         const had =
           this.edits.has(design.toothNumber) ||
@@ -2019,7 +2066,7 @@ export class AbutmentDirectEditSession {
       view.gumball.visible = show && visible && expanded;
       view.gumball.quaternion.copy(gumballQuat);
       view.gumball.position.copy(this.gumballPosition(view, edit));
-      view.gumball.scale.setScalar(worldPerPx * (expanded ? 78 : 66));
+      view.gumball.scale.setScalar(worldPerPx * (expanded ? GUMBALL_SIZE_PX : 50));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
     }
   }
@@ -2120,7 +2167,7 @@ export class AbutmentDirectEditSession {
     const camera = this.bridge.getCamera();
     if (!view || !camera || !this.dom) return false;
     if (handle.op === "center") {
-      const start = cloneAbutmentEdit(this.editOf(handle.tooth));
+      const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
       const center = this.gumballPosition(view, start);
       this.viewPlane(center);
       const hit = this.rayOnPlane(event);
@@ -2135,7 +2182,7 @@ export class AbutmentDirectEditSession {
       };
       return true;
     }
-    const start = cloneAbutmentEdit(this.editOf(handle.tooth));
+    const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
     const center = this.gumballPosition(view, start);
     if (handle.op === "move" || handle.op === "scale") {
       const axis = this.cameraAxis(handle.axis, vC).clone();
@@ -2209,7 +2256,7 @@ export class AbutmentDirectEditSession {
       reach,
       radial: [l / radius, m / radius],
       radius,
-      start: cloneAbutmentEdit(this.editOf(tooth)),
+      start: cloneAbutmentEdit(this.ensureEdit(tooth)),
       hitLocal: local,
       pointerId: event.pointerId,
     };
@@ -2656,7 +2703,7 @@ export class AbutmentDirectEditSession {
     return full.subarray(0, length);
   }
 
-  private editOf(tooth: string) {
+  private ensureEdit(tooth: string) {
     let edit = this.edits.get(tooth);
     if (!edit) {
       edit = identityAbutmentEdit();
@@ -2834,7 +2881,11 @@ export class AbutmentDirectEditSession {
       const el = (child as { element?: HTMLElement }).element;
       if (!el) continue;
       child.position.copy(center);
-      el.style.pointerEvents = gumballOn ? "none" : "auto";
+      if (el.dataset.candidatePicker === "true") {
+        el.style.pointerEvents = "none";
+      } else {
+        el.style.pointerEvents = gumballOn ? "none" : "auto";
+      }
     }
   }
 

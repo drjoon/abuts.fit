@@ -139,10 +139,12 @@ export function isAnteriorTooth(toothNumber: string): boolean {
 export const RETENTION_REF_POST_HEIGHT_MM = 5;
 export const RETENTION_SINGLE_REF_TAPER_DEG = 2;
 export const RETENTION_SINGLE_MIN_TAPER_DEG = 2;
-export const RETENTION_BRIDGE_REF_TAPER_DEG = 3;
-export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.25;
-export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 3.5;
-export const RETENTION_BRIDGE_MIN_TAPER_DEG = 2;
+export const RETENTION_SINGLE_MAX_TAPER_DEG = 5;
+export const RETENTION_BRIDGE_REF_TAPER_DEG = 3.2;
+export const RETENTION_BRIDGE_EXTRA_RETAINER_DEG = 0.3;
+export const RETENTION_BRIDGE_MAX_REF_TAPER_DEG = 3.8;
+export const RETENTION_BRIDGE_MIN_TAPER_DEG = 2.8;
+export const RETENTION_BRIDGE_MAX_TAPER_DEG = 6.5;
 export const RETENTION_MIN_POST_HEIGHT_MM = 2.2;
 export const RETENTION_MAX_POST_HEIGHT_MM = 12;
 
@@ -291,14 +293,13 @@ export function resolveAbutmentBridgeRetentionSpec(
   const retainerCount = isBridge
     ? Math.max(2, Math.round(Number(typeof bridge === "object" && bridge ? bridge.retainerCount : 2) || 2))
     : 1;
-  const maxTaperDeg = CUSTOM_ABUTMENT_PARAM_SPECS.postTaperDeg.max;
   if (!isBridge) {
     return {
       isBridge: false,
       retainerCount: 1,
       refTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
       minTaperDeg: RETENTION_SINGLE_MIN_TAPER_DEG,
-      maxTaperDeg,
+      maxTaperDeg: RETENTION_SINGLE_MAX_TAPER_DEG,
     };
   }
   const refTaperDeg = Math.min(
@@ -310,7 +311,7 @@ export function resolveAbutmentBridgeRetentionSpec(
     retainerCount,
     refTaperDeg,
     minTaperDeg: RETENTION_BRIDGE_MIN_TAPER_DEG,
-    maxTaperDeg,
+    maxTaperDeg: RETENTION_BRIDGE_MAX_TAPER_DEG,
   };
 }
 
@@ -424,9 +425,19 @@ export function snapMaxDiameterMm(diameterMm: number): number {
   return cents / 100;
 }
 
-function clampDesignParam(key: CustomAbutmentParamKey, raw: number): number {
+function clampDesignParam(
+  key: CustomAbutmentParamKey,
+  raw: number,
+  isBridge = false,
+): number {
   const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
-  let next = Math.min(spec.max, Math.max(spec.min, raw));
+  const max =
+    key === "postTaperDeg"
+      ? isBridge
+        ? RETENTION_BRIDGE_MAX_TAPER_DEG
+        : RETENTION_SINGLE_MAX_TAPER_DEG
+      : spec.max;
+  let next = Math.min(max, Math.max(spec.min, raw));
   if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
   if (key === "postTaperLink") next = next >= 0.5 ? 1 : 0;
   return next;
@@ -436,13 +447,15 @@ function clampDesignParam(key: CustomAbutmentParamKey, raw: number): number {
 export function resolveCustomAbutmentParams(
   toothNumber: string,
   overrides?: Partial<CustomAbutmentDesignParams> | null,
+  bridge?: { isBridge?: boolean } | boolean | null,
 ): CustomAbutmentDesignParams {
   const out = defaultCustomAbutmentParams(toothNumber);
   if (!overrides) return out;
+  const isBridge = typeof bridge === "boolean" ? bridge : Boolean(bridge?.isBridge);
   for (const key of CUSTOM_ABUTMENT_PARAM_KEYS) {
     const raw = Number(overrides[key]);
     if (!Number.isFinite(raw)) continue;
-    out[key] = clampDesignParam(key, raw);
+    out[key] = clampDesignParam(key, raw, isBridge);
   }
   return out;
 }
@@ -456,7 +469,11 @@ export function parseCustomAbutmentParamOverrides(
   for (const key of keys) {
     const raw = Number((value as Record<string, unknown>)[key]);
     if (!Number.isFinite(raw)) continue;
-    out[key] = clampDesignParam(key, raw);
+    out[key] = clampDesignParam(
+      key,
+      raw,
+      key === "postTaperDeg" && raw > RETENTION_SINGLE_MAX_TAPER_DEG,
+    );
   }
   return out;
 }

@@ -80,18 +80,20 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   ]);
   assert.deepEqual(threeRetainerBridge, { isBridge: true, retainerCount: 3 });
 
-  // 브리지: 5mm 기준 3.0°(3지대주 3.3°). 짧으면 최소 2.0°
-  assert.equal(computeOptimalPostTaperDeg(2.5, twoUnitBridge), 2.0);
-  assert.equal(computeOptimalPostTaperDeg(5.0, twoUnitBridge), 3.0);
-  assert.equal(computeOptimalPostTaperDeg(6.0, twoUnitBridge), 3.6);
-  assert.equal(computeOptimalPostTaperDeg(16, twoUnitBridge), 5, "긴 브리지 포스트도 편측 5°를 넘기지 않는다");
-  assert.equal(computeOptimalPostTaperDeg(5.0, threeRetainerBridge), 3.3);
-  assert.equal(computeOptimalPostHeightMmFromTaper(3.0, twoUnitBridge), 5.0);
+  // 브리지: 여러 어벗이 힘을 분담하고 착탈이 쉽도록 싱글보다 높은 테이퍼(5mm 기준 3.2°, 3지대주 3.5°, 범위 [2.8°, 6.5°])를 쓴다
+  assert.equal(computeOptimalPostTaperDeg(2.5, twoUnitBridge), 2.8);
+  assert.equal(computeOptimalPostTaperDeg(3.5, twoUnitBridge), 2.8);
+  assert.equal(computeOptimalPostTaperDeg(5.0, twoUnitBridge), 3.2);
+  assert.equal(computeOptimalPostTaperDeg(6.0, twoUnitBridge), 3.8);
+  assert.equal(computeOptimalPostTaperDeg(16, twoUnitBridge), 6.5, "긴 브리지 포스트는 편측 6.5°까지 완화된다");
+  assert.equal(computeOptimalPostTaperDeg(5.0, threeRetainerBridge), 3.5);
+  assert.equal(computeOptimalPostHeightMmFromTaper(3.2, twoUnitBridge), 5.0);
+  assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 8 }, twoUnitBridge).postTaperDeg, 6.5);
 
-  // 경계선(1.95° < 2.0°)도 반올림으로 누락되지 않고 최소값 클램프로 판별된다
-  const borderlineBridge = evaluatePostTaperRetention(3.25, twoUnitBridge);
-  assert.equal(borderlineBridge.appliedTaperDeg, 2.0);
-  assert.equal(borderlineBridge.idealTaperDeg, 1.9);
+  // 경계선(3.5mm -> 적정 2.2° < 브리지 최소 2.8°)도 브리지 최소값 2.8°로 맞춰져 착탈 여유를 지킨다
+  const borderlineBridge = evaluatePostTaperRetention(3.5, twoUnitBridge);
+  assert.equal(borderlineBridge.appliedTaperDeg, 2.8);
+  assert.equal(borderlineBridge.idealTaperDeg, 2.2);
   assert.equal(borderlineBridge.isBelowMinLimit, true);
 
   // 케이스별 높이 보정·테이퍼는 치과 전역 취향에서 제외해 대합거리 1.5mm 우선순위를 해치지 않는다

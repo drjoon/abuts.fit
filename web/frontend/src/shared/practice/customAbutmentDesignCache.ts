@@ -16,10 +16,11 @@ import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import type { MatchedScanbodyFixture } from "@/shared/practice/customAbutmentScanbodyMatch";
 import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmentDesignParams";
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
+import type { AbutmentEdit } from "@/shared/components/practice/abutmentDirectEdit";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 
 /** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 50;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 52;
 /** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
 export const CUSTOM_ABUTMENT_FIT_VERSION = 9;
 
@@ -56,6 +57,9 @@ export type CachedCustomAbutmentTooth = {
   metrics: CustomAbutmentDesignMetrics;
   baselineMetrics?: CustomAbutmentDesignMetrics;
   baselineParams?: CustomAbutmentDesignParams;
+  gumballEdit?: AbutmentEdit | null;
+  gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
+  gumballBaseMetrics?: CustomAbutmentDesignMetrics;
   /** 처음 제안할 때 넣은 조정값. 리셋은 이 입력으로만 돌아간다. */
   proposalInput?: Partial<CustomAbutmentDesignParams>;
   editedInfoFields?: string[];
@@ -370,6 +374,9 @@ export type CustomAbutmentSnapshotUploadTooth = {
   overrides: Partial<CustomAbutmentDesignParams>;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  gumballEdit?: AbutmentEdit | null;
+  gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
+  gumballBaseMetrics?: CustomAbutmentDesignMetrics;
   stlBlob: Blob;
   crownLocalPositions: Float32Array;
   marginLoopLocal: Float32Array;
@@ -383,6 +390,9 @@ export type UploadedCustomAbutmentSnapshotTooth = {
   overrides: Partial<CustomAbutmentDesignParams>;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  gumballEdit?: AbutmentEdit | null;
+  gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
+  gumballBaseMetrics?: CustomAbutmentDesignMetrics;
   s3Key: string;
   crownS3Key: string;
   size: number;
@@ -530,6 +540,15 @@ export async function fetchCustomAbutmentSnapshot(
         overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
         params: row.params as CustomAbutmentDesignParams,
         metrics: row.metrics as CustomAbutmentDesignMetrics,
+        ...(row.gumballEdit && typeof row.gumballEdit === "object"
+          ? { gumballEdit: row.gumballEdit as AbutmentEdit }
+          : {}),
+        ...(row.gumballBaseParams && typeof row.gumballBaseParams === "object"
+          ? { gumballBaseParams: row.gumballBaseParams as Partial<CustomAbutmentDesignParams> }
+          : {}),
+        ...(row.gumballBaseMetrics && typeof row.gumballBaseMetrics === "object"
+          ? { gumballBaseMetrics: row.gumballBaseMetrics as CustomAbutmentDesignMetrics }
+          : {}),
         localPositions,
         crownLocalPositions,
         marginLoopLocal,
@@ -631,6 +650,9 @@ export async function uploadCustomAbutmentSnapshotTeeth(
         overrides: row.overrides,
         params: row.params,
         metrics: row.metrics,
+        ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
+        ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
+        ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
         s3Key,
         crownS3Key,
         size,

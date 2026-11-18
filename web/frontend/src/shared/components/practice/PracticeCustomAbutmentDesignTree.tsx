@@ -35,9 +35,11 @@ import {
 } from "@/components/ui/tooltip";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
+  RETENTION_BRIDGE_MAX_TAPER_DEG,
   RETENTION_BRIDGE_MIN_TAPER_DEG,
   RETENTION_MAX_POST_HEIGHT_MM,
   RETENTION_MIN_POST_HEIGHT_MM,
+  RETENTION_SINGLE_MAX_TAPER_DEG,
   RETENTION_SINGLE_MIN_TAPER_DEG,
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
@@ -177,10 +179,15 @@ export function computeParamsFromInfoFieldEdit(
     }
     case "postTaperLink": {
       const nextLinked = num >= 0.5 ? 1 : 0;
+      const maxTaper = bridgeCtx.isBridge
+        ? RETENTION_BRIDGE_MAX_TAPER_DEG
+        : RETENTION_SINGLE_MAX_TAPER_DEG;
       if (nextLinked === 0) {
         return {
           postTaperLink: 0,
-          postTaperDeg: Number(clampParam("postTaperDeg", m.postTaperDeg).toFixed(2)),
+          postTaperDeg: Number(
+            Math.min(maxTaper, Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, m.postTaperDeg)).toFixed(2),
+          ),
         };
       }
       return {
@@ -205,8 +212,15 @@ export function computeParamsFromInfoFieldEdit(
       };
     }
     case "postTaperDeg": {
+      const maxTaper = bridgeCtx.isBridge
+        ? RETENTION_BRIDGE_MAX_TAPER_DEG
+        : RETENTION_SINGLE_MAX_TAPER_DEG;
+      const minTaper =
+        linked && bridgeCtx.isBridge
+          ? RETENTION_BRIDGE_MIN_TAPER_DEG
+          : RETENTION_SINGLE_MIN_TAPER_DEG;
       if (linked) {
-        const targetTaper = Number(clampParam("postTaperDeg", num).toFixed(2));
+        const targetTaper = Number(Math.min(maxTaper, Math.max(minTaper, num)).toFixed(2));
         const targetHeight = computeOptimalPostHeightMmFromTaper(targetTaper, bridgeCtx);
         const deltaH = targetHeight - m.postHeightMm;
         return {
@@ -219,7 +233,9 @@ export function computeParamsFromInfoFieldEdit(
       }
       const delta = num - m.postTaperDeg;
       return {
-        postTaperDeg: Number(clampParam("postTaperDeg", p.postTaperDeg + delta).toFixed(2)),
+        postTaperDeg: Number(
+          Math.min(maxTaper, Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, p.postTaperDeg + delta)).toFixed(2),
+        ),
       };
     }
     case "occlusalClearanceMm": {
@@ -1511,6 +1527,9 @@ export function PracticeCustomAbutmentDesignTree({
                         postTaperLinked && m.isBridge
                           ? RETENTION_BRIDGE_MIN_TAPER_DEG
                           : RETENTION_SINGLE_MIN_TAPER_DEG;
+                      const taperMax = m.isBridge
+                        ? RETENTION_BRIDGE_MAX_TAPER_DEG
+                        : RETENTION_SINGLE_MAX_TAPER_DEG;
                       const taperCheck = evaluatePostTaperRetention(m.postHeightMm, {
                         isBridge: Boolean(m.isBridge),
                         retainerCount: m.bridgeRetainerCount,
@@ -1562,7 +1581,7 @@ export function PracticeCustomAbutmentDesignTree({
                               label="테이퍼"
                               value={m.postTaperDeg}
                               min={taperMin}
-                              max={CUSTOM_ABUTMENT_PARAM_SPECS.postTaperDeg.max}
+                              max={taperMax}
                               step={0.1}
                               digits={1}
                               suffix="°"
