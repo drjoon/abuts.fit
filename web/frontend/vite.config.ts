@@ -21,6 +21,18 @@ export default defineConfig(({ mode }) => {
       headers: {
         "Cache-Control": "no-cache",
       },
+      // 자주 쓰는 lazy 라우트를 미리 변환해, 첫 진입 때 최적화·변환이 겹치지 않게 한다.
+      warmup: {
+        clientFiles: [
+          "./src/App.tsx",
+          "./src/features/dashboard/DashboardHome.tsx",
+          "./src/features/layout/DashboardLayout.tsx",
+          "./src/pages/manufacturer/worksheet/WorksheetPage.tsx",
+          "./src/pages/manufacturer/equipment/EquipmentPage.tsx",
+          "./src/pages/requestor/practice/RequestorPracticePage.tsx",
+          "./src/pages/public/Index.tsx",
+        ],
+      },
       proxy: {
         "/socket.io": {
           target: apiTarget,
@@ -78,17 +90,27 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: ["rhino3dm"],
-      // lazy 라우트에서 처음 발견되면 재최적화 → 504 Outdated Optimize Dep 로 청크 로드가 깨진다.
+      // 기본 entries는 index.html뿐이라 lazy 라우트 dep가 진입 때만 발견된다.
+      // 그때 재최적화로 browserHash(?v=)가 바뀌면 열린 탭이 504 Outdated Optimize Dep 을 받는다.
+      // 소스 전체를 시작 시 스캔해 정적·문자열 dynamic import 를 미리 묶는다.
+      entries: ["index.html", "src/**/*.{js,jsx,ts,tsx}"],
+      // 스캐너가 놓치기 쉬운 패키지·이미 504로 깨졌던 패키지 보강.
       include: [
         "@monaco-editor/react",
         "monaco-editor",
         "react-intersection-observer",
+        "@radix-ui/react-accordion",
+        "jszip",
+        "xlsx",
+        "qrcode",
+        "html2canvas",
+        "jsbarcode",
       ],
       // esbuildOptions는 브라우저 해시(?v=)에 들어간다. 식별자는 소스에서 안 쓰여 출력은 그대로고,
       // 이미 immutable로 박힌 옛 ?v= URL만 버린다.
       esbuildOptions: {
         define: {
-          __ABUTS_OPTIMIZE_DEPS_REV__: '"2"',
+          __ABUTS_OPTIMIZE_DEPS_REV__: '"3"',
         },
       },
     },
