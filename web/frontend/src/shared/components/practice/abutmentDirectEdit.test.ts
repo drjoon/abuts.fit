@@ -1750,6 +1750,171 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       c.design.predictedCrownWorldGeometry.dispose();
       c.design.enameloplastyWorldGeometry?.dispose();
     }
+
+    // 14) 전형적인 치은 스캘럽(근·원심 치은선 높고 협·설 중앙은 낮은 #37 지형)에서:
+    //     - 생성 시 피니시라인이 평면으로 눌리지 않고 치은 굴곡을 따라 스캘럽 패턴을 유지한다.
+    //     - 치은 연하 수치(0.1~0.4mm ↔ 0.7~1.1mm)를 바꾸면 스캘럽을 유지한 채 마진 높이가 설정에 맞게 이동한다.
+    //     - 검볼로 외경을 넓히거나 이동·높이 조절을 해도 피니시라인이 평면 고정·공중 부양되지 않고 치은 연하 굴곡을 따라 재적합된다.
+    const scallopedJaw37 = makeGridSurface(-12, 12, -12, 12, 60, (x, y) => {
+      const r = Math.hypot(x, y);
+      const socketFunnel = -0.85 * Math.exp(-(r * r) / 5.2);
+      // 근·원심(y 방향)은 바깥으로 갈수록 치간유두가 솟고(+1.45mm), 협·설 중앙(x 방향)은 바깥으로 갈수록 낮아지는 전형적인 굴곡
+      const papillaRise =
+        1.45 *
+        (1 - Math.exp(-(y * y) / 4.8)) *
+        Math.exp(-(x * x) / 14.0) *
+        Math.exp(-((Math.abs(y) - 4.4) ** 2) / 9.5);
+      const flDip = -0.35 * (1 - Math.exp(-(x * x) / 5.5)) * Math.exp(-(y * y) / 8.0);
+      const mesial36Crown = 6.2 * Math.exp(-((x * x) / 9.0 + ((y - 8.6) * (y - 8.6)) / 1.9));
+      return 3.15 + socketFunnel + papillaRise + flDip + mesial36Crown;
+    });
+    const measureScallopStats = (ml: Float32Array) => {
+      const mCount = ml.length / 3;
+      let proxSum = 0;
+      let proxN = 0;
+      let flSum = 0;
+      let flN = 0;
+      let meanZ = 0;
+      for (let c = 0; c < mCount; c += 1) {
+        const mx = ml[c * 3]!;
+        const my = ml[c * 3 + 1]!;
+        const mz = ml[c * 3 + 2]!;
+        meanZ += mz / mCount;
+        const r = Math.hypot(mx, my) || 1;
+        if (Math.abs(my / r) >= 0.85) {
+          proxSum += mz;
+          proxN += 1;
+        } else if (Math.abs(mx / r) >= 0.85) {
+          flSum += mz;
+          flN += 1;
+        }
+      }
+      return {
+        proxMeanZ: proxSum / Math.max(proxN, 1),
+        flMeanZ: flSum / Math.max(flN, 1),
+        scallopDeltaMm: proxSum / Math.max(proxN, 1) - flSum / Math.max(flN, 1),
+        meanZ,
+      };
+    };
+
+    const shallow37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: scallopedJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: {
+        marginDepthMm: 0.1,
+        marginSubgMinMm: 0.1,
+        marginSubgMaxMm: 0.4,
+        occlusalClearanceMm: 1.06,
+        marginFilletRadiusMm: 0.5,
+      },
+      explicitParams: {
+        marginSubgMinMm: 0.1,
+        marginSubgMaxMm: 0.4,
+      },
+    });
+    const deep37 = await designCustomAbutmentStl({
+      fixture: fixture37,
+      jawGeometry: scallopedJaw37,
+      opposingGeometry: opp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: {
+        marginDepthMm: 0.7,
+        marginSubgMinMm: 0.7,
+        marginSubgMaxMm: 1.1,
+        occlusalClearanceMm: 1.06,
+        marginFilletRadiusMm: 0.5,
+      },
+      explicitParams: {
+        marginSubgMinMm: 0.7,
+        marginSubgMaxMm: 1.1,
+      },
+    });
+    const stShallow = measureScallopStats(shallow37.marginLoopLocal);
+    const stDeep = measureScallopStats(deep37.marginLoopLocal);
+    assert.ok(
+      stShallow.scallopDeltaMm >= 0.55,
+      `#37 피니시라인이 평면으로 눌리지 않고 근·원심이 협·설 중앙보다 뚜렷이 높은 스캘럽(${stShallow.scallopDeltaMm.toFixed(2)}mm)을 유지한다`,
+    );
+    assert.ok(
+      stDeep.scallopDeltaMm >= 0.5 && stShallow.meanZ - stDeep.meanZ >= 0.45,
+      `치은 연하(0.1~0.4mm → 0.7~1.1mm) 변경 시 스캘럽(${stDeep.scallopDeltaMm.toFixed(2)}mm)을 유지한 채 마진 깊이(${(stShallow.meanZ - stDeep.meanZ).toFixed(2)}mm)가 내려간다`,
+    );
+
+    // 검볼 직접 편집 세션에서 외경을 넓히고(+스케일) 수직 높이를 당겨도 피니시라인이 치은 연하 굴곡을 따라 재적합되는지 검증
+    const scene37 = new THREE.Scene();
+    const abutMesh37 = new THREE.Mesh(shallow37.worldGeometry.clone(), new THREE.MeshBasicMaterial());
+    scene37.add(abutMesh37);
+    let lastMarginPositions37: Float32Array | null = null;
+    const marginLine37 = Object.assign(new THREE.Object3D(), {
+      geometry: {
+        setPositions: (positions: Float32Array | number[]) => {
+          lastMarginPositions37 =
+            positions instanceof Float32Array ? new Float32Array(positions) : new Float32Array(positions);
+        },
+      },
+      computeLineDistances: () => {},
+    });
+    const sessionDesign37 = {
+      toothNumber: "37",
+      jaw: "lower" as const,
+      fixture: shallow37.fixture,
+      localPositions: new Float32Array(shallow37.localPositions),
+      solidBodyLocalPositions: shallow37.solidBodyLocalPositions
+        ? new Float32Array(shallow37.solidBodyLocalPositions)
+        : undefined,
+      crownLocalPositions: new Float32Array(shallow37.crownLocalPositions),
+      marginLoopLocal: new Float32Array(shallow37.marginLoopLocal),
+      stlBlob: shallow37.stlBlob,
+      params: { ...shallow37.params },
+      metrics: { ...shallow37.metrics },
+    };
+    const editSession37 = new AbutmentDirectEditSession({
+      getScene: () => scene37,
+      getCamera: () => null,
+      getRenderer: () => null,
+      getHost: () => null,
+      getDesigns: () => [sessionDesign37],
+      getAbutment: (t) => (t === "37" ? abutMesh37 : undefined),
+      getCrown: () => undefined,
+      getMargin: (t) => (t === "37" ? marginLine37 : undefined),
+      getJawGeometry: () => scallopedJaw37,
+      getOpposingGeometry: () => opp37,
+      ui: {
+        gumballOn: true,
+        sculptOn: false,
+        radiusMm: 2.0,
+        readOnly: false,
+        selected: "37",
+        visible: { "37": true },
+        expanded: { "37": true },
+      },
+      onBadge: () => {},
+      onCommit: () => {},
+      onHistory: () => {},
+    });
+    editSession37.setEdit("37", {
+      ...identityAbutmentEdit(),
+      scale: [1.26, 1.26, 1],
+      shiftMesialMm: 0.35,
+      heightMm: 0.9,
+    });
+    editSession37.sync();
+    assert.ok(lastMarginPositions37 != null, "검볼 편집 동기화 시 피니시라인 월드 좌표가 갱신된다");
+    const stGumball = measureScallopStats(sessionDesign37.marginLoopLocal);
+    assert.ok(
+      stGumball.scallopDeltaMm >= 0.7 && stGumball.flMeanZ < stShallow.flMeanZ + 0.15,
+      `검볼 확장·수직 드래그 후에도 피니시라인이 공중으로 뜨지 않고(협설Z=${stGumball.flMeanZ.toFixed(2)}mm) 더 높은 근원심 유두를 따라 스캘럽(${stGumball.scallopDeltaMm.toFixed(2)}mm)을 키운다`,
+    );
+    editSession37.dispose();
+    abutMesh37.geometry.dispose();
+    (abutMesh37.material as THREE.Material).dispose();
+    shallow37.worldGeometry.dispose();
+    shallow37.predictedCrownWorldGeometry.dispose();
+    deep37.worldGeometry.dispose();
+    deep37.predictedCrownWorldGeometry.dispose();
+    scallopedJaw37.dispose();
   }
 }
 

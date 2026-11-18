@@ -15,8 +15,10 @@ import * as THREE from "three";
 import { encodeBinaryStl } from "../../files/stlBinaryWrite";
 import { cuffProfile } from "../../practice/cuffProfile";
 import {
+  buildJawGingivaMarginProbe,
   buildMinkowskiCuffRadiusEvaluator,
   resolveScrewChannelProfile,
+  type JawGingivaMarginProbe,
 } from "../../practice/customAbutmentStlDesign";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
@@ -42,6 +44,9 @@ export type DirectEditFixture = {
   labialDir: readonly number[];
   mesialDir: readonly number[];
   archOcclusalDir?: readonly number[];
+  scanbodyRadiusMm?: number;
+  scanbodyHeightMm?: number;
+  gingivaFloorMm?: number;
   fixturePose: {
     hexX: readonly number[];
     hexY: readonly number[];
@@ -51,6 +56,7 @@ export type DirectEditFixture = {
   connectionSpec?: {
     l2Mm?: number;
     prcConeTopMm: number;
+    originDiameterMm?: number;
     screwLowerDiameterMm?: number;
     screwUpperDiameterMm: number;
     screwTopMouthDiameterMm?: number;
@@ -72,6 +78,8 @@ export type DirectEditDesign = {
   metrics?: {
     occlusalClearanceMm?: number | null;
     postTaperDeg?: number;
+    marginSubgMinMm?: number;
+    marginSubgMaxMm?: number;
     isBridge?: boolean;
     bridgeRetainerCount?: number;
   };
@@ -183,7 +191,10 @@ type ToothView = {
   lastDrilledLocal: Float32Array;
   lastDrilledEdit: AbutmentEdit;
   lastAutoLiftMm: number;
+  lastMarginZCorr: Float32Array | null;
   zone: Zone;
+  gingivaProbe: JawGingivaMarginProbe | null;
+  gingivaBaseResidual: Float32Array | null;
   oppProbe: OpposingClearanceProbe | null;
   topSampleVertices: Uint32Array;
   targetClearanceMm: number | null;
@@ -266,6 +277,7 @@ export type AbutmentEditBridge = {
   getAbutment: (tooth: string) => THREE.Mesh | undefined;
   getCrown: (tooth: string) => THREE.Mesh | undefined;
   getMargin: (tooth: string) => MarginLine | undefined;
+  getJawGeometry?: (jaw: "upper" | "lower") => THREE.BufferGeometry | null;
   getOpposingGeometry?: (jaw: "upper" | "lower") => THREE.BufferGeometry | null;
   ui: {
     gumballOn: boolean;
@@ -537,6 +549,7 @@ export function refitLocalPositions(
   zone: Zone,
   out: Float32Array,
   extraPostTopLiftMm = 0,
+  marginZCorrCol?: Float32Array | null,
 ): { widthRatio: number; heightDeltaMm: number } {
   const { fixedZ, marginZ, screwR, labial, mesial } = zone;
   const yawRad = (edit.yawDeg * Math.PI) / 180;
@@ -658,12 +671,16 @@ export function refitLocalPositions(
 
     const offL = edit.shiftLabialMm * t + leanL;
     const offM = edit.shiftMesialMm * t + leanM;
-    const z2 = z + baseZLift + postTopDeltaZ;
+    const mColCorr =
+      marginZCorrCol && marginZCorrCol.length >= 3 && z >= mZCol - 0.025
+        ? samplePolarProfile(marginZCorrCol, theta0, 0)
+        : 0;
+    const z2 = z + baseZLift + postTopDeltaZ + mColCorr * (1 - uPost);
     let adjLRot = lRot;
     let adjMRot = mRot;
     if (hasTaperLinkAdjust && hAboveMargin > 0.22 && (!hole || rProp > screwR + 0.12)) {
       const mColLift = computeZLift(mZCol, fixedZ, marginZ, safePropTop, edit);
-      const newHAbove = Math.max(0, z2 - (mZCol + mColLift));
+      const newHAbove = Math.max(0, z2 - (mZCol + mColLift + mColCorr));
       const ramp = clamp((hAboveMargin - 0.22) / 0.28, 0, 1);
       const extraInward = (taperLinkSlopeNew * newHAbove - taperLinkSlopeOld * hAboveMargin) * ramp;
       const rRot = Math.hypot(adjLRot, adjMRot);
@@ -2000,6 +2017,24 @@ export class AbutmentDirectEditSession {
       const zone = zoneOf(design, proposal, proposalSolid, margin);
       const inferredJaw: "upper" | "lower" =
         design.jaw ?? (/^[12]/.test(String(design.toothNumber || "")) ? "upper" : "lower");
+      const jawGeometry = this.bridge.getJawGeometry?.(inferredJaw) ?? null;
+      const gingivaProbe = buildJawGingivaMarginProbe(jawGeometry, design.fixture, design.toothNumber);
+      let gingivaBaseResidual: Float32Array | null = null;
+      if (gingivaProbe && margin && margin.length >= 24) {
+        const subgMinMm = design.params?.marginSubgMinMm ?? design.metrics?.marginSubgMinMm ?? 0.5;
+        const subgMaxMm = design.params?.marginSubgMaxMm ?? design.metrics?.marginSubgMaxMm ?? 1.0;
+        const baseDrapedZ = gingivaProbe.drapeMarginLoopZ(margin, {
+          subgMinMm,
+          subgMaxMm,
+          scallopMm: design.params?.marginScallopMm,
+        });
+        if (baseDrapedZ && baseDrapedZ.length * 3 === margin.length) {
+          gingivaBaseResidual = new Float32Array(baseDrapedZ.length);
+          for (let col = 0; col < baseDrapedZ.length; col += 1) {
+            gingivaBaseResidual[col] = clamp(margin[col * 3 + 2]! - baseDrapedZ[col]!, -0.45, 0.45);
+          }
+        }
+      }
       const opposingGeometry = this.bridge.getOpposingGeometry?.(inferredJaw) ?? null;
       const oppProbe = buildOpposingClearanceProbe(opposingGeometry, design.fixture, zone);
       const sampleSrc = proposalSolid ?? proposal;
@@ -2021,7 +2056,10 @@ export class AbutmentDirectEditSession {
         lastDrilledLocal: new Float32Array(proposal),
         lastDrilledEdit: identityAbutmentEdit(),
         lastAutoLiftMm: 0,
+        lastMarginZCorr: null,
         zone,
+        gingivaProbe,
+        gingivaBaseResidual,
         oppProbe,
         topSampleVertices,
         targetClearanceMm,
@@ -2449,6 +2487,8 @@ export class AbutmentDirectEditSession {
     const cached = Boolean(bake && view.proposalSolid && editsEqual(edit, view.lastDrilledEdit));
     const local = cached ? new Float32Array(view.lastDrilledLocal) : this.take("local", previewSrc.length);
     let marginLocal: Float32Array | null = null;
+    let marginZCorr: Float32Array | null = cached ? view.lastMarginZCorr : null;
+    let hasMarginZCorr = false;
     if (view.proposalMargin) {
       marginLocal = new Float32Array(view.proposalMargin.length);
       refitLocalPositions(
@@ -2458,11 +2498,53 @@ export class AbutmentDirectEditSession {
         marginLocal,
         0,
       );
+      if (!editsEqual(edit, EMPTY_EDIT) && view.gingivaProbe) {
+        const mCount = Math.floor(marginLocal.length / 3);
+        const subgMinMm = design.params?.marginSubgMinMm ?? design.metrics?.marginSubgMinMm ?? 0.5;
+        const subgMaxMm = design.params?.marginSubgMaxMm ?? design.metrics?.marginSubgMaxMm ?? 1.0;
+        const drapedZ = view.gingivaProbe.drapeMarginLoopZ(marginLocal, {
+          subgMinMm,
+          subgMaxMm,
+          scallopMm: design.params?.marginScallopMm,
+        });
+        if (drapedZ && drapedZ.length === mCount) {
+          let maxXYShift = 0;
+          for (let col = 0; col < mCount; col += 1) {
+            const dx = marginLocal[col * 3]! - view.proposalMargin[col * 3]!;
+            const dy = marginLocal[col * 3 + 1]! - view.proposalMargin[col * 3 + 1]!;
+            maxXYShift = Math.max(maxXYShift, Math.hypot(dx, dy));
+          }
+          const xyBlend = clamp(maxXYShift / 0.18, 0, 1);
+          const manualTopLift = computeZLift(view.topZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
+          marginZCorr = new Float32Array(mCount);
+          for (let col = 0; col < mCount; col += 1) {
+            const origZ = view.proposalMargin[col * 3 + 2]!;
+            const rawRefitZ = marginLocal[col * 3 + 2]!;
+            const res = view.gingivaBaseResidual?.[col] ?? 0;
+            const probeTargetZ = drapedZ[col]! + res * (1 - xyBlend * 0.75);
+            const thetaCol = (col / mCount) * Math.PI * 2;
+            const colTopBefore = samplePolarProfile(view.zone.topColZ, thetaCol, view.topZ);
+            const maxAllowZ = Math.max(
+              view.zone.coneZ + 0.45,
+              colTopBefore + manualTopLift - 0.95,
+            );
+            const wantZ = clamp(
+              origZ * (1 - xyBlend) + probeTargetZ * xyBlend,
+              Math.max(view.zone.coneZ + 0.42, view.gingivaProbe.minMarginZ),
+              maxAllowZ,
+            );
+            marginLocal[col * 3 + 2] = wantZ;
+            const corr = wantZ - rawRefitZ;
+            marginZCorr[col] = corr;
+            if (Math.abs(corr) > 1e-4) hasMarginZCorr = true;
+          }
+        }
+      }
     }
     let measured = this.summary;
     let autoLiftMm = cached ? view.lastAutoLiftMm : 0;
     if (!cached) {
-      measured = refitLocalPositions(previewSrc, edit, previewZone, local, 0);
+      measured = refitLocalPositions(previewSrc, edit, previewZone, local, 0, marginZCorr);
       const hasRotation =
         Math.abs(edit.tiltLabialDeg) > 1e-3 ||
         Math.abs(edit.tiltMesialDeg) > 1e-3 ||
@@ -2484,12 +2566,13 @@ export class AbutmentDirectEditSession {
           const nextLift = clamp(autoLiftMm + stepLift, -2.8, 2.8);
           if (Math.abs(nextLift - autoLiftMm) < 0.008) break;
           autoLiftMm = nextLift;
-          measured = refitLocalPositions(previewSrc, edit, previewZone, local, autoLiftMm);
+          measured = refitLocalPositions(previewSrc, edit, previewZone, local, autoLiftMm, marginZCorr);
         }
       }
       view.lastAutoLiftMm = autoLiftMm;
+      view.lastMarginZCorr = marginZCorr;
       this.summary = measured;
-      if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+      if (marginLocal && view.proposalMargin && (cuffNeedsRegen(edit) || hasMarginZCorr)) {
         regenerateCuffToMargin(previewSrc, local, view.proposalMargin, marginLocal, previewZone);
       }
     }
@@ -2506,6 +2589,7 @@ export class AbutmentDirectEditSession {
         { ...view.zone, screwR: 0 },
         crownLocal,
         autoLiftMm,
+        marginZCorr,
       );
       writeAttribute(
         crown.geometry,
@@ -2622,8 +2706,9 @@ export class AbutmentDirectEditSession {
           { ...view.zone, screwR: 0 },
           solidOut,
           view.lastAutoLiftMm,
+          view.lastMarginZCorr,
         );
-        if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+        if (marginLocal && view.proposalMargin && (cuffNeedsRegen(edit) || Boolean(view.lastMarginZCorr))) {
           regenerateCuffToMargin(view.proposalSolid, solidOut, view.proposalMargin, marginLocal, view.zone);
         }
       }
@@ -2661,8 +2746,8 @@ export class AbutmentDirectEditSession {
         .catch(() => {
           if (view.bakeEpoch !== epoch) return;
           const fallback = new Float32Array(view.proposal.length);
-          refitLocalPositions(view.proposal, edit, view.zone, fallback, view.lastAutoLiftMm);
-          if (marginLocal && view.proposalMargin && cuffNeedsRegen(edit)) {
+          refitLocalPositions(view.proposal, edit, view.zone, fallback, view.lastAutoLiftMm, view.lastMarginZCorr);
+          if (marginLocal && view.proposalMargin && (cuffNeedsRegen(edit) || Boolean(view.lastMarginZCorr))) {
             regenerateCuffToMargin(view.proposal, fallback, view.proposalMargin, marginLocal, view.zone);
           }
           view.lastDrilledLocal = fallback;
@@ -2685,6 +2770,7 @@ export class AbutmentDirectEditSession {
       view.lastDrilledLocal = new Float32Array(view.proposal);
       view.lastDrilledEdit = identityAbutmentEdit();
       view.lastAutoLiftMm = 0;
+      view.lastMarginZCorr = null;
     }
     design.localPositions = new Float32Array(local);
     const stlPositions =

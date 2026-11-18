@@ -1077,6 +1077,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       getAbutment: (tooth) => abutmentMeshesRef.current.get(tooth),
       getCrown: (tooth) => predictedCrownMeshesRef.current.get(tooth),
       getMargin: (tooth) => marginLinesRef.current.get(tooth),
+      getJawGeometry: (jaw) =>
+        designContextRef.current?.jawGeometry[jaw] ??
+        rawJawScansRef.current.find((s) => s.jaw === jaw)?.geometry ??
+        null,
       getOpposingGeometry: (jaw) => {
         const oppJaw = jaw === "upper" ? "lower" : "upper";
         return (

@@ -1196,8 +1196,17 @@ function solveSmoothOffsetMarginLoop(
   zMinClamp: number,
   zMaxClamp: number,
   occViewDir?: Vec3,
-): { radii: number[]; zCols: number[]; footPsis: number[] } {
+): { radii: number[]; zCols: number[]; footPsis: number[]; duLats: number[]; dvLats: number[] } {
   const occFrame = occViewDir ? insertionFrame(occViewDir, frame.uLabial) : null;
+  const occOz =
+    occViewDir && Math.abs(occViewDir[2]) > 0.25
+      ? occViewDir[2]
+      : occViewDir
+        ? Math.sign(occViewDir[2] || 1) * 0.25
+        : 1;
+  const occSlopeX = occViewDir ? occViewDir[0] / occOz : 0;
+  const occSlopeY = occViewDir ? occViewDir[1] / occOz : 0;
+
   const zRaw = new Float64Array(ANGULAR_COLS);
   let a0 = 0;
   let a1 = 0;
@@ -1219,17 +1228,31 @@ function solveSmoothOffsetMarginLoop(
     zScallop[col] = zRaw[col]! - zp;
   }
 
-  const evalForBeta = (beta: number) => {
+  // 수직 피니시라인 높이(zCols)는 치은선 스캘럽(zScale=1)을 그대로 유지하고,
+  // 경사 식립에서 스캘럽 때문에 수평·교합 투영 곡률이 줄어들 때만 광선 수평 오프셋(betaLat, occComp)을 먼저 조절한다.
+  const evalCandidate = (betaLat: number, occComp: number, zScale = 1) => {
     const radii = new Array<number>(ANGULAR_COLS);
     const zCols = new Array<number>(ANGULAR_COLS);
     const footPsis = new Array<number>(ANGULAR_COLS);
+    const duLats = new Array<number>(ANGULAR_COLS);
+    const dvLats = new Array<number>(ANGULAR_COLS);
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const theta = (col / ANGULAR_COLS) * Math.PI * 2;
       const radialFix: Vec3 = [Math.cos(theta), Math.sin(theta), 0];
-      const zCol = clamp(zPlane[col]! + beta * zScallop[col]!, zMinClamp, zMaxClamp);
-      const dz0 = zCol - zRef;
-      const uOff = dz0 * frame.uLabial[2];
-      const vOff = dz0 * frame.vSide[2];
+      const zScal = zScallop[col]! * zScale;
+      const zCol = clamp(zPlane[col]! + zScal, zMinClamp, zMaxClamp);
+      const dzFull = zCol - zRef;
+      const dzPlane = zPlane[col]! - zRef;
+      const occDx = occComp * zScal * occSlopeX;
+      const occDy = occComp * zScal * occSlopeY;
+      const uOff =
+        (dzPlane + betaLat * zScal) * frame.uLabial[2] -
+        (occDx * frame.uLabial[0] + occDy * frame.uLabial[1]);
+      const vOff =
+        (dzPlane + betaLat * zScal) * frame.vSide[2] -
+        (occDx * frame.vSide[0] + occDy * frame.vSide[1]);
+      duLats[col] = dzFull * frame.uLabial[2] - uOff;
+      dvLats[col] = dzFull * frame.vSide[2] - vOff;
       const gu = dot3(radialFix, frame.uLabial);
       const gv = dot3(radialFix, frame.vSide);
       const lenDir = Math.hypot(gu, gv);
@@ -1248,35 +1271,86 @@ function solveSmoothOffsetMarginLoop(
     const minCrOcc = occFrame
       ? minLoopCrossInPlane(radii, zCols, occFrame.uLabial, occFrame.vSide)
       : minCrXY;
-    return { radii, zCols, footPsis, minCr: Math.min(minCrXY, minCrOcc) };
+    return { radii, zCols, footPsis, duLats, dvLats, minCr: Math.min(minCrXY, minCrOcc) };
   };
 
-  const full = evalForBeta(1);
-  if (full.minCr >= 1e-5) {
-    return { radii: full.radii, zCols: full.zCols, footPsis: full.footPsis };
-  }
-  const flat = evalForBeta(0);
-  if (flat.minCr < 1e-6) {
+  const full = evalCandidate(1, 0, 1);
+  if (full.minCr >= 1.2e-5) {
     return {
-      radii: projectPolarRadiiToConvexHull(flat.radii),
-      zCols: flat.zCols,
-      footPsis: flat.footPsis,
+      radii: full.radii,
+      zCols: full.zCols,
+      footPsis: full.footPsis,
+      duLats: full.duLats,
+      dvLats: full.dvLats,
     };
   }
-  let loB = 0;
-  let hiB = 1;
-  let best = flat;
-  for (let it = 0; it < 10; it += 1) {
-    const midB = (loB + hiB) * 0.5;
-    const cand = evalForBeta(midB);
-    if (cand.minCr >= 1e-5) {
-      best = cand;
-      loB = midB;
-    } else {
-      hiB = midB;
+
+  // 1단계: zScale=1(치은 스캘럽 100% 보존)에서 occComp·betaLat 수평 보정만으로 엄밀 볼록을 확보한다.
+  let bestOccComp = 0;
+  let bestZeroLat = evalCandidate(0, 0, 1);
+  if (occFrame) {
+    for (const oc of [0.25, 0.5, 0.75, 1]) {
+      const c = evalCandidate(0, oc, 1);
+      if (c.minCr > bestZeroLat.minCr) {
+        bestZeroLat = c;
+        bestOccComp = oc;
+      }
     }
   }
-  return { radii: best.radii, zCols: best.zCols, footPsis: best.footPsis };
+  if (bestZeroLat.minCr >= 1.2e-5) {
+    let loLat = 0;
+    let hiLat = 1;
+    let best = bestZeroLat;
+    for (let it = 0; it < 9; it += 1) {
+      const midLat = (loLat + hiLat) * 0.5;
+      const cand = evalCandidate(midLat, bestOccComp * (1 - midLat), 1);
+      if (cand.minCr >= 1.2e-5) {
+        best = cand;
+        loLat = midLat;
+      } else {
+        hiLat = midLat;
+      }
+    }
+    return {
+      radii: best.radii,
+      zCols: best.zCols,
+      footPsis: best.footPsis,
+      duLats: best.duLats,
+      dvLats: best.dvLats,
+    };
+  }
+
+  // 2단계: 초극단 절벽 지형에서도 스캘럽을 평면으로 죽이지 않고 볼록 한계까지만 최소 완화한다.
+  const flatPlane = evalCandidate(0, 0, 0);
+  if (flatPlane.minCr < 1e-6) {
+    return {
+      radii: projectPolarRadiiToConvexHull(bestZeroLat.radii),
+      zCols: bestZeroLat.zCols,
+      footPsis: bestZeroLat.footPsis,
+      duLats: bestZeroLat.duLats,
+      dvLats: bestZeroLat.dvLats,
+    };
+  }
+  let loZ = 0;
+  let hiZ = 1;
+  let bestZ = flatPlane;
+  for (let it = 0; it < 9; it += 1) {
+    const midZ = (loZ + hiZ) * 0.5;
+    const cand = evalCandidate(0, bestOccComp, midZ);
+    if (cand.minCr >= 1.2e-5) {
+      bestZ = cand;
+      loZ = midZ;
+    } else {
+      hiZ = midZ;
+    }
+  }
+  return {
+    radii: bestZ.radii,
+    zCols: bestZ.zCols,
+    footPsis: bestZ.footPsis,
+    duLats: bestZ.duLats,
+    dvLats: bestZ.dvLats,
+  };
 }
 
 /**
@@ -5502,8 +5576,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
 
   // 마진 반경(marginRadii)과 예측 크라운 치경부 출현 윤곽이 확정된 뒤, 실제 치은 라인(출현 소켓 테두리·치간유두 능선)을 따라
-  // 협·설측은 치은 연하 얕은 끝만큼 내리고 근·원심은 치관 쪽으로 올라가는 스캘럽 마진을 잡는다. 최종은 얕은 끝~깊은 끝 안이다.
-  {
+  // 협·설측은 치은 연하 깊은 쪽으로 감추고 근·원심은 치간유두 치은선을 따라 치관 쪽으로 올라가는 스캘럽 마진을 잡는다. 최종은 얕은 끝~깊은 끝 안이다.
+  const hasExplicitMarginDepth =
+    hasUserExplicitMarginDepth || supragingivalRaisedForStrength;
+  const baseRetentionRefMeanZ = meanMarginZ;
+  const drapeMarginZForRadii = (curRadii: readonly number[]): number[] => {
     const CREST_BIN_MM = 0.35;
     const CREST_BINS = 6;
     const sectorRStart = new Array<number>(SECTORS);
@@ -5511,6 +5588,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const sectorCLab = new Array<number>(SECTORS);
     const sectorSMes = new Array<number>(SECTORS);
     const sectorRetromolar = new Array<boolean>(SECTORS);
+    const sectorRM = new Array<number>(SECTORS);
     for (let b = 0; b < SECTORS; b += 1) {
       const theta = ((b + 0.5) / SECTORS) * Math.PI * 2;
       const ct = Math.cos(theta);
@@ -5519,7 +5597,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const sMes = ct * mesXY[0] + st * mesXY[1];
       const proxW = sMes * sMes;
       const isRetromolar = hasDistalRetromolarPad && sMes < -0.35;
-      const rM = evalPeriodicLinear(marginRadii, theta);
+      const rM = evalPeriodicLinear(curRadii, theta);
+      sectorRM[b] = rM;
       const colIdx = Math.floor(((b + 0.5) / SECTORS) * ANGULAR_COLS) % ANGULAR_COLS;
       const tCrown = analyticSectionRay(
         tpl.kind,
@@ -5535,23 +5614,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const rCrownFix = Number.isFinite(tCrown)
         ? tCrown / Math.max(0.35, colProjScale[colIdx]!)
         : rM + 1.0;
-      const rProxEnd = posterior
-        ? rM + 0.42
-        : Math.max(rM + 0.55, Math.min(rM + 1.25, rM * 0.4 + rCrownFix * 0.6));
+      const rProxEnd = Math.max(
+        rM + 0.55,
+        Math.min(rM + (posterior ? 1.05 : 1.25), rM * 0.4 + rCrownFix * 0.6),
+      );
       sectorCLab[b] = cLab;
       sectorSMes[b] = sMes;
       sectorRetromolar[b] = isRetromolar;
-      sectorRStart[b] = Math.max(sbR + 0.22, rM - 0.32);
+      sectorRStart[b] = Math.max(sbR + 0.22, Math.min(rM - 0.32, sbR + 0.55));
       sectorREnd[b] = isRetromolar
         ? rM + 0.35
-        : (rM + (posterior ? 0.35 : 0.5)) * (1 - proxW) + rProxEnd * proxW;
+        : (rM + 0.48) * (1 - proxW) + rProxEnd * proxW;
     }
 
     const atMarginBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+    const nearSupportCounts = new Int32Array(SECTORS);
     const crestBins: number[][][] = Array.from({ length: SECTORS }, () =>
       Array.from({ length: CREST_BINS }, () => [] as number[]),
     );
-    const zScanCap = medianRimZ + (posterior ? 2.7 : 3.5);
+    const zScanCap = medianRimZ + (posterior ? 2.85 : 3.5);
     for (let i = 0; i < jawLocalPts.length; i += 3) {
       const x = jawLocalPts[i]!;
       const y = jawLocalPts[i + 1]!;
@@ -5562,8 +5643,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const r = Math.hypot(x, y);
       const rStart = sectorRStart[b]!;
       if (r < rStart) continue;
-      const rM = evalPeriodicLinear(marginRadii, theta);
-      if (r <= rM + 0.32 && z <= rawGingivaZ[b]! + 2.3) {
+      const rM = evalPeriodicLinear(curRadii, theta);
+      if (r <= rM + 0.72 && z <= rawGingivaZ[b]! + 2.5) {
+        nearSupportCounts[b] += 1;
+      }
+      if (r >= Math.max(sbR + 0.22, rM - 0.24) && r <= rM + 0.42 && z <= rawGingivaZ[b]! + 2.4) {
         atMarginBuckets[b]!.push(z);
       }
       if (r <= sectorREnd[b]!) {
@@ -5599,16 +5683,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     };
 
-    const hasNearGingiva = atMarginBuckets.map((list) => list.length >= 3);
-    const gingAtM = atMarginBuckets.map((list) => {
-      if (list.length < 3) return Number.NaN;
+    const hasNearGingiva = Array.from({ length: SECTORS }, (_, b) => {
+      const n0 = nearSupportCounts[(b - 1 + SECTORS) % SECTORS]!;
+      const n1 = nearSupportCounts[b]!;
+      const n2 = nearSupportCounts[(b + 1) % SECTORS]!;
+      return n1 >= 2 || n0 + n1 + n2 >= 4;
+    });
+    const gingAtM = atMarginBuckets.map((list, b) => {
+      if (list.length < 2) return Number.NaN;
       list.sort((a, c) => a - c);
-      return list[Math.floor(list.length * 0.52)]!;
+      const proxW = sectorSMes[b]! * sectorSMes[b]!;
+      const q = proxW > 0.35 ? 0.68 : 0.5;
+      return list[Math.min(list.length - 1, Math.floor(list.length * q))]!;
     });
     fillMissingCircular(gingAtM, rimLow);
 
     const gingCrestRaw = crestBins.map((bins, b) => {
-      // 피니시라인 근처(r <= rM + 0.32mm)에 잇몸이 없고 치은선이 멀리 떨어져 있는 방향에서는
+      // 피니시라인 근처에 잇몸이 없고 치은선이 멀리 떨어져 있는 방향에서는
       // 먼 바깥 치은 능선을 억지로 따라 올라가지 않고 주변 치은선과 완만하게 잇는다.
       if (!hasNearGingiva[b]) return Number.NaN;
       const cLab = sectorCLab[b]!;
@@ -5617,13 +5708,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const binCap = sectorRetromolar[b] ? 2 : bins.length;
       for (let bi = 0; bi < binCap; bi += 1) {
         const list = bins[bi]!;
-        if (list.length < 3) continue;
+        if (list.length < 2) continue;
         list.sort((a, c) => a - c);
         const m = list[Math.floor(list.length * 0.55)]!;
         // 반경 0.35mm 안에 0.92mm 넘게 치솟으면 치은이 아니라 인접 자연치 법랑질 벽이므로 직전에서 멈춘다.
         if (Number.isFinite(prev) && m - prev > 0.92) break;
-        // 순·협측에서 치은정 능선을 넘어 바깥 치조점막으로 꺾여 내려가면 능선 꼭대기를 치은 라인으로 잡는다.
-        if (cLab > 0.35 && Number.isFinite(crest) && m < crest - 0.18) break;
+        // 순·협·설측에서 치은정 능선을 넘어 바깥 치조점막으로 꺾여 내려가면 능선 꼭대기를 치은 라인으로 잡는다.
+        if (Math.abs(cLab) > 0.35 && Number.isFinite(crest) && m < crest - 0.18) break;
         crest = Number.isFinite(crest) ? Math.max(crest, m) : m;
         prev = m;
       }
@@ -5632,6 +5723,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     fillMissingCircular(gingCrestRaw, gingAtM);
 
     const gingSmooth = lowPassCircular(gingCrestRaw, 3);
+    // 협·설은 마진 반경 직상방 치은(gingAtM)과 치은정 중 낮은 쪽을 기준으로 노출을 막고,
+    // 근·원심은 치간유두 치은선(gingSmooth)과 마진 위치 치은 중 높은 쪽을 따라 스캘럽을 살린다.
+    const gingLine = Array.from({ length: SECTORS }, (_, b) => {
+      const proxW = sectorSMes[b]! * sectorSMes[b]!;
+      const gS = gingSmooth[b]!;
+      const gM = gingAtM[b]!;
+      if (!Number.isFinite(gM)) return gS;
+      const flGing = Math.min(gS, gM);
+      const proxGing = sectorRetromolar[b]
+        ? flGing
+        : Math.max(gS, Math.min(gM, gS + 0.55));
+      return flGing * (1 - proxW) + proxGing * proxW;
+    });
+
     // 협·설 치은정(cLab² 가중)을 잇는 기준선을 구해 임플란트 협설 경사와 무관하게 근·원심 치간유두 상승량을 분리한다.
     let flWSum = 0;
     let flMeanNum = 0;
@@ -5641,9 +5746,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const cLab = sectorCLab[b]!;
       const w = cLab * cLab;
       flWSum += w;
-      flMeanNum += w * gingSmooth[b]!;
+      flMeanNum += w * gingLine[b]!;
       flW2Sum += w * cLab * cLab;
-      flSlopeNum += w * cLab * gingSmooth[b]!;
+      flSlopeNum += w * cLab * gingLine[b]!;
     }
     const flMean = flMeanNum / Math.max(flWSum, 1e-4);
     const flSlope = flSlopeNum / Math.max(flW2Sum, 1e-4);
@@ -5651,50 +5756,54 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const defaultScallop = posterior ? 0.55 : 0.75;
     const scallopRatio = clamp(params.marginScallopMm / defaultScallop, 0, 2.4);
     const followScale = scallopRatio <= 1 ? scallopRatio : 1 + (scallopRatio - 1) * 0.25;
-    const proxDepthRelief = Math.min(Math.max(0, subgMin) * 0.62, params.marginScallopMm * 0.55);
+    const subgSpan = Math.max(0, subgMax - subgMin);
+    const proxDepthRelief = Math.min(
+      Math.max(subgSpan * 0.65, Math.max(0, subgMin) * 0.62),
+      params.marginScallopMm * 0.65 + subgSpan * 0.4,
+    );
     const extraUserProxLift = Math.max(0, params.marginScallopMm - defaultScallop) * 0.55;
 
-    const baseMaxSpan = tpl.kind === "molar" ? 1.45 : tpl.kind === "premolar" ? 1.75 : 2.35;
+    const baseMaxSpan = tpl.kind === "molar" ? 2.05 : tpl.kind === "premolar" ? 2.15 : 2.45;
 
-    const draftZ = gingSmooth.map((gCrest, b) => {
+    const draftZ = gingLine.map((gCrest, b) => {
       const cLab = sectorCLab[b]!;
       const sMes = sectorSMes[b]!;
       const proxW = sMes * sMes;
-      const facialW = Math.max(0, cLab) ** 2;
+      const flW = cLab * cLab;
       const isRetromolar = sectorRetromolar[b]!;
+      const baseDepthFl = subgMin + subgSpan * 0.72;
       const flBase = flMean + flSlope * cLab;
       const gingRise = clamp(
         gCrest - flBase,
-        -0.55,
+        -0.65,
         isRetromolar ? 0.75 : baseMaxSpan,
       );
       const naturalLift = gingRise * followScale + proxDepthRelief * proxW;
       const minScallopLift =
-        (isRetromolar ? Math.min(0.45, params.marginScallopMm * 0.65) : params.marginScallopMm * 0.92) *
+        (isRetromolar ? Math.min(0.45, params.marginScallopMm * 0.65) : params.marginScallopMm * 0.85) *
         proxW;
       const coronalLift =
         params.marginScallopMm <= 0.02
           ? gingRise * scallopRatio
           : Math.max(naturalLift, minScallopLift);
-      const zFl = flBase - subgMin;
+      const zFl = flBase - baseDepthFl;
       const supragingivalLift = Math.max(0, -subgMin);
       const maxSpanAboveFl =
-        (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
+        (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift + subgSpan;
       const highCap = Math.min(maxMarginZ, zFl + maxSpanAboveFl);
 
-      // 치은 상방 노출 방지: 협측은 마진 반경 직상방 치은(gingAtM) 아래로 감추고, 근·원심은 치간유두 치은 라인 바로 아래까지 따라 올라간다.
       const crestSubgMin =
         subgMin < 0
           ? subgMin
-          : Math.min(subgMin, Math.min(0.38, subgMin * 0.82) * (1 - proxW) + Math.min(0.28, subgMin * 0.45) * proxW);
+          : subgMin + subgSpan * (0.55 * (1 - proxW) + 0.1 * proxW);
       const crestCeil = gCrest - crestSubgMin + extraUserProxLift * proxW;
-      const facialSurfaceCeil =
+      const flSurfaceCeil =
         subgMin < 0
           ? gingAtM[b]! + supragingivalLift
-          : gingAtM[b]! - Math.min(subgMax, Math.max(subgMin, subgMin * 0.72));
+          : gingAtM[b]! - Math.min(subgMax, Math.max(subgMin, subgMin + subgSpan * 0.5));
       const ceilZ =
-        facialW > 0.15
-          ? Math.min(highCap, crestCeil * (1 - facialW * 0.75) + Math.min(crestCeil, facialSurfaceCeil) * (facialW * 0.75))
+        flW > 0.2
+          ? Math.min(highCap, crestCeil * (1 - flW * 0.7) + Math.min(crestCeil, flSurfaceCeil) * (flW * 0.7))
           : Math.min(highCap, crestCeil);
       return clamp(Math.min(zFl + coronalLift, ceilZ), minMarginZ, highCap);
     });
@@ -5703,24 +5812,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const cLab = sectorCLab[b]!;
       const sMes = sectorSMes[b]!;
       const proxW = sMes * sMes;
-      const facialW = Math.max(0, cLab) ** 2;
+      const flW = cLab * cLab;
       const flBase = flMean + flSlope * cLab;
       const supragingivalLift = Math.max(0, -subgMin);
       const maxSpanAboveFl =
         (sectorRetromolar[b] ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift;
       const highCap = Math.min(maxMarginZ, flBase - subgMin + maxSpanAboveFl);
-      const facialGuard =
-        facialW > 0.25 && subgMin > 0.05
-          ? gingAtM[b]! - Math.min(subgMax, Math.max(subgMin, subgMin * 0.65)) * facialW
+      const flGuard =
+        flW > 0.25 && subgMin > 0.02
+          ? Math.min(gingSmooth[b]!, gingAtM[b]!) - subgMin * flW
           : Infinity;
-      return clamp(Math.min(mz, facialGuard), minMarginZ, highCap);
+      return clamp(Math.min(mz, flGuard), minMarginZ, highCap);
     });
-    smoothMarginZ = lowPassCircular(pass1, 3).map((z, b) => {
+    let nextMarginZ = lowPassCircular(pass1, 3).map((z, b) => {
       const bounded = clamp(z, minMarginZ, maxMarginZ);
       if (!hasNearGingiva[b]) return bounded;
-      const gingCandidates = [gingSmooth[b], gingAtM[b]].filter((v): v is number => Number.isFinite(v));
-      if (gingCandidates.length === 0) return bounded;
-      const ging = Math.min(...gingCandidates);
+      const ging = gingLine[b]!;
+      if (!Number.isFinite(ging)) return bounded;
       const hi = ging - subgMin;
       const lo = ging - subgMax;
       const loZ = Math.max(minMarginZ, Math.min(lo, hi));
@@ -5729,83 +5837,50 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     });
     // 사용자가 치은 연하를 지정하지 않았고 기준 포스트 높이가 짧으면, 깊은 끝(기본 1.0mm)까지 마진을 내려 유지 높이를 채운다.
     // 대합 거리·포스트 높이 편집 시 마진 깊이가 따라 움직이지 않도록 스캔 기준 높이(refBasePostTopH)만 본다.
-    const hasExplicitMarginDepth =
-      hasUserExplicitMarginDepth || supragingivalRaisedForStrength;
     if (!hasExplicitMarginDepth) {
       const axialCosM = Math.max(frame.w[2], 0.2);
-      const subgLine = gingSmooth.map((gc, b) => Math.min(gc, gingAtM[b]!));
-      const wantMeanMarginZ = meanMarginZ + refBasePostTopH / axialCosM - (TARGET_RETENTION_POST_HEIGHT_MM + 0.2);
+      const wantMeanMarginZ =
+        baseRetentionRefMeanZ + refBasePostTopH / axialCosM - (TARGET_RETENTION_POST_HEIGHT_MM + 0.2);
       for (let dropIt = 0; dropIt < 4; dropIt += 1) {
-        const curMeanM = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+        const curMeanM = nextMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
         if (curMeanM <= wantMeanMarginZ + 1e-3) break;
         const needMeanDrop = curMeanM - wantMeanMarginZ;
         let slackSectors = 0;
         for (let b = 0; b < SECTORS; b += 1) {
-          const floorB = Math.max(minMarginZ, subgLine[b]! - subgMax);
-          if (smoothMarginZ[b]! > floorB + 0.03) slackSectors += 1;
+          const floorB = Math.max(minMarginZ, gingLine[b]! - subgMax);
+          if (nextMarginZ[b]! > floorB + 0.03) slackSectors += 1;
         }
         if (slackSectors === 0) break;
         const stepDrop = Math.min(2.4, (needMeanDrop * SECTORS) / Math.max(slackSectors, 4) + 0.04);
-        const shifted = smoothMarginZ.map((mz, b) => {
-          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - subgMax);
+        const shifted = nextMarginZ.map((mz, b) => {
+          const maxSubgFloor = Math.max(minMarginZ, gingLine[b]! - subgMax);
           return Math.max(minMarginZ, Math.min(mz, Math.max(maxSubgFloor, mz - stepDrop)));
         });
-        smoothMarginZ = lowPassCircular(shifted, 3).map((mz, b) => {
-          const maxSubgFloor = Math.max(minMarginZ, subgLine[b]! - subgMax);
+        nextMarginZ = lowPassCircular(shifted, 3).map((mz, b) => {
+          const maxSubgFloor = Math.max(minMarginZ, gingLine[b]! - subgMax);
           return clamp(Math.max(maxSubgFloor, mz), minMarginZ, maxMarginZ);
         });
       }
     }
-    smoothMarginZ = smoothMarginZ.map((mz, b) => {
+    nextMarginZ = nextMarginZ.map((mz, b) => {
       if (!hasNearGingiva[b]) return clamp(mz, minMarginZ, maxMarginZ);
-      const gingCandidates = [gingSmooth[b], gingAtM[b]].filter((v): v is number => Number.isFinite(v));
-      if (gingCandidates.length === 0) return clamp(mz, minMarginZ, maxMarginZ);
-      const ging = Math.min(...gingCandidates);
+      const ging = gingLine[b]!;
+      if (!Number.isFinite(ging)) return clamp(mz, minMarginZ, maxMarginZ);
       const hi = ging - subgMin;
       const lo = ging - subgMax;
       const loZ = Math.max(minMarginZ, Math.min(lo, hi));
       const hiZ = Math.min(maxMarginZ, Math.max(lo, hi));
       return clamp(mz, loZ, hiZ);
     });
-    // 구치부는 먼 치은·비대칭 스캔 요철로 한쪽(원심 등) 피니시라인만 솟아 마진 투영 폭이 튀지 않도록
-    // 완만한 1차 경사와 대칭 2차 스캘럽(-cos 2φ)만 남긴다.
-    if (posterior) {
-      const mMean = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
-      let a1 = 0;
-      let b1 = 0;
-      let a2 = 0;
-      let b2 = 0;
-      for (let b = 0; b < SECTORS; b += 1) {
-        const phi = ((b + 0.5) / SECTORS) * Math.PI * 2 - labialAngleFix;
-        const dv = smoothMarginZ[b]! - mMean;
-        a1 += (dv * Math.cos(phi) * 2) / SECTORS;
-        b1 += (dv * Math.sin(phi) * 2) / SECTORS;
-        a2 += (dv * Math.cos(2 * phi) * 2) / SECTORS;
-        b2 += (dv * Math.sin(2 * phi) * 2) / SECTORS;
-      }
-      a1 = clamp(a1, -0.22, 0.22);
-      b1 = clamp(b1, -0.08, 0.08);
-      const maxAmp2 = Math.min(0.45, Math.max(0.32, params.marginScallopMm * 0.65));
-      a2 = clamp(a2, -maxAmp2, 0.08);
-      b2 = clamp(b2 * 0.2, -0.08, 0.08);
-      smoothMarginZ = Array.from({ length: SECTORS }, (_, b) => {
-        const phi = ((b + 0.5) / SECTORS) * Math.PI * 2 - labialAngleFix;
-        const zHarm =
-          mMean +
-          a1 * Math.cos(phi) +
-          b1 * Math.sin(phi) +
-          a2 * Math.cos(2 * phi) +
-          b2 * Math.sin(2 * phi);
-        return clamp(zHarm, minMarginZ, maxMarginZ);
-      });
-    }
-    // 치은 연하 구간을 옮기면 섹터별 클램프가 스캔 요철을 피니시라인에 붙인다.
-    // 깊이 평균과 스캘럽(1·2차)만 남겨 근·원심은 높고 협·설은 낮은 완만한 곡선으로 되돌린다.
-    smoothMarginZ = lowPassCircular(smoothMarginZ, 2);
-    meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
-    marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
-  }
-  const finalMeanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+    // 치은 연하 구간 클램프 뒤 스캔 삼각형 미세 요철만 걸러내고,
+    // 임플란트 경사(1차)와 근·원심 고점 / 협·설 저점 치은 스캘럽(2·3차)은 그대로 살린다.
+    return lowPassCircular(nextMarginZ, 3).map((z) => clamp(z, minMarginZ, maxMarginZ));
+  };
+
+  smoothMarginZ = drapeMarginZForRadii(marginRadii);
+  meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+  marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
+  let finalMeanMarginZ = meanMarginZ;
   // 포스트 굵기(postWidthScale) 보정도 편심 곱셈 대신 둘레 등폭 오프셋으로 환산해 협·설·근·원 마진 폭을 균일하게 지킨다.
   const rawMeanPostHalf = Math.max(0.85, (mHalfBl + mHalfMd) * 0.5 - shoulderW);
   const targetShoulderW = clamp(
@@ -5821,7 +5896,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const initMarginCv = mCv;
   const initMarginRadii = [...marginRadii];
 
-  const smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
+  let smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
   const initMarginColZs = Array.from({ length: ANGULAR_COLS }, (_, col) =>
     smoothMarginZAt((col / ANGULAR_COLS) * Math.PI * 2),
   );
@@ -6193,6 +6268,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     effUniformShoulder: number;
     geomIdealTaperDeg: number | null;
     footPsis: number[];
+    duLats: number[];
+    dvLats: number[];
   };
   type LockedAnteriorBase = {
     pBaseCu: number;
@@ -6557,6 +6634,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let finalTopMdScaled: number;
       let effUniformShoulder: number;
       let colFootPsis: number[];
+      let colDuLats: number[] = new Array<number>(ANGULAR_COLS).fill(0);
+      let colDvLats: number[] = new Array<number>(ANGULAR_COLS).fill(0);
 
       const hRefBase = meanHBaseSum;
       const hRefTop = Math.max(hRefBase + 0.5, meanRoundStartSum);
@@ -6583,6 +6662,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         topBl: number,
         topMd: number,
         footPsis: readonly number[],
+        duLats: readonly number[],
+        dvLats: readonly number[],
       ) => {
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
@@ -6597,6 +6678,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             Math.max(hBaseCol + 0.36, topEdge - topRoundMm * 0.9),
             0.03,
           );
+          const duLat = duLats[col] ?? 0;
+          const dvLat = dvLats[col] ?? 0;
           const wallPts: Vec3[] = [];
           for (let k = 0; k <= POST_LEVELS; k += 1) {
             const uSpan = k / POST_LEVELS;
@@ -6611,8 +6694,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               mdAtH,
               phiSec,
             );
-            const u = cuSec + s * cp;
-            const v = cvSec + s * sp;
+            const u = cuSec + s * cp + duLat * (1 - uSpan);
+            const v = cvSec + s * sp + dvLat * (1 - uSpan);
             postR[col]![k] = Math.hypot(u, v);
             wallPts.push(
               add3(c0, add3(scale3(frame.w, h), add3(scale3(frame.uLabial, u), scale3(frame.vSide, v)))),
@@ -6632,6 +6715,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         effUniformShoulder = lockedPosteriorBase.effUniformShoulder;
         geomIdealTaperDeg = lockedPosteriorBase.geomIdealTaperDeg;
         colFootPsis = lockedPosteriorBase.footPsis;
+        colDuLats = lockedPosteriorBase.duLats;
+        colDvLats = lockedPosteriorBase.dvLats;
         pTopCu = pSecCu;
         pTopCv = pSecCv;
         topFaceCu = pSecCu;
@@ -6663,6 +6748,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           finalTopBlScaled,
           finalTopMdScaled,
           colFootPsis,
+          colDuLats,
+          colDvLats,
         );
         for (let topFix = 0; topFix < 4; topFix += 1) {
           let worstTopDef = 0;
@@ -6704,6 +6791,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             finalTopBlScaled,
             finalTopMdScaled,
             colFootPsis,
+            colDuLats,
+            colDvLats,
           );
         }
       } else {
@@ -7248,6 +7337,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           marginRadii = solved.radii;
           marginColZs = solved.zCols;
           colFootPsis = solved.footPsis;
+          colDuLats = solved.duLats;
+          colDvLats = solved.dvLats;
           mHalfBl = finalBaseBl + effUniformShoulder;
           mHalfMd = finalBaseMd + effUniformShoulder;
           syncColsMarginGeometry();
@@ -7259,6 +7350,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             finalTopBlScaled,
             finalTopMdScaled,
             colFootPsis,
+            colDuLats,
+            colDvLats,
           );
         };
 
@@ -7360,6 +7453,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           }
           solvePosteriorMarginAndWalls();
         }
+        {
+          let maxMarginShift = 0;
+          for (let col = 0; col < ANGULAR_COLS; col += 1) {
+            maxMarginShift = Math.max(
+              maxMarginShift,
+              Math.abs(marginRadii[col]! - initMarginRadii[col]!),
+            );
+          }
+          if (maxMarginShift > 0.08) {
+            smoothMarginZ = drapeMarginZForRadii(marginRadii);
+            meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+            smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
+            solvePosteriorMarginAndWalls();
+          }
+        }
 
         pTopCu = pSecCu;
         pTopCv = pSecCv;
@@ -7375,6 +7483,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           effUniformShoulder,
           geomIdealTaperDeg,
           footPsis: [...colFootPsis!],
+          duLats: [...colDuLats],
+          dvLats: [...colDvLats],
         };
       }
     } else {
@@ -8161,6 +8271,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             solveAnteriorMarginAndWalls();
           }
         }
+        {
+          let maxAntMarginShift = 0;
+          for (let col = 0; col < ANGULAR_COLS; col += 1) {
+            maxAntMarginShift = Math.max(
+              maxAntMarginShift,
+              Math.abs(marginRadii[col]! - initMarginRadii[col]!),
+            );
+          }
+          if (maxAntMarginShift > 0.08) {
+            smoothMarginZ = drapeMarginZForRadii(marginRadii);
+            meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
+            smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
+            solveAnteriorMarginAndWalls();
+          }
+        }
         lockedAnteriorBase = {
           pBaseCu,
           pBaseCv,
@@ -8396,6 +8521,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (lockBasePass || !lockedMarginRadii) {
       lockedMarginRadii = [...marginRadii];
       lockedMarginColZs = [...marginColZs];
+      finalMeanMarginZ = marginColZs.reduce((s, v) => s + v, 0) / Math.max(marginColZs.length, 1);
     }
 
     // 윗면 라운드가 스크류 홀에 가까운 특정 방위(원심 등)나 모서리/변 차이로 들쭉날쭉해져 오목 패임이 생기지 않도록
@@ -9261,6 +9387,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     minAllowedReportTaper,
     taperSpec.maxTaperDeg,
   );
+  let marginZMinActual = Infinity;
+  let marginZMaxActual = -Infinity;
+  for (let i = 2; i < marginLoopLocal.length; i += 3) {
+    const mz = marginLoopLocal[i]!;
+    if (mz < marginZMinActual) marginZMinActual = mz;
+    if (mz > marginZMaxActual) marginZMaxActual = mz;
+  }
   const design = buildDesignedCustomAbutment({
     fixture: {
       ...fixture,
@@ -9278,8 +9411,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     metrics: {
       connectionDiameterMm: conn.originDiameterMm,
       maxDiameterMm: round2(maxOuterR * 2),
-      cuffHeightMinMm: round2(Math.min(...smoothMarginZ)),
-      cuffHeightMaxMm: round2(Math.max(...smoothMarginZ)),
+      cuffHeightMinMm: round2(Number.isFinite(marginZMinActual) ? marginZMinActual : Math.min(...smoothMarginZ)),
+      cuffHeightMaxMm: round2(Number.isFinite(marginZMaxActual) ? marginZMaxActual : Math.max(...smoothMarginZ)),
       postHeightMm: finalPostHeightMm,
       totalLengthMm: round2(zMaxLocal - zMinLocal),
       angulationDeg: Math.round(angulationDeg * 10) / 10,
@@ -9312,4 +9445,466 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       hasGroupAxis: Boolean(mode.groupAxisWorld),
     },
   };
+}
+
+export type JawGingivaMarginProbeFixture = {
+  labialDir: readonly number[];
+  mesialDir: readonly number[];
+  scanbodyRadiusMm?: number;
+  scanbodyHeightMm?: number;
+  gingivaFloorMm?: number;
+  fixturePose: {
+    hexX: readonly number[];
+    hexY: readonly number[];
+    axis: readonly number[];
+    origin: readonly number[];
+  };
+  connectionSpec?: {
+    prcConeTopMm: number;
+    originDiameterMm?: number;
+  };
+};
+
+export type JawGingivaMarginProbe = {
+  minMarginZ: number;
+  drapeMarginLoopZ: (
+    marginLoopLocal: Float32Array,
+    opts: {
+      subgMinMm: number;
+      subgMaxMm: number;
+      scallopMm?: number;
+    },
+  ) => Float32Array | null;
+};
+
+const jawGingivaProbeCache = new WeakMap<
+  THREE.BufferGeometry,
+  Map<string, JawGingivaMarginProbe | null>
+>();
+
+/**
+ * 구강 스캔(jawGeometry)을 픽스쳐 로컬 XY 상면 높이 격자로 래스터화해,
+ * 검볼 이동·스케일·회전 및 치은 연하 변경 때마다 현재 피니시라인 XY 윤곽 위의 실제 치은선 굴곡(근·원심 고점, 협·설 저점)과
+ * 치은 연하 설정(subgMinMm ~ subgMaxMm)에 맞춰 피니시라인 Z 높이를 즉시 계산한다.
+ */
+export function buildJawGingivaMarginProbe(
+  jawGeometry: THREE.BufferGeometry | null | undefined,
+  fixture: JawGingivaMarginProbeFixture,
+  toothNumber: string,
+): JawGingivaMarginProbe | null {
+  if (!jawGeometry) return null;
+  const pos = jawGeometry.getAttribute("position");
+  if (!pos || pos.count < 9) return null;
+
+  const pose = fixture.fixturePose;
+  const ox = pose.origin[0] ?? 0;
+  const oy = pose.origin[1] ?? 0;
+  const oz = pose.origin[2] ?? 0;
+  const cacheKey = `${toothNumber}:${ox.toFixed(3)},${oy.toFixed(3)},${oz.toFixed(3)}`;
+  let byFixture = jawGingivaProbeCache.get(jawGeometry);
+  if (byFixture?.has(cacheKey)) {
+    return byFixture.get(cacheKey) ?? null;
+  }
+  if (!byFixture) {
+    byFixture = new Map();
+    jawGingivaProbeCache.set(jawGeometry, byFixture);
+  }
+
+  const tpl = abutmentTemplateForTooth(toothNumber);
+  const posterior = !tpl.anterior;
+  const ownFdi = parseFdiTooth(toothNumber);
+  const coneTopZ = fixture.connectionSpec?.prcConeTopMm ?? 1.0;
+  const minMarginZ = Math.max(1.45, coneTopZ + 0.95);
+  const sbR = Math.max(1.5, fixture.scanbodyRadiusMm ?? (fixture.connectionSpec?.originDiameterMm ?? 3.6) * 0.5);
+  const sbH = Math.max(4.8, fixture.scanbodyHeightMm ?? 7.5);
+
+  const hx0 = pose.hexX[0] ?? 1, hx1 = pose.hexX[1] ?? 0, hx2 = pose.hexX[2] ?? 0;
+  const hy0 = pose.hexY[0] ?? 0, hy1 = pose.hexY[1] ?? 1, hy2 = pose.hexY[2] ?? 0;
+  const az0 = pose.axis[0] ?? 0, az1 = pose.axis[1] ?? 0, az2 = pose.axis[2] ?? 1;
+  const toLocalPt = (wx: number, wy: number, wz: number): Vec3 => {
+    const dx = wx - ox;
+    const dy = wy - oy;
+    const dz = wz - oz;
+    return [
+      dx * hx0 + dy * hx1 + dz * hx2,
+      dx * hy0 + dy * hy1 + dz * hy2,
+      dx * az0 + dy * az1 + dz * az2,
+    ];
+  };
+  const toLocalXYDir = (dir: readonly number[]): [number, number] => {
+    const wx = dir[0] ?? 1;
+    const wy = dir[1] ?? 0;
+    const wz = dir[2] ?? 0;
+    const lx = wx * hx0 + wy * hx1 + wz * hx2;
+    const ly = wx * hy0 + wy * hy1 + wz * hy2;
+    const len = Math.hypot(lx, ly);
+    return len > 1e-6 ? [lx / len, ly / len] : [1, 0];
+  };
+  const labXY = toLocalXYDir(fixture.labialDir);
+  let mesXY: [number, number] = [-labXY[1], labXY[0]];
+  const rawMes = toLocalXYDir(fixture.mesialDir);
+  if (mesXY[0] * rawMes[0] + mesXY[1] * rawMes[1] < 0) {
+    mesXY = [-mesXY[0], -mesXY[1]];
+  }
+
+  // 1) 치은 기준 중앙 높이와 후구치 융기(retromolar pad) 여부를 먼저 읽는다.
+  const index = jawGeometry.getIndex();
+  const vStride = Math.max(1, Math.floor(pos.count / 18000));
+  const nearRimZs: number[] = [];
+  for (let v = 0; v < pos.count; v += vStride) {
+    const wx = pos.getX(v), wy = pos.getY(v), wz = pos.getZ(v);
+    if ((wx - ox) ** 2 + (wy - oy) ** 2 + (wz - oz) ** 2 > 144) continue;
+    const p = toLocalPt(wx, wy, wz);
+    if (p[2] < 0.7 || p[2] > sbH - 0.25) continue;
+    const r = Math.hypot(p[0], p[1]);
+    if (r >= sbR + 0.25 && r <= sbR + 2.6) nearRimZs.push(p[2]);
+  }
+  nearRimZs.sort((a, c) => a - c);
+  const medianRimZ =
+    nearRimZs.length >= 6
+      ? nearRimZs[Math.floor(nearRimZs.length * 0.52)]!
+      : Math.max(2.6, (fixture.gingivaFloorMm ?? 2.1) + 0.55);
+
+  let tallDistalPts = 0;
+  if (ownFdi?.pos === 7) {
+    for (let v = 0; v < pos.count; v += vStride) {
+      const wx = pos.getX(v), wy = pos.getY(v), wz = pos.getZ(v);
+      if ((wx - ox) ** 2 + (wy - oy) ** 2 + (wz - oz) ** 2 > 144) continue;
+      const p = toLocalPt(wx, wy, wz);
+      const r = Math.hypot(p[0], p[1]);
+      if (r < 3.8 || r > 9.2) continue;
+      const alongDistal = -(p[0] * mesXY[0] + p[1] * mesXY[1]);
+      if (alongDistal >= 3.4 && Math.abs(p[0] * labXY[0] + p[1] * labXY[1]) <= 4.2 && p[2] >= medianRimZ + 3.1) {
+        tallDistalPts += 1;
+        if (tallDistalPts >= 16) break;
+      }
+    }
+  }
+  const hasDistalRetromolarPad = ownFdi?.pos === 8 || (ownFdi?.pos === 7 && tallDistalPts < 16);
+
+  // 2) 스캔바디 기둥 바깥의 치은 상면을 0.20mm XY 격자에 래스터화한다(삼각형 밀도와 무관하게 연속 치은선 확보).
+  const step = 0.2;
+  const halfSpan = 9.6;
+  const minXY = -halfSpan;
+  const gridCols = Math.round((halfSpan * 2) / step) + 1;
+  const grid = new Float32Array(gridCols * gridCols).fill(-Infinity);
+  const zScanCap = Math.min(sbH + 0.5, medianRimZ + (posterior ? 2.95 : 3.65));
+  const minScanR2 = (sbR + 0.2) * (sbR + 0.2);
+  const maxWorldR2 = 13.5 * 13.5;
+  const triCount = Math.floor((index ? index.count : pos.count) / 3);
+  let written = 0;
+
+  for (let t = 0; t < triCount; t += 1) {
+    const i0 = index ? index.getX(t * 3) : t * 3;
+    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    const x0 = pos.getX(i0), y0 = pos.getY(i0), z0 = pos.getZ(i0);
+    const x1 = pos.getX(i1), y1 = pos.getY(i1), z1 = pos.getZ(i1);
+    const x2 = pos.getX(i2), y2 = pos.getY(i2), z2 = pos.getZ(i2);
+    if (
+      (x0 - ox) ** 2 + (y0 - oy) ** 2 + (z0 - oz) ** 2 > maxWorldR2 &&
+      (x1 - ox) ** 2 + (y1 - oy) ** 2 + (z1 - oz) ** 2 > maxWorldR2 &&
+      (x2 - ox) ** 2 + (y2 - oy) ** 2 + (z2 - oz) ** 2 > maxWorldR2
+    ) {
+      continue;
+    }
+    const a = toLocalPt(x0, y0, z0);
+    const b = toLocalPt(x1, y1, z1);
+    const c = toLocalPt(x2, y2, z2);
+    if (Math.max(a[2], b[2], c[2]) < 0.65 || Math.min(a[2], b[2], c[2]) > zScanCap) continue;
+    // 인접치 수직 법랑질 절벽 삼각형(높이차 > 1.1mm & 급경사)은 치은 격자에 덮어쓰지 않는다.
+    const ab = sub3(b, a);
+    const ac = sub3(c, a);
+    const nrm = cross3(ab, ac);
+    const nLen = Math.hypot(nrm[0], nrm[1], nrm[2]);
+    if (nLen < 1e-8) continue;
+    if (Math.abs(nrm[2]) / nLen < 0.24 && Math.max(a[2], b[2], c[2]) > medianRimZ + 0.9) continue;
+
+    const ixLo = Math.max(0, Math.floor((Math.min(a[0], b[0], c[0]) - minXY) / step));
+    const ixHi = Math.min(gridCols - 1, Math.ceil((Math.max(a[0], b[0], c[0]) - minXY) / step));
+    const iyLo = Math.max(0, Math.floor((Math.min(a[1], b[1], c[1]) - minXY) / step));
+    const iyHi = Math.min(gridCols - 1, Math.ceil((Math.max(a[1], b[1], c[1]) - minXY) / step));
+    const v0x = b[0] - a[0], v0y = b[1] - a[1];
+    const v1x = c[0] - a[0], v1y = c[1] - a[1];
+    const den = v0x * v1y - v1x * v0y;
+    if (Math.abs(den) < 1e-9) continue;
+    const invDen = 1 / den;
+
+    for (let iy = iyLo; iy <= iyHi; iy += 1) {
+      const py = minXY + iy * step;
+      const v2y = py - a[1];
+      const rowOff = iy * gridCols;
+      for (let ix = ixLo; ix <= ixHi; ix += 1) {
+        const px = minXY + ix * step;
+        if (px * px + py * py < minScanR2) continue;
+        const v2x = px - a[0];
+        const w1 = (v2x * v1y - v1x * v2y) * invDen;
+        const w2 = (v0x * v2y - v2x * v0y) * invDen;
+        const w0 = 1 - w1 - w2;
+        if (w0 < -0.05 || w1 < -0.05 || w2 < -0.05) continue;
+        const z = a[2] * w0 + b[2] * w1 + c[2] * w2;
+        if (z < 0.65 || z > zScanCap) continue;
+        const cell = rowOff + ix;
+        if (z > grid[cell]!) {
+          grid[cell] = z;
+          written += 1;
+        }
+      }
+    }
+  }
+
+  if (written < 16) {
+    byFixture.set(cacheKey, null);
+    return null;
+  }
+
+  const sampleGridZ = (px: number, py: number): number => {
+    const fx = (px - minXY) / step;
+    const fy = (py - minXY) / step;
+    const ix0 = Math.round(fx);
+    const iy0 = Math.round(fy);
+    if (ix0 < 1 || ix0 >= gridCols - 1 || iy0 < 1 || iy0 >= gridCols - 1) return Number.NaN;
+    let sum = 0;
+    let cnt = 0;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const rOff = (iy0 + dy) * gridCols;
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const v = grid[rOff + ix0 + dx]!;
+        if (Number.isFinite(v)) {
+          sum += v;
+          cnt += 1;
+        }
+      }
+    }
+    return cnt > 0 ? sum / cnt : Number.NaN;
+  };
+
+  const fillMissing = (arr: number[], fallbackVal: number) => {
+    for (let b = 0; b < SECTORS; b += 1) {
+      if (Number.isFinite(arr[b]!)) continue;
+      let prev = fallbackVal;
+      let next = fallbackVal;
+      let dPrev = SECTORS;
+      let dNext = SECTORS;
+      for (let s = 1; s < SECTORS; s += 1) {
+        const lp = arr[(b - s + SECTORS) % SECTORS]!;
+        if (dPrev === SECTORS && Number.isFinite(lp)) {
+          prev = lp;
+          dPrev = s;
+        }
+        const rn = arr[(b + s) % SECTORS]!;
+        if (dNext === SECTORS && Number.isFinite(rn)) {
+          next = rn;
+          dNext = s;
+        }
+        if (dPrev < SECTORS && dNext < SECTORS) break;
+      }
+      arr[b] =
+        dPrev < SECTORS || dNext < SECTORS
+          ? (prev * dNext + next * dPrev) / Math.max(dPrev + dNext, 1)
+          : fallbackVal;
+    }
+  };
+
+  const defaultScallop = posterior ? 0.55 : 0.75;
+  const baseMaxSpan = tpl.kind === "molar" ? 2.05 : tpl.kind === "premolar" ? 2.15 : 2.45;
+
+  const probe: JawGingivaMarginProbe = {
+    minMarginZ,
+    drapeMarginLoopZ: (marginLoopLocal, opts) => {
+      const count = Math.floor(marginLoopLocal.length / 3);
+      if (count < 8) return null;
+      const subgMin = Math.min(opts.subgMinMm, opts.subgMaxMm);
+      const subgMax = Math.max(opts.subgMinMm, opts.subgMaxMm);
+      const subgSpan = Math.max(0, subgMax - subgMin);
+      const scallopMm = opts.scallopMm ?? defaultScallop;
+      const maxMarginZ = medianRimZ + Math.max(posterior ? 2.1 : 2.5, Math.max(0, -subgMin) + 0.85);
+
+      let cx = 0;
+      let cy = 0;
+      for (let i = 0; i < count; i += 1) {
+        cx += marginLoopLocal[i * 3]! / count;
+        cy += marginLoopLocal[i * 3 + 1]! / count;
+      }
+      const cLen = Math.hypot(cx, cy);
+      if (cLen > 2.2) {
+        cx *= 2.2 / cLen;
+        cy *= 2.2 / cLen;
+      }
+
+      const sectorRho = new Float64Array(SECTORS);
+      const sectorCnt = new Int32Array(SECTORS);
+      for (let i = 0; i < count; i += 1) {
+        const dx = marginLoopLocal[i * 3]! - cx;
+        const dy = marginLoopLocal[i * 3 + 1]! - cy;
+        const ang = wrapAngle(Math.atan2(dy, dx));
+        const b = Math.min(SECTORS - 1, Math.floor((ang / (Math.PI * 2)) * SECTORS));
+        sectorRho[b] += Math.hypot(dx, dy);
+        sectorCnt[b] += 1;
+      }
+      const rhoBySector = Array.from({ length: SECTORS }, (_, b) =>
+        sectorCnt[b]! > 0 ? sectorRho[b]! / sectorCnt[b]! : Number.NaN,
+      );
+      fillMissing(rhoBySector, sbR + 1.0);
+
+      const gingCrestRaw = new Array<number>(SECTORS).fill(Number.NaN);
+      const gingAtMRaw = new Array<number>(SECTORS).fill(Number.NaN);
+      const sectorCLab = new Array<number>(SECTORS);
+      const sectorSMes = new Array<number>(SECTORS);
+      const sectorRetromolar = new Array<boolean>(SECTORS);
+      const hasNearGingiva = new Array<boolean>(SECTORS).fill(false);
+
+      for (let b = 0; b < SECTORS; b += 1) {
+        const phi = ((b + 0.5) / SECTORS) * Math.PI * 2;
+        const cp = Math.cos(phi);
+        const sp = Math.sin(phi);
+        const cLab = cp * labXY[0] + sp * labXY[1];
+        const sMes = cp * mesXY[0] + sp * mesXY[1];
+        const proxW = sMes * sMes;
+        const isRetromolar = hasDistalRetromolarPad && sMes < -0.35;
+        sectorCLab[b] = cLab;
+        sectorSMes[b] = sMes;
+        sectorRetromolar[b] = isRetromolar;
+
+        const rhoM = rhoBySector[b]!;
+        const rhoStart = Math.max(0.35, rhoM - 0.55);
+        const rhoEnd = isRetromolar
+          ? rhoM + 0.35
+          : (rhoM + 0.48) * (1 - proxW) + (rhoM + (posterior ? 0.85 : 1.0)) * proxW;
+
+        let crest = Number.NaN;
+        let prev = Number.NaN;
+        for (let rho = rhoStart; rho <= rhoEnd + 1e-6; rho += 0.22) {
+          const px = cx + rho * cp;
+          const py = cy + rho * sp;
+          if (px * px + py * py < minScanR2) continue;
+          const z = sampleGridZ(px, py);
+          if (!Number.isFinite(z)) continue;
+          if (rho <= rhoM + 0.65) hasNearGingiva[b] = true;
+          if (Number.isFinite(prev) && z - prev > 0.62) break;
+          if (Math.abs(cLab) > 0.35 && Number.isFinite(crest) && z < crest - 0.16) break;
+          crest = Number.isFinite(crest) ? Math.max(crest, z) : z;
+          prev = z;
+        }
+        gingCrestRaw[b] = crest;
+
+        const nearSamples: number[] = [];
+        for (const dRho of [-0.16, 0, 0.16, 0.32]) {
+          const rho = rhoM + dRho;
+          if (rho < 0.3) continue;
+          const px = cx + rho * cp;
+          const py = cy + rho * sp;
+          if (px * px + py * py < minScanR2) continue;
+          const z = sampleGridZ(px, py);
+          if (!Number.isFinite(z)) continue;
+          if (Number.isFinite(crest) && z > crest + 0.85) continue;
+          nearSamples.push(z);
+        }
+        if (nearSamples.length > 0) {
+          nearSamples.sort((a, c) => a - c);
+          const q = proxW > 0.35 ? 0.7 : 0.5;
+          gingAtMRaw[b] = nearSamples[Math.min(nearSamples.length - 1, Math.floor(nearSamples.length * q))]!;
+          hasNearGingiva[b] = true;
+        }
+      }
+
+      fillMissing(gingAtMRaw, medianRimZ);
+      for (let b = 0; b < SECTORS; b += 1) {
+        if (!Number.isFinite(gingCrestRaw[b]!) && hasNearGingiva[b]) {
+          gingCrestRaw[b] = gingAtMRaw[b]!;
+        }
+      }
+      fillMissing(gingCrestRaw, medianRimZ);
+      const gingSmooth = lowPassCircular(gingCrestRaw, 3);
+
+      const gingLine = Array.from({ length: SECTORS }, (_, b) => {
+        const proxW = sectorSMes[b]! * sectorSMes[b]!;
+        const gS = gingSmooth[b]!;
+        const gM = gingAtMRaw[b]!;
+        const flGing = Math.min(gS, gM);
+        const proxGing = sectorRetromolar[b]
+          ? flGing
+          : Math.max(gS, Math.min(gM, gS + 0.55));
+        return flGing * (1 - proxW) + proxGing * proxW;
+      });
+
+      let flWSum = 0;
+      let flMeanNum = 0;
+      let flW2Sum = 0;
+      let flSlopeNum = 0;
+      for (let b = 0; b < SECTORS; b += 1) {
+        const cLab = sectorCLab[b]!;
+        const w = cLab * cLab;
+        flWSum += w;
+        flMeanNum += w * gingLine[b]!;
+        flW2Sum += w * cLab * cLab;
+        flSlopeNum += w * cLab * gingLine[b]!;
+      }
+      const flMean = flMeanNum / Math.max(flWSum, 1e-4);
+      const flSlope = flSlopeNum / Math.max(flW2Sum, 1e-4);
+
+      const scallopRatio = clamp(scallopMm / defaultScallop, 0, 2.4);
+      const followScale = scallopRatio <= 1 ? scallopRatio : 1 + (scallopRatio - 1) * 0.25;
+      const proxDepthRelief = Math.min(
+        Math.max(subgSpan * 0.65, Math.max(0, subgMin) * 0.62),
+        scallopMm * 0.65 + subgSpan * 0.4,
+      );
+      const extraUserProxLift = Math.max(0, scallopMm - defaultScallop) * 0.55;
+
+      const draftZ = gingLine.map((gCrest, b) => {
+        const cLab = sectorCLab[b]!;
+        const sMes = sectorSMes[b]!;
+        const proxW = sMes * sMes;
+        const flW = cLab * cLab;
+        const isRetromolar = sectorRetromolar[b]!;
+        const baseDepthFl = subgMin + subgSpan * 0.72;
+        const flBase = flMean + flSlope * cLab;
+        const gingRise = clamp(gCrest - flBase, -0.65, isRetromolar ? 0.75 : baseMaxSpan);
+        const naturalLift = gingRise * followScale + proxDepthRelief * proxW;
+        const minScallopLift =
+          (isRetromolar ? Math.min(0.45, scallopMm * 0.65) : scallopMm * 0.85) * proxW;
+        const coronalLift =
+          scallopMm <= 0.02 ? gingRise * scallopRatio : Math.max(naturalLift, minScallopLift);
+        const zFl = flBase - baseDepthFl;
+        const supragingivalLift = Math.max(0, -subgMin);
+        const maxSpanAboveFl =
+          (isRetromolar ? 0.95 : baseMaxSpan) + extraUserProxLift * proxW + supragingivalLift + subgSpan;
+        const highCap = Math.min(maxMarginZ, zFl + maxSpanAboveFl);
+        const crestSubgMin =
+          subgMin < 0 ? subgMin : subgMin + subgSpan * (0.55 * (1 - proxW) + 0.1 * proxW);
+        const crestCeil = gCrest - crestSubgMin + extraUserProxLift * proxW;
+        const flSurfaceCeil =
+          subgMin < 0
+            ? gingAtMRaw[b]! + supragingivalLift
+            : gingAtMRaw[b]! - Math.min(subgMax, Math.max(subgMin, subgMin + subgSpan * 0.5));
+        const ceilZ =
+          flW > 0.2
+            ? Math.min(highCap, crestCeil * (1 - flW * 0.7) + Math.min(crestCeil, flSurfaceCeil) * (flW * 0.7))
+            : Math.min(highCap, crestCeil);
+        return clamp(Math.min(zFl + coronalLift, ceilZ), minMarginZ, highCap);
+      });
+
+      const clampedZ = lowPassCircular(draftZ, 3).map((z, b) => {
+        const bounded = clamp(z, minMarginZ, maxMarginZ);
+        if (!hasNearGingiva[b]) return bounded;
+        const ging = gingLine[b]!;
+        const hi = ging - subgMin;
+        const lo = ging - subgMax;
+        return clamp(bounded, Math.max(minMarginZ, Math.min(lo, hi)), Math.min(maxMarginZ, Math.max(lo, hi)));
+      });
+      const smoothZ = lowPassCircular(clampedZ, 3).map((z) => clamp(z, minMarginZ, maxMarginZ));
+      const evalZ = buildPeriodicSmoothCurve(smoothZ, 3);
+
+      const outZ = new Float32Array(count);
+      for (let i = 0; i < count; i += 1) {
+        const dx = marginLoopLocal[i * 3]! - cx;
+        const dy = marginLoopLocal[i * 3 + 1]! - cy;
+        outZ[i] = clamp(evalZ(wrapAngle(Math.atan2(dy, dx))), minMarginZ, maxMarginZ);
+      }
+      return outZ;
+    },
+  };
+
+  byFixture.set(cacheKey, probe);
+  return probe;
 }
