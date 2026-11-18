@@ -3,9 +3,11 @@ import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   finalizeStaffBulkDrafts,
+  hangulDisplayName,
   loginIdBaseFromName,
   mergeStaffDraftsByDepartmentOccurrence,
   parseStaffBulkText,
+  pickUniqueUserByDisplayName,
 } from "../../services/staffBulkRegister.core.js";
 import {
   createOwnerStaffAccounts,
@@ -56,6 +58,26 @@ describe("staff bulk register parsing", () => {
     expect(latinPlanned.ready).toEqual([]);
     expect(latinPlanned.failed[0].message).toMatch(/한글/);
     expect(parseStaffBulkText("  \n# 메모").fatal).toMatch(/이름/);
+  });
+
+  test("한글 표시 이름은 한 명일 때만 로그인 후보가 된다", () => {
+    expect(hangulDisplayName(" 김 정수 ")).toBe("김정수");
+    expect(hangulDisplayName("kim")).toBe("");
+    expect(hangulDisplayName("김정수1")).toBe("");
+    const only = { name: "김정수", deletedAt: null };
+    expect(pickUniqueUserByDisplayName([only], "김정수")).toBe(only);
+    expect(
+      pickUniqueUserByDisplayName(
+        [only, { name: "김정수", deletedAt: null }],
+        "김정수",
+      ),
+    ).toBeNull();
+    expect(
+      pickUniqueUserByDisplayName(
+        [{ name: "김정수", deletedAt: new Date() }],
+        "김정수",
+      ),
+    ).toBeNull();
   });
 
   test("같은 순번의 같은 이름은 여러 부서로 합친다", () => {

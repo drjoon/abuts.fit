@@ -36,6 +36,8 @@ import {
 } from "../../utils/passwordPolicy.js";
 import {
   classifyLoginCredential,
+  hangulDisplayName,
+  pickUniqueUserByDisplayName,
   toStaffListFields,
 } from "../../services/staffBulkRegister.core.js";
 import {
@@ -857,12 +859,26 @@ async function login(req, res) {
     const credential = classifyLoginCredential(email);
     const normalizedEmail = credential.value;
 
-    const user =
+    let user =
       credential.kind === "loginId"
         ? await User.findOne({ loginId: credential.value }).select("+password")
         : credential.kind === "email"
           ? await User.findOne({ email: credential.value }).select("+password")
           : null;
+    // 직원 아이디는 loginId. 대표 가입 계정은 이메일이라 이름으로 찾는다.
+    // 동명이인이면 어느 계정인지 정하지 않는다.
+    if (!user && credential.kind === "loginId") {
+      const displayName = hangulDisplayName(credential.value);
+      if (displayName) {
+        const named = await User.find({
+          name: displayName,
+          deletedAt: null,
+        })
+          .select("+password")
+          .limit(2);
+        user = pickUniqueUserByDisplayName(named, displayName);
+      }
+    }
     if (!user) {
       await logSecurityEvent({
         action: "LOGIN_FAILED_USER_NOT_FOUND",

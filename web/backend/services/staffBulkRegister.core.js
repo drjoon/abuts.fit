@@ -37,6 +37,23 @@ export function classifyLoginCredential(raw) {
   return { kind: "loginId", value };
 }
 
+/** 로그인 아이디가 없는 가입자는 표시 이름으로 들어온다. 한글 이름만 후보로 둔다. */
+export function hangulDisplayName(raw) {
+  const name = String(raw || "").replace(/\s+/g, "");
+  return HANGUL_NAME.test(name) ? name : "";
+}
+
+/** 같은 이름이 한 명일 때만 그 계정을 고른다. 삭제된 계정과 동명이인은 제외한다. */
+export function pickUniqueUserByDisplayName(users, rawName) {
+  const name = hangulDisplayName(rawName);
+  if (!name) return null;
+  const hits = (users || []).filter((user) => {
+    if (user?.deletedAt) return false;
+    return String(user?.name || "").replace(/\s+/g, "") === name;
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+
 export function loginIdBaseFromName(name) {
   const compact = String(name || "")
     .trim()
