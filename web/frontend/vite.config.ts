@@ -78,11 +78,17 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: ["rhino3dm"],
+      // lazy 라우트에서 처음 발견되면 재최적화 → 504 Outdated Optimize Dep 로 청크 로드가 깨진다.
+      include: [
+        "@monaco-editor/react",
+        "monaco-editor",
+        "react-intersection-observer",
+      ],
       // esbuildOptions는 브라우저 해시(?v=)에 들어간다. 식별자는 소스에서 안 쓰여 출력은 그대로고,
-      // 이미 immutable로 박힌 98b24b15 URL만 버린다.
+      // 이미 immutable로 박힌 옛 ?v= URL만 버린다.
       esbuildOptions: {
         define: {
-          __ABUTS_OPTIMIZE_DEPS_REV__: '"1"',
+          __ABUTS_OPTIMIZE_DEPS_REV__: '"2"',
         },
       },
     },
