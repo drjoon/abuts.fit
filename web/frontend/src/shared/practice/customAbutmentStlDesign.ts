@@ -8873,30 +8873,36 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             add3(scale3(frame.uLabial, topFaceCu + topDirU * sRad), scale3(frame.vSide, topFaceCv + topDirV * sRad)),
           ),
         );
-      const minRoundR = boreTopR + 0.32;
-      // XY만 밀면 기운 윗면에서 Z가 평면에 못 미쳐 스크류 쪽에 홈이 생긴다.
-      // 스크류 바깥으로 민 뒤 평면 대비 깊이를 유지하고, 삽입축 재투영으로 다시 안으로 들어가지 않게 반복한다.
+      const minRoundR = boreTopR + 0.3;
+      // 임플란트 축 원으로 스냅하면 스크류 홀 크기만큼 필레가 깎인다.
+      // 스크류 안으로 들어온 점만 그 열의 반지름 방향으로, 벽 두께만큼만 밖으로 민다.
       const keepRoundOutsideScrew = (pt: Vec3): Vec3 => {
-        let cur = pt;
+        if (Math.hypot(pt[0], pt[1]) >= minRoundR - 1e-4) return pt;
         const rel0 = sub3(pt, c0);
-        const below = top.heightAt(dot3(rel0, frame.uLabial), dot3(rel0, frame.vSide)) - dot3(rel0, frame.w);
-        for (let it = 0; it < 6; it += 1) {
-          const r = Math.hypot(cur[0], cur[1]);
-          if (r >= minRoundR - 1e-4 || r < 1e-4) break;
-          const scale = minRoundR / r;
-          const nudged: Vec3 = [cur[0] * scale, cur[1] * scale, cur[2]];
-          const rel1 = sub3(nudged, c0);
-          const u1 = dot3(rel1, frame.uLabial);
-          const v1 = dot3(rel1, frame.vSide);
-          cur = add3(
+        const u0 = dot3(rel0, frame.uLabial);
+        const v0 = dot3(rel0, frame.vSide);
+        const below = top.heightAt(u0, v0) - dot3(rel0, frame.w);
+        const s0 = (u0 - topFaceCu) * topDirU + (v0 - topFaceCv) * topDirV;
+        const atS = (sRad: number): Vec3 => {
+          const u = topFaceCu + topDirU * sRad;
+          const v = topFaceCv + topDirV * sRad;
+          return add3(
             c0,
             add3(
-              scale3(frame.w, top.heightAt(u1, v1) - below),
-              add3(scale3(frame.uLabial, u1), scale3(frame.vSide, v1)),
+              scale3(frame.w, top.heightAt(u, v) - below),
+              add3(scale3(frame.uLabial, u), scale3(frame.vSide, v)),
             ),
           );
+        };
+        let lo = s0;
+        let hi = s0 + 1.8;
+        if (Math.hypot(atS(hi)[0], atS(hi)[1]) < minRoundR) return pt;
+        for (let it = 0; it < 12; it += 1) {
+          const mid = (lo + hi) * 0.5;
+          if (Math.hypot(atS(mid)[0], atS(mid)[1]) >= minRoundR) hi = mid;
+          else lo = mid;
         }
-        return cur;
+        return atS(hi);
       };
       post.push(keepRoundOutsideScrew(atTop(h1, s1)));
       const radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
