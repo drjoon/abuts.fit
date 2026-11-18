@@ -89,7 +89,9 @@ export function DashboardNoticeAlert({
         path: "/api/notices/active",
         token,
       });
-      if (!res.ok || res.data?.success === false) return [];
+      if (!res.ok || res.data?.success === false) {
+        throw new Error("notices");
+      }
       return res.data?.data?.items || [];
     },
   });

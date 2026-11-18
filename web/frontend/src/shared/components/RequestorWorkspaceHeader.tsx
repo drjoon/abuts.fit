@@ -29,6 +29,7 @@ export type RequestorWorkspaceHeaderProps = {
   /** 필터 뒤에 붙는 추가 액션 (예: 정책 안내, 불완전가공 알림) */
   children?: ReactNode;
   className?: string;
+  childrenClassName?: string;
 };
 
 export const RequestorWorkspaceHeader = ({
@@ -40,6 +41,7 @@ export const RequestorWorkspaceHeader = ({
   onClearCustomRange,
   children,
   className,
+  childrenClassName,
 }: RequestorWorkspaceHeaderProps) => {
   const showPeriodFilter =
     typeof period !== "undefined" && typeof onPeriodChange === "function";
@@ -58,7 +60,14 @@ export const RequestorWorkspaceHeader = ({
           className="shrink-0"
         />
       )}
-      <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>
+      <div
+        className={
+          childrenClassName ??
+          "flex shrink-0 flex-wrap items-center gap-2"
+        }
+      >
+        {children}
+      </div>
     </div>
   );
 };

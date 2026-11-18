@@ -36,6 +36,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Factory } from "lucide-react";
+import { DashboardImportantNoticesRail } from "@/shared/notices/DashboardImportantNoticesRail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -73,6 +74,55 @@ const IN_PROGRESS_MANUFACTURER_STAGES = [
 
 const isPrepCancelableRequest = (request: unknown) =>
   getNormalizedStageLabelSafe(request) === "준비";
+
+const isFinishedStage = (stage: unknown) => {
+  const text = String(stage || "").trim();
+  return text === "추적관리" || text === "완료" || text === "tracking";
+};
+
+const shipItemToFinishedRow = (item: any) => ({
+  _id: String(item?.mongoId || item?.id || "").trim(),
+  id: String(item?.mongoId || item?.id || "").trim(),
+  requestId: String(item?.id || item?.requestId || "").trim(),
+  createdAt: item?.createdAt || null,
+  manufacturerStage: item?.stageLabel || item?.stage || "포장.발송",
+  listStatusLabel: "출고예정",
+  shippingMode: item?.shippingMode,
+  deliveryInfoRef: item?.delivery || null,
+  practiceTransferLinked: item?.practiceTransferLinked,
+  caseInfos: {
+    clinicName: item?.clinic,
+    patientName: item?.patient,
+    tooth: item?.tooth,
+    designSoftware: item?.designSoftware,
+    anodizingEnabled: item?.anodizingEnabled,
+    screwSupply: item?.screwSupply,
+    hexVerificationSample: item?.hexVerificationSample,
+    implantManufacturer: item?.implantManufacturer,
+    implantBrand: item?.implantBrand,
+    implantFamily: item?.implantFamily,
+    implantType: item?.implantType,
+  },
+});
+
+const unmachItemToFinishedRow = (row: any) => {
+  const ci = row?.caseInfos && typeof row.caseInfos === "object" ? row.caseInfos : {};
+  return {
+    ...row,
+    _id: String(row?._id || row?.id || "").trim(),
+    listStatusLabel: "불완전 가공",
+    caseInfos: {
+      clinicName: ci.clinicName || row?.clinicName,
+      patientName: ci.patientName || row?.patientName,
+      tooth: ci.tooth || row?.tooth,
+      implantManufacturer: ci.implantManufacturer || row?.implantManufacturer,
+      implantBrand: ci.implantBrand || row?.implantBrand,
+      implantFamily: ci.implantFamily || row?.implantFamily,
+      implantType: ci.implantType || row?.implantType,
+      ...ci,
+    },
+  };
+};
 
 export type RequestorAbutmentPageHeaderVariant = "full" | "policyInProgress";
 
@@ -144,6 +194,9 @@ export const RequestorAbutmentPageHeader = ({
   const [canceling, setCanceling] = useState(false);
   const [inProgressCancelSuccessNonce, setInProgressCancelSuccessNonce] =
     useState(0);
+  const [shipItems, setShipItems] = useState<any[]>([]);
+  const [unmachFocusId, setUnmachFocusId] = useState<string | null>(null);
+  const [unmachOpenSignal, setUnmachOpenSignal] = useState(0);
 
   const cardsSummaryQueryKey = useMemo(
     () => [
@@ -269,6 +322,73 @@ export const RequestorAbutmentPageHeader = ({
     const fallback = Number(stats.unmachinableCount);
     return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
   })();
+
+  const { data: unmachOverview } = useQuery({
+    queryKey: [
+      "requestor-unmachinable-overview",
+      period,
+      customStartDate,
+      customEndDate,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      appendDashboardPeriodParams(params, period, {
+        customStartDate,
+        customEndDate,
+      });
+      params.set("limit", "100");
+      const res = await apiFetch<any>({
+        path: `/api/requests/unmachinable-overview?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) throw new Error("불완전 가공 목록 조회에 실패했습니다.");
+      return res.data;
+    },
+    enabled: Boolean(token) && !isPolicyInProgressOnly && unmachinableCount > 0,
+    retry: false,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const finishedExtraRows = useMemo(() => {
+    const unmachRows = (
+      Array.isArray(unmachOverview?.data?.items) ? unmachOverview.data.items : []
+    )
+      .filter((row: any) => {
+        if (!row?.rnd?.unmachinableAt) return false;
+        const stage = String(row?.manufacturerStage || "").trim();
+        return stage !== "취소" && stage.toLowerCase() !== "cancel";
+      })
+      .map(unmachItemToFinishedRow);
+    const shipRows = shipItems.map(shipItemToFinishedRow);
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const row of [...unmachRows, ...shipRows]) {
+      const id = String(row?._id || row?.id || "").trim();
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      out.push(row);
+    }
+    return out;
+  }, [shipItems, unmachOverview]);
+
+  const movedFromProgressIds = useMemo(
+    () =>
+      finishedExtraRows
+        .filter((row) => !isFinishedStage(row?.manufacturerStage))
+        .map((row) => String(row?._id || row?.id || "").trim())
+        .filter(Boolean),
+    [finishedExtraRows],
+  );
+  const progressDisplay = Math.max(
+    0,
+    inProgressCount - new Set(movedFromProgressIds).size,
+  );
+  const doneCount =
+    pastCount +
+    finishedExtraRows.filter((row) => !isFinishedStage(row?.manufacturerStage))
+      .length;
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
   const selectedIsPtxLinked = isPracticeTransferLinkedRequest(
@@ -653,10 +773,36 @@ export const RequestorAbutmentPageHeader = ({
           setCustomStartDate("");
           setCustomEndDate("");
         }}
+        childrenClassName="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2"
       >
-        {policyAndInProgressActions}
+        {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 text-xs"
+          onClick={() => setInProgressOpen(true)}
+        >
+          진행 {progressDisplay.toLocaleString()}건
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={
+            unmachinableCount > 0
+              ? "h-8 border-accent-muted bg-accent-soft px-3 text-xs font-semibold text-accent-strong hover:bg-accent-muted/50"
+              : "h-8 px-3 text-xs"
+          }
+          onClick={() => setPastOpen(true)}
+        >
+          완료 {doneCount.toLocaleString()}건
+        </Button>
+        <DashboardImportantNoticesRail />
         <RequestorBulkShippingBannerCard
           variant="headerButton"
+          hideTrigger
+          onShippingItems={setShipItems}
           bulkData={bulkData}
           period={period}
           customStartDate={customStartDate}
@@ -666,16 +812,10 @@ export const RequestorAbutmentPageHeader = ({
           }}
           onOpenBulkModal={() => {}}
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-3 text-xs"
-          onClick={() => setPastOpen(true)}
-        >
-          완료 내역 {pastCount.toLocaleString()}건
-        </Button>
         <RequestorUnmachinableHost
+          hideTrigger
+          openSignal={unmachOpenSignal}
+          focusId={unmachFocusId}
           period={period}
           customStartDate={customStartDate}
           customEndDate={customEndDate}
@@ -683,16 +823,44 @@ export const RequestorAbutmentPageHeader = ({
         />
       </RequestorWorkspaceHeader>
 
-      {inProgressModal}
+      <PastRequestsModal
+        open={inProgressOpen}
+        onOpenChange={setInProgressOpen}
+        title="진행"
+        description=""
+        manufacturerStageIn={IN_PROGRESS_MANUFACTURER_STAGES}
+        initialPeriod={period}
+        allowCancel
+        suspend={listSource === "inProgress" && Boolean(selectedPastRequest)}
+        removeMongoId={canceledMongoIds}
+        excludeMongoIds={movedFromProgressIds}
+        onCanceled={refreshHeaderCounts}
+        onCancelRequest={cancelRequestByMongoId}
+        onCancelRequests={cancelRequestsByMongoIds}
+        closeWhenEmptyAfterCancel
+        externalCancelSuccessNonce={inProgressCancelSuccessNonce}
+        contentStyle={inProgressDialogStyle}
+        mobileSheet={inProgressMobileSheet}
+        onSelectRequest={(request) => {
+          setListSource("inProgress");
+          setSelectedPastRequest(request);
+        }}
+      />
 
       <PastRequestsModal
         open={pastOpen}
         onOpenChange={setPastOpen}
-        title="완료 내역"
+        title="완료"
         manufacturerStageIn={["추적관리"]}
         initialPeriod={period}
+        extraRows={finishedExtraRows}
         suspend={listSource === "past" && Boolean(selectedPastRequest)}
         onSelectRequest={(request) => {
+          if (String(request?.listStatusLabel || "") === "불완전 가공") {
+            setUnmachFocusId(String(request?._id || request?.id || "").trim());
+            setUnmachOpenSignal((n) => n + 1);
+            return;
+          }
           setListSource("past");
           setSelectedPastRequest(request);
         }}

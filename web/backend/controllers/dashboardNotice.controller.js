@@ -88,22 +88,17 @@ export function ensureDashboardNoticeSeed() {
         await DashboardNotice.updateOne(
           { code: LAB_IMPORTANT_RAIL_NOTICE_CODE },
           {
-            $setOnInsert: {
+            $set: {
               code: LAB_IMPORTANT_RAIL_NOTICE_CODE,
               title: LAB_IMPORTANT_RAIL_TITLE,
               body: LAB_IMPORTANT_RAIL_BODY,
               audiences: ["lab"],
-              images: [],
               published: true,
-              startsAt: null,
               endsAt: null,
             },
-            $set: {
-              published: true,
-              audiences: ["lab"],
-              title: LAB_IMPORTANT_RAIL_TITLE,
-              body: LAB_IMPORTANT_RAIL_BODY,
-              endsAt: null,
+            $setOnInsert: {
+              images: [],
+              startsAt: null,
             },
           },
           { upsert: true },

@@ -136,6 +136,10 @@ export type PastRequestsModalProps = {
   closeWhenEmptyAfterCancel?: boolean;
   /** 상세 등 모달 밖에서 취소가 성공했을 때 증가 — 목록이 비었으면 닫기 */
   externalCancelSuccessNonce?: number;
+  /** 완료 목록에 합칠 출고예정·불완전 가공 행. `listStatusLabel`을 상태에 쓴다. */
+  extraRows?: any[];
+  /** 진행 목록에서 빼는 mongo id. 출고예정·불완전 가공은 완료 쪽에 둔다. */
+  excludeMongoIds?: string[];
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -143,6 +147,24 @@ const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
 const PAGE_SIZE = 50;
 
 const requestMongoId = (row: any) => String(row?._id || row?.id || "").trim();
+
+/** 목록에 보이는 상태. 명시 라벨이 있으면 그걸 쓰고, 추적관리는 완료. */
+const rowListStatus = (row: any) => {
+  const explicit = String(row?.listStatusLabel || "").trim();
+  if (explicit) return explicit;
+  const stage =
+    getNormalizedStageLabelSafe(row) ||
+    String(row?.manufacturerStage || "").trim();
+  if (stage === "추적관리") return "완료";
+  return stage || "-";
+};
+
+const statusBadgeClass = (label: string) => {
+  if (label === "완료") return "bg-emerald-100 text-emerald-800";
+  if (label === "출고예정") return "bg-sky-100 text-sky-900";
+  if (label === "불완전 가공") return "bg-accent-soft text-accent-strong";
+  return "bg-slate-100 text-slate-800";
+};
 
 const requestBusinessId = (row: any) => String(row?.requestId || "").trim();
 
@@ -272,6 +294,8 @@ export const PastRequestsModal = ({
   mobileSheet = false,
   closeWhenEmptyAfterCancel = false,
   externalCancelSuccessNonce = 0,
+  extraRows = [],
+  excludeMongoIds = [],
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -399,16 +423,38 @@ export const PastRequestsModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, loading, page, open]);
 
+  const mergedItems = useMemo(() => {
+    const hidden = new Set(
+      (excludeMongoIds || []).map((id) => String(id || "").trim()).filter(Boolean),
+    );
+    const extras = (extraRows || []).filter((row) => {
+      const id = requestMongoId(row);
+      return !id || !hidden.has(id);
+    });
+    const extraIds = new Set(extras.map((row) => requestMongoId(row)).filter(Boolean));
+    const base = (items || []).filter((row) => {
+      const id = requestMongoId(row);
+      if (id && hidden.has(id)) return false;
+      if (id && extraIds.has(id)) return false;
+      return true;
+    });
+    return [...extras, ...base].sort((a, b) => {
+      const left = new Date(b?.createdAt || 0).getTime();
+      const right = new Date(a?.createdAt || 0).getTime();
+      return (Number.isNaN(left) ? 0 : left) - (Number.isNaN(right) ? 0 : right);
+    });
+  }, [excludeMongoIds, extraRows, items]);
+
   const filteredRows = useMemo(() => {
     const keyword = String(q || "")
       .trim()
       .toLowerCase();
-    if (!keyword) return items;
-    return (items || []).filter((r: any) => {
+    if (!keyword) return mergedItems;
+    return mergedItems.filter((r: any) => {
       const ci = r?.caseInfos || {};
       const hay = [
         r?.requestId,
-        getNormalizedStageLabelSafe(r),
+        rowListStatus(r),
         ci?.clinicName,
         ci?.patientName,
         ci?.tooth,
@@ -421,7 +467,7 @@ export const PastRequestsModal = ({
         .join("|");
       return hay.includes(keyword);
     });
-  }, [items, q]);
+  }, [mergedItems, q]);
 
   const colSpan = allowCancel ? 9 : 7;
   const dismissLocked = Boolean(suspend || cancelTargets.length);
@@ -830,9 +876,7 @@ export const PastRequestsModal = ({
               {filteredRows.map((r: any) => {
                 const ci = r?.caseInfos || {};
                 const id = requestMongoId(r);
-                const stage =
-                  getNormalizedStageLabelSafe(r) ||
-                  String(r?.manufacturerStage || "-");
+                const stage = rowListStatus(r);
                 const caseText =
                   [ci?.clinicName, ci?.patientName, ci?.tooth]
                     .filter(Boolean)
@@ -878,7 +922,12 @@ export const PastRequestsModal = ({
                       ) : null}
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-slate-100 px-2 text-[11px] font-semibold text-slate-800">
+                          <span
+                            className={cn(
+                              "inline-flex h-6 shrink-0 items-center rounded-md px-2 text-[11px] font-semibold",
+                              statusBadgeClass(stage),
+                            )}
+                          >
                             {stage}
                           </span>
                           <ShippingModeBadge source={r} size="sm" />
@@ -1001,7 +1050,7 @@ export const PastRequestsModal = ({
                 {filteredRows.map((r: any) => {
                   const ci = r?.caseInfos || {};
                   const id = requestMongoId(r);
-                  const stage = getNormalizedStageLabelSafe(r) || String(r?.manufacturerStage || "-");
+                  const stage = rowListStatus(r);
                   const caseText =
                     [ci?.clinicName, ci?.patientName, ci?.tooth]
                       .filter(Boolean)
@@ -1037,8 +1086,15 @@ export const PastRequestsModal = ({
                       <TableCell className="text-xs text-slate-600">
                         {formatDate(r?.createdAt)}
                       </TableCell>
-                      <TableCell className="text-xs font-medium text-slate-900">
-                        {stage}
+                      <TableCell>
+                        <span
+                          className={cn(
+                            "inline-flex h-6 items-center rounded-md px-2 text-[11px] font-semibold",
+                            statusBadgeClass(stage),
+                          )}
+                        >
+                          {stage}
+                        </span>
                       </TableCell>
                       <TableCell className="text-xs text-slate-700">
                         <DeliveryStatusChip row={r} />

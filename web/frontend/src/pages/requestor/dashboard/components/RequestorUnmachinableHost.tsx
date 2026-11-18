@@ -36,6 +36,12 @@ type Props = {
   customStartDate?: string;
   customEndDate?: string;
   count: number;
+  /** 헤더 통합 칩이 버튼을 대신할 때 트리거를 숨긴다. */
+  hideTrigger?: boolean;
+  /** 값이 늘면 불완전 가공 모달을 연다. */
+  openSignal?: number;
+  /** 열 때 이 의뢰를 선택한다. */
+  focusId?: string | null;
 };
 
 const splitUnmachinableReasons = (rawReason: unknown): string[] => {
@@ -65,6 +71,9 @@ export const RequestorUnmachinableHost = ({
   customStartDate = "",
   customEndDate = "",
   count,
+  hideTrigger = false,
+  openSignal = 0,
+  focusId = null,
 }: Props) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -448,8 +457,19 @@ export const RequestorUnmachinableHost = ({
       ? resolvedSpec.connectionDiameter.toFixed(2)
       : "-";
 
+  const openSignalSeen = useRef(openSignal);
+  useEffect(() => {
+    if (openSignalSeen.current === openSignal) return;
+    openSignalSeen.current = openSignal;
+    if (openSignal > 0) {
+      setFocusedRequestId(String(focusId || "").trim() || null);
+      setOpen(true);
+    }
+  }, [focusId, openSignal]);
+
   return (
     <>
+      {hideTrigger ? null : (
       <Button
         type="button"
         variant="outline"
@@ -466,6 +486,7 @@ export const RequestorUnmachinableHost = ({
       >
         불완전 가공 {count.toLocaleString()}건
       </Button>
+      )}
 
       <Dialog
         open={open}

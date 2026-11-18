@@ -143,6 +143,13 @@ type Props = {
   loading?: boolean;
   /** headerButton: 카드 없이 헤더용 [출고예정 x건] + 기존 모달 */
   variant?: "card" | "headerButton";
+  /** 헤더 통합 칩이 버튼을 대신할 때 트리거를 숨긴다. */
+  hideTrigger?: boolean;
+  /** 값이 늘면 출고예정 모달을 연다. */
+  openSignal?: number;
+  onWaitingCount?: (count: number) => void;
+  /** 기간이 반영된 출고예정 행. 완료 목록에 합친다. */
+  onShippingItems?: (items: any[]) => void;
 };
 
 const periodToShippingSummaryDays = (
@@ -353,6 +360,10 @@ export const RequestorBulkShippingBannerCard = ({
   customEndDate = "",
   loading = false,
   variant = "card",
+  hideTrigger = false,
+  openSignal = 0,
+  onWaitingCount,
+  onShippingItems,
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -521,6 +532,22 @@ export const RequestorBulkShippingBannerCard = ({
     setIsModalOpen(true);
     onOpenBulkModal();
   };
+
+  const onWaitingCountRef = useRef(onWaitingCount);
+  onWaitingCountRef.current = onWaitingCount;
+  const onShippingItemsRef = useRef(onShippingItems);
+  onShippingItemsRef.current = onShippingItems;
+  useEffect(() => {
+    onWaitingCountRef.current?.(items.length);
+    onShippingItemsRef.current?.(items);
+  }, [items]);
+
+  const openSignalSeen = useRef(openSignal);
+  useEffect(() => {
+    if (openSignalSeen.current === openSignal) return;
+    openSignalSeen.current = openSignal;
+    if (openSignal > 0) handleOpenModal();
+  }, [openSignal]);
 
   const handleLeadTimeButtonClick = () => {
     setIsLeadTimeModalOpen(true);
@@ -835,6 +862,7 @@ export const RequestorBulkShippingBannerCard = ({
   return (
     <>
       {isHeaderButton ? (
+        hideTrigger ? null : (
         <Button
           type="button"
           variant="outline"
@@ -844,6 +872,7 @@ export const RequestorBulkShippingBannerCard = ({
         >
           출고예정 {waitingCount.toLocaleString()}건
         </Button>
+        )
       ) : (
       <Card className="app-glass-card app-glass-card--lg h-full min-w-0">
         <CardHeader className="pb-3">
