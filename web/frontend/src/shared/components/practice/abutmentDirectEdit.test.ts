@@ -1638,6 +1638,113 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       cands37[0]!.design.metrics.maxDiameterMm > cands37[1]!.design.metrics.maxDiameterMm + 0.35,
       `(1) 인접 공간 균형 후보(Ø${cands37[0]!.design.metrics.maxDiameterMm}mm)가 (2) 치은 연하 우선 후보(Ø${cands37[1]!.design.metrics.maxDiameterMm}mm)보다 빈 공간을 더 채운다`,
     );
+    // 13) 원심에 픽스쳐가 치우쳐 포스트·마진이 근심으로 크게 이동한 #37 케이스 및 충돌 후보 전원에서
+    //     원심측 원호 배불뚝이·직선 다각형 절단(flatSegs)·교합면 오목 홈이 0건이고 마진 폭이 균등한지 검증
+    const eccentricTilt37 = (6.4 * Math.PI) / 180;
+    const eccentricFixture37 = {
+      ...fixture37,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: [0, -Math.sin(eccentricTilt37), Math.cos(eccentricTilt37)] as [number, number, number],
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: [0, Math.cos(eccentricTilt37), Math.sin(eccentricTilt37)] as [number, number, number],
+      },
+      scanbodyTop: [0, -5 * Math.sin(eccentricTilt37), 5 * Math.cos(eccentricTilt37)] as [
+        number,
+        number,
+        number,
+      ],
+      connectionSpec: {
+        ...fixture37.connectionSpec,
+        originDiameterMm: 3.35,
+        prcConeTopMm: 0.3,
+        screwLowerDiameterMm: 2.08,
+        screwUpperDiameterMm: 2.45,
+        screwTopMouthDiameterMm: 2.5,
+      },
+    };
+    const eccentricJaw37 = makeGridSurface(-12, 12, -10, 14, 56, (x, y) => {
+      const mesial36 = 6.0 * Math.exp(-((x * x) / 10 + ((y - 9.2) * (y - 9.2)) / 1.8));
+      const distalGingiva = 3.8 * Math.exp(-((x * x) / 12 + ((y + 3.5) * (y + 3.5)) / 1.5));
+      return 3.25 + mesial36 + distalGingiva;
+    });
+    const eccentricOpp37 = makeGridSurface(-8, 8, -2, 10, 28, () => 7.2);
+    const eccentric37 = await designCustomAbutmentStl({
+      fixture: eccentricFixture37,
+      jawGeometry: eccentricJaw37,
+      opposingGeometry: eccentricOpp37,
+      toothWorks: [{ toothNumber: "37", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+      params: {
+        occlusalClearanceMm: 1.0,
+        marginFilletRadiusMm: 0.7,
+        marginDepthMm: 0.3,
+        marginSubgMinMm: 0.3,
+        marginSubgMaxMm: 0.3,
+        postWidthScale: 1.08,
+        marginSizeScale: 0.967,
+        axisSourceCode: 1,
+      },
+    });
+    for (const [label, d] of [
+      ["원심 편심 #37", eccentric37] as const,
+      ...cands37.map((c, idx) => [`충돌 후보 #${idx + 1} (${c.id})`, c.design] as const),
+    ]) {
+      const ml = d.marginLoopLocal;
+      const n = ml.length / 3;
+      const { hexX, hexY, axis } = d.fixture.fixturePose;
+      const lab = d.fixture.labialDir;
+      const mes = d.fixture.mesialDir;
+      const xy: Array<[number, number]> = [];
+      const occUV: Array<[number, number]> = [];
+      for (let i = 0; i < n; i += 1) {
+        const lx = ml[i * 3]!;
+        const ly = ml[i * 3 + 1]!;
+        const lz = ml[i * 3 + 2]!;
+        xy.push([lx, ly]);
+        const wx = hexX[0]! * lx + hexY[0]! * ly + axis[0]! * lz;
+        const wy = hexX[1]! * lx + hexY[1]! * ly + axis[1]! * lz;
+        const wz = hexX[2]! * lx + hexY[2]! * ly + axis[2]! * lz;
+        occUV.push([
+          wx * lab[0]! + wy * lab[1]! + wz * lab[2]!,
+          wx * mes[0]! + wy * mes[1]! + wz * mes[2]!,
+        ]);
+      }
+      let area2Occ = 0;
+      for (let i = 0; i < n; i += 1) {
+        const j = (i + 1) % n;
+        area2Occ += occUV[i]![0] * occUV[j]![1] - occUV[i]![1] * occUV[j]![0];
+      }
+      const occSign = area2Occ >= 0 ? 1 : -1;
+      let flatSegsXY = 0;
+      let minCrXY = Infinity;
+      let minCrOcc = Infinity;
+      for (let i = 0; i < n; i += 1) {
+        const p0 = xy[(i - 1 + n) % n]!;
+        const p1 = xy[i]!;
+        const p2 = xy[(i + 1) % n]!;
+        const crXY = (p1[0] - p0[0]) * (p2[1] - p1[1]) - (p1[1] - p0[1]) * (p2[0] - p1[0]);
+        minCrXY = Math.min(minCrXY, crXY);
+        if (Math.abs(crXY) < 1e-5) flatSegsXY += 1;
+        const q0 = occUV[(i - 1 + n) % n]!;
+        const q1 = occUV[i]!;
+        const q2 = occUV[(i + 1) % n]!;
+        const crOcc =
+          ((q1[0] - q0[0]) * (q2[1] - q1[1]) - (q1[1] - q0[1]) * (q2[0] - q1[0])) * occSign;
+        minCrOcc = Math.min(minCrOcc, crOcc);
+      }
+      assert.equal(
+        flatSegsXY,
+        0,
+        `${label}: 피니시라인에 원호 클램프나 볼록껍질 직선 현(flatSegs=${flatSegsXY})이 없다`,
+      );
+      assert.ok(
+        minCrXY > 1e-5 && minCrOcc > 1e-6,
+        `${label}: 픽스쳐 수평면(minCrXY=${minCrXY.toFixed(6)})과 교합면 시점(minCrOcc=${minCrOcc.toFixed(6)}) 모두 전 구간 매끈한 엄밀 볼록 곡선이다`,
+      );
+    }
+    eccentric37.worldGeometry.dispose();
+    eccentric37.predictedCrownWorldGeometry.dispose();
+    eccentric37.enameloplastyWorldGeometry?.dispose();
     for (const c of cands37) {
       c.design.worldGeometry.dispose();
       c.design.predictedCrownWorldGeometry.dispose();
