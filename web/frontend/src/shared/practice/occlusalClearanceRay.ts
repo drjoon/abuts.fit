@@ -317,12 +317,14 @@ export function solvePostTopClearanceShiftMm(args: {
   opposingTris: Float32Array;
   up: V;
   targetClearanceMm: number;
+  /** 주변 대합까지 보는 수평 반경. 딥바이트 설측은 면 자체의 수직 간격만 본다. */
+  lateralMm?: number;
 }): number | null {
   const field = buildCapOpposingField(args);
   if (!field) return null;
   const { sampleList, iuMin, ivMin, gCols, oppGrid } = field;
   const target = Math.max(0, args.targetClearanceMm);
-  const rCheck = Math.min(LATERAL_3D_MM, target);
+  const rCheck = Math.min(Math.max(0, args.lateralMm ?? LATERAL_3D_MM), target);
 
   let minAllowShift = Infinity;
   for (const s of sampleList) {

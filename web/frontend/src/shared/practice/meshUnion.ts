@@ -3,6 +3,18 @@
 import type { Manifold, ManifoldToplevel } from "manifold-3d";
 import wasmUrl from "manifold-3d/manifold.wasm?url";
 
+function manifoldWasmFile(): string {
+  if (
+    typeof window === "undefined" &&
+    wasmUrl.startsWith("/") &&
+    typeof process !== "undefined" &&
+    typeof process.cwd === "function"
+  ) {
+    return `${process.cwd()}${wasmUrl}`;
+  }
+  return wasmUrl;
+}
+
 export type MeshUnionFailure = "open" | "separate" | "failed";
 
 export class MeshUnionError extends Error {
@@ -20,7 +32,7 @@ let loading: Promise<ManifoldToplevel> | null = null;
 function loadManifold(): Promise<ManifoldToplevel> {
   if (!loading) {
     loading = import("manifold-3d").then(async ({ default: Module }) => {
-      const wasm = await Module({ locateFile: () => wasmUrl });
+      const wasm = await Module({ locateFile: () => manifoldWasmFile() });
       wasm.setup();
       return wasm;
     });

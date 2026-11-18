@@ -2,9 +2,13 @@
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
 // 1) 피니시라인 = 둘레 치은 연하(얕은 끝~깊은 끝)의 완만한 스캘럽. 깊이를 옮겨도 2차 조화만 남긴다. 마진 단면 = 치종 템플릿.
 // 2) 삽입축 = 인접 자연치·인접 어벗 장축과 같은 각도(브리지는 더 정확히). 없으면 대합·악궁 방향.
+//    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
+//    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
+//    삽입축의 순측·근원심 기울기도 그 인접치 장축을 따른다. 설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
 // 6) 포스트 축벽은 솔리드로 두고, 화면용 메시만 임플란트 축 원통으로 스크류 홀을 뚫는다.
@@ -641,13 +645,26 @@ function smoothRamp09(u: number): number {
 
 /**
  * 전치·견치 설측 싱귤럼 사선.
- * 카탈로그 각이 28° 미만이면 예전 완만 값으로 보고 상단 사선용으로 8°를 더한다.
- * 인접치 측면 기울기(°, 순측으로 누우면 +)만큼 치아마다 다르게 기울인다. 인접치가 곧으면 카탈로그 사선을 유지한다.
+ * 견치는 카탈로그 각이 28° 미만이면 상단 사선용으로 8°를 더하고, 인접치 측면 기울기만큼 치아마다 다르게 기울인다.
+ * 절치는 치경 1/3에 싱귤럼 축벽을 남기고, 그 위는 설면와(lingual fossa)가 들어가도록 더 일찍·더 가파른 직선 사선으로 깎는다.
+ * 인접 자연치에서 잰 설측 후퇴각이 있으면 그 각을 함께 쓴다.
  */
-function anteriorCingulumPlan(bevelAngleDeg: number, collarRatio: number, neighborSideDeg: number) {
+function anteriorCingulumPlan(
+  bevelAngleDeg: number,
+  collarRatio: number,
+  neighborSideDeg: number,
+  kind: ToothKind = "canine",
+  neighborBevelDeg = 0,
+) {
   const catalog = Number.isFinite(bevelAngleDeg) && bevelAngleDeg > 0 ? bevelAngleDeg : 30;
-  const steepBase = catalog < 28 ? catalog + 8 : catalog;
   const tilt = clamp(neighborSideDeg, -16, 12);
+  if (kind === "incisor") {
+    const fromNeighbor = neighborBevelDeg >= 24 ? neighborBevelDeg : 0;
+    const angleDeg = clamp(Math.max(catalog + 12, fromNeighbor) - tilt * 0.25, 40, 52);
+    const collar = clamp(0.34 - tilt * 0.003, 0.3, 0.42);
+    return { angleDeg, collar, slope: Math.tan(angleDeg * DEG) };
+  }
+  const steepBase = catalog < 28 ? catalog + 8 : catalog;
   const angleDeg = clamp(steepBase - tilt * 0.6, 22, 38);
   const collar = clamp(Math.max(collarRatio || 0, 0.58), 0.54, 0.68);
   return { angleDeg, collar, slope: Math.tan(angleDeg * DEG) };
@@ -672,7 +689,7 @@ function cingulumTopHalfMm(
  * 포스트 아래쪽(u ≤ collar)은 0이라 2° 축벽이 유지되고, 그 위는 짧은 진입 뒤 상단까지 직선 사선이다.
  */
 function smoothCingulumBevelRamp(u: number, collarRatio = 0.58): number {
-  const c = clamp(collarRatio, 0.4, 0.72);
+  const c = clamp(collarRatio, 0.28, 0.72);
   if (u <= c) return 0;
   const t = (u - c) / Math.max(0.16, 1 - c);
   if (t >= 1) return 1;
@@ -1951,6 +1968,174 @@ function adjacentOcclusalHeight(
   return tops.length ? tops.reduce((s, v) => s + v, 0) / tops.length : Number.NaN;
 }
 
+type IncisorNeighborGuide = {
+  /** 마진 중심에서 교합 방향으로 잰 인접 자연치 절단연 높이(mm). */
+  incisalH: number;
+  /** 치경부 중심 → 절단 중심. 양수면 절단이 순측으로 기운다(du/dh). */
+  labialSlope: number;
+  /** 양수면 절단이 근심으로 기운다(dv/dh). */
+  mesialSlope: number;
+};
+
+/**
+ * 절치 옆 자연치의 절단연 길이와 장축 기울기.
+ * 순측으로 빠진 절단연(|u|가 4.5mm를 넘는 경우)도 포함한다. 어벗·프렙 쪽은 빼고, 더 긴 자연치를 쓴다.
+ */
+function measureAdjacentIncisorGuide(
+  pts: Float32Array,
+  c0: Vec3,
+  up: Vec3,
+  labial: Vec3,
+  mesial: Vec3,
+  halfMdMm: number,
+  ownScanbody: { radius: number; height: number },
+  opts?: { skipPos?: boolean; skipNeg?: boolean },
+): IncisorNeighborGuide | null {
+  const upN = norm3(up);
+  const sides: Array<Array<{ h: number; u: number; v: number }>> = [[], []];
+  for (let i = 0; i < pts.length; i += 3) {
+    const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+    if (Math.hypot(p[0], p[1]) < ownScanbody.radius + 0.7 && p[2] < ownScanbody.height + 1) continue;
+    const rel = sub3(p, c0);
+    const h = dot3(rel, upN);
+    if (h < 0.4 || h > 14.5) continue;
+    const u = dot3(rel, labial);
+    if (u < -5.5 || u > 11) continue;
+    const v = dot3(rel, mesial);
+    if (v > 0 && opts?.skipPos) continue;
+    if (v < 0 && opts?.skipNeg) continue;
+    const av = Math.abs(v);
+    if (av < halfMdMm + 0.45 || av > halfMdMm + 9.2) continue;
+    sides[v >= 0 ? 0 : 1]!.push({ h, u, v });
+  }
+  const guides: IncisorNeighborGuide[] = [];
+  for (const list of sides) {
+    if (list.length < 36) continue;
+    const hs = list.map((q) => q.h).sort((a, b) => a - b);
+    const hTop = Math.min(12.6, hs[Math.floor(hs.length * 0.98)]!);
+    const hBot = hs[Math.floor(hs.length * 0.1)]!;
+    if (hTop < 6 || hTop - hBot < 4.2) continue;
+    const band = (h0: number, h1: number) => {
+      const rows = list.filter((q) => q.h >= h0 && q.h <= h1);
+      if (rows.length < 6) return null;
+      const us = rows.map((q) => q.u).sort((a, b) => a - b);
+      const vs = rows.map((q) => q.v).sort((a, b) => a - b);
+      const hh = rows.map((q) => q.h).sort((a, b) => a - b);
+      return {
+        u: us[Math.floor(us.length * 0.5)]!,
+        v: vs[Math.floor(vs.length * 0.5)]!,
+        h: hh[Math.floor(hh.length * 0.5)]!,
+      };
+    };
+    const cerv = band(Math.max(1.5, hBot + 0.35), Math.min(hTop - 2.6, Math.max(hBot + 3.1, 3.4)));
+    const inc = band(hTop - 1.85, hTop - 0.2);
+    let labialSlope = 0;
+    let mesialSlope = 0;
+    if (cerv && inc && inc.h - cerv.h >= 1.8) {
+      const dh = inc.h - cerv.h;
+      labialSlope = clamp((inc.u - cerv.u) / dh, -0.5, 0.55);
+      mesialSlope = clamp((inc.v - cerv.v) / dh, -0.4, 0.4);
+    }
+    guides.push({ incisalH: hTop, labialSlope, mesialSlope });
+  }
+  if (!guides.length) return null;
+  let incisalH = 0;
+  let labialSlope = 0;
+  let mesialSlope = 0;
+  for (const g of guides) {
+    incisalH = Math.max(incisalH, g.incisalH);
+    labialSlope += g.labialSlope;
+    mesialSlope += g.mesialSlope;
+  }
+  return {
+    incisalH,
+    labialSlope: labialSlope / guides.length,
+    mesialSlope: mesialSlope / guides.length,
+  };
+}
+
+type IncisorNeighborShovel = {
+  incisalBlMm: number;
+  lingualBevelDeg: number;
+};
+
+/**
+ * 바로 옆 자연 절치의 절단부 순설 폭과 설측 후퇴각.
+ * 양옆 중 카탈로그 절단 순설에 더 가까운 치아(예: #11 옆의 #21)를 고른다. 스캔바디·무치악이면 null.
+ */
+function measureAdjacentIncisorShovel(
+  pts: Float32Array,
+  c0: Vec3,
+  frame: InsertionFrame,
+  halfMdMm: number,
+  ownScanbody: { radius: number; height: number },
+  catalogIncisalBlMm: number,
+): IncisorNeighborShovel | null {
+  const sides: Array<Array<{ h: number; u: number }>> = [[], []];
+  for (let i = 0; i < pts.length; i += 3) {
+    const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+    if (Math.hypot(p[0], p[1]) < ownScanbody.radius + 0.65 && p[2] < ownScanbody.height + 0.8) continue;
+    const rel = sub3(p, c0);
+    const h = dot3(rel, frame.w);
+    if (h < 1.6 || h > 12) continue;
+    const u = dot3(rel, frame.uLabial);
+    if (Math.abs(u) > 6.2) continue;
+    const v = dot3(rel, frame.vSide);
+    const av = Math.abs(v);
+    if (av < halfMdMm + 0.7 || av > halfMdMm + 7.2) continue;
+    sides[v >= 0 ? 0 : 1]!.push({ h, u });
+  }
+  let best: IncisorNeighborShovel | null = null;
+  let bestScore = Infinity;
+  for (const list of sides) {
+    if (list.length < 48) continue;
+    const hs = list.map((q) => q.h).sort((a, b) => a - b);
+    const hTop = hs[Math.floor(hs.length * 0.97)]!;
+    const hBot = hs[Math.floor(hs.length * 0.12)]!;
+    if (hTop - hBot < 4.2) continue;
+    const band = (h0: number, h1: number) => {
+      const us = list
+        .filter((q) => q.h >= h0 && q.h <= h1)
+        .map((q) => q.u)
+        .sort((a, b) => a - b);
+      if (us.length < 8) return null;
+      const uLin = us[Math.floor(us.length * 0.08)]!;
+      const uLab = us[Math.floor(us.length * 0.92)]!;
+      return { uLin, bl: uLab - uLin };
+    };
+    const inc = band(hTop - 1.7, hTop - 0.35);
+    const cerv = band(hBot + (hTop - hBot) * 0.22, hBot + (hTop - hBot) * 0.42);
+    if (!inc || !cerv) continue;
+    if (inc.bl < 2.2 || inc.bl > 8.5) continue;
+    const span = Math.max(1.4, hTop - 1.0 - (hBot + (hTop - hBot) * 0.32));
+    // 절단 설측이 치경 싱귤럼보다 순측으로 들어가면 양수. 그 각이 설면와 사선이다.
+    const bevelDeg = (Math.atan2(Math.max(0, inc.uLin - cerv.uLin), span) * 180) / Math.PI;
+    const score = Math.abs(inc.bl - catalogIncisalBlMm);
+    if (score < bestScore) {
+      bestScore = score;
+      best = { incisalBlMm: inc.bl, lingualBevelDeg: bevelDeg };
+    }
+  }
+  return best;
+}
+
+/** 대합 높이장에서 순설 구간(u0~u1, |v|≤vHalf)의 가장 가까운 높이. 없으면 Infinity. */
+function opposingBandMinHeight(
+  field: ReturnType<typeof buildOpposingHeightField>,
+  u0: number,
+  u1: number,
+  vHalf: number,
+): number {
+  let best = Infinity;
+  const lo = Math.min(u0, u1);
+  const hi = Math.max(u0, u1);
+  for (const cell of field.list) {
+    if (cell.u < lo || cell.u > hi || Math.abs(cell.v) > vHalf) continue;
+    if (cell.h < best) best = cell.h;
+  }
+  return best;
+}
+
 /** 픽스쳐 로컬 Z축을 따르는 닫힌 원뿔대(스크류 채널 cutter). */
 /** 악궁 곡률 때문에 양옆 인접치 순측면을 이은 선보다 이만큼 더 나온다(치종별). */
 const ARCH_LABIAL_BULGE_MM: Record<ToothKind, number> = {
@@ -2784,6 +2969,8 @@ type ConflictHints = {
 
 type DesignMode = {
   probeAxis?: boolean;
+  /** 브리지 높이 맞추기 전 이 치아의 자연 높이와 대합 상한만 반환한다. 형제 프로브는 다시 프로브하지 않는다. */
+  probeHeight?: boolean;
   groupAxisWorld?: Vec3 | null;
   /** 포스트 파절 방지 치은 연상 자동 승격 1회 실행 여부(재귀 루프 원천 차단). */
   supragingivalRetried?: boolean;
@@ -2792,6 +2979,7 @@ type DesignMode = {
 };
 type DesignResult =
   | { kind: "axis"; axisWorld: Vec3 }
+  | { kind: "height"; naturalTopH: number; safeTopH: number }
   | { kind: "design"; design: DesignedCustomAbutment; conflictHints: ConflictHints };
 
 /** 자동 삽입축(윗면 이동 전) 캐시. 붙은 치아 평행 축을 구할 때 이웃마다 다시 계산하지 않는다. */
@@ -2882,6 +3070,103 @@ function parallelGroupOf(
     }
   }
   return group;
+}
+
+type BridgeTopProbe = { naturalTopH: number; safeTopH: number };
+
+const bridgeHeightProbeCache = new WeakMap<THREE.BufferGeometry, Map<string, Promise<BridgeTopProbe>>>();
+
+function bridgeHeightProbeKey(args: DesignArgs): string {
+  const p = resolveCustomAbutmentParams(args.fixture.toothNumber, args.params);
+  const o = args.fixture.fixturePose.origin;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  return JSON.stringify([
+    args.fixture.toothNumber,
+    args.fixture.jaw,
+    [r(o[0]), r(o[1]), r(o[2])],
+    args.opposingGeometry?.uuid ?? null,
+    r(p.occlusalClearanceMm),
+    r(p.marginDepthMm),
+    r(p.marginSubgMinMm),
+    r(p.marginSubgMaxMm),
+    r(p.axisMaxDeg),
+    p.axisToOpposing,
+    abutmentLogicSignature(args.fixture.toothNumber, args.logicRules),
+  ]);
+}
+
+/** 같은 bridgeLinkedTeeth 묶음의 다른 지대치. 사분악이 같다고 다른 브리지를 섞지 않는다. */
+function bridgeAbutmentMates(
+  fixture: MatchedScanbodyFixture,
+  neighbors: readonly MatchedScanbodyFixture[] | undefined,
+  toothWorks: readonly ToothWorkSelection[] | undefined,
+): MatchedScanbodyFixture[] {
+  const works = toothWorks ?? [];
+  const digitsOf = (tooth: string) => parseFdiTooth(tooth)?.digits ?? "";
+  const start = digitsOf(fixture.toothNumber);
+  if (!start) return [];
+  const visited = new Set<string>();
+  const queue = [start];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const wCur = works.find((tw) => digitsOf(tw.toothNumber) === cur);
+    for (const linked of wCur?.bridgeLinkedTeeth ?? []) {
+      const d = digitsOf(linked);
+      if (d && !visited.has(d)) queue.push(d);
+    }
+    for (const tw of works) {
+      const d = digitsOf(tw.toothNumber);
+      if (!d || visited.has(d)) continue;
+      if ((tw.bridgeLinkedTeeth ?? []).some((t) => digitsOf(t) === cur)) queue.push(d);
+    }
+  }
+  if (visited.size < 2) return [];
+  return (neighbors ?? []).filter(
+    (n) => n.jaw === fixture.jaw && n.toothNumber !== fixture.toothNumber && visited.has(digitsOf(n.toothNumber)),
+  );
+}
+
+/** 가장 긴 높이까지 모두가 대합 거리를 지킬 수 있으면 그 높이, 아니면 짧은 포스트 높이. */
+function resolveBridgeMatchedTopH(rows: BridgeTopProbe[]): number | null {
+  const usable = rows.filter((row) => Number.isFinite(row.naturalTopH));
+  if (usable.length < 2) return null;
+  let tallest = -Infinity;
+  let shortest = Infinity;
+  for (const row of usable) {
+    tallest = Math.max(tallest, row.naturalTopH);
+    shortest = Math.min(shortest, row.naturalTopH);
+  }
+  if (tallest - shortest < 0.35) return null;
+  const blocked = usable.some((row) => row.safeTopH + 0.3 < tallest);
+  return blocked ? shortest : tallest;
+}
+
+async function probeBridgePostTop(args: DesignArgs): Promise<BridgeTopProbe> {
+  const key = bridgeHeightProbeKey(args);
+  let byKey = bridgeHeightProbeCache.get(args.jawGeometry);
+  if (!byKey) {
+    byKey = new Map();
+    bridgeHeightProbeCache.set(args.jawGeometry, byKey);
+  }
+  const hit = byKey.get(key);
+  if (hit) return hit;
+  const pending = (async () => {
+    const probeArgs: DesignArgs = {
+      ...args,
+      params: { ...(args.params ?? {}), postHeightOffsetMm: 0 },
+    };
+    const groupAxisWorld = await resolveGroupAxisWorld(probeArgs);
+    const res = await designImpl(probeArgs, { groupAxisWorld, probeHeight: true });
+    if (res.kind !== "height") return { naturalTopH: Number.NaN, safeTopH: Infinity };
+    return { naturalTopH: res.naturalTopH, safeTopH: res.safeTopH };
+  })();
+  byKey.set(key, pending);
+  pending.catch(() => {
+    if (byKey.get(key) === pending) byKey.delete(key);
+  });
+  return pending;
 }
 
 /**
@@ -4238,6 +4523,24 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     return wCur;
   };
 
+  // 절치 각도는 이미 기운 삽입축이 아니라 교합 수직(occInFix)에서 인접 자연치를 잰다.
+  const incisorGuide =
+    tpl.kind === "incisor"
+      ? measureAdjacentIncisorGuide(
+          jawLocalPts,
+          c0,
+          occInFix,
+          labXY,
+          mesXY,
+          Math.max(2.2, marginB),
+          { radius: sbR, height: sbH },
+          {
+            skipPos: mesialAllowance.wallMm > 0,
+            skipNeg: distalAllowance.wallMm > 0,
+          },
+        )
+      : null;
+
   let w: Vec3 = [0, 0, 1];
   /** 인접 자연치 순측 기울기(°). 전치·견치 싱귤럼 사선을 치아마다 다르게 기울일 때 쓴다. 0이면 곧은 인접치. */
   let anteriorNeighborSideDeg = 0;
@@ -4449,6 +4752,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
       w = steerAxisForProximalClearance(w, posterior ? Math.min(tiltCapRad, 8.5 * DEG) : tiltCapRad);
     }
+  }
+  // 절치만: 인접 자연치 장축의 순측 벌림(최대 22°)과 근원심 기울기를 삽입축에 반영한다. 견치·구치는 그대로.
+  if (tpl.kind === "incisor" && incisorGuide) {
+    const labCap = Math.tan(22 * DEG);
+    const mesCap = Math.tan(16 * DEG);
+    const labS = clamp(incisorGuide.labialSlope, -labCap, labCap);
+    const mesS = clamp(incisorGuide.mesialSlope, -mesCap, mesCap);
+    const curLab = dot3(w, labXY) / Math.max(w[2], 0.25);
+    const curMes = dot3(w, mesXY) / Math.max(w[2], 0.25);
+    const nextLab = clamp(curLab * 0.25 + labS * 0.75, -labCap, labCap);
+    const nextMes = clamp(curMes * 0.45 + mesS * 0.55, -mesCap, mesCap);
+    w = capTilt(
+      norm3([
+        labXY[0] * nextLab + mesXY[0] * nextMes,
+        labXY[1] * nextLab + mesXY[1] * nextMes,
+        1,
+      ]),
+      tiltCapRad,
+    );
+    w = steerAxisForProximalClearance(w, tiltCapRad);
   }
   const logicBias = generationAxisBias(fixture.toothNumber, args.logicRules);
   if (mode.probeAxis) {
@@ -4677,30 +5000,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         )
       : Number.NaN;
   const mirrorTopH = contraMirror ? clamp(contraMirror.crownHeightMm, 5.0, 10.5) : Number.NaN;
-  const archCrownTopH = Number.isFinite(adjacentTopH)
+  let archCrownTopH = Number.isFinite(adjacentTopH)
     ? Number.isFinite(mirrorTopH)
       ? adjacentTopH * 0.7 + mirrorTopH * 0.3
       : adjacentTopH
     : mirrorTopH;
+  // 순측으로 빠진 절단연은 |u|≤4.5 샘플에 안 잡힌다. 절치는 그 끝 높이를 교합 방향에서 다시 넣는다.
+  if (tpl.kind === "incisor" && incisorGuide && Number.isFinite(incisorGuide.incisalH)) {
+    const axial = Math.max(0.72, Math.abs(dot3(frame.w, norm3(occInFix))));
+    const guideAxial = incisorGuide.incisalH / axial;
+    archCrownTopH = Number.isFinite(archCrownTopH) ? Math.max(archCrownTopH, guideAxial) : guideAxial;
+  }
   const offsetH = params.postHeightOffsetMm;
   const desiredOccThickness = clamp(Math.max(clearance, params.minCrownThicknessMm + 0.15), 1.0, 1.5);
-  // 대합치가 있으면 구치는 대합치와 교합되도록 올리고, 전치는 인접 자연치 절단연(archCrownTopH - 절단 두께)도 넘지 않게 맞춘다.
+  // 절치는 도재 1mm 전후만 남긴다. 견치·구치는 기존 절단·교합 두께를 유지한다.
+  const incisorPorcelainMm = clamp(tpl.crownOcclusalMm * 0.62, 0.9, 1.15);
   const antIncisalCap =
     !posterior && Number.isFinite(archCrownTopH)
-      ? archCrownTopH - Math.max(desiredOccThickness, tpl.crownOcclusalMm * 0.88)
+      ? archCrownTopH -
+        (tpl.kind === "incisor" ? incisorPorcelainMm : Math.max(desiredOccThickness, tpl.crownOcclusalMm * 0.88))
       : Infinity;
+  const neighborHeightCap = Number.isFinite(archCrownTopH)
+    ? archCrownTopH - (tpl.kind === "incisor" ? incisorPorcelainMm : desiredOccThickness)
+    : Infinity;
   const baseCap = hasOpposing
     ? Math.min(tpl.postHeightMm + (posterior ? 4.5 : 2.2), antIncisalCap)
-    : Math.min(
-        tpl.postHeightMm + 3.0,
-        Number.isFinite(archCrownTopH) ? archCrownTopH - desiredOccThickness : Infinity,
-      );
+    : Math.min(tpl.postHeightMm + 3.0, neighborHeightCap);
   const hasExplicitClearance =
     args.params?.occlusalClearanceMm != null && Number.isFinite(Number(args.params.occlusalClearanceMm));
   const minClearanceFloor = hasExplicitClearance
     ? Math.min(CROWN_THICKNESS_FLOOR_MM, clearance)
     : CROWN_THICKNESS_FLOOR_MM;
-  const postTopMax = Math.max(
+  let postTopMax = Math.max(
     minSafePostHeightMm,
     hasOpposing
       ? oppRefH - clearance + Math.max(0, offsetH) + 4.0
@@ -4719,6 +5050,104 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   if (hasOpposing) {
     // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
     postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
+  }
+  // 절치 딥바이트: 설측 대합(하악 절치가 설면와에 물림)이 포스트 전체를 짧게 만들지 않는다.
+  // 순측 절단 높이는 인접 자연치 절단연과 순측 대합 거리 중 낮은 쪽까지 올리고, 설측은 사선으로 비운다.
+  let incisorDeepBite = false;
+  let incisorShovelScale = 1;
+  let incisorNeighborBevelDeg = 0;
+  let incisorPalatalOppH = Infinity;
+  let incisorPalatalContactU = -4;
+  if (tpl.kind === "incisor") {
+    const neighborShovel = measureAdjacentIncisorShovel(
+      jawLocalPts,
+      c0,
+      frame,
+      Math.max(2.2, marginB),
+      { radius: sbR, height: sbH },
+      tpl.occlusalBlMm,
+    );
+    if (neighborShovel) {
+      incisorShovelScale = clamp(neighborShovel.incisalBlMm / Math.max(3.2, tpl.occlusalBlMm), 0.84, 1.16);
+      incisorNeighborBevelDeg = neighborShovel.lingualBevelDeg;
+    }
+    if (hasOpposing && oppField && !hasExplicitClearance && Math.abs(offsetH) <= 0.05) {
+      const labialOppH = opposingBandMinHeight(oppField, 0.3, 1.9, 1.35);
+      const palatalOppH = opposingBandMinHeight(oppField, -3.4, -0.4, 1.85);
+      if (Number.isFinite(labialOppH) && Number.isFinite(palatalOppH) && palatalOppH + 0.7 < labialOppH) {
+        // 높이를 더 올리지 않아도 설측 대합이 순측 절단을 끌어내리지 않게 표시해 둔다.
+        incisorDeepBite = true;
+        incisorPalatalOppH = palatalOppH;
+        let contactU = -4;
+        for (const cell of oppField.list) {
+          if (Math.abs(cell.v) > 2.1) continue;
+          if (cell.h + 0.7 < labialOppH && cell.u > contactU) contactU = cell.u;
+        }
+        incisorPalatalContactU = contactU;
+        const labialTop = labialOppH - clearance;
+        const neighborTop = Number.isFinite(antIncisalCap) ? antIncisalCap : labialTop;
+        const raised = Math.min(labialTop, neighborTop, labialOppH - minClearanceFloor);
+        if (raised > postTopH + 0.6) {
+          postTopH = raised;
+          postTopMax = Math.max(postTopMax, postTopH + 0.45);
+        }
+      }
+    }
+    // 중심 대합 샘플이 짧아도 순측 절단은 인접치 길이까지 올린다. 순측 대합이 실제로 가까우면 거기서 멈춘다.
+    if (incisorGuide && Number.isFinite(incisorGuide.incisalH) && !hasExplicitClearance && Math.abs(offsetH) <= 0.05) {
+      const axial = Math.max(0.72, Math.abs(dot3(frame.w, norm3(occInFix))));
+      let target = (incisorGuide.incisalH - incisorPorcelainMm) / axial;
+      const labialOppH =
+        hasOpposing && oppField ? opposingBandMinHeight(oppField, -0.15, 2.8, 1.9) : Infinity;
+      if (Number.isFinite(labialOppH)) {
+        target = Math.min(target, labialOppH - Math.max(incisorPorcelainMm, clearance * 0.85));
+      }
+      if (!incisorDeepBite && hasOpposing && oppField && Number.isFinite(labialOppH)) {
+        const palatalOppH = opposingBandMinHeight(oppField, -3.6, -0.15, 1.9);
+        if (Number.isFinite(palatalOppH) && palatalOppH + 0.45 < labialOppH) {
+          incisorDeepBite = true;
+          incisorPalatalOppH = palatalOppH;
+          let contactU = -4;
+          for (const cell of oppField.list) {
+            if (Math.abs(cell.v) > 2.2) continue;
+            if (cell.h + 0.55 < labialOppH && cell.u > contactU) contactU = cell.u;
+          }
+          incisorPalatalContactU = contactU;
+        }
+      }
+      if (target > postTopH + 0.3) {
+        postTopH = target;
+        postTopMax = Math.max(postTopMax, postTopH + 0.4);
+      }
+    }
+  }
+  // 구치는 대합 거리까지 윗면이 올라가고, 전치는 이미 잡은 postTopH가 자연 높이다.
+  const clearTopH =
+    hasOpposing && Number.isFinite(oppRefH) ? Math.max(minSafePostHeightMm, oppRefH - clearance) : Infinity;
+  const naturalTopH = posterior && Number.isFinite(clearTopH) ? clearTopH : postTopH;
+  const safeTopH = Number.isFinite(clearTopH) ? Math.max(clearTopH, posterior ? 0 : postTopH) : Infinity;
+  if (mode.probeHeight) return { kind: "height", naturalTopH, safeTopH };
+  let bridgeMatchedTopH: number | null = null;
+  if (Math.abs(offsetH) <= 0.05) {
+    const mates = bridgeAbutmentMates(fixture, args.neighbors, args.toothWorks);
+    if (mates.length > 0) {
+      const probed = await Promise.all(
+        mates.map((mate) =>
+          probeBridgePostTop({
+            ...args,
+            fixture: mate,
+            neighbors: [fixture, ...(args.neighbors ?? []).filter((n) => n.toothNumber !== mate.toothNumber)],
+          }),
+        ),
+      );
+      const matched = resolveBridgeMatchedTopH([{ naturalTopH, safeTopH }, ...probed]);
+      if (matched != null && Number.isFinite(matched)) {
+        const applied = Math.min(safeTopH, Math.max(minSafePostHeightMm, matched));
+        postTopH = applied;
+        postTopMax = applied;
+        bridgeMatchedTopH = applied;
+      }
+    }
   }
   // 높이·테이퍼 연결(postTaperLink=1)이면 포스트 높이·축벽 둘레와 싱글/브리지에 맞춰 접착 지수가 같은 테이퍼를 쓴다.
   // 연결이 끊어져 있으면(postTaperLink=0) 설정된 테이퍼(최소 2°)를 그대로 쓴다.
@@ -6018,11 +6447,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const tu = dot3(dir, frame.uLabial) * tipR;
     const tv = dot3(dir, frame.vSide) * tipR;
     if (oppField) {
-      const oppH = oppField.heightAt(tu, tv, 1.05);
+      const deepLabialTip = incisorDeepBite && tu > incisorPalatalContactU + 0.35;
+      const oppH = deepLabialTip
+        ? opposingBandMinHeight(oppField, tu - 0.35, tu + 0.5, Math.abs(tv) + 0.4)
+        : oppField.heightAt(tu, tv, 1.05);
       if (Number.isFinite(oppH)) {
         hasColOpp = true;
         hTop = posterior ? oppH - clearance + Math.max(0, offsetH) : Math.min(hTop, oppH - clearance);
-        refHTop = posterior ? oppH - defaultRefClearance : Math.min(refHTop, oppH - defaultRefClearance);
+        if (!deepLabialTip) {
+          refHTop = posterior ? oppH - defaultRefClearance : Math.min(refHTop, oppH - defaultRefClearance);
+        }
       }
     }
     hTop = Math.min(hTop, postTopMax) - topDrop;
@@ -6213,6 +6647,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           if (du * du + dv * dv > 1) {
             continue;
           }
+          // 딥바이트 절치는 설측 대합이 순측 절단 높이를 끌어내리지 않는다. 설측은 사선 삭제 쪽에 둔다.
+          if (incisorDeepBite && cell.u <= incisorPalatalContactU + 0.55) continue;
           const planeSub = slopeU * cell.u + slopeV * cell.v;
           aClear = Math.min(aClear, cell.h - effClearance - planeSub);
           aHard = Math.min(aHard, cell.h - curFloor - planeSub);
@@ -6245,7 +6681,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         a = aClear;
       } else {
         const maxEdgeRise = Math.max(0, ...cols.map((c) => gu * c.tipU + gv * c.tipV));
-        const aHeightCap = baseCap + curOffsetH + 0.65 - maxEdgeRise * 0.65;
+        const aHeightCap = Math.max(baseCap, postTopH) + curOffsetH + 0.65 - maxEdgeRise * 0.65;
         a = Math.min(aClear, aHeightCap);
       }
       if (Number.isFinite(aHard)) {
@@ -6259,6 +6695,48 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     a += curShift;
     a = Math.max(a, minTop);
+    if (tpl.kind === "incisor") {
+      // 순측 절단 높이는 유지하고 설측 윗면만 낮춘다. 균일 대합(#22)은 최고점이 그대로고, 딥바이트는 순측만 길다.
+      let labialU = 0.45;
+      for (const c of cols) if (c.tipU > labialU) labialU = c.tipU;
+      const preserveH = a + gu * labialU;
+      const minDeg = incisorDeepBite ? 26 : 18;
+      const maxDeg = incisorDeepBite ? 34 : 24;
+      const neighborDeg = incisorNeighborBevelDeg >= 22 ? Math.min(30, incisorNeighborBevelDeg * 0.55) : 0;
+      gu = clamp(
+        Math.max(gu, Math.tan(Math.max(minDeg, neighborDeg) * DEG)),
+        Math.tan(4 * DEG),
+        Math.tan(maxDeg * DEG),
+      );
+      a = preserveH - gu * labialU;
+      if (incisorDeepBite && Number.isFinite(incisorPalatalOppH)) {
+        let linU = 0.15;
+        for (const c of cols) if (c.tipU < linU) linU = c.tipU;
+        const linTarget = incisorPalatalOppH - Math.max(effClearance, 1.2);
+        const spanU = Math.max(0.85, labialU - linU);
+        const needGu = (preserveH - linTarget) / spanU;
+        if (Number.isFinite(needGu) && needGu > gu) {
+          gu = clamp(needGu, Math.tan(16 * DEG), Math.tan(48 * DEG));
+          a = preserveH - gu * labialU;
+        }
+      }
+    if (incisorDeepBite && hasOpposing && oppField) {
+      let labialCap = Infinity;
+      const tipLo = Math.max(incisorPalatalContactU + 0.55, labialU - 0.85);
+      for (const cell of oppField.list) {
+        if (cell.u < tipLo || cell.u > labialU + 0.4 || Math.abs(cell.v) > 1.2) continue;
+        labialCap = Math.min(labialCap, cell.h - effClearance - gu * cell.u - gv * cell.v);
+      }
+      if (Number.isFinite(labialCap)) a = Math.min(a, labialCap);
+    }
+      const tipH = a + gu * labialU;
+      if (incisorDeepBite && tipH > postTopH + 0.15) a -= tipH - postTopH;
+    }
+    if (bridgeMatchedTopH != null && Number.isFinite(bridgeMatchedTopH)) {
+      let peak = -Infinity;
+      for (const c of cols) peak = Math.max(peak, a + gu * c.tipU + gv * c.tipV);
+      if (peak > bridgeMatchedTopH + 0.04) a = Math.max(minTop, a - (peak - bridgeMatchedTopH));
+    }
     return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a };
   };
 
@@ -7577,10 +8055,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       //    전 둘레 보철물 안착 마진 폭(≥ MIN_MARGIN_SHOULDER_MM, ~0.30~0.40mm)과 치관 중앙 테이퍼 포스트를 최우선으로 지키고
       //    스크류 홀은 가까운 사면(순측·근심순측 사면)으로 자연스럽게 비스듬히 개구시킨다.
       // 3) 설측은 포스트 아래는 2° 축벽을 유지하고, 위쪽만 인접치 측면 각도에 맞춘 가파른 직선 사선으로 싱귤럼을 깎는다.
+      //    절치(#11·#12·#22)는 치경 1/3 싱귤럼을 남기고 그 위를 설면와가 들어가게 더 일찍 깎으며, 상단 순설은 인접 자연치처럼 좁은 삽형으로 둔다.
       const cingulumPlan = anteriorCingulumPlan(
         tpl.anatomy.morphology.cingulum.bevelAngleDeg,
         tpl.anatomy.morphology.cingulum.collarHeightRatio,
         anteriorNeighborSideDeg,
+        tpl.kind,
+        incisorNeighborBevelDeg,
       );
       const estAntTaperSlope = Math.tan(
         Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
@@ -7628,7 +8109,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             params.marginSizeScale >= 0.95 &&
             angulationDeg <= 13.5 &&
             reqWrapMdMargin <= maxAnatHalfMd + 0.45));
-      const maxTopShiftU = wrapAnteriorScrew360 ? 1.55 : 0.72;
+      // 절치는 스크류를 360°로 감싸 원기둥이 되지 않게 한다. 홀은 설측·절단 사면으로 열고 순설은 삽형으로 좁힌다.
+      if (tpl.kind === "incisor") wrapAnteriorScrew360 = false;
+      const maxTopShiftU = wrapAnteriorScrew360 ? 1.55 : tpl.kind === "incisor" ? 1.25 : 0.72;
       const maxTopShiftV = 1.35;
       pTopCu = wrapAnteriorScrew360
         ? clamp(uScrewTop * 0.72 + (tpl.kind === "canine" ? 0.16 : 0.12), -maxTopShiftU, maxTopShiftU)
@@ -7636,6 +8119,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       pTopCv = wrapAnteriorScrew360
         ? clamp(vScrewTop * 0.78 + mCv * 0.22, -maxTopShiftV, maxTopShiftV)
         : clamp(mCv * 0.85 + crownCenterV * crownSideSign * 0.25, -maxTopShiftV, maxTopShiftV);
+      if (tpl.kind === "incisor") {
+        // 삽형은 순측에 두고 설측을 비운다. 딥바이트면 설측 모서리가 가까운 대합 밖으로 나오게 더 옮긴다.
+        let nextCu = pTopCu + 0.32;
+        if (incisorDeepBite) nextCu = Math.max(nextCu, incisorPalatalContactU + 2.0);
+        pTopCu = clamp(nextCu, -0.15, maxTopShiftU);
+      }
       const screwAxialExitW = () =>
         wrapAnteriorScrew360
           ? 1
@@ -7765,6 +8254,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let topLabHalf = Math.max(minLabCollar(), keepBl);
       let topLinHalf = Math.min(keepBl, Math.max(minLinCollar(), tplLinHalf));
       let topMdHalf = Math.max(minMdCollar(), keepMd);
+      if (tpl.kind === "incisor") {
+        // 상단 순설은 인접 자연치 절단 폭(없으면 치종 템플릿)까지 좁힌다. 치경부는 마진 폭을 유지해 싱귤럼이 앉는다.
+        const shovelLab = Math.max(
+          1.15,
+          Math.max(tpl.topLabialHalfMm, 1.62) * blScale * params.postWidthScale * incisorShovelScale,
+        );
+        const shovelLin = Math.max(0.72, tpl.topLingualHalfMm * blScale * params.postWidthScale * incisorShovelScale);
+        topLabHalf = Math.max(1.05, Math.min(topLabHalf, shovelLab + 0.18));
+        topLinHalf = Math.min(topLinHalf, shovelLin);
+        if (incisorDeepBite) {
+          topLinHalf = Math.min(topLinHalf, Math.max(0.62, pTopCu - incisorPalatalContactU - 1.15));
+        }
+      }
 
       // 하단·중단·상단 모두 크라운 목표 두께(capR, 1.0mm)와 최소 지르코니아 두께(hardCapR, 0.7mm)를 침범하지 않도록
       // 반복 루프 안에서 해부 단면 반축과 중심(pTopCu, pTopCv)을 함께 조정한다(루프 밖 열별 클리핑 금지 → 100% 볼록 단면 유지).
@@ -8206,18 +8708,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               Math.min(taperLab, Math.max(0.78, topLabHalf * syncedAntScaleBl)),
             );
         // 설측 싱귤럼: 칼라 위 상단만 가파른 직선 사선으로 깎고, 스크류 홀 최소 벽(minLinCollar)은 남긴다.
+        const incisorOpenScrew = tpl.kind === "incisor" && !wrapAnteriorScrew360;
+        const linFloor = incisorOpenScrew ? 0.62 : minLinCollar();
         const cingulumBevelTopLin = cingulumTopHalfMm(
           cingulumPlan,
           finalAntBaseBl - pBaseCu + pTopCu,
           minAntDropBl,
           hRefSpanAnt,
-          minLinCollar(),
+          incisorOpenScrew ? 0.58 : minLinCollar(),
         );
         const tLin = Math.max(
-          minLinCollar(),
+          linFloor,
           Math.min(
             finalAntBaseBl - pBaseCu + pTopCu - minAntDropBl,
-            Math.max(0.64, Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin)),
+            Math.max(linFloor, Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin)),
           ),
         );
         const tMd = honorTaper
@@ -9081,7 +9585,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     chamfer = refBaseChamfer;
   }
   let shape = buildShape(false);
-  const maxShiftUp = posterior || hasExplicitClearance || offsetH > 0.01 ? 8.0 : 0;
+  const maxShiftUpBase = posterior || hasExplicitClearance || offsetH > 0.01 ? 8.0 : 0;
   if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
     const targetClear =
       offsetH >= 0
@@ -9091,18 +9595,55 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 전치·견치는 수평피개(overjet)로 상악 대합치가 멀리 있을 때 포스트가 인접치 절단연 위로 솟지 않도록
     // 대합 거리를 직접 편집하지 않은 기본 생성에서는 아래쪽(대합 간섭 회피)으로만 평행이동한다.
     for (let pass = 0; pass < 6; pass += 1) {
-      const taperChanged = syncLinkedTaperForHeight(measureShapePostHeightMm(shape));
+      const measuredH = measureShapePostHeightMm(shape);
+      let maxShiftUp = incisorDeepBite
+        ? Math.min(8, Math.max(maxShiftUpBase, postTopH - measuredH + planeShift))
+        : maxShiftUpBase;
+      if (bridgeMatchedTopH != null) {
+        const axialH = measuredH / Math.max(frame.w[2], 0.35);
+        maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, bridgeMatchedTopH - axialH));
+      }
+      const taperChanged = syncLinkedTaperForHeight(measuredH);
       let delta = 0;
       let hasDelta = true;
       if (oppTrisLocal.length >= 9) {
-        const occShift = solvePostTopClearanceShiftMm({
-          columns: shape.postByCol,
-          apex: shape.postApex,
-          roundSteps: TOP_ROUND_STEPS,
-          opposingTris: oppTrisLocal,
-          up: occInFix,
-          targetClearanceMm: targetClear,
-        });
+        const solveShift = (
+          columns: readonly (readonly Vec3[])[],
+          targetMm: number,
+          lateralMm?: number,
+        ) =>
+          solvePostTopClearanceShiftMm({
+            columns,
+            apex: shape.postApex,
+            roundSteps: TOP_ROUND_STEPS,
+            opposingTris: oppTrisLocal,
+            up: occInFix,
+            targetClearanceMm: targetMm,
+            lateralMm,
+          });
+        let occShift: number | null;
+        if (incisorDeepBite) {
+          // 순측 절단은 대합 거리(1.5mm)를 맞추고, 설측은 면이 0.7mm만 비우면 된다.
+          // 설측 대합이 가깝다고 순측 절단까지 같이 내리지 않는다.
+          const labialColumns = shape.postByCol.filter((post) => {
+            const start = Math.max(0, post.length - 14);
+            let labial = -Infinity;
+            for (let i = start; i < post.length; i += 1) {
+              const rel = sub3(post[i]!, c0);
+              const radial = sub3(rel, scale3(frame.w, dot3(rel, frame.w)));
+              if (Math.hypot(radial[0], radial[1], radial[2]) < 0.45) continue;
+              labial = Math.max(labial, dot3(radial, frame.uLabial));
+            }
+            return labial > 0.15;
+          });
+          const labialShift =
+            labialColumns.length >= 4 ? solveShift(labialColumns, targetClear) : solveShift(shape.postByCol, targetClear);
+          const floorShift = solveShift(shape.postByCol, minClearanceFloor, 0.3);
+          if (labialShift == null && floorShift == null) occShift = null;
+          else occShift = Math.min(labialShift ?? Infinity, floorShift ?? Infinity);
+        } else {
+          occShift = solveShift(shape.postByCol, targetClear);
+        }
         if (occShift == null) hasDelta = false;
         else delta = occShift / axialCos;
       } else {
@@ -9139,7 +9680,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     for (let fit = 0; fit < 3; fit += 1) {
       const deltaH = targetH - measureShapePostHeightMm(shape);
       if (Math.abs(deltaH) < 0.02) break;
-      planeShift = clamp(planeShift + deltaH, -20, maxShiftUp);
+      const shiftCap = incisorDeepBite
+        ? Math.max(maxShiftUpBase, postTopH - measureShapePostHeightMm(shape) + planeShift)
+        : maxShiftUpBase;
+      planeShift = clamp(planeShift + deltaH, -20, shiftCap);
       shape = buildShape(false);
     }
   }
