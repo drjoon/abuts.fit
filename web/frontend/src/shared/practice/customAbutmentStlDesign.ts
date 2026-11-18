@@ -7790,6 +7790,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             }
           }
         }
+        // 높이·테이퍼 연결을 끊고 각을 직접 주면, 크라운 목표 두께(soft)가
+        // 순측·근원심 상단을 그 각보다 좁히지 않는다. 좁히면 2°로 내려도 화면 원뿔이 그대로다.
+        // 인접 하드 캡(useSoft=false)만 그 아래로 깎을 수 있다.
+        if (useSoft && !isTaperLinked) {
+          if (topLabHalf <= Math.max(minLabCollar(), keepBl) + 1e-3) worstTopLab = 0;
+          if (topMdHalf <= Math.max(minMdCollar(), keepMd) + 1e-3) worstTopMd = 0;
+        }
         if (Math.max(worstTopLab, worstTopLin, worstTopMd, worstBaseEx) <= 1e-3) break;
         if (worstBaseEx > 0) {
           const wu = worstBaseDu * worstBaseDu;
@@ -7944,6 +7951,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         effAntShoulder = lockedAnteriorBase.effAntShoulder;
         wrapAnteriorScrew360 = lockedAnteriorBase.wrapAnteriorScrew360;
         antFootPsis = lockedAnteriorBase.footPsis;
+        // 연결을 끊고 기준보다 완만한 각을 주면, 마진은 그대로 두고 남는 숄더만큼 하단을 연다.
+        // 하단이 고정이면 상단만 조금 넓어져 마진에서 본 원뿔은 5°처럼 남는다.
+        if (!isTaperLinked && passTaperDeg + 0.2 < refBaseTaperDeg) {
+          const spareShoulder = Math.max(0, Math.min(0.55, effAntShoulder - 0.26));
+          finalAntBaseBl += spareShoulder;
+          finalAntBaseMd += spareShoulder;
+        }
         syncedAntScaleBl = clamp(finalAntBaseBl / Math.max(antBaseBl, 0.5), 0.72, 1.15);
         syncedAntScaleMd = clamp(finalAntBaseMd / Math.max(antBaseMd, 0.5), 0.72, 1.15);
       } else {
@@ -8081,13 +8095,33 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
 
       const computeAnteriorTopHalves = () => {
-        const tLab = Math.max(
-          wrapAnteriorScrew360 ? minLabCollar() : 0.78,
-          Math.min(
-            finalAntBaseBl + pBaseCu - pTopCu - minAntDropBl,
-            Math.max(0.78, topLabHalf * syncedAntScaleBl),
-          ),
+        // 순측·근원심 상단은 설정 편측 테이퍼만큼만 들어간다.
+        // 크라운 여유로 더 좁힌 값(topLabHalf)을 그대로 쓰면 테이퍼를 낮춰도 축벽 각이 변하지 않는다.
+        const labRoom = finalAntBaseBl + pBaseCu - pTopCu;
+        const mdRoom = Math.min(
+          finalAntBaseMd + pBaseCv - pTopCv,
+          finalAntBaseMd - pBaseCv + pTopCv,
         );
+        const taperLab = labRoom - minAntDropBl;
+        const taperMd = mdRoom - minAntDropMd;
+        const honorTaper = !isTaperLinked;
+        const hardLab =
+          !honorTaper || topLabHalf < keepBl - 0.05
+            ? Math.max(0.7, topLabHalf * syncedAntScaleBl)
+            : Infinity;
+        const hardMd =
+          !honorTaper || topMdHalf < keepMd - 0.05
+            ? Math.max(0.8, topMdHalf * syncedAntScaleMd)
+            : Infinity;
+        const tLab = honorTaper
+          ? Math.min(
+              Math.max(0.62, labRoom - 0.02),
+              Math.max(wrapAnteriorScrew360 ? minLabCollar() : 0.78, Math.min(taperLab, hardLab)),
+            )
+          : Math.max(
+              wrapAnteriorScrew360 ? minLabCollar() : 0.78,
+              Math.min(taperLab, Math.max(0.78, topLabHalf * syncedAntScaleBl)),
+            );
         // 설측 싱귤럼 사선 삭제: 치경부 유지 칼라 위에서 상단 설측 반폭(finalAntTopLin)까지 사선 평면으로 충분히 깎되,
         // 스크류 홀 최소 벽 두께(minLinCollar)는 침범하지 않아 포스트 파절을 막는다.
         const cingulumCollarRatio = tpl.anatomy.morphology.cingulum.collarHeightRatio || 0.16;
@@ -8109,13 +8143,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             Math.max(0.64, Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin)),
           ),
         );
-        const tMd = Math.max(
-          minMdCollar(),
-          Math.min(
-            Math.min(finalAntBaseMd + pBaseCv - pTopCv, finalAntBaseMd - pBaseCv + pTopCv) - minAntDropMd,
-            Math.max(0.9, topMdHalf * syncedAntScaleMd),
-          ),
-        );
+        const tMd = honorTaper
+          ? Math.min(
+              Math.max(0.7, mdRoom - 0.02),
+              Math.max(minMdCollar(), Math.min(taperMd, hardMd)),
+            )
+          : Math.max(
+              minMdCollar(),
+              Math.min(taperMd, Math.max(0.9, topMdHalf * syncedAntScaleMd)),
+            );
         return { tLab, tLin, tMd };
       };
 
@@ -8933,7 +8969,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const oppTrisLocal = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
   // 대합 거리·포스트 높이·테이퍼·챔퍼 R 편집과 무관한 기준 상태에서 마진·베이스 단면을 먼저 1회 확정한다.
   buildShape(true);
+  // 연결이 끊기면 높이 맞춤은 기준 테이퍼로 하고, 사용자가 준 각은 그 높이에 나중에 얹는다.
+  // 테이퍼를 바꿔도 측정 높이가 따라 움직이지 않게 한다.
+  const userTaperDeg = effectiveTaperDeg;
+  const userTaperSlope = taperSlope;
+  const userChamfer = chamfer;
+  if (!isTaperLinked) {
+    effectiveTaperDeg = refBaseTaperDeg;
+    taperSlope = refBaseTaperSlope;
+    chamfer = refBaseChamfer;
+  }
   let shape = buildShape(false);
+  const maxShiftUp = posterior || hasExplicitClearance || offsetH > 0.01 ? 8.0 : 0;
   if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
     const targetClear =
       offsetH >= 0
@@ -8942,7 +8989,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const axialCos = Math.max(dot3(frame.w, occInFix), 0.35);
     // 전치·견치는 수평피개(overjet)로 상악 대합치가 멀리 있을 때 포스트가 인접치 절단연 위로 솟지 않도록
     // 대합 거리를 직접 편집하지 않은 기본 생성에서는 아래쪽(대합 간섭 회피)으로만 평행이동한다.
-    const maxShiftUp = posterior || hasExplicitClearance || offsetH > 0.01 ? 8.0 : 0;
     for (let pass = 0; pass < 6; pass += 1) {
       const taperChanged = syncLinkedTaperForHeight(measureShapePostHeightMm(shape));
       let delta = 0;
@@ -8982,7 +9028,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   } else if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
     shape = buildShape();
   }
-  const { postByCol, crownByCol, cutbackSum, taperMean, postApex, crownApex, meanCrownCuspH } = shape;
+  if (!isTaperLinked) {
+    const targetH = measureShapePostHeightMm(shape);
+    effectiveTaperDeg = userTaperDeg;
+    taperSlope = userTaperSlope;
+    chamfer = userChamfer;
+    params.postTaperDeg = Math.round(userTaperDeg * 10) / 10;
+    shape = buildShape(false);
+    for (let fit = 0; fit < 3; fit += 1) {
+      const deltaH = targetH - measureShapePostHeightMm(shape);
+      if (Math.abs(deltaH) < 0.02) break;
+      planeShift = clamp(planeShift + deltaH, -20, maxShiftUp);
+      shape = buildShape(false);
+    }
+  }
+  const { postByCol, crownByCol, cutbackSum, postApex, crownApex, meanCrownCuspH } = shape;
   // ── 8) 솔리드 외형(커넥션·커프·포스트)을 닫고, 스크류 홀은 임플란트 축 실측 단차 입체로 따로 뚫는다
   const l2 = conn.l2Mm;
   const zBot = -l2;
@@ -9376,14 +9436,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     shape.geomIdealTaperDeg != null
       ? Math.min(retentionIdealDeg, shape.geomIdealTaperDeg)
       : retentionIdealDeg;
-  const rawMeasuredTaperDeg = taperMean / DEG;
   const minAllowedReportTaper = isTaperLinked
     ? taperSpec.minTaperDeg
     : RETENTION_SINGLE_MIN_TAPER_DEG;
+  // 연결이 끊기면 표시 각은 사용자가 둔 값이다. 높이를 바꿔 벽 측정각이 흔들려도 테이퍼 숫자는 그대로다.
   const reportedPostTaperDeg = clamp(
-    isTaperLinked || Math.abs(rawMeasuredTaperDeg - effectiveTaperDeg) <= 0.35
-      ? Math.round(effectiveTaperDeg * 10) / 10
-      : Math.round(rawMeasuredTaperDeg * 10) / 10,
+    Math.round(effectiveTaperDeg * 10) / 10,
     minAllowedReportTaper,
     taperSpec.maxTaperDeg,
   );

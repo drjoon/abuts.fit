@@ -708,15 +708,15 @@ function metricsFromGumball(
     retainerCount: base.bridgeRetainerCount,
   };
   const taperSpec = resolveAbutmentBridgeRetentionSpec(bridgeCtx);
-  const hasTiltOrHeight =
-    Math.abs(summary.heightDeltaMm) >= 0.02 ||
-    Math.abs(summary.shiftLabialMm) >= 0.05 ||
-    Math.abs(summary.shiftMesialMm) >= 0.05;
+  const hasTilt =
+    Math.abs(summary.shiftLabialMm) >= 0.05 || Math.abs(summary.shiftMesialMm) >= 0.05;
   const rawNextTaper = taperLinked
     ? computeOptimalPostTaperDeg(nextPostHeightMm, bridgeCtx)
-    : hasTiltOrHeight
-      ? shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1)
-      : base.postTaperDeg;
+    : Math.abs(summary.heightDeltaMm) >= 0.02
+      ? base.postTaperDeg
+      : hasTilt
+        ? shiftMetric(base.postTaperDeg, now.postTaperDeg, orig.postTaperDeg, 1)
+        : base.postTaperDeg;
   const minTaper = taperLinked ? taperSpec.minTaperDeg : RETENTION_SINGLE_MIN_TAPER_DEG;
   const nextPostTaperDeg = Math.min(taperSpec.maxTaperDeg, Math.max(minTaper, rawNextTaper));
   return {

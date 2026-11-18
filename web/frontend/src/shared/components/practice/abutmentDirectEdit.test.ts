@@ -783,9 +783,22 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       params: { ...unlinkPatch, ...unlinkedHeightPatch },
     });
     assert.ok(
-      Math.abs(unlinkedHeightEdited.metrics.postTaperDeg - unlinked.metrics.postTaperDeg) <= 0.35 &&
+      Math.abs(unlinkedHeightEdited.metrics.postTaperDeg - unlinked.metrics.postTaperDeg) <= 0.05 &&
         unlinkedHeightEdited.metrics.postHeightMm < unlinked.metrics.postHeightMm - 1.5,
       `연결 해제 상태에서는 높이를 줄여도(${unlinked.metrics.postHeightMm}mm → ${unlinkedHeightEdited.metrics.postHeightMm}mm) 테이퍼(${unlinked.metrics.postTaperDeg}° → ${unlinkedHeightEdited.metrics.postTaperDeg}°)는 그대로 유지된다`,
+    );
+    const unlinkedTaperPatch = computeParamsFromInfoFieldEdit(unlinked, "postTaperDeg", 2.0);
+    const unlinkedTaperEdited = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: flatOppTall,
+      toothWorks: singleWorks,
+      params: { ...unlinkPatch, ...unlinkedTaperPatch },
+    });
+    assert.ok(
+      Math.abs(unlinkedTaperEdited.metrics.postHeightMm - unlinked.metrics.postHeightMm) <= 0.05 &&
+        Math.abs(unlinkedTaperEdited.metrics.postTaperDeg - 2.0) <= 0.05,
+      `연결 해제 상태에서는 테이퍼를 2°로 바꿔도 높이(${unlinked.metrics.postHeightMm}mm → ${unlinkedTaperEdited.metrics.postHeightMm}mm)는 그대로이고 테이퍼만 ${unlinkedTaperEdited.metrics.postTaperDeg}°가 된다`,
     );
 
     // 브리지 케이스는 같은 높이에서도 싱글보다 테이퍼가 더 크고, 짧아도 최소 2° 이상을 유지한다.
