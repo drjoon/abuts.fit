@@ -101,8 +101,8 @@ const TOP_ROUND_STEPS = 10;
 const PARALLEL_GROUP_MM = 13;
 /** 소·대구치 윗면이 대합 경사를 따르는 삽입축 프레임 기울기 상한. */
 const FLAT_TOP_MAX_TILT = Math.tan(18 * DEG);
-/** 교합 방향에서 본 구치 윗면 기울기. 이보다 크면 교합면에 홈처럼 보인다. */
-const FLAT_TOP_ARCH_MAX_TILT = Math.tan(5 * DEG);
+/** 교합 방향에서 본 구치 윗면 기울기. 0이면 교합면과 평행한 평평한 면. */
+const FLAT_TOP_ARCH_MAX_TILT = Math.tan(2 * DEG);
 /** 전치에서 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
 /** 전치에서 크라운 공간 때문에 깎은 축벽이 아래 원래 벽으로 돌아가는 사선. */
@@ -6131,7 +6131,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   /**
    * 윗면 높이. 구치 교합면과 전치 절단연 모두 하나의 평면이다.
-   * 구치는 대합 경사를 조금 따르되, 교합 방향 기울기는 5°를 넘기지 않아 홈처럼 파이지 않는다.
+   * 구치는 대합 경사를 조금 따르되, 교합 방향 기울기는 2°를 넘기지 않아 홈처럼 파이지 않는다.
    */
   const fitTopSurface = (opts?: {
     clearanceMm?: number;
@@ -6160,7 +6160,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         gu *= FLAT_TOP_MAX_TILT / g;
         gv *= FLAT_TOP_MAX_TILT / g;
       }
-      // 삽입축에 수직인 윗면은 교합 시점에서 한쪽으로 파인다. 그 기울기를 5° 안으로 되돌린다.
+      // 삽입축에 수직인 윗면은 교합 시점에서 한쪽으로 파인다. 그 기울기를 2° 안으로 되돌린다.
       const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
       const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
       const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
@@ -8874,11 +8874,29 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           ),
         );
       const minRoundR = boreTopR + 0.32;
+      // XY만 밀면 기운 윗면에서 Z가 평면에 못 미쳐 스크류 쪽에 홈이 생긴다.
+      // 스크류 바깥으로 민 뒤 평면 대비 깊이를 유지하고, 삽입축 재투영으로 다시 안으로 들어가지 않게 반복한다.
       const keepRoundOutsideScrew = (pt: Vec3): Vec3 => {
-        const r = Math.hypot(pt[0], pt[1]);
-        if (r >= minRoundR || r < 1e-4) return pt;
-        const scale = minRoundR / r;
-        return [pt[0] * scale, pt[1] * scale, pt[2]];
+        let cur = pt;
+        const rel0 = sub3(pt, c0);
+        const below = top.heightAt(dot3(rel0, frame.uLabial), dot3(rel0, frame.vSide)) - dot3(rel0, frame.w);
+        for (let it = 0; it < 6; it += 1) {
+          const r = Math.hypot(cur[0], cur[1]);
+          if (r >= minRoundR - 1e-4 || r < 1e-4) break;
+          const scale = minRoundR / r;
+          const nudged: Vec3 = [cur[0] * scale, cur[1] * scale, cur[2]];
+          const rel1 = sub3(nudged, c0);
+          const u1 = dot3(rel1, frame.uLabial);
+          const v1 = dot3(rel1, frame.vSide);
+          cur = add3(
+            c0,
+            add3(
+              scale3(frame.w, top.heightAt(u1, v1) - below),
+              add3(scale3(frame.uLabial, u1), scale3(frame.vSide, v1)),
+            ),
+          );
+        }
+        return cur;
       };
       post.push(keepRoundOutsideScrew(atTop(h1, s1)));
       const radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
