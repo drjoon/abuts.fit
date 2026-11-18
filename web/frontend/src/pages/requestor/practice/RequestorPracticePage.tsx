@@ -1,4 +1,6 @@
 // related files:
+// - 2026-11-19: 다치아 어벗 STL — 확인 모달을 치아마다 언마운트하지 않는다. 포커스가 빠지며 다음 치아 핸드오프가 끊기던 문제.
+// - 2026-11-19: 무료 크레딧 402는 충전 화면으로 보내지 않는다.
 // - 2026-11-07: 수신 캘린더 툴바 — 당일 어벗 STL 일부 미업로드 깜빡임 경고.
 // - 2026-10-27: 택배 라벨 헤더 버튼·완료 후 출력 확인은 어벗츠기공소(internalLab)만.
 // - 2026-10-24: 치과의뢰 수신 — 택배 라벨. 보철 완료 후 출력 여부, 헤더에서 치과별 선택.
@@ -3712,13 +3714,16 @@ export function RequestorPracticeReceivePage({
       }
       if (isPtxCaInsufficientCreditBody(body)) {
         const message = String(body.message || "").trim();
+        const freeCreditOnly = message.includes("무료 크레딧");
         setBilling402Dialog({
           title: PTX_CA_INSUFFICIENT_CREDIT_TITLE,
           descriptionLines: message
             ? message.split("\n").filter(Boolean)
             : [...PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES],
-          confirmLabel: PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
-          href: CREDITS_PRACTICE_AUTOPAY_HREF,
+          confirmLabel: freeCreditOnly
+            ? "확인"
+            : PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
+          href: freeCreditOnly ? "" : CREDITS_PRACTICE_AUTOPAY_HREF,
         });
         return true;
       }
@@ -6452,16 +6457,21 @@ export function RequestorPracticeReceivePage({
     }).then((files) => filterPracticeTransferFiles(files));
   }, []);
 
-  const clearDesignConfirmState = useCallback(() => {
-    setDesignConfirmOpen(false);
-    setDesignConfirmBusy(false);
-    setDesignConfirmQueue([]);
-    setDesignConfirmQueueIndex(0);
-    setDesignConfirmTransfer(null);
-    setDesignConfirmPendingMetas([]);
-    designHandoffPromisesRef.current = [];
-    designHandoffTailRef.current = Promise.resolve();
-  }, []);
+  const clearDesignConfirmState = useCallback(
+    (options?: { keepHandoffChain?: boolean }) => {
+      setDesignConfirmOpen(false);
+      setDesignConfirmBusy(false);
+      setDesignConfirmQueue([]);
+      setDesignConfirmQueueIndex(0);
+      setDesignConfirmTransfer(null);
+      setDesignConfirmPendingMetas([]);
+      // 마지막 치아 확인은 체인에 올린 뒤에 ref를 비운다. 여기서 지우면 앞 치아를 기다리지 않고 병렬로 나간다.
+      if (options?.keepHandoffChain) return;
+      designHandoffPromisesRef.current = [];
+      designHandoffTailRef.current = Promise.resolve();
+    },
+    [],
+  );
 
   const clearPendingProstheticAfterAbutment = useCallback(() => {
     pendingProstheticAfterAbutmentRef.current = null;
@@ -7146,8 +7156,8 @@ export function RequestorPracticeReceivePage({
         const nextIndex = queueIndex + 1;
         const isLast = nextIndex >= queueTotal;
         if (isLast) {
-          // handoff settle 후 성공/실패 토스트 — 여기서는 모달만 닫음
-          clearDesignConfirmState();
+          // handoff settle 후 성공/실패 토스트 — 모달만 닫고 체인은 유지
+          clearDesignConfirmState({ keepHandoffChain: true });
         } else {
           setDesignConfirmTransfer(
             patchedForQueue || mergeOptimisticDesignFile(transfer),
@@ -10074,7 +10084,6 @@ export function RequestorPracticeReceivePage({
         onCancel={clearToothAssignState}
       />
       <AbutmentDesignConfirmDialog
-        key={`${designConfirmRequestId}:${designConfirmQueueIndex}`}
         open={designConfirmOpen}
         onOpenChange={(open) => {
           if (!open && !designConfirmBusy) {
@@ -11232,7 +11241,7 @@ export function RequestorPracticeReceivePage({
         onConfirm={() => {
           const href = billing402Dialog?.href ?? CREDITS_PRACTICE_AUTOPAY_HREF;
           setBilling402Dialog(null);
-          navigate(href);
+          if (href) navigate(href);
         }}
         onCancel={() => setBilling402Dialog(null)}
       />

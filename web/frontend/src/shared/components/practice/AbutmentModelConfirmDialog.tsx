@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-19: 기공소 어벗 STL 확인은 포커스가 빠져도 닫지 않는다. 다음 치아로 넘어갈 때 핸드오프가 끊긴다.
 // - 2026-10-25: 포스트 3mm 이하 유지홈 창은 3D 확인 모달 포커스에 바로 닫히지 않게 연다.
 // - 2026-10-24: 3D 확인 모달은 내용 높이에 맞추고 세로 스크롤을 두지 않는다.
 // - 2026-10-24: 3D 확인 모달 — 미리보기·입력·하단 버튼을 나눠 읽기 쉽게.
@@ -639,13 +640,14 @@ export function AbutmentModelConfirmDialog({
           className="new-request-page z-[320] flex w-[min(1080px,calc(100vw-2rem))] max-w-[min(1080px,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0 sm:w-[min(1080px,calc(100vw-2rem))] sm:max-w-[min(1080px,calc(100vw-2rem))]"
           overlayClassName="z-[310]"
           onFocusOutside={(event) => {
-            if (shortPostChoiceOpen) event.preventDefault();
+            // 다치아 큐는 같은 모달에서 파일만 바꾼다. 포커스가 빠지면 다음 치아 확인이 취소된다.
+            if (shortPostChoiceOpen || isLabHandoff) event.preventDefault();
           }}
           onInteractOutside={(event) => {
-            if (shortPostChoiceOpen) event.preventDefault();
+            if (shortPostChoiceOpen || isLabHandoff) event.preventDefault();
           }}
           onPointerDownOutside={(event) => {
-            if (shortPostChoiceOpen) event.preventDefault();
+            if (shortPostChoiceOpen || isLabHandoff) event.preventDefault();
           }}
         >
           <DialogHeader className="shrink-0 space-y-0 border-b border-slate-200 px-5 py-3 pr-12 text-left">

@@ -20,6 +20,7 @@ import {
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
+import { RequestorLowCreditWarning } from "@/shared/credits/RequestorLowCreditWarning";
 import {
   DashboardNoticeBar,
   DashboardNoticeHostProvider,
@@ -35,6 +36,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
+// - 2026-11-19: PTX·커스텀어벗 의뢰 — 최근 충전 1/4 이하 크레딧 경고. 기공사도 본다.
 // - 2026-10-26: 치과 사이드「스토어」숨김 — PRACTICE_STORE_OPEN.
 // - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `커스텀어벗 의뢰하기`.
 // - 2026-10-17: 기공소 수신·커스텀어벗 — `compactLabel` + 기공/어벗 accent 밑줄.
@@ -2035,6 +2037,7 @@ export const DashboardLayout = () => {
             <DashboardNoticeHostProvider>
             <div className="relative flex h-full flex-col">
               <DashboardNoticeBar />
+              <RequestorLowCreditWarning />
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
                   <div

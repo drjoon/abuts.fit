@@ -1,3 +1,4 @@
+// - 2026-11-19: PTX CA 402 — 무료크레딧 잔액 문구를 「충전하세요」로 바꾸지 않는다.
 // - 2026-11-16: 치과 발신 — 준비 단계 커스텀어벗 공정 취소(제조사 큐에서 내림). 가공 이후는 불가.
 // - 2026-11-07: PTX abutment-design-handoff — 같은 의뢰 hold를 서버 락으로 직렬화(병렬 WriteConflict로 한 치아만 탈락 방지).
 // - 2026-11-07: PTX 다치아 — 일부 STL만 업로드 시 sibling 미업로드를 준비 큐에 노출(누락 피드백).
@@ -118,6 +119,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 import { isLabProsthesisUploadRequired } from "../../utils/practiceProsthesisUploadRequirement.js";
 import { isAutoMatchCompleted } from "../../utils/practiceTransferAutoMatchCore.js";
 import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
+import { resolvePtxCaInsufficientCreditClientMessage } from "../../utils/practiceObBeta.util.js";
 import {
   normalizeScrewSupply,
   syncPracticeTransferScrewSupply,
@@ -165,17 +167,12 @@ function isPtxCaInsufficientCreditError(err) {
 
 function rejectPtxCaInsufficientCredit(res, err) {
   const status = Number(err?.statusCode || 402);
-  const reason = String(err?.payload?.reason || err?.code || "").trim();
-  const rawMsg = String(err?.message || "").trim();
-  const useCanonical =
-    !rawMsg ||
-    reason === "insufficient_credit_for_hold" ||
-    reason === "insufficient_credit_for_custom_abutment" ||
-    reason === PTX_CA_INSUFFICIENT_CREDIT_REASON ||
-    rawMsg.includes("크레딧이 부족");
   return res.status(status >= 400 && status < 600 ? status : 402).json({
     success: false,
-    message: useCanonical ? PTX_CA_INSUFFICIENT_CREDIT_MESSAGE : rawMsg,
+    message: resolvePtxCaInsufficientCreditClientMessage(
+      err,
+      PTX_CA_INSUFFICIENT_CREDIT_MESSAGE,
+    ),
     reason: PTX_CA_INSUFFICIENT_CREDIT_REASON,
     ...(err?.payload && typeof err.payload === "object" ? err.payload : {}),
   });

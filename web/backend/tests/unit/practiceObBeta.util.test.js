@@ -12,10 +12,37 @@ import {
   isObAutopayEnforcedBusinessName,
   isPracticeBetaUnlimitedPostpaid,
   isPracticeObLaunchBetaActive,
+  resolvePtxCaInsufficientCreditClientMessage,
 } from "../../utils/practiceObBeta.util.js";
 import { checkPracticeSettlementLock } from "../../utils/creditLock.util.js";
 
 describe("practiceObBeta (런칭 전)", () => {
+  test("무료크레딧 잔액 402는 충전 안내로 바꾸지 않는다", () => {
+    const canonical =
+      "커스텀어벗은 충전된 크레딧으로 결제됩니다.\n충전 후 다시 업로드해 주세요.";
+    expect(
+      resolvePtxCaInsufficientCreditClientMessage(
+        {
+          message:
+            "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다. (잔액 9,300원 / 필요 15,000원)",
+          payload: { reason: "insufficient_credit_for_custom_abutment" },
+        },
+        canonical,
+      ),
+    ).toBe(
+      "커스텀어벗 의뢰는 무료 크레딧이 있어야 합니다.\n잔액 9,300원 / 필요 15,000원",
+    );
+    expect(
+      resolvePtxCaInsufficientCreditClientMessage(
+        {
+          message: "크레딧이 부족합니다.",
+          payload: { reason: "insufficient_credit_for_custom_abutment" },
+        },
+        canonical,
+      ),
+    ).toBe(canonical);
+  });
+
   test("OB 자동정산 적용 대상은 테스트치과·테스트기공소만", () => {
     expect(isObAutopayEnforcedBusinessName("테스트치과")).toBe(true);
     expect(isObAutopayEnforcedBusinessName("테스트기공소")).toBe(true);

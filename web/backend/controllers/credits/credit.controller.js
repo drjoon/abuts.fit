@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-19: balance에 최근 충전 1/4 경고(lowCreditWarning). 정산 권한 없이 조회 가능.
 // - 2026-08-13: 기공크레딧 일별 집계를 등록(active|referred)/미등록 2구분으로 통합.
 // - 2026-08-12: balance 응답에 requestorKind·showSettlementCredit(기공크레딧은 lab만 UI 노출).
 // - 2026-08-11: spend insights 추천 충전액을 월사용량/3 반올림으로 변경. 단위는 기공소 50만/치과 100만.
@@ -14,6 +15,7 @@
 // - web/backend/utils/requestorCapabilities.js
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
+import { resolveRequestorLowCreditWarning } from "../../services/requestorLowCreditWarning.service.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { Types } from "mongoose";
@@ -243,10 +245,30 @@ export async function getMyCreditBalance(req, res) {
     Boolean(anchor?.demoMode) &&
     !anchor?.demoModeExitedAt;
 
+  let lowCreditWarning = {
+    active: false,
+    orderableCredit: 0,
+    lastChargeAmount: 0,
+    lastChargeJournalId: null,
+    lastChargeAt: null,
+    thresholdAmount: 0,
+  };
+  try {
+    lowCreditWarning = await resolveRequestorLowCreditWarning(
+      scope.businessAnchorId,
+    );
+  } catch (error) {
+    console.error(
+      "[credits] low credit warning failed",
+      error?.message || error,
+    );
+  }
+
   return res.json({
     success: true,
     data: {
       ...balanceData,
+      lowCreditWarning,
       demoMode: demoActive,
       demoModeExpired:
         demoActive && isDemoModeExpired(anchor?.demoModeStartedAt),

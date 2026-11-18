@@ -186,3 +186,30 @@ export function buildCustomAbutmentSpendBuckets(balances, policy) {
     settlementCredit: policy.excludeSettlementCredit ? 0 : settlementCredit,
   };
 }
+
+/**
+ * 기공소 CA 402. 잔액이 적힌 hold 문구는 유지한다.
+ * 일반 기공소는 무료크레딧만 쓰므로 「충전하세요」로 바꾸면 재업로드가 또 거절된다.
+ */
+export function resolvePtxCaInsufficientCreditClientMessage(
+  err,
+  canonicalMessage,
+) {
+  const rawMsg = String(err?.message || "").trim();
+  const reason = String(err?.payload?.reason || err?.code || "").trim();
+  const hasBalance = /잔액\s*[\d,]+원/.test(rawMsg);
+  const hasBucketRule =
+    rawMsg.includes("무료 크레딧") ||
+    rawMsg.includes("충전된 크레딧이 있어야");
+  if (hasBalance || hasBucketRule) {
+    return rawMsg.replace(/\s+\((잔액[^)]+)\)\s*$/, "\n$1");
+  }
+  const useCanonical =
+    !rawMsg ||
+    reason === "insufficient_credit_for_hold" ||
+    reason === "insufficient_credit_for_custom_abutment" ||
+    reason === "insufficient_credit_for_ptx_ca" ||
+    reason === "insufficient_lab_credit_for_abuts_shipping" ||
+    rawMsg.includes("크레딧이 부족");
+  return useCanonical ? String(canonicalMessage || "").trim() : rawMsg;
+}
