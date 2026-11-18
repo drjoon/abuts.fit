@@ -44,6 +44,7 @@ import {
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
   evaluatePostTaperRetention,
+  postRetentionSurface,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
   type CustomAbutmentParamKey,
@@ -167,6 +168,7 @@ export function computeParamsFromInfoFieldEdit(
     isBridge: Boolean(m.isBridge),
     retainerCount: m.bridgeRetainerCount ?? (m.isBridge ? 2 : 1),
   };
+  const surface = postRetentionSurface(m.postWallRadiusMm);
 
   switch (field) {
     case "maxDiameterMm": {
@@ -192,7 +194,7 @@ export function computeParamsFromInfoFieldEdit(
       }
       return {
         postTaperLink: 1,
-        postTaperDeg: computeOptimalPostTaperDeg(m.postHeightMm, bridgeCtx),
+        postTaperDeg: computeOptimalPostTaperDeg(m.postHeightMm, bridgeCtx, surface),
       };
     }
     case "postHeightMm": {
@@ -203,7 +205,7 @@ export function computeParamsFromInfoFieldEdit(
       if (linked) {
         return {
           postHeightOffsetMm: nextOffset,
-          postTaperDeg: computeOptimalPostTaperDeg(num, bridgeCtx),
+          postTaperDeg: computeOptimalPostTaperDeg(num, bridgeCtx, surface),
           postTaperLink: 1,
         };
       }
@@ -221,7 +223,7 @@ export function computeParamsFromInfoFieldEdit(
           : RETENTION_SINGLE_MIN_TAPER_DEG;
       if (linked) {
         const targetTaper = Number(Math.min(maxTaper, Math.max(minTaper, num)).toFixed(2));
-        const targetHeight = computeOptimalPostHeightMmFromTaper(targetTaper, bridgeCtx);
+        const targetHeight = computeOptimalPostHeightMmFromTaper(targetTaper, bridgeCtx, surface);
         const deltaH = targetHeight - m.postHeightMm;
         return {
           postTaperDeg: targetTaper,
@@ -1530,10 +1532,14 @@ export function PracticeCustomAbutmentDesignTree({
                       const taperMax = m.isBridge
                         ? RETENTION_BRIDGE_MAX_TAPER_DEG
                         : RETENTION_SINGLE_MAX_TAPER_DEG;
-                      const taperCheck = evaluatePostTaperRetention(m.postHeightMm, {
-                        isBridge: Boolean(m.isBridge),
-                        retainerCount: m.bridgeRetainerCount,
-                      });
+                      const taperCheck = evaluatePostTaperRetention(
+                        m.postHeightMm,
+                        {
+                          isBridge: Boolean(m.isBridge),
+                          retainerCount: m.bridgeRetainerCount,
+                        },
+                        postRetentionSurface(m.postWallRadiusMm),
+                      );
                       const effectiveIdealDeg =
                         m.idealPostTaperDeg != null
                           ? Math.min(m.idealPostTaperDeg, taperCheck.idealTaperDeg)

@@ -135,6 +135,7 @@ import {
   EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
   RETENTION_SINGLE_MIN_TAPER_DEG,
   computeOptimalPostTaperDeg,
+  postRetentionSurface,
   parseCustomAbutmentParamOverrides,
   parseCustomAbutmentPreference,
   preferenceOverridesForTooth,
@@ -708,10 +709,15 @@ function metricsFromGumball(
     retainerCount: base.bridgeRetainerCount,
   };
   const taperSpec = resolveAbutmentBridgeRetentionSpec(bridgeCtx);
+  const widthScale = orig.maxDiameterMm > 0.5 ? now.maxDiameterMm / orig.maxDiameterMm : 1;
+  const wallRadiusMm =
+    base.postWallRadiusMm != null && Number.isFinite(base.postWallRadiusMm)
+      ? Math.max(1.1, base.postWallRadiusMm * widthScale)
+      : undefined;
   const hasTilt =
     Math.abs(summary.shiftLabialMm) >= 0.05 || Math.abs(summary.shiftMesialMm) >= 0.05;
   const rawNextTaper = taperLinked
-    ? computeOptimalPostTaperDeg(nextPostHeightMm, bridgeCtx)
+    ? computeOptimalPostTaperDeg(nextPostHeightMm, bridgeCtx, postRetentionSurface(wallRadiusMm))
     : Math.abs(summary.heightDeltaMm) >= 0.02
       ? base.postTaperDeg
       : hasTilt
@@ -725,6 +731,7 @@ function metricsFromGumball(
     cuffHeightMinMm: shiftMetric(base.cuffHeightMinMm, now.cuffHeightMinMm, orig.cuffHeightMinMm),
     cuffHeightMaxMm: shiftMetric(base.cuffHeightMaxMm, now.cuffHeightMaxMm, orig.cuffHeightMaxMm),
     postHeightMm: nextPostHeightMm,
+    ...(wallRadiusMm != null ? { postWallRadiusMm: Math.round(wallRadiusMm * 100) / 100 } : {}),
     totalLengthMm: shiftMetric(base.totalLengthMm, now.totalLengthMm, orig.totalLengthMm),
     angulationDeg: shiftMetric(base.angulationDeg, now.angulationDeg, orig.angulationDeg, 1),
     postTaperDeg: nextPostTaperDeg,
@@ -1926,10 +1933,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (Math.abs(summary.heightDeltaMm) >= 0.02) {
         next.postHeightOffsetMm = clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm);
         if (taperLinked) {
-          next.postTaperDeg = computeOptimalPostTaperDeg(design.metrics.postHeightMm, {
-            isBridge: Boolean(design.metrics.isBridge),
-            retainerCount: design.metrics.bridgeRetainerCount,
-          });
+          next.postTaperDeg = computeOptimalPostTaperDeg(
+            design.metrics.postHeightMm,
+            {
+              isBridge: Boolean(design.metrics.isBridge),
+              retainerCount: design.metrics.bridgeRetainerCount,
+            },
+            postRetentionSurface(design.metrics.postWallRadiusMm),
+          );
         }
       }
       design.params = { ...design.params, ...next };

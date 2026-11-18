@@ -1,5 +1,7 @@
 // 커스텀어벗 뷰어의 직접 편집.
-// 검볼은 포스트 중심에 둔다. 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
+// 검볼 원점은 피니시라인 중앙(포스트 최하단)이다. 파란 회전은 그 점을 힌지로 포스트를 기울인다.
+// 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
+// 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 화살표는 그 방향으로 포스트를 옮긴다. 축 상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기다.
 // 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
@@ -24,6 +26,7 @@ import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   computeOptimalPostTaperDeg,
   isAnteriorTooth,
+  postRetentionSurface,
   RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
@@ -160,6 +163,12 @@ type Zone = {
   mesial: [number, number];
   centerL?: number;
   centerM?: number;
+  /** 피니시라인 루프 중심. 검볼 회전의 힌지다. */
+  marginCenterL?: number;
+  marginCenterM?: number;
+  marginCenterZ?: number;
+  /** 마진 폭을 뺀 축벽 반지름(mm). 높이·테이퍼 접착 연동에 쓴다. */
+  wallRadiusMm?: number;
   /** PRC 면 반지름. 커프가 여기서 마진으로 벌어진다. */
   coneTopR?: number;
   taperLink?: {
@@ -537,9 +546,59 @@ function computeSafePostTopLean(
   return { topLeanL: wantL * k, topLeanM: wantM * k };
 }
 
+type SwingRotation = {
+  kL: number;
+  kM: number;
+  kZ: number;
+  sinA: number;
+  cosA: number;
+};
+
+/**
+ * +Z를 순측·근심으로 넘기는 최소 회전.
+ * 회전축이 수평이라 포스트 축 둘레 비틀림(요)이 없다.
+ */
+function swingTilt(tiltLabialRad: number, tiltMesialRad: number): SwingRotation | null {
+  const mag = Math.hypot(tiltLabialRad, tiltMesialRad);
+  if (mag < 1e-7) return null;
+  const sinP = tiltMesialRad / mag;
+  const cosP = tiltLabialRad / mag;
+  return {
+    kL: -sinP,
+    kM: cosP,
+    kZ: 0,
+    sinA: Math.sin(mag),
+    cosA: Math.cos(mag),
+  };
+}
+
+function applySwing(
+  l: number,
+  m: number,
+  z: number,
+  pivotL: number,
+  pivotM: number,
+  pivotZ: number,
+  swing: SwingRotation,
+): { l: number; m: number; z: number } {
+  const x = l - pivotL;
+  const y = m - pivotM;
+  const zz = z - pivotZ;
+  const cx = swing.kM * zz - swing.kZ * y;
+  const cy = swing.kZ * x - swing.kL * zz;
+  const cz = swing.kL * y - swing.kM * x;
+  const dot = swing.kL * x + swing.kM * y + swing.kZ * zz;
+  const oneC = 1 - swing.cosA;
+  return {
+    l: pivotL + x * swing.cosA + cx * swing.sinA + swing.kL * dot * oneC,
+    m: pivotM + y * swing.cosA + cy * swing.sinA + swing.kM * dot * oneC,
+    z: pivotZ + zz * swing.cosA + cz * swing.sinA + swing.kZ * dot * oneC,
+  };
+}
+
 /**
  * 초기 제안 정점에서 커넥션과 2° 테이퍼는 복사하고, 그 위 커프·포스트만 다시 놓는다.
- * 파란 회전 툴(tilt)은 마진 위 포스트와 평평한 최상단 교합면을 실제로 3D 회전시켜 대합치와의 각도를 맞추고,
+ * 파란 회전 툴은 피니시라인 중앙을 힌지로 포스트를 강체 회전시킨다. 단면이 높이마다 다르게 밀리지 않아 표면이 꼬이지 않는다.
  * extraPostTopLiftMm로 포스트 상단 높이를 보정해 최단 대합 거리를 유지한다.
  * 드래그 중에는 솔리드 외형(screwR=0)에 곧바로 적용하고, 드래그 종료 시 임플란트 축 원통으로 스크류 홀을 뚫는다.
  */
@@ -588,13 +647,25 @@ export function refitLocalPositions(
       postCenterM /= postCenterN;
     }
   }
-  const tiltSlopeL = Math.tan((edit.tiltLabialDeg * Math.PI) / 180);
-  const tiltSlopeM = Math.tan((edit.tiltMesialDeg * Math.PI) / 180);
-  const hasTilt = Math.abs(tiltSlopeL) > 1e-6 || Math.abs(tiltSlopeM) > 1e-6;
+  const hasTilt = Math.abs(edit.tiltLabialDeg) > 1e-4 || Math.abs(edit.tiltMesialDeg) > 1e-4;
   const hasTopAdjust = hasTilt || Math.abs(extraPostTopLiftMm) > 1e-5;
   const { topLeanL, topLeanM } = hasTilt
     ? computeSafePostTopLean(edit, zone, safePropTop, postCenterL, postCenterM)
     : { topLeanL: 0, topLeanM: 0 };
+  const basePivotL = zone.marginCenterL ?? postCenterL;
+  const basePivotM = zone.marginCenterM ?? postCenterM;
+  const basePivotZ = zone.marginCenterZ ?? zone.meanMarginZ ?? marginZ;
+  const postSpanPivot = Math.max(safePropTop - basePivotZ, 0.8);
+  const swing = hasTilt
+    ? swingTilt(Math.atan2(topLeanL, postSpanPivot), Math.atan2(topLeanM, postSpanPivot))
+    : null;
+  const yawCos = Math.cos(yawRad);
+  const yawSin = Math.sin(yawRad);
+  const pivotDl = (basePivotL - postCenterL) * (1 + (edit.scale[0] - 1));
+  const pivotDm = (basePivotM - postCenterM) * (1 + (edit.scale[1] - 1));
+  const pivotL = postCenterL + (pivotDl * yawCos - pivotDm * yawSin) + edit.shiftLabialMm;
+  const pivotM = postCenterM + (pivotDl * yawSin + pivotDm * yawCos) + edit.shiftMesialMm;
+  const pivotZ = basePivotZ + computeZLift(basePivotZ, fixedZ, marginZ, safePropTop, edit);
   const manualTopLift = computeZLift(safePropTop, fixedZ, marginZ, safePropTop, edit);
   const marginLiftRef = computeZLift(zone.meanMarginZ ?? marginZ, fixedZ, marginZ, safePropTop, edit);
   const postHeightLift = manualTopLift - marginLiftRef;
@@ -604,11 +675,14 @@ export function refitLocalPositions(
     ? Math.tan((zone.taperLink.baseTaperDeg * Math.PI) / 180)
     : 0;
   const taperLinkSlopeNew = zone.taperLink
-    ? Math.tan((computeOptimalPostTaperDeg(nextLinkedPostHeight, zone.taperLink) * Math.PI) / 180)
+    ? Math.tan(
+        (computeOptimalPostTaperDeg(nextLinkedPostHeight, zone.taperLink, postRetentionSurface(zone.wallRadiusMm)) *
+          Math.PI) /
+          180,
+      )
     : 0;
   const hasTaperLinkAdjust = Boolean(zone.taperLink && Math.abs(postHeightLift) > 0.02);
   const rimZ = (Number.isFinite(boreTop) ? boreTop : safePropTop) - 0.7;
-  const minPostWallAboveMargin = 0.85;
 
   for (let i = 0; i < proposal.length; i += 3) {
     const x = proposal[i]!;
@@ -634,11 +708,10 @@ export function refitLocalPositions(
 
     if (hole && rProp <= screwR + 0.22 && z >= rimZ) {
       let zRim = z + baseZLift;
-      if (hasTopAdjust && uPost > 0) {
-        const screwTiltZ = -((-postCenterL) * tiltSlopeL + (-postCenterM) * tiltSlopeM);
-        const minAllowedDelta = minPostWallAboveMargin - postSpanCol - manualTopLift;
-        zRim += Math.max(minAllowedDelta, extraPostTopLiftMm + screwTiltZ) * uPost;
+      if (swing) {
+        zRim = applySwing(0, 0, zRim, pivotL, pivotM, pivotZ, swing).z;
       }
+      if (Math.abs(extraPostTopLiftMm) > 1e-5 && uPost > 0) zRim += extraPostTopLiftMm * uPost;
       out[i] = x;
       out[i + 1] = y;
       out[i + 2] = zRim;
@@ -656,26 +729,14 @@ export function refitLocalPositions(
     const lRot = dl * c - dm * s;
     const mRot = dl * s + dm * c;
 
-    let leanL = 0;
-    let leanM = 0;
-    let postTopDeltaZ = 0;
-    if (hasTopAdjust && hAboveMargin > 0) {
-      const hSmooth = (hAboveMargin * hAboveMargin) / (hAboveMargin + 0.12);
-      const uLean = clamp(hSmooth / postSpanCol, 0, 1.15);
-      leanL = topLeanL * uLean;
-      leanM = topLeanM * uLean;
-      const rawTiltZ = -(lRot * tiltSlopeL + mRot * tiltSlopeM);
-      const minAllowedDelta = minPostWallAboveMargin - postSpanCol - manualTopLift;
-      postTopDeltaZ = Math.max(minAllowedDelta, extraPostTopLiftMm + rawTiltZ) * uPost;
-    }
-
-    const offL = edit.shiftLabialMm * t + leanL;
-    const offM = edit.shiftMesialMm * t + leanM;
+    const offL = edit.shiftLabialMm * t;
+    const offM = edit.shiftMesialMm * t;
     const mColCorr =
-      marginZCorrCol && marginZCorrCol.length >= 3 && z >= mZCol - 0.025
+      !swing && marginZCorrCol && marginZCorrCol.length >= 3 && z >= mZCol - 0.025
         ? samplePolarProfile(marginZCorrCol, theta0, 0)
         : 0;
-    const z2 = z + baseZLift + postTopDeltaZ + mColCorr * (1 - uPost);
+    const uH = clamp((z + baseZLift - basePivotZ) / postSpanPivot, 0, 1);
+    const z2 = z + baseZLift + (hasTopAdjust ? extraPostTopLiftMm * uH : 0) + mColCorr * (1 - uPost);
     let adjLRot = lRot;
     let adjMRot = mRot;
     if (hasTaperLinkAdjust && hAboveMargin > 0.22 && (!hole || rProp > screwR + 0.12)) {
@@ -720,12 +781,21 @@ export function refitLocalPositions(
         my *= k;
       }
     }
+    const preSwingL = ly;
+    const preSwingM = my;
+    let zOut = z2;
+    if (swing && z > fixedZ + 0.02) {
+      const swung = applySwing(ly, my, z2, pivotL, pivotM, pivotZ, swing);
+      ly = swung.l;
+      my = swung.m;
+      zOut = swung.z;
+    }
     out[i] = ly * labial[0] + my * mesial[0];
     out[i + 1] = ly * labial[1] + my * mesial[1];
-    out[i + 2] = z2;
+    out[i + 2] = zOut;
     if (z > marginZ && rProp > screwR) {
       const rOrigFromCenter = Math.hypot(l - postCenterL, m - postCenterM);
-      const rNowFromCenter = Math.hypot(ly - (postCenterL + offL), my - (postCenterM + offM));
+      const rNowFromCenter = Math.hypot(preSwingL - (postCenterL + offL), preSwingM - (postCenterM + offM));
       if (rOrigFromCenter > 0.25) {
         widthSum += rNowFromCenter / rOrigFromCenter;
         widthN += 1;
@@ -741,6 +811,7 @@ export function refitLocalPositions(
 function cuffNeedsRegen(edit: AbutmentEdit) {
   if (Math.abs(edit.heightMm) > 1e-4) return true;
   if (Math.abs(edit.shiftLabialMm) > 1e-4 || Math.abs(edit.shiftMesialMm) > 1e-4) return true;
+  if (Math.abs(edit.tiltLabialDeg) > 1e-3 || Math.abs(edit.tiltMesialDeg) > 1e-3) return true;
   if (Math.abs(edit.yawDeg) > 1e-3) return true;
   if (Math.abs(edit.scale[0] - 1) > 1e-4) return true;
   if (Math.abs(edit.scale[1] - 1) > 1e-4) return true;
@@ -1143,17 +1214,31 @@ function zoneOf(
   const screwR = (design.fixture.connectionSpec?.screwUpperDiameterMm ?? 2) / 2 + 0.2;
   let marginMin = Infinity;
   let marginMean = 0;
+  let marginCenterL = 0;
+  let marginCenterM = 0;
+  let marginCenterZ = 0;
+  let marginRadiusSum = 0;
   let marginColZ: Float32Array | undefined;
   if (margin && margin.length >= 9) {
     const mCount = Math.floor(margin.length / 3);
     marginColZ = new Float32Array(mCount);
     for (let col = 0; col < mCount; col += 1) {
+      const x = margin[col * 3]!;
+      const y = margin[col * 3 + 1]!;
       const z = margin[col * 3 + 2]!;
       marginColZ[col] = z;
       if (z < marginMin) marginMin = z;
       marginMean += z;
+      marginCenterL += x * axes.labial[0] + y * axes.labial[1];
+      marginCenterM += x * axes.mesial[0] + y * axes.mesial[1];
+      marginCenterZ += z;
+      marginRadiusSum += Math.hypot(x, y);
     }
     marginMean /= mCount;
+    marginCenterL /= mCount;
+    marginCenterM /= mCount;
+    marginCenterZ /= mCount;
+    marginRadiusSum /= mCount;
   }
   const src = proposalSolid && proposalSolid.length >= 9 ? proposalSolid : proposal;
   let top = coneZ + 4;
@@ -1256,6 +1341,14 @@ function zoneOf(
     mesial: axes.mesial,
     centerL,
     centerM,
+    ...(marginColZ
+      ? {
+          marginCenterL,
+          marginCenterM,
+          marginCenterZ,
+          wallRadiusMm: Math.max(1.1, marginRadiusSum - (design.params?.marginShoulderMm ?? 0.5)),
+        }
+      : {}),
     coneTopR: measureConeTopR(src, coneZ),
     taperLink: taperLinkOfDesign(design),
   };
@@ -2498,7 +2591,8 @@ export class AbutmentDirectEditSession {
         marginLocal,
         0,
       );
-      if (!editsEqual(edit, EMPTY_EDIT) && view.gingivaProbe) {
+      const tilting = Math.abs(edit.tiltLabialDeg) > 0.15 || Math.abs(edit.tiltMesialDeg) > 0.15;
+      if (!editsEqual(edit, EMPTY_EDIT) && view.gingivaProbe && !tilting) {
         const mCount = Math.floor(marginLocal.length / 3);
         const subgMinMm = design.params?.marginSubgMinMm ?? design.metrics?.marginSubgMinMm ?? 0.5;
         const subgMaxMm = design.params?.marginSubgMaxMm ?? design.metrics?.marginSubgMaxMm ?? 1.0;
@@ -2636,7 +2730,10 @@ export class AbutmentDirectEditSession {
     cached: boolean,
   ): AbutmentEditSummary {
     const neutral = editsEqual(edit, EMPTY_EDIT);
-    const postSpan = Math.max(view.topZ - view.zone.fixedZ, 1.5);
+    const hinge = Math.max(
+      view.topZ - (view.zone.marginCenterZ ?? view.zone.meanMarginZ ?? view.zone.marginZ),
+      0.8,
+    );
     let measured: EditedAbutmentMetrics | null = null;
     let baselineMeasured = view.baselineMeasure;
     if (marginLocal && view.proposalMargin) {
@@ -2672,8 +2769,8 @@ export class AbutmentDirectEditSession {
       widthRatio: fit.widthRatio,
       heightDeltaMm: fit.heightDeltaMm,
       yawDeg: edit.yawDeg,
-      shiftLabialMm: edit.shiftLabialMm + Math.tan((edit.tiltLabialDeg * Math.PI) / 180) * postSpan,
-      shiftMesialMm: edit.shiftMesialMm + Math.tan((edit.tiltMesialDeg * Math.PI) / 180) * postSpan,
+      shiftLabialMm: edit.shiftLabialMm + Math.sin((edit.tiltLabialDeg * Math.PI) / 180) * hinge,
+      shiftMesialMm: edit.shiftMesialMm + Math.sin((edit.tiltMesialDeg * Math.PI) / 180) * hinge,
       neutral,
       measured,
       baselineMeasured,
@@ -2854,28 +2951,18 @@ export class AbutmentDirectEditSession {
   }
 
   private gumballPosition(view: ToothView, edit: AbutmentEdit) {
-    const meanM = view.zone.meanMarginZ ?? view.zone.marginZ;
-    const postSpan = Math.max(view.topZ - meanM, 0.8);
-    const hAbove = Math.max(view.midZ - meanM, 0);
-    const uLean = hAbove > 0 ? clamp(((hAbove * hAbove) / (hAbove + 0.12)) / postSpan, 0, 1.15) : 0;
-    const { topLeanL, topLeanM } = computeSafePostTopLean(
-      edit,
-      view.zone,
-      view.topZ,
-      view.zone.centerL ?? 0,
-      view.zone.centerM ?? 0,
-    );
-    const offL = edit.shiftLabialMm + topLeanL * uLean;
-    const offM = edit.shiftMesialMm + topLeanM * uLean;
-    const uPost = hAbove > 0 ? clamp(hAbove / postSpan, 0, 1) : 0;
-    const zLift =
-      computeZLift(view.midZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit) +
-      view.lastAutoLiftMm * uPost;
-    return view.anchor
-      .clone()
-      .addScaledVector(view.axes[0], offL)
-      .addScaledVector(view.axes[1], offM)
-      .addScaledVector(view.axes[2], zLift);
+    const zone = view.zone;
+    const l0 = zone.marginCenterL ?? zone.centerL ?? 0;
+    const m0 = zone.marginCenterM ?? zone.centerM ?? 0;
+    const z0 = zone.marginCenterZ ?? zone.meanMarginZ ?? zone.marginZ;
+    const zLift = computeZLift(z0, zone.fixedZ, zone.marginZ, view.topZ, edit);
+    const l = l0 + edit.shiftLabialMm;
+    const m = m0 + edit.shiftMesialMm;
+    return new THREE.Vector3(
+      l * zone.labial[0] + m * zone.mesial[0],
+      l * zone.labial[1] + m * zone.mesial[1],
+      z0 + zLift,
+    ).applyMatrix4(view.fixture);
   }
 
   private cameraBasis() {

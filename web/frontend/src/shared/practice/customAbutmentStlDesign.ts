@@ -168,6 +168,8 @@ export type CustomAbutmentDesignMetrics = {
   cuffHeightMinMm: number;
   cuffHeightMaxMm: number;
   postHeightMm: number;
+  /** 접착 면적에 쓰는 축벽 반지름(mm). 피니시라인 평균 반지름에서 마진 폭을 뺀 값. */
+  postWallRadiusMm?: number;
   totalLengthMm: number;
   /** 픽스쳐 장축과 크라운 삽입축 사이의 각도(°). */
   angulationDeg: number;
@@ -4685,14 +4687,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
     postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
   }
-  // 높이·테이퍼 연결(postTaperLink=1)이면 포스트 높이와 싱글/브리지 여부에 맞춰 최적 접착력 테이퍼를 자동 조절한다.
+  // 높이·테이퍼 연결(postTaperLink=1)이면 포스트 높이·축벽 둘레와 싱글/브리지에 맞춰 접착 지수가 같은 테이퍼를 쓴다.
   // 연결이 끊어져 있으면(postTaperLink=0) 설정된 테이퍼(최소 2°)를 그대로 쓴다.
   const bridgeRetention = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
   const taperSpec = resolveAbutmentBridgeRetentionSpec(bridgeRetention);
   const isTaperLinked = (params.postTaperLink ?? 1) >= 0.5;
+  const templateWallRadiusMm = Math.max(
+    1.1,
+    (((tpl.topLabialHalfMm + tpl.topLingualHalfMm) / 2 + tpl.topMdMm / 2) / 2) *
+      Math.max(0.7, params.postWidthScale),
+  );
+  let axialWallRadiusMm = templateWallRadiusMm;
   let effectiveTaperDeg = clamp(
     isTaperLinked
-      ? computeOptimalPostTaperDeg(postTopH, bridgeRetention)
+      ? computeOptimalPostTaperDeg(postTopH, bridgeRetention, { radiusMm: axialWallRadiusMm })
       : params.postTaperDeg,
     isTaperLinked ? taperSpec.minTaperDeg : RETENTION_SINGLE_MIN_TAPER_DEG,
     taperSpec.maxTaperDeg,
@@ -5222,7 +5230,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   })();
   const refBaseTaperDeg = Math.max(
     RETENTION_SINGLE_MIN_TAPER_DEG,
-    computeOptimalPostTaperDeg(refBasePostTopH, bridgeRetention),
+    computeOptimalPostTaperDeg(refBasePostTopH, bridgeRetention, { radiusMm: axialWallRadiusMm }),
   );
   const refBaseTaperSlope = Math.tan(refBaseTaperDeg * DEG);
   const refBaseChamfer = chamferGeometry(shoulderW, 0.6, refBaseTaperSlope);
@@ -8952,9 +8960,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
     return Math.round((maxZ - finalMeanMarginZ) * 100) / 100;
   };
+  const refreshAxialWallRadius = () => {
+    if (marginRadii.length > 0) {
+      let sum = 0;
+      for (const radius of marginRadii) sum += radius;
+      axialWallRadiusMm = Math.max(1.1, sum / marginRadii.length - targetShoulderW);
+    }
+  };
   const syncLinkedTaperForHeight = (heightMm: number): boolean => {
     if (!isTaperLinked) return false;
-    const nextDeg = computeOptimalPostTaperDeg(heightMm, bridgeRetention);
+    refreshAxialWallRadius();
+    const nextDeg = computeOptimalPostTaperDeg(heightMm, bridgeRetention, { radiusMm: axialWallRadiusMm });
     if (Math.abs(nextDeg - effectiveTaperDeg) < 0.05) return false;
     effectiveTaperDeg = nextDeg;
     params.postTaperDeg = nextDeg;
@@ -9428,10 +9444,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
   }
-  const retentionIdealDeg = evaluatePostTaperRetention(
-    finalPostHeightMm,
-    bridgeRetention,
-  ).idealTaperDeg;
+  refreshAxialWallRadius();
+  const retentionIdealDeg = evaluatePostTaperRetention(finalPostHeightMm, bridgeRetention, {
+    radiusMm: axialWallRadiusMm,
+  }).idealTaperDeg;
   const idealPostTaperDeg =
     shape.geomIdealTaperDeg != null
       ? Math.min(retentionIdealDeg, shape.geomIdealTaperDeg)
@@ -9472,6 +9488,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       cuffHeightMinMm: round2(Number.isFinite(marginZMinActual) ? marginZMinActual : Math.min(...smoothMarginZ)),
       cuffHeightMaxMm: round2(Number.isFinite(marginZMaxActual) ? marginZMaxActual : Math.max(...smoothMarginZ)),
       postHeightMm: finalPostHeightMm,
+      postWallRadiusMm: round2(axialWallRadiusMm),
       totalLengthMm: round2(zMaxLocal - zMinLocal),
       angulationDeg: Math.round(angulationDeg * 10) / 10,
       cutbackMm: round2(cutbackSum / ANGULAR_COLS),

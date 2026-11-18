@@ -131,12 +131,24 @@ export function isAnteriorTooth(toothNumber: string): boolean {
 }
 
 /**
- * 포스트 등유지력 연동 기준.
- * 기울기 tanθ/H 가 일정하면 높이별 접착력이 같다.
- * 싱글 앵커는 5mm · 2°(최소 2°). 브리지는 이전 4°→6° 기울기 비(tan 6°/tan 4°)를 유지해 5mm · 3.0°(최소 2°).
- * 포스트가 더 길면 기울기 tanθ/H 를 유지해 각을 키우되, 편측 5°는 넘기지 않는다.
+ * 시멘트 유지 포스트의 접착력. 기준점(축벽 반지름 2.5mm · 높이 5mm)과 같은 접착 지수를 유지한다.
+ *
+ * 1. 테이퍼 — Jørgensen 1955. 수렴각이 커지면 유지력은 벽의 코사인 투영보다 가파르게 떨어진다.
+ * 2. 길이 — Kaufman 1961, Bernal 2003, Bresciano 2005. 2–8mm에서는 높이에 거의 비례한다.
+ * 3. 표면적 — Kaufman 1961은 면적이 유지력을 올린다고 했고, Saleh Saber 2012는 높이를 고정하면
+ *    총면적·폭의 효과가 그보다 약하다고 했다. 길이에 이미 들어 있는 높이를 다시 세지 않고
+ *    축벽 평균 반지름(둘레)만 약한 지수로 더한다. 반지름이 작으면 접착력도 작아 테이퍼를 더 닫는다.
+ *
+ * 지수: 테이퍼 1.35, 길이 1, 표면적 0.4.
+ * 싱글 기준은 5mm · 편측 2°. 브리지는 착탈 여유로 더 열린 기준각을 쓴다.
  */
 export const RETENTION_REF_POST_HEIGHT_MM = 5;
+export const RETENTION_REF_WALL_RADIUS_MM = 2.5;
+/** 테이퍼가 접착 지수에서 차지하는 비중. 길이(1)보다 크다. */
+export const RETENTION_TAPER_EXPONENT = 1.35;
+export const RETENTION_HEIGHT_EXPONENT = 1;
+/** 축벽 둘레(평균 반지름)가 접착 지수에서 차지하는 비중. 길이보다 작다. */
+export const RETENTION_AREA_EXPONENT = 0.4;
 export const RETENTION_SINGLE_REF_TAPER_DEG = 2;
 export const RETENTION_SINGLE_MIN_TAPER_DEG = 2;
 export const RETENTION_SINGLE_MAX_TAPER_DEG = 5;
@@ -315,6 +327,94 @@ export function resolveAbutmentBridgeRetentionSpec(
   };
 }
 
+export type PostRetentionSurface = {
+  /** 피니시라인에서 마진 폭을 뺀 축벽 반지름(mm). 없으면 기준 2.5mm. */
+  radiusMm?: number;
+};
+
+export function postRetentionSurface(radiusMm: number | null | undefined): PostRetentionSurface | undefined {
+  if (radiusMm == null || !Number.isFinite(radiusMm) || radiusMm <= 0.4) return undefined;
+  return { radiusMm: Math.min(8, radiusMm) };
+}
+
+function resolveWallRadiusMm(surface?: PostRetentionSurface | null): number {
+  const radius = surface?.radiusMm;
+  if (radius != null && Number.isFinite(radius) && radius > 0.3) return Math.min(8, Math.max(0.6, radius));
+  return RETENTION_REF_WALL_RADIUS_MM;
+}
+
+/** 테이퍼 진 축벽의 평균 반지름. 높이에 비례하는 면적은 길이 항이 맡고, 여기는 둘레만 본다. */
+function meanWallRadiusMm(heightMm: number, taperDeg: number, baseRadiusMm: number): number {
+  const theta = (Math.min(40, Math.max(0.05, taperDeg)) * Math.PI) / 180;
+  const height = Math.max(0.5, heightMm);
+  const base = Math.min(8, Math.max(0.6, baseRadiusMm));
+  const top = Math.max(0.35, base - height * Math.tan(theta));
+  return (base + top) / 2;
+}
+
+/**
+ * 기준 포스트와 접착 지수가 같아지는 편측 테이퍼(°, 클램프 전).
+ * tanθ = tanθref · (H/Href)^(길이/테이퍼) · (Rmean/Rref)^(면적/테이퍼)
+ */
+function solveEqualRetentionTaperDeg(
+  postHeightMm: number,
+  spec: AbutmentBridgeRetentionSpec,
+  radiusMm: number,
+): number {
+  const height = Math.max(0.5, postHeightMm);
+  const tanRef = Math.tan((spec.refTaperDeg * Math.PI) / 180);
+  const heightTerm = Math.pow(
+    height / RETENTION_REF_POST_HEIGHT_MM,
+    RETENTION_HEIGHT_EXPONENT / RETENTION_TAPER_EXPONENT,
+  );
+  const refMean = meanWallRadiusMm(
+    RETENTION_REF_POST_HEIGHT_MM,
+    spec.refTaperDeg,
+    RETENTION_REF_WALL_RADIUS_MM,
+  );
+  let deg = (Math.atan(tanRef * heightTerm) * 180) / Math.PI;
+  for (let pass = 0; pass < 5; pass += 1) {
+    const areaTerm = Math.pow(
+      meanWallRadiusMm(height, deg, radiusMm) / Math.max(refMean, 1e-6),
+      RETENTION_AREA_EXPONENT / RETENTION_TAPER_EXPONENT,
+    );
+    const next = (Math.atan(tanRef * heightTerm * areaTerm) * 180) / Math.PI;
+    if (Math.abs(next - deg) < 0.01) return next;
+    deg = next;
+  }
+  return deg;
+}
+
+function solveEqualRetentionHeightMm(
+  taperDeg: number,
+  spec: AbutmentBridgeRetentionSpec,
+  radiusMm: number,
+): number {
+  const tanRef = Math.tan((spec.refTaperDeg * Math.PI) / 180);
+  const tanNow = Math.tan((Math.min(40, Math.max(0.05, taperDeg)) * Math.PI) / 180);
+  const taperTerm = Math.pow(tanRef / Math.max(tanNow, 1e-6), RETENTION_TAPER_EXPONENT);
+  const refMean = meanWallRadiusMm(
+    RETENTION_REF_POST_HEIGHT_MM,
+    spec.refTaperDeg,
+    RETENTION_REF_WALL_RADIUS_MM,
+  );
+  let height =
+    RETENTION_REF_POST_HEIGHT_MM *
+    Math.pow(tanNow / Math.max(tanRef, 1e-6), RETENTION_TAPER_EXPONENT / RETENTION_HEIGHT_EXPONENT);
+  for (let pass = 0; pass < 5; pass += 1) {
+    const areaTerm = Math.pow(
+      meanWallRadiusMm(height, taperDeg, radiusMm) / Math.max(refMean, 1e-6),
+      RETENTION_AREA_EXPONENT,
+    );
+    const next =
+      RETENTION_REF_POST_HEIGHT_MM *
+      Math.pow(1 / Math.max(taperTerm * areaTerm, 1e-6), 1 / RETENTION_HEIGHT_EXPONENT);
+    if (Math.abs(next - height) < 0.01) return next;
+    height = next;
+  }
+  return height;
+}
+
 export type PostTaperRetentionCheck = {
   /** 높이 기준 등유지력 적정 편측 테이퍼(°, 클램프 전). */
   idealTaperDeg: number;
@@ -331,11 +431,11 @@ export type PostTaperRetentionCheck = {
 export function evaluatePostTaperRetention(
   postHeightMm: number,
   bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+  surface?: PostRetentionSurface | null,
 ): PostTaperRetentionCheck {
   const spec = resolveAbutmentBridgeRetentionSpec(bridge);
   const h = Math.max(0.5, Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_REF_POST_HEIGHT_MM);
-  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
-  const rawDeg = (Math.atan(refSlope * (h / RETENTION_REF_POST_HEIGHT_MM)) * 180) / Math.PI;
+  const rawDeg = solveEqualRetentionTaperDeg(h, spec, resolveWallRadiusMm(surface));
   const isBelowMinLimit = rawDeg < spec.minTaperDeg - 0.02;
   const roundedRaw = Math.round(rawDeg * 10) / 10;
   const idealTaperDeg = Math.max(
@@ -356,30 +456,29 @@ export function evaluatePostTaperRetention(
 }
 
 /**
- * 포스트 높이와 싱글/브리지 여부에 따라 보철물 최적 접착력이 일정해지는 편측 테이퍼(°)를 계산한다.
- * - 싱글: 높이 5mm 기준 2.0°, 최소 2.0° (5mm보다 짧으면 2°에 머문다)
- * - 브리지: 착탈·다수 지대주 여유를 싱글 대비 같은 기울기 비로 유지. 5mm 기준 3.0°+(3지대주 이상 +0.25°), 최소 2.0°
- * - 편측 최대 5.0°. 포스트가 아무리 길어도 이 각을 넘기지 않는다.
+ * 포스트 높이·축벽 반지름·싱글/브리지에 따라 접착 지수가 기준과 같아지는 편측 테이퍼(°)를 계산한다.
+ * 테이퍼를 가장 크게 보고, 그다음 길이, 축벽 둘레는 그보다 약하게 반영한다.
+ * 싱글은 최소 2°·최대 5°, 브리지는 착탈 여유만큼 더 열린 범위를 넘기지 않는다.
  */
 export function computeOptimalPostTaperDeg(
   postHeightMm: number,
   bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+  surface?: PostRetentionSurface | null,
 ): number {
-  return evaluatePostTaperRetention(postHeightMm, bridge).appliedTaperDeg;
+  return evaluatePostTaperRetention(postHeightMm, bridge, surface).appliedTaperDeg;
 }
 
 /**
- * 링크가 연결된 상태에서 테이퍼 각도를 바꿨을 때 최적 접착력이 비슷하게 유지되는 목표 포스트 높이(mm)를 역산한다.
+ * 링크가 연결된 상태에서 테이퍼를 바꿨을 때 같은 접착 지수가 되는 포스트 높이(mm)를 역산한다.
  */
 export function computeOptimalPostHeightMmFromTaper(
   taperDeg: number,
   bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
+  surface?: PostRetentionSurface | null,
 ): number {
   const spec = resolveAbutmentBridgeRetentionSpec(bridge);
   const deg = Math.min(spec.maxTaperDeg, Math.max(spec.minTaperDeg, taperDeg));
-  const refSlope = Math.tan((spec.refTaperDeg * Math.PI) / 180);
-  const targetSlope = Math.tan((deg * Math.PI) / 180);
-  const rawH = RETENTION_REF_POST_HEIGHT_MM * (targetSlope / Math.max(refSlope, 1e-6));
+  const rawH = solveEqualRetentionHeightMm(deg, spec, resolveWallRadiusMm(surface));
   const clamped = Math.min(RETENTION_MAX_POST_HEIGHT_MM, Math.max(RETENTION_MIN_POST_HEIGHT_MM, rawH));
   return Math.round(clamped * 100) / 100;
 }

@@ -9,6 +9,10 @@ import {
   designCustomAbutmentStl,
   resolveScrewChannelProfile,
 } from "../../practice/customAbutmentStlDesign";
+import {
+  computeOptimalPostHeightMmFromTaper,
+  postRetentionSurface,
+} from "../../practice/customAbutmentDesignParams";
 import { getToothAnatomy } from "../../practice/toothAnatomy";
 import { computeParamsFromInfoFieldEdit } from "./PracticeCustomAbutmentDesignTree";
 import {
@@ -91,12 +95,37 @@ const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
 assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
 
 const tiltDeg = 12;
-const tiltedPair = many([2, 0, 6, -2, 0, 6, 2.5, 0, 3], edit({ tiltLabialDeg: tiltDeg }));
+const tiltedPair = many([2, 0, 6, -2, 0, 6, 2.5, 0, 3, 0, 0, 3], edit({ tiltLabialDeg: tiltDeg }));
 assert.ok(
-  tiltedPair[0]! > 2.3 && tiltedPair[2]! < 6 - 0.3 && tiltedPair[8]! === 3,
-  "파란 회전툴 기울기 시 순측 상단은 내려가고 설측 상단은 올라가며 마진은 고정된다",
+  tiltedPair[0]! > 2.3 && tiltedPair[2]! < 6 - 0.3,
+  "피니시라인 중앙 기준 기울기에서 순측 상단은 내려간다",
 );
-assert.ok(tiltedPair[5]! > 6 + 0.3, "반대쪽(설측) 상단은 대칭으로 올라가 평평한 경사면을 유지한다");
+assert.ok(tiltedPair[5]! > 6 + 0.3, "반대쪽(설측) 상단은 올라간다");
+assert.ok(
+  Math.abs(tiltedPair[9]!) < 1e-4 &&
+    Math.abs(tiltedPair[10]!) < 1e-4 &&
+    Math.abs(tiltedPair[11]! - 3) < 1e-4,
+  "피니시라인 중앙은 회전 힌지로 고정된다",
+);
+assert.ok(Math.abs(tiltedPair[8]! - 3) > 0.05, "중앙이 아닌 마진 링은 강체 회전으로 함께 움직인다");
+{
+  const before = [
+    [2, 0, 6],
+    [-2, 0, 6],
+    [2.5, 0, 3],
+  ];
+  const dist = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+  for (let i = 0; i < before.length; i += 1) {
+    for (let j = i + 1; j < before.length; j += 1) {
+      const afterI = [tiltedPair[i * 3]!, tiltedPair[i * 3 + 1]!, tiltedPair[i * 3 + 2]!];
+      const afterJ = [tiltedPair[j * 3]!, tiltedPair[j * 3 + 1]!, tiltedPair[j * 3 + 2]!];
+      assert.ok(
+        Math.abs(dist(before[i]!, before[j]!) - dist(afterI, afterJ)) < 1e-3,
+        "기울인 포스트 점 사이 거리가 유지되어 표면이 꼬이지 않는다",
+      );
+    }
+  }
+}
 const tiltConnection = one([1, 0, 0.2], edit({ tiltLabialDeg: tiltDeg }));
 assert.ok(Math.abs(tiltConnection[0]! - 1) < 1e-6, "기울여도 커넥션은 그대로");
 
@@ -217,7 +246,14 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   const rotX = edit();
   applyWorldRotationToAbutmentEdit(rotX, new THREE.Vector3(1, 0, 0), 10, axes);
   const topRotX = one([1, 0, 6.6], rotX);
-  assert.ok(topRotX[1]! < -0.45 && Math.abs(topRotX[0]! - 1) < 1e-4, "+X 축 오른손 회전은 상단을 -Y로 기울인다");
+  const pivot = [0, 0, 3];
+  const beforeX = [1, 0, 6.6];
+  const afterX = [topRotX[0]!, topRotX[1]!, topRotX[2]!];
+  const distPivot = (p: number[]) => Math.hypot(p[0]! - pivot[0]!, p[1]! - pivot[1]!, p[2]! - pivot[2]!);
+  assert.ok(
+    topRotX[1]! < -0.45 && Math.abs(distPivot(beforeX) - distPivot(afterX)) < 1e-3,
+    "+X 축 오른손 회전은 상단을 -Y로 기울이고 피니시라인 중앙까지의 거리를 유지한다",
+  );
 
   // 좌수계 사분면(#38 하악 좌측: labial = +X, mesial = -Y, axis = +Z → labial × mesial = -Z)에서도
   // 화면 밖(협측 +X) 주위로 반시계(+10°) 회전하면 상단(+Z)이 화면 왼쪽(근심, -Y)으로 정확히 기울어야 한다.
@@ -759,10 +795,15 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       toothWorks: singleWorks,
       params: linkedTaperPatch,
     });
+    const linkedWall = postRetentionSurface(
+      singleTall.metrics.postWallRadiusMm ?? afterLinkedTaperEdit.metrics.postWallRadiusMm,
+    );
+    const linkedTargetH = computeOptimalPostHeightMmFromTaper(2.0, false, linkedWall);
     assert.ok(
-      Math.abs(afterLinkedTaperEdit.metrics.postHeightMm - 5.0) <= 0.25 &&
-        Math.abs(afterLinkedTaperEdit.metrics.postTaperDeg - 2.0) <= 0.3,
-      `연결 상태에서 테이퍼를 2.0°로 맞추면 포스트 높이(${afterLinkedTaperEdit.metrics.postHeightMm}mm)가 기준 5mm 근처로 함께 조절되고 테이퍼(${afterLinkedTaperEdit.metrics.postTaperDeg}°)도 2°로 맞춰진다`,
+      Math.abs(afterLinkedTaperEdit.metrics.postHeightMm - linkedTargetH) <= 0.45 &&
+        Math.abs(afterLinkedTaperEdit.metrics.postTaperDeg - 2.0) <= 0.3 &&
+        afterLinkedTaperEdit.metrics.postHeightMm < singleTall.metrics.postHeightMm - 1,
+      `연결 상태에서 테이퍼를 2.0°로 맞추면 포스트 높이(${afterLinkedTaperEdit.metrics.postHeightMm}mm)가 같은 축벽의 등접착 높이(${linkedTargetH}mm)로 줄고 테이퍼(${afterLinkedTaperEdit.metrics.postTaperDeg}°)도 2°로 맞춰진다`,
     );
 
     // 링크를 끊으면(postTaperLink=0) 높이와 테이퍼가 각각 독립적으로 조절된다.
