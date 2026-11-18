@@ -8818,7 +8818,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         top.heightAt(topFaceCu + topDirU * sFlat, topFaceCv + topDirV * sFlat);
       const localSpare = Math.hypot(pEnd[0], pEnd[1]) - (boreTopR + 0.36);
       const rise = Math.max(1 - sin0, 1e-3);
-      // 가장 좁은 열의 스크류 여유로 전 둘레를 깎지 않는다. 스크류에 닿는 점은 아래에서 밖으로 민다.
+      // 가장 좁은 열의 스크류 여유로 전 둘레 라운드를 깎지 않는다.
       const rhoMax = posterior
         ? topRoundMm
         : Math.max(
@@ -8873,39 +8873,32 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             add3(scale3(frame.uLabial, topFaceCu + topDirU * sRad), scale3(frame.vSide, topFaceCv + topDirV * sRad)),
           ),
         );
-      const minRoundR = boreTopR + 0.3;
-      // 임플란트 축 원으로 스냅하면 스크류 홀 크기만큼 필레가 깎인다.
-      // 스크류 안으로 들어온 점만 그 열의 반지름 방향으로, 벽 두께만큼만 밖으로 민다.
-      const keepRoundOutsideScrew = (pt: Vec3): Vec3 => {
-        if (Math.hypot(pt[0], pt[1]) >= minRoundR - 1e-4) return pt;
-        const rel0 = sub3(pt, c0);
-        const u0 = dot3(rel0, frame.uLabial);
-        const v0 = dot3(rel0, frame.vSide);
-        const below = top.heightAt(u0, v0) - dot3(rel0, frame.w);
-        const s0 = (u0 - topFaceCu) * topDirU + (v0 - topFaceCv) * topDirV;
-        const atS = (sRad: number): Vec3 => {
-          const u = topFaceCu + topDirU * sRad;
-          const v = topFaceCv + topDirV * sRad;
-          return add3(
-            c0,
-            add3(
-              scale3(frame.w, top.heightAt(u, v) - below),
-              add3(scale3(frame.uLabial, u), scale3(frame.vSide, v)),
-            ),
-          );
+      // 스크류 홀과 동심인 원으로 필레를 밀지 않는다. 홀에 닿을 열만 원호를 짧게 해서 벽 밖에서 끝낸다.
+      post.push(atTop(h1, s1));
+      let radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
+      if (posterior || wrapAnteriorScrew360) {
+        const minFilletR = boreTopR + 0.32;
+        const closestR = (useRadial: number): number => {
+          let best = Infinity;
+          for (let step = 0; step <= TOP_ROUND_STEPS; step += 1) {
+            const t = t0 + ((Math.PI / 2 - t0) * step) / TOP_ROUND_STEPS;
+            const sPos = Math.max(0.08, s1 - useRadial * (cos0 - Math.cos(t)));
+            const pt = atTop(h1, sPos);
+            best = Math.min(best, Math.hypot(pt[0], pt[1]));
+          }
+          return best;
         };
-        let lo = s0;
-        let hi = s0 + 1.8;
-        if (Math.hypot(atS(hi)[0], atS(hi)[1]) < minRoundR) return pt;
-        for (let it = 0; it < 12; it += 1) {
-          const mid = (lo + hi) * 0.5;
-          if (Math.hypot(atS(mid)[0], atS(mid)[1]) >= minRoundR) hi = mid;
-          else lo = mid;
+        if (closestR(radialRho) < minFilletR && closestR(0) >= minFilletR) {
+          let lo = 0;
+          let hi = radialRho;
+          for (let it = 0; it < 14; it += 1) {
+            const mid = (lo + hi) * 0.5;
+            if (closestR(mid) >= minFilletR) lo = mid;
+            else hi = mid;
+          }
+          radialRho = lo;
         }
-        return atS(hi);
-      };
-      post.push(keepRoundOutsideScrew(atTop(h1, s1)));
-      const radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
+      }
       const arcS = Math.max(0.08, s1 - radialRho * cos0);
       const arcH = h1 - rho * sin0;
       for (let s = 1; s <= TOP_ROUND_STEPS; s += 1) {
@@ -8915,7 +8908,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const uFrac = s / TOP_ROUND_STEPS;
         const hArc = arcH + rho * Math.sin(t);
         const hPlane = edgeHeight(sPos);
-        post.push(keepRoundOutsideScrew(atTop(hArc + (hPlane - (arcH + rho)) * uFrac * uFrac, sPos)));
+        post.push(atTop(hArc + (hPlane - (arcH + rho)) * uFrac * uFrac, sPos));
       }
       postByCol.push(post);
 
