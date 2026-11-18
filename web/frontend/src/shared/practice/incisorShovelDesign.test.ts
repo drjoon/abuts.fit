@@ -282,6 +282,73 @@ assert.ok(
   `순측으로 기운 인접치의 각도를 포스트가 따른다(상단-치경 순측 이동 ${openShape.labialRise.toFixed(2)}mm)`,
 );
 
+function makePalatalOnlyOpposing() {
+  const sSteps = 64;
+  const uSteps = 12;
+  const sMin = -5.5;
+  const sMax = 5.5;
+  const uMin = -8.5;
+  const uMax = -0.85;
+  const tris: number[] = [];
+  const at = (is: number, iu: number) => {
+    const s = sMin + ((sMax - sMin) * is) / sSteps;
+    const u = uMin + ((uMax - uMin) * iu) / uSteps;
+    const a = (s / 6) * ARCH_ANG;
+    const x = 40 * Math.cos(a) - 6 - originX + Math.cos(a) * u;
+    const y = 22 * Math.sin(a) - originY + Math.sin(a) * u;
+    return [x, y, -5.8] as const;
+  };
+  for (let is = 0; is < sSteps; is += 1) {
+    for (let iu = 0; iu < uSteps; iu += 1) {
+      const p00 = at(is, iu);
+      const p10 = at(is + 1, iu);
+      const p11 = at(is + 1, iu + 1);
+      const p01 = at(is, iu + 1);
+      tris.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const palatalOnlyOpp = makePalatalOnlyOpposing();
+const asymJaw22 = makeArchStrip((x, y) => {
+  const base = makeJawZ(0)(x, y);
+  // 원심 쪽(#23 위치)은 절단연이 2.4mm 더 짧은 비대칭 인접치
+  return y < -2.2 ? Math.max(base, -8.3) : base;
+});
+const [palatalOpen11, asym22] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: palatalOnlyOpp,
+    toothWorks: works11,
+  }),
+  designCustomAbutmentStl({
+    fixture: { ...fixture11, toothNumber: "22" },
+    jawGeometry: asymJaw22,
+    opposingGeometry: null,
+    toothWorks: works22,
+  }),
+]);
+assert.ok(
+  palatalOpen11.metrics.postHeightMm > close11.metrics.postHeightMm + 2.2,
+  `설측에만 대합치가 있고 순측이 비어 있는 수평피개·딥바이트 #11(${palatalOpen11.metrics.postHeightMm}mm)도 인접치 길이까지 올라간다`,
+);
+assert.ok(
+  asym22.metrics.postHeightMm < palatalOpen11.metrics.postHeightMm - 0.5 &&
+    !asym22.metrics.supragingivalRaisedForStrength,
+  `측절치 #22(${asym22.metrics.postHeightMm}mm)는 짧은 쪽 인접치와 측절치 단차를 따라 과도하게 길어지거나 치은연상으로 튀지 않는다`,
+);
+palatalOnlyOpp.dispose();
+asymJaw22.dispose();
+palatalOpen11.worldGeometry.dispose();
+palatalOpen11.predictedCrownWorldGeometry.dispose();
+asym22.worldGeometry.dispose();
+asym22.predictedCrownWorldGeometry.dispose();
+
 const bridgeOpp = makeArchStrip((x, y) => (Math.hypot(x, y) < 4.2 ? -6.2 : -16));
 const fixture34 = { ...fixture11, toothNumber: "34", jaw: "lower" as const };
 const fixture35 = {
