@@ -9,9 +9,9 @@
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
-// 화살표는 이동, −축·좌하 점은 크기, 흰 점은 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
+// 화살표는 이동, −축·좌하 점은 크기·평면 스케일이다. 커넥션과 2° 테이퍼는 고정이다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
-// - 2026-11-19: 치과 소통은 세로로 긴 좁은 열. 제목은 치과 소통.
+// - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
@@ -1092,7 +1092,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [expandedTeeth, setExpandedTeeth] = useState<Record<string, boolean>>({});
   const editedInfoFieldsRef = useRef<Record<string, Set<AbutmentInfoFieldKey>>>({});
 
-  const [manualChatOpen, setManualChatOpen] = useState(isLabViewer);
+  const [manualChatOpen, setManualChatOpen] = useState(!readOnly && Boolean(transferIdParam));
   const [ptxRoomId, setPtxRoomId] = useState<string | null>(null);
   const [ptxRoomLoading, setPtxRoomLoading] = useState(false);
   const [sharedChatDraft, setSharedChatDraft] = useState("");
@@ -3311,7 +3311,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!viewerTouchRef.current.has("chat")) {
           if (viewerPrefsRef.current.chatOpen != null) {
             setManualChatOpen(viewerPrefsRef.current.chatOpen);
-          } else if (remote?.mode === "manual" || isLabViewer) {
+          } else if (remote?.mode === "manual" || (!readOnly && transferIdParam)) {
             setManualChatOpen(true);
           }
         }
@@ -5838,14 +5838,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {!readOnly && manualChatOpen && transferIdParam ? (
                   <div
-                    className="pointer-events-auto flex h-[min(36rem,calc(100dvh-12rem))] w-[min(16rem,calc(100vw-2rem))] max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
+                    className="pointer-events-auto flex w-[min(15rem,calc(100vw-2rem))] max-h-[min(28rem,calc(100dvh-13.5rem))] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
                       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
                         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="truncate">
-                          {isLabViewer ? "치과 소통" : "수작업 의뢰 · 기공소 전달"}
+                          {isLabViewer ? "치과 소통" : "기공소 소통"}
                         </span>
                         {paint.count > 0 ? (
                           <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
@@ -5898,7 +5898,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                         <p className="py-1 text-muted-foreground">
                           {isLabViewer
                             ? "치과와 이 디자인 화면·페인트·대화를 실시간으로 공유합니다."
-                            : "기공소에 전달할 내용을 작성하거나 화면에 페인트로 표시하세요."}
+                            : "기공소와 이 디자인 화면·페인트·대화를 실시간으로 공유합니다."}
                         </p>
                       ) : (
                         ptxMessages.slice(-20).map((msg) => {
@@ -5960,7 +5960,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                         placeholder={
                           isLabViewer
                             ? "치과에 전달할 메시지를 입력하세요…"
-                            : "기공소에 전달할 수작업 요청 내용을 입력하세요…"
+                            : "기공소에 전달할 메시지를 입력하세요…"
                         }
                         className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2.5 text-xs text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
                       />
