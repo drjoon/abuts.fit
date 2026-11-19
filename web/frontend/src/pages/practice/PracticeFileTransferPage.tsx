@@ -372,6 +372,7 @@ import {
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
 import { parseLabTechnician } from "@/shared/practice/labTechnician";
+import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { PracticeCustomAbutmentPreviewDialog } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
@@ -1462,6 +1463,15 @@ export const PracticeFileTransferPage = ({
     Array<{ transfer: PracticeRecentTransferItem; label: string }>
   >([]);
   const [designReviewIndex, setDesignReviewIndex] = useState(0);
+  const [abutmentDesignAwaitingQueue, setAbutmentDesignAwaitingQueue] = useState<
+    Array<{ transfer: PracticeRecentTransferItem; label: string }>
+  >([]);
+  const handleAbutmentDesignAwaitingItemsChange = useCallback(
+    (items: Array<{ transfer: PracticeRecentTransferItem; label: string }>) => {
+      setAbutmentDesignAwaitingQueue(items);
+    },
+    [],
+  );
   const abutmentDesignTransferKey = String(
     selectedTransfer?.transferId || selectedTransfer?.id || "",
   );
@@ -6269,6 +6279,77 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  const buildAbutmentDesignReviewLabel = useCallback(
+    (transfer: PracticeRecentTransferItem) => {
+      const model = buildPracticeSenderTransferDetailModel(transfer);
+      const labLabel = stripPracticeTargetLabDisplayDecorations(
+        resolvePracticeTransferLabDisplayLabel({
+          targetLab: transfer.targetLab,
+          handledByCertifiedPartner: transfer.handledByCertifiedPartner,
+          assigneeKind: transfer.assigneeKind,
+          assigneeLabName: transfer.assigneeLabName,
+        }),
+      );
+      return [
+        labLabel,
+        String(model?.patientName || "").trim(),
+        String(model?.doctorName || "").trim(),
+        formatToothNumbersForCard(model?.toothWorks || []),
+      ]
+        .map((part) => String(part || "").trim())
+        .filter(Boolean)
+        .join(" · ");
+    },
+    [],
+  );
+
+  const collectAbutmentDesignReviewItems = useCallback(
+    (focus?: PracticeRecentTransferItem | null) => {
+      const byId = new Map<
+        string,
+        { transfer: PracticeRecentTransferItem; label: string }
+      >();
+      const push = (
+        transfer: PracticeRecentTransferItem,
+        label?: string,
+      ) => {
+        const id = String(transfer.transferId || "").trim();
+        if (!id || id === "-") return;
+        byId.set(id, {
+          transfer,
+          label: label || buildAbutmentDesignReviewLabel(transfer),
+        });
+      };
+      for (const item of abutmentDesignAwaitingQueue) {
+        push(item.transfer, item.label);
+      }
+      for (const transfer of groupedTransfers) {
+        if (
+          !isPtxAbutmentDesignAwaitingDentist({
+            status: transfer.status,
+            hasCustomAbutment: transfer.hasCustomAbutment,
+            abutmentFeeRoute: transfer.abutmentFeeRoute,
+            practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
+            designReadyAt: transfer.designReadyAt,
+            designFileCount: transfer.designFileCount,
+          })
+        ) {
+          continue;
+        }
+        push(transfer);
+      }
+      if (focus) {
+        push(focus);
+      }
+      return Array.from(byId.values());
+    },
+    [
+      abutmentDesignAwaitingQueue,
+      buildAbutmentDesignReviewLabel,
+      groupedTransfers,
+    ],
+  );
+
   const openAbutmentDesignReview = useCallback(
     async (
       items: Array<{ transfer: PracticeRecentTransferItem; label: string }>,
@@ -6283,7 +6364,13 @@ export const PracticeFileTransferPage = ({
       if (!first) return;
       const hydratedFirst = await hydratePracticeTransferForDesign(first.transfer);
       const nextItems = items.map((item, index) =>
-        index === safeStart ? { ...item, transfer: hydratedFirst } : item,
+        index === safeStart
+          ? {
+              ...item,
+              transfer: hydratedFirst,
+              label: buildAbutmentDesignReviewLabel(hydratedFirst) || item.label,
+            }
+          : item,
       );
       setDesignReviewItems(nextItems);
       setDesignReviewIndex(safeStart);
@@ -6292,7 +6379,11 @@ export const PracticeFileTransferPage = ({
         nextItems.map(async (item, index) => {
           if (index === safeStart) return item;
           const hydrated = await hydratePracticeTransferForDesign(item.transfer);
-          return { ...item, transfer: hydrated };
+          return {
+            ...item,
+            transfer: hydrated,
+            label: buildAbutmentDesignReviewLabel(hydrated) || item.label,
+          };
         }),
       ).then((hydratedRest) => {
         setDesignReviewItems((prev) => {
@@ -6305,7 +6396,38 @@ export const PracticeFileTransferPage = ({
         });
       });
     },
-    [hydratePracticeTransferForDesign],
+    [buildAbutmentDesignReviewLabel, hydratePracticeTransferForDesign],
+  );
+
+  const openAbutmentDesignFromTransfer = useCallback(
+    async (transfer: PracticeRecentTransferItem) => {
+      const focusId = String(transfer.transferId || "").trim();
+      const items = collectAbutmentDesignReviewItems(transfer);
+      if (items.length === 0) {
+        await openAbutmentDesignReview(
+          [
+            {
+              transfer,
+              label: buildAbutmentDesignReviewLabel(transfer),
+            },
+          ],
+          0,
+        );
+        return;
+      }
+      const startIndex = Math.max(
+        0,
+        items.findIndex(
+          (item) => String(item.transfer.transferId || "").trim() === focusId,
+        ),
+      );
+      await openAbutmentDesignReview(items, startIndex);
+    },
+    [
+      buildAbutmentDesignReviewLabel,
+      collectAbutmentDesignReviewItems,
+      openAbutmentDesignReview,
+    ],
   );
 
   const handleOpenTransferDialog = async (
@@ -11406,6 +11528,9 @@ export const PracticeFileTransferPage = ({
           }
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
+          onAbutmentDesignAwaitingItemsChange={
+            handleAbutmentDesignAwaitingItemsChange
+          }
           onReviewAbutmentDesigns={(items) => {
             void openAbutmentDesignReview(items, 0);
           }}
@@ -12772,17 +12897,7 @@ export const PracticeFileTransferPage = ({
           onWorkScanTileClick={
             practiceAbutmentDesignAvailable && selectedTransfer
               ? () => {
-                  void (async () => {
-                    const hydrated = await hydratePracticeTransferForDesign(
-                      selectedTransfer,
-                    );
-                    if (hydrated !== selectedTransfer) {
-                      setSelectedTransfer(hydrated);
-                    }
-                    setDesignReviewItems([]);
-                    setDesignReviewIndex(0);
-                    setAbutmentDesignOpen(true);
-                  })();
+                  void openAbutmentDesignFromTransfer(selectedTransfer);
                 }
               : undefined
           }

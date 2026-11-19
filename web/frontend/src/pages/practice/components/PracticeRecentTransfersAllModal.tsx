@@ -252,6 +252,10 @@ type PracticeRecentTransfersAllModalProps = {
   onReviewAbutmentDesigns?: (
     items: Array<{ transfer: PracticeRecentTransferItem; label: string }>,
   ) => void;
+  /** 캘린더 검토 대기 목록 — 채팅 작업스캔에서도 같은 큐를 쓴다 */
+  onAbutmentDesignAwaitingItemsChange?: (
+    items: Array<{ transfer: PracticeRecentTransferItem; label: string }>,
+  ) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
   /** 범례 기공소 점 색 — 채팅 헤더 등과 동기화 */
@@ -279,6 +283,7 @@ export function PracticeRecentTransfersAllModal({
   calendarRefreshNonce = 0,
   onSelectTransfer,
   onReviewAbutmentDesigns,
+  onAbutmentDesignAwaitingItemsChange,
   onDeleteTransfer,
   onLabColorDotsChange,
 }: PracticeRecentTransfersAllModalProps) {
@@ -937,14 +942,24 @@ export function PracticeRecentTransfersAllModal({
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
   }, [visibleGroupedTransfers]);
 
-  const openAbutmentDesignReview = () => {
-    if (!onReviewAbutmentDesigns || abutmentDesignAwaitingItems.length === 0) return;
-    onReviewAbutmentDesigns(
+  const awaitingDesignReviewPayload = useMemo(
+    () =>
       abutmentDesignAwaitingItems.map((item) => ({
         transfer: item.transfer,
         label: item.label,
       })),
-    );
+    [abutmentDesignAwaitingItems],
+  );
+
+  useEffect(() => {
+    onAbutmentDesignAwaitingItemsChange?.(awaitingDesignReviewPayload);
+  }, [awaitingDesignReviewPayload, onAbutmentDesignAwaitingItemsChange]);
+
+  const openAbutmentDesignReview = () => {
+    if (!onReviewAbutmentDesigns || awaitingDesignReviewPayload.length === 0) {
+      return;
+    }
+    onReviewAbutmentDesigns(awaitingDesignReviewPayload);
   };
 
   const transferByNoticeId = useMemo(() => {
