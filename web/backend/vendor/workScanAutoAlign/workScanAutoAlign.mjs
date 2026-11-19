@@ -14725,6 +14725,18 @@ const TOOTH_WHITE_B = 0.969;
 function clamp01(v) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
+function linearToSrgbChannel(c2) {
+  return c2 < 31308e-7 ? c2 * 12.92 : 1.055 * Math.pow(c2, 0.41666) - 0.055;
+}
+function srgbToLinearChannel(c2) {
+  return c2 < 0.04045 ? c2 * 0.0773993808 : Math.pow(c2 * 0.9478672986 + 0.0521327014, 2.4);
+}
+function plainColorArray(color) {
+  if (!(color.array instanceof Float32Array) || color.itemSize < 3) return null;
+  if ("isInterleavedBufferAttribute" in color && color.isInterleavedBufferAttribute) return null;
+  if (color.array.length < color.count * color.itemSize) return null;
+  return color.array;
+}
 function enhanceScanSrgbChannels(r0, g0, b0) {
   let r2 = clamp01(0.5 + (r0 - 0.5) * SCAN_COLOR_CONTRAST);
   let g = clamp01(0.5 + (g0 - 0.5) * SCAN_COLOR_CONTRAST);
@@ -14768,18 +14780,30 @@ function enhanceScanSrgbChannels(r0, g0, b0) {
 function enhanceScanVertexColors(geometry) {
   const color = geometry.getAttribute("color");
   if (!color || color.count <= 0) return;
-  const tmp = new Color();
-  for (let i = 0; i < color.count; i += 1) {
-    tmp.setRGB(
-      color.getX(i),
-      color.getY(i),
-      color.getZ(i),
-      LinearSRGBColorSpace
+  const arr = plainColorArray(color);
+  if (!arr) {
+    const tmp = new Color();
+    for (let i = 0; i < color.count; i += 1) {
+      tmp.setRGB(color.getX(i), color.getY(i), color.getZ(i), LinearSRGBColorSpace);
+      tmp.convertLinearToSRGB();
+      const [r2, g, b2] = enhanceScanSrgbChannels(tmp.r, tmp.g, tmp.b);
+      tmp.setRGB(r2, g, b2, SRGBColorSpace);
+      color.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    }
+    color.needsUpdate = true;
+    return;
+  }
+  const step = color.itemSize;
+  const n2 = color.count * step;
+  for (let i = 0; i < n2; i += step) {
+    const [r2, g, b2] = enhanceScanSrgbChannels(
+      linearToSrgbChannel(arr[i]),
+      linearToSrgbChannel(arr[i + 1]),
+      linearToSrgbChannel(arr[i + 2])
     );
-    tmp.convertLinearToSRGB();
-    const [r2, g, b2] = enhanceScanSrgbChannels(tmp.r, tmp.g, tmp.b);
-    tmp.setRGB(r2, g, b2, SRGBColorSpace);
-    color.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    arr[i] = srgbToLinearChannel(r2);
+    arr[i + 1] = srgbToLinearChannel(g);
+    arr[i + 2] = srgbToLinearChannel(b2);
   }
   color.needsUpdate = true;
 }
@@ -15176,14 +15200,24 @@ function normalizeVertexColorsIfNeeded(geometry) {
     if (Number.isFinite(v) && v > max) max = v;
   }
   if (!(max > 0 && max <= 0.02)) return;
+  const plain = plainColorArray(color);
+  if (plain) {
+    const step = color.itemSize;
+    const n2 = color.count * step;
+    for (let i = 0; i < n2; i += step) {
+      const r2 = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i]) * 255));
+      const g = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i + 1]) * 255));
+      const b2 = Math.min(1, Math.max(0, linearToSrgbChannel(plain[i + 2]) * 255));
+      plain[i] = srgbToLinearChannel(r2);
+      plain[i + 1] = srgbToLinearChannel(g);
+      plain[i + 2] = srgbToLinearChannel(b2);
+    }
+    color.needsUpdate = true;
+    return;
+  }
   const tmp = new Color();
   for (let i = 0; i < color.count; i += 1) {
-    tmp.setRGB(
-      color.getX(i),
-      color.getY(i),
-      color.getZ(i),
-      LinearSRGBColorSpace
-    );
+    tmp.setRGB(color.getX(i), color.getY(i), color.getZ(i), LinearSRGBColorSpace);
     tmp.convertLinearToSRGB();
     const r2 = Math.min(1, Math.max(0, tmp.r * 255));
     const g = Math.min(1, Math.max(0, tmp.g * 255));
@@ -16049,7 +16083,7 @@ function resetYieldClock() {
 async function pause(options) {
   if (options?.cancelled?.()) throw new BiteAlignCancelled();
   await yieldFrame();
-  nextYieldAt = performance.now() + 48;
+  nextYieldAt = performance.now() + 96;
   if (options?.cancelled?.()) throw new BiteAlignCancelled();
 }
 function checkpoint(options) {
@@ -16201,12 +16235,19 @@ function buildGrid(cloud, cell) {
     const mid2 = ((minDist + maxDist) * 0.5) ** 2;
     const min2 = minDist * minDist;
     const max2 = maxDist * maxDist;
-    visit(x, y, z, maxDist, (index2, dist2) => {
-      if (dist2 < min2 || dist2 > max2) return;
-      if (dist2 <= mid2) {
-        if (inner.length < limit) inner.push(index2);
-      } else if (outer.length < limit) outer.push(index2);
-    });
+    visit(
+      x,
+      y,
+      z,
+      maxDist,
+      (index2, dist2) => {
+        if (dist2 < min2 || dist2 > max2) return;
+        if (dist2 <= mid2) {
+          if (inner.length < limit) inner.push(index2);
+        } else if (outer.length < limit) outer.push(index2);
+      },
+      () => inner.length >= limit && outer.length >= limit
+    );
     const mixed = [];
     const span = Math.max(inner.length, outer.length);
     for (let i = 0; i < span && mixed.length < limit; i += 1) {
@@ -17392,28 +17433,57 @@ function translationSeeds(source, rot, center, samples, sampleNormals, unitToMm,
   const lo = [0, 1, 2].map((k) => tMin[k] - sMax[k]);
   const hi = [0, 1, 2].map((k) => tMax[k] - sMin[k]);
   const floor = Math.max(6, Math.floor(n2 * 0.12));
-  const found = [];
-  for (let tx = lo[0]; tx <= hi[0]; tx += step) {
-    for (let ty = lo[1]; ty <= hi[1]; ty += step) {
-      for (let tz = lo[2]; tz <= hi[2]; tz += step) {
-        let score = 0;
-        for (let i = 0; i < n2; i += 1) {
-          const ix = Math.floor((samples[i * 3] - tx - sMin[0]) / cell) + 1;
-          if (ix < 0 || ix >= nx) continue;
-          const iy = Math.floor((samples[i * 3 + 1] - ty - sMin[1]) / cell) + 1;
-          if (iy < 0 || iy >= ny) continue;
-          const iz = Math.floor((samples[i * 3 + 2] - tz - sMin[2]) / cell) + 1;
-          if (iz < 0 || iz >= nz) continue;
-          const at = (iz * ny + iy) * nx + ix;
-          if (!occ[at]) continue;
-          const dot = occN[at * 3] * sampleNormals[i * 3] + occN[at * 3 + 1] * sampleNormals[i * 3 + 1] + occN[at * 3 + 2] * sampleNormals[i * 3 + 2];
-          if (Math.abs(dot) > 0.55) score += 1;
+  const scoreAt = (tx, ty, tz) => {
+    let score = 0;
+    for (let i = 0; i < n2; i += 1) {
+      const ix = Math.floor((samples[i * 3] - tx - sMin[0]) / cell) + 1;
+      if (ix < 0 || ix >= nx) continue;
+      const iy = Math.floor((samples[i * 3 + 1] - ty - sMin[1]) / cell) + 1;
+      if (iy < 0 || iy >= ny) continue;
+      const iz = Math.floor((samples[i * 3 + 2] - tz - sMin[2]) / cell) + 1;
+      if (iz < 0 || iz >= nz) continue;
+      const at = (iz * ny + iy) * nx + ix;
+      if (!occ[at]) continue;
+      const dot = occN[at * 3] * sampleNormals[i * 3] + occN[at * 3 + 1] * sampleNormals[i * 3 + 1] + occN[at * 3 + 2] * sampleNormals[i * 3 + 2];
+      if (Math.abs(dot) > 0.55) score += 1;
+    }
+    return score;
+  };
+  const collect = (boxLo, boxHi, stride, minScore) => {
+    const rows = [];
+    const endPad = stride * 0.25;
+    for (let tx = boxLo[0]; tx <= boxHi[0] + endPad; tx += stride) {
+      for (let ty = boxLo[1]; ty <= boxHi[1] + endPad; ty += stride) {
+        for (let tz = boxLo[2]; tz <= boxHi[2] + endPad; tz += stride) {
+          const score = scoreAt(tx, ty, tz);
+          if (score >= minScore) rows.push({ t: [tx, ty, tz], score });
         }
-        if (score >= floor) found.push({ t: [tx, ty, tz], score });
       }
     }
+    rows.sort((a2, b2) => b2.score - a2.score);
+    return rows;
+  };
+  const coarse = step * 2;
+  const coarseHits = collect(lo, hi, coarse, 1);
+  const bestCoarse = coarseHits[0]?.score ?? 0;
+  let found;
+  if (bestCoarse >= floor) {
+    const seen = /* @__PURE__ */ new Set();
+    found = [];
+    for (const hit of coarseHits.slice(0, 4)) {
+      const boxLo = [0, 1, 2].map((k) => Math.max(lo[k], hit.t[k] - coarse));
+      const boxHi = [0, 1, 2].map((k) => Math.min(hi[k], hit.t[k] + coarse));
+      for (const row of collect(boxLo, boxHi, step, floor)) {
+        const key = `${Math.round(row.t[0] * 10)},${Math.round(row.t[1] * 10)},${Math.round(row.t[2] * 10)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(row);
+      }
+    }
+    found.sort((a2, b2) => b2.score - a2.score);
+  } else {
+    found = collect(lo, hi, step, floor);
   }
-  found.sort((a2, b2) => b2.score - a2.score);
   const apart = mmToUnits(7, unitToMm);
   const seeds = [];
   for (const row of found) {

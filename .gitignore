@@ -16,6 +16,10 @@ logs
 .eb_setenv_*.sha
 .eb_frontend_npm.sha
 .eb_frontend_src.sha
+.eb_lambda_*.sha
+
+# local frontend diag / scratch
+web/frontend/.tmp_*
 
 *.zip
 # 기공소 연결 프로그램 설치 파일 (웹「설치 파일 받기」)
