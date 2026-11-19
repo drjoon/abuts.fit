@@ -56,6 +56,10 @@ export type PracticeStatusFilterBadgeItem = {
   unreadCount?: number;
   /** 상태 의미 설명(클릭 안내 문구는 컴포넌트가 앞에 붙임) */
   tooltip?: string;
+  /** 디자인 확정 대기 등 — 하이라이트·깜빡임 */
+  attention?: boolean;
+  /** attention일 때 Badge에 붙는 클래스(예: practice-abutment-design-awaiting-attention) */
+  attentionClassName?: string;
 };
 
 const STATUS_BADGE_ICON: Record<PracticeCalendarStatusTone, LucideIcon> = {
@@ -199,6 +203,9 @@ export function PracticeStatusFilterBadges({
                         ? "px-2.5"
                         : null,
                     PRACTICE_STATUS_FILTER_BADGE_CLASS[item.tone].active,
+                    item.attention &&
+                      (item.attentionClassName ||
+                        "practice-abutment-design-awaiting-attention"),
                   )}
                 >
                   <span className="inline-flex items-center gap-1">

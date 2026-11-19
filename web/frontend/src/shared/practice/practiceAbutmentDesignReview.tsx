@@ -1,6 +1,6 @@
 /**
  * 치과 기공의뢰 — 커스텀어벗 디자인 미확정.
- * 툴바 한 줄은 공지 왼쪽. 디자인 모달 헤더는 공지 레일처럼 한 장씩 넘긴다.
+ * 건수는 상단 「어벗」뱃지. 디자인 모달 헤더는 공지 레일처럼 한 장씩 넘긴다.
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -13,26 +13,6 @@ export type PracticeAbutmentDesignReviewCard = {
   id: string;
   label: string;
 };
-
-export function PracticeAbutmentDesignAwaitingButton({
-  total,
-  onClick,
-}: {
-  total: number;
-  onClick: () => void;
-}) {
-  const count = Math.max(0, Number(total || 0));
-  if (count <= 0) return null;
-  return (
-    <button
-      type="button"
-      className="inline-flex h-8 shrink-0 items-center rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-sm font-medium text-amber-950 hover:bg-amber-100"
-      onClick={onClick}
-    >
-      어벗 디자인 {count}건 검토 대기중
-    </button>
-  );
-}
 
 export function PracticeAbutmentDesignReviewRail({
   items,

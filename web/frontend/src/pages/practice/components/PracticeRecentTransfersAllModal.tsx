@@ -62,7 +62,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronRight, Search, Trash2, X } from "lucide-react";
+import { ChevronRight, Hexagon, Search, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
@@ -148,8 +148,10 @@ import {
   isPracticeNextArrivalOverdue,
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
-import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
-import { PracticeAbutmentDesignAwaitingButton } from "@/shared/practice/practiceAbutmentDesignReview";
+import {
+  isPtxAbutmentDesignAwaitingDentist,
+  PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
 import {
   PracticeRecentTransfersCalendar,
@@ -955,12 +957,14 @@ export function PracticeRecentTransfersAllModal({
     onAbutmentDesignAwaitingItemsChange?.(awaitingDesignReviewPayload);
   }, [awaitingDesignReviewPayload, onAbutmentDesignAwaitingItemsChange]);
 
-  const openAbutmentDesignReview = () => {
+  const openAbutmentDesignReview = useCallback(() => {
     if (!onReviewAbutmentDesigns || awaitingDesignReviewPayload.length === 0) {
       return;
     }
     onReviewAbutmentDesigns(awaitingDesignReviewPayload);
-  };
+  }, [awaitingDesignReviewPayload, onReviewAbutmentDesigns]);
+
+  const abutmentDesignAwaitingCount = abutmentDesignAwaitingItems.length;
 
   const transferByNoticeId = useMemo(() => {
     const map = new Map<string, (typeof visibleGroupedTransfers)[number]>();
@@ -1001,6 +1005,11 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
+      // 어벗(작업완료 필터키) + 디자인 확정 대기 → 디자인 화면에서 하나씩 확정.
+      if (filterKey === "작업완료" && abutmentDesignAwaitingCount > 0) {
+        openAbutmentDesignReview();
+        return;
+      }
       // 배지 본문 건수와 동일하게 순회(완료·취소·어벗은 미열람만).
       // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
       const queueMatched = listBadgeNavigateTransfersForStatusFilter(
@@ -1046,26 +1055,40 @@ export function PracticeRecentTransfersAllModal({
       );
     },
     [
+      abutmentDesignAwaitingCount,
       badgeClearedIds,
       badgeQueueTransfers,
       dateKey,
       focusCalendarTransfer,
       onSelectTransfer,
+      openAbutmentDesignReview,
       viewMode,
       visibleGroupedTransfers,
     ],
   );
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
-      key: item.filter,
-      label: item.label,
-      tone: resolvePracticeStatusFilterBadgeTone(item.filter),
-      count: statusCounts[item.countKey],
-      unreadCount: statusUnreadCounts[item.countKey],
-      tooltip: item.tooltip,
-    }));
-  }, [statusCounts, statusUnreadCounts]);
+    return PRACTICE_RECENT_STATUS_BADGES.map((item) => {
+      const isAbutment = item.countKey === "abutment";
+      const awaiting = isAbutment && abutmentDesignAwaitingCount > 0;
+      return {
+        key: item.filter,
+        label: item.label,
+        tone: resolvePracticeStatusFilterBadgeTone(item.filter),
+        count: awaiting
+          ? abutmentDesignAwaitingCount
+          : statusCounts[item.countKey],
+        unreadCount: statusUnreadCounts[item.countKey],
+        tooltip: awaiting
+          ? "커스텀어벗 디자인 확정이 필요한 건입니다. 클릭하면 디자인 화면에서 하나씩 확정합니다."
+          : item.tooltip,
+        attention: awaiting,
+        attentionClassName: awaiting
+          ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+          : undefined,
+      };
+    });
+  }, [abutmentDesignAwaitingCount, statusCounts, statusUnreadCounts]);
 
   const statusBadges = (
     <PracticeStatusFilterBadges
@@ -1195,14 +1218,6 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : isMobile ? (
             <>
-              {abutmentDesignAwaitingItems.length > 0 ? (
-                <div className="mb-2 flex justify-end">
-                  <PracticeAbutmentDesignAwaitingButton
-                    total={abutmentDesignAwaitingItems.length}
-                    onClick={openAbutmentDesignReview}
-                  />
-                </div>
-              ) : null}
               <PracticeNextArrivalOverdueNotice
                 total={nextArrivalOverdueTotal}
                 items={nextArrivalOverdueItems}
@@ -1295,12 +1310,24 @@ export function PracticeRecentTransfersAllModal({
                           designReadyAt: transfer.designReadyAt,
                           designFileCount: transfer.designFileCount,
                         }) ? (
-                          <Badge
-                            variant="outline"
-                            className="h-6 shrink-0 border-amber-300 bg-amber-50 px-2 text-[11px] font-semibold leading-none text-amber-900"
+                          <span
+                            className={cn(
+                              "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-emerald-700",
+                              PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+                            )}
+                            title="어벗 디자인 확정 대기"
+                            aria-label="어벗 디자인 확정 대기"
                           >
-                            디자인 대기
-                          </Badge>
+                            <Hexagon className="h-3.5 w-3.5" aria-hidden />
+                          </span>
+                        ) : transfer.hasCustomAbutment ? (
+                          <span
+                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-emerald-700"
+                            title="커스텀 어벗 포함"
+                            aria-label="커스텀 어벗 포함"
+                          >
+                            <Hexagon className="h-3.5 w-3.5" aria-hidden />
+                          </span>
                         ) : null}
                         {deliveryLabel ? (
                           <span
@@ -1427,14 +1454,6 @@ export function PracticeRecentTransfersAllModal({
                 search={search}
                 onSearchChange={handleSearchChange}
                 searchPlaceholder="환자명, 기공소명, 치아번호"
-                toolbarBeforeMiddle={
-                  abutmentDesignAwaitingItems.length > 0 ? (
-                    <PracticeAbutmentDesignAwaitingButton
-                      total={abutmentDesignAwaitingItems.length}
-                      onClick={openAbutmentDesignReview}
-                    />
-                  ) : null
-                }
                 toolbarMiddle={calendarToolbarMiddle}
                 hiddenWeekdays={hiddenWeekdays}
                 alignEpoch={alignEpoch}

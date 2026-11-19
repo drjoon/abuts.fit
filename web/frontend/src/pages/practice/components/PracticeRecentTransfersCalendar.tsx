@@ -157,6 +157,7 @@ import {
   getPracticeAbutmentUploadOverdueTooltip,
   type PracticeAbutmentUploadOverdueViewer,
 } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import { PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { ABUTS_PINNED_LAB_NAME } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import {
   formatAbutsCooperationLabLabel,
@@ -723,20 +724,19 @@ function PracticeCalendarChipHover({
           <p className="text-muted-foreground">상태 · {statusLabel}</p>
         ) : null}
         {item.abutmentDesignAwaiting ? (
-          <p className="text-amber-800">
-            어벗 디자인 대기
+          <p className="text-emerald-800">
+            어벗 디자인 확정 대기
             <br />
             치과의사가 확정하면 생산이 시작됩니다.
           </p>
+        ) : item.hasCustomAbutment ? (
+          <p className="text-emerald-800">커스텀 어벗 포함</p>
         ) : null}
         {linkedOrders ? (
           <p className="text-muted-foreground">연결 주문일 · {linkedOrders}</p>
         ) : null}
         {linkedArrivals ? (
           <p className="text-muted-foreground">연결 도착일 · {linkedArrivals}</p>
-        ) : null}
-        {item.hasCustomAbutment ? (
-          <p className="text-emerald-800">커스텀 어벗 포함</p>
         ) : null}
         {unread > 0 ? (
           <p className="font-medium text-destructive">
@@ -2287,19 +2287,23 @@ export function PracticeRecentTransfersCalendar({
                               ) : null}
                               {hasCustomAbutment ? (
                                 <span
-                                  className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-700"
-                                  title="커스텀 어벗 포함"
-                                  aria-label="커스텀 어벗 포함"
+                                  className={cn(
+                                    "mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-700",
+                                    item.abutmentDesignAwaiting &&
+                                      PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+                                  )}
+                                  title={
+                                    item.abutmentDesignAwaiting
+                                      ? "어벗 디자인 확정 대기"
+                                      : "커스텀 어벗 포함"
+                                  }
+                                  aria-label={
+                                    item.abutmentDesignAwaiting
+                                      ? "어벗 디자인 확정 대기"
+                                      : "커스텀 어벗 포함"
+                                  }
                                 >
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
-                                </span>
-                              ) : null}
-                              {item.abutmentDesignAwaiting ? (
-                                <span
-                                  className="mt-0.5 inline-flex h-4 shrink-0 items-center rounded bg-amber-100 px-1 text-[10px] font-semibold leading-none text-amber-900"
-                                  title="어벗 디자인 대기"
-                                >
-                                  디자인 대기
                                 </span>
                               ) : null}
                               {renderLinkArrow(item, {
@@ -2555,19 +2559,23 @@ export function PracticeRecentTransfersCalendar({
                               ) : null}
                               {item.hasCustomAbutment ? (
                                 <span
-                                  className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-800/80"
-                                  title="커스텀 어벗 포함"
-                                  aria-label="커스텀 어벗 포함"
+                                  className={cn(
+                                    "mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-800/80",
+                                    item.abutmentDesignAwaiting &&
+                                      PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+                                  )}
+                                  title={
+                                    item.abutmentDesignAwaiting
+                                      ? "어벗 디자인 확정 대기"
+                                      : "커스텀 어벗 포함"
+                                  }
+                                  aria-label={
+                                    item.abutmentDesignAwaiting
+                                      ? "어벗 디자인 확정 대기"
+                                      : "커스텀 어벗 포함"
+                                  }
                                 >
                                   <Hexagon className="h-3 w-3" aria-hidden />
-                                </span>
-                              ) : null}
-                              {item.abutmentDesignAwaiting ? (
-                                <span
-                                  className="mt-0.5 inline-flex h-4 shrink-0 items-center rounded bg-amber-100 px-1 text-[10px] font-semibold leading-none text-amber-900"
-                                  title="어벗 디자인 대기"
-                                >
-                                  디자인 대기
                                 </span>
                               ) : null}
                               {renderLinkArrow(

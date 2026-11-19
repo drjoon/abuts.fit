@@ -509,6 +509,38 @@ All colors MUST be HSL.
   }
 }
 
+/* 치과 기공의뢰: 어벗 디자인 확정 대기 — 헤더 뱃지·육각형 아이콘 */
+@keyframes practice-abutment-design-awaiting-pulse {
+  0%,
+  100% {
+    border-color: rgb(16 185 129 / 0.55);
+    background-color: rgb(209 250 229 / 0.65);
+    color: rgb(4 120 87);
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.28);
+  }
+  50% {
+    border-color: rgb(5 150 105);
+    background-color: rgb(167 243 208 / 0.95);
+    color: rgb(6 95 70);
+    box-shadow: 0 0 0 4px rgb(16 185 129 / 0.2);
+  }
+}
+
+.practice-abutment-design-awaiting-attention {
+  border-width: 1px;
+  border-style: solid;
+  animation: practice-abutment-design-awaiting-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .practice-abutment-design-awaiting-attention {
+    animation: none;
+    border-color: rgb(5 150 105);
+    background-color: rgb(167 243 208 / 0.95);
+    color: rgb(6 95 70);
+  }
+}
+
 /* Practice: 보철물 치식 체험형 가이드투어 하이라이트 (accent) */
 @keyframes practice-tooth-guide-pulse {
   0%,
