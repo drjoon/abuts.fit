@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 
 import * as THREE from "three";
 
+import {
+  buildOpposingClearanceProbe,
+  identityAbutmentEdit,
+  refitLocalPositions,
+} from "../components/practice/abutmentDirectEdit";
 import { designCustomAbutmentStl } from "./customAbutmentStlDesign";
 
 const ARCH_ANG = 1.35;
@@ -1127,6 +1132,77 @@ open11.predictedCrownWorldGeometry.dispose();
   br11.predictedCrownWorldGeometry.dispose();
   single22.worldGeometry.dispose();
   single22.predictedCrownWorldGeometry.dispose();
+}
+
+// 설측에만 대합이 있는 수평피개 #22에서 검볼로 높이·위치를 바꿀 때 실제 3D 대합거리가 실시간 갱신된다.
+{
+  const palatal22Opp = makeArchStrip(() => -5.8);
+  // 순측(u > -2.3) 삼각형은 비우고 설측(u <= -2.3)에만 대합을 남긴다.
+  const posAttr = palatal22Opp.getAttribute("position") as THREE.BufferAttribute;
+  const keptTris: number[] = [];
+  for (let i = 0; i < posAttr.count; i += 3) {
+    const x0 = posAttr.getX(i), y0 = posAttr.getY(i), z0 = posAttr.getZ(i);
+    const x1 = posAttr.getX(i + 1), y1 = posAttr.getY(i + 1), z1 = posAttr.getZ(i + 1);
+    const x2 = posAttr.getX(i + 2), y2 = posAttr.getY(i + 2), z2 = posAttr.getZ(i + 2);
+    if (Math.max(x0, x1, x2) > -2.3) continue;
+    keptTris.push(x0, y0, z0, x1, y1, z1, x2, y2, z2);
+  }
+  const overjetOppGeo = new THREE.BufferGeometry();
+  overjetOppGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(keptTris), 3));
+  overjetOppGeo.computeVertexNormals();
+
+  const d22Overjet = await designCustomAbutmentStl({
+    fixture: { ...fixture11, toothNumber: "22" },
+    jawGeometry: jaw,
+    opposingGeometry: overjetOppGeo,
+    toothWorks: works22,
+  });
+  const solid = d22Overjet.solidBodyLocalPositions!;
+  const mLoop = d22Overjet.marginLoopLocal;
+  let minMz = Infinity;
+  let sumMz = 0;
+  for (let i = 2; i < mLoop.length; i += 3) {
+    minMz = Math.min(minMz, mLoop[i]!);
+    sumMz += mLoop[i]!;
+  }
+  const meanMz = sumMz / (mLoop.length / 3);
+  const zone22 = {
+    coneZ: 1.0,
+    fixedZ: 1.4,
+    marginZ: minMz,
+    meanMarginZ: meanMz,
+    screwR: 0,
+    boreTopR: 1.225,
+    span: 6.0,
+    labial: [1, 0] as [number, number],
+    mesial: [0, 1] as [number, number],
+  };
+  const probe22 = buildOpposingClearanceProbe(overjetOppGeo, d22Overjet.fixture, zone22)!;
+  assert.ok(probe22 != null, "수평피개 설측 대합 프로브가 생성된다");
+  const outSolid = new Float32Array(solid.length);
+  const outMargin = new Float32Array(mLoop.length);
+  const evalGumballClear = (patch: Partial<ReturnType<typeof identityAbutmentEdit>>) => {
+    const ed = { ...identityAbutmentEdit(), ...patch };
+    refitLocalPositions(solid, ed, zone22, outSolid, 0);
+    refitLocalPositions(mLoop, ed, zone22, outMargin, 0);
+    return probe22.measureSurfaceClearance(outSolid, outMargin);
+  };
+  const baseClear = evalGumballClear({});
+  const liftedClear = evalGumballClear({ heightMm: 1.55 });
+  const movedPalatalClear = evalGumballClear({ heightMm: 1.55, shiftLabialMm: -0.9 });
+  const movedLabialClear = evalGumballClear({ heightMm: 1.55, shiftLabialMm: 0.9 });
+  assert.ok(
+    baseClear != null && liftedClear != null && liftedClear > baseClear - 0.5,
+    `검볼로 높이를 1.55mm 올려도 열린 순측 절단 공간에서는 대합거리가 단순 차감되지 않는다(${baseClear} → ${liftedClear}mm)`,
+  );
+  assert.ok(
+    movedPalatalClear != null && movedLabialClear != null && movedPalatalClear + 0.8 < movedLabialClear,
+    `검볼로 순·설 위치를 옮기면 대합거리가 실시간 반영된다(설측 ${movedPalatalClear}mm < 순측 ${movedLabialClear}mm)`,
+  );
+  palatal22Opp.dispose();
+  overjetOppGeo.dispose();
+  d22Overjet.worldGeometry.dispose();
+  d22Overjet.predictedCrownWorldGeometry.dispose();
 }
 
 jaw.dispose();
