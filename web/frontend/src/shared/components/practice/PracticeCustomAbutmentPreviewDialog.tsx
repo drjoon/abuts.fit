@@ -15,6 +15,7 @@
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
+// - 2026-11-19: 기공소는 치과 디자인 확정 전 뷰어로 두지 않고 모달을 닫는다.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -291,7 +292,7 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   viewerRole?: "practice" | "lab";
   /** 확정 & 의뢰, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
   onActionComplete?: (
-    action: "confirmed" | "manual" | "checked" | "cancelled",
+    action: "confirmed" | "manual" | "checked" | "cancelled" | "unconfirmed",
     detail?: { body?: unknown },
   ) => void;
   /** 검토 대기 의뢰. 헤더에서 한 건씩 넘긴다. */
@@ -2836,6 +2837,12 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [flushSessionWork, onOpenChange],
   );
+  const handleOpenChangeRef = useRef(handleOpenChange);
+  handleOpenChangeRef.current = handleOpenChange;
+  const onActionCompleteRef = useRef(onActionComplete);
+  onActionCompleteRef.current = onActionComplete;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // WebGL 씬 초기화 (Radix DialogPortal이 마운트된 뒤 hostEl 콜백 ref로 실행)
   useEffect(() => {
@@ -3301,6 +3308,20 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
+        // 기공소는 스캔을 그리기 전에 확정을 본다. 아니면 뷰어가 잠깐 열린다.
+        const remoteFirst = isLabViewerRef.current ? await remotePromise : null;
+        if (cancelled) return;
+        if (isLabViewerRef.current && remoteFirst?.mode !== "confirmed") {
+          if (remoteFirst) onActionCompleteRef.current?.("unconfirmed");
+          toastRef.current({
+            title: "디자인 검토",
+            description: remoteFirst
+              ? "치과 디자인 확정 후 검토할 수 있습니다."
+              : "디자인 상태를 확인하지 못했습니다.",
+          });
+          handleOpenChangeRef.current(false);
+          return;
+        }
         const [rawLoadedScans, localCached, localChat, remote] = await Promise.all([
           Promise.all(
             toLoad.map((item, idx) =>
@@ -3320,8 +3341,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           ),
           cachePromise,
           chatPromise,
-          remotePromise,
+          isLabViewerRef.current ? Promise.resolve(remoteFirst) : remotePromise,
         ]);
+        if (cancelled) return;
         const serverDesign =
           remote?.design && remote.design.teeth.length > 0
             ? {

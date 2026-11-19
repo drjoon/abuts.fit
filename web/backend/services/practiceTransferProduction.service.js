@@ -2840,6 +2840,13 @@ async function emitPracticeTransferAbutmentStageChangedRealtime(
         ? pastReadyTeeth
         : [],
       abutmentToothStages: Array.isArray(toothStages) ? toothStages : [],
+      // 취소로 비면 null. 기공소가 확정 전 디자인 모달을 열지 않게 한다.
+      practiceDesignConfirmedAt: (() => {
+        const raw = transfer.production?.practiceDesignConfirmedAt;
+        if (!raw) return null;
+        const ms = new Date(raw).getTime();
+        return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+      })(),
     },
     updatedAt: transfer.updatedAt || new Date(),
   });

@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-19: 기공소 디자인 모달 — 치과 확정이 아니면 열지 않는다. 뷰어로 대체하지 않는다.
 // - 2026-11-19: 기공소 디자인 확정 — 응답의 제조 STL·연동 의뢰를 바로 반영. 생산의뢰 완료가 새로고침 없이 보인다.
 // - 2026-11-19: 작업시작 — 치과 어벗·디자인 확정 전 CTA 비활성, 보철 업로드 안내 모달 카피 갱신.
 // - 2026-11-19: 디자인 모달 — 캘린더 hydrate를 열기 전에 기다리지 않는다. 선택 시 prefetch.
@@ -301,6 +302,7 @@ import {
   anonymizeAutoMatchChatSenderName,
   isRedactedPracticeDisplayName,
 } from "@/shared/practice/autoMatchIdentity";
+import { fetchCustomAbutmentSnapshot } from "@/shared/practice/customAbutmentDesignCache";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
 import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
@@ -845,6 +847,7 @@ function LabAbutmentDesignReviewDialog({
   onOpenChange,
   onIndexChange,
   onChecked,
+  onUnconfirmed,
 }: {
   open: boolean;
   items: ReceivedPracticeTransfer[];
@@ -856,6 +859,7 @@ function LabAbutmentDesignReviewDialog({
   onOpenChange: (open: boolean) => void;
   onIndexChange: (index: number) => void;
   onChecked: (transferId: string, body?: unknown) => void;
+  onUnconfirmed: (transferId: string) => void;
 }) {
   const entry = items[index];
   if (!open || !entry) return null;
@@ -905,8 +909,13 @@ function LabAbutmentDesignReviewDialog({
       reviewIndex={index}
       onReviewIndexChange={onIndexChange}
       onActionComplete={(action, detail) => {
+        const id = String(entry.transferId || entry._id || "");
+        if (action === "unconfirmed") {
+          onUnconfirmed(id);
+          return;
+        }
         if (action !== "checked") return;
-        onChecked(String(entry.transferId || entry._id || ""), detail?.body);
+        onChecked(id, detail?.body);
       }}
     />
   );
@@ -2903,6 +2912,20 @@ export function RequestorPracticeReceivePage({
                     abutmentPastReady: Boolean(
                       productionRawFromRealtime.abutmentPastReady,
                     ),
+                  }
+                : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "practiceDesignConfirmedAt",
+              )
+                ? {
+                    practiceDesignConfirmedAt:
+                      productionRawFromRealtime.practiceDesignConfirmedAt
+                        ? String(
+                            productionRawFromRealtime.practiceDesignConfirmedAt,
+                          )
+                        : null,
                   }
                 : {}),
             },
@@ -9569,6 +9592,23 @@ export function RequestorPracticeReceivePage({
     [mergeTransferPreserveOptimisticDesigns],
   );
 
+  const clearLabPracticeDesignConfirmed = useCallback((transferId: string) => {
+    const id = String(transferId || "").trim();
+    if (!id) return;
+    const patch = (row: ReceivedPracticeTransfer): ReceivedPracticeTransfer => {
+      const same =
+        String(row.transferId || "").trim() === id ||
+        String(row._id || "").trim() === id;
+      if (!same || !row.production?.practiceDesignConfirmedAt) return row;
+      return {
+        ...row,
+        production: { ...row.production, practiceDesignConfirmedAt: null },
+      };
+    };
+    setTransfers((prev) => prev.map(patch));
+    setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+  }, []);
+
   const openLabAbutmentDesign = useCallback(
     (
       items: ReceivedPracticeTransfer[],
@@ -9577,17 +9617,37 @@ export function RequestorPracticeReceivePage({
     ) => {
       if (items.length === 0) return;
       const safe = Math.min(Math.max(0, startIndex), items.length - 1);
-      const seq = ++labDesignOpenSeqRef.current;
       const first = items[safe]!;
-      const needsHydrate = !labTransferHasDesignScan(first);
-      // Critical path: 모달을 먼저 연다. 파일 hydrate는 응답 후.
-      setLabDesignRail(rail);
-      setLabDesignItems(items);
-      setLabDesignIndex(safe);
-      setLabDesignFilesPending(needsHydrate);
-      setLabDesignOpen(true);
+      const transferKey = String(first.transferId || first._id || "").trim();
+      const seq = ++labDesignOpenSeqRef.current;
 
       void (async () => {
+        if (!token || !transferKey) return;
+        const snap = await fetchCustomAbutmentSnapshot(token, transferKey);
+        if (labDesignOpenSeqRef.current !== seq) return;
+        if (!snap) {
+          toast({
+            title: "디자인 검토",
+            description: "디자인 상태를 확인하지 못했습니다.",
+          });
+          return;
+        }
+        if (snap.mode !== "confirmed") {
+          clearLabPracticeDesignConfirmed(transferKey);
+          toast({
+            title: "디자인 검토",
+            description: "치과 디자인 확정 후 검토할 수 있습니다.",
+          });
+          return;
+        }
+
+        const needsHydrate = !labTransferHasDesignScan(first);
+        setLabDesignRail(rail);
+        setLabDesignItems(items);
+        setLabDesignIndex(safe);
+        setLabDesignFilesPending(needsHydrate);
+        setLabDesignOpen(true);
+
         let next = items;
         if (needsHydrate) {
           const hydratedFirst = await hydrateLabTransferForDesign(first);
@@ -9619,7 +9679,13 @@ export function RequestorPracticeReceivePage({
         }
       })();
     },
-    [applyHydratedLabTransfer, hydrateLabTransferForDesign],
+    [
+      applyHydratedLabTransfer,
+      clearLabPracticeDesignConfirmed,
+      hydrateLabTransferForDesign,
+      toast,
+      token,
+    ],
   );
 
   /** 채팅이 열린 어벗 의뢰는 디자인 클릭 전에 스캔 키를 미리 채운다. */
@@ -11568,15 +11634,9 @@ export function RequestorPracticeReceivePage({
                   ) ? (
                     <>
                       {(() => {
-                        const labAbutmentDesignReady =
-                          Boolean(
-                            selectedTransfer.production
-                              ?.practiceDesignConfirmedAt,
-                          ) ||
-                          Boolean(
-                            selectedTransfer.production
-                              ?.customAbutmentManualDesign,
-                          );
+                        const labAbutmentDesignReady = Boolean(
+                          selectedTransfer.production?.practiceDesignConfirmedAt,
+                        );
                         return (
                           <PracticeCustomAbutmentPreviewButton
                             viewerRole="lab"
@@ -11877,6 +11937,9 @@ export function RequestorPracticeReceivePage({
               setLabDesignFilesPending(false);
               applyHydratedLabTransfer(hydrated);
             });
+          }}
+          onUnconfirmed={(transferId) => {
+            clearLabPracticeDesignConfirmed(transferId);
           }}
           onChecked={(transferId, body) => {
             const patch = (row: ReceivedPracticeTransfer) =>
