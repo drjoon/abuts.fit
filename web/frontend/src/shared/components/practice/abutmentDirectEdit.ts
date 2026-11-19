@@ -41,7 +41,7 @@ import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
 
 const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
-export const GUMBALL_SIZE_PX = 60;
+export const GUMBALL_SIZE_PX = 76;
 const SCALE_MIN = 0.65;
 const SCALE_MAX = 1.45;
 const SHIFT_MM = 2.5;
@@ -2102,15 +2102,16 @@ export function makeGumball(tooth: string) {
   group.userData.tooth = tooth;
   group.frustumCulled = false;
 
-  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 60px.
-  // 스케일 점은 뱃지 바로 밖(우상), 이동 화살표는 그 바깥으로 간격을 두고 짧게 둔다. 회전 호는 좌하.
-  const scaleAxisDist = 0.3;
-  const scale2Corner = 0.26;
+  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 76px.
+  // 치아번호 뱃지가 중심에 있으므로 스케일 점은 뱃지 밖(우상)으로 띄우고,
+  // 이동 화살표는 그 바깥으로 간격을 둔다. 회전 호는 좌하.
+  const scaleAxisDist = 0.42;
+  const scale2Corner = 0.36;
   for (const axis of [0, 1] as const) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
-    const shaftLen = 0.28;
-    const shaftAt = 0.64;
+    const shaftLen = 0.3;
+    const shaftAt = 0.76;
     const shaft = tagHandle(
       new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, shaftLen, 12), mat),
       "move",
@@ -2141,14 +2142,14 @@ export function makeGumball(tooth: string) {
   const arcSpan = (112 * Math.PI) / 180;
   const arcStart = (169 * Math.PI) / 180;
   const arc = tagHandle(
-    new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.045, 8, 22, arcSpan), arcMat),
+    new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.045, 8, 22, arcSpan), arcMat),
     "rot",
     2,
     -1,
     arcMat,
   );
   const arcHit = tagHandle(
-    new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.12, 6, 18, arcSpan), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.12, 6, 18, arcSpan), basicMat(0xffffff, 0)),
     "rot",
     2,
     -1,
@@ -2158,8 +2159,8 @@ export function makeGumball(tooth: string) {
   arcHit.rotation.z = arcStart;
   group.add(arc, arcHit);
 
-  const moveCorner = 0.46;
-  const moveCornerLen = 0.22;
+  const moveCorner = 0.56;
+  const moveCornerLen = 0.24;
   addCornerMoveArrow(group, 0, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[0]!));
   addCornerMoveArrow(group, 1, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[1]!));
   const move2Hit = tagHandle(

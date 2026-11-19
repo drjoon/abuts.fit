@@ -295,11 +295,11 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     const found = hits.some((h) => h.object.userData.editHandle?.op === expectedOp);
     assert.ok(found, `(${x}, ${y})에서 ${expectedOp} 핸들이 잡힌다`);
   };
-  checkRay(0.3, 0, "scale");
-  checkRay(0, 0.3, "scale");
-  checkRay(0.26, 0.26, "scale2");
-  checkRay(0.55, 0.55, "move2");
-  checkRay(-0.42, -0.42, "rot");
+  checkRay(0.42, 0, "scale");
+  checkRay(0, 0.42, "scale");
+  checkRay(0.36, 0.36, "scale2");
+  checkRay(0.66, 0.66, "move2");
+  checkRay(-0.51, -0.51, "rot");
 }
 
 // 검볼이 마진을 옮기면 커프는 그 마진까지 오목하게 다시 깔리고, 콘·포스트·스크류 벽은 그대로다.
@@ -1497,8 +1497,8 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       );
     }
 
-    // 11) 검볼 60px 크기, 비등방 협설 스케일 복원·유지, 개별 요소 변경 시 무관 치수 불변 및 원심 먼 치은 대구치(#37) 매끈함 검증
-    assert.equal(GUMBALL_SIZE_PX, 60, "검볼 기준 크기는 60px이다");
+    // 11) 검볼 76px 크기, 비등방 협설 스케일 복원·유지, 개별 요소 변경 시 무관 치수 불변 및 원심 먼 치은 대구치(#37) 매끈함 검증
+    assert.equal(GUMBALL_SIZE_PX, 76, "검볼 기준 크기는 76px이다");
     assert.equal(normalizeAbutmentEdit(identityAbutmentEdit()), null, "항등 검볼 편집은 null로 정규화된다");
     const savedAnisoEdit = normalizeAbutmentEdit({
       heightMm: 0.25,
