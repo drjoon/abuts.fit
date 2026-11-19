@@ -411,6 +411,126 @@ single35.worldGeometry.dispose();
 single35.predictedCrownWorldGeometry.dispose();
 bridgeOpp.dispose();
 
+function measureMdSilhouetteTaperDeg(
+  positions: Float32Array,
+  fixture: {
+    fixturePose: { hexX: readonly number[]; hexY: readonly number[]; axis: readonly number[] };
+    mesialDir?: readonly number[];
+  },
+  cuffMaxMm: number,
+) {
+  const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  const pose = fixture.fixturePose;
+  const mesW = fixture.mesialDir ?? pose.hexY;
+  const mesLocalRaw = [dot(mesW, pose.hexX), dot(mesW, pose.hexY), dot(mesW, pose.axis)];
+  const mesLen = Math.hypot(mesLocalRaw[0]!, mesLocalRaw[1]!) || 1;
+  const mvx = mesLocalRaw[0]! / mesLen;
+  const mvy = mesLocalRaw[1]! / mesLen;
+
+  let zMax = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zMax = Math.max(zMax, positions[i]!);
+  const zBase = cuffMaxMm + 0.7;
+  const zTop = Math.min(zMax - 1.4, zBase + 2.6);
+  const slices: Array<{ z: number; vMin: number; vMax: number }> = [];
+  for (let s = 0; s <= 8; s += 1) {
+    const z = zBase + ((zTop - zBase) * s) / 8;
+    let vMin = Infinity;
+    let vMax = -Infinity;
+    let n = 0;
+    for (let i = 0; i < positions.length; i += 3) {
+      if (Math.abs(positions[i + 2]! - z) > 0.14) continue;
+      const v = positions[i]! * mvx + positions[i + 1]! * mvy;
+      if (v < vMin) vMin = v;
+      if (v > vMax) vMax = v;
+      n += 1;
+    }
+    if (n > 15) slices.push({ z, vMin, vMax });
+  }
+  const linSlope = (xs: number[], ys: number[]) => {
+    const n = xs.length;
+    const mx = xs.reduce((a, b) => a + b, 0) / n;
+    const my = ys.reduce((a, b) => a + b, 0) / n;
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < n; i += 1) {
+      num += (xs[i]! - mx) * (ys[i]! - my);
+      den += (xs[i]! - mx) ** 2;
+    }
+    return num / Math.max(den, 1e-8);
+  };
+  const zs = slices.map((s) => s.z);
+  const cvSl = linSlope(zs, slices.map((s) => (s.vMax + s.vMin) * 0.5));
+  const mesDeg = (Math.atan(-linSlope(zs, slices.map((s) => s.vMax)) + cvSl) * 180) / Math.PI;
+  const disDeg = (Math.atan(linSlope(zs, slices.map((s) => s.vMin)) - cvSl) * 180) / Math.PI;
+  const mdHalfDeg =
+    (Math.atan(-linSlope(zs, slices.map((s) => (s.vMax - s.vMin) * 0.5))) * 180) / Math.PI;
+  return { mesDeg, disDeg, mdHalfDeg };
+}
+
+const [taper2Deg11, taper35Deg11] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: deep,
+    toothWorks: works11,
+    params: { postTaperLink: 0, postTaperDeg: 2.0 },
+    explicitParams: { postTaperLink: 0, postTaperDeg: 2.0 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: deep,
+    toothWorks: works11,
+    params: { postTaperLink: 0, postTaperDeg: 3.5 },
+    explicitParams: { postTaperLink: 0, postTaperDeg: 3.5 },
+  }),
+]);
+const deepTaper = measureMdSilhouetteTaperDeg(
+  deep11.solidBodyLocalPositions!,
+  deep11.fixture,
+  deep11.metrics.cuffHeightMaxMm,
+);
+const taper2Meas = measureMdSilhouetteTaperDeg(
+  taper2Deg11.solidBodyLocalPositions!,
+  taper2Deg11.fixture,
+  taper2Deg11.metrics.cuffHeightMaxMm,
+);
+const taper35Meas = measureMdSilhouetteTaperDeg(
+  taper35Deg11.solidBodyLocalPositions!,
+  taper35Deg11.fixture,
+  taper35Deg11.metrics.cuffHeightMaxMm,
+);
+console.log(
+  JSON.stringify({
+    linked11: { panel: deep11.metrics.postTaperDeg, ...deepTaper },
+    unlinked2: { panel: taper2Deg11.metrics.postTaperDeg, ...taper2Meas },
+    unlinked35: { panel: taper35Deg11.metrics.postTaperDeg, ...taper35Meas },
+  }),
+);
+assert.ok(
+  taper2Deg11.metrics.postTaperDeg === 2.0 &&
+    Math.abs(taper2Meas.mdHalfDeg - 2.0) <= 0.4 &&
+    taper2Meas.mesDeg >= 1.75 &&
+    taper2Meas.disDeg >= 1.75 &&
+    Math.abs(taper2Meas.mesDeg - taper2Meas.disDeg) <= 0.5,
+  `전치 2° 설정 시 실제 근원심 양쪽 벽(${taper2Meas.mesDeg.toFixed(2)}°/${taper2Meas.disDeg.toFixed(2)}°, 평균 ${taper2Meas.mdHalfDeg.toFixed(2)}°)이 패널값(2.0°)과 대칭 일치한다`,
+);
+assert.ok(
+  taper35Deg11.metrics.postTaperDeg === 3.5 &&
+    Math.abs(taper35Meas.mdHalfDeg - 3.5) <= 0.45 &&
+    taper35Meas.mdHalfDeg > taper2Meas.mdHalfDeg + 1.1,
+  `전치 3.5° 설정 시 실제 근원심 테이퍼(${taper35Meas.mdHalfDeg.toFixed(2)}°)가 패널값(3.5°)을 따라 커진다`,
+);
+assert.ok(
+  Math.abs(deepTaper.mdHalfDeg - deep11.metrics.postTaperDeg) <= 0.45 &&
+    Math.abs(deepTaper.mesDeg - deepTaper.disDeg) <= 0.5,
+  `전치 기본 연동 상태에서도 실제 근원심 테이퍼(${deepTaper.mdHalfDeg.toFixed(2)}°)가 패널값(${deep11.metrics.postTaperDeg}°)과 대칭 일치한다`,
+);
+taper2Deg11.worldGeometry.dispose();
+taper2Deg11.predictedCrownWorldGeometry.dispose();
+taper35Deg11.worldGeometry.dispose();
+taper35Deg11.predictedCrownWorldGeometry.dispose();
+
 deep11.worldGeometry.dispose();
 deep11.predictedCrownWorldGeometry.dispose();
 close11.worldGeometry.dispose();

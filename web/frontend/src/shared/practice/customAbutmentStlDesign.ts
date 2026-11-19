@@ -8160,9 +8160,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       pTopCu = wrapAnteriorScrew360
         ? clamp(uScrewTop * 0.72 + (tpl.kind === "canine" ? 0.16 : 0.12), -maxTopShiftU, maxTopShiftU)
         : clamp(mCu * 0.75 + (tpl.kind === "canine" ? 0.22 : 0.16), -0.55, maxTopShiftU);
+      // 근원심(v) 중심은 하단(pBaseCv)과 일치시켜 삽입축 평행과 좌우 대칭 편측 테이퍼를 지킨다.
       pTopCv = wrapAnteriorScrew360
-        ? clamp(vScrewTop * 0.78 + mCv * 0.22, -maxTopShiftV, maxTopShiftV)
-        : clamp(mCv * 0.85 + crownCenterV * crownSideSign * 0.25, -maxTopShiftV, maxTopShiftV);
+        ? clamp(vScrewTop * 0.5 + mCv * 0.5, -maxTopShiftV, maxTopShiftV)
+        : mCv;
       if (tpl.kind === "incisor") {
         // 삽형은 순측에 두고 설측을 비운다. 딥바이트면 설측 모서리가 가까운 대합 밖으로 나오게 더 옮긴다.
         let nextCu = pTopCu + 0.32;
@@ -8424,10 +8425,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             }
           }
         }
-        // 높이·테이퍼 연결을 끊고 각을 직접 주면, 크라운 목표 두께(soft)가
-        // 순측·근원심 상단을 그 각보다 좁히지 않는다. 좁히면 2°로 내려도 화면 원뿔이 그대로다.
+        // 크라운 목표 두께(soft)가 설정 편측 테이퍼(keepBl/keepMd)보다 순측·근원심 상단을 더 좁히지 않는다.
+        // 좁히면 패널 테이퍼(예: 2°)와 달리 실제 축벽이 5°~7° 원뿔로 벌어진다.
         // 인접 하드 캡(useSoft=false)만 그 아래로 깎을 수 있다.
-        if (useSoft && !isTaperLinked) {
+        if (useSoft) {
           if (topLabHalf <= Math.max(minLabCollar(), keepBl) + 1e-3) worstTopLab = 0;
           if (topMdHalf <= Math.max(minMdCollar(), keepMd) + 1e-3) worstTopMd = 0;
         }
@@ -8444,14 +8445,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             else antBaseExtraW.negV += worstBaseEx * (0.3 + 0.6 * wv);
           }
         }
+        // 근원심 한쪽이 좁아 중심을 옮길 때는 상단(pTopCv)만 밀지 않고 하단 숄더(antBaseExtraW)를 함께 조절해
+        // 하단·상단 근원심 중심을 일치시킨다(상단만 밀면 한쪽 벽이 10° 이상 눕고 반대쪽은 2° 미만으로 무너진다).
         if (worstNegVEx > worstPosVEx + 0.015 && minPosVSlack > 0.03) {
           const shift = Math.min((worstNegVEx - worstPosVEx) * 0.6, minPosVSlack * 0.65, 0.24);
-          pTopCv = clamp(pTopCv + shift, -maxTopShiftV, maxTopShiftV);
+          antBaseExtraW.negV += shift;
+          pTopCv = pBaseCv;
           worstTopMd = Math.max(0, worstTopMd - shift * 0.75);
         } else if (worstPosVEx > worstNegVEx + 0.015 && minNegVSlack > 0.03) {
           const shift = Math.min((worstPosVEx - worstNegVEx) * 0.6, minNegVSlack * 0.65, 0.24);
-          pTopCv = clamp(pTopCv - shift, -maxTopShiftV, maxTopShiftV);
+          antBaseExtraW.posV += shift;
+          pTopCv = pBaseCv;
           worstTopMd = Math.max(0, worstTopMd - shift * 0.75);
+        } else {
+          pTopCv = pBaseCv;
         }
         const labFloor = wrapAnteriorScrew360 || useSoft ? minLabCollar() : Math.max(0.8, minLabCollar() - 0.2);
         const linFloor = wrapAnteriorScrew360 || useSoft ? minLinCollar() : Math.max(0.62, minLinCollar() - 0.18);
@@ -8465,9 +8472,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const finalBase = syncAnteriorBase(
         pTopCu + minLabCollar() + 0.06,
         -pTopCu + minLinCollar() + 0.06,
-        pTopCv + minMdCollar() + 0.06,
-        -pTopCv + minMdCollar() + 0.06,
+        pBaseCv + minMdCollar() + 0.06,
+        -pBaseCv + minMdCollar() + 0.06,
       );
+      pTopCv = pBaseCv;
       topLabHalf = Math.min(topLabHalf, finalBase.bPosU - pTopCu - 0.04);
       topLinHalf = Math.min(topLinHalf, finalBase.bNegU + pTopCu - 0.04);
       topMdHalf = Math.min(
@@ -8580,18 +8588,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (!lockBasePass && lockedAnteriorBase) {
         pBaseCu = lockedAnteriorBase.pBaseCu;
         pBaseCv = lockedAnteriorBase.pBaseCv;
+        pTopCv = pBaseCv;
         finalAntBaseBl = lockedAnteriorBase.finalAntBaseBl;
         finalAntBaseMd = lockedAnteriorBase.finalAntBaseMd;
         effAntShoulder = lockedAnteriorBase.effAntShoulder;
         wrapAnteriorScrew360 = lockedAnteriorBase.wrapAnteriorScrew360;
         antFootPsis = lockedAnteriorBase.footPsis;
-        // 연결을 끊고 기준보다 완만한 각을 주면, 마진은 그대로 두고 남는 숄더만큼 하단을 연다.
-        // 하단이 고정이면 상단만 조금 넓어져 마진에서 본 원뿔은 5°처럼 남는다.
-        if (!isTaperLinked && passTaperDeg + 0.2 < refBaseTaperDeg) {
-          const spareShoulder = Math.max(0, Math.min(0.55, effAntShoulder - 0.26));
-          finalAntBaseBl += spareShoulder;
-          finalAntBaseMd += spareShoulder;
-        }
         syncedAntScaleBl = clamp(finalAntBaseBl / Math.max(antBaseBl, 0.5), 0.72, 1.15);
         syncedAntScaleMd = clamp(finalAntBaseMd / Math.max(antBaseMd, 0.5), 0.72, 1.15);
       } else {
@@ -8721,77 +8723,146 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
         syncedAntScaleBl = clamp(finalAntBaseBl / Math.max(antBaseBl, 0.5), 0.72, 1.15);
         syncedAntScaleMd = clamp(finalAntBaseMd / Math.max(antBaseMd, 0.5), 0.72, 1.15);
+        pTopCv = pBaseCv;
       }
 
-      const computeAnteriorTopHalves = () => {
-        // 순측·근원심 상단은 설정 편측 테이퍼만큼만 들어간다.
-        // 크라운 여유로 더 좁힌 값(topLabHalf)을 그대로 쓰면 테이퍼를 낮춰도 축벽 각이 변하지 않는다.
+      const computeAnteriorDirectionalSpans = (footPsis?: readonly number[]) => {
+        if (!footPsis || footPsis.length !== ANGULAR_COLS) {
+          return { hSpanLab: hRefSpanAnt, hSpanLin: hRefSpanAnt, hSpanMd: hRefSpanAnt };
+        }
+        let labSum = 0;
+        let labN = 0;
+        let linSum = 0;
+        let linN = 0;
+        let mdSum = 0;
+        let mdN = 0;
+        for (let col = 0; col < ANGULAR_COLS; col += 1) {
+          const c = cols[col]!;
+          const phiSec = footPsis[col]!;
+          const cp = Math.cos(phiSec);
+          const sp = Math.sin(phiSec);
+          const topEdgeEst = top.heightAt(
+            pTopCu + cp * Math.max(0.7, finalAntBaseBl - minAntDropBl),
+            pBaseCv + sp * Math.max(0.8, finalAntBaseMd - minAntDropMd),
+          );
+          const maxRound = Math.max(c.h0 + 0.14, topEdgeEst - 0.1);
+          const hBase = smoothMin(c.h0 + hPostBase, maxRound - 0.08, 0.03);
+          const roundStart = smoothMin(
+            maxRound,
+            Math.max(hBase + 0.36, topEdgeEst - topRoundMm * 0.9),
+            0.03,
+          );
+          const span = Math.max(0.36, roundStart - hBase);
+          if (cp >= 0.7) {
+            labSum += span;
+            labN += 1;
+          } else if (cp <= -0.7) {
+            linSum += span;
+            linN += 1;
+          }
+          if (Math.abs(sp) >= 0.7) {
+            mdSum += span;
+            mdN += 1;
+          }
+        }
+        return {
+          hSpanLab: labN > 0 ? labSum / labN : hRefSpanAnt,
+          hSpanLin: linN > 0 ? linSum / linN : hRefSpanAnt,
+          hSpanMd: mdN > 0 ? mdSum / mdN : hRefSpanAnt,
+        };
+      };
+
+      const computeAnteriorTopHalves = (footPsis?: readonly number[]) => {
+        // 근원심(v) 중심은 하단(pBaseCv)과 일치시켜 양쪽 근원심 축벽이 삽입축 기준 대칭 편측 테이퍼를 따르게 한다.
+        pTopCv = pBaseCv;
+        // 스캘럽으로 방향별 축벽 높이가 다르므로 순측·설측·근원심 각각의 실제 축벽 높이로 편측 테이퍼 감소량을 계산한다.
+        const { hSpanLab, hSpanLin, hSpanMd } = computeAnteriorDirectionalSpans(footPsis);
+        const dropLab = minAntTaperSlope * hSpanLab * Math.max(1, postUnitLab);
+        const dropLin = minAntTaperSlope * hSpanLin * Math.max(1, postUnitLin);
+        const dropMd = minAntTaperSlope * hSpanMd;
         const labRoom = finalAntBaseBl + pBaseCu - pTopCu;
-        const mdRoom = Math.min(
-          finalAntBaseMd + pBaseCv - pTopCv,
-          finalAntBaseMd - pBaseCv + pTopCv,
-        );
-        const taperLab = labRoom - minAntDropBl;
-        const taperMd = mdRoom - minAntDropMd;
-        const honorTaper = !isTaperLinked;
+        const mdRoom = finalAntBaseMd;
+        const taperLab = labRoom - dropLab;
+        const taperMd = mdRoom - dropMd;
         const hardLab =
-          !honorTaper || topLabHalf < keepBl - 0.05
+          topLabHalf < keepBl - 0.05
             ? Math.max(0.7, topLabHalf * syncedAntScaleBl)
             : Infinity;
         const hardMd =
-          !honorTaper || topMdHalf < keepMd - 0.05
+          topMdHalf < keepMd - 0.05
             ? Math.max(0.8, topMdHalf * syncedAntScaleMd)
             : Infinity;
-        const tLab = honorTaper
-          ? Math.min(
-              Math.max(0.62, labRoom - 0.02),
-              Math.max(wrapAnteriorScrew360 ? minLabCollar() : 0.78, Math.min(taperLab, hardLab)),
-            )
-          : Math.max(
-              wrapAnteriorScrew360 ? minLabCollar() : 0.78,
-              Math.min(taperLab, Math.max(0.78, topLabHalf * syncedAntScaleBl)),
-            );
+        // 절치 등 스크류 사면 개구 케이스에서는 soft minCollar가 taperLab/taperMd를 덮어써 최소 2° 아래로 무너지지 않게 한다.
+        const minLabFloor = wrapAnteriorScrew360
+          ? minLabCollar()
+          : Math.min(minLabCollar(), Math.max(0.78, taperLab));
+        const tLab = wrapAnteriorScrew360
+          ? Math.max(minLabFloor, Math.min(taperLab, hardLab))
+          : Math.min(taperLab, Math.max(minLabFloor, Math.min(taperLab, hardLab)));
         // 설측 싱귤럼: 칼라 위 상단만 가파른 직선 사선으로 깎고, 스크류 홀 최소 벽(minLinCollar)은 남긴다.
         const incisorOpenScrew = tpl.kind === "incisor" && !wrapAnteriorScrew360;
         const linFloor = incisorOpenScrew ? 0.62 : minLinCollar();
         const cingulumBevelTopLin = cingulumTopHalfMm(
           cingulumPlan,
           finalAntBaseBl - pBaseCu + pTopCu,
-          minAntDropBl,
-          hRefSpanAnt,
+          dropLin,
+          hSpanLin,
           incisorOpenScrew ? 0.58 : minLinCollar(),
         );
         const tLin = Math.max(
           linFloor,
           Math.min(
-            finalAntBaseBl - pBaseCu + pTopCu - minAntDropBl,
+            finalAntBaseBl - pBaseCu + pTopCu - dropLin,
             Math.max(linFloor, Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin)),
           ),
         );
-        const tMd = honorTaper
-          ? Math.min(
-              Math.max(0.7, mdRoom - 0.02),
-              Math.max(minMdCollar(), Math.min(taperMd, hardMd)),
-            )
-          : Math.max(
-              minMdCollar(),
-              Math.min(taperMd, Math.max(0.9, topMdHalf * syncedAntScaleMd)),
-            );
-        return { tLab, tLin, tMd };
+        const minMdFloor = wrapAnteriorScrew360
+          ? minMdCollar()
+          : Math.min(minMdCollar(), Math.max(0.82, taperMd));
+        const tMd = wrapAnteriorScrew360
+          ? Math.max(minMdFloor, Math.min(taperMd, hardMd))
+          : Math.min(taperMd, Math.max(minMdFloor, Math.min(taperMd, hardMd)));
+        // 인접치 하드 캡 등으로 상단 근원심(tMd)이 taperMd보다 좁아진 경우, 하단 반폭(wallBaseMd)도 함께 맞춰
+        // 마진 외경은 유지하면서 실제 근원심 축벽 각도가 설정 테이퍼(최소 2°)를 벗어나지 않게 한다.
+        let wallBaseMd = finalAntBaseMd;
+        if (tMd < wallBaseMd - dropMd - 1e-3) {
+          const minWallBaseMd = wrapAnteriorScrew360
+            ? Math.max(0.98, Math.abs(vScrewBase - pBaseCv) + screwSafeR)
+            : Math.max(0.92, finalAntBaseMd - 0.55);
+          wallBaseMd = Math.max(minWallBaseMd, tMd + dropMd);
+        } else if (wrapAnteriorScrew360 && tMd > wallBaseMd - dropMd + 1e-3) {
+          const spareSh = Math.max(0, effAntShoulder - MIN_MARGIN_SHOULDER_MM);
+          wallBaseMd = Math.min(finalAntBaseMd + spareSh, tMd + dropMd);
+        }
+        return { tLab, tLin, tMd, wallBaseMd, dropLin, hSpanMd };
       };
 
-      let { tLab: finalAntTopLab, tLin: finalAntTopLin, tMd: finalAntTopMd } = computeAnteriorTopHalves();
+      let {
+        tLab: finalAntTopLab,
+        tLin: finalAntTopLin,
+        tMd: finalAntTopMd,
+        wallBaseMd: finalAntWallBaseMd,
+        dropLin: finalAntDropLin,
+        hSpanMd: finalAntSpanMd,
+      } = computeAnteriorTopHalves(!lockBasePass && lockedAnteriorBase ? antFootPsis : undefined);
 
       const buildAnteriorWallColumns = (
         footPsis: readonly number[],
         tLab: number,
         tLin: number,
         tMd: number,
+        wallBaseMd = finalAntBaseMd,
+        dropLin = minAntDropBl,
+        hSpanMdRef = hRefSpanAnt,
       ) => {
         const baseLabParam = finalAntBaseBl / postUnitLab;
         const baseLinParam = finalAntBaseBl / postUnitLin;
         const topLabParam = tLab / postUnitLab;
         const targetTopLinParam = tLin / postUnitLin;
+        const mdWallSlope = Math.max(
+          minAntTaperSlope,
+          (wallBaseMd - tMd) / Math.max(hSpanMdRef, 0.36),
+        );
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
           const phiSec = footPsis[col]!;
@@ -8820,7 +8891,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             const cuH = pBaseCu + (pTopCu - pBaseCu) * uSpan;
             const cvH = pBaseCv + (pTopCv - pBaseCv) * uSpan;
             const aLabH = Math.max(0.68, baseLabParam + (topLabParam - baseLabParam) * uSpan);
-            const taperOnlyTopLinParam = Math.max(0.58, baseLinParam - minAntDropBl / Math.max(postUnitLin, 0.4));
+            const taperOnlyTopLinParam = Math.max(0.58, baseLinParam - dropLin / Math.max(postUnitLin, 0.4));
             const collarU = cingulumPlan.collar;
             const linAtCollar = baseLinParam + (taperOnlyTopLinParam - baseLinParam) * collarU;
             const aLinRaw =
@@ -8829,7 +8900,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 : linAtCollar +
                   (targetTopLinParam - linAtCollar) * smoothCingulumBevelRamp(uSpan, collarU);
             const aLinH = Math.max(0.58, aLinRaw);
-            const bMdH = Math.max(0.82, finalAntBaseMd + (tMd - finalAntBaseMd) * uSpan);
+            // 치은 스캘럽으로 근심·원심 축벽 높이가 달라도 실제 높이(h - hBaseAnt)에 비례해 테이퍼를 깎아
+            // 양쪽 근원심 벽 모두 설정 편측 테이퍼(최소 2°)를 지키게 한다.
+            const bMdH = Math.max(0.82, wallBaseMd - mdWallSlope * (h - hBaseAnt));
             const s = evalPostSectionRadiusAtPhi(tpl.kind, aLabH, aLinH, bMdH, phiSec);
             const u = cuH + s * cp;
             const v = cvH + s * sp;
@@ -8844,6 +8917,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
       if (lockBasePass || !lockedAnteriorBase) {
         const solveAnteriorMarginAndWalls = () => {
+          pTopCv = pBaseCv;
           const offsetSolver = buildParallelOffsetMarginSolver(
             pBaseCu,
             pBaseCv,
@@ -8871,8 +8945,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           marginColZs = solved.zCols;
           antFootPsis = solved.footPsis;
           syncColsMarginGeometry();
-          ({ tLab: finalAntTopLab, tLin: finalAntTopLin, tMd: finalAntTopMd } = computeAnteriorTopHalves());
-          buildAnteriorWallColumns(antFootPsis, finalAntTopLab, finalAntTopLin, finalAntTopMd);
+          ({
+            tLab: finalAntTopLab,
+            tLin: finalAntTopLin,
+            tMd: finalAntTopMd,
+            wallBaseMd: finalAntWallBaseMd,
+            dropLin: finalAntDropLin,
+            hSpanMd: finalAntSpanMd,
+          } = computeAnteriorTopHalves(antFootPsis));
+          buildAnteriorWallColumns(
+            antFootPsis,
+            finalAntTopLab,
+            finalAntTopLin,
+            finalAntTopMd,
+            finalAntWallBaseMd,
+            finalAntDropLin,
+            finalAntSpanMd,
+          );
         };
 
         solveAnteriorMarginAndWalls();
@@ -8928,13 +9017,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             const grow = worstDef / axialCos + 0.006;
             if (worstUFrac > 0.25) {
               pTopCu += cpW * grow * 0.55;
-              pTopCv += spW * grow * 0.55;
               topLabHalf += grow * 0.45 * Math.max(0, cpW);
               topLinHalf += grow * 0.45 * Math.max(0, -cpW);
               topMdHalf += grow * 0.45 * Math.abs(spW);
             }
             pBaseCu += cpW * grow * 0.4;
-            pBaseCv += spW * grow * 0.4;
+            pBaseCv += spW * grow * (worstUFrac > 0.25 ? 0.55 : 0.4);
+            pTopCv = pBaseCv;
             finalAntBaseBl += grow * 0.6 * (0.3 + 0.7 * cpW * cpW);
             finalAntBaseMd += grow * 0.6 * (0.3 + 0.7 * spW * spW);
             solveAnteriorMarginAndWalls();
@@ -8965,7 +9054,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           footPsis: [...antFootPsis!],
         };
       } else {
-        buildAnteriorWallColumns(antFootPsis!, finalAntTopLab, finalAntTopLin, finalAntTopMd);
+        buildAnteriorWallColumns(
+          antFootPsis!,
+          finalAntTopLab,
+          finalAntTopLin,
+          finalAntTopMd,
+          finalAntWallBaseMd,
+          finalAntDropLin,
+          finalAntSpanMd,
+        );
       }
       topFaceCu = pTopCu + (finalAntTopLab - finalAntTopLin) * 0.5;
       topFaceCv = pTopCv;
