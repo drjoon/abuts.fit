@@ -20,6 +20,7 @@ import {
   ChevronsUpDown,
   Crown,
   Cylinder,
+  Crosshair,
   Download,
   Eye,
   EyeOff,
@@ -79,7 +80,7 @@ export type AbutmentInfoEditValue = number | AbutmentAxisSource | { min: number;
 export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = {
   marginSubgMm: "치은 연하",
   maxDiameterMm: "최대 직경",
-  marginFilletRadiusMm: "마진 챔퍼 R",
+  marginFilletRadiusMm: "마진 필레 R",
   postHeightMm: "포스트 높이",
   postTaperDeg: "테이퍼",
   postTaperLink: "높이·테이퍼 연결",
@@ -1443,6 +1444,7 @@ export function PracticeCustomAbutmentDesignTree({
   onDownloadAll,
   onRegenerate,
   onRegenerateTooth,
+  onRepickScanbody,
   onEditField,
   expanded,
   onExpandedChange,
@@ -1465,6 +1467,8 @@ export function PracticeCustomAbutmentDesignTree({
   onDownloadAll?: () => void;
   onRegenerate?: () => void;
   onRegenerateTooth?: (toothNumber: string) => void;
+  /** 스캔바디 위치를 다시 찍는다. 자동 배정이 틀렸을 때 쓴다. */
+  onRepickScanbody?: (toothNumbers: readonly string[]) => void;
   onEditField?: (
     item: DesignedCustomAbutment,
     field: AbutmentInfoFieldKey,
@@ -1614,6 +1618,28 @@ export function PracticeCustomAbutmentDesignTree({
                   {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                 </button>
                 <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  {onRepickScanbody ? (
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                      aria-label={`#${tooth} 위치 다시 지정`}
+                      title={
+                        selectedTeeth.length > 1 && selectedTeeth.includes(tooth)
+                          ? "선택한 치아의 스캔바디 위치를 다시 찍습니다."
+                          : `#${tooth} 스캔바디 위치를 다시 찍습니다.`
+                      }
+                      disabled={redesigning.length > 0 || busy}
+                      onClick={() => {
+                        const targets =
+                          selectedTeeth.length > 1 && selectedTeeth.includes(tooth)
+                            ? selectedTeeth
+                            : [tooth];
+                        onRepickScanbody(targets);
+                      }}
+                    >
+                      <Crosshair className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   {onRegenerateTooth ? (
                     <button
                       type="button"
@@ -1705,7 +1731,7 @@ export function PracticeCustomAbutmentDesignTree({
                     )}
                     {editable ? (
                       <EditableNumberRow
-                        label="마진 챔퍼 R"
+                        label="마진 필레 R"
                         value={m.marginFilletRadiusMm}
                         min={0.5}
                         max={1}
@@ -1716,7 +1742,7 @@ export function PracticeCustomAbutmentDesignTree({
                         onCommit={(v) => onEditField?.(item, "marginFilletRadiusMm", v)}
                       />
                     ) : (
-                      <DetailRow label="마진 챔퍼 R" value={`${m.marginFilletRadiusMm}mm`} />
+                      <DetailRow label="마진 필레 R" value={`${m.marginFilletRadiusMm}mm`} />
                     )}
                   </InfoGroup>
                   <InfoGroup title="포스트">
