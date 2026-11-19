@@ -82,4 +82,29 @@ const planeOnly = closestSurfaceClearanceMm({
 });
 assert.ok(planeOnly != null && Math.abs(planeOnly - 1.4) < 0.06, `평면까지 최근접 ${planeOnly}`);
 
+// 속이 빈 대합 스캔 껍질을 포스트 상단이 수직으로 뚫고 올라간 경우(>0 오보고 방지) 0mm로 판정한다.
+const penetratedCap = closestSurfaceClearanceMm({
+  points: new Float32Array([0, 0, 6.2, 1.2, 0, 5.1]),
+  topPoints: new Float32Array([0, 0, 6.2]),
+  opposingTris: new Float32Array(slab(5.4, -2.5, 2.5, -2.5, 2.5)),
+  origin: [0, 0, 2],
+  up,
+  labialHint: labial,
+  minHeightMm: 0.35,
+});
+assert.equal(penetratedCap, 0, "대합 교합면을 수직 침투한 상단은 0mm를 반환한다");
+
+// 자기 치아는 무대합이고 옆 치아(근원심 6mm 밖)에만 대합이 있을 때는 옆 치아 대합을 잡지 않는다.
+const neighborOnlyAntagonist = closestSurfaceClearanceMm({
+  points: new Float32Array([-1, -1.2, 5, 1, 1.2, 5, 0, 0, 5.5]),
+  topPoints: new Float32Array([0, 0, 5.5]),
+  opposingTris: new Float32Array(slab(6.0, -2, 2, 5.2, 8.0)),
+  origin: [0, 0, 2],
+  up,
+  labialHint: labial,
+  minHeightMm: 0.35,
+  postCorridorMarginMm: 2.2,
+});
+assert.equal(neighborOnlyAntagonist, null, "옆 치아 슬롯에만 있는 대합은 대합 거리로 잡지 않는다");
+
 console.log("occlusalClearanceRay ok", hit, archOffset, closest, planeOnly);
