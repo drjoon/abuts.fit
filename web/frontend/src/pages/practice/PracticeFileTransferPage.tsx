@@ -1466,8 +1466,10 @@ export const PracticeFileTransferPage = ({
     selectedTransfer?.transferId || selectedTransfer?.id || "",
   );
   useEffect(() => {
+    // 검토 대기 큐로 연 디자인은 상세 선택이 바뀌어도 닫지 않는다.
+    if (designReviewItems.length > 0) return;
     setAbutmentDesignOpen(false);
-  }, [abutmentDesignTransferKey]);
+  }, [abutmentDesignTransferKey, designReviewItems.length]);
   const [alertOpenPanelTab, setAlertOpenPanelTab] = useState<
     "chat" | "detail" | null
   >(null);
@@ -6197,6 +6199,113 @@ export const PracticeFileTransferPage = ({
       clearLocalFilesWithCache,
       toast,
     ],
+  );
+
+  /** 캘린더 행은 파일·작업스캔이 없다. 디자인 모달 전에 /my로 채운다. */
+  const transferReadyForAbutmentDesign = useCallback(
+    (transfer: PracticeRecentTransferItem | null | undefined) => {
+      if (!transfer) return false;
+      const hasCaTooth = (Array.isArray(transfer.toothWorks) ? transfer.toothWorks : []).some(
+        (row) => Boolean((row as { customAbutment?: unknown })?.customAbutment),
+      );
+      const hasScan = [...(transfer.files || []), ...(transfer.workScanFiles || [])].some(
+        (file) => Boolean(String(file?.s3Key || "").trim()),
+      );
+      return hasCaTooth && hasScan;
+    },
+    [],
+  );
+
+  const hydratePracticeTransferForDesign = useCallback(
+    async (transfer: PracticeRecentTransferItem) => {
+      const hydrateId = String(transfer.transferId || "").trim();
+      if (!hydrateId || hydrateId === "-") return transfer;
+      if (transferReadyForAbutmentDesign(transfer)) return transfer;
+
+      const fromSidebar =
+        groupedTransfers.find(
+          (row) => String(row.transferId || "").trim() === hydrateId,
+        ) || null;
+      if (fromSidebar && transferReadyForAbutmentDesign(fromSidebar)) {
+        return {
+          ...fromSidebar,
+          arrivalDate: transfer.arrivalDate || fromSidebar.arrivalDate,
+          orderDate: transfer.orderDate || fromSidebar.orderDate,
+        };
+      }
+
+      const qs = new URLSearchParams({ transferId: hydrateId, limit: "8" });
+      const res = await apiFetch<unknown>({
+        path: `/api/practice/transfers/my?${qs.toString()}`,
+        method: "GET",
+        token: authToken,
+      });
+      if (!res.ok) return transfer;
+      const body = res.data;
+      const data =
+        body && typeof body === "object" && "data" in (body as object)
+          ? (body as { data?: unknown }).data
+          : body;
+      const list =
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as { requests?: unknown[] }).requests)
+          ? ((data as { requests: unknown[] }).requests ?? [])
+          : [];
+      const mapped = mapMyPracticeTransferApiRows(list);
+      const [full] = groupPracticeRecentRequests(mapped, chatRooms);
+      if (!full || String(full.transferId || "").trim() !== hydrateId) return transfer;
+      return {
+        ...full,
+        arrivalDate: transfer.arrivalDate || full.arrivalDate,
+        orderDate: transfer.orderDate || full.orderDate,
+      };
+    },
+    [
+      authToken,
+      chatRooms,
+      groupedTransfers,
+      transferReadyForAbutmentDesign,
+    ],
+  );
+
+  const openAbutmentDesignReview = useCallback(
+    async (
+      items: Array<{ transfer: PracticeRecentTransferItem; label: string }>,
+      startIndex = 0,
+    ) => {
+      if (items.length === 0) return;
+      const safeStart = Math.min(
+        Math.max(0, startIndex),
+        items.length - 1,
+      );
+      const first = items[safeStart];
+      if (!first) return;
+      const hydratedFirst = await hydratePracticeTransferForDesign(first.transfer);
+      const nextItems = items.map((item, index) =>
+        index === safeStart ? { ...item, transfer: hydratedFirst } : item,
+      );
+      setDesignReviewItems(nextItems);
+      setDesignReviewIndex(safeStart);
+      setAbutmentDesignOpen(true);
+      void Promise.all(
+        nextItems.map(async (item, index) => {
+          if (index === safeStart) return item;
+          const hydrated = await hydratePracticeTransferForDesign(item.transfer);
+          return { ...item, transfer: hydrated };
+        }),
+      ).then((hydratedRest) => {
+        setDesignReviewItems((prev) => {
+          if (prev.length !== hydratedRest.length) return prev;
+          return hydratedRest.map((item, index) =>
+            index === safeStart
+              ? prev[index] || item
+              : item,
+          );
+        });
+      });
+    },
+    [hydratePracticeTransferForDesign],
   );
 
   const handleOpenTransferDialog = async (
@@ -11298,9 +11407,7 @@ export const PracticeFileTransferPage = ({
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
           onReviewAbutmentDesigns={(items) => {
-            setDesignReviewItems(items);
-            setDesignReviewIndex(0);
-            setAbutmentDesignOpen(true);
+            void openAbutmentDesignReview(items, 0);
           }}
           onSelectTransfer={(transfer, options) => {
             const openId = String(selectedTransfer?.transferId || selectedTransfer?.id || "").trim();
@@ -12322,7 +12429,27 @@ export const PracticeFileTransferPage = ({
                 label: item.label,
               }))}
               reviewIndex={designReviewIndex}
-              onReviewIndexChange={setDesignReviewIndex}
+              onReviewIndexChange={(next) => {
+                const target = designReviewItems[next];
+                if (!target) {
+                  setDesignReviewIndex(next);
+                  return;
+                }
+                if (transferReadyForAbutmentDesign(target.transfer)) {
+                  setDesignReviewIndex(next);
+                  return;
+                }
+                void hydratePracticeTransferForDesign(target.transfer).then(
+                  (hydrated) => {
+                    setDesignReviewItems((prev) =>
+                      prev.map((item, index) =>
+                        index === next ? { ...item, transfer: hydrated } : item,
+                      ),
+                    );
+                    setDesignReviewIndex(next);
+                  },
+                );
+              }}
               onActionComplete={(action) => {
                 void loadRecentRequests({ silent: true });
                 if (designReviewItems.length === 0) return;
@@ -12596,11 +12723,19 @@ export const PracticeFileTransferPage = ({
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
           summaryBanner={null}
           onWorkScanTileClick={
-            practiceAbutmentDesignAvailable
+            practiceAbutmentDesignAvailable && selectedTransfer
               ? () => {
-                  setDesignReviewItems([]);
-                  setDesignReviewIndex(0);
-                  setAbutmentDesignOpen(true);
+                  void (async () => {
+                    const hydrated = await hydratePracticeTransferForDesign(
+                      selectedTransfer,
+                    );
+                    if (hydrated !== selectedTransfer) {
+                      setSelectedTransfer(hydrated);
+                    }
+                    setDesignReviewItems([]);
+                    setDesignReviewIndex(0);
+                    setAbutmentDesignOpen(true);
+                  })();
                 }
               : undefined
           }

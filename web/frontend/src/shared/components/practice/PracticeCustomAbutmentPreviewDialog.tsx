@@ -864,7 +864,10 @@ export function PracticeCustomAbutmentPreviewDialog({
     const seen = new Set<string>();
     const list: ToothWorkSelection[] = [];
     for (const row of toothWorks || []) {
-      const parsed = parseFdiTooth(row?.toothNumber);
+      const rawTooth =
+        (row as { toothNumber?: unknown; tooth?: unknown })?.toothNumber ??
+        (row as { tooth?: unknown })?.tooth;
+      const parsed = parseFdiTooth(String(rawTooth ?? ""));
       if (!parsed || seen.has(parsed.digits)) continue;
       seen.add(parsed.digits);
       list.push({ ...row, toothNumber: parsed.digits });
