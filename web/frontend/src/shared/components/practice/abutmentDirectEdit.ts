@@ -1859,14 +1859,64 @@ function alongAxis(mesh: THREE.Object3D, axis: number, distance: number) {
   else if (axis === 2) mesh.rotation.x = Math.PI / 2;
 }
 
+function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, onNegative: number) {
+  const scaleMat = basicMat(AXIS_COLOR[axis]!);
+  const dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 10), scaleMat), "scale", axis, -1, scaleMat);
+  dot.position.set(axis === 0 ? onNegative : 0, axis === 1 ? onNegative : 0, 0.02);
+  dot.renderOrder = 46;
+  const scaleHit = tagHandle(
+    new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), basicMat(0xffffff, 0)),
+    "scale",
+    axis,
+    -1,
+    scaleMat,
+  );
+  scaleHit.position.copy(dot.position);
+  group.add(dot, scaleHit);
+}
+
+/** 2D 이동 코너용 짧은 축 화살표(색은 해당 축). */
+function addCornerMoveArrow(
+  group: THREE.Group,
+  axis: 0 | 1,
+  corner: number,
+  len: number,
+  colorMat: THREE.MeshBasicMaterial,
+) {
+  const shaft = tagHandle(
+    new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, len * 0.55, 10), colorMat),
+    "move2",
+    axis,
+    axis === 0 ? 1 : 0,
+    colorMat,
+  );
+  const head = tagHandle(
+    new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 12), colorMat),
+    "move2",
+    axis,
+    axis === 0 ? 1 : 0,
+    colorMat,
+  );
+  if (axis === 0) {
+    shaft.position.set(corner + len * 0.38, corner, 0.03);
+    head.position.set(corner + len * 0.82, corner, 0.03);
+    shaft.rotation.z = -Math.PI / 2;
+    head.rotation.z = -Math.PI / 2;
+  } else {
+    shaft.position.set(corner, corner + len * 0.38, 0.03);
+    head.position.set(corner, corner + len * 0.82, 0.03);
+  }
+  group.add(shaft, head);
+}
+
 export function makeGumball(tooth: string) {
   const group = new THREE.Group();
   group.name = "abutment-gumball";
   group.userData.tooth = tooth;
   group.frustumCulled = false;
 
-  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖):
-  // Z 방향 모서리 고리·평면이 앞쪽(z>0)에서 스케일 네모 판정을 가로채지 않도록 화면 평면(XY) 안에 비겹침 배치한다.
+  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖).
+  // 이동(화살표)은 +축·1사분면 코너에만, 스케일(점)은 −축·3사분면 코너에 묶어 겹치지 않게 한다.
   for (const axis of [0, 1] as const) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
@@ -1888,29 +1938,13 @@ export function makeGumball(tooth: string) {
       mat,
     );
     alongAxis(hit, axis, 0.96);
-
-    const scaleMat = basicMat(color);
-    const box = tagHandle(
-      new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.08), scaleMat),
-      "scale",
-      axis,
-      -1,
-      scaleMat,
-    );
-    box.position.set(axis === 0 ? 0.47 : 0, axis === 1 ? 0.47 : 0, 0.02);
-    box.renderOrder = 46;
-    const scaleHit = tagHandle(
-      new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.18), basicMat(0xffffff, 0)),
-      "scale",
-      axis,
-      -1,
-      scaleMat,
-    );
-    scaleHit.position.copy(box.position);
-    group.add(shaft, head, hit, box, scaleHit);
+    group.add(shaft, head, hit);
+  }
+  for (const axis of [0, 1] as const) {
+    addAxisScaleDot(group, axis, -0.47);
   }
 
-  // 파란 화면 평면 회전 호: 초록 축(90°) 왼쪽(104°~216°)에 놓아 노란 면 스케일 네모(45°)·축 스케일 네모와 완전히 분리한다.
+  // 파란 화면 평면 회전 호: 초록 축(90°) 왼쪽(104°~216°)에 놓아 스케일·이동 코너 핸들과 분리한다.
   const arcColor = AXIS_COLOR[2]!;
   const arcMat = basicMat(arcColor);
   const arcSpan = (112 * Math.PI) / 180;
@@ -1933,37 +1967,34 @@ export function makeGumball(tooth: string) {
   arcHit.rotation.z = arcStart;
   group.add(arc, arcHit);
 
-  // 노란 평면 스케일 네모(화면 가로·세로 동시 스케일): 1사분면(0.41, 0.41)에 배치하고 BoxGeometry 히트박스로 양면 판정을 보장한다.
+  const moveCorner = 0.41;
+  const moveCornerLen = 0.26;
+  addCornerMoveArrow(group, 0, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[0]!));
+  addCornerMoveArrow(group, 1, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[1]!));
+  const move2Hit = tagHandle(
+    new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.18), basicMat(0xffffff, 0)),
+    "move2",
+    0,
+    1,
+    basicMat(AXIS_COLOR[0]!),
+  );
+  move2Hit.position.set(moveCorner + moveCornerLen * 0.35, moveCorner + moveCornerLen * 0.35, 0.02);
+  group.add(move2Hit);
+
+  // 노란 2D 스케일 점: 스케일 묶음 3사분면(-0.41, -0.41).
   const planeMat = basicMat(0xf5d90a, 0.94);
-  planeMat.side = THREE.DoubleSide;
-  const quad = tagHandle(new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.21), planeMat), "scale2", 0, 1, planeMat);
-  quad.position.set(0.41, 0.41, 0.02);
-  quad.renderOrder = 47;
-  const quadHit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.18), basicMat(0xffffff, 0)),
+  const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), planeMat), "scale2", 0, 1, planeMat);
+  scale2Dot.position.set(-0.41, -0.41, 0.02);
+  scale2Dot.renderOrder = 47;
+  const scale2Hit = tagHandle(
+    new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), basicMat(0xffffff, 0)),
     "scale2",
     0,
     1,
     planeMat,
   );
-  quadHit.position.copy(quad.position);
-  group.add(quad, quadHit);
-
-  // 하늘색 평면 이동 네모(화면 가로·세로 동시 이동): 노란 스케일 네모와 겹치지 않게 3사분면(-0.41, -0.41)에 둔다.
-  const move2Mat = basicMat(0x38bdf8, 0.94);
-  move2Mat.side = THREE.DoubleSide;
-  const move2Quad = tagHandle(new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.21), move2Mat), "move2", 0, 1, move2Mat);
-  move2Quad.position.set(-0.41, -0.41, 0.02);
-  move2Quad.renderOrder = 47;
-  const move2Hit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.18), basicMat(0xffffff, 0)),
-    "move2",
-    0,
-    1,
-    move2Mat,
-  );
-  move2Hit.position.copy(move2Quad.position);
-  group.add(move2Quad, move2Hit);
+  scale2Hit.position.copy(scale2Dot.position);
+  group.add(scale2Dot, scale2Hit);
 
   const ringMat = basicMat(0xf8fafc);
   const ring = tagHandle(new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.036, 8, 28), ringMat), "scale3", 0, -1, ringMat);
