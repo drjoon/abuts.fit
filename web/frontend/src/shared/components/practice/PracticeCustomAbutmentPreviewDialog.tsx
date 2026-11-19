@@ -10,6 +10,7 @@
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
 // 화살표는 이동, 상자는 그 방향 크기, 흰 고리는 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
+// - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -288,6 +289,11 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   reviewItems?: readonly { id: string; label: string }[];
   reviewIndex?: number;
   onReviewIndexChange?: (index: number) => void;
+  /**
+   * 캘린더 행처럼 s3Key가 아직 없을 때. 부모가 hydrate하는 동안
+   * 스캔 없음 에러 대신 로딩을 보여 모달을 먼저 연다.
+   */
+  filesPending?: boolean;
 };
 
 type PendingInfoChange = {
@@ -890,6 +896,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   reviewItems = [],
   reviewIndex = 0,
   onReviewIndexChange,
+  filesPending = false,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { toast } = useToast();
   const designSoftware = useAccountDesignSoftware();
@@ -2971,6 +2978,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     if (curScanSources.meshes.length === 0) {
+      if (filesPending) {
+        setStatus({
+          kind: "loading",
+          percent: 4,
+          step: "의뢰 파일을 불러오는 중…",
+        });
+        return;
+      }
       setStatus({
         kind: "error",
         message: "구강 스캔 파일(DCM·PLY·STL·OBJ)이 없어 디자인 프리뷰를 만들 수 없습니다.",
@@ -4027,6 +4042,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
   }, [
     authToken,
+    filesPending,
     hostEl,
     isLabViewer,
     open,

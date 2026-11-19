@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-19: 디자인 모달 — 캘린더 hydrate를 열기 전에 기다리지 않는다. 선택 시 prefetch.
 // - 2026-11-19: 헤더 오른쪽 — 중요 사항 공지 레일(크레딧·공지 5초 롤링).
 // - 2026-11-19: 크레딧 hold 성공 전에는 어벗 STL을 업로드된 것으로 보이지 않는다.
 // - 2026-11-19: 다치아 어벗 STL — 확인 모달을 치아마다 언마운트하지 않는다. 포커스가 빠지며 다음 치아 핸드오프가 끊기던 문제.
@@ -718,6 +719,7 @@ function LabAbutmentDesignReviewDialog({
   rail,
   authToken,
   catalog,
+  filesPending = false,
   onOpenChange,
   onIndexChange,
   onChecked,
@@ -728,6 +730,7 @@ function LabAbutmentDesignReviewDialog({
   rail: boolean;
   authToken: string | null;
   catalog: Parameters<typeof resolvePracticeTransferToothWorks>[1];
+  filesPending?: boolean;
   onOpenChange: (open: boolean) => void;
   onIndexChange: (index: number) => void;
   onChecked: (transferId: string) => void;
@@ -764,6 +767,7 @@ function LabAbutmentDesignReviewDialog({
       files={toFiles(entry.files)}
       workScanFiles={toFiles(entry.production?.labWorkScanFiles)}
       transferId={String(entry.transferId || entry._id || "")}
+      filesPending={filesPending}
       reviewItems={
         rail
           ? items.map((item) => ({
@@ -1955,22 +1959,59 @@ export function RequestorPracticeReceivePage({
   /**
    * 목록 재조회 시 서버 designFiles가 아직 덜 미러된 경우,
    * 로컬 낙관 패치(미러 전 s3Key)를 버리지 않아 취소선·썸네일 플리커를 막는다.
+   * 캘린더 INDEX는 구강스캔 s3Key를 안 주므로, 이미 hydrate한 스캔도 유지한다.
    */
   const mergeTransferPreserveOptimisticDesigns = useCallback(
     (
       local: ReceivedPracticeTransfer,
       server: ReceivedPracticeTransfer,
     ): ReceivedPracticeTransfer => {
+      const s3Of = (row: ReceivedPracticeFile) =>
+        String(row?.s3Key || "").trim();
+      const hasScanKey = (files: ReceivedPracticeFile[] | null | undefined) =>
+        (files || []).some((file) => Boolean(s3Of(file)));
+
+      const keepOralFiles =
+        hasScanKey(local.files) && !hasScanKey(server.files)
+          ? local.files
+          : server.files;
+      const localWorkScans = Array.isArray(local.production?.labWorkScanFiles)
+        ? local.production.labWorkScanFiles
+        : [];
+      const serverWorkScans = Array.isArray(server.production?.labWorkScanFiles)
+        ? server.production.labWorkScanFiles
+        : [];
+      const keepWorkScans =
+        hasScanKey(localWorkScans) && !hasScanKey(serverWorkScans)
+          ? localWorkScans
+          : serverWorkScans;
+      const keepAlignment =
+        local.production?.workScanAlignment &&
+        !server.production?.workScanAlignment
+          ? local.production.workScanAlignment
+          : server.production?.workScanAlignment;
+
+      const withPreservedScans = (
+        row: ReceivedPracticeTransfer,
+      ): ReceivedPracticeTransfer => ({
+        ...row,
+        files: keepOralFiles,
+        production: {
+          ...row.production,
+          labWorkScanFiles: keepWorkScans,
+          workScanAlignment:
+            keepAlignment ?? row.production?.workScanAlignment ?? null,
+        },
+      });
+
       const localFiles = Array.isArray(local.production?.designFiles)
         ? local.production.designFiles
         : [];
       const serverFiles = Array.isArray(server.production?.designFiles)
         ? server.production.designFiles
         : [];
-      if (localFiles.length === 0) return server;
+      if (localFiles.length === 0) return withPreservedScans(server);
 
-      const s3Of = (row: ReceivedPracticeFile) =>
-        String(row?.s3Key || "").trim();
       const localByKey = new Map(
         localFiles.map((row) => [s3Of(row), row] as const).filter(([k]) => k),
       );
@@ -2006,16 +2047,16 @@ export function RequestorPracticeReceivePage({
         });
       if (sameDesignList) {
         // 파일 목록 동일 — production 기타 필드만 서버 반영, designFiles 참조 유지
-        return {
+        return withPreservedScans({
           ...server,
           production: {
             ...server.production,
             designFiles: localFiles,
             designFileCount: localFiles.length,
           },
-        };
+        });
       }
-      return {
+      return withPreservedScans({
         ...server,
         production: {
           ...server.production,
@@ -2043,7 +2084,7 @@ export function RequestorPracticeReceivePage({
               ? server.production.abutmentToothStages
               : local.production?.abutmentToothStages || [],
         },
-      };
+      });
     },
     [],
   );
@@ -9260,6 +9301,7 @@ export function RequestorPracticeReceivePage({
   const [labDesignItems, setLabDesignItems] = useState<ReceivedPracticeTransfer[]>([]);
   const [labDesignIndex, setLabDesignIndex] = useState(0);
   const [labDesignRail, setLabDesignRail] = useState(false);
+  const [labDesignFilesPending, setLabDesignFilesPending] = useState(false);
   const labDesignOpenSeqRef = useRef(0);
 
   const labAbutmentInput = useCallback(
@@ -9316,8 +9358,41 @@ export function RequestorPracticeReceivePage({
     [mapTransferRows, parseTransfersBody, token],
   );
 
+  /** 캘린더 INDEX 행에 없는 스캔 s3Key를 목록·선택에 남겨 다음 클릭이 즉시 열리게 한다. */
+  const applyHydratedLabTransfer = useCallback(
+    (hydrated: ReceivedPracticeTransfer) => {
+      if (!labTransferHasDesignScan(hydrated)) return;
+      const id = String(hydrated.transferId || "").trim();
+      const mongo = String(hydrated._id || "").trim();
+      if (!id && !mongo) return;
+      const matches = (row: ReceivedPracticeTransfer) => {
+        const a = String(row.transferId || "").trim();
+        const b = String(row._id || "").trim();
+        return (Boolean(id) && a === id) || (Boolean(mongo) && b === mongo);
+      };
+      setTransfers((prev) =>
+        prev.map((row) =>
+          matches(row)
+            ? mergeTransferPreserveOptimisticDesigns(row, hydrated)
+            : row,
+        ),
+      );
+      setSelectedTransfer((prev) => {
+        if (!prev || !matches(prev)) return prev;
+        const merged = mergeTransferPreserveOptimisticDesigns(prev, hydrated);
+        return {
+          ...merged,
+          arrivalDate: prev.arrivalDate || merged.arrivalDate,
+          orderDate: prev.orderDate || merged.orderDate,
+          focusFollowUpIndex: prev.focusFollowUpIndex,
+        };
+      });
+    },
+    [mergeTransferPreserveOptimisticDesigns],
+  );
+
   const openLabAbutmentDesign = useCallback(
-    async (
+    (
       items: ReceivedPracticeTransfer[],
       startIndex: number,
       rail: boolean,
@@ -9325,32 +9400,87 @@ export function RequestorPracticeReceivePage({
       if (items.length === 0) return;
       const safe = Math.min(Math.max(0, startIndex), items.length - 1);
       const seq = ++labDesignOpenSeqRef.current;
-      const hydratedFirst = await hydrateLabTransferForDesign(items[safe]!);
-      if (labDesignOpenSeqRef.current !== seq) return;
-      const next = items.map((item, index) =>
-        index === safe ? hydratedFirst : item,
-      );
+      const first = items[safe]!;
+      const needsHydrate = !labTransferHasDesignScan(first);
+      // Critical path: 모달을 먼저 연다. 파일 hydrate는 응답 후.
       setLabDesignRail(rail);
-      setLabDesignItems(next);
+      setLabDesignItems(items);
       setLabDesignIndex(safe);
+      setLabDesignFilesPending(needsHydrate);
       setLabDesignOpen(true);
-      void Promise.all(
-        next.map(async (item, index) => {
-          if (index === safe) return item;
-          return hydrateLabTransferForDesign(item);
-        }),
-      ).then((hydrated) => {
+
+      void (async () => {
+        let next = items;
+        if (needsHydrate) {
+          const hydratedFirst = await hydrateLabTransferForDesign(first);
+          if (labDesignOpenSeqRef.current !== seq) return;
+          next = items.map((item, index) =>
+            index === safe ? hydratedFirst : item,
+          );
+          setLabDesignItems(next);
+          setLabDesignFilesPending(false);
+          applyHydratedLabTransfer(hydratedFirst);
+        } else {
+          setLabDesignFilesPending(false);
+        }
+        const hydratedRest = await Promise.all(
+          next.map(async (item, index) => {
+            if (index === safe) return item;
+            return hydrateLabTransferForDesign(item);
+          }),
+        );
         if (labDesignOpenSeqRef.current !== seq) return;
         setLabDesignItems((prev) => {
-          if (prev.length !== hydrated.length) return prev;
-          return hydrated.map((item, index) =>
+          if (prev.length !== hydratedRest.length) return prev;
+          return hydratedRest.map((item, index) =>
             index === safe ? prev[index] || item : item,
           );
         });
-      });
+        for (const item of hydratedRest) {
+          applyHydratedLabTransfer(item);
+        }
+      })();
     },
-    [hydrateLabTransferForDesign],
+    [applyHydratedLabTransfer, hydrateLabTransferForDesign],
   );
+
+  /** 채팅이 열린 어벗 의뢰는 디자인 클릭 전에 스캔 키를 미리 채운다. */
+  const selectedTransferRef = useRef(selectedTransfer);
+  selectedTransferRef.current = selectedTransfer;
+  const labDesignPrefetchId = useMemo(() => {
+    if (!dialogOpen || !selectedTransfer) return "";
+    if (labTransferHasDesignScan(selectedTransfer)) return "";
+    const hasCa =
+      Boolean(selectedTransfer.hasCustomAbutment) ||
+      practiceTransferHasCustomAbutment(selectedTransfer, implantCatalog);
+    if (!hasCa) return "";
+    return String(selectedTransfer.transferId || selectedTransfer._id || "").trim();
+  }, [dialogOpen, implantCatalog, selectedTransfer]);
+
+  useEffect(() => {
+    if (!labDesignPrefetchId || !token) return;
+    const snapshot = selectedTransferRef.current;
+    if (!snapshot) return;
+    if (
+      String(snapshot.transferId || snapshot._id || "").trim() !==
+      labDesignPrefetchId
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void hydrateLabTransferForDesign(snapshot).then((hydrated) => {
+      if (cancelled) return;
+      applyHydratedLabTransfer(hydrated);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    applyHydratedLabTransfer,
+    hydrateLabTransferForDesign,
+    labDesignPrefetchId,
+    token,
+  ]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
     const items: PracticeStatusFilterBadgeItem[] = [];
@@ -11515,12 +11645,14 @@ export function RequestorPracticeReceivePage({
           rail={labDesignRail}
           authToken={token}
           catalog={implantCatalog}
+          filesPending={labDesignFilesPending}
           onOpenChange={(open) => {
             setLabDesignOpen(open);
             if (!open) {
               setLabDesignItems([]);
               setLabDesignIndex(0);
               setLabDesignRail(false);
+              setLabDesignFilesPending(false);
             }
           }}
           onIndexChange={(next) => {
@@ -11530,16 +11662,20 @@ export function RequestorPracticeReceivePage({
               return;
             }
             if (labTransferHasDesignScan(target)) {
+              setLabDesignFilesPending(false);
               setLabDesignIndex(next);
               return;
             }
+            setLabDesignIndex(next);
+            setLabDesignFilesPending(true);
             void hydrateLabTransferForDesign(target).then((hydrated) => {
               setLabDesignItems((prev) =>
                 prev.map((item, itemIndex) =>
                   itemIndex === next ? hydrated : item,
                 ),
               );
-              setLabDesignIndex(next);
+              setLabDesignFilesPending(false);
+              applyHydratedLabTransfer(hydrated);
             });
           }}
           onChecked={(transferId) => {
