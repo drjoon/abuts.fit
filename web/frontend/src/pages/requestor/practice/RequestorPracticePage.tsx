@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-19: 기공소 디자인 확정 — 응답의 제조 STL·연동 의뢰를 바로 반영. 생산의뢰 완료가 새로고침 없이 보인다.
 // - 2026-11-19: 작업시작 — 치과 어벗·디자인 확정 전 CTA 비활성, 보철 업로드 안내 모달 카피 갱신.
 // - 2026-11-19: 디자인 모달 — 캘린더 hydrate를 열기 전에 기다리지 않는다. 선택 시 prefetch.
 // - 2026-11-19: 헤더 오른쪽 — 중요 사항 공지 레일(크레딧·공지 5초 롤링).
@@ -712,6 +713,121 @@ const formatLabReceiveMobileCreatedAt = (value: unknown) => {
 
 type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
 
+function readConfirmProduction(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const root = raw as Record<string, unknown>;
+  const nested =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : null;
+  const production = nested?.production ?? root.production;
+  return production && typeof production === "object"
+    ? (production as Record<string, unknown>)
+    : null;
+}
+
+function mapConfirmDesignFiles(raw: unknown): ReceivedPracticeFile[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((row, idx) => {
+    if (!row || typeof row !== "object") return [];
+    const file = row as Record<string, unknown>;
+    const s3Key = String(file.s3Key || "").trim();
+    if (!s3Key) return [];
+    return [
+      {
+        id: String(file.id || `design-${idx + 1}`),
+        patientName: String(file.patientName || "").trim(),
+        tooth: String(file.tooth || "").trim(),
+        originalName: String(file.originalName || "").trim(),
+        mimetype: String(file.mimetype || "application/octet-stream").trim(),
+        size: Number(file.size || 0),
+        s3Key,
+        uploadedAt: String(file.uploadedAt || "").trim() || null,
+      },
+    ];
+  });
+}
+
+/** 기공소 디자인 확정 응답을 목록 행에 붙인다. 제조 STL이 있어야 생산의뢰 완료가 바로 보인다. */
+function applyLabDesignConfirmedProduction(
+  row: ReceivedPracticeTransfer,
+  raw: unknown,
+): ReceivedPracticeTransfer {
+  const productionRaw = readConfirmProduction(raw);
+  const nowIso = new Date().toISOString();
+  const incomingFiles = mapConfirmDesignFiles(productionRaw?.designFiles);
+  const designFiles =
+    incomingFiles.length > 0
+      ? incomingFiles
+      : row.production?.designFiles || [];
+  const incomingIds = Array.isArray(productionRaw?.relatedRequestIds)
+    ? productionRaw.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    : [];
+  const stageByTooth = new Map<string, string>();
+  for (const stage of row.production?.abutmentToothStages || []) {
+    const tooth = String(stage.tooth || "").trim();
+    const name = String(stage.stage || "").trim();
+    if (tooth && name) stageByTooth.set(tooth, name);
+  }
+  for (const stage of normalizeAbutmentToothStagesFromApi(
+    productionRaw?.abutmentToothStages,
+  ) || []) {
+    stageByTooth.set(stage.tooth, stage.stage);
+  }
+  for (const file of designFiles) {
+    const tooth = String(file.tooth || "").trim();
+    if (tooth && !stageByTooth.has(tooth)) stageByTooth.set(tooth, "준비");
+  }
+  const pastReadyTeeth = Array.isArray(productionRaw?.abutmentPastReadyTeeth)
+    ? productionRaw.abutmentPastReadyTeeth
+        .map((tooth) => String(tooth || "").trim())
+        .filter(Boolean)
+    : row.production?.abutmentPastReadyTeeth || [];
+  return {
+    ...row,
+    production: {
+      ...row.production,
+      labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
+        ? String(productionRaw.labDesignConfirmedAt)
+        : row.production?.labDesignConfirmedAt || nowIso,
+      practiceDesignConfirmedAt: productionRaw?.practiceDesignConfirmedAt
+        ? String(productionRaw.practiceDesignConfirmedAt)
+        : row.production?.practiceDesignConfirmedAt || null,
+      designReadyAt: productionRaw?.designReadyAt
+        ? String(productionRaw.designReadyAt)
+        : row.production?.designReadyAt ||
+          (designFiles.length > 0 ? nowIso : null),
+      designFiles,
+      designFileCount:
+        designFiles.length > 0
+          ? designFiles.length
+          : Number(
+              productionRaw?.designFileCount ??
+                row.production?.designFileCount ??
+                0,
+            ),
+      relatedRequestIds:
+        incomingIds.length > 0
+          ? incomingIds
+          : row.production?.relatedRequestIds || [],
+      abutmentToothStages: [...stageByTooth.entries()].map(([tooth, stage]) => ({
+        tooth,
+        stage,
+      })),
+      abutmentPastReady:
+        productionRaw?.abutmentPastReady != null
+          ? Boolean(productionRaw.abutmentPastReady)
+          : Boolean(row.production?.abutmentPastReady),
+      abutmentPastReadyTeeth: pastReadyTeeth,
+      abutmentProductionStartedAt: productionRaw?.abutmentProductionStartedAt
+        ? String(productionRaw.abutmentProductionStartedAt)
+        : row.production?.abutmentProductionStartedAt || null,
+    },
+  };
+}
+
 function labTransferHasDesignScan(transfer: ReceivedPracticeTransfer) {
   return [...(transfer.files || []), ...(transfer.production?.labWorkScanFiles || [])].some(
     (file) => String(file.s3Key || "").trim(),
@@ -739,7 +855,7 @@ function LabAbutmentDesignReviewDialog({
   filesPending?: boolean;
   onOpenChange: (open: boolean) => void;
   onIndexChange: (index: number) => void;
-  onChecked: (transferId: string) => void;
+  onChecked: (transferId: string, body?: unknown) => void;
 }) {
   const entry = items[index];
   if (!open || !entry) return null;
@@ -788,9 +904,9 @@ function LabAbutmentDesignReviewDialog({
       }
       reviewIndex={index}
       onReviewIndexChange={onIndexChange}
-      onActionComplete={(action) => {
+      onActionComplete={(action, detail) => {
         if (action !== "checked") return;
-        onChecked(String(entry.transferId || entry._id || ""));
+        onChecked(String(entry.transferId || entry._id || ""), detail?.body);
       }}
     />
   );
@@ -1999,16 +2115,28 @@ export function RequestorPracticeReceivePage({
 
       const withPreservedScans = (
         row: ReceivedPracticeTransfer,
-      ): ReceivedPracticeTransfer => ({
-        ...row,
-        files: keepOralFiles,
-        production: {
-          ...row.production,
-          labWorkScanFiles: keepWorkScans,
-          workScanAlignment:
-            keepAlignment ?? row.production?.workScanAlignment ?? null,
-        },
-      });
+      ): ReceivedPracticeTransfer => {
+        const rowIds = row.production?.relatedRequestIds || [];
+        const localIds = local.production?.relatedRequestIds || [];
+        const rowStages = row.production?.abutmentToothStages || [];
+        const localStages = local.production?.abutmentToothStages || [];
+        return {
+          ...row,
+          files: keepOralFiles,
+          production: {
+            ...row.production,
+            labWorkScanFiles: keepWorkScans,
+            workScanAlignment:
+              keepAlignment ?? row.production?.workScanAlignment ?? null,
+            labDesignConfirmedAt:
+              String(row.production?.labDesignConfirmedAt || "").trim() ||
+              String(local.production?.labDesignConfirmedAt || "").trim() ||
+              null,
+            relatedRequestIds: rowIds.length > 0 ? rowIds : localIds,
+            abutmentToothStages: rowStages.length > 0 ? rowStages : localStages,
+          },
+        };
+      };
 
       const localFiles = Array.isArray(local.production?.designFiles)
         ? local.production.designFiles
@@ -2022,13 +2150,33 @@ export function RequestorPracticeReceivePage({
         Boolean(String(server.production?.practiceDesignConfirmedAt || "").trim()) &&
         !String(server.production?.labDesignConfirmedAt || "").trim();
       if (serverHoldingDesign) {
+        const localConfirmed = String(
+          local.production?.labDesignConfirmedAt || "",
+        ).trim();
+        if (!localConfirmed) {
+          return withPreservedScans({
+            ...server,
+            production: {
+              ...server.production,
+              designFiles: serverFiles,
+              designFileCount: serverFiles.length,
+              designReadyAt: server.production?.designReadyAt || null,
+            },
+          });
+        }
+        const files = localFiles.length > 0 ? localFiles : serverFiles;
         return withPreservedScans({
           ...server,
           production: {
+            ...local.production,
             ...server.production,
-            designFiles: serverFiles,
-            designFileCount: serverFiles.length,
-            designReadyAt: server.production?.designReadyAt || null,
+            designFiles: files,
+            designFileCount: files.length,
+            designReadyAt:
+              local.production?.designReadyAt ||
+              server.production?.designReadyAt ||
+              null,
+            labDesignConfirmedAt: localConfirmed,
           },
         });
       }
@@ -2767,6 +2915,23 @@ export function RequestorPracticeReceivePage({
           setSelectedTransfer((prev) =>
             prev && prev.transferId === transferId ? patchStages(prev) : prev,
           );
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "abutment-design-confirmed") {
+          const mongoId = String(payload.transferMongoId || "").trim();
+          const patchConfirmed = (row: ReceivedPracticeTransfer) => {
+            const sameTransfer =
+              (transferId && String(row.transferId || "").trim() === transferId) ||
+              (mongoId && String(row._id || "").trim() === mongoId);
+            return sameTransfer
+              ? applyLabDesignConfirmedProduction(row, payload)
+              : row;
+          };
+          setTransfers((prev) => prev.map(patchConfirmed));
+          setSelectedTransfer((prev) => (prev ? patchConfirmed(prev) : prev));
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -5606,63 +5771,26 @@ export function RequestorPracticeReceivePage({
           });
           return false;
         }
-        const data =
+        const envelope =
           res.data && typeof res.data === "object"
             ? (res.data as Record<string, unknown>)
             : {};
-        const productionRaw =
-          data.production && typeof data.production === "object"
-            ? (data.production as Record<string, unknown>)
-            : null;
-        const productionPatch: ReceivedPracticeTransfer["production"] = productionRaw
-          ? {
-              ...transfer.production,
-              skipDesignConfirm: productionRaw.skipDesignConfirm !== false,
-              skipJig: Boolean(productionRaw.skipJig),
-              labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
-                ? String(productionRaw.labDesignConfirmedAt)
-                : new Date().toISOString(),
-              practiceDesignConfirmedAt: productionRaw.practiceDesignConfirmedAt
-                ? String(productionRaw.practiceDesignConfirmedAt)
-                : transfer.production?.practiceDesignConfirmedAt || null,
-              abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
-                ? String(productionRaw.abutmentProductionStartedAt)
-                : transfer.production?.abutmentProductionStartedAt || null,
-              abutmentPastReady:
-                productionRaw.abutmentPastReady != null
-                  ? Boolean(productionRaw.abutmentPastReady)
-                  : Boolean(transfer.production?.abutmentPastReady),
-              abutmentPastReadyTeeth: Array.isArray(
-                productionRaw.abutmentPastReadyTeeth,
-              )
-                ? productionRaw.abutmentPastReadyTeeth
-                    .map((t) => String(t || "").trim())
-                    .filter(Boolean)
-                : transfer.production?.abutmentPastReadyTeeth || [],
-              designReadyAt: productionRaw.designReadyAt
-                ? String(productionRaw.designReadyAt)
-                : transfer.production?.designReadyAt || null,
-              designFileCount: Number(
-                productionRaw.designFileCount ?? transfer.production?.designFileCount ?? 0,
-              ),
-              designFiles: transfer.production?.designFiles || [],
-            }
-          : {
-              ...transfer.production,
-              labDesignConfirmedAt: new Date().toISOString(),
-            };
+        const data =
+          envelope.data && typeof envelope.data === "object"
+            ? (envelope.data as Record<string, unknown>)
+            : envelope;
 
         setTransfers((prev) =>
           prev.map((row) =>
             row._id === transfer._id || row.transferId === transfer.transferId
-              ? { ...row, production: productionPatch }
+              ? applyLabDesignConfirmedProduction(row, res.data)
               : row,
           ),
         );
         setSelectedTransfer((prev) =>
           prev &&
           (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? { ...prev, production: productionPatch }
+            ? applyLabDesignConfirmedProduction(prev, res.data)
             : prev,
         );
 
@@ -11750,17 +11878,11 @@ export function RequestorPracticeReceivePage({
               applyHydratedLabTransfer(hydrated);
             });
           }}
-          onChecked={(transferId) => {
-            const nowIso = new Date().toISOString();
+          onChecked={(transferId, body) => {
             const patch = (row: ReceivedPracticeTransfer) =>
-              String(row.transferId || row._id || "") === transferId
-                ? {
-                    ...row,
-                    production: {
-                      ...row.production,
-                      labDesignConfirmedAt: nowIso,
-                    },
-                  }
+              String(row.transferId || "").trim() === transferId ||
+              String(row._id || "").trim() === transferId
+                ? applyLabDesignConfirmedProduction(row, body)
                 : row;
             setTransfers((prev) => prev.map(patch));
             setSelectedTransfer((prev) => (prev ? patch(prev) : prev));

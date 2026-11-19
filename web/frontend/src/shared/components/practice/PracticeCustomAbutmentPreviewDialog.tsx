@@ -10,6 +10,7 @@
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
 // 화살표는 이동, 우상 점은 크기·평면 스케일, 좌하 호는 회전이다. 커넥션과 2° 테이퍼는 고정이다.
+// - 2026-11-19: 기공소 디자인 확정 — 제조 의뢰 응답을 부모에 넘겨 목록 상태를 바로 갱신한다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
@@ -289,7 +290,10 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   /** 치과(발신) 또는 기공소(수신) 역할 구분 */
   viewerRole?: "practice" | "lab";
   /** 확정 & 의뢰, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
-  onActionComplete?: (action: "confirmed" | "manual" | "checked" | "cancelled") => void;
+  onActionComplete?: (
+    action: "confirmed" | "manual" | "checked" | "cancelled",
+    detail?: { body?: unknown },
+  ) => void;
   /** 검토 대기 의뢰. 헤더에서 한 건씩 넘긴다. */
   reviewItems?: readonly { id: string; label: string }[];
   reviewIndex?: number;
@@ -2793,29 +2797,17 @@ export function PracticeCustomAbutmentPreviewDialog({
     workScanFiles,
   };
 
+  // 확정 뒤 목록 응답이 파일 이름·스캔 역할만 바꿔도 구강 스캔을 다시 받지 않는다.
   const pipelineKey = useMemo(
     () =>
       JSON.stringify({
-        teeth: abutmentToothWorks.map((t) => [
-          t.toothNumber,
-          t.implantManufacturer,
-          t.implantBrand,
-          t.implantFamily,
-          t.implantType,
-          t.abutmentManufacturer,
-          t.abutmentDiameter,
-          t.abutmentHeight,
-        ]),
-        allWorks: normalizedToothWorks.map((t) => [
-          t.toothNumber,
-          t.prosthesisType,
-          t.customAbutment,
-          t.customAbutmentSelection,
-          t.bridgeLinkedTeeth,
-        ]),
-        scans: scanSources.meshes.map((s) => [s.s3Key, s.fileName, s.scanRole]),
+        teeth: abutmentToothWorks.map((t) => t.toothNumber).join(","),
+        scans: scanSources.meshes
+          .map((s) => s.s3Key)
+          .sort()
+          .join(","),
       }),
-    [abutmentToothWorks, normalizedToothWorks, scanSources.meshes],
+    [abutmentToothWorks, scanSources.meshes],
   );
   chatScopeRef.current = transferIdParam || pipelineKey;
 
@@ -4950,7 +4942,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         title: "디자인 확정",
         description: "제조사에 실물 어벗 생산을 의뢰했습니다.",
       });
-      onActionComplete?.("checked");
+      onActionComplete?.("checked", { body: checkRes.data });
       handleOpenChange(false);
     } catch (err) {
       toast({

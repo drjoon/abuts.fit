@@ -28,16 +28,16 @@ import { postPracticeTransferSystemChatMessage } from "../../services/chatSystem
 import {
   claimAbutmentDesignHandoffLock,
   ensureAbutmentRequestsForHandoff,
+  readRelatedRequestIdsFromProduction,
   releaseAbutmentDesignHandoffLock,
   stampPracticeTransferFileBatch,
+  syncRelatedRequestOwnershipToAcceptingLab,
 } from "../../services/practiceTransferProduction.service.js";
 import { emitAppEventToUser } from "../../socket.js";
-import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
   DESIGN_ROUTE_PLATFORM,
   abutmentLabCheckDeadline,
-  clearMachiningBind,
   currentDesignRoute,
   designRouteBlockMessage,
   oralSourcesOnly,
@@ -883,40 +883,80 @@ function buildConfirmedRhinoFileName(requestDoc) {
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
  */
+const CONFIRM_REQUEST_SELECT = {
+  requestId: 1,
+  manufacturerStage: 1,
+  designCompletedAt: 1,
+  caseInfos: 1,
+  partnerBilling: 1,
+};
+
+function confirmToothMatches(doc, toothNumber) {
+  if (String(doc?.manufacturerStage || "").trim() === "취소") return false;
+  if (doc?.caseInfos?.hexVerificationSample === true) return false;
+  const tooth = String(doc?.caseInfos?.tooth || "").trim();
+  return tooth === toothNumber || tooth === String(Number(toothNumber));
+}
+
+async function loadConfirmRequests(ids) {
+  const objectIds = (Array.isArray(ids) ? ids : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (objectIds.length === 0) return [];
+  return Request.find({ _id: { $in: objectIds } }).select(CONFIRM_REQUEST_SELECT).lean();
+}
+
 export async function confirmCustomAbutmentDesign(req, res) {
   try {
-    const { anchorId, canSave, canEditShared, transferId } = await resolvePreferenceAnchor(
-      req,
-      req.body?.transferId,
-    );
-    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
-    const labRevision = Boolean(canEditShared) && !canSave && !privileged;
-    if (!transferId || (!canSave && !privileged && !labRevision) || !anchorId) {
-      return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
-    }
     const userId = String(req.user?._id || "").trim();
     if (!userId || !Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ success: false, message: "인증이 필요합니다." });
     }
-
-    const incoming = snapshotTeeth(req.body?.teeth, transferId);
-    if (incoming.length === 0) {
+    const transferIdInput = String(req.body?.transferId || "").trim();
+    const incoming = snapshotTeeth(req.body?.teeth, transferIdInput);
+    if (!transferIdInput || incoming.length === 0) {
       return res.status(400).json({ success: false, message: "확정할 커스텀어벗 디자인이 없습니다." });
     }
 
-    const checkedTeeth = await Promise.all(
-      incoming.map(async (row) => {
-        if (!row.s3Key) return null;
-        const size = await headObjectSizeInS3(row.s3Key);
-        if (!size || size > PREVIEW_STL_MAX) return null;
-        let crownS3Key = "";
-        if (row.crownS3Key) {
-          const crownSize = await headObjectSizeInS3(row.crownS3Key);
-          if (crownSize && crownSize <= PREVIEW_STL_MAX) crownS3Key = row.crownS3Key;
-        }
-        return { ...row, size, crownS3Key };
-      }),
-    );
+    const now = new Date();
+    const [transferDoc, checkedTeeth, freshDeadline] = await Promise.all([
+      PracticeTransfer.findOne({ transferId: transferIdInput }),
+      Promise.all(
+        incoming.map(async (row) => {
+          if (!row.s3Key) return null;
+          const [size, crownSize] = await Promise.all([
+            headObjectSizeInS3(row.s3Key),
+            row.crownS3Key ? headObjectSizeInS3(row.crownS3Key) : Promise.resolve(null),
+          ]);
+          if (!size || size > PREVIEW_STL_MAX) return null;
+          const crownS3Key =
+            row.crownS3Key && crownSize && crownSize <= PREVIEW_STL_MAX ? row.crownS3Key : "";
+          return { ...row, size, crownS3Key };
+        }),
+      ),
+      abutmentLabCheckDeadline(now),
+    ]);
+    if (!transferDoc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const own = String(req.user?.businessAnchorId || "").trim();
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    const practiceId = String(transferDoc.practiceBusinessAnchorId || "").trim();
+    const labIds = [transferDoc.targetLabAnchorId, transferDoc.assigneeLabAnchorId]
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    const party = Boolean(practiceId) && (labIds.concat(practiceId).includes(own) || privileged);
+    const canSave = party ? own === practiceId : Types.ObjectId.isValid(own);
+    const canEditShared = party ? labIds.includes(own) : false;
+    const anchorId = party ? practiceId : canSave ? own : "";
+    const transferId = String(transferDoc.transferId || transferIdInput);
+    const labRevision = Boolean(canEditShared) && !canSave && !privileged;
+    if ((!canSave && !privileged && !labRevision) || !anchorId) {
+      return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
+    }
+
     const validTeeth = checkedTeeth.filter(Boolean);
     if (validTeeth.length === 0) {
       return res.status(400).json({
@@ -925,34 +965,35 @@ export async function confirmCustomAbutmentDesign(req, res) {
       });
     }
 
-    const transferDoc = await PracticeTransfer.findOne({ transferId });
-    if (!transferDoc) {
-      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
-    }
-
-    const now = new Date();
     const userOid = new Types.ObjectId(userId);
     const updatedRequests = [];
     let cancelDeadlineAt = null;
+    let handoffReleased = false;
+    let handoffClaimed = false;
 
-    await claimAbutmentDesignHandoffLock(transferDoc._id);
+    const requestDocsPromise = loadConfirmRequests(
+      readRelatedRequestIdsFromProduction(transferDoc.production),
+    );
     try {
-      const ensure = await ensureAbutmentRequestsForHandoff({
-        transferDoc,
-        actorUserId: userId,
-        allowPracticeConfirmed: true,
-      });
-      const relatedIds = (Array.isArray(ensure?.requestIds) ? ensure.requestIds : [])
-        .filter((id) => Types.ObjectId.isValid(id))
-        .map((id) => new Types.ObjectId(id));
-
-      const requestDocs =
-        relatedIds.length > 0 ? await Request.find({ _id: { $in: relatedIds } }) : [];
+      await claimAbutmentDesignHandoffLock(transferDoc._id);
+      handoffClaimed = true;
+      let requestDocs = await requestDocsPromise;
+      const covered = validTeeth.every((toothRow) =>
+        requestDocs.some((doc) => confirmToothMatches(doc, toothRow.toothNumber)),
+      );
+      if (!covered) {
+        const ensure = await ensureAbutmentRequestsForHandoff({
+          transferDoc,
+          actorUserId: userId,
+          allowPracticeConfirmed: true,
+        });
+        requestDocs = await loadConfirmRequests(ensure?.requestIds);
+      }
 
       const productionTargets = [];
       for (const toothRow of validTeeth) {
-        const reqDoc = requestDocs.find(
-          (doc) => String(doc?.caseInfos?.tooth || "").trim() === toothRow.toothNumber,
+        const reqDoc = requestDocs.find((doc) =>
+          confirmToothMatches(doc, toothRow.toothNumber),
         );
         if (!reqDoc) continue;
         const blocked = designRouteBlockMessage(reqDoc, DESIGN_ROUTE_PLATFORM);
@@ -978,59 +1019,57 @@ export async function confirmCustomAbutmentDesign(req, res) {
       );
 
       await Promise.all(productionTeeth.map(async ({ toothRow, reqDoc, generation, destKey }) => {
-        if (!reqDoc.caseInfos) reqDoc.caseInfos = {};
-        if (!reqDoc.rnd) reqDoc.rnd = {};
-
-        const prevPrimaryKey = String(reqDoc.caseInfos.file?.s3Key || "").trim();
-        const prevSources = Array.isArray(reqDoc.caseInfos.designSourceFiles)
-          ? reqDoc.caseInfos.designSourceFiles
+        const caseInfos = reqDoc.caseInfos && typeof reqDoc.caseInfos === "object" ? reqDoc.caseInfos : {};
+        const prevPrimaryKey = String(caseInfos.file?.s3Key || "").trim();
+        const prevSources = Array.isArray(caseInfos.designSourceFiles)
+          ? caseInfos.designSourceFiles
           : [];
         const sourceFiles = oralSourcesOnly(prevSources, [prevPrimaryKey, toothRow.s3Key, destKey]);
         const fileName = toothRow.fileName || `custom_abutment_${toothRow.toothNumber}.stl`;
-        reqDoc.caseInfos.designSourceFiles = sourceFiles;
-        reqDoc.caseInfos.files = sourceFiles;
-        reqDoc.caseInfos.file = {
+        const processFileName = buildConfirmedRhinoFileName({
+          ...reqDoc,
+          caseInfos: { ...caseInfos, file: { originalName: fileName } },
+        });
+        const file = {
           originalName: fileName,
           fileType: "model/stl",
           fileSize: toothRow.size,
           s3Key: destKey,
+          ...(processFileName ? { filePath: processFileName } : {}),
         };
-        reqDoc.caseInfos.designGeneration = generation;
-        reqDoc.caseInfos.designRoute = DESIGN_ROUTE_PLATFORM;
-        reqDoc.caseInfos.machiningSourceS3Key = destKey;
-        reqDoc.caseInfos.productMode = "custom_abutment";
-        if (!String(reqDoc.caseInfos.designSoftware || "").trim()) {
-          reqDoc.caseInfos.designSoftware = "3Shape";
-        }
-        reqDoc.caseInfos.requestorHexRotation = "STL모델대로";
-        reqDoc.caseInfos.manufacturerHexRotation = "STL모델대로";
-        reqDoc.caseInfos.finalHexRotation = "STL모델대로";
-        reqDoc.caseInfos.hexRotation = { mode: "STL모델대로" };
-        reqDoc.rnd.manufacturerHexRotation = "STL모델대로";
-
+        const $set = {
+          "caseInfos.designSourceFiles": sourceFiles,
+          "caseInfos.files": sourceFiles,
+          "caseInfos.file": file,
+          "caseInfos.designGeneration": generation,
+          "caseInfos.designRoute": DESIGN_ROUTE_PLATFORM,
+          "caseInfos.machiningSourceS3Key": destKey,
+          "caseInfos.productMode": "custom_abutment",
+          "caseInfos.designSoftware": String(caseInfos.designSoftware || "").trim() || "3Shape",
+          "caseInfos.requestorHexRotation": "STL모델대로",
+          "caseInfos.manufacturerHexRotation": "STL모델대로",
+          "caseInfos.finalHexRotation": "STL모델대로",
+          "caseInfos.hexRotation": { mode: "STL모델대로" },
+          "rnd.manufacturerHexRotation": "STL모델대로",
+          "partnerBilling.practiceConfirmedAiDesign": true,
+          "partnerBilling.billingDeferred": true,
+          "productionSchedule.ncBind": { generation: "", filledS3Key: "" },
+        };
         const maxD = Number(toothRow.metrics?.maxDiameterMm);
         if (Number.isFinite(maxD) && maxD > 0) {
-          reqDoc.caseInfos.maxDiameter = maxD;
+          $set["caseInfos.maxDiameter"] = maxD;
         }
-        clearFilledStlFileOnCaseInfos(reqDoc.caseInfos);
-        reqDoc.caseInfos.ncFile = undefined;
-
-        // 제조 진입(designCompletedAt·준비·filled-STL JS 파이프라인)은 기공소 디자인 확정까지 미룬다.
-        // filePath는 나중에 파이프라인용으로 맞춰 두되, stlPreload/worksheet는 열지 않는다.
-        const processFileName = buildConfirmedRhinoFileName(reqDoc);
-        if (processFileName && reqDoc.caseInfos.file) {
-          reqDoc.caseInfos.file.filePath = processFileName;
-        }
-
-        reqDoc.partnerBilling = {
-          ...(reqDoc.partnerBilling && typeof reqDoc.partnerBilling === "object"
-            ? reqDoc.partnerBilling.toObject?.() || reqDoc.partnerBilling
-            : {}),
-          practiceConfirmedAiDesign: true,
-          billingDeferred: true,
-        };
-        clearMachiningBind(reqDoc);
-        await reqDoc.save();
+        await Request.updateOne(
+          { _id: reqDoc._id },
+          {
+            $set,
+            $unset: {
+              "caseInfos.stlFile": "",
+              "caseInfos.camFile": "",
+              "caseInfos.ncFile": "",
+            },
+          },
+        );
         updatedRequests.push({ reqDoc, processFileName });
       }));
 
@@ -1077,7 +1116,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         : Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0))) + 1;
       cancelDeadlineAt = transferDoc.production?.abutmentCancelDeadlineAt || null;
       if (!labRevision && !cancelDeadlineAt) {
-        cancelDeadlineAt = await abutmentLabCheckDeadline(now);
+        cancelDeadlineAt = freshDeadline;
       }
       const productionSet = {
         "production.customAbutmentPreview": nextPreview,
@@ -1104,9 +1143,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
           $set: productionSet,
           $unset: {
             "production.customAbutmentManualDesign": "",
+            "production.abutmentDesignHandoffLockAt": "",
           },
         },
       );
+      handoffReleased = true;
       if (!transferDoc.production) transferDoc.production = {};
       if (!labRevision) {
         transferDoc.production.abutmentFeeRoute = "platform";
@@ -1116,7 +1157,9 @@ export async function confirmCustomAbutmentDesign(req, res) {
         }
       }
     } finally {
-      await releaseAbutmentDesignHandoffLock(transferDoc._id);
+      if (handoffClaimed && !handoffReleased) {
+        await releaseAbutmentDesignHandoffLock(transferDoc._id);
+      }
     }
 
     res.json({
@@ -1133,6 +1176,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
     });
 
     void (async () => {
+      try {
+        await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
+      } catch (err) {
+        console.warn("[AI] confirm ownership sync failed", err?.message || err);
+      }
       if (!labRevision) {
         try {
           await syncPracticeTransferAbutmentFeeRoute({
