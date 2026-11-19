@@ -164,6 +164,7 @@ type Zone = {
   /** 본체 솔리드 기준 최상단 Z. 마진·크라운 refit에서도 본체와 동일한 swing/lift 기준을 유지한다. */
   propTop?: number;
   marginColZ?: Float32Array;
+  marginColAng?: Float32Array;
   topColZ?: Float32Array;
   topMinOuterR?: number;
   boreTopR?: number;
@@ -536,9 +537,50 @@ function angleDelta(a: number, b: number) {
   return Math.atan2(Math.sin(a - b), Math.cos(a - b));
 }
 
-function samplePolarProfile(profile: Float32Array | undefined, angle: number, fallback: number): number {
+/**
+ * 마진 루프의 실제 열 각도(angles[col] = atan2(my, mx))를 이용해
+ * 임의 각도 theta를 감싸는 인접 열 쌍 (c0, c1)과 보간 계수 frac ∈ [0, 1]을 찾는다.
+ * 편심·회전·저장된 디자인처럼 열 각도가 (col / count) * 2π에서 벗어난 경우에도
+ * 커프 정점·마진 Z·마진 보정값이 정확한 자기 열에 매칭된다.
+ */
+function findMarginColumnByAngle(
+  angles: Float32Array | undefined,
+  count: number,
+  theta: number,
+): { c0: number; c1: number; frac: number } {
+  if (!angles || angles.length !== count || count < 3) {
+    return marginColumnBlend(theta, count);
+  }
+  let bestCol = 0;
+  let bestAbs = Infinity;
+  for (let col = 0; col < count; col += 1) {
+    const c0 = col;
+    const c1 = (col + 1) % count;
+    const a0 = angles[c0]!;
+    const a1 = angles[c1]!;
+    const span = angleDelta(a1, a0);
+    if (Math.abs(span) < 1e-7) continue;
+    const d0 = angleDelta(theta, a0);
+    if (span > 0 ? d0 >= -1e-7 && d0 <= span + 1e-7 : d0 <= 1e-7 && d0 >= span - 1e-7) {
+      return { c0, c1, frac: clamp(d0 / span, 0, 1) };
+    }
+    const absD = Math.abs(d0);
+    if (absD < bestAbs) {
+      bestAbs = absD;
+      bestCol = col;
+    }
+  }
+  return { c0: bestCol, c1: (bestCol + 1) % count, frac: 0 };
+}
+
+function samplePolarProfile(
+  profile: Float32Array | undefined,
+  angle: number,
+  fallback: number,
+  angles?: Float32Array,
+): number {
   if (!profile || profile.length < 3) return fallback;
-  const { c0, c1, frac } = marginColumnBlend(angle, profile.length);
+  const { c0, c1, frac } = findMarginColumnByAngle(angles, profile.length, angle);
   return profile[c0]! * (1 - frac) + profile[c1]! * frac;
 }
 
@@ -734,7 +776,7 @@ export function refitLocalPositions(
       continue;
     }
     const theta0 = Math.atan2(y, x);
-    const mZCol = samplePolarProfile(zone.marginColZ, theta0, marginZ);
+    const mZCol = samplePolarProfile(zone.marginColZ, theta0, marginZ, zone.marginColAng);
     const topZCol = Math.max(mZCol + 0.8, samplePolarProfile(zone.topColZ, theta0, safePropTop));
     const postSpanCol = Math.max(topZCol - mZCol, 0.8);
     const hAboveMargin = z > mZCol + 1e-4 ? z - mZCol : 0;
@@ -765,12 +807,14 @@ export function refitLocalPositions(
 
     const offL = edit.shiftLabialMm * t;
     const offM = edit.shiftMesialMm * t;
-    const mColCorr =
-      !swing && marginZCorrCol && marginZCorrCol.length >= 3 && z >= mZCol - 0.025
-        ? samplePolarProfile(marginZCorrCol, theta0, 0)
+    const mColCorrRaw =
+      !swing && marginZCorrCol && marginZCorrCol.length >= 3
+        ? samplePolarProfile(marginZCorrCol, theta0, 0, zone.marginColAng)
         : 0;
-    const uH = clamp((z + baseZLift - basePivotZ) / postSpanPivot, 0, 1);
-    const z2 = z + baseZLift + (hasTopAdjust ? extraPostTopLiftMm * uH : 0) + mColCorr * (1 - uPost);
+    // 계단식 컷오프(z >= mZCol - 0.025) 대신 연속 램프로 적용해 마진·챔퍼 경계에 수직 단차가 생기지 않게 한다.
+    const mColCorr = mColCorrRaw * blendAbove(z, fixedZ, mZCol);
+    // extraPostTopLiftMm은 마진 위 포스트에만(uPost: 마진 0 → 상단 1) 적용해 메시 마진 링과 피니시라인(marginLocal)이 항상 일치하게 한다.
+    const z2 = z + baseZLift + (hasTopAdjust ? extraPostTopLiftMm * uPost : 0) + mColCorr * (1 - uPost);
     let adjLRot = lRot;
     let adjMRot = mRot;
     if (hasTaperLinkAdjust && hAboveMargin > 0.22 && (!hole || rProp > screwR + 0.12)) {
@@ -883,22 +927,32 @@ function marginColumnBlend(angle: number, count: number): { c0: number; c1: numb
   return { c0, c1, frac };
 }
 
-const cuffMaskCache = new WeakMap<Float32Array, Map<string, Uint8Array | null>>();
+type CuffTopology = {
+  mask: Uint8Array;
+  colPos: Float32Array;
+  baseX: Float32Array;
+  baseY: Float32Array;
+  uParam: Float32Array;
+};
+
+const cuffTopoCache = new WeakMap<Float32Array, Map<string, CuffTopology | null>>();
 
 /**
  * 삼각형 수프에서 콘 상단(coneZ)과 피니시라인 루프(proposalMargin) 사이의 실제 커프 정점만
- * 토폴로지 BFS로 정확히 분리한다.
- * - 마진 루프 정점을 닫힌 장벽(barrier)으로 두어, 기울어진 포스트의 챔퍼 정점이 마진보다 낮은 Z에 있더라도
- *   커프로 오인해 덮어쓰지 않고, 반대로 커프 스캘럽 정점이 반경 오차로 누락되지도 않는다.
+ * 토폴로지 BFS로 정확히 분리하고, 각 커프 정점의 (열 위치 colPos, 콘 시작점 baseXY, 높이 비율 uParam)을
+ * 메시 연결 구조 위에서 조화(Harmonic) 보간으로 계산해 캐시한다.
+ * - 이미 검볼 편집이 반영돼 저장된 디자인을 2차·3차 편집할 때도 기하 각도(atan2)에 흔들리지 않고
+ *   원래 토폴로지 열과 콘·마진 경계를 1:1로 유지해 삼각형 뒤집힘·주름·계단을 원천 차단한다.
  */
-function getCuffVertexMask(
+function getCuffTopology(
   proposal: Float32Array,
   proposalMargin: Float32Array,
   coneZ: number,
+  coneTopR: number,
   screwR: number,
-): Uint8Array | null {
+): CuffTopology | null {
   const key = `${Math.round(coneZ * 1000)}:${Math.round(screwR * 1000)}:${proposalMargin.length}`;
-  let byKey = cuffMaskCache.get(proposal);
+  let byKey = cuffTopoCache.get(proposal);
   if (byKey?.has(key)) return byKey.get(key) ?? null;
 
   const vCount = Math.floor(proposal.length / 3);
@@ -906,7 +960,7 @@ function getCuffVertexMask(
   if (vCount < 9 || vCount % 3 !== 0 || mCount < 3) {
     if (!byKey) {
       byKey = new Map();
-      cuffMaskCache.set(proposal, byKey);
+      cuffTopoCache.set(proposal, byKey);
     }
     byKey.set(key, null);
     return null;
@@ -936,17 +990,25 @@ function getCuffVertexMask(
   }
   const uCount = ux.length;
   const isBarrier = new Uint8Array(uCount);
+  const barrierCol = new Float32Array(uCount).fill(-1);
+  let minMarginZ = Infinity;
   let maxMarginZ = -Infinity;
   let matchedMargin = 0;
+  const origAng = new Float32Array(mCount);
+  const origZ = new Float32Array(mCount);
   for (let col = 0; col < mCount; col += 1) {
     const mx = proposalMargin[col * 3]!;
     const my = proposalMargin[col * 3 + 1]!;
     const mz = proposalMargin[col * 3 + 2]!;
+    origAng[col] = Math.atan2(my, mx);
+    origZ[col] = mz;
+    if (mz < minMarginZ) minMarginZ = mz;
     if (mz > maxMarginZ) maxMarginZ = mz;
     const exactKey = `${Math.round(mx * 1000)},${Math.round(my * 1000)},${Math.round(mz * 1000)}`;
     const exactUid = keyToUid.get(exactKey);
     if (exactUid !== undefined) {
       isBarrier[exactUid] = 1;
+      barrierCol[exactUid] = col;
       matchedMargin += 1;
       continue;
     }
@@ -965,11 +1027,12 @@ function getCuffVertexMask(
     }
     if (bestUid >= 0) {
       isBarrier[bestUid] = 1;
+      barrierCol[bestUid] = col;
       matchedMargin += 1;
     }
   }
 
-  let result: Uint8Array | null = null;
+  let result: CuffTopology | null = null;
   if (matchedMargin >= Math.max(3, Math.floor(mCount * 0.75))) {
     const adj: number[][] = Array.from({ length: uCount }, () => []);
     for (let t = 0; t < vCount; t += 3) {
@@ -990,51 +1053,264 @@ function getCuffVertexMask(
       }
     }
 
-    const isCuffUid = new Uint8Array(uCount);
-    const queue: number[] = [];
-    const allowCuff = (u: number) =>
-      uz[u]! > coneZ + 1e-3 &&
-      !isBarrier[u] &&
-      (screwR <= 0.15 || ur[u]! > screwR + 0.22);
+    const runBfs = () => {
+      const isCuffUid = new Uint8Array(uCount);
+      const isConeBot = new Uint8Array(uCount);
+      const queue: number[] = [];
+      const allowCuff = (u: number) =>
+        uz[u]! > coneZ + 1e-3 &&
+        !isBarrier[u] &&
+        (screwR <= 0.15 || ur[u]! > screwR + 0.22);
 
-    for (let u = 0; u < uCount; u += 1) {
-      if (!allowCuff(u)) continue;
-      const nbs = adj[u]!;
-      for (let j = 0; j < nbs.length; j += 1) {
-        if (uz[nbs[j]!]! <= coneZ + 1e-3) {
-          isCuffUid[u] = 1;
-          queue.push(u);
-          break;
+      for (let u = 0; u < uCount; u += 1) {
+        if (!allowCuff(u)) continue;
+        const nbs = adj[u]!;
+        for (let j = 0; j < nbs.length; j += 1) {
+          const nb = nbs[j]!;
+          if (uz[nb]! <= coneZ + 1e-3 && (screwR <= 0.15 || ur[nb]! > screwR + 0.22)) {
+            isConeBot[nb] = 1;
+            if (!isCuffUid[u]) {
+              isCuffUid[u] = 1;
+              queue.push(u);
+            }
+          }
         }
       }
-    }
 
-    let head = 0;
-    let maxCuffZ = -Infinity;
-    while (head < queue.length) {
-      const cur = queue[head++]!;
-      if (uz[cur]! > maxCuffZ) maxCuffZ = uz[cur]!;
-      const nbs = adj[cur]!;
-      for (let j = 0; j < nbs.length; j += 1) {
-        const nb = nbs[j]!;
-        if (isCuffUid[nb] || !allowCuff(nb)) continue;
-        isCuffUid[nb] = 1;
-        queue.push(nb);
+      let head = 0;
+      let maxCuffZ = -Infinity;
+      while (head < queue.length) {
+        const cur = queue[head++]!;
+        if (uz[cur]! > maxCuffZ) maxCuffZ = uz[cur]!;
+        const nbs = adj[cur]!;
+        for (let j = 0; j < nbs.length; j += 1) {
+          const nb = nbs[j]!;
+          if (isCuffUid[nb] || !allowCuff(nb)) continue;
+          isCuffUid[nb] = 1;
+          queue.push(nb);
+        }
       }
+      return { isCuffUid, isConeBot, queue, maxCuffZ };
+    };
+
+    let bfs = runBfs();
+    // 리메시된 드릴링 메시 등에서 마진 선분 중간 정점이 빠져 포스트로 새어나간 경우에만 좁은 허용오차로 선분 장벽을 보강한다.
+    if (bfs.queue.length > 0 && bfs.maxCuffZ > maxMarginZ + 0.08) {
+      const segTol = 0.012;
+      const segTol2 = segTol * segTol;
+      for (let u = 0; u < uCount; u += 1) {
+        if (isBarrier[u]) continue;
+        const z = uz[u]!;
+        if (z < minMarginZ - segTol || z > maxMarginZ + segTol) continue;
+        const x = ux[u]!;
+        const y = uy[u]!;
+        for (let col = 0; col < mCount; col += 1) {
+          const next = (col + 1) % mCount;
+          const ax = proposalMargin[col * 3]!;
+          const ay = proposalMargin[col * 3 + 1]!;
+          const az = proposalMargin[col * 3 + 2]!;
+          const bx = proposalMargin[next * 3]!;
+          const by = proposalMargin[next * 3 + 1]!;
+          const bz = proposalMargin[next * 3 + 2]!;
+          const zLo = az < bz ? az : bz;
+          const zHi = az > bz ? az : bz;
+          if (z < zLo - segTol || z > zHi + segTol) continue;
+          const abx = bx - ax;
+          const aby = by - ay;
+          const abz = bz - az;
+          const ab2 = abx * abx + aby * aby + abz * abz;
+          const proj = ab2 > 1e-12 ? clamp(((x - ax) * abx + (y - ay) * aby + (z - az) * abz) / ab2, 0, 1) : 0;
+          const dx = x - (ax + abx * proj);
+          const dy = y - (ay + aby * proj);
+          const dz = z - (az + abz * proj);
+          if (dx * dx + dy * dy + dz * dz <= segTol2) {
+            isBarrier[u] = 1;
+            barrierCol[u] = col + proj;
+            break;
+          }
+        }
+      }
+      bfs = runBfs();
     }
 
-    if (queue.length > 0 && maxCuffZ <= maxMarginZ + 0.08) {
+    if (bfs.queue.length > 0 && bfs.maxCuffZ <= maxMarginZ + 0.08) {
+      const { isCuffUid, isConeBot, queue } = bfs;
+      const tau = Math.PI * 2;
+      const uVal = new Float32Array(uCount);
+      const colCos = new Float32Array(uCount);
+      const colSin = new Float32Array(uCount);
+      const bx = new Float32Array(uCount);
+      const by = new Float32Array(uCount);
+      const activeBot: number[] = [];
+
+      for (let u = 0; u < uCount; u += 1) {
+        if (isBarrier[u]) {
+          uVal[u] = 1;
+          const phase = ((barrierCol[u]! >= 0 ? barrierCol[u]! : 0) / mCount) * tau;
+          colCos[u] = Math.cos(phase);
+          colSin[u] = Math.sin(phase);
+          const th = Math.atan2(uy[u]!, ux[u]!);
+          bx[u] = coneTopR * Math.cos(th);
+          by[u] = coneTopR * Math.sin(th);
+        } else if (isConeBot[u]) {
+          uVal[u] = 0;
+          bx[u] = ux[u]!;
+          by[u] = uy[u]!;
+          const th = Math.atan2(uy[u]!, ux[u]!);
+          const b = findMarginColumnByAngle(origAng, mCount, th);
+          const phase = ((b.c0 + b.frac) / mCount) * tau;
+          colCos[u] = Math.cos(phase);
+          colSin[u] = Math.sin(phase);
+          activeBot.push(u);
+        } else if (isCuffUid[u]) {
+          const th = Math.atan2(uy[u]!, ux[u]!);
+          const b = findMarginColumnByAngle(origAng, mCount, th);
+          const phase = ((b.c0 + b.frac) / mCount) * tau;
+          colCos[u] = Math.cos(phase);
+          colSin[u] = Math.sin(phase);
+          const mZ = origZ[b.c0]! * (1 - b.frac) + origZ[b.c1]! * b.frac;
+          uVal[u] = clamp((uz[u]! - coneZ) / Math.max(0.05, mZ - coneZ), 0.02, 0.98);
+          bx[u] = coneTopR * Math.cos(th);
+          by[u] = coneTopR * Math.sin(th);
+        }
+      }
+
+      // 중복 제거된 커프·경계 인접 리스트 (조화 완화 속도·정확도 최적화)
+      const cuffAdj: number[][] = new Array(uCount);
+      for (let idx = 0; idx < queue.length; idx += 1) {
+        const u = queue[idx]!;
+        const seen = new Set<number>();
+        const list: number[] = [];
+        for (const nb of adj[u]!) {
+          if (nb !== u && !seen.has(nb) && (isCuffUid[nb] || isBarrier[nb] || isConeBot[nb])) {
+            seen.add(nb);
+            list.push(nb);
+          }
+        }
+        cuffAdj[u] = list;
+      }
+      const botAdj: number[][] = new Array(uCount);
+      for (let idx = 0; idx < activeBot.length; idx += 1) {
+        const u = activeBot[idx]!;
+        const seen = new Set<number>();
+        const list: number[] = [];
+        for (const nb of adj[u]!) {
+          if (nb !== u && !seen.has(nb) && isCuffUid[nb]) {
+            seen.add(nb);
+            list.push(nb);
+          }
+        }
+        botAdj[u] = list;
+      }
+      const activeTop: number[] = [];
+      const topAdj: number[][] = new Array(uCount);
+      for (let u = 0; u < uCount; u += 1) {
+        if (!isBarrier[u]) continue;
+        const seen = new Set<number>();
+        const list: number[] = [];
+        for (const nb of adj[u]!) {
+          if (nb !== u && !seen.has(nb) && isCuffUid[nb]) {
+            seen.add(nb);
+            list.push(nb);
+          }
+        }
+        if (list.length > 0) {
+          activeTop.push(u);
+          topAdj[u] = list;
+        }
+      }
+
+      // Gauss-Seidel 조화 완화:
+      // - uVal: 콘(0) → 마진(1) 엄격 단조 진행도
+      // - (colCos, colSin): 마진 경계 고정, 바닥 경계 자유 → 토폴로지 열이 바닥까지 정확히 전파
+      // - (bx, by): 바닥 경계 고정, 마진 경계 자유 → 콘 시작점이 마진까지 정확히 전파
+      for (let iter = 0; iter < 40; iter += 1) {
+        for (let idx = 0; idx < queue.length; idx += 1) {
+          const u = queue[idx]!;
+          const nbs = cuffAdj[u]!;
+          const deg = nbs.length;
+          if (deg === 0) continue;
+          let su = 0;
+          let sc = 0;
+          let ss = 0;
+          let sbx = 0;
+          let sby = 0;
+          for (let j = 0; j < deg; j += 1) {
+            const nb = nbs[j]!;
+            su += uVal[nb]!;
+            sc += colCos[nb]!;
+            ss += colSin[nb]!;
+            sbx += bx[nb]!;
+            sby += by[nb]!;
+          }
+          uVal[u] = su / deg;
+          const cl = Math.hypot(sc, ss);
+          if (cl > 1e-8) {
+            colCos[u] = sc / cl;
+            colSin[u] = ss / cl;
+          }
+          const bl = Math.hypot(sbx, sby);
+          if (bl > 1e-8) {
+            bx[u] = (sbx / bl) * coneTopR;
+            by[u] = (sby / bl) * coneTopR;
+          }
+        }
+        for (let idx = 0; idx < activeBot.length; idx += 1) {
+          const u = activeBot[idx]!;
+          const nbs = botAdj[u]!;
+          if (nbs.length === 0) continue;
+          let sc = 0;
+          let ss = 0;
+          for (let j = 0; j < nbs.length; j += 1) {
+            sc += colCos[nbs[j]!]!;
+            ss += colSin[nbs[j]!]!;
+          }
+          const cl = Math.hypot(sc, ss);
+          if (cl > 1e-8) {
+            colCos[u] = sc / cl;
+            colSin[u] = ss / cl;
+          }
+        }
+        for (let idx = 0; idx < activeTop.length; idx += 1) {
+          const u = activeTop[idx]!;
+          const nbs = topAdj[u]!;
+          if (nbs.length === 0) continue;
+          let sbx = 0;
+          let sby = 0;
+          for (let j = 0; j < nbs.length; j += 1) {
+            sbx += bx[nbs[j]!]!;
+            sby += by[nbs[j]!]!;
+          }
+          const bl = Math.hypot(sbx, sby);
+          if (bl > 1e-8) {
+            bx[u] = (sbx / bl) * coneTopR;
+            by[u] = (sby / bl) * coneTopR;
+          }
+        }
+      }
+
       const mask = new Uint8Array(vCount);
+      const colPos = new Float32Array(vCount);
+      const baseX = new Float32Array(vCount);
+      const baseY = new Float32Array(vCount);
+      const uParam = new Float32Array(vCount);
       for (let v = 0; v < vCount; v += 1) {
-        if (isCuffUid[vertUid[v]!]) mask[v] = 1;
+        const u = vertUid[v]!;
+        if (!isCuffUid[u]) continue;
+        mask[v] = 1;
+        const ang = ((Math.atan2(colSin[u]!, colCos[u]!) % tau) + tau) % tau;
+        colPos[v] = (ang / tau) * mCount;
+        baseX[v] = bx[u]!;
+        baseY[v] = by[u]!;
+        uParam[v] = clamp(uVal[u]!, 0, 1);
       }
-      result = mask;
+      result = { mask, colPos, baseX, baseY, uParam };
     }
   }
 
   if (!byKey) {
     byKey = new Map();
-    cuffMaskCache.set(proposal, byKey);
+    cuffTopoCache.set(proposal, byKey);
   }
   byKey.set(key, result);
   return result;
@@ -1060,10 +1336,9 @@ export function regenerateCuffToMargin(
   const screwR = zone.screwR;
   const origZ = new Float32Array(count);
   const origR = new Float32Array(count);
+  const origAng = new Float32Array(count);
   const endZ = new Float32Array(count);
-  const endAng = new Float32Array(count);
   const origMarginXY: Array<[number, number]> = [];
-  const fittedMarginXY: Array<[number, number]> = [];
   let origSpan = 0.45;
   let origDelta = 0.35;
   let fitSpan = 0.45;
@@ -1074,6 +1349,7 @@ export function regenerateCuffToMargin(
     const oy = proposalMargin[i + 1]!;
     origZ[col] = proposalMargin[i + 2]!;
     origR[col] = Math.hypot(ox, oy);
+    origAng[col] = Math.atan2(oy, ox);
     origMarginXY.push([ox, oy]);
     if (origR[col]! - coneTopR > origDelta) {
       origDelta = origR[col]! - coneTopR;
@@ -1082,8 +1358,6 @@ export function regenerateCuffToMargin(
     const x = fittedMargin[i]!;
     const y = fittedMargin[i + 1]!;
     endZ[col] = fittedMargin[i + 2]!;
-    endAng[col] = Math.atan2(y, x);
-    fittedMarginXY.push([x, y]);
     const fitR = Math.hypot(x, y);
     if (fitR - coneTopR > fitDelta) {
       fitDelta = fitR - coneTopR;
@@ -1097,60 +1371,67 @@ export function regenerateCuffToMargin(
   );
 
   const fitShared = cuffProfile(0, 0, fitDelta, fitSpan);
-  const evalFitMink = buildMinkowskiCuffRadiusEvaluator(coneTopR, fittedMarginXY);
-  const cuffMask = getCuffVertexMask(proposal, proposalMargin, coneZ, screwR);
+  const cuffTopo = getCuffTopology(proposal, proposalMargin, coneZ, coneTopR, screwR);
 
   for (let i = 0; i < proposal.length; i += 3) {
     const vIdx = i / 3;
+    if (cuffTopo) {
+      if (!cuffTopo.mask[vIdx]) continue;
+      const fCol = cuffTopo.colPos[vIdx]!;
+      const i0 = Math.floor(fCol);
+      const frac = fCol - i0;
+      const c0 = ((i0 % count) + count) % count;
+      const c1 = (c0 + 1) % count;
+      const u = cuffTopo.uParam[vIdx]!;
+      const zEnd0 = coneZ + u * (endZ[c0]! - coneZ);
+      const zEnd1 = coneZ + u * (endZ[c1]! - coneZ);
+      const z2 = zEnd0 * (1 - frac) + zEnd1 * frac;
+      const x0 = cuffTopo.baseX[vIdx]!;
+      const y0 = cuffTopo.baseY[vIdx]!;
+      const endX = fittedMargin[c0 * 3]! * (1 - frac) + fittedMargin[c1 * 3]! * frac;
+      const endY = fittedMargin[c0 * 3 + 1]! * (1 - frac) + fittedMargin[c1 * 3 + 1]! * frac;
+      const fitAlpha = clamp(fitShared(u * fitSpan) / fitDelta, 0, 1);
+      fitted[i] = x0 + (endX - x0) * fitAlpha;
+      fitted[i + 1] = y0 + (endY - y0) * fitAlpha;
+      fitted[i + 2] = z2;
+      continue;
+    }
     const ox = proposal[i]!;
     const oy = proposal[i + 1]!;
     const oz = proposal[i + 2]!;
-    if (cuffMask) {
-      if (!cuffMask[vIdx]) continue;
-    } else {
-      if (oz <= coneZ + 1e-3) continue;
-      const orad = Math.hypot(ox, oy);
-      if (screwR > 0.15 && orad <= screwR + 0.22) continue;
-    }
+    if (oz <= coneZ + 1e-3) continue;
+    const orad = Math.hypot(ox, oy);
+    if (screwR > 0.15 && orad <= screwR + 0.22) continue;
     const theta0 = Math.atan2(oy, ox);
-    const { c0, c1, frac } = marginColumnBlend(theta0, count);
+    const { c0, c1, frac } = findMarginColumnByAngle(origAng, count, theta0);
     const marginZ = origZ[c0]! * (1 - frac) + origZ[c1]! * frac;
-    if (!(marginZ > coneZ + 0.05)) continue;
+    if (!(marginZ > coneZ + 0.05) || oz >= marginZ - 1e-3) continue;
     const u = clamp((oz - coneZ) / (marginZ - coneZ), 0, 1);
-    if (!cuffMask) {
-      if (oz >= marginZ - 1e-3) continue;
-      const orad = Math.hypot(ox, oy);
-      const origAlpha = clamp(origShared(u * origSpan) / origDelta, 0, 1);
-      const origMinkR = evalOrigMink(theta0, origAlpha);
-      const origLegacyR =
-        origLegacyProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
-        origLegacyProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
-      const origChordR =
-        coneTopR +
-        ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
-          Math.max(0.05, marginZ - coneZ);
-      if (
-        orad > Math.max(origChordR, origMinkR) + 0.04 ||
-        Math.min(Math.abs(orad - origMinkR), Math.abs(orad - origLegacyR)) > 0.08
-      ) {
-        continue;
-      }
+    const origAlpha = clamp(origShared(u * origSpan) / origDelta, 0, 1);
+    const origMinkR = evalOrigMink(theta0, origAlpha);
+    const origLegacyR =
+      origLegacyProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
+      origLegacyProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
+    const origChordR =
+      coneTopR +
+      ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
+        Math.max(0.05, marginZ - coneZ);
+    if (
+      orad > Math.max(origChordR, origMinkR) + 0.04 ||
+      Math.min(Math.abs(orad - origMinkR), Math.abs(orad - origLegacyR)) > 0.08
+    ) {
+      continue;
     }
     const zEnd0 = coneZ + u * (endZ[c0]! - coneZ);
     const zEnd1 = coneZ + u * (endZ[c1]! - coneZ);
     const z2 = zEnd0 * (1 - frac) + zEnd1 * frac;
-    const targetAng = endAng[c0]! + angleDelta(endAng[c1]!, endAng[c0]!) * frac;
-    const blendU = smootherstep(u);
-    const theta = theta0 + angleDelta(targetAng, theta0) * blendU;
-    const fitAlpha = clamp(fitShared(u * fitSpan) / fitDelta, 0, 1);
+    const x0 = coneTopR * Math.cos(theta0);
+    const y0 = coneTopR * Math.sin(theta0);
     const endX = fittedMargin[c0 * 3]! * (1 - frac) + fittedMargin[c1 * 3]! * frac;
     const endY = fittedMargin[c0 * 3 + 1]! * (1 - frac) + fittedMargin[c1 * 3 + 1]! * frac;
-    const endR = Math.hypot(endX, endY);
-    const rMink = evalFitMink(theta, fitAlpha);
-    const rMinkEnd = evalFitMink(targetAng, 1);
-    const r = Math.max(coneTopR, rMink + (endR - rMinkEnd) * blendU);
-    fitted[i] = r * Math.cos(theta);
-    fitted[i + 1] = r * Math.sin(theta);
+    const fitAlpha = clamp(fitShared(u * fitSpan) / fitDelta, 0, 1);
+    fitted[i] = x0 + (endX - x0) * fitAlpha;
+    fitted[i + 1] = y0 + (endY - y0) * fitAlpha;
     fitted[i + 2] = z2;
   }
 }
@@ -1426,14 +1707,17 @@ function zoneOf(
   let marginCenterZ = 0;
   let marginRadiusSum = 0;
   let marginColZ: Float32Array | undefined;
+  let marginColAng: Float32Array | undefined;
   if (margin && margin.length >= 9) {
     const mCount = Math.floor(margin.length / 3);
     marginColZ = new Float32Array(mCount);
+    marginColAng = new Float32Array(mCount);
     for (let col = 0; col < mCount; col += 1) {
       const x = margin[col * 3]!;
       const y = margin[col * 3 + 1]!;
       const z = margin[col * 3 + 2]!;
       marginColZ[col] = z;
+      marginColAng[col] = Math.atan2(y, x);
       if (z < marginMin) marginMin = z;
       marginMean += z;
       marginCenterL += x * axes.labial[0] + y * axes.labial[1];
@@ -1539,6 +1823,7 @@ function zoneOf(
     meanMarginZ,
     propTop: top,
     marginColZ,
+    marginColAng,
     topColZ,
     topMinOuterR: Number.isFinite(topMinOuterR) ? topMinOuterR : undefined,
     boreTopR,

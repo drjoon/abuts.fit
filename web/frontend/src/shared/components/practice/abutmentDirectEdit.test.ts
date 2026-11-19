@@ -1963,6 +1963,204 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       stGumball.scallopDeltaMm >= 0.7 && stGumball.flMeanZ < stShallow.flMeanZ + 0.15,
       `검볼 확장·수직 드래그 후에도 피니시라인이 공중으로 뜨지 않고(협설Z=${stGumball.flMeanZ.toFixed(2)}mm) 더 높은 근원심 유두를 따라 스캘럽(${stGumball.scallopDeltaMm.toFixed(2)}mm)을 키운다`,
     );
+
+    // 15) 검볼 편집(이동·비등방 스케일·높이·기울기·요 및 저장된 디자인 위 2차 편집) 후에도
+    //     메시 마진 링이 피니시라인(marginLoopLocal)과 정확히 일치하고,
+    //     커프~마진 구간에 뒤집힌 삼각형이나 급격한 계단/찢어짐 없이 매끈한 페이스를 유지하는지 검증
+    const assertSmoothCuffAndMargin = (
+      label: string,
+      solidSoup: Float32Array,
+      marginLoop: Float32Array,
+    ) => {
+      const nCols = Math.floor(marginLoop.length / 3);
+      const trisPerCol = solidSoup.length / 9 / nCols;
+      const ringCount = (trisPerCol + 2) / 2 + 1;
+      const cols: Array<Array<[number, number, number]>> = [];
+      for (let col = 0; col < nCols; col += 1) {
+        const b = col * trisPerCol * 9;
+        const pts: Array<[number, number, number]> = [
+          [solidSoup[b]!, solidSoup[b + 1]!, solidSoup[b + 2]!],
+          [solidSoup[b + 6]!, solidSoup[b + 7]!, solidSoup[b + 8]!],
+        ];
+        let off = b + 9;
+        for (let r = 1; r < ringCount - 2; r += 1) {
+          pts.push([solidSoup[off + 15]!, solidSoup[off + 16]!, solidSoup[off + 17]!]);
+          off += 18;
+        }
+        pts.push([solidSoup[off + 6]!, solidSoup[off + 7]!, solidSoup[off + 8]!]);
+        cols.push(pts);
+      }
+      // 1) 마진 링(ring 28) 정점과 marginLoopLocal 일치도 검증
+      let maxMarginGapMm = 0;
+      for (let col = 0; col < nCols; col += 1) {
+        const mp = cols[col]![28]!;
+        const dx = mp[0] - marginLoop[col * 3]!;
+        const dy = mp[1] - marginLoop[col * 3 + 1]!;
+        const dz = mp[2] - marginLoop[col * 3 + 2]!;
+        maxMarginGapMm = Math.max(maxMarginGapMm, Math.hypot(dx, dy, dz));
+      }
+      assert.ok(
+        maxMarginGapMm <= 0.02,
+        `${label}: 메시 마진 링과 피니시라인의 최대 오차(${maxMarginGapMm.toFixed(4)}mm)가 0.02mm 이내다`,
+      );
+      // 2) 커프 구간(ring 6..28)에서 각 열의 Z 단조 증가 및 뒤집힌 삼각형 0건 검증
+      let flippedCuffTris = 0;
+      let maxAdjacentDihedralDeg = 0;
+      const triNormal = (
+        a: readonly [number, number, number],
+        b: readonly [number, number, number],
+        c: readonly [number, number, number],
+      ): [number, number, number] => {
+        const abx = b[0] - a[0];
+        const aby = b[1] - a[1];
+        const abz = b[2] - a[2];
+        const acx = c[0] - a[0];
+        const acy = c[1] - a[1];
+        const acz = c[2] - a[2];
+        const nx = aby * acz - abz * acy;
+        const ny = abz * acx - abx * acz;
+        const nz = abx * acy - aby * acx;
+        const l = Math.hypot(nx, ny, nz) || 1;
+        return [nx / l, ny / l, nz / l];
+      };
+      for (let col = 0; col < nCols; col += 1) {
+        const nxt = (col + 1) % nCols;
+        const cA = cols[col]!;
+        const cB = cols[nxt]!;
+        for (let r = 6; r < 28; r += 1) {
+          assert.ok(
+            cA[r + 1]![2] > cA[r]![2] - 1e-4,
+            `${label}: 커프 열 ${col} 링 ${r}→${r + 1}의 Z가 역전되지 않는다`,
+          );
+          const n1 = triNormal(cA[r]!, cB[r]!, cB[r + 1]!);
+          const n2 = triNormal(cA[r]!, cB[r + 1]!, cA[r + 1]!);
+          // 외향 법선은 반경 방향(radial)으로 바깥을 향해야 한다
+          const midX = (cA[r]![0] + cB[r]![0] + cA[r + 1]![0] + cB[r + 1]![0]) * 0.25;
+          const midY = (cA[r]![1] + cB[r]![1] + cA[r + 1]![1] + cB[r + 1]![1]) * 0.25;
+          const dotOut1 = n1[0] * midX + n1[1] * midY;
+          const dotOut2 = n2[0] * midX + n2[1] * midY;
+          if (dotOut1 <= 0 || dotOut2 <= 0) flippedCuffTris += 1;
+          const pairDot = Math.max(-1, Math.min(1, n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]));
+          const pairDeg = (Math.acos(pairDot) * 180) / Math.PI;
+          if (pairDeg > maxAdjacentDihedralDeg) maxAdjacentDihedralDeg = pairDeg;
+          if (r > 6) {
+            const prevN = triNormal(cA[r - 1]!, cB[r]!, cA[r]!);
+            const stepDot = Math.max(-1, Math.min(1, prevN[0] * n2[0] + prevN[1] * n2[1] + prevN[2] * n2[2]));
+            const stepDeg = (Math.acos(stepDot) * 180) / Math.PI;
+            if (stepDeg > maxAdjacentDihedralDeg) maxAdjacentDihedralDeg = stepDeg;
+          }
+        }
+      }
+      assert.equal(flippedCuffTris, 0, `${label}: 커프 구간에 뒤집힌 삼각형이 0개다`);
+      assert.ok(
+        maxAdjacentDihedralDeg < 35,
+        `${label}: 커프~마진 인접 삼각형 최대 법선 꺾임(${maxAdjacentDihedralDeg.toFixed(1)}°)이 매끈한 범위(<35°) 안이다`,
+      );
+    };
+
+    const invFixture37 = (() => {
+      const p = shallow37.fixture.fixturePose;
+      const m = new THREE.Matrix4().makeBasis(
+        new THREE.Vector3(...p.hexX),
+        new THREE.Vector3(...p.hexY),
+        new THREE.Vector3(...p.axis),
+      );
+      m.setPosition(...p.origin);
+      return m.invert();
+    })();
+    const worldMarginToLocal = (closedWorld: Float32Array): Float32Array => {
+      const n = Math.floor(closedWorld.length / 3) - 1;
+      const out = new Float32Array(n * 3);
+      const v = new THREE.Vector3();
+      for (let i = 0; i < n; i += 1) {
+        v.set(closedWorld[i * 3]!, closedWorld[i * 3 + 1]!, closedWorld[i * 3 + 2]!).applyMatrix4(invFixture37);
+        out[i * 3] = v.x;
+        out[i * 3 + 1] = v.y;
+        out[i * 3 + 2] = v.z;
+      }
+      return out;
+    };
+
+    const gumballCases: Array<[string, Partial<AbutmentEdit>]> = [
+      ["확장+이동+높이", { scale: [1.26, 1.12, 1.08], shiftLabialMm: 0.7, shiftMesialMm: -0.5, heightMm: 0.6 }],
+      ["기울기 회전(±10°)", { tiltLabialDeg: 10, tiltMesialDeg: -7, shiftLabialMm: 0.4 }],
+      ["축소+요 회전+기울기", { scale: [0.85, 1.18, 0.94], yawDeg: 14, tiltLabialDeg: -8, shiftMesialMm: 0.6 }],
+    ];
+    for (const [caseName, patch] of gumballCases) {
+      const nextEdit = edit(patch);
+      editSession37.setEdit("37", nextEdit);
+      const internal = editSession37 as unknown as {
+        show: (t: string, b: boolean, s?: boolean) => void;
+        localBuf: Float32Array;
+      };
+      internal.show("37", false, true);
+      const solidLen = sessionDesign37.solidBodyLocalPositions!.length;
+      const liveMarginLocal = worldMarginToLocal(lastMarginPositions37!);
+      assertSmoothCuffAndMargin(
+        `1차 검볼(${caseName})`,
+        internal.localBuf.subarray(0, solidLen),
+        liveMarginLocal,
+      );
+    }
+
+    // 저장된 디자인(1차 검볼 편집이 bake된 상태)을 다시 열어 2차 검볼 편집을 해도 마진·커프가 깨지지 않는다
+    const internal1 = editSession37 as unknown as {
+      show: (t: string, b: boolean, s?: boolean) => void;
+      localBuf: Float32Array;
+    };
+    editSession37.setEdit("37", edit({ shiftLabialMm: 0.9, shiftMesialMm: 0.5, scale: [1.22, 0.92, 1], yawDeg: 12 }));
+    internal1.show("37", false, true);
+    const bakedSolid1 = new Float32Array(
+      internal1.localBuf.subarray(0, sessionDesign37.solidBodyLocalPositions!.length),
+    );
+    const bakedMargin1 = worldMarginToLocal(lastMarginPositions37!);
+    const savedDesign37 = {
+      ...sessionDesign37,
+      localPositions: new Float32Array(bakedSolid1),
+      solidBodyLocalPositions: new Float32Array(bakedSolid1),
+      marginLoopLocal: new Float32Array(bakedMargin1),
+    };
+    const abutMeshSaved = new THREE.Mesh(shallow37.worldGeometry.clone(), new THREE.MeshBasicMaterial());
+    scene37.add(abutMeshSaved);
+    const savedSession37 = new AbutmentDirectEditSession({
+      getScene: () => scene37,
+      getCamera: () => null,
+      getRenderer: () => null,
+      getHost: () => null,
+      getDesigns: () => [savedDesign37],
+      getAbutment: (t) => (t === "37" ? abutMeshSaved : undefined),
+      getCrown: () => undefined,
+      getMargin: (t) => (t === "37" ? marginLine37 : undefined),
+      getJawGeometry: () => scallopedJaw37,
+      getOpposingGeometry: () => opp37,
+      ui: {
+        gumballOn: true,
+        sculptOn: false,
+        radiusMm: 2.0,
+        readOnly: false,
+        selected: "37",
+        visible: { "37": true },
+        expanded: { "37": true },
+      },
+      onBadge: () => {},
+      onCommit: () => {},
+      onHistory: () => {},
+    });
+    savedSession37.sync();
+    savedSession37.setEdit("37", edit({ shiftLabialMm: -0.6, tiltMesialDeg: 9, scale: [0.92, 1.15, 1.05] }));
+    const internal2 = savedSession37 as unknown as {
+      show: (t: string, b: boolean, s?: boolean) => void;
+      localBuf: Float32Array;
+    };
+    internal2.show("37", false, true);
+    assertSmoothCuffAndMargin(
+      "저장된 디자인 2차 검볼",
+      internal2.localBuf.subarray(0, bakedSolid1.length),
+      worldMarginToLocal(lastMarginPositions37!),
+    );
+    savedSession37.dispose();
+    abutMeshSaved.geometry.dispose();
+    (abutMeshSaved.material as THREE.Material).dispose();
     editSession37.dispose();
     abutMesh37.geometry.dispose();
     (abutMesh37.material as THREE.Material).dispose();

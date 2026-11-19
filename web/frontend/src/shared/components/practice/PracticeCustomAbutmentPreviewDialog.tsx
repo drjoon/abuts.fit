@@ -3678,14 +3678,37 @@ export function PracticeCustomAbutmentPreviewDialog({
                 freshSolid.worldGeometry.dispose();
                 freshSolid.predictedCrownWorldGeometry.dispose();
                 freshSolid.enameloplastyWorldGeometry?.dispose();
+                const savedMarginLoop = new Float32Array(row.marginLoopLocal);
+                // 저장된 디자인의 마진과 새로 만든 솔리드의 마진이 일치할 때만 솔리드 베이스로 결합한다.
+                // (이미 검볼 편집이 반영돼 저장된 디자인에 미편집 freshSolid를 섞으면 커프·마진 메시가 찢어진다.)
+                let freshSolidMatchesSavedMargin =
+                  !restoredGumball &&
+                  Boolean(freshSolid.solidBodyLocalPositions?.length) &&
+                  freshSolid.marginLoopLocal.length === savedMarginLoop.length &&
+                  savedMarginLoop.length >= 9;
+                if (freshSolidMatchesSavedMargin) {
+                  let maxMarginDiffSq = 0;
+                  for (let mi = 0; mi < savedMarginLoop.length; mi += 3) {
+                    const dx = freshSolid.marginLoopLocal[mi]! - savedMarginLoop[mi]!;
+                    const dy = freshSolid.marginLoopLocal[mi + 1]! - savedMarginLoop[mi + 1]!;
+                    const dz = freshSolid.marginLoopLocal[mi + 2]! - savedMarginLoop[mi + 2]!;
+                    const d2 = dx * dx + dy * dy + dz * dz;
+                    if (d2 > maxMarginDiffSq) maxMarginDiffSq = d2;
+                  }
+                  if (maxMarginDiffSq > 0.08 * 0.08) {
+                    freshSolidMatchesSavedMargin = false;
+                  }
+                }
                 builtAbutments.push(
                   buildDesignedCustomAbutment({
                     fixture: row.fixture,
                     fileName: row.fileName,
                     localPositions: new Float32Array(row.localPositions),
-                    solidBodyLocalPositions: freshSolid.solidBodyLocalPositions,
+                    ...(freshSolidMatchesSavedMargin
+                      ? { solidBodyLocalPositions: freshSolid.solidBodyLocalPositions }
+                      : {}),
                     crownLocalPositions: new Float32Array(row.crownLocalPositions),
-                    marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                    marginLoopLocal: savedMarginLoop,
                     ...(row.enameloplastyLocalPositions?.byteLength
                       ? {
                           enameloplastyLocalPositions: new Float32Array(
