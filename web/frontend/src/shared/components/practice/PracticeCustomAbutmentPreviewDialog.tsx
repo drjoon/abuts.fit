@@ -12,7 +12,7 @@
 // 화살표는 이동, 우상 점은 크기·평면 스케일, 좌하 호는 회전이다. 커넥션과 2° 테이퍼는 고정이다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
-// - 2026-11-19: 소통 패널 헤더는 접기(chevron). X로 닫지 않는다.
+// - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
@@ -3355,10 +3355,16 @@ export function PracticeCustomAbutmentPreviewDialog({
         setLabCheckedAt(remote?.choice?.labCheckedAt ?? null);
         setCancelDeadlineAt(remote?.choice?.cancelDeadlineAt ?? null);
         if (!viewerTouchRef.current.has("chat")) {
-          if (viewerPrefsRef.current.chatOpen != null) {
-            setManualChatOpen(viewerPrefsRef.current.chatOpen);
-          } else if (remote?.mode === "manual" || (!readOnly && transferIdParam)) {
+          if (viewerPrefsRef.current.chatOpen === false) {
             setManualChatOpen(true);
+            setManualChatCollapsed(true);
+          } else if (
+            viewerPrefsRef.current.chatOpen === true ||
+            remote?.mode === "manual" ||
+            (!readOnly && transferIdParam)
+          ) {
+            setManualChatOpen(true);
+            setManualChatCollapsed(false);
           }
         }
         const savedChat = pickCustomAbutmentChat(localChat, remote?.chat ?? [], cached?.chat ?? []);
@@ -5149,7 +5155,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     routeCostPassedRef.current = null;
-    if (!manualChatOpen) {
+    if (!manualChatOpen || manualChatCollapsed) {
       viewerTouchRef.current.add("chat");
       viewerPrefsRef.current = { ...viewerPrefsRef.current, chatOpen: true };
       setManualChatOpen(true);
@@ -5233,6 +5239,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     authToken,
     captureCurrentPaintView,
     handleOpenChange,
+    manualChatCollapsed,
     manualChatOpen,
     onActionComplete,
     paint,
@@ -5281,7 +5288,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!touch.has("margin")) setShowFinishLine(prefs.showFinishLine);
         if (!touch.has("fixture")) setShowFixtureAnalog(prefs.showFixtureAnalog);
         if (!touch.has("gumball")) setGumballOn(prefs.gumballOn);
-        if (!touch.has("chat") && prefs.chatOpen != null) setManualChatOpen(prefs.chatOpen);
+        if (!touch.has("chat") && prefs.chatOpen != null) {
+          setManualChatOpen(true);
+          setManualChatCollapsed(prefs.chatOpen === false);
+        }
         if (!touch.has("jaws")) {
           setVisibleJaws({ upper: prefs.showUpper, lower: prefs.showLower });
         }
@@ -5353,7 +5363,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       gumballOn,
       chatOpen:
         touch.has("chat") || viewerPrefsRef.current.chatOpen != null
-          ? manualChatOpen
+          ? !manualChatCollapsed
           : null,
       infoExpanded,
       expandedTeeth: { ...viewerPrefsRef.current.expandedTeeth, ...expandedTeeth },
@@ -5378,6 +5388,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     designedList,
     expandedTeeth,
     gumballOn,
+    manualChatCollapsed,
     manualChatOpen,
     open,
     scanTransparency,
@@ -5932,17 +5943,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div
-                className={cn(
-                  "pointer-events-none absolute left-3 top-3 z-20 grid h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] gap-2",
-                  !readOnly && manualChatOpen && transferIdParam && !manualChatCollapsed
-                    ? "grid-rows-[auto_minmax(0,1fr)]"
-                    : "grid-rows-[auto_auto]",
-                )}
-              >
+              <div className="pointer-events-none absolute left-3 top-3 z-20 flex h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] flex-col items-start gap-2">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
-                  className="shrink-0 justify-self-start"
+                  className="shrink-0"
                   faceLabels={cubeFaceLabels}
                   caption={cubeView ? `#${cubeView.toothNumber} 기준` : null}
                   pivotActive={pivotSet}
@@ -5969,11 +5973,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                   }}
                   onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
                 />
-                {!readOnly && manualChatOpen && transferIdParam ? (
+                {!readOnly && transferIdParam ? (
                   <div
                     className={cn(
-                      "pointer-events-auto flex w-full flex-col self-stretch overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
-                      manualChatCollapsed ? "h-auto" : "h-full min-h-0",
+                      "pointer-events-auto flex w-full flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
+                      manualChatCollapsed ? "h-auto shrink-0" : "min-h-0 flex-1",
                     )}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
