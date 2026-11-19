@@ -253,7 +253,11 @@ export const PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT = {
   "production.skipDesignConfirm": 1,
   "production.skipJig": 1,
   "production.designReadyAt": 1,
+  // 기공소 확정 후 「생산의뢰 완료 · (전체취소)」 — 치아·파일명·연동 의뢰
+  "production.designFiles.tooth": 1,
+  "production.designFiles.file.originalName": 1,
   "production.designFiles.file.s3Key": 1,
+  "production.relatedRequestIds": 1,
   "production.confirmedAt": 1,
   "production.practiceDesignConfirmedAt": 1,
   "production.labDesignConfirmedAt": 1,
