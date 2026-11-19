@@ -878,7 +878,7 @@ function buildConfirmedRhinoFileName(requestDoc) {
 
 /**
  * 치과 「디자인 확정」: 커스텀어벗 STL을 Request·PTX(designFiles)에 미러하고
- * 기공소 검토로 넘긴다. 제조사 준비·Rhino는 기공소 「디자인 확정」에서 연다.
+ * 기공소 검토로 넘긴다. 제조사 준비·filled-STL(JS 파이프라인)은 기공소 「디자인 확정」에서 연다.
  * 기공소 labRevision은 같은 API로 수정 STL만 반영한다(제조 진입은 confirm-abutment-design).
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
@@ -1019,11 +1019,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
         clearFilledStlFileOnCaseInfos(reqDoc.caseInfos);
         reqDoc.caseInfos.ncFile = undefined;
 
-        // 제조 진입(designCompletedAt·준비·Rhino)은 기공소 디자인 확정까지 미룬다.
-        // filePath는 나중에 Rhino용으로 맞춰 두되, stlPreload/worksheet는 열지 않는다.
-        const rhinoName = buildConfirmedRhinoFileName(reqDoc);
-        if (rhinoName && reqDoc.caseInfos.file) {
-          reqDoc.caseInfos.file.filePath = rhinoName;
+        // 제조 진입(designCompletedAt·준비·filled-STL JS 파이프라인)은 기공소 디자인 확정까지 미룬다.
+        // filePath는 나중에 파이프라인용으로 맞춰 두되, stlPreload/worksheet는 열지 않는다.
+        const processFileName = buildConfirmedRhinoFileName(reqDoc);
+        if (processFileName && reqDoc.caseInfos.file) {
+          reqDoc.caseInfos.file.filePath = processFileName;
         }
 
         reqDoc.partnerBilling = {
@@ -1035,7 +1035,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         };
         clearMachiningBind(reqDoc);
         await reqDoc.save();
-        updatedRequests.push({ reqDoc, rhinoName });
+        updatedRequests.push({ reqDoc, processFileName });
       }
 
       const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)

@@ -12047,7 +12047,7 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       );
     }
 
-    // 치과 플랫폼 확정본 → 제조사 준비·Rhino (기공소 디자인 확정 시점)
+    // 치과 플랫폼 확정본 → 제조사 준비·filled-STL JS 파이프라인 (기공소 디자인 확정 시점)
     let promoted = [];
     try {
       promoted = await promotePlatformAbutmentDesignsToManufacturerReady({
@@ -12123,16 +12123,20 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
               }
             }
           }
-          if (row.rhinoName && row.requestId) {
+          // 이름만 Rhino — 실제로는 JS 우선 filled-STL 파이프라인(rules.md §JS 우선).
+          const processFileName = String(
+            row.processFileName || row.rhinoName || "",
+          ).trim();
+          if (processFileName && row.requestId) {
             triggerRhinoProcessFileForRequest({
               requestId: row.requestId,
-              filePath: row.rhinoName,
-              fileName: row.rhinoName,
+              filePath: processFileName,
+              fileName: processFileName,
             });
           }
         } catch (err) {
           console.warn(
-            "[practiceTransfer] lab confirm rhino trigger failed",
+            "[practiceTransfer] lab confirm filled-STL pipeline trigger failed",
             err?.message || err,
           );
         }

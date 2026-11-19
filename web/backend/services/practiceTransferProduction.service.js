@@ -2894,7 +2894,8 @@ export function canStartAbutmentProduction(transferDoc) {
   );
 }
 
-function buildPlatformRhinoFileName(requestDoc) {
+/** 제조 filled-STL 파이프라인(`triggerRhinoProcessFileForRequest` → JS 우선)용 filePath */
+function buildPlatformStlProcessFileName(requestDoc) {
   const requestId = String(requestDoc?.requestId || "").trim();
   const ci = requestDoc?.caseInfos || {};
   const original = String(ci?.file?.filePath || ci?.file?.originalName || "").trim();
@@ -2907,8 +2908,8 @@ function buildPlatformRhinoFileName(requestDoc) {
 
 /**
  * 기공소 「디자인 확정」: 치과가 넘긴 플랫폼 확정본을 제조사 준비 큐에 올린다.
- * 치과 확정만으로는 designCompletedAt/Rhino를 열지 않는다.
- * @returns {Promise<Array<{ requestId: string, rhinoName: string }>>}
+ * 치과 확정만으로는 designCompletedAt·filled-STL 파이프라인을 열지 않는다.
+ * @returns {Promise<Array<{ requestId: string, processFileName: string, mongoId: string }>>}
  */
 export async function promotePlatformAbutmentDesignsToManufacturerReady({
   transferDoc,
@@ -2956,14 +2957,16 @@ export async function promotePlatformAbutmentDesignsToManufacturerReady({
     reqDoc.manufacturerStage = "준비";
     await ensureLotNumberOnReadyEnter(reqDoc);
 
-    const rhinoName = buildPlatformRhinoFileName(reqDoc);
-    if (rhinoName && reqDoc.caseInfos.file) {
-      reqDoc.caseInfos.file.filePath = rhinoName;
+    const processFileName = buildPlatformStlProcessFileName(reqDoc);
+    if (processFileName && reqDoc.caseInfos.file) {
+      reqDoc.caseInfos.file.filePath = processFileName;
       if (!alreadyReady) {
         if (!reqDoc.productionSchedule) reqDoc.productionSchedule = {};
+        // triggerRhinoProcessFileForRequest가 engine=js로 덮어쓴다(JS 우선 SSOT).
         reqDoc.productionSchedule.stlPreload = {
           status: "GENERATING",
           updatedAt: now,
+          engine: "js",
         };
       }
     }
@@ -2971,10 +2974,10 @@ export async function promotePlatformAbutmentDesignsToManufacturerReady({
       clearMachiningBind(reqDoc);
     }
     await reqDoc.save();
-    if (!alreadyReady && rhinoName) {
+    if (!alreadyReady && processFileName) {
       promoted.push({
         requestId: String(reqDoc.requestId || "").trim(),
-        rhinoName,
+        processFileName,
         mongoId: String(reqDoc._id || "").trim(),
       });
     }
