@@ -70,6 +70,7 @@ import {
   abutmentCancelClosedMessage,
   bindMachiningSource,
   clearMachiningBind,
+  currentDesignRoute,
   designRouteBlockMessage,
   isPlatformPreviewKey,
   isPlatformProductionKey,
@@ -685,6 +686,32 @@ const markPtxRelatedRequestsCancelled = async (transferId, options = {}) => {
  * PTX 연동(수락 기공소): 미러 + lab confirm 자동 + 어벗디자인비 + 준비 큐 등록(가공은 제조사/CAM).
  * 비PTX: 기존처럼 제조사 가공 핸드오프.
  */
+/** 확정(platform) / 수작업(lab) 견적·보류를 그 경로로 맞춘다. 회차를 올려 다시 반영한다. */
+async function writeAbutmentFeeRoute(transferDoc, route, actorUserId) {
+  const feeRevision =
+    Math.max(0, Math.floor(Number(transferDoc?.production?.abutmentFeeRouteRevision || 0))) + 1;
+  if (!transferDoc.production || typeof transferDoc.production !== "object") {
+    transferDoc.production = {};
+  }
+  transferDoc.production.abutmentFeeRoute = route;
+  transferDoc.production.abutmentFeeRouteRevision = feeRevision;
+  if (route !== "platform") transferDoc.production.abutmentCancelDeadlineAt = null;
+  const update = {
+    $set: {
+      "production.abutmentFeeRoute": route,
+      "production.abutmentFeeRouteRevision": feeRevision,
+    },
+  };
+  if (route !== "platform") {
+    update.$unset = { "production.abutmentCancelDeadlineAt": "" };
+  }
+  await PracticeTransfer.updateOne({ _id: transferDoc._id }, update);
+  await syncPracticeTransferAbutmentFeeRoute({
+    transfer: transferDoc,
+    actorUserId,
+  });
+}
+
 export async function handoffDesignToProduction(req, res) {
   try {
     const { id } = req.params;
@@ -838,7 +865,14 @@ export async function handoffDesignToProduction(req, res) {
 
     if (!request.caseInfos) request.caseInfos = {};
 
-    const designRouteBlock = designRouteBlockMessage(request, DESIGN_ROUTE_LAB);
+    const explicitPlatformToLab = req.body?.explicitPlatformToLabManual === true;
+    const replacingPlatformDesign =
+      explicitPlatformToLab &&
+      currentDesignRoute(request) === DESIGN_ROUTE_PLATFORM &&
+      Boolean(relatedTransferIdEarly);
+    const designRouteBlock = designRouteBlockMessage(request, DESIGN_ROUTE_LAB, {
+      explicitPlatformToLab: replacingPlatformDesign,
+    });
     if (designRouteBlock) {
       return res.status(409).json({
         success: false,
@@ -1052,12 +1086,25 @@ export async function handoffDesignToProduction(req, res) {
 
       // 생산·배송 보류: 디자인 업로드 시점(수락 시에는 잡지 않음). 이미 hold면 skip.
       const holdT0 = Date.now();
+      let feeSwitchedFromPlatform = false;
       try {
+        if (replacingPlatformDesign && transferDoc) {
+          feeSwitchedFromPlatform = true;
+          await writeAbutmentFeeRoute(transferDoc, "lab", userId);
+        }
         await holdRequestCreditsOnSubmit({
           requests: [request],
           actorUserId: userId,
         });
       } catch (holdErr) {
+        if (feeSwitchedFromPlatform && transferDoc) {
+          await writeAbutmentFeeRoute(transferDoc, "platform", userId).catch((revertErr) => {
+            console.error(
+              "[DESIGN_HANDOFF] abutment fee route revert failed",
+              revertErr?.message || revertErr,
+            );
+          });
+        }
         console.error(
           "[DESIGN_HANDOFF] PTX CA credit hold failed",
           holdErr?.message || holdErr,
@@ -1157,6 +1204,23 @@ export async function handoffDesignToProduction(req, res) {
             : {}),
         },
       });
+
+      if (replacingPlatformDesign && transferDoc?._id) {
+        const redoTooth = String(request.caseInfos?.tooth || "").trim();
+        void postPracticeTransferSystemChatMessage({
+          transferMongoId: transferDoc._id,
+          senderUserId: userId,
+          content: [
+            redoTooth
+              ? `수행 기공소가 #${redoTooth} 커스텀어벗을 수작업으로 다시 디자인합니다.`
+              : "수행 기공소가 커스텀어벗을 수작업으로 다시 디자인합니다.",
+            "어벗 비용은 기공소 수가로 바뀝니다.",
+          ].join("\n"),
+          systemEvent: "custom_abutment_manual_redo",
+        }).catch((err) => {
+          console.warn("[DESIGN_HANDOFF] manual redo chat failed", err?.message || err);
+        });
+      }
 
       // 미제공 커넥션은 헥스 확인 샘플을 만들지 않는다(해당 건만 취소).
       if (!unsupportedConnectionLabel) {

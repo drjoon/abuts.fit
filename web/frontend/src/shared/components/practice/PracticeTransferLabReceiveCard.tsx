@@ -56,6 +56,7 @@ import {
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
 import {
+  practiceTransferHasCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
@@ -64,6 +65,7 @@ import {
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
+import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -198,6 +200,23 @@ export function PracticeTransferLabReceiveCard({
         headerActions={headerCancelButton}
         extraBadges={
           <>
+            {isPtxAbutmentDesignAwaitingDentist({
+              status: workState.displayStatus,
+              hasCustomAbutment: practiceTransferHasCustomAbutment(transfer),
+              abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+              practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+              designReadyAt: transfer.production?.designReadyAt,
+              designFileCount: transfer.production?.designFileCount,
+              manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
+            }) ? (
+              <Badge
+                variant="outline"
+                className="h-5 shrink-0 border-amber-300 bg-amber-50 px-1.5 text-[11px] font-semibold leading-none text-amber-900"
+                title="치과 디자인 확정 전입니다. 보철 작업은 진행할 수 있습니다."
+              >
+                디자인 대기
+              </Badge>
+            ) : null}
             {acceptOverdue ? <PracticeAcceptOverdueBadge viewer="lab" /> : null}
             {isPrePlatformPracticeRemake(transfer) ? (
               <Badge

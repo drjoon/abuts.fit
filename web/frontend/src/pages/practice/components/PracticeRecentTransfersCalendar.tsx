@@ -219,6 +219,8 @@ export type PracticeCalendarChipItem = {
   canDelete?: boolean;
   /** 커스텀 어벗 포함 — 목록·칩에 어벗 아이콘 */
   hasCustomAbutment?: boolean;
+  /** 치과가 어벗 디자인을 아직 확정하지 않음. 열람으로 사라지지 않는다. */
+  abutmentDesignAwaiting?: boolean;
   /** 기공소 바구니 번호표 (01–99). 없으면 미표시 */
   basketTag?: string | null;
   /** 협력·하청. 원청 직접 수행은 없음 */
@@ -720,6 +722,13 @@ function PracticeCalendarChipHover({
         {statusLabel ? (
           <p className="text-muted-foreground">상태 · {statusLabel}</p>
         ) : null}
+        {item.abutmentDesignAwaiting ? (
+          <p className="text-amber-800">
+            어벗 디자인 대기
+            <br />
+            치과의사가 확정하면 생산이 시작됩니다.
+          </p>
+        ) : null}
         {linkedOrders ? (
           <p className="text-muted-foreground">연결 주문일 · {linkedOrders}</p>
         ) : null}
@@ -929,6 +938,8 @@ type PracticeRecentTransfersCalendarProps = {
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  /** 툴바 오른쪽, 공지 슬롯 왼쪽 */
+  toolbarBeforeMiddle?: ReactNode;
   /** 툴바 오른쪽 끝 슬롯 — 어벗츠 출시 행사 CTA 등 */
   toolbarMiddle?: ReactNode;
   /** 숨길 요일(표시만). 변경 UI는 헤더 설정 팝오버 */
@@ -1128,6 +1139,7 @@ export function PracticeRecentTransfersCalendar({
   searchLeading,
   onSearchChange,
   searchPlaceholder = "환자명, 기공소명, 치아번호",
+  toolbarBeforeMiddle = null,
   toolbarMiddle = null,
   hiddenWeekdays,
   alignEpoch = 0,
@@ -2066,9 +2078,14 @@ export function PracticeRecentTransfersCalendar({
             </div>
           ) : null}
         </div>
-        {toolbarMiddle ? (
-          <div className="flex min-w-0 shrink-0 items-center justify-end md:ml-auto md:max-w-[min(100%,28rem)]">
-            {toolbarMiddle}
+        {toolbarBeforeMiddle || toolbarMiddle ? (
+          <div className="flex min-w-0 shrink-0 items-center justify-end gap-2 md:ml-auto">
+            {toolbarBeforeMiddle}
+            {toolbarMiddle ? (
+              <div className="flex min-w-0 max-w-[min(100%,28rem)] items-center justify-end">
+                {toolbarMiddle}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -2275,6 +2292,14 @@ export function PracticeRecentTransfersCalendar({
                                   aria-label="커스텀 어벗 포함"
                                 >
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
+                                </span>
+                              ) : null}
+                              {item.abutmentDesignAwaiting ? (
+                                <span
+                                  className="mt-0.5 inline-flex h-4 shrink-0 items-center rounded bg-amber-100 px-1 text-[10px] font-semibold leading-none text-amber-900"
+                                  title="어벗 디자인 대기"
+                                >
+                                  디자인 대기
                                 </span>
                               ) : null}
                               {renderLinkArrow(item, {
@@ -2535,6 +2560,14 @@ export function PracticeRecentTransfersCalendar({
                                   aria-label="커스텀 어벗 포함"
                                 >
                                   <Hexagon className="h-3 w-3" aria-hidden />
+                                </span>
+                              ) : null}
+                              {item.abutmentDesignAwaiting ? (
+                                <span
+                                  className="mt-0.5 inline-flex h-4 shrink-0 items-center rounded bg-amber-100 px-1 text-[10px] font-semibold leading-none text-amber-900"
+                                  title="어벗 디자인 대기"
+                                >
+                                  디자인 대기
                                 </span>
                               ) : null}
                               {renderLinkArrow(

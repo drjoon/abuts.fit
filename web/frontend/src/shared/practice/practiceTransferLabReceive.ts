@@ -1,4 +1,5 @@
 // related files:
+// - web/frontend/src/shared/practice/practiceAbutmentDesignAwaiting.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferLabReceiveCard.tsx
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
@@ -65,6 +66,7 @@ import {
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
 import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
+import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   enrichToothWorksPendingFromCatalog,
@@ -1275,7 +1277,7 @@ export function resolvePracticeLabReceiveWorkActionState(
   };
 }
 
-/** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
+/** 수락 후 어벗 STL 미업로드 24h/48h 경고. 치과 디자인 확정 전에는 기공소 지연으로 보지 않는다. */
 export function resolvePracticeTransferAbutmentUploadOverdue(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
   catalog: RoundBarCatalogRow[] = [],
@@ -1283,6 +1285,20 @@ export function resolvePracticeTransferAbutmentUploadOverdue(
 ) {
   if (!transfer) return null;
   const displayStatus = getPracticeTransferLabReceiveDisplayStatus(transfer);
+  const designFileCount = countPracticeTransferDesignFiles(transfer);
+  if (
+    isPtxAbutmentDesignAwaitingDentist({
+      status: displayStatus,
+      hasCustomAbutment: practiceTransferHasCustomAbutment(transfer, catalog),
+      abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+      practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+      designReadyAt: transfer.production?.designReadyAt,
+      designFileCount,
+      manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
+    })
+  ) {
+    return null;
+  }
   const needsUpload = practiceTransferNeedsMoreAbutmentDesigns(transfer, catalog);
   return resolvePracticeAbutmentUploadOverdueLevel({
     status: displayStatus,

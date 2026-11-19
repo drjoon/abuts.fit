@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-11-19: lab_design — 치과 디자인 확정이 기본. 수작업 STL은 그다음.
 // - 2026-10-24: 기공소 정산 투어 — 충전·지급 힌트를 화면 안내와 맞춤.
 // - 2026-10-23: 치과 투어 — 사이드바 「기공소에 의뢰하기」「커스텀어벗 의뢰하기」.
 // - 2026-10-23: 기공소 투어 — 사이드바 「치과의뢰 수신하기」「커스텀어벗 의뢰하기」.
@@ -298,8 +299,8 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   },
   {
     id: "lab_design",
-    title: "어벗 디자인 업로드",
-    hint: "작업시작 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자·임플란트 정보는 치과에서 넘겨준 그대로 이어집니다.",
+    title: "어벗 디자인",
+    hint: "치과가 디자인을 확정하면 수행 기공소가 검수합니다.\n화면에서 고치지 못하면 STL을 수작업으로 올립니다.\n환자·임플란트 정보는 치과 값을 그대로 씁니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",

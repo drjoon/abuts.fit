@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-19: 커스텀어벗 플로우·FAQ — 치과 디자인 확정, 수행 기공소 검수, 커스텀어벗 의뢰하기.
 // - 2026-10-26: FAQ — 기공비 결제·계산서, 스토어 크레딧 항목 삭제.
 // - 2026-10-06: 월말 과오입금 카톡 사례(caseStudy) — 원본 캡처·실명 없이 재구성.
 // - 2026-10-05: 중복 섹션 통폐합 — extras·audiences 제거. 크레딧/CNC는 credit·pipeline, 대상은 glance에 통합.
@@ -317,13 +318,13 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
     eyebrow: "CUSTOM ABUTMENT FLOW",
     title: "커스텀어벗, 의뢰부터 납품까지 한 줄로.",
     lead: [
-      "디자인을 올리는 순간 생산이 시작됩니다.",
+      "치과가 디자인을 확정하거나, 기공소가 STL을 올리면 생산이 시작됩니다.",
       "치과 도착일에서 거꾸로 출고일을 잡아 일정도 맞춥니다.",
     ],
     steps: [
       { icon: "request", title: "의뢰", line: "치과가 스캔과 요청을 보냅니다." },
-      { icon: "start", title: "작업시작", line: "기공소가 받아 작업을 시작합니다." },
-      { icon: "design", title: "디자인", line: "어벗 디자인을 마치고 올립니다." },
+      { icon: "abutment", title: "디자인 확정", line: "치과가 플랫폼 디자인을 확정합니다." },
+      { icon: "quality", title: "검수", line: "수행 기공소가 확인하고, 필요하면 수작업으로 다시 만듭니다." },
       {
         icon: "cnc",
         title: "CNC 생산",
@@ -462,8 +463,9 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
       {
         q: "커스텀어벗은 어떻게 만들어지나요?",
         a: [
-          "기공소가 디자인을 업로드하면 애크로덴트 CNC 생산이 자동으로 시작됩니다.",
-          "완성된 어벗은 보철과 함께 치과로 나갑니다.",
+          "기공의뢰에서는 치과가 플랫폼 디자인을 확정합니다.",
+          "수행 기공소가 검수하고, 필요하면 수작업으로 다시 디자인합니다.",
+          "커스텀어벗 의뢰하기는 기공소가 STL을 올리면 생산이 시작됩니다.",
         ],
       },
     ],

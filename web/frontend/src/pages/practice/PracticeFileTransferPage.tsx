@@ -1458,6 +1458,10 @@ export const PracticeFileTransferPage = ({
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [abutmentDesignOpen, setAbutmentDesignOpen] = useState(false);
+  const [designReviewItems, setDesignReviewItems] = useState<
+    Array<{ transfer: PracticeRecentTransferItem; label: string }>
+  >([]);
+  const [designReviewIndex, setDesignReviewIndex] = useState(0);
   const abutmentDesignTransferKey = String(
     selectedTransfer?.transferId || selectedTransfer?.id || "",
   );
@@ -11293,6 +11297,11 @@ export const PracticeFileTransferPage = ({
           }
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
+          onReviewAbutmentDesigns={(items) => {
+            setDesignReviewItems(items);
+            setDesignReviewIndex(0);
+            setAbutmentDesignOpen(true);
+          }}
           onSelectTransfer={(transfer, options) => {
             const openId = String(selectedTransfer?.transferId || selectedTransfer?.id || "").trim();
             const nextId = String(transfer.transferId || transfer.id || "").trim();
@@ -12262,24 +12271,77 @@ export const PracticeFileTransferPage = ({
 
         {workFolderDialogs}
 
-        {abutmentDesignOpen && selectedTransfer ? (
-          <PracticeCustomAbutmentPreviewDialog
-            open
-            onOpenChange={setAbutmentDesignOpen}
-            viewerRole="practice"
-            authToken={authToken}
-            caseTitle={selectedTransferCaseIdentity?.primary}
-            caseDatesLabel={selectedTransferCaseIdentity?.secondary}
-            patientName={selectedTransferDetailModel?.patientName}
-            toothWorks={selectedTransferDetailModel?.toothWorks || []}
-            files={selectedTransferDetailModel?.files || []}
-            workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
-            transferId={String(selectedTransfer.transferId || selectedTransfer.id || "")}
-            onActionComplete={() => {
-              void loadRecentRequests({ silent: true });
-            }}
-          />
-        ) : null}
+        {(() => {
+          const reviewEntry = designReviewItems[designReviewIndex] || null;
+          const reviewModel = reviewEntry
+            ? buildPracticeSenderTransferDetailModel(reviewEntry.transfer)
+            : null;
+          const dialogTransfer = reviewEntry?.transfer || selectedTransfer;
+          const dialogModel = reviewModel || selectedTransferDetailModel;
+          if (!abutmentDesignOpen || !dialogTransfer || !dialogModel) return null;
+          const reviewDates = reviewEntry
+            ? [
+                reviewEntry.transfer.orderDate
+                  ? `주문 ${reviewEntry.transfer.orderDate}`
+                  : "",
+                reviewEntry.transfer.arrivalDate
+                  ? `도착 ${reviewEntry.transfer.arrivalDate}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : "";
+          return (
+            <PracticeCustomAbutmentPreviewDialog
+              key={String(dialogTransfer.transferId || dialogTransfer.id)}
+              open
+              onOpenChange={(open) => {
+                setAbutmentDesignOpen(open);
+                if (!open) {
+                  setDesignReviewItems([]);
+                  setDesignReviewIndex(0);
+                }
+              }}
+              viewerRole="practice"
+              authToken={authToken}
+              caseTitle={
+                reviewEntry ? undefined : selectedTransferCaseIdentity?.primary
+              }
+              caseDatesLabel={
+                reviewEntry
+                  ? reviewDates || undefined
+                  : selectedTransferCaseIdentity?.secondary
+              }
+              patientName={dialogModel.patientName}
+              toothWorks={dialogModel.toothWorks || []}
+              files={dialogModel.files || []}
+              workScanFiles={dialogModel.workScanFiles || []}
+              transferId={String(dialogTransfer.transferId || dialogTransfer.id || "")}
+              reviewItems={designReviewItems.map((item) => ({
+                id: String(item.transfer.transferId || item.transfer.id),
+                label: item.label,
+              }))}
+              reviewIndex={designReviewIndex}
+              onReviewIndexChange={setDesignReviewIndex}
+              onActionComplete={(action) => {
+                void loadRecentRequests({ silent: true });
+                if (designReviewItems.length === 0) return;
+                if (action !== "confirmed" && action !== "manual") return;
+                const next = designReviewItems.filter(
+                  (_, index) => index !== designReviewIndex,
+                );
+                if (next.length === 0) {
+                  setDesignReviewItems([]);
+                  setDesignReviewIndex(0);
+                  setAbutmentDesignOpen(false);
+                  return;
+                }
+                setDesignReviewItems(next);
+                setDesignReviewIndex((index) => Math.min(index, next.length - 1));
+              }}
+            />
+          );
+        })()}
 
         {(() => {
           const detailDialog = (
@@ -12292,6 +12354,8 @@ export const PracticeFileTransferPage = ({
               return;
             }
             setAbutmentDesignOpen(false);
+            setDesignReviewItems([]);
+            setDesignReviewIndex(0);
             handleCloseTransferDialog();
           }}
           preferredDockSide={panelPreferredDockSide}
@@ -12533,16 +12597,17 @@ export const PracticeFileTransferPage = ({
           summaryBanner={null}
           onWorkScanTileClick={
             practiceAbutmentDesignAvailable
-              ? () => setAbutmentDesignOpen(true)
+              ? () => {
+                  setDesignReviewItems([]);
+                  setDesignReviewIndex(0);
+                  setAbutmentDesignOpen(true);
+                }
               : undefined
           }
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
             practiceAbutmentCancelOpen ? (
-              <div
-                className="flex min-w-0 items-center gap-2"
-                data-no-drag
-              >
+              <div className="flex min-w-0 items-center gap-2" data-no-drag>
                 {selectedTransferDetailModel?.abutmentStageLabel ? (
                   <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
                     <span className="font-medium">커스텀어벗 공정</span>

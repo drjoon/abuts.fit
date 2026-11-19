@@ -77,6 +77,7 @@ import {
   ViewGestureHint,
 } from "@/shared/components/ViewGestureHint";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
+import { PracticeAbutmentDesignReviewRail } from "@/shared/practice/practiceAbutmentDesignReview";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
 import {
   readStoredDcmDownloadFormat,
@@ -282,6 +283,10 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   viewerRole?: "practice" | "lab";
   /** 확정 & 의뢰, 수작업 의뢰, 기공소 확인 후 콜백 */
   onActionComplete?: (action: "confirmed" | "manual" | "checked") => void;
+  /** 검토 대기 의뢰. 헤더에서 한 건씩 넘긴다. */
+  reviewItems?: readonly { id: string; label: string }[];
+  reviewIndex?: number;
+  onReviewIndexChange?: (index: number) => void;
 };
 
 type PendingInfoChange = {
@@ -842,6 +847,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   readOnly = false,
   viewerRole = "practice",
   onActionComplete,
+  reviewItems = [],
+  reviewIndex = 0,
+  onReviewIndexChange,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { toast } = useToast();
   const designSoftware = useAccountDesignSoftware();
@@ -4756,15 +4764,28 @@ export function PracticeCustomAbutmentPreviewDialog({
       >
         <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-5 pr-14 text-left">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-            <DialogTitle className="shrink-0 text-base sm:text-lg">
+            {reviewItems.length > 0 ? (
+              <PracticeAbutmentDesignReviewRail
+                items={reviewItems}
+                index={reviewIndex}
+                onIndexChange={(next) => onReviewIndexChange?.(next)}
+              />
+            ) : null}
+            <DialogTitle
+              className={
+                reviewItems.length > 0
+                  ? "sr-only"
+                  : "shrink-0 text-base sm:text-lg"
+              }
+            >
               커스텀어벗 디자인
             </DialogTitle>
-            {caseTitle ? (
+            {reviewItems.length === 0 && caseTitle ? (
               <span className="truncate text-sm font-medium text-foreground">
                 {caseTitle}
               </span>
             ) : null}
-            {caseDatesLabel ? (
+            {reviewItems.length === 0 && caseDatesLabel ? (
               <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
                 {caseDatesLabel}
               </span>
@@ -5416,9 +5437,15 @@ export function PracticeCustomAbutmentPreviewDialog({
                               hour12: false,
                             }).format(new Date(cancelDeadlineAt))}
                             까지 확인해 주세요.
+                            <br />
+                            화면에서 고칩니다. 부족하면 어벗 STL을 수작업으로 올립니다.
                           </>
                         ) : (
-                          <>1영업일 안에 확인해 주세요.</>
+                          <>
+                            1영업일 안에 확인해 주세요.
+                            <br />
+                            화면에서 고칩니다. 부족하면 어벗 STL을 수작업으로 올립니다.
+                          </>
                         )}
                       </p>
                     ) : null}
@@ -5449,9 +5476,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                            1영업일 이내에 기공소가 보철에 맞는지 검토합니다.
+                            디자인 확정이 기본입니다.
                             <br />
-                            그 다음 생산을 시작합니다.
+                            수행 기공소가 1영업일 안에 검수합니다.
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -5480,9 +5507,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                          현재 디자인은 무시하고 기공소가 새로 디자인합니다.
+                          수행 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
                           <br />
-                          기공비는 작업 기공소 수가를 적용합니다.
+                          어벗 비용은 기공소 수가로 바뀝니다.
                         </TooltipContent>
                       </Tooltip>
                     ) : null}
@@ -5604,9 +5631,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle className="text-base font-semibold">어벗 비용</DialogTitle>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            디자인 확정은 이 화면의 디자인을 가공합니다.
+            디자인 확정이 기본입니다.
             <br />
-            수작업 의뢰는 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
+            수작업 의뢰는 수행 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
           </p>
         </DialogHeader>
         <div className="space-y-2">

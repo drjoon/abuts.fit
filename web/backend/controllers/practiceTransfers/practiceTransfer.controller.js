@@ -4071,6 +4071,18 @@ export async function createPracticeTransfer(req, res) {
       },
     });
 
+    if (countCustomAbutmentWorks(toothWorksRaw) > 0 && transferDoc?._id) {
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: transferDoc._id,
+        senderUserId: req.user?._id,
+        content:
+          "커스텀어벗이 포함되어 있습니다.\n치과의사가 디자인 화면에서 확정하면 생산이 시작됩니다.",
+        systemEvent: "custom_abutment_design_awaiting",
+      }).catch((err) => {
+        console.warn("[practice-transfer] design awaiting chat failed", err?.message || err);
+      });
+    }
+
     void (async () => {
       let clearedDraftId = realtimePayload.clearedDraftId;
       try {

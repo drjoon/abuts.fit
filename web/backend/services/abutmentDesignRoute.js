@@ -1,7 +1,8 @@
 // 커스텀어벗 가공 원본은 한 경로만 가진다.
-// platform: 의뢰자가 디자인 화면에서 확정한 STL
-// lab: 기공소가 수작업으로 올린 STL
-// direct: 커스텀어벗 의뢰하기에서 접수한 STL
+// intake ptx: 기공의뢰. designRoute platform=치과 확정, lab=수행 기공소 수작업 STL.
+// intake lab: 커스텀어벗 의뢰하기. designRoute direct.
+// designRoute=lab 은 접수 이름 lab 이 아니다.
+// 플랫폼 확정을 기공소 STL로 바꾸는 것은 explicitPlatformToLab 일 때만.
 // 다른 경로의 파일을 같은 Request·같은 S3 키에 두지 않는다.
 // related files:
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
@@ -65,6 +66,10 @@ export const DESIGN_ROUTE_PLATFORM = "platform";
 export const DESIGN_ROUTE_LAB = "lab";
 export const DESIGN_ROUTE_DIRECT = "direct";
 
+/** 접수. ptx=기공의뢰, lab=커스텀어벗 의뢰하기. designRoute 와 별개다. */
+export const INTAKE_PTX = "ptx";
+export const INTAKE_LAB = "lab";
+
 const ROUTES = new Set([
   DESIGN_ROUTE_PLATFORM,
   DESIGN_ROUTE_LAB,
@@ -102,6 +107,17 @@ function explicitRoute(request) {
   return ROUTES.has(route) ? route : "";
 }
 
+/** 저장된 접수. 없으면 PTX 연결·direct 경로로만 추정한다. */
+export function resolveAbutmentIntake(request) {
+  const explicit = String(request?.caseInfos?.intake || "").trim();
+  if (explicit === INTAKE_PTX || explicit === INTAKE_LAB) return explicit;
+  if (request?.partnerBilling?.relatedPracticeTransferId) return INTAKE_PTX;
+  const route = explicitRoute(request);
+  if (route === DESIGN_ROUTE_DIRECT) return INTAKE_LAB;
+  if (route === DESIGN_ROUTE_PLATFORM || route === DESIGN_ROUTE_LAB) return INTAKE_PTX;
+  return "";
+}
+
 /**
  * 저장된 경로. 없으면 완료된 파일로만 추정한다.
  * 디자인 파일이 없는 PTX 대기 건은 비어 있다.
@@ -124,12 +140,24 @@ export function currentDesignRoute(request) {
   return DESIGN_ROUTE_DIRECT;
 }
 
-/** 다른 경로가 이미 가공 원본이면 빈 문자열이 아닌 거절 문구. */
-export function designRouteBlockMessage(request, incoming) {
+/**
+ * 다른 경로가 이미 가공 원본이면 빈 문자열이 아닌 거절 문구.
+ * explicitPlatformToLab: 수행 기공소가 PTX 확정본을 수작업 STL로 바꾸겠다고 명시한 경우만 통과.
+ */
+export function designRouteBlockMessage(request, incoming, options = {}) {
   const next = String(incoming || "").trim();
   if (!ROUTES.has(next)) return "디자인 경로를 확인하지 못했습니다.";
   const current = currentDesignRoute(request);
   if (!current || current === next) return "";
+  const explicitPlatformToLab = Boolean(options?.explicitPlatformToLab);
+  if (
+    explicitPlatformToLab &&
+    next === DESIGN_ROUTE_LAB &&
+    current === DESIGN_ROUTE_PLATFORM &&
+    resolveAbutmentIntake(request) === INTAKE_PTX
+  ) {
+    return "";
+  }
   if (next === DESIGN_ROUTE_PLATFORM && current === DESIGN_ROUTE_LAB) {
     return "기공소가 올린 디자인입니다. 플랫폼 디자인으로 바꾸지 않습니다.";
   }
@@ -137,7 +165,7 @@ export function designRouteBlockMessage(request, incoming) {
     return "커스텀어벗 의뢰하기에서 접수된 건입니다. 플랫폼 디자인으로 바꾸지 않습니다.";
   }
   if (next === DESIGN_ROUTE_LAB && current === DESIGN_ROUTE_PLATFORM) {
-    return "의뢰자가 확정한 디자인입니다. 기공소 파일로 바꾸지 않습니다.";
+    return "의뢰자가 확정한 디자인입니다. 수작업으로 다시 디자인할 때만 기공소 파일로 바꿉니다.";
   }
   if (next === DESIGN_ROUTE_LAB && current === DESIGN_ROUTE_DIRECT) {
     return "커스텀어벗 의뢰하기에서 접수된 건입니다. 기공소 파일로 바꾸지 않습니다.";
@@ -185,7 +213,11 @@ export function stampDirectDesignRoute(request) {
   if (!request?.caseInfos) return;
   const mode = String(request.caseInfos.productMode || "").trim();
   if (mode !== "custom_abutment") return;
-  if (request.partnerBilling?.relatedPracticeTransferId) return;
+  if (request.partnerBilling?.relatedPracticeTransferId) {
+    if (!request.caseInfos.intake) request.caseInfos.intake = INTAKE_PTX;
+    return;
+  }
+  if (!request.caseInfos.intake) request.caseInfos.intake = INTAKE_LAB;
   if (explicitRoute(request)) return;
   request.caseInfos.designRoute = DESIGN_ROUTE_DIRECT;
   const sourceKey = String(request.caseInfos.file?.s3Key || "").trim();

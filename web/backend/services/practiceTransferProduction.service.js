@@ -1572,6 +1572,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         ...hexFields,
         faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,
         connectionPrcFileName: resolvedPrc.connectionPrcFileName || undefined,
+        intake: "ptx",
         reviewByStage: {
           request: {
             status: "PENDING",

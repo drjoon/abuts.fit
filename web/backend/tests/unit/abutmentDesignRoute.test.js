@@ -10,6 +10,7 @@ import {
   filledStlS3Key,
   ncMatchesCurrentDesign,
   oralSourcesOnly,
+  stampDirectDesignRoute,
 } from "../../services/abutmentDesignRoute.js";
 
 describe("abutment design route", () => {
@@ -34,7 +35,10 @@ describe("abutment design route", () => {
     const platform = {
       caseInfos: { designRoute: DESIGN_ROUTE_PLATFORM, file: { s3Key: "requests/r/1-stl/platform/a.stl" } },
     };
-    expect(designRouteBlockMessage(platform, DESIGN_ROUTE_LAB)).toMatch(/의뢰자/);
+    expect(designRouteBlockMessage(platform, DESIGN_ROUTE_LAB)).toMatch(/수작업/);
+    expect(
+      designRouteBlockMessage(platform, DESIGN_ROUTE_LAB, { explicitPlatformToLab: true }),
+    ).toBe("");
   });
 
   it("does not keep a platform preview in the oral-scan list", () => {
@@ -79,11 +83,33 @@ describe("abutment design route", () => {
     expect(acceptNcCallback(request)).toBe(true);
   });
 
+  it("stamps a direct order as lab intake and leaves a linked order on ptx", () => {
+    const direct = { caseInfos: { productMode: "custom_abutment", file: { s3Key: "orders/a.stl" } } };
+    stampDirectDesignRoute(direct);
+    expect(direct.caseInfos.intake).toBe("lab");
+    expect(direct.caseInfos.designRoute).toBe(DESIGN_ROUTE_DIRECT);
+
+    const linked = {
+      caseInfos: { productMode: "custom_abutment" },
+      partnerBilling: { relatedPracticeTransferId: "t1" },
+    };
+    stampDirectDesignRoute(linked);
+    expect(linked.caseInfos.intake).toBe("ptx");
+    expect(linked.caseInfos.designRoute).toBeUndefined();
+  });
+
   it("leaves a request-page order on the direct route", () => {
     expect(
       designRouteBlockMessage(
         { caseInfos: { designRoute: DESIGN_ROUTE_DIRECT, file: { s3Key: "orders/a.stl" } } },
         DESIGN_ROUTE_PLATFORM,
+      ),
+    ).toMatch(/의뢰하기/);
+    expect(
+      designRouteBlockMessage(
+        { caseInfos: { designRoute: DESIGN_ROUTE_DIRECT, intake: "lab", file: { s3Key: "orders/a.stl" } } },
+        DESIGN_ROUTE_LAB,
+        { explicitPlatformToLab: true },
       ),
     ).toMatch(/의뢰하기/);
   });

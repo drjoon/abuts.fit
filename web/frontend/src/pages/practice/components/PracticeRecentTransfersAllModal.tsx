@@ -148,6 +148,8 @@ import {
   isPracticeNextArrivalOverdue,
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
+import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import { PracticeAbutmentDesignAwaitingButton } from "@/shared/practice/practiceAbutmentDesignReview";
 import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
 import {
   PracticeRecentTransfersCalendar,
@@ -246,6 +248,10 @@ type PracticeRecentTransfersAllModalProps = {
     transfer: PracticeRecentTransferItem,
     options?: { preferredDockSide?: PracticeTransferPanelDockSide },
   ) => void;
+  /** 어벗 디자인 검토 대기 한 줄 — 디자인 모달을 연다 */
+  onReviewAbutmentDesigns?: (
+    items: Array<{ transfer: PracticeRecentTransferItem; label: string }>,
+  ) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
   /** 범례 기공소 점 색 — 채팅 헤더 등과 동기화 */
@@ -272,6 +278,7 @@ export function PracticeRecentTransfersAllModal({
   onSelectFutureDay,
   calendarRefreshNonce = 0,
   onSelectTransfer,
+  onReviewAbutmentDesigns,
   onDeleteTransfer,
   onLabColorDotsChange,
 }: PracticeRecentTransfersAllModalProps) {
@@ -770,6 +777,14 @@ export function PracticeRecentTransfersAllModal({
         ),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        abutmentDesignAwaiting: isPtxAbutmentDesignAwaitingDentist({
+          status: transfer.status,
+          hasCustomAbutment: transfer.hasCustomAbutment,
+          abutmentFeeRoute: transfer.abutmentFeeRoute,
+          practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
+          designReadyAt: transfer.designReadyAt,
+          designFileCount: transfer.designFileCount,
+        }),
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(base, dateKey);
@@ -888,6 +903,49 @@ export function PracticeRecentTransfersAllModal({
   }, [visibleGroupedTransfers]);
 
   const nextArrivalOverdueTotal = nextArrivalOverdueItems.length;
+
+  const abutmentDesignAwaitingItems = useMemo(() => {
+    return visibleGroupedTransfers
+      .map((transfer) => {
+        if (
+          !isPtxAbutmentDesignAwaitingDentist({
+            status: transfer.status,
+            hasCustomAbutment: transfer.hasCustomAbutment,
+            abutmentFeeRoute: transfer.abutmentFeeRoute,
+            practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
+            designReadyAt: transfer.designReadyAt,
+            designFileCount: transfer.designFileCount,
+          })
+        ) {
+          return null;
+        }
+        const id = `${transfer.id}:${transfer.transferId}`;
+        const lab =
+          String(transfer.targetLab || "-")
+            .replace(/\s*→.*$/g, "")
+            .trim() || "-";
+        const patient = resolvePracticeTransferListPatientName(transfer);
+        const teeth = resolvePracticeTransferListToothNumbers(transfer);
+        const patientLine =
+          formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—";
+        return {
+          id,
+          label: [lab, patientLine].filter(Boolean).join(" / "),
+          transfer,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  }, [visibleGroupedTransfers]);
+
+  const openAbutmentDesignReview = () => {
+    if (!onReviewAbutmentDesigns || abutmentDesignAwaitingItems.length === 0) return;
+    onReviewAbutmentDesigns(
+      abutmentDesignAwaitingItems.map((item) => ({
+        transfer: item.transfer,
+        label: item.label,
+      })),
+    );
+  };
 
   const transferByNoticeId = useMemo(() => {
     const map = new Map<string, (typeof visibleGroupedTransfers)[number]>();
@@ -1122,6 +1180,14 @@ export function PracticeRecentTransfersAllModal({
             </div>
           ) : isMobile ? (
             <>
+              {abutmentDesignAwaitingItems.length > 0 ? (
+                <div className="mb-2 flex justify-end">
+                  <PracticeAbutmentDesignAwaitingButton
+                    total={abutmentDesignAwaitingItems.length}
+                    onClick={openAbutmentDesignReview}
+                  />
+                </div>
+              ) : null}
               <PracticeNextArrivalOverdueNotice
                 total={nextArrivalOverdueTotal}
                 items={nextArrivalOverdueItems}
@@ -1206,6 +1272,21 @@ export function PracticeRecentTransfersAllModal({
                         >
                           {statusLabel}
                         </Badge>
+                        {isPtxAbutmentDesignAwaitingDentist({
+                          status: transfer.status,
+                          hasCustomAbutment: transfer.hasCustomAbutment,
+                          abutmentFeeRoute: transfer.abutmentFeeRoute,
+                          practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
+                          designReadyAt: transfer.designReadyAt,
+                          designFileCount: transfer.designFileCount,
+                        }) ? (
+                          <Badge
+                            variant="outline"
+                            className="h-6 shrink-0 border-amber-300 bg-amber-50 px-2 text-[11px] font-semibold leading-none text-amber-900"
+                          >
+                            디자인 대기
+                          </Badge>
+                        ) : null}
                         {deliveryLabel ? (
                           <span
                             className={practiceAbutmentProgressBadgeClassName(
@@ -1331,6 +1412,14 @@ export function PracticeRecentTransfersAllModal({
                 search={search}
                 onSearchChange={handleSearchChange}
                 searchPlaceholder="환자명, 기공소명, 치아번호"
+                toolbarBeforeMiddle={
+                  abutmentDesignAwaitingItems.length > 0 ? (
+                    <PracticeAbutmentDesignAwaitingButton
+                      total={abutmentDesignAwaitingItems.length}
+                      onClick={openAbutmentDesignReview}
+                    />
+                  ) : null
+                }
                 toolbarMiddle={calendarToolbarMiddle}
                 hiddenWeekdays={hiddenWeekdays}
                 alignEpoch={alignEpoch}

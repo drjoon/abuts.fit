@@ -513,6 +513,11 @@ const requestSchema = new mongoose.Schema(
         default: undefined,
       },
 
+      // 접수. ptx=기공의뢰, lab=커스텀어벗 의뢰하기. designRoute 와 별개다.
+      intake: {
+        type: String,
+        enum: ["ptx", "lab"],
+      },
       // 가공 원본 경로. platform=의뢰자 확정, lab=기공소 수작업, direct=커스텀어벗 의뢰하기.
       // 다른 경로의 STL을 이 의뢰의 file·filled·NC에 넣지 않는다.
       designRoute: {

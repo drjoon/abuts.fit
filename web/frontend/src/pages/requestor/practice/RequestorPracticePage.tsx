@@ -424,6 +424,7 @@ import {
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practice/practiceTransferPartialAbutmentUpload";
+import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
 import {
   parseLabTechnician,
@@ -870,7 +871,11 @@ export function RequestorPracticeReceivePage({
     (
       transfer: ReceivedPracticeTransfer,
       files: File[],
-      options?: { skipOversizedGuard?: boolean; skipSettingsGate?: boolean },
+      options?: {
+        skipOversizedGuard?: boolean;
+        skipSettingsGate?: boolean;
+        allowPlatformReplace?: boolean;
+      },
     ) => Promise<DesignUploadStartResult>
   >(async () => "error");
   const {
@@ -1104,6 +1109,11 @@ export function RequestorPracticeReceivePage({
   const [abutmentShipBusyId, setAbutmentShipBusyId] = useState<string>("");
   const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
+  const [platformReplaceUpload, setPlatformReplaceUpload] = useState<{
+    transfer: ReceivedPracticeTransfer;
+    files: File[];
+  } | null>(null);
+  const explicitPlatformToLabManualRef = useRef(false);
   /** handoff API in-flight — 「처리 중」표시 없이 중복 확인 클릭만 막음 */
   const designHandoffInFlightRef = useRef(false);
   /** 다치아 큐 handoff — 크레딧 hold 직렬 체인(같은 lab 락). settle은 마지막 확인에서 */
@@ -3144,6 +3154,17 @@ export function RequestorPracticeReceivePage({
           badgeClearedIds,
         ),
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        abutmentDesignAwaiting: isPtxAbutmentDesignAwaitingDentist({
+          status: getTransferDisplayStatus(transfer),
+          hasCustomAbutment:
+            Boolean(transfer.hasCustomAbutment) ||
+            practiceTransferHasCustomAbutment(transfer, implantCatalog),
+          abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+          practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+          designReadyAt: transfer.production?.designReadyAt,
+          designFileCount: transfer.production?.designFileCount,
+          manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
+        }),
         basketTag: normalizeLabBasketTag(transfer.labBasketTag) || null,
         receiveRole: resolveLabReceiveRoleMarker(transfer, {
           viewerIsPrime: viewerIsPrimeLab,
@@ -6470,6 +6491,7 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmPendingMetas([]);
       // 마지막 치아 확인은 체인에 올린 뒤에 ref를 비운다. 여기서 지우면 앞 치아를 기다리지 않고 병렬로 나간다.
       if (options?.keepHandoffChain) return;
+      explicitPlatformToLabManualRef.current = false;
       designHandoffPromisesRef.current = [];
       designHandoffTailRef.current = Promise.resolve();
     },
@@ -6786,7 +6808,11 @@ export function RequestorPracticeReceivePage({
     async (
       transfer: ReceivedPracticeTransfer,
       files: File[],
-      options?: { skipOversizedGuard?: boolean; skipSettingsGate?: boolean },
+      options?: {
+        skipOversizedGuard?: boolean;
+        skipSettingsGate?: boolean;
+        allowPlatformReplace?: boolean;
+      },
     ): Promise<DesignUploadStartResult> => {
       if (!token) return "error";
       if (isGuideTourDemoTransfer(transfer)) {
@@ -6949,6 +6975,17 @@ export function RequestorPracticeReceivePage({
         return "error";
       }
 
+      if (
+        workingTransfer.production?.abutmentFeeRoute === "platform" &&
+        !options?.allowPlatformReplace
+      ) {
+        setPlatformReplaceUpload({ transfer: workingTransfer, files: stlToUse });
+        return "gated";
+      }
+      if (options?.allowPlatformReplace) {
+        explicitPlatformToLabManualRef.current = true;
+      }
+
       await openAbutmentDesignConfirmQueue(
         workingTransfer,
         stlToUse,
@@ -7072,6 +7109,7 @@ export function RequestorPracticeReceivePage({
       }
 
       designHandoffInFlightRef.current = true;
+      const replaceConfirmedPlatform = explicitPlatformToLabManualRef.current;
       // S3만 busy — handoff는 백그라운드 Promise.all(다치아 병렬)
       setDesignConfirmBusy(true);
       try {
@@ -7132,6 +7170,7 @@ export function RequestorPracticeReceivePage({
         const nextIndex = queueIndex + 1;
         const isLast = nextIndex >= queueTotal;
         if (isLast) {
+          explicitPlatformToLabManualRef.current = false;
           // handoff settle 후 성공/실패 토스트 — 모달만 닫고 체인은 유지
           clearDesignConfirmState({ keepHandoffChain: true });
         } else {
@@ -7192,6 +7231,9 @@ export function RequestorPracticeReceivePage({
                 screwSupply:
                   caseInfos.screwSupply === "manufacturer" ? "manufacturer" : "abuts",
               },
+              ...(replaceConfirmedPlatform
+                ? { explicitPlatformToLabManual: true }
+                : {}),
             },
           });
           if (!res.ok) {
@@ -10075,6 +10117,31 @@ export function RequestorPracticeReceivePage({
         pendingMetas={toothAssignPendingMetas}
         onConfirm={handleToothAssignConfirm}
         onCancel={clearToothAssignState}
+      />
+      <ConfirmDialog
+        open={Boolean(platformReplaceUpload)}
+        title="수작업으로 다시 디자인"
+        description={
+          <>
+            화면에서 고치지 못한 디자인을 기공소 STL로 바꿉니다.
+            <br />
+            어벗 비용은 기공소 수가로 바뀌고, 생산비는 기공소가 어벗츠에 냅니다.
+          </>
+        }
+        confirmLabel="수작업으로 올리기"
+        cancelLabel="닫기"
+        confirmTone="primary"
+        onConfirm={() => {
+          const pending = platformReplaceUpload;
+          setPlatformReplaceUpload(null);
+          if (!pending) return;
+          void beginDesignUploadWithFiles(pending.transfer, pending.files, {
+            allowPlatformReplace: true,
+            skipOversizedGuard: true,
+            skipSettingsGate: true,
+          });
+        }}
+        onCancel={() => setPlatformReplaceUpload(null)}
       />
       <AbutmentDesignConfirmDialog
         open={designConfirmOpen}
