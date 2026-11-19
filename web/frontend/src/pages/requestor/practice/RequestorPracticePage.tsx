@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 치과 디자인 확정 소켓 — 작업시작을 바로 연다. 확정 시각을 작업완료로 보지 않는다.
 // - 2026-11-19: 기공소 디자인 모달 — 치과 확정이 아니면 열지 않는다. 뷰어로 대체하지 않는다.
 // - 2026-11-19: 기공소 디자인 확정 — 응답의 제조 STL·연동 의뢰를 바로 반영. 생산의뢰 완료가 새로고침 없이 보인다.
 // - 2026-11-19: 작업시작 — 치과 어벗·디자인 확정 전 CTA 비활성, 보철 업로드 안내 모달 카피 갱신.
@@ -793,10 +794,13 @@ function applyLabDesignConfirmedProduction(
       ...row.production,
       labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
         ? String(productionRaw.labDesignConfirmedAt)
-        : row.production?.labDesignConfirmedAt || nowIso,
+        : row.production?.labDesignConfirmedAt || null,
       practiceDesignConfirmedAt: productionRaw?.practiceDesignConfirmedAt
         ? String(productionRaw.practiceDesignConfirmedAt)
         : row.production?.practiceDesignConfirmedAt || null,
+      ...(productionRaw?.abutmentFeeRoute
+        ? { abutmentFeeRoute: String(productionRaw.abutmentFeeRoute) }
+        : {}),
       designReadyAt: productionRaw?.designReadyAt
         ? String(productionRaw.designReadyAt)
         : row.production?.designReadyAt ||
@@ -2035,6 +2039,13 @@ export function RequestorPracticeReceivePage({
       const started = practiceTransferAbutmentMachiningStarted(transfer);
       const relatedIds = transfer.production?.relatedRequestIds || [];
       if (!accepted || started || designCount > 0 || relatedIds.length === 0) {
+        return false;
+      }
+      // 치과 플랫폼 확정본은 기공소 확정 전까지 designFiles가 없다. 작업완료로 되감으면 안 된다.
+      if (
+        String(transfer.production?.practiceDesignConfirmedAt || "").trim() &&
+        !String(transfer.production?.labDesignConfirmedAt || "").trim()
+      ) {
         return false;
       }
       return (
@@ -11460,8 +11471,7 @@ export function RequestorPracticeReceivePage({
             (selectedTransfer.isAccepted ||
               selectedTransfer.isDownloaded ||
               selectedTransfer.requestorDownloadedAt ||
-              selectedTransfer.autoMatch?.completed ||
-              selectedTransfer.production?.confirmedAt),
+              selectedTransfer.autoMatch?.completed),
         )}
         chatUnlocked={Boolean(activeChatRoom?._id)}
         workCanceled={Boolean(
@@ -11470,7 +11480,6 @@ export function RequestorPracticeReceivePage({
         )}
         workCompleted={Boolean(
           selectedTransfer?.autoMatch?.completed ||
-            selectedTransfer?.production?.confirmedAt ||
             selectedTransfer?.manufacturerStage === "작업완료",
         )}
         abutmentMachiningStarted={practiceTransferAbutmentMachiningStarted(

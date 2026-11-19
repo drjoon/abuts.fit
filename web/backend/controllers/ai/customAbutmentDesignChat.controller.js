@@ -780,11 +780,33 @@ async function emitCustomAbutmentTransferEvent(transferDoc, action) {
       if (peer?._id) userIdSet.add(String(peer._id));
     }
   }
+  let production = null;
+  if (
+    action === "abutment-design-confirmed" ||
+    action === "abutment-design-lab-revised"
+  ) {
+    const fresh = await PracticeTransfer.findById(transferDoc._id)
+      .select({
+        "production.practiceDesignConfirmedAt": 1,
+        "production.labDesignConfirmedAt": 1,
+        "production.abutmentFeeRoute": 1,
+        "production.designReadyAt": 1,
+      })
+      .lean();
+    const saved = fresh?.production || {};
+    production = {
+      practiceDesignConfirmedAt: saved.practiceDesignConfirmedAt || null,
+      labDesignConfirmedAt: saved.labDesignConfirmedAt || null,
+      abutmentFeeRoute: saved.abutmentFeeRoute || null,
+      designReadyAt: saved.designReadyAt || null,
+    };
+  }
   const payload = {
     action,
     transferId: String(transferDoc.transferId || "").trim(),
     transferMongoId: String(transferDoc._id),
     updatedAt: new Date(),
+    ...(production ? { production } : {}),
   };
   for (const uid of userIdSet) {
     emitAppEventToUser(uid, "practice:transfer-updated", payload);
@@ -1142,8 +1164,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
       if (!labRevision) {
         productionSet["production.practiceDesignConfirmedAt"] = now;
         productionSet["production.practiceDesignConfirmedBy"] = userOid;
-        productionSet["production.confirmedAt"] = now;
-        productionSet["production.confirmedBy"] = userOid;
         productionSet["production.abutmentFeeRoute"] = "platform";
         productionSet["production.abutmentFeeRouteRevision"] = feeRevision;
         if (cancelDeadlineAt) {
@@ -1157,6 +1177,13 @@ export async function confirmCustomAbutmentDesign(req, res) {
           $unset: {
             "production.customAbutmentManualDesign": "",
             "production.abutmentDesignHandoffLockAt": "",
+            // confirmedAt은 크라운 작업완료 후 생산 진행. 디자인 확정으로 찍으면 기공소 작업시작이 완료로 숨는다.
+            ...(!labRevision
+              ? {
+                  "production.confirmedAt": "",
+                  "production.confirmedBy": "",
+                }
+              : {}),
           },
         },
       );
