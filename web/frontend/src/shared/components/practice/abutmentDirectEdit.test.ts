@@ -283,7 +283,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   assert.equal(geo.getAttribute("normal")?.count, 6, "정점 개수 변경 시 normal 버퍼도 새 크기로 재생성된다");
 }
 
-// 검볼 스케일(−축 점·노란 2D 점)·이동(1사분면 코너) 핸들이 다른 핸들에 가리지 않고 정면 광선에 잡히는지 검증
+// 검볼 스케일(+축 점·노란 2D 점)·이동(1사분면 코너) 핸들이 다른 핸들에 가리지 않고 정면 광선에 잡히는지 검증
 {
   const gb = makeGumball("38");
   gb.updateMatrixWorld(true);
@@ -295,10 +295,10 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     const found = hits.some((h) => h.object.userData.editHandle?.op === expectedOp);
     assert.ok(found, `(${x}, ${y})에서 ${expectedOp} 핸들이 잡힌다`);
   };
-  checkRay(-0.47, 0, "scale");
-  checkRay(0, -0.47, "scale");
-  checkRay(-0.41, -0.41, "scale2");
-  checkRay(0.41, 0.41, "move2");
+  checkRay(0.47, 0, "scale");
+  checkRay(0, 0.47, "scale");
+  checkRay(0.41, 0.41, "scale2");
+  checkRay(0.51, 0.51, "move2");
 }
 
 // 검볼이 마진을 옮기면 커프는 그 마진까지 오목하게 다시 깔리고, 콘·포스트·스크류 벽은 그대로다.

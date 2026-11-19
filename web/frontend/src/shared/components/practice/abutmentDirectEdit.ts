@@ -1916,7 +1916,7 @@ export function makeGumball(tooth: string) {
   group.frustumCulled = false;
 
   // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖).
-  // 이동(화살표)은 +축·1사분면 코너에만, 스케일(점)은 −축·3사분면 코너에 묶어 겹치지 않게 한다.
+  // 이동(화살표)은 +축·1사분면 코너, 스케일(점 3개)은 같은 코너·뱃지 쪽, 회전 호는 3사분면(−축)에 둔다.
   for (const axis of [0, 1] as const) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
@@ -1941,14 +1941,14 @@ export function makeGumball(tooth: string) {
     group.add(shaft, head, hit);
   }
   for (const axis of [0, 1] as const) {
-    addAxisScaleDot(group, axis, -0.47);
+    addAxisScaleDot(group, axis, 0.47);
   }
 
-  // 파란 화면 평면 회전 호: 초록 축(90°) 왼쪽(104°~216°)에 놓아 스케일·이동 코너 핸들과 분리한다.
+  // 파란 화면 평면 회전 호: 3사분면(169°~281°) — 예전 1축·2축 스케일 점이 있던 자리.
   const arcColor = AXIS_COLOR[2]!;
   const arcMat = basicMat(arcColor);
   const arcSpan = (112 * Math.PI) / 180;
-  const arcStart = (104 * Math.PI) / 180;
+  const arcStart = (169 * Math.PI) / 180;
   const arc = tagHandle(
     new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.045, 8, 22, arcSpan), arcMat),
     "rot",
@@ -1981,10 +1981,10 @@ export function makeGumball(tooth: string) {
   move2Hit.position.set(moveCorner + moveCornerLen * 0.35, moveCorner + moveCornerLen * 0.35, 0.02);
   group.add(move2Hit);
 
-  // 노란 2D 스케일 점: 스케일 묶음 3사분면(-0.41, -0.41).
+  // 노란 2D 스케일 점: 1사분면 이동 화살표·후보 뱃지 쪽(0.41, 0.41).
   const planeMat = basicMat(0xf5d90a, 0.94);
   const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), planeMat), "scale2", 0, 1, planeMat);
-  scale2Dot.position.set(-0.41, -0.41, 0.02);
+  scale2Dot.position.set(0.41, 0.41, 0.02);
   scale2Dot.renderOrder = 47;
   const scale2Hit = tagHandle(
     new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), basicMat(0xffffff, 0)),
