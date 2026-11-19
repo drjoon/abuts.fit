@@ -69,6 +69,7 @@
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-20: 수신 헤더 xl 미만 — 배지·북마크·생산중 아이콘화. 상세 프린트·번호표는 아이콘+라벨.
 // - 2026-09-20: 수신 헤더 nowrap — 미처리 alert·배지·생산중이 두 줄로 밀리지 않게.
+// - 2026-11-19: 채팅에서 디자인SW 모달을 열어도 채팅·선택을 유지한다.
 // - 2026-11-19: 채팅 작업 줄 — 설정(1) · 디자인 · 업로드(통합).
 // - 2026-11-19: 커스텀어벗 「디자인」버튼 — 헤더 → 어벗 STL 업로드 왼쪽.
 // - 2026-09-20: SW·아노 → 채팅 어벗 STL 업로드 왼쪽(어벗 건만). 미처리 alert를 헤더 왼쪽·배지 오른쪽.
@@ -9801,9 +9802,10 @@ export function RequestorPracticeReceivePage({
   );
 
   const openLabDesignSoftwareModal = useCallback(() => {
-    dismissLabOverlaysForAction("settings");
+    // 채팅 작업 줄에서 연다 — 채팅·목록 선택을 닫지 않는다.
+    setAbutmentInProgressOpen(false);
     openDesignSoftwareModal();
-  }, [dismissLabOverlaysForAction, openDesignSoftwareModal]);
+  }, [openDesignSoftwareModal]);
 
   const openLabAbutmentInProgress = useCallback(
     (open: boolean) => {
