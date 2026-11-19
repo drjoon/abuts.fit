@@ -444,9 +444,7 @@ import {
   isPtxAbutmentManualOrder,
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
   LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT,
-  LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
-  LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_SETTLEMENT,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
@@ -11986,12 +11984,7 @@ export function RequestorPracticeReceivePage({
         panelClassName="max-w-lg"
         description={
           <div className="space-y-3 leading-relaxed">
-            <p>{LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED}</p>
-            <p>
-              {LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED}
-              <br />
-              {LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_SETTLEMENT}
-            </p>
+            <p>{LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED}</p>
             {selectedTransfer?.hasCustomAbutment ||
             (selectedTransfer &&
               practiceTransferHasCustomAbutment(
