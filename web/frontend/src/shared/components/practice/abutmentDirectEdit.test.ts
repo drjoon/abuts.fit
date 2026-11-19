@@ -295,9 +295,9 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     const found = hits.some((h) => h.object.userData.editHandle?.op === expectedOp);
     assert.ok(found, `(${x}, ${y})에서 ${expectedOp} 핸들이 잡힌다`);
   };
-  checkRay(0.47, 0, "scale");
-  checkRay(0, 0.47, "scale");
-  checkRay(0.41, 0.41, "scale2");
+  checkRay(0.36, 0, "scale");
+  checkRay(0, 0.36, "scale");
+  checkRay(0.34, 0.34, "scale2");
   checkRay(0.51, 0.51, "move2");
 }
 

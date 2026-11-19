@@ -1940,8 +1940,10 @@ export function makeGumball(tooth: string) {
     alongAxis(hit, axis, 0.6);
     group.add(shaft, head, hit);
   }
+  const scaleAxisDist = 0.36;
+  const scale2Corner = 0.34;
   for (const axis of [0, 1] as const) {
-    addAxisScaleDot(group, axis, 0.47);
+    addAxisScaleDot(group, axis, scaleAxisDist);
   }
 
   // 파란 화면 평면 회전 호: 3사분면(169°~281°) — 예전 1축·2축 스케일 점이 있던 자리.
@@ -1981,10 +1983,10 @@ export function makeGumball(tooth: string) {
   move2Hit.position.set(moveCorner + moveCornerLen * 0.35, moveCorner + moveCornerLen * 0.35, 0.02);
   group.add(move2Hit);
 
-  // 노란 2D 스케일 점: 1사분면 이동 화살표·후보 뱃지 쪽(0.41, 0.41).
+  // 노란 2D 스케일 점: 코너 이동 화살표(0.41) 안쪽·뱃지 방향.
   const planeMat = basicMat(0xf5d90a, 0.94);
   const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), planeMat), "scale2", 0, 1, planeMat);
-  scale2Dot.position.set(0.41, 0.41, 0.02);
+  scale2Dot.position.set(scale2Corner, scale2Corner, 0.02);
   scale2Dot.renderOrder = 47;
   const scale2Hit = tagHandle(
     new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), basicMat(0xffffff, 0)),
