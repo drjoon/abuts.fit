@@ -218,13 +218,13 @@ const RULES: Rule[] = [
       return { strip, deltas: [{ key: "postHeightOffsetMm", mode: "add", value: v }] };
     },
   },
-  // 전치부 설측 사면 길이(절단에서 떨어진 거리, mm — 각도 아님)
+  // 전치부 설측 사면 — 마진에서 사면이 시작되는 높이(mm)
   {
     match: (c, num, amount) => {
       if (!has(c, /(설측|구개측|싱귤럼)\s*(사면|경사|베벨|길이)/)) return null;
       const strip = [
         /(설측|구개측|싱귤럼)\s*(사면|경사|베벨|길이)/g,
-        /절단(연)?(에서|부터)?\s*(떨어진\s*)?(거리)?/g,
+        /마진(에서|부터)?/g,
         /(길|늘|키|크|짧|줄|작|자동)[게여혀려]*/g,
         /mm|밀리/gi,
       ];
@@ -235,6 +235,26 @@ const RULES: Rule[] = [
       const v = num ?? 0.5 * amount;
       if (has(c, /(짧|줄|작)/)) return { strip, deltas: [{ key: "postLingualBevelMm", mode: "add", value: -v }] };
       if (has(c, /(길|늘|키|크)/)) return { strip, deltas: [{ key: "postLingualBevelMm", mode: "add", value: v }] };
+      return null;
+    },
+  },
+  // 전치부 순측 사면 — 마진에서 사면이 시작되는 높이. 0이면 없음.
+  {
+    match: (c, num, amount) => {
+      if (!has(c, /(순측|협측)\s*(사면|경사|베벨)/)) return null;
+      const strip = [
+        /(순측|협측)\s*(사면|경사|베벨)/g,
+        /마진(에서|부터)?/g,
+        /(없|빼|없애|길|늘|키|크|짧|줄|작)[게여혀려]*/g,
+        /mm|밀리/gi,
+      ];
+      if (has(c, /(없|빼)/) || num === 0) return { strip, deltas: [{ key: "postLabialBevelMm", mode: "set", value: 0 }] };
+      if (num != null && !has(c, /(줄|늘|키|크|작|길|짧)/)) {
+        return { strip, deltas: [{ key: "postLabialBevelMm", mode: "set", value: num }] };
+      }
+      const v = num ?? 0.5 * amount;
+      if (has(c, /(짧|줄|작)/)) return { strip, deltas: [{ key: "postLabialBevelMm", mode: "add", value: -v }] };
+      if (has(c, /(길|늘|키|크)/)) return { strip, deltas: [{ key: "postLabialBevelMm", mode: "add", value: v }] };
       return null;
     },
   },
@@ -366,6 +386,11 @@ function clampParam(key: CustomAbutmentParamKey, v: number) {
     const snapped = Math.round(v / spec.step) * spec.step;
     return Math.min(spec.max, Math.max(0.5, Number(snapped.toFixed(1))));
   }
+  if (key === "postLabialBevelMm") {
+    if (v <= 0) return 0;
+    const snapped = Math.round(v / spec.step) * spec.step;
+    return Math.min(spec.max, Math.max(0, Number(snapped.toFixed(1))));
+  }
   const step = spec.step;
   const snapped = Math.round(v / step) * step;
   return Math.min(spec.max, Math.max(spec.min, Number(snapped.toFixed(4))));
@@ -470,7 +495,7 @@ export function parseLocalDesignCommand(
       let base = params[d.key] ?? cur.params[d.key];
       if (d.key === "postLingualBevelMm" && d.mode === "add" && base < 0) {
         const isCanine = /^[1-4]3$/.test(tooth);
-        base = isCanine ? 2.5 : 4.0;
+        base = isCanine ? 2.5 : 2.0;
       }
       params[d.key] = clampParam(d.key, d.mode === "set" ? d.value : base + d.value);
     }

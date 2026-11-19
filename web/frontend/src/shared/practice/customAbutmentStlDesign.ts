@@ -97,9 +97,9 @@ const SUPRAGINGIVAL_STRENGTH_MIN_MM = -2.0;
 const SUPRAGINGIVAL_STRENGTH_MAX_MM = -1.5;
 const ANTERIOR_SCREW_WALL_MM = 0.52;
 const ANTERIOR_SCREW_LINGUAL_WALL_MM = 0.44;
-/** 교합면-축벽 라인 앵글 반경. 축벽에 접선으로 이어진다. 구치 0.40mm(0.3–0.5). */
-const TOP_ROUND_POSTERIOR_MM = 0.4;
-const TOP_ROUND_ANTERIOR_MM = 0.45;
+/** 교합면-축벽 라인 앵글 반경. 축벽에 접선으로 이어진다. 전치·구치 모두 0.5mm. */
+const TOP_ROUND_POSTERIOR_MM = 0.5;
+const TOP_ROUND_ANTERIOR_MM = 0.5;
 const TOP_ROUND_STEPS = 10;
 /** 픽스쳐 사이가 이 안이면 붙은 치아로 보고 삽입축을 평행하게 맞춘다. */
 const PARALLEL_GROUP_MM = 13;
@@ -186,8 +186,10 @@ export type CustomAbutmentDesignMetrics = {
   postTaperDeg: number;
   /** 최소 테이퍼(2°) 클램프 전 포스트 높이·상단 벽 여유 기준 적정 편측 테이퍼(°). */
   idealPostTaperDeg?: number;
-  /** 전치부(절치·견치) 포스트 설측 사면 길이 — 절단에서 떨어진 거리(mm). 구치부는 null. */
+  /** 전치부(절치·견치) 설측 사면 — 마진에서 사면이 시작되는 높이(mm). 구치부는 null. */
   postLingualBevelMm?: number | null;
+  /** 전치부(절치·견치) 순측 사면 — 마진에서 사면이 시작되는 높이(mm). 0이면 없음. 구치부는 null. */
+  postLabialBevelMm?: number | null;
   /** 포스트 윗면 → 대합치 최소 거리(mm). 대합치가 없으면 null. */
   occlusalClearanceMm: number | null;
   marginFilletRadiusMm: number;
@@ -7186,6 +7188,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let topFaceCv = mCv;
     let geomIdealTaperDeg: number | null = null;
     let appliedLingualBevelMm: number | null = null;
+    let appliedLabialBevelMm: number | null = null;
     let wrapAnteriorScrew360 = false;
     if (posterior) {
       let pSecCu = mCu;
@@ -8085,8 +8088,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 2) 근원심·순설 공간이 좁아 스크류 홀 360° 외벽을 끝까지 감싸면 마진 폭이 죽거나 마진 위가 역전되는 케이스(이춘식 #33 알토란기공소 STL 실측)에서는
       //    전 둘레 보철물 안착 마진 폭(≥ MIN_MARGIN_SHOULDER_MM, ~0.30~0.40mm)과 치관 중앙 테이퍼 포스트를 최우선으로 지키고
       //    스크류 홀은 가까운 사면(순측·근심순측 사면)으로 자연스럽게 비스듬히 개구시킨다.
-      // 3) 설측은 포스트 아래는 2° 축벽을 유지하고, 절단에서 떨어진 거리(postLingualBevelMm, 포스트 높이 미만)부터
-      //    상단까지 단일 평면 사선으로 싱귤럼을 깎는다. 절치는 치경 싱귤럼을 남기고 상단 순설은 인접 자연치처럼 좁은 삽형이다.
+      // 3) 설측은 마진에서 postLingualBevelMm(포스트 높이 미만)까지 2° 축벽을 유지하고,
+      //    그 위부터 절단까지 단일 평면 사선으로 싱귤럼을 깎는다. 절치는 상단 순설을 인접 자연치처럼 좁은 삽형으로 둔다.
       const cingulumPlan = anteriorCingulumPlan(
         tpl.anatomy.morphology.cingulum.bevelAngleDeg,
         tpl.anatomy.morphology.cingulum.collarHeightRatio,
@@ -8849,13 +8852,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         hSpanMdRef = hRefSpanAnt,
         hSpanLinRef = hRefSpanAnt,
       ) => {
-        const antTopRoundMm = Math.min(topRoundMm, 0.15);
         const topGv = top.gv ?? 0;
         const hIncisalTop = top.heightAt(pBaseCu, pBaseCv);
         let labBaseSum = 0;
         let labBaseN = 0;
+        let labMarginSum = 0;
+        let labR0Sum = 0;
         let linBaseSum = 0;
         let linBaseN = 0;
+        let linMarginSum = 0;
+        let linMarginN = 0;
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
           const phiSec = footPsis[col]!;
@@ -8867,31 +8873,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           if (cp >= 0.7) {
             labBaseSum += hBaseColEst;
             labBaseN += 1;
+            labMarginSum += c.h0;
+            labR0Sum += c.r0;
           } else if (cp <= -0.7) {
             linBaseSum += hBaseColEst;
             linBaseN += 1;
+            linMarginSum += c.h0;
+            linMarginN += 1;
           }
         }
         const hLabStart = labBaseN > 0 ? labBaseSum / labBaseN : meanHBaseSum;
         const hLinStart = linBaseN > 0 ? linBaseSum / linBaseN : meanHBaseSum;
-        const totalLinWallH = Math.max(0.6, hIncisalTop - hLinStart);
+        const hLinMargin = linMarginN > 0 ? linMarginSum / linMarginN : hLinStart;
+        const wallFromMargin = Math.max(0.6, hIncisalTop - hLinMargin);
         const estPostHeightMm = Math.max(1.2, hIncisalTop * Math.max(0.35, frame.w[2]));
-        const maxBevelLenMm = Math.max(
+        const maxFromMarginMm = Math.max(
           0.5,
-          Math.min(totalLinWallH - 0.45, estPostHeightMm - 0.5),
+          Math.min(wallFromMargin - 0.45, estPostHeightMm - 0.5),
         );
-        const minBevelLenMm = Math.min(0.5, maxBevelLenMm);
-        const autoBevelRatio =
-          tpl.kind === "incisor"
-            ? Math.max(0.64, 1 - cingulumPlan.collar)
-            : Math.max(0.52, 1 - cingulumPlan.collar);
-        const autoBevelLenMm = totalLinWallH * autoBevelRatio;
-        const effectiveBevelLenMm = clamp(
-          hasExplicitLingualBevel ? params.postLingualBevelMm : autoBevelLenMm,
-          minBevelLenMm,
-          maxBevelLenMm,
+        const minFromMarginMm = Math.min(0.5, maxFromMarginMm);
+        const autoFromMarginMm = wallFromMargin * cingulumPlan.collar;
+        const fromMarginMm = clamp(
+          hasExplicitLingualBevel ? params.postLingualBevelMm : autoFromMarginMm,
+          minFromMarginMm,
+          maxFromMarginMm,
         );
-        appliedLingualBevelMm = Math.round(effectiveBevelLenMm * 10) / 10;
+        // 마진에서 fromMarginMm 올라간 높이에서 단일 설측 사면이 시작된다. 챔퍼 안에서는 시작하지 않는다.
+        const hBevelStart = clamp(
+          Math.max(hLinMargin + fromMarginMm, hLinStart),
+          hLinStart,
+          hIncisalTop - 0.45,
+        );
+        appliedLingualBevelMm = Math.round((hBevelStart - hLinMargin) * 10) / 10;
 
         const mdWallSlope = Math.max(
           minAntTaperSlope,
@@ -8901,19 +8914,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           minAntTaperSlope,
           dropLin / Math.max(hSpanLinRef, 0.36),
         );
-        const hSpanRefBl = Math.max(0.5, hIncisalTop - antTopRoundMm - hLinStart);
+        const hSpanRefBl = Math.max(0.5, hIncisalTop - topRoundMm - hLinStart);
         const cuSlopeU = (pTopCu - pBaseCu) / hSpanRefBl;
         const uLabBase = pBaseCu + finalAntBaseBl;
         const uLabTop = pTopCu + tLab;
-        const labWallSlope = (uLabBase - uLabTop) / Math.max(0.36, hIncisalTop - antTopRoundMm - hLabStart);
+        const labWallSlope = (uLabBase - uLabTop) / Math.max(0.36, hIncisalTop - topRoundMm - hLabStart);
         const linCollarAt = (hVal: number) => {
           const dhLin = Math.max(0, hVal - hLinStart);
           const cuAt = pBaseCu + cuSlopeU * dhLin;
           return cuAt - Math.max(0.58, finalAntBaseBl - linCollarSlope * dhLin);
         };
-        // 절단 최상단(hIncisalTop)에서 정확히 effectiveBevelLenMm 떨어진 높이에서 단일 설측 사면 평면이 시작된다.
-        const hBevelStart = hIncisalTop - effectiveBevelLenMm;
         const uBevelStart = linCollarAt(hBevelStart);
+        const bevelRun = Math.max(0.25, hIncisalTop - hBevelStart);
         const wantIncisalBl =
           tpl.kind === "incisor"
             ? clamp(1.45 * blScale * params.postWidthScale * incisorShovelScale, 1.15, 1.75)
@@ -8932,14 +8944,67 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const uMinBevelTop = linCollarAt(hIncisalTop);
         const uMaxBevelTop = Math.min(
           uLabTop - minIncisalBl,
-          uBevelStart + Math.tan(56 * DEG) * effectiveBevelLenMm,
+          uBevelStart + Math.tan(56 * DEG) * bevelRun,
         );
         const uBevelTop = clamp(
           uTargetBevelTop,
           uMinBevelTop,
           Math.max(uMinBevelTop, uMaxBevelTop),
         );
-        const bevelSlope = (uBevelTop - uBevelStart) / Math.max(0.25, effectiveBevelLenMm);
+        const bevelSlope = (uBevelTop - uBevelStart) / bevelRun;
+
+        const hLabMargin = labBaseN > 0 ? labMarginSum / labBaseN : hLabStart;
+        const labR0 = labBaseN > 0 ? labR0Sum / labBaseN : Math.max(1.2, uLabBase);
+        const needIncisalMm = Math.max(0.7, params.minCrownThicknessMm);
+        const hCrownTop = hIncisalTop + Math.max(tpl.crownOcclusalMm, needIncisalMm);
+        const crownLabU = (hVal: number) =>
+          naturalCrownR(frame.uLabial, hVal, hLabMargin, labR0, hCrownTop);
+        const uLabWallAt = (hVal: number) =>
+          uLabBase - labWallSlope * Math.max(0, hVal - hLabStart);
+        const explicitLabialRaw = args.explicitParams?.postLabialBevelMm;
+        const hasExplicitLabial =
+          explicitLabialRaw != null && Number.isFinite(Number(explicitLabialRaw)) && Number(explicitLabialRaw) >= 0;
+        const maxLabFromMargin = Math.max(
+          0,
+          Math.min(hIncisalTop - hLabMargin - 0.45, estPostHeightMm - 0.5),
+        );
+        let hLabBevelStart = hIncisalTop;
+        let labBevelActive = false;
+        if (hasExplicitLabial && Number(explicitLabialRaw) > 0) {
+          const fromMargin = clamp(Number(explicitLabialRaw), 0, maxLabFromMargin);
+          hLabBevelStart = clamp(
+            Math.max(hLabMargin + fromMargin, hLabStart),
+            hLabStart,
+            hIncisalTop - 0.35,
+          );
+          labBevelActive = hIncisalTop - hLabBevelStart >= 0.3;
+        } else if (!hasExplicitLabial) {
+          const gapTop = crownLabU(hIncisalTop) - uLabWallAt(hIncisalTop);
+          if (gapTop < needIncisalMm - 0.05) {
+            let hOk = hLabStart;
+            const steps = 24;
+            for (let i = 0; i <= steps; i += 1) {
+              const hVal = hLabStart + ((hIncisalTop - hLabStart) * i) / steps;
+              if (crownLabU(hVal) - uLabWallAt(hVal) >= needIncisalMm) hOk = hVal;
+              else break;
+            }
+            hLabBevelStart = clamp(hOk, hLabStart, hIncisalTop - 0.35);
+            labBevelActive = hIncisalTop - hLabBevelStart >= 0.3;
+          }
+        }
+        const uLabBevel0 = uLabWallAt(hLabBevelStart);
+        let uLabBevelTop = Math.min(uLabWallAt(hIncisalTop), crownLabU(hIncisalTop) - needIncisalMm);
+        if (labBevelActive && uLabBevelTop > uLabBevel0 - 0.12) {
+          uLabBevelTop = uLabBevel0 - Math.max(0.2, (hIncisalTop - hLabBevelStart) * Math.tan(8 * DEG));
+        }
+        uLabBevelTop = Math.max(uLabBevelTop, uScrewTop + screwSafeR);
+        uLabBevelTop = Math.min(uLabBevelTop, uLabWallAt(hIncisalTop) - 0.04);
+        if (labBevelActive && uLabBevelTop >= uLabBevel0 - 0.08) labBevelActive = false;
+        const labBevelRun = Math.max(0.25, hIncisalTop - hLabBevelStart);
+        const labBevelSlope = labBevelActive ? (uLabBevelTop - uLabBevel0) / labBevelRun : 0;
+        appliedLabialBevelMm = labBevelActive
+          ? Math.round(Math.max(0, hLabBevelStart - hLabMargin) * 10) / 10
+          : 0;
 
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
@@ -8951,7 +9016,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const hBaseAnt = smoothMin(c.h0 + hPostBase, maxRoundStartAnt - 0.08, 0.03);
           const roundStartAnt = smoothMin(
             maxRoundStartAnt,
-            Math.max(hBaseAnt + 0.36, topEdgeAnt - antTopRoundMm),
+            Math.max(hBaseAnt + 0.36, topEdgeAnt - topRoundMm * 0.9),
             0.025,
           );
           const wallPts: Vec3[] = [];
@@ -8990,11 +9055,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                   phiSec,
                 );
             const denom = cp + bevelSlope * topGv * sp;
-            const sPlane = denom < -1e-5 ? (uPlaneCenter - cuRef) / denom : Infinity;
-            const s =
-              Number.isFinite(sPlane) && sPlane > 0
-                ? smoothMin(sBody, sPlane, 0.03)
-                : sBody;
+            const sLingual = denom < -1e-5 ? (uPlaneCenter - cuRef) / denom : Infinity;
+            const uLabPlane =
+              labBevelActive && h >= hLabBevelStart
+                ? uLabBevel0 + labBevelSlope * (h - hLabBevelStart)
+                : Infinity;
+            const sLabial = cp > 1e-4 && uLabPlane < 1e6 ? (uLabPlane - cuRef) / cp : Infinity;
+            let s = sBody;
+            if (Number.isFinite(sLingual) && sLingual > 0) s = smoothMin(s, sLingual, 0.03);
+            if (Number.isFinite(sLabial) && sLabial > 0) s = smoothMin(s, sLabial, 0.03);
             const u = cuRef + s * cp;
             const v = pBaseCv + s * sp;
             postR[col]![k] = Math.hypot(u, v);
@@ -9490,15 +9559,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     let meanTopSEnd = 0;
-    if (posterior) {
-      for (let col = 0; col < ANGULAR_COLS; col += 1) {
-        const relEndC = sub3(postWallPtsByCol[col]![POST_LEVELS]!, c0);
-        meanTopSEnd +=
-          Math.hypot(
-            dot3(relEndC, frame.uLabial) - topFaceCu,
-            dot3(relEndC, frame.vSide) - topFaceCv,
-          ) / ANGULAR_COLS;
-      }
+    for (let col = 0; col < ANGULAR_COLS; col += 1) {
+      const relEndC = sub3(postWallPtsByCol[col]![POST_LEVELS]!, c0);
+      meanTopSEnd +=
+        Math.hypot(
+          dot3(relEndC, frame.uLabial) - topFaceCu,
+          dot3(relEndC, frame.vSide) - topFaceCv,
+        ) / ANGULAR_COLS;
     }
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const c = cols[col]!;
@@ -9568,27 +9635,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const cos0 = Math.cos(t0);
       const edgeHeight = (sFlat: number) =>
         top.heightAt(topFaceCu + topDirU * sFlat, topFaceCv + topDirV * sFlat);
-      const localSpare = Math.hypot(pEnd[0], pEnd[1]) - (boreTopR + 0.36);
       const rise = Math.max(1 - sin0, 1e-3);
-      // 가장 좁은 열의 스크류 여유로 전 둘레 라운드를 깎지 않는다. 전치부는 2단 절단 경사로 보이지 않도록 라운드 반경을 작게 둔다.
-      const antTopFilletMax = Math.min(topRoundMm, 0.15);
-      const rhoMax = posterior
-        ? topRoundMm
-        : Math.max(
-            0.1,
-            Math.min(antTopFilletMax, Math.max(0.1, localSpare), (sEnd - 0.18) / Math.max(cos0, 0.75)),
-          );
-      const availRise = Math.max(0.08, edgeHeight(sEnd - Math.min(rhoMax, sEnd - 0.14) * cos0) - hEnd);
-      const rhoCap = posterior ? rhoMax : smoothMin(rhoMax, availRise / rise, 0.015);
-      const rho = posterior
-        ? rhoCap
-        : clamp(
-            (edgeHeight(sEnd - rhoCap * cos0) - hEnd) / rise,
-            Math.min(0.12, rhoCap),
-            Math.max(0.1, rhoCap),
-          );
+      // 교합면-축벽 라인 앵글은 전치·구치 모두 topRoundMm(0.5mm). 스크류에 닿는 열만 원호를 줄인다.
+      const rho = topRoundMm;
       let ext = Math.max(0, edgeHeight(sEnd - rho * cos0) - hEnd - rho * rise);
-      if ((posterior || wrapAnteriorScrew360) && ext > 1e-4) {
+      if (ext > 1e-4) {
         const minTopRoundWall = posterior ? MIN_POST_WALL_MM : MIN_FRACTURE_SAFE_POST_WALL_MM + 0.015;
         const atCandidate = (candExt: number): number => {
           const candH = hEnd + candExt;
@@ -9628,8 +9679,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         );
       // 스크류 홀과 동심인 원으로 필레를 밀지 않는다. 홀에 닿을 열만 원호를 짧게 해서 벽 밖에서 끝낸다.
       post.push(atTop(h1, s1));
-      let radialRho = posterior && meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
-      if (posterior || wrapAnteriorScrew360) {
+      let radialRho = meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
+      {
         const minFilletR = boreTopR + 0.32;
         const closestR = (useRadial: number): number => {
           let best = Infinity;
@@ -9783,6 +9834,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       taperMean: taperSum / Math.max(taperCols, 1),
       geomIdealTaperDeg,
       lingualBevelMm: appliedLingualBevelMm,
+      labialBevelMm: appliedLabialBevelMm,
       postApex,
       crownApex,
       meanCrownCuspH,
@@ -10346,6 +10398,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           Math.min(shape.lingualBevelMm, Math.max(0.5, finalPostHeightMm - 0.5)) * 10,
         ) / 10
       : null;
+  const reportedLabialBevelMm =
+    shape.labialBevelMm != null
+      ? Math.round(Math.min(shape.labialBevelMm, Math.max(0, finalPostHeightMm - 0.5)) * 10) / 10
+      : null;
   let marginZMinActual = Infinity;
   let marginZMaxActual = -Infinity;
   for (let i = 2; i < marginLoopLocal.length; i += 3) {
@@ -10381,6 +10437,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       postTaperDeg: reportedPostTaperDeg,
       idealPostTaperDeg,
       ...(reportedLingualBevelMm != null ? { postLingualBevelMm: reportedLingualBevelMm } : {}),
+      ...(reportedLabialBevelMm != null ? { postLabialBevelMm: reportedLabialBevelMm } : {}),
       occlusalClearanceMm,
       marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),

@@ -531,7 +531,7 @@ taper2Deg11.predictedCrownWorldGeometry.dispose();
 taper35Deg11.worldGeometry.dispose();
 taper35Deg11.predictedCrownWorldGeometry.dispose();
 
-// 전치부(절치·견치) 포스트 설측 사면 길이(절단에서 떨어진 거리) 및 단일 평면 검증
+// 전치부(절치·견치) 설측 사면은 마진에서 사면이 시작되는 높이. 단일 평면 검증.
 function measureLingualPlaneFlatnessMm(
   positions: Float32Array,
   fixture: {
@@ -604,6 +604,16 @@ function minLingualXAtZ(positions: Float32Array, zSlice: number): number {
     if (positions[i]! < minX) minX = positions[i]!;
   }
   return minX;
+}
+
+function maxLabialXAtZ(positions: Float32Array, zSlice: number): number {
+  let maxX = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (Math.abs(positions[i + 2]! - zSlice) > 0.12) continue;
+    if (Math.abs(positions[i + 1]!) > 0.25) continue;
+    if (positions[i]! > maxX) maxX = positions[i]!;
+  }
+  return maxX;
 }
 
 const works13 = [{ toothNumber: "13", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }];
@@ -686,15 +696,15 @@ console.log(
     },
   }),
 );
-assert.equal(bevelShortInc.metrics.postLingualBevelMm, 1.5, "절치 설측 사면 길이 1.5mm가 반영된다");
-assert.equal(bevelLongInc.metrics.postLingualBevelMm, 4.0, "절치 설측 사면 길이 4.0mm가 반영된다");
+assert.equal(bevelShortInc.metrics.postLingualBevelMm, 1.5, "절치 설측 사면은 마진에서 1.5mm에 시작된다");
+assert.equal(bevelLongInc.metrics.postLingualBevelMm, 4.0, "절치 설측 사면은 마진에서 4.0mm에 시작된다");
 assert.ok(
   bevelOverInc.metrics.postLingualBevelMm! < bevelOverInc.metrics.postHeightMm,
-  `설측 사면 길이(${bevelOverInc.metrics.postLingualBevelMm}mm)는 항상 포스트 높이(${bevelOverInc.metrics.postHeightMm}mm)보다 작다`,
+  `설측 사면 시작 높이(${bevelOverInc.metrics.postLingualBevelMm}mm)는 항상 포스트 높이(${bevelOverInc.metrics.postHeightMm}mm)보다 작다`,
 );
 assert.ok(
-  longLinMidX > shortLinMidX + 0.35,
-  `절단에서 떨어진 설측 사면 거리를 1.5mm→4.0mm로 늘리면 절단 아래 2.3mm 지점 설측이 사면으로 더 깎인다(${shortLinMidX.toFixed(2)} → ${longLinMidX.toFixed(2)})`,
+  shortLinMidX > longLinMidX + 0.35,
+  `마진에서 설측 사면 시작을 1.5mm→4.0mm로 올리면 절단 아래 2.3mm는 아직 축벽이라 설측이 덜 깎인다(${shortLinMidX.toFixed(2)} → ${longLinMidX.toFixed(2)})`,
 );
 assert.ok(
   incPlane.grooveDepth <= 0.03 &&
@@ -711,11 +721,51 @@ const maxLoopR = (loop: Float32Array) => {
 assert.equal(
   maxLoopR(bevelShortInc.marginLoopLocal),
   maxLoopR(bevelLongInc.marginLoopLocal),
-  "설측 사면 길이를 바꿔도 피니시라인 외경은 유지된다",
+  "설측 사면 시작 높이를 바꿔도 피니시라인 외경은 유지된다",
 );
-assert.equal(bevelShortCan.metrics.postLingualBevelMm, 1.5, "견치 설측 사면 길이 1.5mm가 반영된다");
-assert.equal(bevelLongCan.metrics.postLingualBevelMm, 3.6, "견치 설측 사면 길이 3.6mm가 반영된다");
+assert.equal(bevelShortCan.metrics.postLingualBevelMm, 1.5, "견치 설측 사면은 마진에서 1.5mm에 시작된다");
+assert.equal(bevelLongCan.metrics.postLingualBevelMm, 3.6, "견치 설측 사면은 마진에서 3.6mm에 시작된다");
 assert.equal(single35.metrics.postLingualBevelMm ?? null, null, "구치부에는 설측 사면 메트릭이 없다");
+assert.equal(single35.metrics.postLabialBevelMm ?? null, null, "구치부에는 순측 사면 메트릭이 없다");
+const [labialOff, labialOn] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works11,
+    params: { postLabialBevelMm: 0 },
+    explicitParams: { postLabialBevelMm: 0 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works11,
+    params: { postLabialBevelMm: 3.2 },
+    explicitParams: { postLabialBevelMm: 3.2 },
+  }),
+]);
+assert.equal(labialOff.metrics.postLabialBevelMm, 0, "순측 사면을 0으로 지정하면 사면이 없다");
+assert.equal(labialOn.metrics.postLabialBevelMm, 3.2, "순측 사면은 마진에서 3.2mm에 시작된다");
+assert.ok(
+  labialOn.metrics.postLabialBevelMm! < labialOn.metrics.postHeightMm,
+  "순측 사면 시작 높이는 포스트 높이보다 작다",
+);
+let zMaxLabial = -Infinity;
+for (let i = 2; i < labialOff.solidBodyLocalPositions!.length; i += 3) {
+  zMaxLabial = Math.max(zMaxLabial, labialOff.solidBodyLocalPositions![i]!);
+}
+const zLabial = zMaxLabial - 0.8;
+const offLabX = maxLabialXAtZ(labialOff.solidBodyLocalPositions!, zLabial);
+const onLabX = maxLabialXAtZ(labialOn.solidBodyLocalPositions!, zLabial);
+assert.ok(
+  onLabX < offLabX - 0.15,
+  `마진에서 3.2mm에 순측 사면을 두면 절단 아래 0.8mm 순측이 안으로 들어간다(${offLabX.toFixed(2)} → ${onLabX.toFixed(2)})`,
+);
+labialOff.worldGeometry.dispose();
+labialOff.predictedCrownWorldGeometry.dispose();
+labialOn.worldGeometry.dispose();
+labialOn.predictedCrownWorldGeometry.dispose();
 for (const d of [bevelShortInc, bevelLongInc, bevelOverInc, bevelShortCan, bevelLongCan]) {
   d.worldGeometry.dispose();
   d.predictedCrownWorldGeometry.dispose();

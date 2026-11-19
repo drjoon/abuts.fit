@@ -69,6 +69,7 @@ export type AbutmentInfoFieldKey =
   | "postTaperDeg"
   | "postTaperLink"
   | "postLingualBevelMm"
+  | "postLabialBevelMm"
   | "occlusalClearanceMm"
   | "axisSource";
 
@@ -82,6 +83,7 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   postTaperDeg: "테이퍼",
   postTaperLink: "높이·테이퍼 연결",
   postLingualBevelMm: "설측 사면",
+  postLabialBevelMm: "순측 사면",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
@@ -130,6 +132,8 @@ export function formatAbutmentInfoFieldValue(
       return `${cleanNum(m.postTaperDeg, 1)}°`;
     case "postLingualBevelMm":
       return m.postLingualBevelMm != null ? `${cleanNum(m.postLingualBevelMm, 1)}mm` : "-";
+    case "postLabialBevelMm":
+      return m.postLabialBevelMm != null ? `${cleanNum(m.postLabialBevelMm, 1)}mm` : "-";
     case "occlusalClearanceMm":
       return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
     case "axisSource":
@@ -249,6 +253,12 @@ export function computeParamsFromInfoFieldEdit(
       const maxBevel = Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)));
       return {
         postLingualBevelMm: Number(Math.min(maxBevel, Math.max(0.5, num)).toFixed(1)),
+      };
+    }
+    case "postLabialBevelMm": {
+      const maxBevel = Math.max(0, Number((m.postHeightMm - 0.5).toFixed(1)));
+      return {
+        postLabialBevelMm: Number(Math.min(maxBevel, Math.max(0, num)).toFixed(1)),
       };
     }
     case "occlusalClearanceMm": {
@@ -431,11 +441,13 @@ function DetailRow({
   value,
   warning,
   warningTooltip,
+  hint,
 }: {
   label: string;
   value: string;
   warning?: boolean;
   warningTooltip?: ReactNode;
+  hint?: ReactNode;
 }) {
   const valueNode = (
     <span
@@ -449,9 +461,21 @@ function DetailRow({
       {value}
     </span>
   );
+  const labelNode = hint ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="shrink-0 cursor-help text-muted-foreground">{label}</span>
+      </TooltipTrigger>
+      <TooltipContent side="left" align="center" className="z-[520] max-w-[16rem] text-xs leading-relaxed">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  ) : (
+    <span className="shrink-0 text-muted-foreground">{label}</span>
+  );
   const row = (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
+      {labelNode}
       {valueNode}
     </div>
   );
@@ -479,6 +503,7 @@ function EditableNumberRow({
   disabled,
   warning,
   warningTooltip,
+  hint,
   onCommit,
 }: {
   label: string;
@@ -492,6 +517,7 @@ function EditableNumberRow({
   disabled?: boolean;
   warning?: boolean;
   warningTooltip?: ReactNode;
+  hint?: ReactNode;
   onCommit: (next: number) => void;
 }) {
   const formatVal = (v: number) => cleanNum(v, digits);
@@ -749,27 +775,40 @@ function EditableNumberRow({
     </div>
   );
 
+  const labelNode = (
+    <span
+      className={cn(
+        "shrink-0 select-none text-muted-foreground",
+        !disabled && "cursor-ew-resize hover:text-foreground",
+        hint && "cursor-help",
+      )}
+      title={
+        hint || warningTooltip
+          ? undefined
+          : disabled
+            ? undefined
+            : "좌우로 드래그해 값 조절"
+      }
+      onPointerDown={startScrub(false)}
+      onPointerMove={moveScrub}
+      onPointerUp={endScrub}
+      onPointerCancel={endScrub}
+    >
+      {label}
+    </span>
+  );
   const row = (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
-      <span
-        className={cn(
-          "shrink-0 select-none text-muted-foreground",
-          !disabled && "cursor-ew-resize hover:text-foreground",
-        )}
-        title={
-          warningTooltip
-            ? undefined
-            : disabled
-              ? undefined
-              : "좌우로 드래그해 값 조절"
-        }
-        onPointerDown={startScrub(false)}
-        onPointerMove={moveScrub}
-        onPointerUp={endScrub}
-        onPointerCancel={endScrub}
-      >
-        {label}
-      </span>
+      {hint ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{labelNode}</TooltipTrigger>
+          <TooltipContent side="left" align="center" className="z-[520] max-w-[16rem] text-xs leading-relaxed">
+            {hint}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        labelNode
+      )}
       {inputBox}
     </div>
   );
@@ -1622,6 +1661,7 @@ export function PracticeCustomAbutmentDesignTree({
                       editable ? (
                         <EditableNumberRow
                           label="설측 사면"
+                          hint="마진에서 설측 사면이 시작되는 높이입니다."
                           value={m.postLingualBevelMm}
                           min={0.5}
                           max={Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)))}
@@ -1634,7 +1674,42 @@ export function PracticeCustomAbutmentDesignTree({
                       ) : (
                         <DetailRow
                           label="설측 사면"
+                          hint="마진에서 설측 사면이 시작되는 높이입니다."
                           value={`${cleanNum(m.postLingualBevelMm, 1)}mm`}
+                        />
+                      )
+                    ) : null}
+                    {isAnteriorTooth(item.toothNumber) && m.postLabialBevelMm != null ? (
+                      editable ? (
+                        <EditableNumberRow
+                          label="순측 사면"
+                          hint={
+                            <>
+                              마진에서 순측 사면이 시작되는 높이입니다.
+                              <br />
+                              기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
+                            </>
+                          }
+                          value={m.postLabialBevelMm}
+                          min={0}
+                          max={Math.max(0, Number((m.postHeightMm - 0.5).toFixed(1)))}
+                          step={0.1}
+                          digits={1}
+                          suffix="mm"
+                          disabled={rowDisabled}
+                          onCommit={(v) => onEditField?.(item, "postLabialBevelMm", v)}
+                        />
+                      ) : (
+                        <DetailRow
+                          label="순측 사면"
+                          hint={
+                            <>
+                              마진에서 순측 사면이 시작되는 높이입니다.
+                              <br />
+                              기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
+                            </>
+                          }
+                          value={`${cleanNum(m.postLabialBevelMm, 1)}mm`}
                         />
                       )
                     ) : null}

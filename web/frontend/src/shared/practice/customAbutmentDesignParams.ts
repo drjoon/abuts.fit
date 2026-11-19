@@ -14,8 +14,10 @@ export type CustomAbutmentDesignParams = {
   postTaperDeg: number;
   /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
   postTaperLink: number;
-  /** 전치부(절치·견치) 포스트 설측 사면 길이 — 절단에서 떨어진 거리(mm, -1이면 자동). */
+  /** 전치부(절치·견치) 설측 사면 — 마진에서 사면이 시작되는 높이(mm, -1이면 자동). */
   postLingualBevelMm: number;
+  /** 전치부(절치·견치) 순측 사면 — 마진에서 사면이 시작되는 높이(mm). 0이면 없음. */
+  postLabialBevelMm: number;
   /** 악궁 접선 기준 포스트 수평 회전 보정(°, 교합면 시점 +=반시계, -=시계). */
   postYawDeg: number;
   /** 대합치가 없을 때 포스트 높이 보정(mm). 대합치가 있으면 낮추기만 한다. */
@@ -69,6 +71,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 4.2, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
   postLingualBevelMm: { label: "설측 사면", unit: "mm", min: -1, max: 11.5, step: 0.1 },
+  postLabialBevelMm: { label: "순측 사면", unit: "mm", min: 0, max: 11.5, step: 0.1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
@@ -495,6 +498,7 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
     postTaperLink: 1,
     postLingualBevelMm: -1,
+    postLabialBevelMm: 0,
     postYawDeg: 0,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
@@ -542,10 +546,14 @@ function clampDesignParam(
         ? RETENTION_BRIDGE_MAX_TAPER_DEG
         : RETENTION_SINGLE_MAX_TAPER_DEG
       : spec.max;
-  // 절단에서 떨어진 거리(mm). 포스트 높이보다 작게 쓰며, 패널 max는 postHeight−0.5에서 한 번 더 자른다.
+  // 마진에서 사면이 시작되는 높이(mm). 포스트 높이보다 작게 쓰며, 패널 max는 postHeight−0.5에서 한 번 더 자른다.
   if (key === "postLingualBevelMm") {
     if (raw < 0) return -1;
     return Math.round(Math.min(spec.max, Math.max(0.5, raw)) * 10) / 10;
+  }
+  if (key === "postLabialBevelMm") {
+    if (raw <= 0) return 0;
+    return Math.round(Math.min(spec.max, raw) * 10) / 10;
   }
   let next = Math.min(max, Math.max(spec.min, raw));
   if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
