@@ -289,8 +289,8 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   readOnly?: boolean;
   /** 치과(발신) 또는 기공소(수신) 역할 구분 */
   viewerRole?: "practice" | "lab";
-  /** 확정 & 의뢰, 수작업 의뢰, 기공소 확인 후 콜백 */
-  onActionComplete?: (action: "confirmed" | "manual" | "checked") => void;
+  /** 확정 & 의뢰, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
+  onActionComplete?: (action: "confirmed" | "manual" | "checked" | "cancelled") => void;
   /** 검토 대기 의뢰. 헤더에서 한 건씩 넘긴다. */
   reviewItems?: readonly { id: string; label: string }[];
   reviewIndex?: number;
@@ -920,9 +920,13 @@ function formatCancelLeft(ms: number) {
 function CancelWindowTimer({
   deadlineAt,
   closed,
+  onCancel,
+  busy = false,
 }: {
   deadlineAt: string | null;
   closed: boolean;
+  onCancel?: () => void;
+  busy?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -937,10 +941,47 @@ function CancelWindowTimer({
     return () => window.clearInterval(id);
   }, [closed, deadlineAt]);
   const end = deadlineAt ? new Date(deadlineAt).getTime() : Number.NaN;
-  const open = !closed && Number.isFinite(end) && end > now;
+  const open =
+    !closed &&
+    (!deadlineAt || (Number.isFinite(end) && end > now));
+  const label = open
+    ? deadlineAt && Number.isFinite(end)
+      ? `취소 가능 ${formatCancelLeft(end - now)}`
+      : "취소 가능"
+    : closed || (deadlineAt && Number.isFinite(end))
+      ? "취소 마감"
+      : "취소 가능";
+  if (onCancel && open) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            className="h-9 gap-1.5 px-3 text-sm font-semibold tabular-nums"
+            onClick={onCancel}
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <X className="h-4 w-4 shrink-0" />
+            )}
+            <span>{label}</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
+          디자인 확정을 취소합니다.
+          <br />
+          기공소가 확인하기 전까지 취소할 수 있습니다.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
     <div className="flex h-9 items-center px-3 text-sm font-semibold tabular-nums text-foreground">
-      {open ? `취소 가능 ${formatCancelLeft(end - now)}` : closed || Number.isFinite(end) ? "취소 마감" : "취소 가능"}
+      {label}
     </div>
   );
 }
@@ -1102,7 +1143,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [sharedChatSending, setSharedChatSending] = useState(false);
   const sharedChatInputRef = useRef<HTMLInputElement | null>(null);
   const sharedChatScrollRef = useRef<HTMLDivElement | null>(null);
-  const [actionBusy, setActionBusy] = useState<"confirm" | "manual" | "check" | null>(null);
+  const [actionBusy, setActionBusy] = useState<
+    "confirm" | "manual" | "check" | "cancel" | null
+  >(null);
   const [confirmPrefDialogOpen, setConfirmPrefDialogOpen] = useState(false);
   const [confirmPrefChanges, setConfirmPrefChanges] = useState<PendingInfoChange[]>([]);
   const [checkedChangeIds, setCheckedChangeIds] = useState<Set<string>>(new Set());
@@ -4927,6 +4970,84 @@ export function PracticeCustomAbutmentPreviewDialog({
     transferIdParam,
   ]);
 
+  const handlePracticeDesignConfirmCancel = useCallback(async () => {
+    if (isLabViewer || !canChooseAbutmentRoute || remoteMode !== "confirmed") return;
+    if (!authToken || !transferIdParam || actionBusy) return;
+    if (labCheckedAt) return;
+    const deadlineMs = cancelDeadlineAt
+      ? new Date(cancelDeadlineAt).getTime()
+      : Number.NaN;
+    if (cancelDeadlineAt && Number.isFinite(deadlineMs) && deadlineMs <= Date.now()) {
+      toast({
+        title: "취소할 수 없습니다",
+        description: "확정 후 취소 기한이 지났습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const token = String(authToken || "").trim();
+    const tid = transferIdRef.current || transferIdParam;
+    setActionBusy("cancel");
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        code?: string;
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(tid)}/custom-abutment-process/cancel`,
+        method: "POST",
+        token,
+      });
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { message?: string; code?: string })
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "디자인 확정 취소 실패",
+          description:
+            String(body.message || "").trim() ||
+            "디자인 확정을 취소하는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setRemoteMode(null);
+      setCancelDeadlineAt(null);
+      toast({
+        title: "디자인 확정 취소",
+        description:
+          String(body.message || "").trim() ||
+          "디자인 확정을 취소했습니다. 다시 확정할 수 있습니다.",
+      });
+      onActionComplete?.("cancelled");
+    } catch (err) {
+      toast({
+        title: "디자인 확정 취소 실패",
+        description:
+          err instanceof Error
+            ? err.message
+            : "디자인 확정을 취소하는 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }, [
+    actionBusy,
+    authToken,
+    cancelDeadlineAt,
+    canChooseAbutmentRoute,
+    isLabViewer,
+    labCheckedAt,
+    onActionComplete,
+    remoteMode,
+    toast,
+    transferIdParam,
+  ]);
+
   const handleClickConfirmAndOrder = useCallback(() => {
     if (actionBusy || designedListRef.current.length === 0) return;
     if (isLabViewer) {
@@ -6153,6 +6274,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                       <CancelWindowTimer
                         deadlineAt={cancelDeadlineAt}
                         closed={Boolean(labCheckedAt)}
+                        busy={actionBusy === "cancel"}
+                        onCancel={() => void handlePracticeDesignConfirmCancel()}
                       />
                     ) : null}
                     {canChooseAbutmentRoute && remoteMode !== "confirmed" ? (
