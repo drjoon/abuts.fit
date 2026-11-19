@@ -6042,60 +6042,52 @@ export function PracticeCustomAbutmentPreviewDialog({
                         closed={Boolean(labCheckedAt)}
                       />
                     ) : null}
-                    {canChooseAbutmentRoute && remoteMode !== "manual" && remoteMode !== "confirmed" ? (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={!ready || designedList.length === 0 || actionBusy !== null || redesigning.length > 0}
-                              className="h-9 gap-1.5 px-4 text-sm font-semibold"
-                              onClick={handleClickConfirmAndOrder}
-                            >
-                              {actionBusy === "confirm" ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Check className="h-4 w-4" />
-                              )}
-                              <span>디자인 확정</span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                            수행 기공소가 검토·수정한 뒤 제조에 넘깁니다.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : null}
                     {canChooseAbutmentRoute && remoteMode !== "confirmed" ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={manualChatOpen ? "secondary" : "outline"}
-                            disabled={!transferIdParam || actionBusy !== null}
-                            className={cn(
-                              "h-9 gap-1.5 px-4 text-sm font-semibold",
-                              manualChatOpen &&
-                                "border border-primary/50 bg-primary/10 text-primary hover:bg-primary/15",
-                            )}
-                            onClick={() => void handleClickManualDesign()}
-                          >
-                            {actionBusy === "manual" ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Hand className="h-4 w-4" />
-                            )}
-                            <span>{manualChatOpen ? "수작업 의뢰 전달" : "수작업 의뢰"}</span>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                          수행 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
-                          <br />
-                          어벗 비용은 기공소 수가로 바뀝니다.
-                        </TooltipContent>
-                      </Tooltip>
+                      manualChatOpen ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!transferIdParam || actionBusy !== null}
+                          className="h-9 gap-1.5 px-4 text-sm font-semibold"
+                          onClick={() => void handleClickManualDesign()}
+                        >
+                          {actionBusy === "manual" ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Hand className="h-4 w-4" />
+                          )}
+                          <span>수작업 의뢰 전달</span>
+                        </Button>
+                      ) : remoteMode !== "manual" ? (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={
+                                  !ready ||
+                                  designedList.length === 0 ||
+                                  actionBusy !== null ||
+                                  redesigning.length > 0
+                                }
+                                className="h-9 gap-1.5 px-4 text-sm font-semibold"
+                                onClick={handleClickConfirmAndOrder}
+                              >
+                                {actionBusy === "confirm" ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
+                                <span>디자인 확정</span>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
+                              어벗 비용·진행 방식을 고른 뒤 확정합니다.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : null
                     ) : null}
                     {isLabViewer && remoteMode === "confirmed" && !labCheckedAt ? (
                       <Tooltip>
@@ -6217,11 +6209,17 @@ export function PracticeCustomAbutmentPreviewDialog({
             수작업 의뢰는 수행 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
           </p>
         </DialogHeader>
-        <div className="space-y-2">
-          <div
+        <div className="space-y-2" role="radiogroup" aria-label="어벗 진행 방식">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={routeCostAction === "confirm"}
+            onClick={() => setRouteCostAction("confirm")}
             className={cn(
-              "rounded-lg border px-3 py-2.5",
-              routeCostAction === "confirm" ? "border-primary bg-primary/5" : "bg-background",
+              "w-full rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/30",
+              routeCostAction === "confirm"
+                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                : "bg-background",
             )}
           >
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -6237,11 +6235,17 @@ export function PracticeCustomAbutmentPreviewDialog({
               <br />
               기공소가 이 화면에서 수정한 뒤 제조에 넘깁니다.
             </p>
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={routeCostAction === "manual"}
+            onClick={() => setRouteCostAction("manual")}
             className={cn(
-              "rounded-lg border px-3 py-2.5",
-              routeCostAction === "manual" ? "border-primary bg-primary/5" : "bg-background",
+              "w-full rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/30",
+              routeCostAction === "manual"
+                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                : "bg-background",
             )}
           >
             <div className="flex items-start justify-between gap-3 text-sm">
@@ -6267,7 +6271,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               <br />
               기공소 프로그램으로 처음부터 작업합니다.
             </p>
-          </div>
+          </button>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Checkbox
