@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-11-19: 업로드 메뉴 — 보철→보철 STL. 어벗·보철 아래 설명 문구 제거.
 // - 2026-11-19: 어벗·보철 업로드를 「업로드」한 버튼+선택 팝오버로 통합.
 // - 2026-09-26: 보철 업로드 버튼 — 남은 보철 디자인 파일이 있을 때.
 // - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
@@ -280,11 +281,8 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const prostheticUploadLabel =
     state.pendingProstheticCount > 1
-      ? `보철 (${state.pendingProstheticCount})`
-      : "보철";
-  const prostheticUploadHint = state.prostheticSlotLabels
-    ? `${state.prostheticSlotLabels} 디자인 파일을 올리면 작업완료됩니다.`
-    : "보철 디자인 파일을 올리면 작업완료됩니다.";
+      ? `보철 STL (${state.pendingProstheticCount})`
+      : "보철 STL";
   const uploadBoth = showAbutmentUpload && showProstheticUpload;
   const uploadSingle =
     (showAbutmentUpload && !showProstheticUpload) ||
@@ -307,7 +305,7 @@ export function PracticeLabReceiveWorkActionsBar({
           <ChevronDown className="h-3 w-3 opacity-80" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-52 p-1.5" data-no-drag>
+      <PopoverContent align="end" className="w-44 p-1.5" data-no-drag>
         <div className="flex flex-col gap-0.5">
           <Button
             type="button"
@@ -324,9 +322,6 @@ export function PracticeLabReceiveWorkActionsBar({
             <Upload className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">어벗 STL</span>
           </Button>
-          <p className="px-2 pb-1 text-[0.6875rem] leading-snug text-muted-foreground">
-            {LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
-          </p>
           <Button
             type="button"
             variant="ghost"
@@ -342,40 +337,29 @@ export function PracticeLabReceiveWorkActionsBar({
             <Upload className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">{prostheticUploadLabel}</span>
           </Button>
-          <p className="px-2 pb-1 text-[0.6875rem] leading-snug text-muted-foreground">
-            {prostheticUploadHint}
-          </p>
         </div>
       </PopoverContent>
     </Popover>
   ) : uploadSingle ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          variant="default"
-          disabled={busy}
-          className={cn(ctaButtonClass, "gap-1")}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (showAbutmentUpload) {
-              onAbutmentStlUpload?.(event);
-              return;
-            }
-            onProstheticUpload?.(event);
-          }}
-        >
-          <Upload className="h-3.5 w-3.5" />
-          {busy ? "처리 중..." : "업로드"}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs text-xs">
-        {showAbutmentUpload
-          ? `${LAB_RECEIVE_ABUTMENT_UPLOAD_HINT} 페이지 어디에나 파일을 놓아도 됩니다.`
-          : prostheticUploadHint}
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      type="button"
+      size="sm"
+      variant="default"
+      disabled={busy}
+      className={cn(ctaButtonClass, "gap-1")}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (showAbutmentUpload) {
+          onAbutmentStlUpload?.(event);
+          return;
+        }
+        onProstheticUpload?.(event);
+      }}
+      aria-label={showAbutmentUpload ? "어벗 STL 업로드" : "보철 STL 업로드"}
+    >
+      <Upload className="h-3.5 w-3.5" />
+      {busy ? "처리 중..." : "업로드"}
+    </Button>
   ) : null;
 
   // 부분 업로드(미완료)만 별도 버튼 — 완료 줄 클릭이 SSOT

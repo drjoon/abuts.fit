@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-11-19: menu — 아노다이징도 유지홈처럼 간단 모달 On/Off. 팝오버 인라인·안내 문구 제거.
 // - 2026-11-19: menu — 설정 아이콘 하나 + 팝오버(SW·유지홈·아노 아이콘·라벨).
 // - 2026-10-24: 수신 채팅 SW·유지홈·아노는 아이콘만. 문구는 호버.
 // - 2026-10-24: 수신 채팅에서 어벗츠 정품 버튼을 뺀다. SW·유지홈·아노는 그대로 둔다.
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { anodizingPopoverNote } from "@/shared/anodizing/anodizingOptionCopy";
+import { AnodizingSettingsDialog } from "@/shared/components/practice/AnodizingSettingsDialog";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
 import { ShortPostRetentionDialog } from "@/shared/components/practice/ShortPostRetentionDialog";
 import type { ShortPostRetentionChoice } from "@/pages/requestor/new_request/utils/shortPostRetention";
@@ -66,6 +68,7 @@ export function RequestSettingsToolbar({
 }: RequestSettingsToolbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
+  const [anodizingOpen, setAnodizingOpen] = useState(false);
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
   const anodizingFull = anodizingEnabled ? "아노다이징 On" : "아노다이징 Off";
@@ -137,48 +140,25 @@ export function RequestSettingsToolbar({
                   <span className="min-w-0 truncate">{retentionLabel}</span>
                 </Button>
               ) : null}
-              <div className="rounded-md px-1 py-1">
-                <div className="mb-1 flex items-center gap-2 px-1 text-xs text-muted-foreground">
-                  <Droplets
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      anodizingEnabled ? "text-sky-600" : "opacity-50",
-                    )}
-                  />
-                  <span>아노다이징</span>
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant={anodizingEnabled ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 flex-1 px-2 text-xs"
-                    disabled={anodizingSaving}
-                    onClick={() => {
-                      setAnodizing(true);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    On
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={!anodizingEnabled ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-7 flex-1 px-2 text-xs"
-                    disabled={anodizingSaving}
-                    onClick={() => {
-                      setAnodizing(false);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    Off
-                  </Button>
-                </div>
-                <div className="mt-1 px-1 text-[0.6875rem] leading-snug text-muted-foreground">
-                  {anodizingPopoverNote(anodizingEnabled ? "on" : "off")}
-                </div>
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 justify-start gap-2 px-2"
+                disabled={anodizingSaving}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setAnodizingOpen(true);
+                }}
+              >
+                <Droplets
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0",
+                    anodizingEnabled ? "text-sky-600" : "opacity-50",
+                  )}
+                />
+                <span className="min-w-0 truncate">{anodizingFull}</span>
+              </Button>
             </div>
           </PopoverContent>
         </Popover>
@@ -193,6 +173,16 @@ export function RequestSettingsToolbar({
             }}
           />
         ) : null}
+        <AnodizingSettingsDialog
+          open={anodizingOpen}
+          onOpenChange={setAnodizingOpen}
+          value={anodizingEnabled !== false}
+          saving={anodizingSaving}
+          onConfirm={(enabled) => {
+            setAnodizing(enabled);
+            setAnodizingOpen(false);
+          }}
+        />
       </div>
     );
   }
