@@ -493,10 +493,13 @@ function createFixtureAnalogGeometry(originDiameterMm: number, lengthMm = 9.5): 
 export function PracticeCustomAbutmentPreviewButton({
   disabled,
   className,
+  onOpen,
   ...dialogProps
 }: Omit<PracticeCustomAbutmentPreviewDialogProps, "open" | "onOpenChange"> & {
   disabled?: boolean;
   className?: string;
+  /** 있으면 이 버튼은 열기만 하고, 다이얼로그는 부모가 연다. */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -511,12 +514,18 @@ export function PracticeCustomAbutmentPreviewButton({
           "h-7 shrink-0 gap-1 border-primary/45 bg-background px-2.5 text-xs font-medium text-primary hover:bg-primary/10 hover:text-primary",
           className,
         )}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          if (onOpen) {
+            onOpen();
+            return;
+          }
+          setOpen(true);
+        }}
       >
         <Sparkles className="h-3.5 w-3.5 shrink-0" />
         <span>디자인</span>
       </Button>
-      {open ? (
+      {open && !onOpen ? (
         <PracticeCustomAbutmentPreviewDialog
           {...dialogProps}
           open={open}

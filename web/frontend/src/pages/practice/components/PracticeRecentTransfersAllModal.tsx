@@ -62,7 +62,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronRight, Hexagon, Search, Trash2, X } from "lucide-react";
+import { ChevronRight, Hexagon, Pencil, Search, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
@@ -149,7 +149,10 @@ import {
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
 import {
+  ABUTMENT_ORDER_BADGE_KEY,
+  ABUTMENT_REVIEW_BADGE_KEY,
   isPtxAbutmentDesignAwaitingDentist,
+  isPtxAbutmentManualOrder,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
@@ -248,7 +251,10 @@ type PracticeRecentTransfersAllModalProps = {
   calendarRefreshNonce?: number;
   onSelectTransfer: (
     transfer: PracticeRecentTransferItem,
-    options?: { preferredDockSide?: PracticeTransferPanelDockSide },
+    options?: {
+      preferredDockSide?: PracticeTransferPanelDockSide;
+      panel?: "chat" | "detail";
+    },
   ) => void;
   /** 어벗 디자인 검토 대기 한 줄 — 디자인 모달을 연다 */
   onReviewAbutmentDesigns?: (
@@ -791,6 +797,7 @@ export function PracticeRecentTransfersAllModal({
           practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
           designReadyAt: transfer.designReadyAt,
           designFileCount: transfer.designFileCount,
+          manualRequested: transfer.manualRequested,
         }),
       };
     });
@@ -922,6 +929,7 @@ export function PracticeRecentTransfersAllModal({
             practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
             designReadyAt: transfer.designReadyAt,
             designFileCount: transfer.designFileCount,
+            manualRequested: transfer.manualRequested,
           })
         ) {
           return null;
@@ -966,6 +974,16 @@ export function PracticeRecentTransfersAllModal({
 
   const abutmentDesignAwaitingCount = abutmentDesignAwaitingItems.length;
 
+  const abutmentManualOrderItems = useMemo(() => {
+    return visibleGroupedTransfers.filter((transfer) =>
+      isPtxAbutmentManualOrder({
+        status: transfer.status,
+        hasCustomAbutment: transfer.hasCustomAbutment,
+        manualRequested: transfer.manualRequested,
+      }),
+    );
+  }, [visibleGroupedTransfers]);
+
   const transferByNoticeId = useMemo(() => {
     const map = new Map<string, (typeof visibleGroupedTransfers)[number]>();
     for (const transfer of visibleGroupedTransfers) {
@@ -1005,9 +1023,31 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      // 치과 「어벗」=디자인 확정 대기. 클릭 시 디자인 화면에서 하나씩 확정.
-      if (filterKey === "작업완료") {
+      // 「어벗 검토」=디자인 확정 대기. 디자인 화면에서 하나씩 확정.
+      if (key === ABUTMENT_REVIEW_BADGE_KEY) {
         openAbutmentDesignReview();
+        return;
+      }
+      // 「어벗 의뢰」=수작업 의뢰. 채팅에서 확인.
+      if (key === ABUTMENT_ORDER_BADGE_KEY) {
+        const queue = abutmentManualOrderItems;
+        if (queue.length === 0) return;
+        const transferIdOf = (row: PracticeRecentTransferItem) =>
+          String(row.transferId || row.id || "").trim();
+        const lastId = unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] || "";
+        let candidates = queue;
+        if (lastId) {
+          const withoutLast = queue.filter((row) => transferIdOf(row) !== lastId);
+          if (withoutLast.length > 0) candidates = withoutLast;
+        }
+        const transfer = candidates[0];
+        if (!transfer) return;
+        unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] = transferIdOf(transfer);
+        focusCalendarTransfer(transfer);
+        onSelectTransfer(transfer, {
+          ...(viewMode === "list" ? { preferredDockSide: "right" as const } : {}),
+          panel: "chat",
+        });
         return;
       }
       // 배지 본문 건수와 동일하게 순회(완료·취소·어벗은 미열람만).
@@ -1055,6 +1095,7 @@ export function PracticeRecentTransfersAllModal({
       );
     },
     [
+      abutmentManualOrderItems,
       badgeClearedIds,
       badgeQueueTransfers,
       dateKey,
@@ -1067,15 +1108,26 @@ export function PracticeRecentTransfersAllModal({
   );
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return PRACTICE_RECENT_STATUS_BADGES.map((item) => {
-      // 치과 「어벗」뱃지 건수 SSOT = 디자인 확정 대기(예전의 CA 업로드·미열람 집계 아님).
-      const isAbutmentReview = item.filter === "작업완료";
-      if (isAbutmentReview) {
-        const awaiting = abutmentDesignAwaitingCount > 0;
-        return {
+    const items: PracticeStatusFilterBadgeItem[] = [];
+    for (const item of PRACTICE_RECENT_STATUS_BADGES) {
+      if (item.filter !== "작업완료") {
+        items.push({
           key: item.filter,
           label: item.label,
           tone: resolvePracticeStatusFilterBadgeTone(item.filter),
+          count: statusCounts[item.countKey],
+          unreadCount: statusUnreadCounts[item.countKey],
+          tooltip: item.tooltip,
+        });
+        continue;
+      }
+      const awaiting = abutmentDesignAwaitingCount > 0;
+      items.push(
+        {
+          key: ABUTMENT_REVIEW_BADGE_KEY,
+          label: "어벗 검토",
+          icon: Hexagon,
+          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
           count: abutmentDesignAwaitingCount,
           unreadCount: 0,
           tooltip:
@@ -1084,18 +1136,26 @@ export function PracticeRecentTransfersAllModal({
           attentionClassName: awaiting
             ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
             : undefined,
-        };
-      }
-      return {
-        key: item.filter,
-        label: item.label,
-        tone: resolvePracticeStatusFilterBadgeTone(item.filter),
-        count: statusCounts[item.countKey],
-        unreadCount: statusUnreadCounts[item.countKey],
-        tooltip: item.tooltip,
-      };
-    });
-  }, [abutmentDesignAwaitingCount, statusCounts, statusUnreadCounts]);
+        },
+        {
+          key: ABUTMENT_ORDER_BADGE_KEY,
+          label: "어벗 의뢰",
+          icon: Pencil,
+          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
+          count: abutmentManualOrderItems.length,
+          unreadCount: 0,
+          tooltip:
+            "수작업으로 의뢰한 커스텀어벗입니다. 클릭하면 채팅에서 확인합니다.",
+        },
+      );
+    }
+    return items;
+  }, [
+    abutmentDesignAwaitingCount,
+    abutmentManualOrderItems.length,
+    statusCounts,
+    statusUnreadCounts,
+  ]);
 
   const statusBadges = (
     <PracticeStatusFilterBadges
@@ -1316,6 +1376,7 @@ export function PracticeRecentTransfersAllModal({
                           practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
                           designReadyAt: transfer.designReadyAt,
                           designFileCount: transfer.designFileCount,
+                          manualRequested: transfer.manualRequested,
                         }) ? (
                           <span
                             className={cn(

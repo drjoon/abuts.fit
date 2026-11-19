@@ -50,6 +50,8 @@ export type PracticeStatusFilterBadgeItem = {
   key: string;
   label: string;
   tone: PracticeCalendarStatusTone;
+  /** 있으면 상태 톤 아이콘 대신 이 아이콘 */
+  icon?: LucideIcon;
   /** 의뢰·작업시작=전체 / 완료·취소·어벗=미열람 — 본문 숫자 */
   count: number;
   /** 미확인(채팅) — 빨간 카운터 */
@@ -152,7 +154,7 @@ export function PracticeStatusFilterBadges({
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
         const withGap = gapKeySet.has(item.key);
-        const Icon = STATUS_BADGE_ICON[item.tone] || ClipboardList;
+        const Icon = item.icon || STATUS_BADGE_ICON[item.tone] || ClipboardList;
 
         return (
           <Tooltip key={item.key}>

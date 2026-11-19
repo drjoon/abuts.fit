@@ -143,6 +143,8 @@ export type PracticeRecentRequestItem = {
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
   labDesignConfirmedAt?: string | null;
+  /** 치과가 수작업 디자인을 기공소에 의뢰함 */
+  manualRequested?: boolean;
   /** platform | lab | pending. 비우면 레거시 기공소 수가. */
   abutmentFeeRoute?: "platform" | "lab" | "pending" | null;
   /** 확정 후 기공소 확인·의뢰자 취소 마감(ISO). */
@@ -241,6 +243,8 @@ export type PracticeRecentTransferItem = {
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
   labDesignConfirmedAt?: string | null;
+  /** 치과가 수작업 디자인을 기공소에 의뢰함 */
+  manualRequested?: boolean;
   abutmentFeeRoute?: "platform" | "lab" | "pending" | null;
   abutmentCancelDeadlineAt?: string | null;
   /** 커스텀어벗 치아별 제조사 공정(준비·가공·세척.패킹·포장.발송·추적관리) */
@@ -517,10 +521,11 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   tooltip: string;
 }>;
 
-/** 완료·어벗 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소 | 어벗 */
+/** 완료·어벗 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소 | 어벗 검토·어벗 의뢰 */
 export const PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS = [
   "도착완료",
   "작업완료",
+  "abutmentReview",
 ] as const;
 
 /** 완료·취소·어벗 — 상세를 한 번 열면 배지 본문 건수에서 제외. */
@@ -1017,6 +1022,11 @@ export const mapMyPracticeTransferApiRows = (
         labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
           ? String(productionRaw.labDesignConfirmedAt)
           : null,
+        manualRequested: (() => {
+          const manual = productionRaw?.customAbutmentManualDesign;
+          if (!manual || typeof manual !== "object") return false;
+          return Boolean(String((manual as { at?: unknown }).at || "").trim());
+        })(),
         abutmentFeeRoute:
           productionRaw?.abutmentFeeRoute === "platform" ||
           productionRaw?.abutmentFeeRoute === "lab" ||
@@ -1445,6 +1455,8 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       openRows.find((r) => r.labDesignConfirmedAt)?.labDesignConfirmedAt ||
       prev.labDesignConfirmedAt ||
       null,
+    manualRequested:
+      openRows.some((r) => r.manualRequested) || Boolean(prev.manualRequested),
     abutmentFeeRoute:
       openRows.find((r) => r.abutmentFeeRoute)?.abutmentFeeRoute ||
       prev.abutmentFeeRoute ||
@@ -1727,6 +1739,7 @@ export const groupPracticeRecentRequests = (
         ),
         practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
         labDesignConfirmedAt: req.labDesignConfirmedAt || null,
+        manualRequested: Boolean(req.manualRequested),
         abutmentFeeRoute: req.abutmentFeeRoute || null,
         abutmentCancelDeadlineAt: req.abutmentCancelDeadlineAt || null,
         abutmentToothStages: req.abutmentToothStages || [],
@@ -1907,6 +1920,7 @@ export const groupPracticeRecentRequests = (
     if (req.labDesignConfirmedAt) {
       existing.labDesignConfirmedAt = req.labDesignConfirmedAt;
     }
+    if (req.manualRequested) existing.manualRequested = true;
     if (req.abutmentFeeRoute) existing.abutmentFeeRoute = req.abutmentFeeRoute;
     if (req.abutmentCancelDeadlineAt) {
       existing.abutmentCancelDeadlineAt = req.abutmentCancelDeadlineAt;

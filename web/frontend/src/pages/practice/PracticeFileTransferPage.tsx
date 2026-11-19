@@ -6332,6 +6332,7 @@ export const PracticeFileTransferPage = ({
             practiceDesignConfirmedAt: transfer.practiceDesignConfirmedAt,
             designReadyAt: transfer.designReadyAt,
             designFileCount: transfer.designFileCount,
+            manualRequested: transfer.manualRequested,
           })
         ) {
           continue;
@@ -11538,6 +11539,9 @@ export const PracticeFileTransferPage = ({
             const openId = String(selectedTransfer?.transferId || selectedTransfer?.id || "").trim();
             const nextId = String(transfer.transferId || transfer.id || "").trim();
             if (transferDialogOpen && openId && openId === nextId && selectedTransfer) {
+              if (options?.panel === "chat" || options?.panel === "detail") {
+                setAlertOpenPanelTab(options.panel);
+              }
               setSelectedTransfer({
                 ...selectedTransfer,
                 arrivalDate: transfer.arrivalDate || selectedTransfer.arrivalDate,
@@ -11549,6 +11553,9 @@ export const PracticeFileTransferPage = ({
             }
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
+              ...(options?.panel === "chat" || options?.panel === "detail"
+                ? { panel: options.panel }
+                : {}),
               ...(options && "preferredDockSide" in options
                 ? { preferredDockSide: options.preferredDockSide ?? null }
                 : {}),

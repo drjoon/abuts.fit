@@ -225,7 +225,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Search, Truck, X } from "lucide-react";
+import { ChevronRight, Hexagon, Pencil, Search, Truck, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import {
@@ -329,7 +329,10 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import { PracticeCustomAbutmentPreviewButton } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
+import {
+  PracticeCustomAbutmentPreviewButton,
+  PracticeCustomAbutmentPreviewDialog,
+} from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
   collectOccupiedLabBasketTags,
   normalizeLabBasketTag,
@@ -424,7 +427,14 @@ import {
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
 import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practice/practiceTransferPartialAbutmentUpload";
-import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import {
+  ABUTMENT_ORDER_BADGE_KEY,
+  ABUTMENT_REVIEW_BADGE_KEY,
+  isPtxAbutmentDesignAwaitingDentist,
+  isPtxAbutmentDesignReviewForLab,
+  isPtxAbutmentManualOrder,
+  PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
 import {
   parseLabTechnician,
@@ -691,6 +701,101 @@ const formatLabReceiveMobileCreatedAt = (value: unknown) => {
 };
 
 type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
+
+function labTransferHasDesignScan(transfer: ReceivedPracticeTransfer) {
+  return [...(transfer.files || []), ...(transfer.production?.labWorkScanFiles || [])].some(
+    (file) => String(file.s3Key || "").trim(),
+  );
+}
+
+function LabAbutmentDesignReviewDialog({
+  open,
+  items,
+  index,
+  rail,
+  authToken,
+  catalog,
+  onOpenChange,
+  onIndexChange,
+  onChecked,
+}: {
+  open: boolean;
+  items: ReceivedPracticeTransfer[];
+  index: number;
+  rail: boolean;
+  authToken: string | null;
+  catalog: Parameters<typeof resolvePracticeTransferToothWorks>[1];
+  onOpenChange: (open: boolean) => void;
+  onIndexChange: (index: number) => void;
+  onChecked: (transferId: string) => void;
+}) {
+  const entry = items[index];
+  if (!open || !entry) return null;
+  const toothWorks = resolvePracticeTransferToothWorks(entry, catalog);
+  const label = labAbutmentDesignCaseLabel(entry, toothWorks);
+  const dates = [
+    entry.orderDate ? `주문 ${entry.orderDate}` : "",
+    entry.arrivalDate ? `도착 ${entry.arrivalDate}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const toFiles = (files: ReceivedPracticeFile[] | null | undefined) =>
+    (files || []).map((file) => ({
+      fileName: file.originalName,
+      s3Key: String(file.s3Key || "").trim(),
+      size: Number(file.size || 0),
+      scanRole: file.scanRole || null,
+      uploadedAt: file.uploadedAt || null,
+    }));
+  return (
+    <PracticeCustomAbutmentPreviewDialog
+      key={String(entry.transferId || entry._id)}
+      open={open}
+      onOpenChange={onOpenChange}
+      viewerRole="lab"
+      authToken={authToken}
+      caseTitle={label || undefined}
+      caseDatesLabel={dates || undefined}
+      patientName={resolvePracticeTransferListPatientName(entry)}
+      toothWorks={toothWorks}
+      files={toFiles(entry.files)}
+      workScanFiles={toFiles(entry.production?.labWorkScanFiles)}
+      transferId={String(entry.transferId || entry._id || "")}
+      reviewItems={
+        rail
+          ? items.map((item) => ({
+              id: String(item.transferId || item._id),
+              label:
+                labAbutmentDesignCaseLabel(
+                  item,
+                  resolvePracticeTransferToothWorks(item, catalog),
+                ) || String(item.transferId || ""),
+            }))
+          : []
+      }
+      reviewIndex={index}
+      onReviewIndexChange={onIndexChange}
+      onActionComplete={(action) => {
+        if (action !== "checked") return;
+        onChecked(String(entry.transferId || entry._id || ""));
+      }}
+    />
+  );
+}
+
+function labAbutmentDesignCaseLabel(
+  transfer: ReceivedPracticeTransfer,
+  toothWorks: ReturnType<typeof resolvePracticeTransferToothWorks>,
+) {
+  const clinic = String(transfer.practice?.businessName || "").trim();
+  const patient = resolvePracticeTransferListPatientName(transfer);
+  const doctor = String(
+    parsePracticeTransferMemoMetaShared(String(transfer.rawTransferMemo || "")).doctorName ||
+      "",
+  ).trim();
+  const teeth = formatToothNumbersForCard(toothWorks);
+  return [clinic, patient, doctor, teeth].filter(Boolean).join(" · ");
+}
 
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
@@ -9148,16 +9253,152 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
+  const [labDesignOpen, setLabDesignOpen] = useState(false);
+  const [labDesignItems, setLabDesignItems] = useState<ReceivedPracticeTransfer[]>([]);
+  const [labDesignIndex, setLabDesignIndex] = useState(0);
+  const [labDesignRail, setLabDesignRail] = useState(false);
+  const labDesignOpenSeqRef = useRef(0);
+
+  const labAbutmentInput = useCallback(
+    (transfer: ReceivedPracticeTransfer) => ({
+      status: getTransferDisplayStatus(transfer),
+      hasCustomAbutment:
+        Boolean(transfer.hasCustomAbutment) ||
+        practiceTransferHasCustomAbutment(transfer, implantCatalog),
+      abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+      practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+      labDesignConfirmedAt: transfer.production?.labDesignConfirmedAt,
+      designReadyAt: transfer.production?.designReadyAt,
+      designFileCount: transfer.production?.designFileCount,
+      manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
+    }),
+    [implantCatalog],
+  );
+
+  const labDesignReviewTransfers = useMemo(() => {
+    return baseFilteredTransfers.filter((transfer) => {
+      if (isGuideTourDemoTransfer(transfer)) return false;
+      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return false;
+      return isPtxAbutmentDesignReviewForLab(labAbutmentInput(transfer));
+    });
+  }, [baseFilteredTransfers, labAbutmentInput, user?.role]);
+
+  const labManualOrderTransfers = useMemo(() => {
+    return baseFilteredTransfers.filter((transfer) => {
+      if (isGuideTourDemoTransfer(transfer)) return false;
+      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return false;
+      return isPtxAbutmentManualOrder(labAbutmentInput(transfer));
+    });
+  }, [baseFilteredTransfers, labAbutmentInput, user?.role]);
+
+  const hydrateLabTransferForDesign = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      const id = String(transfer.transferId || "").trim();
+      if (!id || !token || labTransferHasDesignScan(transfer)) return transfer;
+      const qs = new URLSearchParams({ transferId: id, limit: "8" });
+      const res = await apiFetch<unknown>({
+        path: `/api/practice/transfers/received?${qs.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return transfer;
+      const parsed = parseTransfersBody(res.data);
+      const mapped = mapTransferRows(parsed.transfers);
+      return (
+        mapped.find((row) => String(row.transferId || "").trim() === id) ||
+        mapped[0] ||
+        transfer
+      );
+    },
+    [mapTransferRows, parseTransfersBody, token],
+  );
+
+  const openLabAbutmentDesign = useCallback(
+    async (
+      items: ReceivedPracticeTransfer[],
+      startIndex: number,
+      rail: boolean,
+    ) => {
+      if (items.length === 0) return;
+      const safe = Math.min(Math.max(0, startIndex), items.length - 1);
+      const seq = ++labDesignOpenSeqRef.current;
+      const hydratedFirst = await hydrateLabTransferForDesign(items[safe]!);
+      if (labDesignOpenSeqRef.current !== seq) return;
+      const next = items.map((item, index) =>
+        index === safe ? hydratedFirst : item,
+      );
+      setLabDesignRail(rail);
+      setLabDesignItems(next);
+      setLabDesignIndex(safe);
+      setLabDesignOpen(true);
+      void Promise.all(
+        next.map(async (item, index) => {
+          if (index === safe) return item;
+          return hydrateLabTransferForDesign(item);
+        }),
+      ).then((hydrated) => {
+        if (labDesignOpenSeqRef.current !== seq) return;
+        setLabDesignItems((prev) => {
+          if (prev.length !== hydrated.length) return prev;
+          return hydrated.map((item, index) =>
+            index === safe ? prev[index] || item : item,
+          );
+        });
+      });
+    },
+    [hydrateLabTransferForDesign],
+  );
+
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
-      key: item.filter,
-      label: item.label,
-      tone: resolvePracticeStatusFilterBadgeTone(item.filter),
-      count: statusCounts[item.countKey],
-      unreadCount: statusUnreadCounts[item.countKey],
-      tooltip: item.tooltip,
-    }));
-  }, [statusCounts, statusUnreadCounts]);
+    const items: PracticeStatusFilterBadgeItem[] = [];
+    for (const item of LAB_RECEIVE_STATUS_BADGES) {
+      if (item.filter !== "작업완료") {
+        items.push({
+          key: item.filter,
+          label: item.label,
+          tone: resolvePracticeStatusFilterBadgeTone(item.filter),
+          count: statusCounts[item.countKey],
+          unreadCount: statusUnreadCounts[item.countKey],
+          tooltip: item.tooltip,
+        });
+        continue;
+      }
+      const reviewCount = labDesignReviewTransfers.length;
+      items.push(
+        {
+          key: ABUTMENT_REVIEW_BADGE_KEY,
+          label: "어벗 검토",
+          icon: Hexagon,
+          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
+          count: reviewCount,
+          unreadCount: 0,
+          tooltip:
+            "치과가 확정한 디자인입니다. 클릭하면 디자인 화면에서 검토합니다.",
+          attention: reviewCount > 0,
+          attentionClassName:
+            reviewCount > 0
+              ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+              : undefined,
+        },
+        {
+          key: ABUTMENT_ORDER_BADGE_KEY,
+          label: "어벗 의뢰",
+          icon: Pencil,
+          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
+          count: labManualOrderTransfers.length,
+          unreadCount: 0,
+          tooltip:
+            "치과가 수작업으로 의뢰한 커스텀어벗입니다. 클릭하면 채팅에서 확인합니다.",
+        },
+      );
+    }
+    return items;
+  }, [
+    labDesignReviewTransfers.length,
+    labManualOrderTransfers.length,
+    statusCounts,
+    statusUnreadCounts,
+  ]);
 
   const pendingWorkNoticeTotal = useMemo(() => {
     return baseFilteredTransfers.reduce((sum, transfer) => {
@@ -9372,6 +9613,29 @@ export function RequestorPracticeReceivePage({
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
+      if (key === ABUTMENT_REVIEW_BADGE_KEY) {
+        if (labDesignReviewTransfers.length === 0) return;
+        void openLabAbutmentDesign(labDesignReviewTransfers, 0, true);
+        return;
+      }
+      if (key === ABUTMENT_ORDER_BADGE_KEY) {
+        const queue = labManualOrderTransfers;
+        if (queue.length === 0) return;
+        const transferIdOf = (row: ReceivedPracticeTransfer) =>
+          String(row.transferId || row._id || "").trim();
+        const lastId = unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] || "";
+        let candidates = queue;
+        if (lastId) {
+          const withoutLast = queue.filter((row) => transferIdOf(row) !== lastId);
+          if (withoutLast.length > 0) candidates = withoutLast;
+        }
+        const transfer = candidates[0];
+        if (!transfer) return;
+        unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] = transferIdOf(transfer);
+        if (!isMobile) focusCalendarTransfer(transfer);
+        void openTransferDialog(transfer, { panel: "chat" });
+        return;
+      }
       const filterKey = key as LabReceiveStatusFilterKey;
       const toMeta = (transfer: (typeof baseFilteredTransfers)[number]) => ({
         transfer,
@@ -9459,6 +9723,10 @@ export function RequestorPracticeReceivePage({
       calendarDateKey,
       focusCalendarTransfer,
       isMobile,
+      labDesignReviewTransfers,
+      labManualOrderTransfers,
+      openLabAbutmentDesign,
+      openTransferDialog,
       selectTransferFromCalendar,
       transferChatUnreadCount,
       viewMode,
@@ -10521,41 +10789,18 @@ export function RequestorPracticeReceivePage({
               <PracticeCustomAbutmentPreviewButton
                 viewerRole="lab"
                 authToken={token}
-                caseTitle={selectedTransferCaseIdentity?.primary}
-                caseDatesLabel={selectedTransferCaseIdentity?.secondary}
-                patientName={selectedTransferPatientName}
                 toothWorks={selectedTransferToothWorks}
-                files={(selectedTransfer.files || []).map((f) => ({
-                  fileName: f.originalName,
-                  s3Key: String(f.s3Key || "").trim(),
-                  size: Number(f.size || 0),
-                  scanRole: f.scanRole || null,
-                  uploadedAt: f.uploadedAt || null,
-                }))}
-                workScanFiles={(selectedTransfer.production?.labWorkScanFiles || []).map((f) => ({
-                  fileName: f.originalName,
-                  s3Key: String(f.s3Key || "").trim(),
-                  size: Number(f.size || 0),
-                  scanRole: f.scanRole || null,
-                  uploadedAt: f.uploadedAt || null,
-                }))}
-                transferId={String(selectedTransfer.transferId || selectedTransfer._id || "")}
-                onActionComplete={(action) => {
-                  if (action !== "checked") return;
-                  const nowIso = new Date().toISOString();
-                  const id = String(selectedTransfer.transferId || selectedTransfer._id || "");
-                  const patch = (row: ReceivedPracticeTransfer) =>
-                    String(row.transferId || row._id || "") === id
-                      ? {
-                          ...row,
-                          production: {
-                            ...row.production,
-                            labDesignConfirmedAt: nowIso,
-                          },
-                        }
-                      : row;
-                  setTransfers((prev) => prev.map(patch));
-                  setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+                files={[]}
+                onOpen={() => {
+                  const id = String(selectedTransfer.transferId || "").trim();
+                  const idx = labDesignReviewTransfers.findIndex(
+                    (row) => String(row.transferId || "").trim() === id,
+                  );
+                  if (idx >= 0) {
+                    void openLabAbutmentDesign(labDesignReviewTransfers, idx, true);
+                    return;
+                  }
+                  void openLabAbutmentDesign([selectedTransfer], 0, false);
                 }}
               />
               {selectedTransfer.production?.customAbutmentManualDesign ? (
@@ -11237,6 +11482,69 @@ export function RequestorPracticeReceivePage({
           setRemakeChargeCancelConfirm(null);
         }}
       />
+      {labDesignOpen && labDesignItems[labDesignIndex] ? (
+        <LabAbutmentDesignReviewDialog
+          open
+          items={labDesignItems}
+          index={labDesignIndex}
+          rail={labDesignRail}
+          authToken={token}
+          catalog={implantCatalog}
+          onOpenChange={(open) => {
+            setLabDesignOpen(open);
+            if (!open) {
+              setLabDesignItems([]);
+              setLabDesignIndex(0);
+              setLabDesignRail(false);
+            }
+          }}
+          onIndexChange={(next) => {
+            const target = labDesignItems[next];
+            if (!target) {
+              setLabDesignIndex(next);
+              return;
+            }
+            if (labTransferHasDesignScan(target)) {
+              setLabDesignIndex(next);
+              return;
+            }
+            void hydrateLabTransferForDesign(target).then((hydrated) => {
+              setLabDesignItems((prev) =>
+                prev.map((item, itemIndex) =>
+                  itemIndex === next ? hydrated : item,
+                ),
+              );
+              setLabDesignIndex(next);
+            });
+          }}
+          onChecked={(transferId) => {
+            const nowIso = new Date().toISOString();
+            const patch = (row: ReceivedPracticeTransfer) =>
+              String(row.transferId || row._id || "") === transferId
+                ? {
+                    ...row,
+                    production: {
+                      ...row.production,
+                      labDesignConfirmedAt: nowIso,
+                    },
+                  }
+                : row;
+            setTransfers((prev) => prev.map(patch));
+            setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
+            const next = labDesignItems.filter(
+              (row) => String(row.transferId || row._id || "") !== transferId,
+            );
+            setLabDesignItems(next);
+            if (next.length === 0) {
+              setLabDesignOpen(false);
+              setLabDesignIndex(0);
+              setLabDesignRail(false);
+              return;
+            }
+            setLabDesignIndex((current) => Math.min(current, next.length - 1));
+          }}
+        />
+      ) : null}
       <RequestDetailDialog
         open={Boolean(abutmentRequestDetail)}
         onOpenChange={(next) => {
