@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
+// - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
+
 import assert from "node:assert/strict";
 
 import * as THREE from "three";
@@ -897,6 +901,126 @@ mid22.worldGeometry.dispose();
 mid22.predictedCrownWorldGeometry.dispose();
 open11.worldGeometry.dispose();
 open11.predictedCrownWorldGeometry.dispose();
+// 순측 경사 식립된 #22 단독 크라운과 #21 건너편 #11-#12 브리지가 함께 있을 때:
+// 1) #22는 #21 자연치를 건너 #11-#12 평행 그룹에 묶이지 않고,
+// 2) 기공소 스타일로 순면·설면 양쪽 사면 경사가 모두 잡히며,
+// 3) 솔리드 포스트 외면은 비메니폴드·꼬인 면 없이 모든 에지가 C¹ 필레로 매끈하게 이어진다.
+{
+  const labTilt22 = 16.5 * (Math.PI / 180);
+  const fixture22LabTilt = {
+    ...fixture11,
+    toothNumber: "22",
+    fixturePose: {
+      origin: [0, 0, 0] as [number, number, number],
+      axis: [Math.sin(labTilt22), 0, -Math.cos(labTilt22)] as [number, number, number],
+      hexX: [Math.cos(labTilt22), 0, Math.sin(labTilt22)] as [number, number, number],
+      hexY: [0, 1, 0] as [number, number, number],
+    },
+    scanbodyTop: [7 * Math.sin(labTilt22), 0, -7 * Math.cos(labTilt22)] as [number, number, number],
+  };
+  const fixture11Bridge = {
+    ...fixture11,
+    toothNumber: "11",
+    fixturePose: {
+      ...fixture11.fixturePose,
+      origin: [0, 11.8, 0] as [number, number, number],
+    },
+    scanbodyTop: [0, 11.8, -7] as [number, number, number],
+  };
+  const fixture12Bridge = {
+    ...fixture11,
+    toothNumber: "12",
+    fixturePose: {
+      ...fixture11.fixturePose,
+      origin: [0, 17.6, 0] as [number, number, number],
+    },
+    scanbodyTop: [0, 17.6, -7] as [number, number, number],
+  };
+  const mixedWorks = [
+    { toothNumber: "11", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["12"] },
+    { toothNumber: "12", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["11"] },
+    { toothNumber: "22", prosthesisType: "커스텀어벗", customAbutment: true, bridgeLinkedTeeth: [] as string[] },
+  ];
+  const [br11, single22] = await Promise.all([
+    designCustomAbutmentStl({
+      fixture: fixture11Bridge,
+      neighbors: [fixture12Bridge, fixture22LabTilt],
+      jawGeometry: jawLean,
+      opposingGeometry: null,
+      toothWorks: mixedWorks,
+    }),
+    designCustomAbutmentStl({
+      fixture: fixture22LabTilt,
+      neighbors: [fixture11Bridge, fixture12Bridge],
+      jawGeometry: jawLean,
+      opposingGeometry: null,
+      toothWorks: mixedWorks,
+    }),
+  ]);
+  assert.equal(br11.metrics.axisSource, "parallel", "#11-#12 브리지는 평행 그룹을 유지한다");
+  assert.notEqual(single22.metrics.axisSource, "parallel", "#21 자연치를 건넌 #22 단독은 #11-#12 평행 그룹에 묶이지 않는다");
+  assert.ok(
+    (single22.metrics.postLabialBevelMm ?? 0) >= 1.2 && (single22.metrics.postLingualBevelMm ?? 0) >= 1.2,
+    `순측 경사 #22는 치경 유지칼라 위 순면(${single22.metrics.postLabialBevelMm}mm)·설면(${single22.metrics.postLingualBevelMm}mm) 사면이 함께 잡힌다`,
+  );
+  const solid22 = single22.solidBodyLocalPositions!;
+  let zTop22 = -Infinity;
+  for (let i = 2; i < solid22.length; i += 3) zTop22 = Math.max(zTop22, solid22[i]!);
+  const labLow22 = maxLabialXAtZ(solid22, zTop22 - 3.0);
+  const labHigh22 = maxLabialXAtZ(solid22, zTop22 - 0.55);
+  const linLow22 = minLingualXAtZ(solid22, zTop22 - 3.0);
+  const linHigh22 = minLingualXAtZ(solid22, zTop22 - 0.55);
+  assert.ok(
+    labLow22 - labHigh22 >= 0.45 && linHigh22 - linLow22 >= 0.45,
+    `#22 상단은 순면(${(labLow22 - labHigh22).toFixed(2)}mm)과 설면(${(linHigh22 - linLow22).toFixed(2)}mm) 모두 안쪽으로 경사져 수렴한다`,
+  );
+  // 2-메니폴드 무결성 및 포스트 상부 꼬인 면(접힘 각도) 부재 검증
+  const qKey = (x: number, y: number, z: number) =>
+    `${Math.round(x * 1e5)},${Math.round(y * 1e5)},${Math.round(z * 1e5)}`;
+  const eMap = new Map<string, Array<[number, number, number]>>();
+  const zMinPost = single22.metrics.cuffHeightMaxMm + 0.6;
+  for (let i = 0; i < solid22.length; i += 9) {
+    const p0: [number, number, number] = [solid22[i]!, solid22[i + 1]!, solid22[i + 2]!];
+    const p1: [number, number, number] = [solid22[i + 3]!, solid22[i + 4]!, solid22[i + 5]!];
+    const p2: [number, number, number] = [solid22[i + 6]!, solid22[i + 7]!, solid22[i + 8]!];
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-9) continue;
+    const n: [number, number, number] = [nx / nl, ny / nl, nz / nl];
+    const ks = [qKey(...p0), qKey(...p1), qKey(...p2)];
+    const zs = [p0[2], p1[2], p2[2]];
+    for (let e = 0; e < 3; e += 1) {
+      if ((zs[e]! + zs[(e + 1) % 3]!) * 0.5 < zMinPost) continue;
+      const a = ks[e]!, b = ks[(e + 1) % 3]!;
+      const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+      const list = eMap.get(k);
+      if (list) list.push(n);
+      else eMap.set(k, [n]);
+    }
+  }
+  let maxPostDihedral = 0;
+  let nonManifoldPost = 0;
+  for (const list of eMap.values()) {
+    if (list.length !== 2) {
+      nonManifoldPost += 1;
+      continue;
+    }
+    const dotN = Math.max(-1, Math.min(1, list[0]![0] * list[1]![0] + list[0]![1] * list[1]![1] + list[0]![2] * list[1]![2]));
+    maxPostDihedral = Math.max(maxPostDihedral, (Math.acos(dotN) * 180) / Math.PI);
+  }
+  assert.equal(nonManifoldPost, 0, "포스트 외면 메시는 비메니폴드 에지가 없다");
+  assert.ok(
+    maxPostDihedral < 52,
+    `포스트 외면 모든 에지가 필레로 매끈하며 꼬인 면이 없다(max dihedral ${maxPostDihedral.toFixed(1)}°)`,
+  );
+  br11.worldGeometry.dispose();
+  br11.predictedCrownWorldGeometry.dispose();
+  single22.worldGeometry.dispose();
+  single22.predictedCrownWorldGeometry.dispose();
+}
+
 jaw.dispose();
 jawLean.dispose();
 deep.dispose();
