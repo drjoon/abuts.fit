@@ -30,6 +30,7 @@ import {
   ensureAbutmentRequestsForHandoff,
   readRelatedRequestIdsFromProduction,
   releaseAbutmentDesignHandoffLock,
+  releasePracticePlatformDesignHoldIfOrderGone,
   stampPracticeTransferFileBatch,
   syncRelatedRequestOwnershipToAcceptingLab,
 } from "../../services/practiceTransferProduction.service.js";
@@ -621,7 +622,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
           updatedSide: rawPaint.updatedSide || null,
         }
       : null;
-    const mode = stored?.confirmedAt
+    let mode = stored?.confirmedAt
       ? "confirmed"
       : manualDesign
         ? "manual"
@@ -665,10 +666,22 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
           })
         : quoteCustomAbutmentRouteFees({ toothWorks: [] });
     }
-    const choice = {
+    let choice = {
       cancelDeadlineAt: transfer?.production?.abutmentCancelDeadlineAt || null,
       labCheckedAt: transfer?.production?.labDesignConfirmedAt || null,
     };
+    // 기공소가 제조 주문을 취소하면 확정·취소 기한이 남아 「취소 가능」이 뜬다.
+    // 활성 주문이 없으면 확정을 풀고, 치과는 다시 디자인 확정한다.
+    if (mode === "confirmed" && !choice.labCheckedAt && transfer?._id) {
+      const released = await releasePracticePlatformDesignHoldIfOrderGone(
+        transfer._id,
+        req.user?._id,
+      );
+      if (released?.released) {
+        mode = manualDesign ? "manual" : null;
+        choice = { cancelDeadlineAt: null, labCheckedAt: null };
+      }
+    }
     return res.json({
       success: true,
       data: { design, chat, paint, mode, manualDesign, feeGuide, choice },

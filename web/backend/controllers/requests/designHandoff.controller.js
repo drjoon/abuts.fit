@@ -1,3 +1,4 @@
+// - 2026-11-19: 기공소 제조 주문 취소로 활성 어벗이 없으면 치과 플랫폼 확정을 푼다.
 // - 2026-11-19: PTX CA 크레딧 부족이면 그 치아 Request를 준비 큐에 남기지 않는다.
 // - 2026-11-19: PTX CA 402 — 무료크레딧 잔액 문구를 「충전하세요」로 바꾸지 않는다.
 // - 2026-11-16: 치과 발신 — 준비 단계 커스텀어벗 공정 취소(제조사 큐에서 내림). 가공 이후는 불가.
@@ -90,6 +91,7 @@ import {
   ensureAbutmentRequestsForHandoff,
   findRelatedAbutmentRequestIdForTooth,
   releaseAbutmentDesignHandoffLock,
+  releasePracticePlatformDesignHoldIfOrderGone,
   hasCustomAbutmentToothWorks,
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
@@ -1864,12 +1866,25 @@ export async function cancelDesignHandoff(req, res) {
       req.user?.businessAnchorId || request.businessAnchorId || "",
     ).trim();
 
-    const finishCancelResponse = ({
+    const finishCancelResponse = async ({
       message,
       extraData = {},
       feeRevokePending = false,
       feeRevokeRequestIds = null,
     }) => {
+      let platformHoldReleased = false;
+      try {
+        const released = await releasePracticePlatformDesignHoldIfOrderGone(
+          relatedTransferId,
+          userId,
+        );
+        platformHoldReleased = Boolean(released?.released);
+      } catch (releaseErr) {
+        console.warn(
+          "[DESIGN_HANDOFF_CANCEL] platform hold release failed",
+          releaseErr?.message || releaseErr,
+        );
+      }
       // 남은 디자인 sibling이 없으면 미업로드 노출 플래그 해제(다시 숨김)
       void refreshPtxSiblingDesignUploadMissingVisibility(relatedTransferId).catch(
         (refreshErr) => {
@@ -1926,6 +1941,20 @@ export async function cancelDesignHandoff(req, res) {
       }
 
       const { cancelReason: _omit, ...restExtra } = extraData;
+      if (platformHoldReleased) {
+        void postPracticeTransferSystemChatMessage({
+          transferMongoId: relatedTransferId,
+          senderUserId: req.user?._id,
+          content:
+            "기공소가 커스텀어벗 주문을 취소했습니다. 치과에서 다시 디자인 확정할 수 있습니다.",
+          systemEvent: "custom_abutment_lab_order_cancelled",
+        }).catch((err) => {
+          console.warn(
+            "[DESIGN_HANDOFF_CANCEL] platform hold chat failed",
+            err?.message || err,
+          );
+        });
+      }
       return res.status(200).json({
         success: true,
         message,
@@ -1934,6 +1963,7 @@ export async function cancelDesignHandoff(req, res) {
           relatedPracticeTransferId: relatedTransferId,
           manufacturerStage: "취소",
           revokedAt: now.toISOString(),
+          platformHoldReleased,
           ...restExtra,
         },
       });
@@ -2439,6 +2469,44 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
           code: "manufacturer_not_ready",
           message: PRACTICE_ABUTMENT_CANCEL_PAST_READY_MESSAGE,
         });
+      }
+      // 기공소가 제조 주문을 이미 취소하면 준비 단계가 없다.
+      // 남아 있는 치과 확정은 풀어서 다시 확정할 수 있게 한다.
+      const released = await releasePracticePlatformDesignHoldIfOrderGone(
+        fresh._id,
+        userId,
+      );
+      const stillHeld =
+        Boolean(fresh.production?.practiceDesignConfirmedAt) ||
+        Boolean(fresh.production?.customAbutmentPreview?.confirmedAt);
+      if (released?.released || !stillHeld) {
+        const message = released?.released
+          ? "제조 주문이 취소되어 디자인 확정을 해제했습니다. 다시 확정할 수 있습니다."
+          : "디자인 확정이 이미 해제되어 있습니다. 다시 확정할 수 있습니다.";
+        res.status(200).json({
+          success: true,
+          message,
+          data: {
+            transferId: String(fresh.transferId || "").trim(),
+            cancelledTeeth: [],
+            clearedAll: true,
+            releasedHold: true,
+          },
+        });
+        if (released?.released) {
+          void postPracticeTransferSystemChatMessage({
+            transferMongoId: fresh._id,
+            senderUserId: req.user?._id,
+            content: message,
+            systemEvent: "custom_abutment_confirm_released",
+          }).catch((err) => {
+            console.warn(
+              "[PRACTICE_ABUTMENT_CANCEL] released hold chat failed",
+              err?.message || err,
+            );
+          });
+        }
+        return;
       }
       return res.status(400).json({
         success: false,

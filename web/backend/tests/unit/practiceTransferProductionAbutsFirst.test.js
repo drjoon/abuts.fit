@@ -8,6 +8,8 @@ import {
   canStartAbutmentProduction,
   hasCustomAbutmentToothWorks,
   isPracticeAbutmentDesignAwaitingDentist,
+  hasLiveAbutmentManufacturingRequest,
+  missingActiveAbutmentTeeth,
   isAbutmentDesignReady,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
@@ -537,5 +539,31 @@ describe("abutment pastReady work-cancel guard", () => {
         },
       ]),
     ).toEqual([{ tooth: "16", stage: "준비" }]);
+  });
+
+  test("cancelled abutment requests do not cover a tooth", () => {
+    const rows = [
+      { manufacturerStage: "취소", caseInfos: { tooth: "15" } },
+      {
+        manufacturerStage: "취소",
+        caseInfos: { tooth: "16", hexVerificationSample: true },
+      },
+    ];
+    expect(missingActiveAbutmentTeeth(rows, ["15", "16"])).toEqual(["15", "16"]);
+    expect(hasLiveAbutmentManufacturingRequest(rows)).toBe(false);
+    expect(
+      missingActiveAbutmentTeeth(
+        [
+          { manufacturerStage: "준비", caseInfos: { tooth: "15" } },
+          { manufacturerStage: "취소", caseInfos: { tooth: "16" } },
+        ],
+        ["15", "16"],
+      ),
+    ).toEqual(["16"]);
+    expect(
+      hasLiveAbutmentManufacturingRequest([
+        { manufacturerStage: "준비", caseInfos: { tooth: "" } },
+      ]),
+    ).toBe(true);
   });
 });

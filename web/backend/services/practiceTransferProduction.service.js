@@ -5,6 +5,8 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-19: 기공소가 제조 주문을 취소하면 치과 플랫폼 확정을 풀어 다시 확정하게 한다.
+// - 2026-11-19: 취소된 CA Request는 치아를 덮지 않는다. 다시 확정하면 그 치아만 새로 만든다.
 // - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
 // - 2026-11-19: isPracticeAbutmentDesignAwaitingDentist — 치과 어벗·디자인 확정 전 작업시작 차단(FE SSOT).
 // - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
@@ -1066,6 +1068,157 @@ async function reconcileActiveAbutmentRequestsPerTooth({
   return ordered;
 }
 
+/**
+ * 취소·헥스 샘플이 아닌 CA Request의 치아. 빈 단계도 살아있는 주문으로 본다.
+ * @param {Array<{ manufacturerStage?: string, caseInfos?: { tooth?: string, hexVerificationSample?: boolean } }>} rows
+ */
+export function activeAbutmentTeethFromRows(rows = []) {
+  const teeth = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.caseInfos?.hexVerificationSample === true) continue;
+    if (String(row?.manufacturerStage || "").trim() === "취소") continue;
+    const tooth = String(row?.caseInfos?.tooth || "").trim();
+    if (tooth) teeth.add(tooth);
+  }
+  return teeth;
+}
+
+/** 원하는 치아 중 활성 Request가 없는 번호. `15`와 `015`는 숫자로 같은 치아다. */
+export function missingActiveAbutmentTeeth(rows = [], wantedTeeth = []) {
+  const active = activeAbutmentTeethFromRows(rows);
+  const missing = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(wantedTeeth) ? wantedTeeth : []) {
+    const tooth = String(raw || "").trim();
+    if (!tooth || seen.has(tooth)) continue;
+    seen.add(tooth);
+    const numeric = /^\d+$/.test(tooth) ? String(Number(tooth)) : "";
+    if (active.has(tooth) || (numeric && active.has(numeric))) continue;
+    missing.push(tooth);
+  }
+  return missing;
+}
+
+/** 플랫폼 확정을 유지할 제조 주문이 있는지. 전부 취소·링크 없음이면 없다. */
+export function hasLiveAbutmentManufacturingRequest(rows = []) {
+  return activeAbutmentTeethFromRows(rows).size > 0
+    || (Array.isArray(rows) ? rows : []).some((row) => {
+      if (row?.caseInfos?.hexVerificationSample === true) return false;
+      return String(row?.manufacturerStage || "").trim() !== "취소";
+    });
+}
+
+async function loadAbutmentCoverageRows(requestIds) {
+  const ids = (Array.isArray(requestIds) ? requestIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!ids.length) return [];
+  return Request.find({ _id: { $in: ids } })
+    .select({
+      manufacturerStage: 1,
+      "caseInfos.tooth": 1,
+      "caseInfos.hexVerificationSample": 1,
+    })
+    .lean();
+}
+
+/**
+ * 기공소가 제조 주문을 취소한 뒤 남은 치과 플랫폼 확정.
+ * 활성 Request가 없으면 확정·취소 기한·수가 경로를 비워 다시 확정하게 한다.
+ */
+export async function releasePracticePlatformDesignHoldIfOrderGone(
+  transferId,
+  actorUserId = null,
+) {
+  const id = String(transferId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return { released: false };
+  const doc = await PracticeTransfer.findById(id);
+  if (!doc) return { released: false };
+  const production =
+    doc.production && typeof doc.production === "object" ? doc.production : {};
+  const route = String(production.abutmentFeeRoute || "").trim();
+  const confirmed =
+    Boolean(production.practiceDesignConfirmedAt) ||
+    Boolean(production.customAbutmentPreview?.confirmedAt);
+  if (!confirmed && route !== "platform") return { released: false };
+
+  const linked = await collectLinkedAbutmentRequestObjectIds(doc);
+  if (linked.length > 0) {
+    const rows = await Request.find({ _id: { $in: linked } })
+      .select({
+        manufacturerStage: 1,
+        "caseInfos.tooth": 1,
+        "caseInfos.hexVerificationSample": 1,
+      })
+      .lean();
+    if (hasLiveAbutmentManufacturingRequest(rows)) return { released: false };
+  }
+
+  const feeRevision =
+    Math.max(0, Math.floor(Number(production.abutmentFeeRouteRevision || 0))) + 1;
+  if (!doc.production || typeof doc.production !== "object") doc.production = {};
+  doc.production.abutmentFeeRoute = "pending";
+  doc.production.abutmentFeeRouteRevision = feeRevision;
+  doc.production.abutmentCancelDeadlineAt = null;
+  doc.production.practiceDesignConfirmedAt = null;
+  if (doc.production.customAbutmentPreview) {
+    doc.production.customAbutmentPreview.confirmedAt = null;
+    doc.production.customAbutmentPreview.confirmedBy = null;
+  }
+  const holdReleaseUpdate = {
+    $set: {
+      "production.abutmentFeeRoute": "pending",
+      "production.abutmentFeeRouteRevision": feeRevision,
+    },
+    $unset: {
+      "production.practiceDesignConfirmedAt": "",
+      "production.practiceDesignConfirmedBy": "",
+      "production.customAbutmentPreview.confirmedAt": "",
+      "production.customAbutmentPreview.confirmedBy": "",
+      "production.abutmentCancelDeadlineAt": "",
+      "production.labDesignConfirmedAt": "",
+      "production.labDesignConfirmedBy": "",
+    },
+  };
+  let updated = await PracticeTransfer.updateOne(
+    {
+      _id: doc._id,
+      $or: [
+        { "production.abutmentFeeRoute": "platform" },
+        { "production.practiceDesignConfirmedAt": { $exists: true, $ne: null } },
+        {
+          "production.customAbutmentPreview.confirmedAt": {
+            $exists: true,
+            $ne: null,
+          },
+        },
+      ],
+    },
+    holdReleaseUpdate,
+  );
+  if (!updated?.matchedCount) {
+    updated = await PracticeTransfer.updateOne({ _id: doc._id }, holdReleaseUpdate);
+  }
+  if (!updated?.matchedCount) return { released: false };
+  try {
+    const { syncPracticeTransferAbutmentFeeRoute } = await import(
+      "./practiceTransferBilling.service.js"
+    );
+    await syncPracticeTransferAbutmentFeeRoute({
+      transfer: doc,
+      actorUserId,
+    });
+  } catch (err) {
+    console.warn(
+      "[platform-design-hold] fee sync failed",
+      err?.message || err,
+    );
+  }
+  scheduleAbutmentStageRealtimeForTransfer(doc._id);
+  return { released: true };
+}
+
 /** relatedRequestIds(캐논) 밖 준비 잔존만 취소 */
 async function cancelOrphanAbutmentRequestsOutsideCanonical({
   transferDoc,
@@ -1163,10 +1316,19 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .map((id) => String(id || "").trim())
         .filter((id) => Types.ObjectId.isValid(id))
     : [];
+  const wantedTeeth = onlyToothKey
+    ? [onlyToothKey]
+    : customRows
+        .map((row) => String(row.toothNumber || "").trim())
+        .filter(Boolean);
+  // 취소된 Request는 치아를 덮지 않는다. 없는 치아만 새로 만든다.
+  let teethToCreate = wantedTeeth;
   if (existingIds.length > 0) {
-    const covered =
-      !onlyToothKey || (await activeRequestCoversTooth(existingIds, onlyToothKey));
-    if (covered) {
+    const missing = missingActiveAbutmentTeeth(
+      await loadAbutmentCoverageRows(existingIds),
+      wantedTeeth,
+    );
+    if (missing.length === 0) {
       // 신규 생성은 스킵. related 밖 partnerBilling 잔존(레이스 중복)만 취소.
       await cancelOrphanAbutmentRequestsOutsideCanonical({
         transferDoc,
@@ -1180,26 +1342,29 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         requestIds: existingIds,
       };
     }
-  }
-
-  // relatedRequestIds가 비어도 partnerBilling에 준비 잔존이 있으면 재사용(레이스/취소 누락 heal).
-  const activePartnerIds = await listActivePartnerLinkedAbutmentRequestIds(
-    transferDoc?._id,
-  );
-  if (activePartnerIds.length > 0) {
-    const covered =
-      !onlyToothKey ||
-      (await activeRequestCoversTooth(activePartnerIds, onlyToothKey));
-    if (covered) {
-      const reconciledIds = await reconcileActiveAbutmentRequestsPerTooth({
-        transferDoc,
-        candidateRequestIds: activePartnerIds,
-      });
-      return {
-        created: [],
-        skippedReason: "already_created",
-        requestIds: reconciledIds,
-      };
+    teethToCreate = missing;
+  } else {
+    // relatedRequestIds가 비어도 partnerBilling에 준비 잔존이 있으면 재사용(레이스/취소 누락 heal).
+    const activePartnerIds = await listActivePartnerLinkedAbutmentRequestIds(
+      transferDoc?._id,
+    );
+    if (activePartnerIds.length > 0) {
+      const missing = missingActiveAbutmentTeeth(
+        await loadAbutmentCoverageRows(activePartnerIds),
+        wantedTeeth,
+      );
+      if (missing.length === 0) {
+        const reconciledIds = await reconcileActiveAbutmentRequestsPerTooth({
+          transferDoc,
+          candidateRequestIds: activePartnerIds,
+        });
+        return {
+          created: [],
+          skippedReason: "already_created",
+          requestIds: reconciledIds,
+        };
+      }
+      teethToCreate = missing;
     }
   }
 
@@ -1359,11 +1524,10 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   const manufacturerSettings = await getManufacturerLeadTimesUtil();
   const leadTimes = manufacturerSettings?.leadTimes || {};
   const created = [];
-  const rowsToCreate = onlyToothKey
-    ? customRows.filter(
-        (row) => String(row.toothNumber || "").trim() === onlyToothKey,
-      )
-    : customRows;
+  const createToothSet = new Set(teethToCreate);
+  const rowsToCreate = customRows.filter((row) =>
+    createToothSet.has(String(row.toothNumber || "").trim()),
+  );
   if (onlyToothKey && rowsToCreate.length === 0) {
     throw new Error(`치아 #${onlyToothKey} 커스텀어벗 정보가 없습니다.`);
   }
@@ -1831,22 +1995,47 @@ export async function ensureAbutmentRequestsForHandoff({
 
   if (gate.mode === "already") {
     let requestIds = gate.requestIds;
-    if (
-      onlyTooth &&
-      !(await activeRequestCoversTooth(requestIds, onlyTooth))
-    ) {
-      const createdMissing = await createAbutmentRequestsFromPracticeTransfer({
-        transferDoc: workingTransfer,
-        actorUserId,
-        allowPracticeConfirmed,
-        onlyTooth,
-      });
-      if (
-        Array.isArray(createdMissing?.requestIds) &&
-        createdMissing.requestIds.length > 0
-      ) {
-        requestIds = createdMissing.requestIds;
+    const customRows = listCustomAbutmentToothWorks(
+      workingTransfer?.toothWorks,
+      workingTransfer?.implantFavorites ||
+        workingTransfer?.billing?.implantFavorites ||
+        null,
+    );
+    const wantedTeeth = onlyTooth
+      ? [onlyTooth]
+      : customRows
+          .map((row) => String(row.toothNumber || "").trim())
+          .filter(Boolean);
+    const missingTeeth = missingActiveAbutmentTeeth(
+      await loadAbutmentCoverageRows(requestIds),
+      wantedTeeth,
+    );
+    if (missingTeeth.length > 0) {
+      let merged = requestIds;
+      for (const tooth of missingTeeth) {
+        const createdMissing = await createAbutmentRequestsFromPracticeTransfer({
+          transferDoc: workingTransfer,
+          actorUserId,
+          allowPracticeConfirmed,
+          onlyTooth: tooth,
+        });
+        if (
+          Array.isArray(createdMissing?.requestIds) &&
+          createdMissing.requestIds.length > 0
+        ) {
+          merged = createdMissing.requestIds;
+          workingTransfer.production = {
+            ...(workingTransfer.production &&
+            typeof workingTransfer.production === "object"
+              ? workingTransfer.production
+              : {}),
+            relatedRequestIds: merged
+              .filter((id) => Types.ObjectId.isValid(id))
+              .map((id) => new Types.ObjectId(id)),
+          };
+        }
       }
+      requestIds = merged;
       const oidList = requestIds
         .filter((id) => Types.ObjectId.isValid(id))
         .map((id) => new Types.ObjectId(id));
