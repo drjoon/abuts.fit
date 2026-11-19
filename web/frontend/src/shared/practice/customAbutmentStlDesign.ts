@@ -1603,7 +1603,7 @@ function analyticSectionRay(
  * 폭 width·높이를 돌려준다. 곡률 반경은 공구 R보다 작아지지 않게 시작 각을 줄인다.
  */
 function chamferGeometry(width: number, toolR: number, endSlope: number) {
-  const th1 = Math.atan(endSlope);
+  const th1 = Math.atan(Math.max(0, endSlope));
   const rho = Math.max(toolR, 0.2);
   // 반경 = 공구 R. 폭이 R보다 넓으면 90°에서 시작하고 나머지는 평평한 숄더다.
   const th0 = Math.max(Math.acos(clamp(Math.cos(th1) - width / rho, 0, 1)), th1 + 5 * DEG);
@@ -10364,11 +10364,36 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         0,
         -((dot3(rel1, frame.uLabial) - u0) * chDirU + (dot3(rel1, frame.vSide) - v0) * chDirV),
       );
-      const colWallSlope = stepIn / Math.max(hs[1]! - hs[0]!, 1e-4);
-      const chPts = chamferPoints(chWidth, Math.max(0.02, hs[0]! - c.h0), colWallSlope);
+      const wallSpan01 = Math.max(hs[1]! - hs[0]!, 1e-4);
+      const colWallSlope = stepIn / wallSpan01;
+      const colTh1 = clamp(Math.atan(Math.max(0, colWallSlope)), 0.5 * DEG, 38 * DEG);
+      const minRho = Math.max(R, 0.2);
+      const th0Need = Math.max(
+        Math.acos(clamp(Math.cos(colTh1) - chWidth / minRho, 0, 1)),
+        colTh1 + 5 * DEG,
+      );
+      const hNeedForR = minRho * (Math.sin(th0Need) - Math.sin(colTh1));
+      const hAvail = Math.max(0.02, hs[0]! - c.h0);
+      const dhSlide =
+        hAvail < hNeedForR && wallSpan01 > 0.02
+          ? Math.min(hNeedForR - hAvail, wallSpan01 * 0.85)
+          : 0;
+      const slideFrac = dhSlide > 0 ? dhSlide / wallSpan01 : 0;
+      const u0Use = slideFrac > 0 ? u0 + (dot3(rel1, frame.uLabial) - u0) * slideFrac : u0;
+      const v0Use = slideFrac > 0 ? v0 + (dot3(rel1, frame.vSide) - v0) * slideFrac : v0;
+      let chDuUse = uM - u0Use;
+      let chDvUse = vM - v0Use;
+      if (chDuUse * outU + chDvUse * outV < 0.02) {
+        chDuUse = outU * 0.02;
+        chDvUse = outV * 0.02;
+      }
+      const chWidthUse = Math.max(0.02, Math.hypot(chDuUse, chDvUse));
+      const chDirUUse = chDuUse / chWidthUse;
+      const chDirVUse = chDvUse / chWidthUse;
+      const chPts = chamferPoints(chWidthUse, hAvail + dhSlide, colWallSlope);
       for (const [off, dh] of chPts) {
-        const u = u0 + chDirU * off;
-        const v = v0 + chDirV * off;
+        const u = u0Use + chDirUUse * off;
+        const v = v0Use + chDirVUse * off;
         post.push(
           add3(c0, add3(scale3(frame.w, c.h0 + dh), add3(scale3(frame.uLabial, u), scale3(frame.vSide, v)))),
         );

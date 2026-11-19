@@ -161,6 +161,8 @@ type Zone = {
   fixedZ: number;
   marginZ: number;
   meanMarginZ?: number;
+  /** 본체 솔리드 기준 최상단 Z. 마진·크라운 refit에서도 본체와 동일한 swing/lift 기준을 유지한다. */
+  propTop?: number;
   marginColZ?: Float32Array;
   topColZ?: Float32Array;
   topMinOuterR?: number;
@@ -652,7 +654,12 @@ export function refitLocalPositions(
     const r = Math.hypot(proposal[i]!, proposal[i + 1]!);
     if (r <= screwR && z > boreTop) boreTop = z;
   }
-  const safePropTop = Number.isFinite(propTop) ? propTop : marginZ + 4;
+  const safePropTop =
+    zone.propTop != null && Number.isFinite(zone.propTop)
+      ? zone.propTop
+      : Number.isFinite(propTop)
+        ? propTop
+        : marginZ + 4;
   let postCenterL = zone.centerL ?? Number.NaN;
   let postCenterM = zone.centerM ?? Number.NaN;
   if (!Number.isFinite(postCenterL) || !Number.isFinite(postCenterM)) {
@@ -876,11 +883,168 @@ function marginColumnBlend(angle: number, count: number): { c0: number; c1: numb
   return { c0, c1, frac };
 }
 
+const cuffMaskCache = new WeakMap<Float32Array, Map<string, Uint8Array | null>>();
+
+/**
+ * 삼각형 수프에서 콘 상단(coneZ)과 피니시라인 루프(proposalMargin) 사이의 실제 커프 정점만
+ * 토폴로지 BFS로 정확히 분리한다.
+ * - 마진 루프 정점을 닫힌 장벽(barrier)으로 두어, 기울어진 포스트의 챔퍼 정점이 마진보다 낮은 Z에 있더라도
+ *   커프로 오인해 덮어쓰지 않고, 반대로 커프 스캘럽 정점이 반경 오차로 누락되지도 않는다.
+ */
+function getCuffVertexMask(
+  proposal: Float32Array,
+  proposalMargin: Float32Array,
+  coneZ: number,
+  screwR: number,
+): Uint8Array | null {
+  const key = `${Math.round(coneZ * 1000)}:${Math.round(screwR * 1000)}:${proposalMargin.length}`;
+  let byKey = cuffMaskCache.get(proposal);
+  if (byKey?.has(key)) return byKey.get(key) ?? null;
+
+  const vCount = Math.floor(proposal.length / 3);
+  const mCount = Math.floor(proposalMargin.length / 3);
+  if (vCount < 9 || vCount % 3 !== 0 || mCount < 3) {
+    if (!byKey) {
+      byKey = new Map();
+      cuffMaskCache.set(proposal, byKey);
+    }
+    byKey.set(key, null);
+    return null;
+  }
+
+  const keyToUid = new Map<string, number>();
+  const vertUid = new Int32Array(vCount);
+  const ux: number[] = [];
+  const uy: number[] = [];
+  const uz: number[] = [];
+  const ur: number[] = [];
+  for (let v = 0; v < vCount; v += 1) {
+    const x = proposal[v * 3]!;
+    const y = proposal[v * 3 + 1]!;
+    const z = proposal[v * 3 + 2]!;
+    const k = `${Math.round(x * 1000)},${Math.round(y * 1000)},${Math.round(z * 1000)}`;
+    let uid = keyToUid.get(k);
+    if (uid === undefined) {
+      uid = ux.length;
+      keyToUid.set(k, uid);
+      ux.push(x);
+      uy.push(y);
+      uz.push(z);
+      ur.push(Math.hypot(x, y));
+    }
+    vertUid[v] = uid;
+  }
+  const uCount = ux.length;
+  const isBarrier = new Uint8Array(uCount);
+  let maxMarginZ = -Infinity;
+  let matchedMargin = 0;
+  for (let col = 0; col < mCount; col += 1) {
+    const mx = proposalMargin[col * 3]!;
+    const my = proposalMargin[col * 3 + 1]!;
+    const mz = proposalMargin[col * 3 + 2]!;
+    if (mz > maxMarginZ) maxMarginZ = mz;
+    const exactKey = `${Math.round(mx * 1000)},${Math.round(my * 1000)},${Math.round(mz * 1000)}`;
+    const exactUid = keyToUid.get(exactKey);
+    if (exactUid !== undefined) {
+      isBarrier[exactUid] = 1;
+      matchedMargin += 1;
+      continue;
+    }
+    let bestUid = -1;
+    let bestD2 = 0.045 * 0.045;
+    for (let u = 0; u < uCount; u += 1) {
+      if (Math.abs(uz[u]! - mz) > 0.045) continue;
+      const dx = ux[u]! - mx;
+      const dy = uy[u]! - my;
+      const dz = uz[u]! - mz;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        bestUid = u;
+      }
+    }
+    if (bestUid >= 0) {
+      isBarrier[bestUid] = 1;
+      matchedMargin += 1;
+    }
+  }
+
+  let result: Uint8Array | null = null;
+  if (matchedMargin >= Math.max(3, Math.floor(mCount * 0.75))) {
+    const adj: number[][] = Array.from({ length: uCount }, () => []);
+    for (let t = 0; t < vCount; t += 3) {
+      const a = vertUid[t]!;
+      const b = vertUid[t + 1]!;
+      const c = vertUid[t + 2]!;
+      if (a !== b) {
+        adj[a]!.push(b);
+        adj[b]!.push(a);
+      }
+      if (b !== c) {
+        adj[b]!.push(c);
+        adj[c]!.push(b);
+      }
+      if (c !== a) {
+        adj[c]!.push(a);
+        adj[a]!.push(c);
+      }
+    }
+
+    const isCuffUid = new Uint8Array(uCount);
+    const queue: number[] = [];
+    const allowCuff = (u: number) =>
+      uz[u]! > coneZ + 1e-3 &&
+      !isBarrier[u] &&
+      (screwR <= 0.15 || ur[u]! > screwR + 0.22);
+
+    for (let u = 0; u < uCount; u += 1) {
+      if (!allowCuff(u)) continue;
+      const nbs = adj[u]!;
+      for (let j = 0; j < nbs.length; j += 1) {
+        if (uz[nbs[j]!]! <= coneZ + 1e-3) {
+          isCuffUid[u] = 1;
+          queue.push(u);
+          break;
+        }
+      }
+    }
+
+    let head = 0;
+    let maxCuffZ = -Infinity;
+    while (head < queue.length) {
+      const cur = queue[head++]!;
+      if (uz[cur]! > maxCuffZ) maxCuffZ = uz[cur]!;
+      const nbs = adj[cur]!;
+      for (let j = 0; j < nbs.length; j += 1) {
+        const nb = nbs[j]!;
+        if (isCuffUid[nb] || !allowCuff(nb)) continue;
+        isCuffUid[nb] = 1;
+        queue.push(nb);
+      }
+    }
+
+    if (queue.length > 0 && maxCuffZ <= maxMarginZ + 0.08) {
+      const mask = new Uint8Array(vCount);
+      for (let v = 0; v < vCount; v += 1) {
+        if (isCuffUid[vertUid[v]!]) mask[v] = 1;
+      }
+      result = mask;
+    }
+  }
+
+  if (!byKey) {
+    byKey = new Map();
+    cuffMaskCache.set(proposal, byKey);
+  }
+  byKey.set(key, result);
+  return result;
+}
+
 /**
  * 콘 위 커프 정점을 지금 마진 열에 맞춰 다시 놓는다.
  * 2°로 시작해 오목하게 벌어지고, 끝점은 그 방향의 마진 점과 만난다. 마진 위 포스트는 그대로 둔다.
  * 경사진 포스트(삽입축 > 0°)는 마진이 낮은 방향을 넘어 인접 열로 기울면서 로컬 z가 그 열의 마진 높이보다 낮아질 수 있으므로,
- * 마진 곡면 위쪽(삽입축 방향)이 아닌 실제 커프 정점(오목 현 안쪽)만 재생성한다.
+ * 토폴로지 커프 마스크로 마진 링 아래 실제 커프 정점만 빠짐없이 재생성하고 포스트·챔퍼 정점은 절대 건드리지 않는다.
  */
 export function regenerateCuffToMargin(
   proposal: Float32Array,
@@ -934,41 +1098,57 @@ export function regenerateCuffToMargin(
 
   const fitShared = cuffProfile(0, 0, fitDelta, fitSpan);
   const evalFitMink = buildMinkowskiCuffRadiusEvaluator(coneTopR, fittedMarginXY);
+  const cuffMask = getCuffVertexMask(proposal, proposalMargin, coneZ, screwR);
 
   for (let i = 0; i < proposal.length; i += 3) {
+    const vIdx = i / 3;
     const ox = proposal[i]!;
     const oy = proposal[i + 1]!;
     const oz = proposal[i + 2]!;
-    if (oz <= coneZ + 1e-3) continue;
-    const orad = Math.hypot(ox, oy);
-    if (screwR > 0.15 && orad <= screwR + 0.22) continue;
+    if (cuffMask) {
+      if (!cuffMask[vIdx]) continue;
+    } else {
+      if (oz <= coneZ + 1e-3) continue;
+      const orad = Math.hypot(ox, oy);
+      if (screwR > 0.15 && orad <= screwR + 0.22) continue;
+    }
     const theta0 = Math.atan2(oy, ox);
     const { c0, c1, frac } = marginColumnBlend(theta0, count);
     const marginZ = origZ[c0]! * (1 - frac) + origZ[c1]! * frac;
-    if (!(marginZ > coneZ + 0.05) || oz >= marginZ - 1e-3) continue;
+    if (!(marginZ > coneZ + 0.05)) continue;
     const u = clamp((oz - coneZ) / (marginZ - coneZ), 0, 1);
-    const origAlpha = clamp(origShared(u * origSpan) / origDelta, 0, 1);
-    const origMinkR = evalOrigMink(theta0, origAlpha);
-    const origLegacyR =
-      origLegacyProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
-      origLegacyProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
-    const origChordR =
-      coneTopR +
-      ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
-        Math.max(0.05, marginZ - coneZ);
-    if (
-      orad > Math.max(origChordR, origMinkR) + 0.04 ||
-      Math.min(Math.abs(orad - origMinkR), Math.abs(orad - origLegacyR)) > 0.08
-    ) {
-      continue;
+    if (!cuffMask) {
+      if (oz >= marginZ - 1e-3) continue;
+      const orad = Math.hypot(ox, oy);
+      const origAlpha = clamp(origShared(u * origSpan) / origDelta, 0, 1);
+      const origMinkR = evalOrigMink(theta0, origAlpha);
+      const origLegacyR =
+        origLegacyProfiles[c0]!(coneZ + u * (origZ[c0]! - coneZ)) * (1 - frac) +
+        origLegacyProfiles[c1]!(coneZ + u * (origZ[c1]! - coneZ)) * frac;
+      const origChordR =
+        coneTopR +
+        ((origR[c0]! * (1 - frac) + origR[c1]! * frac - coneTopR) * (oz - coneZ)) /
+          Math.max(0.05, marginZ - coneZ);
+      if (
+        orad > Math.max(origChordR, origMinkR) + 0.04 ||
+        Math.min(Math.abs(orad - origMinkR), Math.abs(orad - origLegacyR)) > 0.08
+      ) {
+        continue;
+      }
     }
     const zEnd0 = coneZ + u * (endZ[c0]! - coneZ);
     const zEnd1 = coneZ + u * (endZ[c1]! - coneZ);
     const z2 = zEnd0 * (1 - frac) + zEnd1 * frac;
     const targetAng = endAng[c0]! + angleDelta(endAng[c1]!, endAng[c0]!) * frac;
-    const theta = theta0 + angleDelta(targetAng, theta0) * smootherstep(u);
+    const blendU = smootherstep(u);
+    const theta = theta0 + angleDelta(targetAng, theta0) * blendU;
     const fitAlpha = clamp(fitShared(u * fitSpan) / fitDelta, 0, 1);
-    const r = evalFitMink(theta, fitAlpha);
+    const endX = fittedMargin[c0 * 3]! * (1 - frac) + fittedMargin[c1 * 3]! * frac;
+    const endY = fittedMargin[c0 * 3 + 1]! * (1 - frac) + fittedMargin[c1 * 3 + 1]! * frac;
+    const endR = Math.hypot(endX, endY);
+    const rMink = evalFitMink(theta, fitAlpha);
+    const rMinkEnd = evalFitMink(targetAng, 1);
+    const r = Math.max(coneTopR, rMink + (endR - rMinkEnd) * blendU);
     fitted[i] = r * Math.cos(theta);
     fitted[i + 1] = r * Math.sin(theta);
     fitted[i + 2] = z2;
@@ -1357,6 +1537,7 @@ function zoneOf(
     fixedZ,
     marginZ,
     meanMarginZ,
+    propTop: top,
     marginColZ,
     topColZ,
     topMinOuterR: Number.isFinite(topMinOuterR) ? topMinOuterR : undefined,
