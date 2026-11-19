@@ -7683,12 +7683,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         let linMarginSum = 0;
         let linMarginN = 0;
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
-          const cp0 = Math.cos(footPsis[col]!);
+          const du0 = colPostDu[col]!;
           const h0 = cols[col]!.h0;
-          if (cp0 >= 0.7) {
+          if (du0 >= 0.7) {
             bucMarginSum += h0;
             bucMarginN += 1;
-          } else if (cp0 <= -0.7) {
+          } else if (du0 <= -0.7) {
             linMarginSum += h0;
             linMarginN += 1;
           }
@@ -7758,7 +7758,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
-          const phiSec = footPsis[col]!;
+          const phiSec = c.phi;
           const cp = Math.cos(phiSec);
           const sp = Math.sin(phiSec);
           const topEdge = top.heightAt(cuSec + cp * topBl, cvSec + sp * topMd);
@@ -7786,14 +7786,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               phiSec,
             );
             const latU = duLat * (1 - uSpan);
-            const clipU = (plane: { hStart: number; u0: number; slope: number } | null, side: number) => {
-              if (!plane || h < plane.hStart || cp * side <= 0.05) return;
+            const clipU = (
+              plane: { hStart: number; u0: number; slope: number } | null,
+              labial: boolean,
+            ) => {
+              if (!plane || h < plane.hStart) return;
+              const du = colPostDu[col]!;
+              if (labial ? du <= 0.05 : du >= -0.05) return;
               const uPlane = plane.u0 + plane.slope * (h - plane.hStart);
               const sCap = (uPlane - cuSec - latU) / cp;
               if (sCap > 0.2) s = smoothMin(s, sCap, 0.04);
             };
-            if (linPlane?.active) clipU(linPlane, -1);
-            if (bucPlane?.active) clipU(bucPlane, 1);
+            if (linPlane?.active) clipU(linPlane, false);
+            if (bucPlane?.active) clipU(bucPlane, true);
             const u = cuSec + s * cp + latU;
             const v = cvSec + s * sp + dvLat * (1 - uSpan);
             postR[col]![k] = Math.hypot(u, v);

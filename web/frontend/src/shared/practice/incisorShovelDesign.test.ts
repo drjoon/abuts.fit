@@ -828,7 +828,7 @@ const tiltedPose = {
   ...fixture35.fixturePose,
   axis: [Math.sin(tilt35), 0, -Math.cos(tilt35)] as [number, number, number],
 };
-const [tilted35, tiltedCut, tiltedFlat] = await Promise.all([
+const [tilted35, tiltedCut, tiltedFlat, tiltedBucOnly] = await Promise.all([
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
     jawGeometry: jaw,
@@ -853,6 +853,15 @@ const [tilted35, tiltedCut, tiltedFlat] = await Promise.all([
     toothWorks: singleWorks35,
     params: { postLingualBevelMm: 11 },
     explicitParams: { postLingualBevelMm: 11, postLabialBevelMm: 0 },
+  }),
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+    params: { postLingualBevelMm: 0, postLabialBevelMm: 1.5 },
+    explicitParams: { postLingualBevelMm: 0, postLabialBevelMm: 1.5 },
   }),
 ]);
 console.log(
@@ -887,6 +896,35 @@ assert.ok(
   "체크한 구치 협·설 사면은 마진 높이로 잡히고 포스트 높이보다 작다",
 );
 assert.equal(tiltedFlat.metrics.postLabialBevelMm ?? null, null, "협측 사면 0은 사면을 만들지 않는다");
+const sideTrimAtTop = (positions: Float32Array) => {
+  let zTop = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zTop = Math.max(zTop, positions[i]!);
+  const z0 = zTop - 0.9;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (Math.abs(positions[i + 2]! - z0) > 0.15) continue;
+    if (Math.abs(positions[i + 1]!) > 0.35) continue;
+    minX = Math.min(minX, positions[i]!);
+    maxX = Math.max(maxX, positions[i]!);
+  }
+  return { minX, maxX };
+};
+const flatTop = sideTrimAtTop(tilted35.solidBodyLocalPositions!);
+const linTop = sideTrimAtTop(tiltedFlat.solidBodyLocalPositions!);
+const bucTop = sideTrimAtTop(tiltedBucOnly.solidBodyLocalPositions!);
+const linMinPull = linTop.minX - flatTop.minX;
+const linMaxPull = linTop.maxX - flatTop.maxX;
+const bucMinPull = bucTop.minX - flatTop.minX;
+const bucMaxPull = bucTop.maxX - flatTop.maxX;
+assert.ok(
+  linMinPull < linMaxPull - 0.08 && linMinPull < -0.04,
+  `설측 사면만 켰을 때는 설측(${linMinPull.toFixed(2)}mm)이 협측(${linMaxPull.toFixed(2)}mm)보다 더 깎인다`,
+);
+assert.ok(
+  bucMaxPull < bucMinPull - 0.08 && bucMaxPull < -0.04,
+  `협측 사면만 켰을 때는 협측(${bucMaxPull.toFixed(2)}mm)이 설측(${bucMinPull.toFixed(2)}mm)보다 더 깎인다`,
+);
 const blWidthAt = (positions: Float32Array, z0: number) => {
   let minX = Infinity;
   let maxX = -Infinity;
@@ -915,6 +953,8 @@ tiltedCut.worldGeometry.dispose();
 tiltedCut.predictedCrownWorldGeometry.dispose();
 tiltedFlat.worldGeometry.dispose();
 tiltedFlat.predictedCrownWorldGeometry.dispose();
+tiltedBucOnly.worldGeometry.dispose();
+tiltedBucOnly.predictedCrownWorldGeometry.dispose();
 const [labialOff, labialOn] = await Promise.all([
   designCustomAbutmentStl({
     fixture: fixture11,
