@@ -231,7 +231,7 @@ type ToothView = {
 
 type HandleHit = {
   tooth: string;
-  op: "move" | "rot" | "scale" | "scale2" | "scale3" | "center";
+  op: "move" | "move2" | "rot" | "scale" | "scale2" | "scale3" | "center";
   axis: number;
   axis2: number;
 };
@@ -266,6 +266,16 @@ type Drag =
       start: AbutmentEdit;
       startRadialDir: THREE.Vector3;
       startRadialLen: number;
+      pivotWorld: THREE.Vector3;
+      pointerId: number;
+    }
+  | {
+      kind: "move2";
+      tooth: string;
+      axis: number;
+      axis2: number;
+      start: AbutmentEdit;
+      startHit: THREE.Vector3;
       pivotWorld: THREE.Vector3;
       pointerId: number;
     }
@@ -1939,6 +1949,22 @@ export function makeGumball(tooth: string) {
   quadHit.position.copy(quad.position);
   group.add(quad, quadHit);
 
+  // 하늘색 평면 이동 네모(화면 가로·세로 동시 이동): 노란 스케일 네모와 겹치지 않게 3사분면(-0.41, -0.41)에 둔다.
+  const move2Mat = basicMat(0x38bdf8, 0.94);
+  move2Mat.side = THREE.DoubleSide;
+  const move2Quad = tagHandle(new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.21), move2Mat), "move2", 0, 1, move2Mat);
+  move2Quad.position.set(-0.41, -0.41, 0.02);
+  move2Quad.renderOrder = 47;
+  const move2Hit = tagHandle(
+    new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.18), basicMat(0xffffff, 0)),
+    "move2",
+    0,
+    1,
+    move2Mat,
+  );
+  move2Hit.position.copy(move2Quad.position);
+  group.add(move2Quad, move2Hit);
+
   const ringMat = basicMat(0xf8fafc);
   const ring = tagHandle(new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.036, 8, 28), ringMat), "scale3", 0, -1, ringMat);
   const ringHit = tagHandle(
@@ -1988,7 +2014,7 @@ function pickGumballHit(groups: THREE.Object3D[]) {
   const rank = (obj: THREE.Object3D) => {
     const h = handleFrom(obj);
     if (!h) return 9;
-    if (h.op === "scale" || h.op === "scale2" || h.op === "center") return 0;
+    if (h.op === "scale" || h.op === "scale2" || h.op === "move2" || h.op === "center") return 0;
     return 1;
   };
   let best = hits[0]!;
@@ -2502,6 +2528,24 @@ export class AbutmentDirectEditSession {
       this.show(handle.tooth, false);
       return true;
     }
+    if (handle.op === "move2") {
+      this.viewPlane(center);
+      const hit = this.rayOnPlane(event);
+      if (!hit) return false;
+      this.drag = {
+        kind: "move2",
+        tooth: handle.tooth,
+        axis: handle.axis,
+        axis2: handle.axis2,
+        start,
+        startHit: hit.clone(),
+        pivotWorld: center.clone(),
+        pointerId: event.pointerId,
+      };
+      this.show(handle.tooth, false);
+      return true;
+    }
+    if (handle.op !== "scale2" && handle.op !== "scale3") return false;
     this.viewPlane(center);
     const hit = this.rayOnPlane(event) ?? raycaster.ray.closestPointToPoint(center, vA).clone();
     const radial = hit.sub(center);
@@ -2618,6 +2662,18 @@ export class AbutmentDirectEditSession {
         drag.startVec.dot(cur),
       );
       return { kind: "rotate", axis: drag.worldAxis.clone(), deg: (angle * 180) / Math.PI };
+    }
+    if (drag.kind === "move2") {
+      this.viewPlane(drag.startHit);
+      const hit = this.rayOnPlane(event);
+      if (!hit) return null;
+      const raw = hit.sub(drag.startHit);
+      const a = this.cameraAxis(drag.axis, vA).clone();
+      const b = this.cameraAxis(drag.axis2, vB).clone();
+      return {
+        kind: "translate",
+        delta: a.multiplyScalar(raw.dot(a)).add(b.multiplyScalar(raw.dot(b))),
+      };
     }
     if (drag.kind === "scale2" || drag.kind === "scale3") {
       const center = drag.pivotWorld;

@@ -298,6 +298,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   checkRay(0.47, 0, "scale");
   checkRay(0, 0.47, "scale");
   checkRay(0.41, 0.41, "scale2");
+  checkRay(-0.41, -0.41, "move2");
 }
 
 // 검볼이 마진을 옮기면 커프는 그 마진까지 오목하게 다시 깔리고, 콘·포스트·스크류 벽은 그대로다.
