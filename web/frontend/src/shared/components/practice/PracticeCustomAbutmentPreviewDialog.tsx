@@ -4767,28 +4767,25 @@ export function PracticeCustomAbutmentPreviewDialog({
       >
         <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-5 pr-14 text-left">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+            <DialogTitle className="shrink-0 text-base sm:text-lg">
+              커스텀어벗 디자인
+            </DialogTitle>
             {reviewItems.length > 0 ? (
               <PracticeAbutmentDesignReviewRail
-                items={reviewItems}
+                items={reviewItems.map((item, index) =>
+                  index === reviewIndex && caseTitle
+                    ? { ...item, label: caseTitle }
+                    : item,
+                )}
                 index={reviewIndex}
                 onIndexChange={(next) => onReviewIndexChange?.(next)}
               />
-            ) : null}
-            <DialogTitle
-              className={
-                reviewItems.length > 0
-                  ? "sr-only"
-                  : "shrink-0 text-base sm:text-lg"
-              }
-            >
-              커스텀어벗 디자인
-            </DialogTitle>
-            {reviewItems.length === 0 && caseTitle ? (
+            ) : caseTitle ? (
               <span className="truncate text-sm font-medium text-foreground">
                 {caseTitle}
               </span>
             ) : null}
-            {reviewItems.length === 0 && caseDatesLabel ? (
+            {caseDatesLabel ? (
               <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
                 {caseDatesLabel}
               </span>

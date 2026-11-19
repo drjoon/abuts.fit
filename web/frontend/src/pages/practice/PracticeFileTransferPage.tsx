@@ -12386,6 +12386,28 @@ export const PracticeFileTransferPage = ({
           const dialogTransfer = reviewEntry?.transfer || selectedTransfer;
           const dialogModel = reviewModel || selectedTransferDetailModel;
           if (!abutmentDesignOpen || !dialogTransfer || !dialogModel) return null;
+          const reviewCaseTitle = reviewEntry
+            ? (() => {
+                const labLabel = stripPracticeTargetLabDisplayDecorations(
+                  resolvePracticeTransferLabDisplayLabel({
+                    targetLab: reviewEntry.transfer.targetLab,
+                    handledByCertifiedPartner:
+                      reviewEntry.transfer.handledByCertifiedPartner,
+                    assigneeKind: reviewEntry.transfer.assigneeKind,
+                    assigneeLabName: reviewEntry.transfer.assigneeLabName,
+                  }),
+                );
+                const patient = String(reviewModel?.patientName || "").trim();
+                const doctor = String(reviewModel?.doctorName || "").trim();
+                const teeth = formatToothNumbersForCard(
+                  reviewModel?.toothWorks || [],
+                );
+                return [labLabel, patient, doctor, teeth]
+                  .map((part) => String(part || "").trim())
+                  .filter(Boolean)
+                  .join(" · ");
+              })()
+            : "";
           const reviewDates = reviewEntry
             ? [
                 reviewEntry.transfer.orderDate
@@ -12412,7 +12434,9 @@ export const PracticeFileTransferPage = ({
               viewerRole="practice"
               authToken={authToken}
               caseTitle={
-                reviewEntry ? undefined : selectedTransferCaseIdentity?.primary
+                reviewEntry
+                  ? reviewCaseTitle || undefined
+                  : selectedTransferCaseIdentity?.primary
               }
               caseDatesLabel={
                 reviewEntry
@@ -12424,10 +12448,33 @@ export const PracticeFileTransferPage = ({
               files={dialogModel.files || []}
               workScanFiles={dialogModel.workScanFiles || []}
               transferId={String(dialogTransfer.transferId || dialogTransfer.id || "")}
-              reviewItems={designReviewItems.map((item) => ({
-                id: String(item.transfer.transferId || item.transfer.id),
-                label: item.label,
-              }))}
+              reviewItems={designReviewItems.map((item) => {
+                const model = buildPracticeSenderTransferDetailModel(
+                  item.transfer,
+                );
+                const labLabel = stripPracticeTargetLabDisplayDecorations(
+                  resolvePracticeTransferLabDisplayLabel({
+                    targetLab: item.transfer.targetLab,
+                    handledByCertifiedPartner:
+                      item.transfer.handledByCertifiedPartner,
+                    assigneeKind: item.transfer.assigneeKind,
+                    assigneeLabName: item.transfer.assigneeLabName,
+                  }),
+                );
+                const identity = [
+                  labLabel,
+                  String(model?.patientName || "").trim(),
+                  String(model?.doctorName || "").trim(),
+                  formatToothNumbersForCard(model?.toothWorks || []),
+                ]
+                  .map((part) => String(part || "").trim())
+                  .filter(Boolean)
+                  .join(" · ");
+                return {
+                  id: String(item.transfer.transferId || item.transfer.id),
+                  label: identity || item.label,
+                };
+              })}
               reviewIndex={designReviewIndex}
               onReviewIndexChange={(next) => {
                 const target = designReviewItems[next];
