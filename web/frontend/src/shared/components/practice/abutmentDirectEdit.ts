@@ -1,5 +1,6 @@
 // 커스텀어벗 뷰어의 직접 편집.
-// 검볼 원점은 피니시라인 중앙(포스트 최하단)이다. 파란 회전은 그 점을 힌지로 포스트를 기울인다.
+// 검볼 원점은 선택 어벗(여러 개면 선택 묶음) 바운딩 중심이고, 선택이 없으면 피니시라인 중앙이다.
+// 파란 회전의 형상 힌지는 피니시라인 중앙이며, 검볼 UI 중심은 선택 피봇과 같다.
 // 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
 // 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
@@ -235,6 +236,8 @@ type Drag =
       axisWorld: THREE.Vector3;
       start: AbutmentEdit;
       startAlong: number;
+      /** 제스처 측정 원점. 드래그 동안 고정. */
+      pivotWorld: THREE.Vector3;
       pointerId: number;
     }
   | {
@@ -244,6 +247,7 @@ type Drag =
       start: AbutmentEdit;
       startVec: THREE.Vector3;
       worldAxis: THREE.Vector3;
+      pivotWorld: THREE.Vector3;
       pointerId: number;
     }
   | {
@@ -254,6 +258,7 @@ type Drag =
       start: AbutmentEdit;
       startRadialDir: THREE.Vector3;
       startRadialLen: number;
+      pivotWorld: THREE.Vector3;
       pointerId: number;
     }
   | {
@@ -264,6 +269,7 @@ type Drag =
       y: number;
       start: AbutmentEdit;
       startHit: THREE.Vector3;
+      pivotWorld: THREE.Vector3;
     }
   | {
       kind: "sculpt";
@@ -2225,6 +2231,8 @@ export class AbutmentDirectEditSession {
     const picked = this.bridge.ui.selectedTeeth ?? [];
     const multi = picked.length > 1;
     const primary = picked[picked.length - 1] ?? this.bridge.ui.selected;
+    const selectionPivot = picked.length > 0 ? this.selectionCenterWorld(picked) : null;
+    const drag = this.drag;
     for (const [tooth, view] of this.views) {
       const mesh = this.bridge.getAbutment(tooth);
       const visible = !!mesh && mesh.visible && this.bridge.ui.visible[tooth] !== false;
@@ -2233,7 +2241,18 @@ export class AbutmentDirectEditSession {
       const leadGumball = !multi || tooth === primary;
       view.gumball.visible = show && visible && expanded && leadGumball;
       view.gumball.quaternion.copy(gumballQuat);
-      view.gumball.position.copy(this.gumballPosition(view, edit));
+      const draggingPivot =
+        drag &&
+        drag.kind !== "sculpt" &&
+        drag.tooth === tooth &&
+        (drag.kind === "rot" || drag.kind === "scale" || drag.kind === "scale2" || drag.kind === "scale3")
+          ? drag.pivotWorld
+          : null;
+      const atSelectionPivot = leadGumball && selectionPivot && picked.includes(tooth);
+      view.gumball.position.copy(
+        draggingPivot ??
+          (atSelectionPivot ? selectionPivot : this.gumballPosition(view, edit)),
+      );
       view.gumball.scale.setScalar(worldPerPx * (expanded ? GUMBALL_SIZE_PX : 50));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
     }
@@ -2340,7 +2359,7 @@ export class AbutmentDirectEditSession {
     if (!view || !camera || !this.dom) return false;
     if (handle.op === "center") {
       const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
-      const center = this.gumballPosition(view, start);
+      const center = this.resolveGumballCenter(view, start, handle.tooth);
       this.viewPlane(center);
       const hit = this.rayOnPlane(event);
       this.drag = {
@@ -2351,11 +2370,12 @@ export class AbutmentDirectEditSession {
         y: event.clientY,
         start,
         startHit: (hit ?? center).clone(),
+        pivotWorld: center.clone(),
       };
       return true;
     }
     const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
-    const center = this.gumballPosition(view, start);
+    const center = this.resolveGumballCenter(view, start, handle.tooth);
     if (handle.op === "move" || handle.op === "scale") {
       const axis = this.cameraAxis(handle.axis, vC).clone();
       this.axisPlane(axis, center);
@@ -2369,6 +2389,7 @@ export class AbutmentDirectEditSession {
         axisWorld: axis,
         start,
         startAlong: along,
+        pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
       this.show(handle.tooth, false);
@@ -2386,6 +2407,7 @@ export class AbutmentDirectEditSession {
         start,
         startVec: hit.sub(center),
         worldAxis: axis,
+        pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
       this.show(handle.tooth, false);
@@ -2404,6 +2426,7 @@ export class AbutmentDirectEditSession {
       start,
       startRadialDir: radialDir,
       startRadialLen: radialLen,
+      pivotWorld: center.clone(),
       pointerId: event.pointerId,
     };
     this.show(handle.tooth, false);
@@ -2483,7 +2506,7 @@ export class AbutmentDirectEditSession {
     }
     if (drag.kind === "move" || drag.kind === "scale") {
       const axis = drag.axisWorld;
-      const center = this.gumballPosition(view, drag.start);
+      const center = drag.pivotWorld;
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
@@ -2496,7 +2519,7 @@ export class AbutmentDirectEditSession {
       return { kind: "scaleAxes", axes: [axis.clone()], factor: clamp(1 + delta / refSpan, 0.4, 2.2) };
     }
     if (drag.kind === "rot") {
-      const center = this.gumballPosition(view, drag.start);
+      const center = drag.pivotWorld;
       plane.setFromNormalAndCoplanarPoint(drag.worldAxis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
@@ -2508,7 +2531,7 @@ export class AbutmentDirectEditSession {
       return { kind: "rotate", axis: drag.worldAxis.clone(), deg: (angle * 180) / Math.PI };
     }
     if (drag.kind === "scale2" || drag.kind === "scale3") {
-      const center = this.gumballPosition(view, drag.start);
+      const center = drag.pivotWorld;
       this.viewPlane(center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
@@ -2823,7 +2846,7 @@ export class AbutmentDirectEditSession {
     const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
     this.publishShape(summary, bake);
     if (bake && !silent) this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary);
-    this.moveBadge(mesh, this.gumballPosition(view, edit), view.gumball.visible);
+    this.moveBadge(mesh, this.resolveGumballCenter(view, edit, tooth), view.gumball.visible);
   }
 
   private publishShape(summary: AbutmentEditSummary, bake: boolean) {
@@ -3086,6 +3109,34 @@ export class AbutmentDirectEditSession {
       l * zone.labial[1] + m * zone.mesial[1],
       z0 + zLift,
     ).applyMatrix4(view.fixture);
+  }
+
+  /** 선택 어벗 메시들의 바운딩 중심. 회전 중심 피봇과 같다. */
+  private selectionCenterWorld(teeth: readonly string[]): THREE.Vector3 | null {
+    const box = new THREE.Box3();
+    let any = false;
+    for (const tooth of teeth) {
+      const mesh = this.bridge.getAbutment(tooth);
+      if (!mesh) continue;
+      mesh.updateMatrixWorld(true);
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bb = mesh.geometry.boundingBox;
+      if (!bb || bb.isEmpty()) continue;
+      box.union(bb.clone().applyMatrix4(mesh.matrixWorld));
+      any = true;
+    }
+    return any ? box.getCenter(new THREE.Vector3()) : null;
+  }
+
+  /** 선택 중이면 선택 피봇, 아니면 피니시라인 검볼 원점. */
+  private resolveGumballCenter(view: ToothView, edit: AbutmentEdit, tooth: string): THREE.Vector3 {
+    const picked = this.bridge.ui.selectedTeeth ?? [];
+    const primary = picked[picked.length - 1] ?? this.bridge.ui.selected;
+    if (picked.length > 0 && tooth === primary) {
+      const center = this.selectionCenterWorld(picked);
+      if (center) return center;
+    }
+    return this.gumballPosition(view, edit);
   }
 
   private cameraBasis() {
