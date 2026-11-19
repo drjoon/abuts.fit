@@ -761,6 +761,7 @@ function sameAbutmentMetrics(a: CustomAbutmentDesignMetrics, b: CustomAbutmentDe
     a.totalLengthMm === b.totalLengthMm &&
     a.angulationDeg === b.angulationDeg &&
     a.postTaperDeg === b.postTaperDeg &&
+    a.postLingualBevelDeg === b.postLingualBevelDeg &&
     a.cutbackMm === b.cutbackMm &&
     a.crownOverPostMm === b.crownOverPostMm &&
     a.occlusalClearanceMm === b.occlusalClearanceMm
@@ -4026,6 +4027,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             break;
           case "postTaperDeg":
             params = { postTaperDeg: p.postTaperDeg };
+            break;
+          case "postLingualBevelDeg":
+            params = { postLingualBevelDeg: p.postLingualBevelDeg };
             break;
           case "axisSource":
             params = { axisSourceCode: p.axisSourceCode, axisToOpposing: p.axisToOpposing };

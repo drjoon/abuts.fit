@@ -44,6 +44,7 @@ import {
   computeOptimalPostHeightMmFromTaper,
   computeOptimalPostTaperDeg,
   evaluatePostTaperRetention,
+  isAnteriorTooth,
   postRetentionSurface,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
@@ -67,6 +68,7 @@ export type AbutmentInfoFieldKey =
   | "postHeightMm"
   | "postTaperDeg"
   | "postTaperLink"
+  | "postLingualBevelDeg"
   | "occlusalClearanceMm"
   | "axisSource";
 
@@ -79,6 +81,7 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   postHeightMm: "포스트 높이",
   postTaperDeg: "테이퍼",
   postTaperLink: "높이·테이퍼 연결",
+  postLingualBevelDeg: "설측 사면",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
@@ -125,6 +128,8 @@ export function formatAbutmentInfoFieldValue(
       return `${cleanNum(m.postHeightMm, 2)}mm`;
     case "postTaperDeg":
       return `${cleanNum(m.postTaperDeg, 1)}°`;
+    case "postLingualBevelDeg":
+      return m.postLingualBevelDeg != null ? `${cleanNum(m.postLingualBevelDeg, 1)}°` : "-";
     case "occlusalClearanceMm":
       return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
     case "axisSource":
@@ -238,6 +243,13 @@ export function computeParamsFromInfoFieldEdit(
         postTaperDeg: Number(
           Math.min(maxTaper, Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, p.postTaperDeg + delta)).toFixed(2),
         ),
+      };
+    }
+    case "postLingualBevelDeg": {
+      const minBevel = Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, m.postTaperDeg);
+      const maxBevel = CUSTOM_ABUTMENT_PARAM_SPECS.postLingualBevelDeg.max;
+      return {
+        postLingualBevelDeg: Number(Math.min(maxBevel, Math.max(minBevel, num)).toFixed(1)),
       };
     }
     case "occlusalClearanceMm": {
@@ -1607,6 +1619,26 @@ export function PracticeCustomAbutmentDesignTree({
                         </div>
                       );
                     })()}
+                    {isAnteriorTooth(item.toothNumber) && m.postLingualBevelDeg != null ? (
+                      editable ? (
+                        <EditableNumberRow
+                          label="설측 사면"
+                          value={m.postLingualBevelDeg}
+                          min={Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, m.postTaperDeg)}
+                          max={CUSTOM_ABUTMENT_PARAM_SPECS.postLingualBevelDeg.max}
+                          step={1}
+                          digits={1}
+                          suffix="°"
+                          disabled={rowDisabled}
+                          onCommit={(v) => onEditField?.(item, "postLingualBevelDeg", v)}
+                        />
+                      ) : (
+                        <DetailRow
+                          label="설측 사면"
+                          value={`${cleanNum(m.postLingualBevelDeg, 1)}°`}
+                        />
+                      )
+                    ) : null}
                     {m.occlusalClearanceMm != null && editable ? (
                       <EditableNumberRow
                         label="대합 거리"

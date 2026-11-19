@@ -186,6 +186,8 @@ export type CustomAbutmentDesignMetrics = {
   postTaperDeg: number;
   /** 최소 테이퍼(2°) 클램프 전 포스트 높이·상단 벽 여유 기준 적정 편측 테이퍼(°). */
   idealPostTaperDeg?: number;
+  /** 전치부(절치·견치) 포스트 설측 사면 각도(°). 구치부는 null. */
+  postLingualBevelDeg?: number | null;
   /** 포스트 윗면 → 대합치 최소 거리(mm). 대합치가 없으면 null. */
   occlusalClearanceMm: number | null;
   marginFilletRadiusMm: number;
@@ -631,6 +633,11 @@ function evalPeriodicSmooth(samples: readonly number[], theta: number): number {
 /** 꺾임 없는 C∞ 하한 결합(항상 min(a, b) 이하). */
 function smoothMin(a: number, b: number, k = 0.04): number {
   return 0.5 * (a + b - Math.hypot(a - b, k));
+}
+
+/** 꺾임 없는 C∞ 상한 결합(항상 max(a, b) 이상). */
+function smoothMax(a: number, b: number, k = 0.04): number {
+  return 0.5 * (a + b + Math.hypot(a - b, k));
 }
 
 /** [0, 0.9] 구간에서 C¹ 연속으로 0→1 이동(최대 기울기 1.25). u≤0·u≥0.9에서 기울기 0이라 상·하단 접합이 매끄럽다. */
@@ -7199,6 +7206,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let topFaceCu = mCu;
     let topFaceCv = mCv;
     let geomIdealTaperDeg: number | null = null;
+    let appliedLingualBevelDeg: number | null = null;
     let wrapAnteriorScrew360 = false;
     if (posterior) {
       let pSecCu = mCu;
@@ -8100,13 +8108,27 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       //    스크류 홀은 가까운 사면(순측·근심순측 사면)으로 자연스럽게 비스듬히 개구시킨다.
       // 3) 설측은 포스트 아래는 2° 축벽을 유지하고, 위쪽만 인접치 측면 각도에 맞춘 가파른 직선 사선으로 싱귤럼을 깎는다.
       //    절치(#11·#12·#22)는 치경 1/3 싱귤럼을 남기고 그 위를 설면와가 들어가게 더 일찍 깎으며, 상단 순설은 인접 자연치처럼 좁은 삽형으로 둔다.
-      const cingulumPlan = anteriorCingulumPlan(
+      const autoCingulumPlan = anteriorCingulumPlan(
         tpl.anatomy.morphology.cingulum.bevelAngleDeg,
         tpl.anatomy.morphology.cingulum.collarHeightRatio,
         anteriorNeighborSideDeg,
         tpl.kind,
         incisorNeighborBevelDeg,
       );
+      const hasExplicitLingualBevel =
+        !lockBasePass &&
+        Number.isFinite(params.postLingualBevelDeg) &&
+        params.postLingualBevelDeg >= 0;
+      const minLingualBevelDeg = Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, passTaperDeg);
+      const effectiveLingualBevelDeg = hasExplicitLingualBevel
+        ? clamp(params.postLingualBevelDeg, minLingualBevelDeg, 60)
+        : autoCingulumPlan.angleDeg;
+      appliedLingualBevelDeg = Math.round(effectiveLingualBevelDeg * 10) / 10;
+      const cingulumPlan = {
+        angleDeg: effectiveLingualBevelDeg,
+        collar: autoCingulumPlan.collar,
+        slope: Math.tan(effectiveLingualBevelDeg * DEG),
+      };
       const estAntTaperSlope = Math.tan(
         Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
       );
@@ -8802,19 +8824,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         // 설측 싱귤럼: 칼라 위 상단만 가파른 직선 사선으로 깎고, 스크류 홀 최소 벽(minLinCollar)은 남긴다.
         const incisorOpenScrew = tpl.kind === "incisor" && !wrapAnteriorScrew360;
         const linFloor = incisorOpenScrew ? 0.62 : minLinCollar();
+        const lingualRoom = finalAntBaseBl - pBaseCu + pTopCu;
         const cingulumBevelTopLin = cingulumTopHalfMm(
           cingulumPlan,
-          finalAntBaseBl - pBaseCu + pTopCu,
+          lingualRoom,
           dropLin,
           hSpanLin,
           incisorOpenScrew ? 0.58 : minLinCollar(),
         );
+        // 사용자가 설측 사면 각도를 직접 설정하면 템플릿/소프트 설측 제한(topLinHalf)이 각도를 덮어쓰지 않는다.
+        const tLinCap = hasExplicitLingualBevel
+          ? cingulumBevelTopLin
+          : Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin);
         const tLin = Math.max(
           linFloor,
-          Math.min(
-            finalAntBaseBl - pBaseCu + pTopCu - dropLin,
-            Math.max(linFloor, Math.min(topLinHalf * syncedAntScaleBl, cingulumBevelTopLin)),
-          ),
+          Math.min(lingualRoom - dropLin, Math.max(linFloor, tLinCap)),
         );
         const minMdFloor = wrapAnteriorScrew360
           ? minMdCollar()
@@ -8834,7 +8858,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const spareSh = Math.max(0, effAntShoulder - MIN_MARGIN_SHOULDER_MM);
           wallBaseMd = Math.min(finalAntBaseMd + spareSh, tMd + dropMd);
         }
-        return { tLab, tLin, tMd, wallBaseMd, dropLin, hSpanMd };
+        return { tLab, tLin, tMd, wallBaseMd, dropLin, hSpanMd, hSpanLin };
       };
 
       let {
@@ -8844,6 +8868,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         wallBaseMd: finalAntWallBaseMd,
         dropLin: finalAntDropLin,
         hSpanMd: finalAntSpanMd,
+        hSpanLin: finalAntSpanLin,
       } = computeAnteriorTopHalves(!lockBasePass && lockedAnteriorBase ? antFootPsis : undefined);
 
       const buildAnteriorWallColumns = (
@@ -8854,6 +8879,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         wallBaseMd = finalAntBaseMd,
         dropLin = minAntDropBl,
         hSpanMdRef = hRefSpanAnt,
+        hSpanLinRef = hRefSpanAnt,
       ) => {
         const baseLabParam = finalAntBaseBl / postUnitLab;
         const baseLinParam = finalAntBaseBl / postUnitLin;
@@ -8862,6 +8888,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const mdWallSlope = Math.max(
           minAntTaperSlope,
           (wallBaseMd - tMd) / Math.max(hSpanMdRef, 0.36),
+        );
+        const linCollarSlope = Math.max(
+          minAntTaperSlope,
+          dropLin / Math.max(hSpanLinRef, 0.36),
         );
         for (let col = 0; col < ANGULAR_COLS; col += 1) {
           const c = cols[col]!;
@@ -8894,11 +8924,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             const taperOnlyTopLinParam = Math.max(0.58, baseLinParam - dropLin / Math.max(postUnitLin, 0.4));
             const collarU = cingulumPlan.collar;
             const linAtCollar = baseLinParam + (taperOnlyTopLinParam - baseLinParam) * collarU;
-            const aLinRaw =
-              uSpan <= collarU
-                ? baseLinParam + (taperOnlyTopLinParam - baseLinParam) * uSpan
-                : linAtCollar +
-                  (targetTopLinParam - linAtCollar) * smoothCingulumBevelRamp(uSpan, collarU);
+            let aLinRaw: number;
+            if (hasExplicitLingualBevel) {
+              // 사용자가 설측 사면 각도를 지정한 경우: 칼라 구간은 테이퍼 각도, 칼라 위는 지정 각도로 직선 사면 깎기
+              const hCollar = hBaseAnt + (roundStartAnt - hBaseAnt) * collarU;
+              const uLinBase = pBaseCu - baseLinParam;
+              if (uSpan <= collarU) {
+                const uLinNow = uLinBase + linCollarSlope * (h - hBaseAnt);
+                aLinRaw = cuH - uLinNow;
+              } else {
+                const uLinAtCollar = uLinBase + linCollarSlope * (hCollar - hBaseAnt);
+                const uLinByBevel = uLinAtCollar + cingulumPlan.slope * Math.max(0, h - hCollar);
+                aLinRaw = smoothMax(targetTopLinParam, cuH - uLinByBevel, 0.05);
+              }
+            } else if (uSpan <= collarU) {
+              aLinRaw = baseLinParam + (taperOnlyTopLinParam - baseLinParam) * uSpan;
+            } else {
+              aLinRaw =
+                linAtCollar +
+                (targetTopLinParam - linAtCollar) * smoothCingulumBevelRamp(uSpan, collarU);
+            }
             const aLinH = Math.max(0.58, aLinRaw);
             // 치은 스캘럽으로 근심·원심 축벽 높이가 달라도 실제 높이(h - hBaseAnt)에 비례해 테이퍼를 깎아
             // 양쪽 근원심 벽 모두 설정 편측 테이퍼(최소 2°)를 지키게 한다.
@@ -8952,6 +8997,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             wallBaseMd: finalAntWallBaseMd,
             dropLin: finalAntDropLin,
             hSpanMd: finalAntSpanMd,
+            hSpanLin: finalAntSpanLin,
           } = computeAnteriorTopHalves(antFootPsis));
           buildAnteriorWallColumns(
             antFootPsis,
@@ -8961,6 +9007,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             finalAntWallBaseMd,
             finalAntDropLin,
             finalAntSpanMd,
+            finalAntSpanLin,
           );
         };
 
@@ -9062,6 +9109,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           finalAntWallBaseMd,
           finalAntDropLin,
           finalAntSpanMd,
+          finalAntSpanLin,
         );
       }
       topFaceCu = pTopCu + (finalAntTopLab - finalAntTopLin) * 0.5;
@@ -9674,6 +9722,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       cutbackSum,
       taperMean: taperSum / Math.max(taperCols, 1),
       geomIdealTaperDeg,
+      lingualBevelDeg: appliedLingualBevelDeg,
       postApex,
       crownApex,
       meanCrownCuspH,
@@ -10265,6 +10314,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       rmsMm: fixture.rmsMm,
       postTaperDeg: reportedPostTaperDeg,
       idealPostTaperDeg,
+      ...(shape.lingualBevelDeg != null ? { postLingualBevelDeg: shape.lingualBevelDeg } : {}),
       occlusalClearanceMm,
       marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),

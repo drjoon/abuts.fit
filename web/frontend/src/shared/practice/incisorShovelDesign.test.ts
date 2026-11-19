@@ -531,6 +531,86 @@ taper2Deg11.predictedCrownWorldGeometry.dispose();
 taper35Deg11.worldGeometry.dispose();
 taper35Deg11.predictedCrownWorldGeometry.dispose();
 
+// 전치부(절치·견치) 포스트 설측 사면 각도 설정 검증
+const works13 = [{ toothNumber: "13", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }];
+const fixture13 = { ...fixture11, toothNumber: "13" };
+const [bevel15Incisor, bevel45Incisor, bevel15Canine, bevel45Canine] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works11,
+    params: { postLingualBevelDeg: 15 },
+    explicitParams: { postLingualBevelDeg: 15 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works11,
+    params: { postLingualBevelDeg: 45 },
+    explicitParams: { postLingualBevelDeg: 45 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture13,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works13,
+    params: { postLingualBevelDeg: 15 },
+    explicitParams: { postLingualBevelDeg: 15 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture13,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works13,
+    params: { postLingualBevelDeg: 45 },
+    explicitParams: { postLingualBevelDeg: 45 },
+  }),
+]);
+const inc15Shape = sectionMetrics(bevel15Incisor.solidBodyLocalPositions!);
+const inc45Shape = sectionMetrics(bevel45Incisor.solidBodyLocalPositions!);
+const can15Shape = sectionMetrics(bevel15Canine.solidBodyLocalPositions!);
+const can45Shape = sectionMetrics(bevel45Canine.solidBodyLocalPositions!);
+console.log(
+  JSON.stringify({
+    bevel: {
+      inc15: { deg: bevel15Incisor.metrics.postLingualBevelDeg, bl: +inc15Shape.bl.toFixed(2), maxD: bevel15Incisor.metrics.maxDiameterMm },
+      inc45: { deg: bevel45Incisor.metrics.postLingualBevelDeg, bl: +inc45Shape.bl.toFixed(2), maxD: bevel45Incisor.metrics.maxDiameterMm },
+      can15: { deg: bevel15Canine.metrics.postLingualBevelDeg, bl: +can15Shape.bl.toFixed(2), maxD: bevel15Canine.metrics.maxDiameterMm },
+      can45: { deg: bevel45Canine.metrics.postLingualBevelDeg, bl: +can45Shape.bl.toFixed(2), maxD: bevel45Canine.metrics.maxDiameterMm },
+      posterior35Deg: single35.metrics.postLingualBevelDeg ?? null,
+    },
+  }),
+);
+assert.equal(bevel15Incisor.metrics.postLingualBevelDeg, 15, "절치 설측 사면 15°가 메트릭에 반영된다");
+assert.equal(bevel45Incisor.metrics.postLingualBevelDeg, 45, "절치 설측 사면 45°가 메트릭에 반영된다");
+assert.ok(
+  inc45Shape.bl < inc15Shape.bl - 0.35,
+  `절치 설측 사면을 15°→45°로 키우면 상단 순설 폭이 줄어든다(${inc15Shape.bl.toFixed(2)}mm → ${inc45Shape.bl.toFixed(2)}mm)`,
+);
+const maxLoopR = (loop: Float32Array) => {
+  let r = 0;
+  for (let i = 0; i < loop.length; i += 3) r = Math.max(r, Math.hypot(loop[i]!, loop[i + 1]!));
+  return Math.round(r * 200) / 100;
+};
+assert.equal(
+  maxLoopR(bevel15Incisor.marginLoopLocal),
+  maxLoopR(bevel45Incisor.marginLoopLocal),
+  "설측 사면 각도를 바꿔도 피니시라인 외경은 유지된다",
+);
+assert.equal(bevel15Canine.metrics.postLingualBevelDeg, 15, "견치 설측 사면 15°가 메트릭에 반영된다");
+assert.equal(bevel45Canine.metrics.postLingualBevelDeg, 45, "견치 설측 사면 45°가 메트릭에 반영된다");
+assert.ok(
+  can45Shape.bl < can15Shape.bl - 0.25,
+  `견치 설측 사면을 15°→45°로 키우면 상단 순설 폭이 줄어든다(${can15Shape.bl.toFixed(2)}mm → ${can45Shape.bl.toFixed(2)}mm)`,
+);
+assert.equal(single35.metrics.postLingualBevelDeg ?? null, null, "구치부에는 설측 사면 메트릭이 없다");
+for (const d of [bevel15Incisor, bevel45Incisor, bevel15Canine, bevel45Canine]) {
+  d.worldGeometry.dispose();
+  d.predictedCrownWorldGeometry.dispose();
+}
+
 deep11.worldGeometry.dispose();
 deep11.predictedCrownWorldGeometry.dispose();
 close11.worldGeometry.dispose();

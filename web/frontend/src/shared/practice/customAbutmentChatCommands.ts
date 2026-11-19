@@ -218,6 +218,24 @@ const RULES: Rule[] = [
       return { strip, deltas: [{ key: "postHeightOffsetMm", mode: "add", value: v }] };
     },
   },
+  // 전치부 설측 사면 각도
+  {
+    match: (c, num, amount) => {
+      if (!has(c, /(설측|구개측|싱귤럼)\s*(사면|경사|각도|베벨)/)) return null;
+      const strip = [
+        /(설측|구개측|싱귤럼)\s*(사면|경사|각도|베벨)/g,
+        /(가파르|급|더\s*깎|늘|키|크|완만|줄|작|세워|자동)[게여혀]*/g,
+      ];
+      if (has(c, /자동/)) return { strip, deltas: [{ key: "postLingualBevelDeg", mode: "set", value: -1 }] };
+      if (num != null && !has(c, /(줄|늘|키|크|작|완만|가파르|급)/)) {
+        return { strip, deltas: [{ key: "postLingualBevelDeg", mode: "set", value: num }] };
+      }
+      const v = num ?? 5 * amount;
+      if (has(c, /(완만|줄|작|세워)/)) return { strip, deltas: [{ key: "postLingualBevelDeg", mode: "add", value: -v }] };
+      if (has(c, /(가파르|급|늘|키|크|깎)/)) return { strip, deltas: [{ key: "postLingualBevelDeg", mode: "add", value: v }] };
+      return null;
+    },
+  },
   // 테이퍼
   {
     match: (c, num, amount) => {
@@ -341,12 +359,18 @@ function leftoverChars(clause: string, strips: RegExp[]): number {
 
 function clampParam(key: CustomAbutmentParamKey, v: number) {
   const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
+  if (key === "postLingualBevelDeg") {
+    if (v < 0) return -1;
+    const snapped = Math.round(v / spec.step) * spec.step;
+    return Math.min(spec.max, Math.max(2, Number(snapped.toFixed(1))));
+  }
   const step = spec.step;
   const snapped = Math.round(v / step) * step;
   return Math.min(spec.max, Math.max(spec.min, Number(snapped.toFixed(4))));
 }
 
 function formatValue(key: CustomAbutmentParamKey, v: number) {
+  if (key === "postLingualBevelDeg" && v < 0) return "자동";
   const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
   const text = Number(v.toFixed(spec.step >= 0.5 ? 1 : 2)).toString();
   return spec.unit === "배" ? `×${text}` : `${text}${spec.unit}`;
@@ -441,7 +465,11 @@ export function parseLocalDesignCommand(
     if (!cur) continue;
     const params: Partial<CustomAbutmentDesignParams> = {};
     for (const d of deltas) {
-      const base = params[d.key] ?? cur.params[d.key];
+      let base = params[d.key] ?? cur.params[d.key];
+      if (d.key === "postLingualBevelDeg" && d.mode === "add" && base < 0) {
+        const isCanine = /^[1-4]3$/.test(tooth);
+        base = isCanine ? 30 : 42;
+      }
       params[d.key] = clampParam(d.key, d.mode === "set" ? d.value : base + d.value);
     }
     if (
