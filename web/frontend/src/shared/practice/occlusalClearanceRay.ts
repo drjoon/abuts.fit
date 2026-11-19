@@ -1,5 +1,6 @@
 // 포스트 윗면(평탄면 + 상단 라운드 테두리) → 대합치 최단 거리.
 // 윗면 전체를 0.1mm 격자로 샘플링하고, 교합 방향 침투(< 0)와 주변 대합 교두 경사벽(3D 거리)을 함께 잰다.
+// 전치부는 악궁 곡률·수평피개로 대합이 삽입축 바로 위에서 빗나가므로, archBiasU로 순설 탐색을 넓힌다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
 
@@ -11,14 +12,17 @@ const MIN_OPP_H_MM = 1.5;
 const LATERAL_3D_MM = 0.9;
 const LATERAL_CELLS = Math.round(LATERAL_3D_MM / STEP_MM);
 const MAX_SAMPLES = 16000;
+const MAX_LATERAL_MM = 6.5;
 
 type DiskOffset = { di: number; dj: number; dLatSq: number; dLat: number };
 
-const DISK_OFFSETS: readonly DiskOffset[] = (() => {
+function buildDiskOffsets(lateralMm: number): readonly DiskOffset[] {
+  const r = Math.min(MAX_LATERAL_MM, Math.max(LATERAL_3D_MM, lateralMm));
+  const cells = Math.round(r / STEP_MM);
   const list: DiskOffset[] = [];
-  const r2Max = LATERAL_3D_MM * LATERAL_3D_MM + 1e-6;
-  for (let dj = -LATERAL_CELLS; dj <= LATERAL_CELLS; dj += 1) {
-    for (let di = -LATERAL_CELLS; di <= LATERAL_CELLS; di += 1) {
+  const r2Max = r * r + 1e-6;
+  for (let dj = -cells; dj <= cells; dj += 1) {
+    for (let di = -cells; di <= cells; di += 1) {
       if (di === 0 && dj === 0) continue;
       const dLatSq = (di * STEP_MM) ** 2 + (dj * STEP_MM) ** 2;
       if (dLatSq > r2Max) continue;
@@ -27,7 +31,9 @@ const DISK_OFFSETS: readonly DiskOffset[] = (() => {
   }
   list.sort((a, b) => a.dLatSq - b.dLatSq);
   return list;
-})();
+}
+
+const DISK_OFFSETS: readonly DiskOffset[] = buildDiskOffsets(LATERAL_3D_MM);
 
 function sub(a: V, b: V): [number, number, number] {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -51,8 +57,19 @@ function norm(a: V): [number, number, number] {
   return [a[0] / l, a[1] / l, a[2] / l];
 }
 
-function basis(upIn: V) {
+function basis(upIn: V, labialHint?: V) {
   const up = norm(upIn);
+  if (labialHint) {
+    const raw: [number, number, number] = [
+      labialHint[0] - up[0] * dot(labialHint, up),
+      labialHint[1] - up[1] * dot(labialHint, up),
+      labialHint[2] - up[2] * dot(labialHint, up),
+    ];
+    if (Math.hypot(raw[0], raw[1], raw[2]) > 1e-6) {
+      const u = norm(raw);
+      return { up, u, v: cross(up, u) };
+    }
+  }
   const helper: V = Math.abs(up[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   const u = norm(cross(helper, up));
   const v = cross(up, u);
@@ -114,10 +131,33 @@ function buildCapOpposingField(args: {
   roundSteps: number;
   opposingTris: Float32Array;
   up: V;
+  /** 순측 힌트. 있으면 UV가 순설·근원심에 맞춰져 archBiasU가 악궁 순설을 의미한다. */
+  labialHint?: V;
+  /** 포스트 주변 대합까지 보는 기본 수평 반경(mm). */
+  lateralMm?: number;
+  /**
+   * 악궁 순설 방향 대합 중심 오프셋(mm, + = 순측).
+   * 전치 수평피개처럼 대합이 삽입축 바로 위에서 빗나갈 때 격자·탐색을 그쪽으로 넓힌다.
+   */
+  archBiasU?: number;
+  /** 악궁 탐색 시 근원심 반폭(mm). 옆 치아 대합에 걸리지 않게 제한한다. */
+  archHalfVMm?: number;
 }): CapOpposingField | null {
   const cols = args.columns;
   if (cols.length < 3 || args.opposingTris.length < 9) return null;
-  const { up, u, v } = basis(args.up);
+  const { up, u, v } = basis(args.up, args.labialHint);
+  const lateralMm = Math.min(
+    MAX_LATERAL_MM,
+    Math.max(LATERAL_3D_MM, args.lateralMm ?? LATERAL_3D_MM),
+  );
+  const lateralCells = Math.round(lateralMm / STEP_MM);
+  const archBiasU = Number.isFinite(args.archBiasU) ? Number(args.archBiasU) : 0;
+  const archBiasCells = Math.round(Math.abs(archBiasU) / STEP_MM);
+  const archHalfVMm = Math.min(
+    MAX_LATERAL_MM,
+    Math.max(lateralMm, args.archHalfVMm ?? lateralMm),
+  );
+  const archHalfVCells = Math.round(archHalfVMm / STEP_MM);
   const cap: [V, V, V][] = [];
   for (let col = 0; col < cols.length; col += 1) {
     const post = cols[col]!;
@@ -199,10 +239,14 @@ function buildCapOpposingField(args: {
     if (s.h > maxSampleH) maxSampleH = s.h;
   }
 
-  const iuMin = sIuMin - LATERAL_CELLS;
-  const iuMax = sIuMax + LATERAL_CELLS;
-  const ivMin = sIvMin - LATERAL_CELLS;
-  const ivMax = sIvMax + LATERAL_CELLS;
+  // 악궁 순설 바이어스 쪽으로 격자를 확장해, 포스트 footprint 밖의 대합 삼각형도 담는다.
+  const biasSign = archBiasU >= 0 ? 1 : -1;
+  const iuMin =
+    sIuMin - lateralCells - (biasSign < 0 ? archBiasCells + lateralCells : 0);
+  const iuMax =
+    sIuMax + lateralCells + (biasSign > 0 ? archBiasCells + lateralCells : 0);
+  const ivMin = sIvMin - Math.max(lateralCells, archHalfVCells);
+  const ivMax = sIvMax + Math.max(lateralCells, archHalfVCells);
   const gCols = iuMax - iuMin + 1;
   const gRows = ivMax - ivMin + 1;
   if (gCols <= 0 || gRows <= 0 || gCols * gRows > 250000) return null;
@@ -267,21 +311,37 @@ function buildCapOpposingField(args: {
   return { sampleList, iuMin, ivMin, gCols, gRows, oppGrid };
 }
 
-/**
- * 포스트 윗면(상단 라운드 포함)에서 대합 스캔 면까지의 최단 거리(mm).
- * 수직 침투 시 0을 돌려주고, 급경사 대합 교두벽·오버행 교두까지의 3D 거리도 반영한다.
- * 닿는 면이 없으면 null.
- */
-export function shortestPostTopClearanceMm(args: {
+type ClearanceRayOpts = {
   columns: readonly (readonly V[])[];
   apex: V;
   roundSteps: number;
   opposingTris: Float32Array;
   up: V;
-}): number | null {
+  labialHint?: V;
+  lateralMm?: number;
+  archBiasU?: number;
+  archHalfVMm?: number;
+};
+
+/**
+ * 포스트 윗면(상단 라운드 포함)에서 대합 스캔 면까지의 최단 거리(mm).
+ * 수직 침투 시 0을 돌려주고, 급경사 대합 교두벽·오버행 교두까지의 3D 거리도 반영한다.
+ * 닿는 면이 없으면 null.
+ */
+export function shortestPostTopClearanceMm(args: ClearanceRayOpts): number | null {
   const field = buildCapOpposingField(args);
   if (!field) return null;
   const { sampleList, iuMin, ivMin, gCols, oppGrid } = field;
+  const lateralMm = Math.min(
+    MAX_LATERAL_MM,
+    Math.max(LATERAL_3D_MM, args.lateralMm ?? LATERAL_3D_MM),
+  );
+  const disk =
+    Math.abs(lateralMm - LATERAL_3D_MM) < 1e-6 ? DISK_OFFSETS : buildDiskOffsets(lateralMm);
+  const archBiasU = Number.isFinite(args.archBiasU) ? Number(args.archBiasU) : 0;
+  const archHalfVMm = args.archHalfVMm ?? lateralMm;
+  const biasCells = Math.round(archBiasU / STEP_MM);
+  const halfVCells = Math.round(archHalfVMm / STEP_MM);
 
   let best = Infinity;
   for (const s of sampleList) {
@@ -293,13 +353,29 @@ export function shortestPostTopClearanceMm(args: {
       if (dz0 < best) best = dz0;
     }
     if (best <= 0) continue;
-    for (const off of DISK_OFFSETS) {
+    for (const off of disk) {
       if (off.dLat >= best) break;
       const oppH = oppGrid[(r + off.dj) * gCols + (c + off.di)]!;
       if (!Number.isFinite(oppH)) continue;
       const dzPos = oppH > s.h ? oppH - s.h : 0;
       const d3 = Math.sqrt(off.dLatSq + dzPos * dzPos);
       if (d3 < best) best = d3;
+    }
+    // 악궁 순설로 빗나간 대합: 포스트 셀에서 바이어스 쪽 복도로 추가 탐색(근원심은 halfV로 제한).
+    if (Math.abs(biasCells) >= 2) {
+      const step = biasCells > 0 ? 1 : -1;
+      for (let di = step; step > 0 ? di <= biasCells + LATERAL_CELLS : di >= biasCells - LATERAL_CELLS; di += step) {
+        for (let dj = -halfVCells; dj <= halfVCells; dj += 1) {
+          const oppH = oppGrid[(r + dj) * gCols + (c + di)]!;
+          if (!Number.isFinite(oppH)) continue;
+          const dLatSq = (di * STEP_MM) ** 2 + (dj * STEP_MM) ** 2;
+          const dLat = Math.sqrt(dLatSq);
+          if (dLat >= best) continue;
+          const dzPos = oppH > s.h ? oppH - s.h : 0;
+          const d3 = Math.sqrt(dLatSq + dzPos * dzPos);
+          if (d3 < best) best = d3;
+        }
+      }
     }
   }
   if (!Number.isFinite(best) || best >= MAX_MM) return null;
@@ -310,21 +386,26 @@ export function shortestPostTopClearanceMm(args: {
  * 포스트 윗면(상단 라운드 포함) 전체가 대합 스캔과 최소 targetClearanceMm(3D + 수직)를 확보하도록
  * 교합 방향(up)으로 옮겨야 하는 정확한 이동량(mm). 양수면 올리고 음수면 내린다.
  */
-export function solvePostTopClearanceShiftMm(args: {
-  columns: readonly (readonly V[])[];
-  apex: V;
-  roundSteps: number;
-  opposingTris: Float32Array;
-  up: V;
-  targetClearanceMm: number;
-  /** 주변 대합까지 보는 수평 반경. 딥바이트 설측은 면 자체의 수직 간격만 본다. */
-  lateralMm?: number;
-}): number | null {
+export function solvePostTopClearanceShiftMm(
+  args: ClearanceRayOpts & {
+    targetClearanceMm: number;
+  },
+): number | null {
   const field = buildCapOpposingField(args);
   if (!field) return null;
   const { sampleList, iuMin, ivMin, gCols, oppGrid } = field;
   const target = Math.max(0, args.targetClearanceMm);
-  const rCheck = Math.min(Math.max(0, args.lateralMm ?? LATERAL_3D_MM), target);
+  const lateralMm = Math.min(
+    MAX_LATERAL_MM,
+    Math.max(0, args.lateralMm ?? LATERAL_3D_MM),
+  );
+  const rCheck = Math.min(lateralMm, target);
+  const disk =
+    Math.abs(lateralMm - LATERAL_3D_MM) < 1e-6 ? DISK_OFFSETS : buildDiskOffsets(Math.max(LATERAL_3D_MM, lateralMm));
+  const archBiasU = Number.isFinite(args.archBiasU) ? Number(args.archBiasU) : 0;
+  const archHalfVMm = args.archHalfVMm ?? lateralMm;
+  const biasCells = Math.round(archBiasU / STEP_MM);
+  const halfVCells = Math.round(archHalfVMm / STEP_MM);
 
   let minAllowShift = Infinity;
   for (const s of sampleList) {
@@ -335,13 +416,27 @@ export function solvePostTopClearanceShiftMm(args: {
       const allow = h0 - s.h - target;
       if (allow < minAllowShift) minAllowShift = allow;
     }
-    for (const off of DISK_OFFSETS) {
+    for (const off of disk) {
       if (off.dLat >= rCheck) break;
       const oppH = oppGrid[(r + off.dj) * gCols + (c + off.di)]!;
       if (!Number.isFinite(oppH)) continue;
       const reqDz = Math.sqrt(Math.max(0, target * target - off.dLatSq));
       const allow = oppH - s.h - reqDz;
       if (allow < minAllowShift) minAllowShift = allow;
+    }
+    if (Math.abs(biasCells) >= 2) {
+      const step = biasCells > 0 ? 1 : -1;
+      for (let di = step; step > 0 ? di <= biasCells + LATERAL_CELLS : di >= biasCells - LATERAL_CELLS; di += step) {
+        for (let dj = -halfVCells; dj <= halfVCells; dj += 1) {
+          const dLatSq = (di * STEP_MM) ** 2 + (dj * STEP_MM) ** 2;
+          if (dLatSq >= target * target) continue;
+          const oppH = oppGrid[(r + dj) * gCols + (c + di)]!;
+          if (!Number.isFinite(oppH)) continue;
+          const reqDz = Math.sqrt(Math.max(0, target * target - dLatSq));
+          const allow = oppH - s.h - reqDz;
+          if (allow < minAllowShift) minAllowShift = allow;
+        }
+      }
     }
   }
   if (!Number.isFinite(minAllowShift)) return null;

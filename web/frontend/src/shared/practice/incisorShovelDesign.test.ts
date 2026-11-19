@@ -286,6 +286,57 @@ assert.ok(
   `순측으로 기운 인접치의 각도를 포스트가 따른다(상단-치경 순측 이동 ${openShape.labialRise.toFixed(2)}mm)`,
 );
 
+// 악궁·수평피개: 대합 교합면이 삽입축(+Z) 바로 위가 아니라 순측(+u)으로 빗나간 경우.
+function makeArchOffsetOpposing() {
+  const sSteps = 64;
+  const uSteps = 14;
+  const sMin = -5.5;
+  const sMax = 5.5;
+  const uMin = 2.6;
+  const uMax = 7.2;
+  const tris: number[] = [];
+  const at = (is: number, iu: number) => {
+    const s = sMin + ((sMax - sMin) * is) / sSteps;
+    const u = uMin + ((uMax - uMin) * iu) / uSteps;
+    const a = (s / 6) * ARCH_ANG;
+    const x = 40 * Math.cos(a) - 6 - originX + Math.cos(a) * u;
+    const y = 22 * Math.sin(a) - originY + Math.sin(a) * u;
+    return [x, y, -7.1] as const;
+  };
+  for (let is = 0; is < sSteps; is += 1) {
+    for (let iu = 0; iu < uSteps; iu += 1) {
+      const p00 = at(is, iu);
+      const p10 = at(is + 1, iu);
+      const p11 = at(is + 1, iu + 1);
+      const p01 = at(is, iu + 1);
+      tris.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const archOffsetOpp = makeArchOffsetOpposing();
+const archOffset12 = await designCustomAbutmentStl({
+  fixture: { ...fixture11, toothNumber: "12" },
+  jawGeometry: jaw,
+  opposingGeometry: archOffsetOpp,
+  toothWorks: [{ toothNumber: "12", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+});
+assert.ok(
+  archOffset12.metrics.occlusalClearanceMm != null && archOffset12.metrics.occlusalClearanceMm >= 0.7,
+  `악궁 순설로 빗나간 대합(#12)도 대합 거리(${archOffset12.metrics.occlusalClearanceMm})를 잰다`,
+);
+assert.ok(
+  archOffset12.metrics.postHeightMm < open11.metrics.postHeightMm - 0.4,
+  `순설 빗나간 대합이 있으면 포스트(${archOffset12.metrics.postHeightMm}mm)가 대합 없음(${open11.metrics.postHeightMm}mm)보다 짧다`,
+);
+archOffsetOpp.dispose();
+archOffset12.worldGeometry.dispose();
+archOffset12.predictedCrownWorldGeometry.dispose();
+
 function makePalatalOnlyOpposing() {
   const sSteps = 64;
   const uSteps = 12;

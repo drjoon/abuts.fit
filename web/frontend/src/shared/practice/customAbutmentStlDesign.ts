@@ -346,6 +346,12 @@ function measurePostTopClearanceMm(
   columns: readonly Vec3[][],
   apex: Vec3,
   up: Vec3,
+  opts?: {
+    labialHint?: Vec3;
+    lateralMm?: number;
+    archBiasU?: number;
+    archHalfVMm?: number;
+  },
 ): number | null {
   const tris = opposingTrianglesInFixtureFrame(opposingGeometry, pose, 18);
   if (tris.length < 9) return null;
@@ -355,6 +361,10 @@ function measurePostTopClearanceMm(
     roundSteps: TOP_ROUND_STEPS,
     opposingTris: tris,
     up,
+    labialHint: opts?.labialHint,
+    lateralMm: opts?.lateralMm,
+    archBiasU: opts?.archBiasU,
+    archHalfVMm: opts?.archHalfVMm,
   });
 }
 
@@ -2185,6 +2195,37 @@ function opposingBandMinHeight(
     if (cell.h < best) best = cell.h;
   }
   return best;
+}
+
+/**
+ * 전치·견치 대합치: 임플란트 축(+Z/삽입축) 바로 위만 보면 악궁 곡률·수평피개로 빗나간 대합을 놓친다.
+ * 같은 치아 근원심 폭(|v|≤halfMd) 안에서 교합면 하한 띠의 순설 중심을 악궁상 대합 위치로 쓴다.
+ */
+function findArchAwareOpposingHit(
+  field: ReturnType<typeof buildOpposingHeightField>,
+  opts?: { halfMdMm?: number; maxAbsU?: number },
+): { h: number; u: number; v: number } | null {
+  const vHalf = Math.max(2.4, opts?.halfMdMm ?? 3.2);
+  const maxU = Math.max(5.5, opts?.maxAbsU ?? 8.0);
+  const slice = field.list.filter((c) => Math.abs(c.v) <= vHalf && Math.abs(c.u) <= maxU);
+  if (slice.length < 10) return null;
+  const hs = slice.map((c) => c.h).sort((a, b) => a - b);
+  const minH = hs[Math.floor(hs.length * 0.08)]!;
+  if (!Number.isFinite(minH)) return null;
+  const band = slice.filter((c) => c.h <= minH + 3.2);
+  if (band.length < 8) return null;
+  const us = band.map((c) => c.u).sort((a, b) => a - b);
+  const vs = band.map((c) => c.v).sort((a, b) => a - b);
+  const uCenter = 0.5 * (us[Math.floor(us.length * 0.15)]! + us[Math.floor(us.length * 0.85)]!);
+  const vCenter = 0.5 * (vs[Math.floor(vs.length * 0.2)]! + vs[Math.floor(vs.length * 0.8)]!);
+  const near = band
+    .filter((c) => Math.hypot(c.u - uCenter, c.v - vCenter) <= 2.6)
+    .map((c) => c.h)
+    .sort((a, b) => a - b);
+  const h =
+    near.length >= 4 ? near[Math.floor(near.length * 0.12)]! : minH;
+  if (!Number.isFinite(h)) return null;
+  return { h, u: uCenter, v: vCenter };
 }
 
 /** 픽스쳐 로컬 Z축을 따르는 닫힌 원뿔대(스크류 채널 cutter). */
@@ -5047,17 +5088,43 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // ── 4) 가상 치아 교합면 높이 → 포스트 높이(대합치와 교합 접촉, 지르코니아 두께 최소 0.7mm, 목표 1.0~1.5mm 확보)
   const oppField =
     opposingLocalPts.length > 0 ? buildOpposingHeightField(opposingLocalPts, c0, frame, 9) : null;
+  // 전치·견치: 삽입축 바로 위가 비면 악궁·수평피개로 빗나간 대합을 찾기 위해 순설로 더 넓게 한 번 더 모은다.
+  const oppFieldArch =
+    !posterior && opposingLocalPts.length > 0
+      ? buildOpposingHeightField(opposingLocalPts, c0, frame, 11)
+      : oppField;
   const footR = Math.max(marginA, marginB) - shoulderW + 0.6;
   const oppFootH = oppField ? oppField.heightAt(0, 0, footR) : Infinity;
+  // 악궁상 대합치 중심(전치·견치). 삽입축 Z만 보면 순설로 빗나간 대합을 "없음"으로 놓친다.
+  const archOppHit =
+    !posterior && oppFieldArch
+      ? findArchAwareOpposingHit(oppFieldArch, {
+          halfMdMm: Math.max(2.6, marginB * 0.9),
+          maxAbsU: 8.5,
+        })
+      : null;
   // 중심부(포스트 상단 면) 대합치 높이.
-  // 구치는 중심 교합면(0, 0), 전치는 절단연 능선(순측 +0.45mm — 설측 와에 물리는 하악 절치 때문에 포스트 전체가 짧아지지 않게 구분)을 본다.
+  // 구치는 중심 교합면(0, 0). 전치는 절단연 능선(순측 +0.45mm)을 우선하고,
+  // 삽입축 바로 위가 비면(악궁 곡률·수평피개) 악궁상 대합 중심으로 찾는다.
+  // 축 위 높이와 악궁 높이를 min으로 합치지 않는다 — 딥바이트 설측 대합이 절단 높이를 끌어내리기 때문이다.
   const oppCoreH = oppField
     ? posterior
       ? oppField.heightAt(0, 0, Math.min(2.2, footR * 0.6))
-      : oppField.heightAt(0.45, 0, 1.35)
+      : (() => {
+          const axisH = oppField.heightAt(0.45, 0, 1.35);
+          if (Number.isFinite(axisH)) return axisH;
+          if (archOppHit) return archOppHit.h;
+          return opposingBandMinHeight(
+            oppFieldArch ?? oppField,
+            -4.5,
+            5.5,
+            Math.max(2.4, marginB * 0.75),
+          );
+        })()
     : Infinity;
   const oppRefH = Number.isFinite(oppCoreH) ? oppCoreH : oppFootH;
-  const hasOpposing = Number.isFinite(posterior ? oppFootH : oppRefH);
+  const hasOpposing =
+    Number.isFinite(posterior ? oppFootH : oppRefH) || (!posterior && archOppHit != null);
   // 대합치가 가깝더라도 지르코니아 최소 두께(0.7mm)와 목표(clearance 기본 1.3mm, 1.0~1.5mm)를 확보하기 위해
   // MIN_POST_HEIGHT_MM 때문에 대합치를 파고드는 일을 절대 허용하지 않는다.
   const minSafePostHeightMm = hasOpposing ? 2.2 : MIN_POST_HEIGHT_MM;
@@ -6607,13 +6674,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   const oppNear: Vec3[] = [];
   const maxOppNearH = Math.max(postTopMax + clearance + 4, 16);
+  const axisOppNearH = oppField?.heightAt(0.45, 0, 1.35) ?? Infinity;
+  // 삽입축 바로 위 대합이 없을 때만 악궁 순설로 탐색을 넓힌다. 근원심은 자기 치아 폭 안.
+  const useArchOppNear = !posterior && !Number.isFinite(axisOppNearH);
+  const oppNearLat = useArchOppNear
+    ? Math.max(footR + 0.9, Math.abs(archOppHit?.u ?? 0) + 2.8, 5.2)
+    : footR + 0.9;
+  const oppNearHalfV = useArchOppNear ? Math.max(2.8, marginB * 0.95 + 0.6) : footR + 0.9;
   for (let i = 0; i < opposingLocalPts.length; i += 3) {
     const q: Vec3 = [opposingLocalPts[i]!, opposingLocalPts[i + 1]!, opposingLocalPts[i + 2]!];
     const rel = sub3(q, c0);
     const h = dot3(rel, frame.w);
     if (h < 2 || h > maxOppNearH) continue;
-    // 포스트 자체 수평 반경 + 여유(0.9mm) 안의 대합치만 본다. 인접치(#37 등) 상방으로 내려온 옆 치아 대합 교두에 걸려 내 포스트가 낮아지지 않게 한다.
-    if (Math.hypot(dot3(rel, frame.uLabial), dot3(rel, frame.vSide)) > footR + 0.9) continue;
+    const u = dot3(rel, frame.uLabial);
+    const v = dot3(rel, frame.vSide);
+    // 구치·축 위 대합: 포스트 반경 원. 악궁 빗나감: 순설(u)은 넓히고 근원심(v)은 자기 치아 폭만.
+    if (!useArchOppNear) {
+      if (Math.hypot(u, v) > oppNearLat) continue;
+    } else if (Math.abs(v) > oppNearHalfV || Math.abs(u) > oppNearLat) {
+      continue;
+    }
     oppNear.push(q);
   }
   const nearestOpp = (p: Vec3) => {
@@ -10248,6 +10328,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let delta = 0;
       let hasDelta = true;
       if (oppTrisLocal.length >= 9) {
+        // 삽입축 바로 위에 대합이 있으면 기존 수직 탐색만 쓴다(딥바이트 설측이 절단 높이를 끌어내리지 않게).
+        // 축 위가 비고 악궁·수평피개로만 대합이 잡힐 때만 순설 바이어스 탐색을 켠다.
+        const axisClearH = oppField?.heightAt(0.45, 0, 1.35) ?? Infinity;
+        const archClearOpts =
+          !posterior && !Number.isFinite(axisClearH)
+            ? {
+                labialHint: frame.uLabial,
+                archBiasU: archOppHit?.u ?? 0,
+                archHalfVMm: Math.max(2.6, marginB * 0.9),
+                lateralMm: Math.max(
+                  2.5,
+                  Math.min(5.2, Math.abs(archOppHit?.u ?? 2.5) * 0.6 + 1.4),
+                ),
+              }
+            : {};
         const solveShift = (
           columns: readonly (readonly Vec3[])[],
           targetMm: number,
@@ -10260,7 +10355,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             opposingTris: oppTrisLocal,
             up: occInFix,
             targetClearanceMm: targetMm,
-            lateralMm,
+            ...archClearOpts,
+            ...(lateralMm != null ? { lateralMm } : {}),
           });
         let occShift: number | null;
         if (incisorDeepBite) {
@@ -10451,7 +10547,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     marginLoopLocal[col * 3 + 2] = mp[2];
   }
 
-  // 포스트 윗면 0.1mm 그리드에서 교합 방향(수직) 레이 → 대합 스캔 면까지의 최단 거리
+  // 포스트 윗면 0.1mm 그리드에서 교합 방향 레이 → 대합 스캔 면까지의 최단 거리.
+  // 삽입축 바로 위가 비고 악궁·수평피개로만 대합이 있을 때 순설 바이어스 탐색을 켠다.
+  const axisClearMeasureH = oppField?.heightAt(0.45, 0, 1.35) ?? Infinity;
+  const archClearMeasureOpts =
+    !posterior && !Number.isFinite(axisClearMeasureH)
+      ? {
+          labialHint: frame.uLabial,
+          archBiasU: archOppHit?.u ?? 0,
+          archHalfVMm: Math.max(2.6, marginB * 0.9),
+          lateralMm: Math.max(2.5, Math.min(5.2, Math.abs(archOppHit?.u ?? 2.5) * 0.6 + 1.4)),
+        }
+      : undefined;
   const occlusalClearanceMm =
     oppTrisLocal.length >= 9
       ? shortestPostTopClearanceMm({
@@ -10460,6 +10567,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           roundSteps: TOP_ROUND_STEPS,
           opposingTris: oppTrisLocal,
           up: occInFix,
+          ...archClearMeasureOpts,
         })
       : measurePostTopClearanceMm(
           opposingGeometry,
@@ -10467,6 +10575,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           postByCol,
           postApex,
           occInFix,
+          archClearMeasureOpts,
         );
 
   let zMinLocal = Infinity;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { shortestPostTopClearanceMm } from "./occlusalClearanceRay";
 
 const up = [0, 0, 1] as const;
+const labial = [1, 0, 0] as const;
 
 const columns: [number, number, number][][] = [
   [[-1, -1, 4], [-1, -1, 5]],
@@ -37,4 +38,30 @@ const sideOnly = shortestPostTopClearanceMm({
 });
 assert.equal(sideOnly, null, "옆 정점은 수직 레이에 안 걸린다");
 
-console.log("occlusalClearanceRay ok", hit);
+// 전치 악궁·수평피개: 대합 교합면이 순측(+X)으로 3mm 빗나가 있어도 찾는다.
+const archOffset = shortestPostTopClearanceMm({
+  columns,
+  apex,
+  roundSteps: 1,
+  opposingTris: new Float32Array(slab(6.5, 2.4, 4.2, -1.2, 1.2)),
+  up,
+  labialHint: labial,
+  archBiasU: 3.2,
+  archHalfVMm: 2.8,
+  lateralMm: 3.5,
+});
+assert.ok(
+  archOffset != null && archOffset > 0.5 && archOffset < 3.5,
+  `악궁 순설로 빗나간 대합 거리(${archOffset})를 잰다`,
+);
+
+const archMissWithoutBias = shortestPostTopClearanceMm({
+  columns,
+  apex,
+  roundSteps: 1,
+  opposingTris: new Float32Array(slab(6.5, 2.4, 4.2, -1.2, 1.2)),
+  up,
+});
+assert.equal(archMissWithoutBias, null, "바이어스 없이 순설 빗나간 대합은 수직 레이에 안 걸린다");
+
+console.log("occlusalClearanceRay ok", hit, archOffset);
