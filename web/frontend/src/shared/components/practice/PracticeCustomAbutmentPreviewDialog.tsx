@@ -152,6 +152,7 @@ import {
 } from "@/shared/practice/abutmentDesignLogic";
 import {
   detectAndMatchScanbodiesOnJaw,
+  locateNominalToothSlot,
   matchScanbodyNearPoint,
   splitScanByScanbodies,
   fixturePoseToMatrix4,
@@ -3631,6 +3632,93 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
 
+        // 저장본에 없는 치아, 또는 옆 치아 슬롯에 붙어 있는 치아는 다시 찍게 한다.
+        // 그렇지 않으면 화면이 바로 확정되고 #36이 #35 자리에 남은 채로 안내가 사라진다.
+        if (!readOnly && (restored || meshRestore) && !cancelled && frame) {
+          const slotCenter = new Map<string, [number, number, number]>();
+          for (const tw of curToothWorks) {
+            const parsed = parseFdiTooth(tw.toothNumber);
+            const geo = parsed?.jaw === "upper" ? upperPrimary : parsed?.jaw === "lower" ? lowerPrimary : null;
+            if (!parsed || !geo) continue;
+            const slot = locateNominalToothSlot({
+              geometry: geo,
+              frame,
+              toothNumber: tw.toothNumber,
+              allowPartialArch: true,
+            });
+            if (slot) slotCenter.set(tw.toothNumber, slot.center);
+          }
+          const misplaced = new Set<string>();
+          for (const designed of builtAbutments) {
+            const own = slotCenter.get(designed.toothNumber);
+            if (!own) continue;
+            const top = designed.fixture.scanbodyTop;
+            const dist = (center: readonly [number, number, number]) =>
+              Math.hypot(top[0] - center[0], top[1] - center[1], top[2] - center[2]);
+            const ownD = dist(own);
+            for (const [other, center] of slotCenter) {
+              if (other === designed.toothNumber) continue;
+              const otherFdi = parseFdiTooth(other);
+              const ownFdi = parseFdiTooth(designed.toothNumber);
+              if (!otherFdi || !ownFdi || otherFdi.jaw !== ownFdi.jaw || otherFdi.digits[0] !== ownFdi.digits[0]) {
+                continue;
+              }
+              if (dist(center) + 2.5 < ownD) misplaced.add(designed.toothNumber);
+            }
+          }
+          if (misplaced.size > 0) {
+            const kept: DesignedCustomAbutment[] = [];
+            for (const designed of builtAbutments) {
+              if (!misplaced.has(designed.toothNumber)) {
+                kept.push(designed);
+                continue;
+              }
+              const staleChoice = candidateChoicesRef.current[designed.toothNumber];
+              if (staleChoice) {
+                delete candidateChoicesRef.current[designed.toothNumber];
+                for (const cand of staleChoice.candidates) {
+                  if (cand.design === designed) continue;
+                  cand.design.worldGeometry.dispose();
+                  cand.design.predictedCrownWorldGeometry.dispose();
+                  cand.design.enameloplastyWorldGeometry?.dispose();
+                }
+              }
+              designed.worldGeometry.dispose();
+              designed.predictedCrownWorldGeometry.dispose();
+              designed.enameloplastyWorldGeometry?.dispose();
+            }
+            builtAbutments.length = 0;
+            builtAbutments.push(...kept);
+          }
+          const builtTeeth = new Set(builtAbutments.map((d) => d.toothNumber));
+          const missing = curToothWorks.filter((tw) => !builtTeeth.has(tw.toothNumber));
+          if (missing.length > 0) {
+            const curCatalog = scanbodyCatalogRef.current ?? (await catalogPromise);
+            if (!cancelled) {
+              scanbodyCatalogRef.current = curCatalog;
+              const queued = new Set(pendingPickJobs.map((job) => job.toothNumber));
+              for (const tw of missing) {
+                if (queued.has(tw.toothNumber)) continue;
+                const parsed = parseFdiTooth(tw.toothNumber);
+                if (!parsed) continue;
+                const models = await loadCandidateScanbodyModels({
+                  toothWork: tw,
+                  catalog: curCatalog,
+                  connections: curConnections,
+                });
+                if (cancelled) break;
+                if (models.length === 0) continue;
+                pendingPickJobs.push({
+                  toothNumber: tw.toothNumber,
+                  jaw: parsed.jaw,
+                  toothWork: tw,
+                  models,
+                });
+              }
+            }
+          }
+        }
+
         for (const bite of biteScans) {
           bite.geometry.dispose();
           bite.texture?.dispose();
@@ -3768,6 +3856,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (restoredChat.length > savedChat.length) persistChat(restoredChat);
         }
         if (pendingPickJobs.length > 0) {
+          pendingPickJobs.sort(
+            (a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber),
+          );
           scanbodyPickRef.current = {
             jobs: pendingPickJobs,
             connections: curConnections,
@@ -5853,7 +5944,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {status.kind === "pick" ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-20 z-20 flex justify-center px-3">
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
