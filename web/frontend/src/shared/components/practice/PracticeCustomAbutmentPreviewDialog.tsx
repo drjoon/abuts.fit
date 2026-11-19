@@ -12,6 +12,7 @@
 // 화살표는 이동, 우상 점은 크기·평면 스케일, 좌하 호는 회전이다. 커넥션과 2° 테이퍼는 고정이다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
+// - 2026-11-19: 소통 패널 헤더는 접기(chevron). X로 닫지 않는다.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
@@ -42,6 +43,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Axis3d,
   Check,
+  ChevronDown,
   Download,
   Hand,
   Loader2,
@@ -1093,6 +1095,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const editedInfoFieldsRef = useRef<Record<string, Set<AbutmentInfoFieldKey>>>({});
 
   const [manualChatOpen, setManualChatOpen] = useState(!readOnly && Boolean(transferIdParam));
+  const [manualChatCollapsed, setManualChatCollapsed] = useState(false);
   const [ptxRoomId, setPtxRoomId] = useState<string | null>(null);
   const [ptxRoomLoading, setPtxRoomLoading] = useState(false);
   const [sharedChatDraft, setSharedChatDraft] = useState("");
@@ -4459,9 +4462,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [authToken, open, transferIdParam]);
 
   useEffect(() => {
+    if (manualChatCollapsed) return;
     const el = sharedChatScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [ptxMessages, manualChatOpen]);
+  }, [manualChatCollapsed, ptxMessages, manualChatOpen]);
 
   // 상대방이 3D 페인트를 갱신하면 실시간 반영
   useEffect(() => {
@@ -5028,6 +5032,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       viewerTouchRef.current.add("chat");
       viewerPrefsRef.current = { ...viewerPrefsRef.current, chatOpen: true };
       setManualChatOpen(true);
+      setManualChatCollapsed(false);
       paint.setPaintOn(true);
       persistDesign();
       window.requestAnimationFrame(() => sharedChatInputRef.current?.focus());
@@ -5806,7 +5811,14 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute left-3 top-3 z-20 grid h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] grid-rows-[auto_minmax(0,1fr)] gap-2">
+              <div
+                className={cn(
+                  "pointer-events-none absolute left-3 top-3 z-20 grid h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] gap-2",
+                  !readOnly && manualChatOpen && transferIdParam && !manualChatCollapsed
+                    ? "grid-rows-[auto_minmax(0,1fr)]"
+                    : "grid-rows-[auto_auto]",
+                )}
+              >
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0 justify-self-start"
@@ -5838,10 +5850,18 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {!readOnly && manualChatOpen && transferIdParam ? (
                   <div
-                    className="pointer-events-auto flex h-full min-h-0 w-full flex-col self-stretch overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
+                    className={cn(
+                      "pointer-events-auto flex w-full flex-col self-stretch overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
+                      manualChatCollapsed ? "h-auto" : "h-full min-h-0",
+                    )}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
+                    <div
+                      className={cn(
+                        "flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-xs",
+                        !manualChatCollapsed && "border-b",
+                      )}
+                    >
                       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
                         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="truncate">
@@ -5867,24 +5887,35 @@ export function PracticeCustomAbutmentPreviewDialog({
                           <Paintbrush className="h-3 w-3" />
                           <span>페인트</span>
                         </button>
-                        {!isLabViewer ? (
-                          <button
-                            type="button"
-                            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                            aria-label="채팅창 닫기"
-                            onClick={() => {
-                              viewerTouchRef.current.add("chat");
-                              viewerPrefsRef.current = { ...viewerPrefsRef.current, chatOpen: false };
-                              setManualChatOpen(false);
-                              paint.setPaintOn(false);
-                            }}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label={manualChatCollapsed ? "소통 패널 펼치기" : "소통 패널 접기"}
+                          aria-expanded={!manualChatCollapsed}
+                          onClick={() => {
+                            viewerTouchRef.current.add("chat");
+                            setManualChatCollapsed((collapsed) => {
+                              const next = !collapsed;
+                              if (!next) {
+                                window.requestAnimationFrame(() =>
+                                  sharedChatInputRef.current?.focus(),
+                                );
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-3.5 w-3.5 transition-transform",
+                              !manualChatCollapsed && "rotate-180",
+                            )}
+                          />
+                        </button>
                       </div>
                     </div>
 
+                    {!manualChatCollapsed ? (
                     <div
                       ref={sharedChatScrollRef}
                       className="min-h-[3.25rem] flex-1 space-y-1 overflow-y-auto px-2.5 py-1.5 text-xs"
@@ -5944,7 +5975,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                         })
                       )}
                     </div>
+                    ) : null}
 
+                    {!manualChatCollapsed ? (
                     <form
                       className="flex shrink-0 items-center gap-1.5 border-t bg-background px-2.5 py-1.5"
                       onSubmit={(e) => {
@@ -5978,6 +6011,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                         <span>전송</span>
                       </Button>
                     </form>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
