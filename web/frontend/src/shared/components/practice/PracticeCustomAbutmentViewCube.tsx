@@ -300,7 +300,7 @@ export const PracticeCustomAbutmentViewCube = forwardRef<
               ? "회전 중심 지우기"
               : pivotArmed
                 ? "회전 중심 고르기 취소"
-                : "회전 중심 지정 (누른 뒤 면을 클릭, 또는 면을 더블클릭)"
+                : "회전 중심 켜기 (선택 어벗, 또는 면 클릭·더블클릭)"
           }
           active={pivotActive || pivotArmed}
           onClick={onPivot}

@@ -1059,6 +1059,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [editRev, setEditRev] = useState(0);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
+  /** 회전 중심이 선택 어벗에서 왔는지, 면 클릭으로 수동인지. */
+  const pivotSourceRef = useRef<"selection" | "manual" | null>(null);
   const scanbodyPickRef = useRef<ScanbodyPickSession | null>(null);
   const scanbodyPickClickRef = useRef<(clientX: number, clientY: number) => void>(() => {});
   const pickEpochRef = useRef(0);
@@ -1582,9 +1584,49 @@ export function PracticeCustomAbutmentPreviewDialog({
   const clearPivot = useCallback(() => {
     if (controlsRef.current) controlsRef.current.pivot = null;
     if (pivotMarkerRef.current) pivotMarkerRef.current.visible = false;
+    pivotSourceRef.current = null;
     setPivotSet(false);
     setPivotArmed(false);
   }, []);
+
+  /** 선택 어벗(들)의 바운딩 박스 중심을 회전 중심으로. 화면은 옮기지 않는다. */
+  const applySelectionPivot = useCallback(
+    (teeth: readonly string[]) => {
+      if (teeth.length === 0) {
+        clearPivot();
+        return;
+      }
+      const box = new THREE.Box3();
+      let any = false;
+      for (const tooth of teeth) {
+        const mesh = abutmentMeshesRef.current.get(tooth);
+        if (!mesh) continue;
+        mesh.updateMatrixWorld(true);
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        const bb = mesh.geometry.boundingBox;
+        if (!bb || bb.isEmpty()) continue;
+        box.union(bb.clone().applyMatrix4(mesh.matrixWorld));
+        any = true;
+      }
+      if (!any) {
+        clearPivot();
+        return;
+      }
+      const controls = controlsRef.current;
+      if (!controls) return;
+      const center = box.getCenter(new THREE.Vector3());
+      controls.pivot = center.clone();
+      const marker = pivotMarkerRef.current;
+      if (marker) {
+        marker.position.copy(center);
+        marker.visible = true;
+      }
+      pivotSourceRef.current = "selection";
+      setPivotSet(true);
+      setPivotArmed(false);
+    },
+    [clearPivot],
+  );
 
   /** 화면 좌표 아래 보이는 면을 회전 중심으로. 빈 곳이면 false. */
   const pickPivotAt = useCallback((clientX: number, clientY: number): boolean => {
@@ -1617,6 +1659,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       marker.position.copy(hit.point);
       marker.visible = true;
     }
+    pivotSourceRef.current = "manual";
     setPivotSet(true);
     setPivotArmed(false);
     return true;
@@ -1652,7 +1695,15 @@ export function PracticeCustomAbutmentPreviewDialog({
           box.expandByObject(obj);
         }
       }
-      if (box.isEmpty()) return;
+      const restoreSelectionPivot = () => {
+        if (selectedTeethRef.current.length > 0) {
+          applySelectionPivot(selectedTeethRef.current);
+        }
+      };
+      if (box.isEmpty()) {
+        restoreSelectionPivot();
+        return;
+      }
 
       const center = box.getCenter(new THREE.Vector3());
       const dir = (
@@ -1692,7 +1743,10 @@ export function PracticeCustomAbutmentPreviewDialog({
           count += 1;
         }
       }
-      if (count === 0) return;
+      if (count === 0) {
+        restoreSelectionPivot();
+        return;
+      }
 
       const aspect = readHostSize(host).aspect;
       const halfW = Math.max((max.x - min.x) / 2, 2);
@@ -1714,8 +1768,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       applyOrthoHeight(camera, halfH, aspect);
       camera.lookAt(mid);
       controls.syncFromCamera();
+      restoreSelectionPivot();
     },
-    [clearPivot],
+    [applySelectionPivot, clearPivot],
   );
 
   const fitDefaultCamera = useCallback(() => {
@@ -1824,6 +1879,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const nextTeeth = nextAbutmentSelection(selectedTeethRef.current, toothNumber, additive);
     selectedTeethRef.current = nextTeeth;
     setSelectedTeeth(nextTeeth);
+    applySelectionPivot(nextTeeth);
     const primary = nextTeeth[nextTeeth.length - 1] ?? null;
     viewerTouchRef.current.add("expanded");
     const next: Record<string, boolean> = {};
@@ -1841,6 +1897,16 @@ export function PracticeCustomAbutmentPreviewDialog({
   };
 
   badgeClickRef.current = selectAbutments;
+
+  /** 선택 피봇일 때 형상·선택이 바뀌면 중심을 다시 맞춘다. */
+  useEffect(() => {
+    if (pivotSourceRef.current !== "selection") return;
+    if (selectedTeeth.length === 0) {
+      clearPivot();
+      return;
+    }
+    applySelectionPivot(selectedTeeth);
+  }, [applySelectionPivot, clearPivot, designedList, editRev, selectedTeeth]);
 
   /** 대화를 의뢰 키로 남긴다. 빈 목록은 쓰지 않아 재계산이 대화를 지우지 않는다. */
   const persistChat = useCallback((chat?: readonly ChatTurn[]) => {
@@ -2076,12 +2142,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       selectedTeethRef.current = [toothNumber];
       setSelectedTeeth([toothNumber]);
+      applySelectionPivot([toothNumber]);
       setExpandedTeeth((prev) => (prev[toothNumber] ? prev : { ...prev, [toothNumber]: true }));
       syncCandidateSceneForTooth(toothNumber);
       directEditRef.current?.sync();
       directEditRef.current?.tick();
     },
-    [addDesignToScene, removeDesignFromScene, syncCandidateSceneForTooth],
+    [addDesignToScene, applySelectionPivot, removeDesignFromScene, syncCandidateSceneForTooth],
   );
 
   selectCandidateRef.current = selectCandidateForTooth;
@@ -2557,6 +2624,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       });
       selectedTeethRef.current = selectedTeethRef.current.filter((t) => !repickSet.has(t));
       setSelectedTeeth(selectedTeethRef.current);
+      applySelectionPivot(selectedTeethRef.current);
 
       const existing = scanbodyPickRef.current;
       const keptJobs = (existing?.jobs ?? []).filter((j) => !repickSet.has(j.toothNumber));
@@ -2575,6 +2643,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [
       abutmentToothWorks,
+      applySelectionPivot,
       canEditDesign,
       clearGhostCandidateVisuals,
       connections,
@@ -5509,6 +5578,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   onHome={() => {
                     selectedTeethRef.current = [];
                     setSelectedTeeth([]);
+                    clearPivot();
                     fitDefaultCamera();
                   }}
                   onFit={fitCurrentView}
@@ -5516,6 +5586,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   onPivot={() => {
                     if (pivotSet || pivotArmed) {
                       clearPivot();
+                      return;
+                    }
+                    if (selectedTeethRef.current.length > 0) {
+                      applySelectionPivot(selectedTeethRef.current);
                       return;
                     }
                     setPivotArmed(true);
