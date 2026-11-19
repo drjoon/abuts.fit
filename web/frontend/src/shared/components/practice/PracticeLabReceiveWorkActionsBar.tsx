@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-11-19: 어벗·보철 업로드를 「업로드」한 버튼+선택 팝오버로 통합.
 // - 2026-09-26: 보철 업로드 버튼 — 남은 보철 디자인 파일이 있을 때.
 // - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
 // - 2026-11-19: abutmentLeadingActions — 업로드 클러스터 안, 어벗 STL 업로드 바로 왼쪽.
@@ -30,9 +31,14 @@
 // - 2026-09-02: 파일 없는「작업 완료」CTA 제거(도착일 경과 자동 완료).
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 // - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
-import type { MouseEvent, ReactNode } from "react";
-import { Repeat, Upload, X } from "lucide-react";
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { ChevronDown, Repeat, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -137,6 +143,7 @@ export function PracticeLabReceiveWorkActionsBar({
   trailingActions = null,
   className,
 }: PracticeLabReceiveWorkActionsBarProps) {
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const catalog = Array.isArray(implantCatalog) ? implantCatalog : [];
   const state = resolvePracticeLabReceiveWorkActionState(transfer, catalog);
   const uploadOverdue = resolvePracticeTransferAbutmentUploadOverdue(
@@ -271,32 +278,77 @@ export function PracticeLabReceiveWorkActionsBar({
     />
   ) : null;
 
-  const abutmentUploadButton = showAbutmentUpload ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
+  const prostheticUploadLabel =
+    state.pendingProstheticCount > 1
+      ? `보철 (${state.pendingProstheticCount})`
+      : "보철";
+  const prostheticUploadHint = state.prostheticSlotLabels
+    ? `${state.prostheticSlotLabels} 디자인 파일을 올리면 작업완료됩니다.`
+    : "보철 디자인 파일을 올리면 작업완료됩니다.";
+  const uploadBoth = showAbutmentUpload && showProstheticUpload;
+  const uploadSingle =
+    (showAbutmentUpload && !showProstheticUpload) ||
+    (!showAbutmentUpload && showProstheticUpload);
+
+  const workUploadButton = uploadBoth ? (
+    <Popover open={uploadMenuOpen} onOpenChange={setUploadMenuOpen}>
+      <PopoverTrigger asChild>
         <Button
           type="button"
           size="sm"
           variant="default"
           disabled={busy}
           className={cn(ctaButtonClass, "gap-1")}
-          onClick={(event) => {
-            event.stopPropagation();
-            onAbutmentStlUpload?.(event);
-          }}
+          onClick={(event) => event.stopPropagation()}
+          aria-label="업로드"
         >
           <Upload className="h-3.5 w-3.5" />
-          {busy ? "처리 중..." : "어벗 STL 업로드"}
+          {busy ? "처리 중..." : "업로드"}
+          <ChevronDown className="h-3 w-3 opacity-80" />
         </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs text-xs">
-        {LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
-        {" 페이지 어디에나 파일을 놓아도 됩니다."}
-      </TooltipContent>
-    </Tooltip>
-  ) : null;
-
-  const prostheticUploadButton = showProstheticUpload ? (
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-52 p-1.5" data-no-drag>
+        <div className="flex flex-col gap-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 justify-start gap-2 px-2"
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation();
+              setUploadMenuOpen(false);
+              onAbutmentStlUpload?.(event);
+            }}
+          >
+            <Upload className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 truncate">어벗 STL</span>
+          </Button>
+          <p className="px-2 pb-1 text-[0.6875rem] leading-snug text-muted-foreground">
+            {LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 justify-start gap-2 px-2"
+            disabled={busy}
+            onClick={(event) => {
+              event.stopPropagation();
+              setUploadMenuOpen(false);
+              onProstheticUpload?.(event);
+            }}
+          >
+            <Upload className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{prostheticUploadLabel}</span>
+          </Button>
+          <p className="px-2 pb-1 text-[0.6875rem] leading-snug text-muted-foreground">
+            {prostheticUploadHint}
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  ) : uploadSingle ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
@@ -307,21 +359,21 @@ export function PracticeLabReceiveWorkActionsBar({
           className={cn(ctaButtonClass, "gap-1")}
           onClick={(event) => {
             event.stopPropagation();
+            if (showAbutmentUpload) {
+              onAbutmentStlUpload?.(event);
+              return;
+            }
             onProstheticUpload?.(event);
           }}
         >
           <Upload className="h-3.5 w-3.5" />
-          {busy
-            ? "처리 중..."
-            : state.pendingProstheticCount > 1
-              ? `보철 업로드 (${state.pendingProstheticCount})`
-              : "보철 업로드"}
+          {busy ? "처리 중..." : "업로드"}
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
-        {state.prostheticSlotLabels
-          ? `${state.prostheticSlotLabels} 디자인 파일을 올리면 작업완료됩니다.`
-          : "보철 디자인 파일을 올리면 작업완료됩니다."}
+        {showAbutmentUpload
+          ? `${LAB_RECEIVE_ABUTMENT_UPLOAD_HINT} 페이지 어디에나 파일을 놓아도 됩니다.`
+          : prostheticUploadHint}
       </TooltipContent>
     </Tooltip>
   ) : null;
@@ -391,15 +443,13 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const cancelCluster =
     abutmentLeading ||
-    abutmentUploadButton ||
-    prostheticUploadButton ||
+    workUploadButton ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {abutmentLeading}
-        {abutmentUploadButton}
-        {prostheticUploadButton}
+        {workUploadButton}
         {productionCancelButton}
         {pastReadyRemakeButton}
         {stickyTrailingActions}

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 //
 // history:
+// - 2026-11-19: menu — 설정 아이콘 하나 + 팝오버(SW·유지홈·아노 아이콘·라벨).
 // - 2026-10-24: 수신 채팅 SW·유지홈·아노는 아이콘만. 문구는 호버.
 // - 2026-10-24: 수신 채팅에서 어벗츠 정품 버튼을 뺀다. SW·유지홈·아노는 그대로 둔다.
 // - 2026-10-24: 수신 채팅 유지홈·아노다이징은 버튼 팝오버.
@@ -13,8 +14,13 @@
 // - 2026-09-14: 버튼 라벨을 선택된 SW명으로 다시 표시(미설정 시 「디자인SW」).
 // - 2026-09-03: 버튼 라벨을 저장된 SW명(ExoCAD) 대신 고정 「디자인SW」로.
 import { useState } from "react";
-import { Droplets, Monitor, Rows3 } from "lucide-react";
+import { Droplets, Monitor, Rows3, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
 import { anodizingPopoverNote } from "@/shared/anodizing/anodizingOptionCopy";
 import { CaseOptionPopoverButton } from "@/shared/components/practice/CaseOptionPopoverButton";
@@ -39,7 +45,7 @@ type RequestSettingsToolbarProps = {
   iconOnly?: boolean;
   /** true면 라벨을 SW·아노로 축약(채팅 어벗 CTA 옆) */
   shortLabels?: boolean;
-  /** 채팅 작업 줄 — SW·유지홈·아노를 버튼으로 둔다 */
+  /** 채팅 작업 줄 — 설정 아이콘 하나 + 팝오버(SW·유지홈·아노) */
   menu?: boolean;
 };
 
@@ -58,13 +64,138 @@ export function RequestSettingsToolbar({
   shortLabels = false,
   menu = false,
 }: RequestSettingsToolbarProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [retentionOpen, setRetentionOpen] = useState(false);
   const fullLabel = String(designSoftwareLabel || "").trim() || "디자인SW";
   const label = shortLabels && !menu ? "SW" : fullLabel;
   const anodizingFull = anodizingEnabled ? "아노다이징 On" : "아노다이징 Off";
-  const retentionLabel = retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음";
+  const retentionLabel =
+    retentionGroove === "deep" ? "유지홈 있음" : "유지홈 없음";
   const compact = shortLabels && !menu;
   const iconButton = menu || (iconOnly && !compact);
+
+  const setAnodizing = (enabled: boolean) => {
+    if (onAnodizingChange) {
+      onAnodizingChange(enabled);
+      return;
+    }
+    if (enabled !== anodizingEnabled) onToggleAnodizing?.();
+  };
+
+  if (menu) {
+    return (
+      <div className={cn("shrink-0", className)} data-no-drag>
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 shrink-0 px-0"
+              aria-label="의뢰 설정"
+              title="의뢰 설정"
+              disabled={anodizingSaving}
+            >
+              <Settings className="h-3.5 w-3.5 shrink-0" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-56 p-1.5" data-no-drag>
+            <div className="flex flex-col gap-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 justify-start gap-2 px-2"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenDesignSoftwareModal?.();
+                }}
+              >
+                <Monitor className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 truncate">{fullLabel}</span>
+              </Button>
+              {onRetentionGrooveChange ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 justify-start gap-2 px-2"
+                  disabled={anodizingSaving}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setRetentionOpen(true);
+                  }}
+                >
+                  <Rows3
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      retentionGroove === "deep"
+                        ? "text-slate-800"
+                        : "opacity-40",
+                    )}
+                  />
+                  <span className="min-w-0 truncate">{retentionLabel}</span>
+                </Button>
+              ) : null}
+              <div className="rounded-md px-1 py-1">
+                <div className="mb-1 flex items-center gap-2 px-1 text-xs text-muted-foreground">
+                  <Droplets
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0",
+                      anodizingEnabled ? "text-sky-600" : "opacity-50",
+                    )}
+                  />
+                  <span>아노다이징</span>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    type="button"
+                    variant={anodizingEnabled ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 flex-1 px-2 text-xs"
+                    disabled={anodizingSaving}
+                    onClick={() => {
+                      setAnodizing(true);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    On
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!anodizingEnabled ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 flex-1 px-2 text-xs"
+                    disabled={anodizingSaving}
+                    onClick={() => {
+                      setAnodizing(false);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Off
+                  </Button>
+                </div>
+                <div className="mt-1 px-1 text-[0.6875rem] leading-snug text-muted-foreground">
+                  {anodizingPopoverNote(anodizingEnabled ? "on" : "off")}
+                </div>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+        {onRetentionGrooveChange ? (
+          <ShortPostRetentionDialog
+            open={retentionOpen}
+            onOpenChange={setRetentionOpen}
+            value={retentionGroove === "deep" ? "deep" : "none"}
+            onConfirm={(value) => {
+              onRetentionGrooveChange(value);
+              setRetentionOpen(false);
+            }}
+          />
+        ) : null}
+      </div>
+    );
+  }
 
   const controls = (
     <>
@@ -84,62 +215,40 @@ export function RequestSettingsToolbar({
         aria-label={fullLabel}
         title={fullLabel}
       >
-        <Monitor className={cn("shrink-0", compact || menu ? "h-3.5 w-3.5" : "h-4 w-4")} />
-        <span className={cn(iconButton && !compact ? "sr-only" : compact ? undefined : "hidden sm:inline")}>
+        <Monitor
+          className={cn(
+            "shrink-0",
+            compact ? "h-3.5 w-3.5" : "h-4 w-4",
+          )}
+        />
+        <span
+          className={cn(
+            iconButton && !compact
+              ? "sr-only"
+              : compact
+                ? undefined
+                : "hidden sm:inline",
+          )}
+        >
           {label}
         </span>
       </Button>
-      {menu && onRetentionGrooveChange ? (
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-8 shrink-0 px-0"
-            disabled={anodizingSaving}
-            aria-label={retentionLabel}
-            title={retentionLabel}
-            onClick={() => setRetentionOpen(true)}
-          >
-            <Rows3
-              className={cn(
-                "h-3.5 w-3.5 shrink-0",
-                retentionGroove === "deep" ? "text-slate-800" : "opacity-40",
-              )}
-            />
-            <span className="sr-only">{retentionLabel}</span>
-          </Button>
-          <ShortPostRetentionDialog
-            open={retentionOpen}
-            onOpenChange={setRetentionOpen}
-            value={retentionGroove === "deep" ? "deep" : "none"}
-            onConfirm={(value) => {
-              onRetentionGrooveChange(value);
-              setRetentionOpen(false);
-            }}
-          />
-        </>
-      ) : null}
       <CaseOptionPopoverButton
         className={cn(
-          menu
-            ? "h-8 w-8 px-0"
-            : compact
-              ? "h-8 px-2 text-xs"
-              : iconButton
-                ? "h-8 w-8 px-0"
-                : "h-9 w-9 px-0 sm:w-auto sm:px-3",
+          compact
+            ? "h-8 px-2 text-xs"
+            : iconButton
+              ? "h-8 w-8 px-0"
+              : "h-9 w-9 px-0 sm:w-auto sm:px-3",
           !anodizingEnabled && "text-muted-foreground",
         )}
-        hideLabel={menu || (iconButton && !compact)}
-        labelClassName={
-          menu || iconButton || compact ? undefined : "hidden sm:inline"
-        }
+        hideLabel={iconButton && !compact}
+        labelClassName={iconButton || compact ? undefined : "hidden sm:inline"}
         icon={
           <Droplets
             className={cn(
               "shrink-0",
-              menu || compact ? "h-3.5 w-3.5" : "h-4 w-4",
+              compact ? "h-3.5 w-3.5" : "h-4 w-4",
               anodizingEnabled ? "text-sky-600" : "opacity-50",
             )}
           />
@@ -152,25 +261,10 @@ export function RequestSettingsToolbar({
         ]}
         disabled={anodizingSaving}
         optionNote={anodizingPopoverNote}
-        onChange={(next) => {
-          const enabled = next === "on";
-          if (onAnodizingChange) {
-            onAnodizingChange(enabled);
-            return;
-          }
-          if (enabled !== anodizingEnabled) onToggleAnodizing?.();
-        }}
+        onChange={(next) => setAnodizing(next === "on")}
       />
     </>
   );
-
-  if (menu) {
-    return (
-      <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-        {controls}
-      </div>
-    );
-  }
 
   return (
     <div

@@ -69,6 +69,7 @@
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-20: 수신 헤더 xl 미만 — 배지·북마크·생산중 아이콘화. 상세 프린트·번호표는 아이콘+라벨.
 // - 2026-09-20: 수신 헤더 nowrap — 미처리 alert·배지·생산중이 두 줄로 밀리지 않게.
+// - 2026-11-19: 채팅 작업 줄 — 설정(1) · 디자인 · 업로드(통합).
 // - 2026-11-19: 커스텀어벗 「디자인」버튼 — 헤더 → 어벗 STL 업로드 왼쪽.
 // - 2026-09-20: SW·아노 → 채팅 어벗 STL 업로드 왼쪽(어벗 건만). 미처리 alert를 헤더 왼쪽·배지 오른쪽.
 // - 2026-09-26: 보철 디자인 파일 필수 — 드롭·버튼으로 올리고 작업완료.
@@ -11232,8 +11233,28 @@ export function RequestorPracticeReceivePage({
               showProductionCancelInBar
               abutmentLeadingActions={
                 <div className="flex min-w-0 items-center gap-1.5" data-no-drag>
+                  <RequestSettingsToolbar
+                    designSoftwareLabel={String(
+                      designSoftwareValue || "",
+                    ).trim()}
+                    onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
+                    anodizingEnabled={anodizingEnabled}
+                    anodizingSaving={anodizingSaving}
+                    onAnodizingChange={(enabled) => {
+                      void saveAnodizingEnabled(enabled);
+                    }}
+                    retentionGroove={
+                      retentionGrooveDefault === "deep" ? "deep" : "none"
+                    }
+                    onRetentionGrooveChange={(value) => {
+                      void saveRetentionGroove(value);
+                    }}
+                    menu
+                  />
                   {selectedTransfer.hasCustomAbutment ||
-                  selectedTransferToothWorks.some((row) => row.customAbutment) ? (
+                  selectedTransferToothWorks.some(
+                    (row) => row.customAbutment,
+                  ) ? (
                     <>
                       <PracticeCustomAbutmentPreviewButton
                         viewerRole="lab"
@@ -11280,24 +11301,6 @@ export function RequestorPracticeReceivePage({
                       ) : null}
                     </>
                   ) : null}
-                  <RequestSettingsToolbar
-                    designSoftwareLabel={String(
-                      designSoftwareValue || "",
-                    ).trim()}
-                    onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
-                    anodizingEnabled={anodizingEnabled}
-                    anodizingSaving={anodizingSaving}
-                    onAnodizingChange={(enabled) => {
-                      void saveAnodizingEnabled(enabled);
-                    }}
-                    retentionGroove={
-                      retentionGrooveDefault === "deep" ? "deep" : "none"
-                    }
-                    onRetentionGrooveChange={(value) => {
-                      void saveRetentionGroove(value);
-                    }}
-                    menu
-                  />
                 </div>
               }
               stickyTrailingActions={labZirStartButton}
