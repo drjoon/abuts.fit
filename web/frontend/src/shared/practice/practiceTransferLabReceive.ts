@@ -66,7 +66,10 @@ import {
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
 import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
-import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import {
+  isPlatformAbutmentDesignHeldForLabReview,
+  isPtxAbutmentDesignAwaitingDentist,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   enrichToothWorksPendingFromCatalog,
@@ -372,6 +375,13 @@ export function getPracticeTransferLabReceiveDisplayStatus(
     labRejected?: boolean;
     production?: {
       confirmedAt?: string | null;
+      skipDesignConfirm?: boolean | null;
+      designFileCount?: number | null;
+      designFiles?: unknown[] | null;
+      designReadyAt?: string | null;
+      practiceDesignConfirmedAt?: string | null;
+      labDesignConfirmedAt?: string | null;
+      abutmentFeeRoute?: string | null;
     } | null;
     autoMatch?: {
       openPool?: boolean;
@@ -419,12 +429,19 @@ export function getPracticeTransferLabReceiveDisplayStatus(
     return "생산진행";
   }
 
-  const designCount = Math.max(
-    Number(transfer.production?.designFileCount || 0) || 0,
-    Array.isArray(transfer.production?.designFiles)
-      ? transfer.production.designFiles.length
-      : 0,
-  );
+  const holdPlatformDesign = isPlatformAbutmentDesignHeldForLabReview({
+    abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+    practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+    labDesignConfirmedAt: transfer.production?.labDesignConfirmedAt,
+  });
+  const designCount = holdPlatformDesign
+    ? 0
+    : Math.max(
+        Number(transfer.production?.designFileCount || 0) || 0,
+        Array.isArray(transfer.production?.designFiles)
+          ? transfer.production.designFiles.length
+          : 0,
+      );
   const resultCount = Math.max(
     Number(transfer.resultFileCount || 0) || 0,
     Array.isArray(transfer.resultFiles) ? transfer.resultFiles.length : 0,
@@ -432,7 +449,7 @@ export function getPracticeTransferLabReceiveDisplayStatus(
   const hasDesignOrResult =
     designCount > 0 ||
     resultCount > 0 ||
-    Boolean(transfer.production?.designReadyAt);
+    (!holdPlatformDesign && Boolean(transfer.production?.designReadyAt));
 
   if (
     transfer.autoMatch?.completed ||
@@ -1142,13 +1159,23 @@ export function resolvePracticeLabReceiveWorkActionState(
     enrichedTransfer,
     catalog,
   );
-  // 치과 플랫폼 확정본은 designFiles로 이미 넘어오므로 어벗 STL 업로드 CTA를 두지 않는다.
+  // 치과 플랫폼 확정본은 기공소 검토 중이다. 제조 STL 업로드 CTA를 두지 않는다.
+  const reviewingPlatformDesign = isPlatformAbutmentDesignHeldForLabReview({
+    abutmentFeeRoute: enrichedTransfer.production?.abutmentFeeRoute,
+    practiceDesignConfirmedAt:
+      enrichedTransfer.production?.practiceDesignConfirmedAt,
+    labDesignConfirmedAt: enrichedTransfer.production?.labDesignConfirmedAt,
+    manualRequested: Boolean(
+      enrichedTransfer.production?.customAbutmentManualDesign?.at,
+    ),
+  });
   const platformAbutmentDesignHandedOff =
-    Boolean(
+    reviewingPlatformDesign ||
+    (Boolean(
       String(enrichedTransfer.production?.practiceDesignConfirmedAt || "").trim(),
     ) &&
-    String(enrichedTransfer.production?.abutmentFeeRoute || "").trim() ===
-      "platform";
+      String(enrichedTransfer.production?.abutmentFeeRoute || "").trim() ===
+        "platform");
   const needsMoreAbutmentDesigns =
     !platformAbutmentDesignHandedOff &&
     practiceTransferNeedsMoreAbutmentDesigns(enrichedTransfer, catalog);
@@ -1227,7 +1254,9 @@ export function resolvePracticeLabReceiveWorkActionState(
     uploadedTeeth.length > 0 && uploadedReadyCount === 0 && uploadedPastReadyCount > 0;
   // 준비 치아가 남아 있으면 치아/전체 취소 가능(형제 가공 중이어도).
   const showAbutmentProductionCancel =
-    hasCancelableAbutmentUpload && uploadedReadyCount > 0;
+    !reviewingPlatformDesign &&
+    hasCancelableAbutmentUpload &&
+    uploadedReadyCount > 0;
   // 어벗 CNC 대상 + 가공 시작이면 작업취소 차단·리메이크 유도
   const abutmentCancelBlockedPastReady =
     hasAbutsCa &&
@@ -1250,8 +1279,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     !showWorkActions && showAbutmentProductionCancel;
   const showDesignConfirm =
     hasAbutsCa &&
-    designFileCount > 0 &&
-    !transfer.production?.labDesignConfirmedAt;
+    !transfer.production?.labDesignConfirmedAt &&
+    (designFileCount > 0 || reviewingPlatformDesign);
   // 보철이 있으면 디자인 파일 업로드로만 작업완료. 파일 없는 수동 완료는 두지 않음.
   const showMarkCompleteWithoutFiles = false;
   const designStlUploadModeForUi: PracticeLabReceiveDesignStlUploadMode =

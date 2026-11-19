@@ -220,7 +220,7 @@ function ToothNumberDetail({
           !pastReady &&
           typeof onToothCancel === "function";
         const stageLabel =
-          holdManufacturerStage && !uploaded && !pastReady
+          holdManufacturerStage && !pastReady
             ? ""
             : toothStages
               ? !uploaded && !pastReady
@@ -414,7 +414,9 @@ export function LabPendingAbutmentGuide({
     abutsRows.every((row) =>
       struckTeeth.has(String(row.toothNumber || "").trim()),
     );
-  const ordered = abutsProductionOrdered || allAbutsUploaded;
+  const ordered = holdManufacturerStage
+    ? false
+    : abutsProductionOrdered || allAbutsUploaded;
   const abutsLabel = ordered
     ? LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL
     : LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL;
@@ -434,7 +436,7 @@ export function LabPendingAbutmentGuide({
     const uploaded = struckTeeth.has(tooth);
     const pastReady = pastReadyTeeth.has(tooth);
     const raw =
-      holdManufacturerStage && !uploaded && !pastReady
+      holdManufacturerStage && !pastReady
         ? ""
         : abutmentToothStages
           ? !uploaded && !pastReady

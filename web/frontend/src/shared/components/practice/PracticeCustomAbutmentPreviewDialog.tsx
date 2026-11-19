@@ -45,7 +45,6 @@ import {
   Check,
   ChevronDown,
   Download,
-  Hand,
   Loader2,
   MessageSquare,
   Paintbrush,
@@ -6282,52 +6281,37 @@ export function PracticeCustomAbutmentPreviewDialog({
                         onCancel={() => void handlePracticeDesignConfirmCancel()}
                       />
                     ) : null}
-                    {canChooseAbutmentRoute && remoteMode !== "confirmed" ? (
-                      manualChatOpen ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={!transferIdParam || actionBusy !== null}
-                          className="h-9 gap-1.5 px-4 text-sm font-semibold"
-                          onClick={() => void handleClickManualDesign()}
-                        >
-                          {actionBusy === "manual" ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Hand className="h-4 w-4" />
-                          )}
-                          <span>수작업 의뢰 전달</span>
-                        </Button>
-                      ) : remoteMode !== "manual" ? (
-                        <TooltipProvider delayDuration={200}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={
-                                  !ready ||
-                                  designedList.length === 0 ||
-                                  actionBusy !== null ||
-                                  redesigning.length > 0
-                                }
-                                className="h-9 gap-1.5 px-4 text-sm font-semibold"
-                                onClick={handleClickConfirmAndOrder}
-                              >
-                                {actionBusy === "confirm" ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Check className="h-4 w-4" />
-                                )}
-                                <span>디자인 확정</span>
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                              어벗 비용·진행 방식을 고른 뒤 확정합니다.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : null
+                    {canChooseAbutmentRoute &&
+                    remoteMode !== "confirmed" &&
+                    remoteMode !== "manual" ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={
+                                !ready ||
+                                designedList.length === 0 ||
+                                actionBusy !== null ||
+                                redesigning.length > 0
+                              }
+                              className="h-9 gap-1.5 px-4 text-sm font-semibold"
+                              onClick={handleClickConfirmAndOrder}
+                            >
+                              {actionBusy === "confirm" ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Check className="h-4 w-4" />
+                              )}
+                              <span>디자인 확정</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
+                            어벗 비용·진행 방식을 고른 뒤 확정합니다.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : null}
                     {isLabViewer && remoteMode === "confirmed" && !labCheckedAt ? (
                       <Tooltip>

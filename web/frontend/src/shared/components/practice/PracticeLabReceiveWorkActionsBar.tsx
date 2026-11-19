@@ -60,6 +60,7 @@ import {
   resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
+import { isPlatformAbutmentDesignHeldForLabReview } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
 import { cn } from "@/shared/ui/cn";
 
@@ -210,7 +211,14 @@ export function PracticeLabReceiveWorkActionsBar({
   ) : null;
 
   const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
+  const labDesignReviewHold = isPlatformAbutmentDesignHeldForLabReview({
+    abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+    practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+    labDesignConfirmedAt: transfer.production?.labDesignConfirmedAt,
+    manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
+  });
   const abutsProductionOrdered =
+    !labDesignReviewHold &&
     (state.showAbutmentProductionCancel ||
       state.abutmentCancelBlockedPastReady) &&
     !state.needsMoreAbutmentDesigns;
@@ -269,17 +277,14 @@ export function PracticeLabReceiveWorkActionsBar({
           ? (tooth, event) => onOpenAbutmentRemake(event, [tooth])
           : undefined
       }
-      uploadedAbutmentTeeth={listPracticeTransferUploadedAbutmentTeeth(
-        transfer,
-        catalog,
-      )}
+      uploadedAbutmentTeeth={
+        labDesignReviewHold
+          ? []
+          : listPracticeTransferUploadedAbutmentTeeth(transfer, catalog)
+      }
       pastReadyAbutmentTeeth={pastReadyTeeth}
       abutmentToothStages={mapPracticeTransferAbutmentToothStages(transfer)}
-      holdManufacturerStage={
-        String(transfer.production?.abutmentFeeRoute || "").trim() === "platform" &&
-        Boolean(String(transfer.production?.practiceDesignConfirmedAt || "").trim()) &&
-        !String(transfer.production?.labDesignConfirmedAt || "").trim()
-      }
+      holdManufacturerStage={labDesignReviewHold}
       abutsTrailing={abutsTrailing}
     />
   ) : null;

@@ -90,6 +90,21 @@ export function isPtxAbutmentManualOrder(
 }
 
 /**
+ * 치과 확정 후 기공소 확정 전. 제조 STL·생산의뢰 완료로 보지 않는다.
+ * 표시 단계가 파일 때문에 작업완료로 올라가도 이 구간은 유지한다.
+ */
+export function isPlatformAbutmentDesignHeldForLabReview(
+  input: AbutmentDesignAwaitingInput | null | undefined,
+) {
+  if (!input) return false;
+  if (input.manualRequested) return false;
+  if (!String(input.practiceDesignConfirmedAt || "").trim()) return false;
+  if (String(input.labDesignConfirmedAt || "").trim()) return false;
+  if (String(input.abutmentFeeRoute || "").trim() === "lab") return false;
+  return true;
+}
+
+/**
  * 기공소 「어벗 검토」.
  * 치과가 디자인을 확정했고, 수작업이 아니며, 기공소가 아직 디자인 확정하지 않은 자기 수행 건.
  * 플랫폼 확정본은 designFiles가 이미 있어도 검토 대상으로 둔다(제조 진입은 기공소 확정 후).

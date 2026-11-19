@@ -1008,10 +1008,17 @@ const extractTransferMemoFromMessage = (message) => {
 
 const toProductionApiFields = (
   production,
-  { abutmentPastReady, abutmentPastReadyTeeth, abutmentToothStages } = {},
+  {
+    abutmentPastReady,
+    abutmentPastReadyTeeth,
+    abutmentToothStages,
+    /** 치과 발신 화면은 검토 중에도 확정 STL을 보여 준다. */
+    releaseHeldDesign = false,
+  } = {},
 ) => {
   const p = production && typeof production === "object" ? production : {};
-  const holdDesign = isPlatformAbutmentDesignHeldForLabReview(p);
+  const holdDesign =
+    !releaseHeldDesign && isPlatformAbutmentDesignHeldForLabReview(p);
   const designFiles = normalizeResultFiles(holdDesign ? [] : p.designFiles);
   // 목록 등에서 라이브 pastReady를 넘기면 sticky startedAt보다 우선(가공→준비 복귀).
   const pastReady =
@@ -1347,7 +1354,7 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
       size: Number(rf?.file?.size || 0),
       s3Key: String(rf?.file?.s3Key || "").trim(),
     })),
-    production: toProductionApiFields(production),
+    production: toProductionApiFields(production, { releaseHeldDesign: true }),
     canRateLab: Boolean(String(performingLabAnchorId || "").trim()),
     performingLabAnchorId: performingLabAnchorId || null,
     handledByCertifiedPartner,

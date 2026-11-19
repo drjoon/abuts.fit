@@ -68,13 +68,15 @@ export const isPracticeTransferAbutmentOutbound = (abutmentDeliveryInfo) => {
 
 /**
  * 치과가 플랫폼 디자인을 확정했고, 수행 기공소가 아직 확정하지 않은 구간.
- * 이 동안에는 제조사 준비·채팅 어벗 STL에 올리지 않는다.
+ * 이 동안 기공소 채팅에는 제조 STL을 올리지 않는다. 치과 화면은 확정본을 그대로 둔다.
+ * 수가 경로가 스키마에 없어 빠졌어도, 수작업(lab)이 아니면 검토 중으로 본다.
  */
 export function isPlatformAbutmentDesignHeldForLabReview(production) {
   if (!production || typeof production !== "object") return false;
-  if (String(production.abutmentFeeRoute || "").trim() !== "platform") return false;
   if (!production.practiceDesignConfirmedAt) return false;
   if (production.labDesignConfirmedAt) return false;
+  const route = String(production.abutmentFeeRoute || "").trim();
+  if (route === "lab") return false;
   return true;
 }
 

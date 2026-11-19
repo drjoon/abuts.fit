@@ -2,6 +2,7 @@
 // - web/backend/utils/practiceTransferStage.js
 import {
   canEditPracticeTransferContent,
+  isPlatformAbutmentDesignHeldForLabReview,
   isPracticeTransferFinishedBadge,
   resolvePracticeTransferManufacturerStage,
 } from "../../utils/practiceTransferStage.js";
@@ -190,6 +191,34 @@ describe("practiceTransfer finished badge", () => {
     };
     const stage = resolvePracticeTransferManufacturerStage(doc);
     expect(isPracticeTransferFinishedBadge(doc, stage)).toBe(false);
+  });
+
+  test("기공소 검토 중에는 디자인 파일이 있어도 작업완료가 아니다", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      requestorDownloadedAt: new Date("2026-11-19T04:00:00.000Z"),
+      toothWorks: [{ toothNumber: "15", customAbutment: true }],
+      production: {
+        practiceDesignConfirmedAt: new Date("2026-11-19T13:23:14.202Z"),
+        designReadyAt: new Date("2026-11-19T13:23:14.202Z"),
+        designFiles: [{ file: { s3Key: "k", originalName: "15.stl" } }],
+      },
+    };
+    expect(isPlatformAbutmentDesignHeldForLabReview(doc.production)).toBe(true);
+    expect(resolvePracticeTransferManufacturerStage(doc)).toBe("의뢰수락");
+    expect(
+      isPlatformAbutmentDesignHeldForLabReview({
+        ...doc.production,
+        labDesignConfirmedAt: new Date(),
+      }),
+    ).toBe(false);
+    expect(
+      isPlatformAbutmentDesignHeldForLabReview({
+        ...doc.production,
+        abutmentFeeRoute: "lab",
+      }),
+    ).toBe(false);
   });
 
   test("작업시작만 된 건은 완료가 아니다", () => {

@@ -2016,8 +2016,9 @@ export function RequestorPracticeReceivePage({
       const serverFiles = Array.isArray(server.production?.designFiles)
         ? server.production.designFiles
         : [];
+      const serverFeeRoute = String(server.production?.abutmentFeeRoute || "").trim();
       const serverHoldingDesign =
-        String(server.production?.abutmentFeeRoute || "").trim() === "platform" &&
+        serverFeeRoute !== "lab" &&
         Boolean(String(server.production?.practiceDesignConfirmedAt || "").trim()) &&
         !String(server.production?.labDesignConfirmedAt || "").trim();
       if (serverHoldingDesign) {
