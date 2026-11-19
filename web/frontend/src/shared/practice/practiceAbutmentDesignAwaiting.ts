@@ -13,6 +13,7 @@
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 // - 2026-11-20: 작업시작 보철 업로드 안내 모달 문구 간소화.
 // - 2026-11-20: 기공소 미확정 검토도 육각형·디자인 버튼이 같은 깜빡임을 쓴다.
+// - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」잠금을 푼다.
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
 export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =
@@ -74,6 +75,21 @@ export function isPtxAbutmentDesignAwaitingDentist(
   if (input.manualRequested) return false;
   const route = String(input.abutmentFeeRoute || "").trim();
   if (route === "platform" || route === "lab") return false;
+  return true;
+}
+
+const DESIGN_ENTRY_RELEASED_STATUS = new Set(["작업취소", "거부"]);
+
+/**
+ * 수작업 의뢰 중 치과 채팅 「디자인」을 잠근다.
+ * 지정 기공소가 작업을 취소하거나 거부하면 다시 연다.
+ */
+export function isPracticeDesignEntryLocked(
+  input: { manualRequested?: boolean | null; status?: string | null } | null | undefined,
+) {
+  if (!input?.manualRequested) return false;
+  const status = String(input.status || "").trim();
+  if (DESIGN_ENTRY_RELEASED_STATUS.has(status)) return false;
   return true;
 }
 

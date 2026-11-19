@@ -20,7 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
-// - 2026-11-20: 수작업 의뢰 뒤 치과 「디자인」은 비활성. 작업 스캔 타일은 미리보기만.
+// - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」을 다시 연다. 수작업 중에는 비활성.
 // - 2026-11-19: 치과 헤더 — 디자인 모달 진입을 「디자인」+Sparkles로(작업 스캔 라벨 교체).
 // - 2026-11-19: 담당 기사 뱃지 — 다음 도착일과 같은 줄(헤더 1줄 절약).
 // - 2026-11-16: 치과 헤더 — 의뢰 수정 왼쪽에 「작업 스캔」(디자인 모달·프리뷰).
@@ -695,7 +695,7 @@ type PracticeTransferDetailChatDialogProps = {
   workScanAlignment?: WorkScanAlignment | null;
   /** 작업 스캔 타일 클릭. 있으면 스캔 프리뷰 대신 이 콜백을 연다. */
   onWorkScanTileClick?: () => void;
-  /** 수작업 의뢰 뒤. 「디자인」은 남기되 열지 않는다. */
+  /** 수작업 의뢰 중이고 기공소가 취소·거부하지 않았을 때. 「디자인」은 남기되 열지 않는다. */
   practiceDesignEntryDisabled?: boolean;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];

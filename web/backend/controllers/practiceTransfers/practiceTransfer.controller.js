@@ -12460,9 +12460,21 @@ export async function confirmPracticeTransferProduction(req, res) {
 }
 
 /**
+ * 지정 기공소 작업취소·거부: 수작업 의뢰를 푼다.
+ * 치과 채팅 「디자인」이 다시 열린다. 수가 경로 lab은 남겨 작업시작 게이트를 바꾸지 않는다.
+ * 자동매칭 재공개는 다음 기공소가 수작업을 이어가므로 풀지 않는다.
+ * @returns {Record<string, string> | null} $unset 조각
+ */
+function releaseDirectManualAbutmentDesign(doc) {
+  if (!doc?.production?.customAbutmentManualDesign?.at) return null;
+  doc.production.customAbutmentManualDesign = undefined;
+  return { "production.customAbutmentManualDesign": "" };
+}
+
+/**
  * 기공소 작업취소: 수락(클레임)을 되돌린다.
  * - auto: 과금 롤백 후 공개 풀 재공개
- * - direct: 과금 롤백 후 의뢰수락 해제(지정 기공소는 유지)
+ * - direct: 과금 롤백 후 의뢰수락 해제(지정 기공소는 유지). 수작업 의뢰는 푼다.
  */
 export async function markReceivedPracticeTransferRelease(req, res) {
   try {
@@ -12526,6 +12538,13 @@ export async function markReceivedPracticeTransferRelease(req, res) {
             String(doc?._id || ""),
             rollbackErr?.message || rollbackErr,
           );
+        }
+        // 이미 취소된 지정 건에 수작업 잠금이 남아 있으면 여기서 푼다.
+        if (!isAutoEarly && alreadyWorkCanceled) {
+          const unsetManual = releaseDirectManualAbutmentDesign(doc);
+          if (unsetManual) {
+            await PracticeTransfer.updateOne({ _id: doc._id }, { $unset: unsetManual });
+          }
         }
         return res.status(200).json({
           success: true,
@@ -12632,6 +12651,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
+    let manualDesignReleased = false;
     if (isAuto) {
       clearAutoMatchClaimFields(doc, { bumpRelease: true });
       doc.workCanceledAt = now;
@@ -12693,6 +12713,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         doc.autoMatch.completedAt = null;
         doc.autoMatch.completedBy = null;
       }
+      const unsetManualDesign = releaseDirectManualAbutmentDesign(doc);
+      manualDesignReleased = Boolean(unsetManualDesign);
       await PracticeTransfer.updateOne(
         { _id: doc._id },
         {
@@ -12706,6 +12728,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
             "autoMatch.completedAt": null,
             "autoMatch.completedBy": null,
           },
+          ...(unsetManualDesign ? { $unset: unsetManualDesign } : {}),
         },
       );
     }
@@ -12731,6 +12754,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       requestorAcceptedAt: doc.requestorDownloadedAt,
       status: String(doc.status || "active").trim(),
       manufacturerStage: isAuto ? "자동매칭" : "작업취소",
+      manualDesignReleased,
       workCanceledAt: doc.workCanceledAt || now,
       updatedAt: now,
       source: "workCancelRelease",
@@ -13314,6 +13338,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
     doc.labRejectedAt = now;
     doc.labRejectedByLabAnchorId = labOid;
     doc.billing = billingReset;
+    const unsetManualDesign = releaseDirectManualAbutmentDesign(doc);
 
     await PracticeTransfer.updateOne(
       { _id: doc._id },
@@ -13328,6 +13353,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
           labRejectedByLabAnchorId: labOid,
           billing: billingReset,
         },
+        ...(unsetManualDesign ? { $unset: unsetManualDesign } : {}),
       },
     );
 
@@ -13344,6 +13370,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
       unreadCount: null,
       status: String(doc.status || "active").trim(),
       manufacturerStage: "작업취소",
+      manualDesignReleased: Boolean(unsetManualDesign),
       labRejected: true,
       labRejectedAt: now,
       workCanceledAt: now,

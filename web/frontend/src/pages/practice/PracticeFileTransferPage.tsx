@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-11-20: 기공소 작업취소·거부 뒤 치과 채팅 「디자인」을 다시 연다.
  * - 2026-11-20: 수작업 의뢰 뒤 치과 채팅 「디자인」비활성.
  * - 2026-11-19: 치과 채팅 — 디자인 모달 진입 버튼을 「디자인」+Sparkles로 표시.
  * - 2026-11-16: 치과 채팅 — PracticeCustomAbutmentPreviewButton 제거. 작업 스캔이 디자인 모달을 연다.
@@ -374,7 +375,10 @@ import {
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
 import { parseLabTechnician } from "@/shared/practice/labTechnician";
-import { isPtxAbutmentDesignAwaitingDentist } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import {
+  isPracticeDesignEntryLocked,
+  isPtxAbutmentDesignAwaitingDentist,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { buildPracticeSenderTransferDetailModel } from "@/shared/practice/practiceSenderTransferDetailModel";
 import { PracticeCustomAbutmentPreviewDialog } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
 import {
@@ -9189,11 +9193,16 @@ export const PracticeFileTransferPage = ({
           String(payload.manufacturerStage || "").trim() ||
           (isAutoRelease ? "자동매칭" : "작업취소");
         const stage = toStatusLabel(stageRaw);
+        const manualDesignReleased = Boolean(payload.manualDesignReleased);
         if (releaseTransferId) {
           setRecentRequests((prev) =>
             prev.map((row) =>
               String(row.transferId || "").trim() === releaseTransferId
-                ? { ...row, status: stage }
+                ? {
+                    ...row,
+                    status: stage,
+                    ...(manualDesignReleased ? { manualRequested: false } : {}),
+                  }
                 : row,
             ),
           );
@@ -9218,6 +9227,7 @@ export const PracticeFileTransferPage = ({
               ...prev,
               status: stage,
               labTechnician: null,
+              ...(manualDesignReleased ? { manualRequested: false } : {}),
               ...(labName && labName !== "-" ? { targetLab: labName } : {}),
               targetLabAnchorId: isAutoRelease ? "" : labAnchorId,
             };
@@ -12918,7 +12928,10 @@ export const PracticeFileTransferPage = ({
                 }
               : undefined
           }
-          practiceDesignEntryDisabled={Boolean(selectedTransfer?.manualRequested)}
+          practiceDesignEntryDisabled={isPracticeDesignEntryLocked({
+            manualRequested: selectedTransfer?.manualRequested,
+            status: selectedTransfer?.status,
+          })}
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
             practiceAbutmentCancelOpen ? (
