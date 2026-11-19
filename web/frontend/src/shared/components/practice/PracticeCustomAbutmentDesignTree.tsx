@@ -1657,11 +1657,21 @@ export function PracticeCustomAbutmentDesignTree({
                         </div>
                       );
                     })()}
-                    {isAnteriorTooth(item.toothNumber) && m.postLingualBevelMm != null ? (
+                    {m.postLingualBevelMm != null ? (
                       editable ? (
                         <EditableNumberRow
                           label="설측 사면"
-                          hint="마진에서 설측 사면이 시작되는 높이입니다."
+                          hint={
+                            isAnteriorTooth(item.toothNumber) ? (
+                              "마진에서 설측 사면이 시작되는 높이입니다."
+                            ) : (
+                              <>
+                                마진에서 설측 사면이 시작되는 높이입니다.
+                                <br />
+                                삽입축 각도가 크면 잡힙니다.
+                              </>
+                            )
+                          }
                           value={m.postLingualBevelMm}
                           min={0.5}
                           max={Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)))}
@@ -1674,21 +1684,39 @@ export function PracticeCustomAbutmentDesignTree({
                       ) : (
                         <DetailRow
                           label="설측 사면"
-                          hint="마진에서 설측 사면이 시작되는 높이입니다."
+                          hint={
+                            isAnteriorTooth(item.toothNumber) ? (
+                              "마진에서 설측 사면이 시작되는 높이입니다."
+                            ) : (
+                              <>
+                                마진에서 설측 사면이 시작되는 높이입니다.
+                                <br />
+                                삽입축 각도가 크면 잡힙니다.
+                              </>
+                            )
+                          }
                           value={`${cleanNum(m.postLingualBevelMm, 1)}mm`}
                         />
                       )
                     ) : null}
-                    {isAnteriorTooth(item.toothNumber) && m.postLabialBevelMm != null ? (
+                    {m.postLabialBevelMm != null ? (
                       editable ? (
                         <EditableNumberRow
-                          label="순측 사면"
+                          label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
                           hint={
-                            <>
-                              마진에서 순측 사면이 시작되는 높이입니다.
-                              <br />
-                              기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
-                            </>
+                            isAnteriorTooth(item.toothNumber) ? (
+                              <>
+                                마진에서 순측 사면이 시작되는 높이입니다.
+                                <br />
+                                기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
+                              </>
+                            ) : (
+                              <>
+                                마진에서 협측 사면이 시작되는 높이입니다.
+                                <br />
+                                삽입축 각도가 크면 잡힙니다.
+                              </>
+                            )
                           }
                           value={m.postLabialBevelMm}
                           min={0}
@@ -1701,13 +1729,21 @@ export function PracticeCustomAbutmentDesignTree({
                         />
                       ) : (
                         <DetailRow
-                          label="순측 사면"
+                          label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
                           hint={
-                            <>
-                              마진에서 순측 사면이 시작되는 높이입니다.
-                              <br />
-                              기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
-                            </>
+                            isAnteriorTooth(item.toothNumber) ? (
+                              <>
+                                마진에서 순측 사면이 시작되는 높이입니다.
+                                <br />
+                                기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
+                              </>
+                            ) : (
+                              <>
+                                마진에서 협측 사면이 시작되는 높이입니다.
+                                <br />
+                                삽입축 각도가 크면 잡힙니다.
+                              </>
+                            )
                           }
                           value={`${cleanNum(m.postLabialBevelMm, 1)}mm`}
                         />

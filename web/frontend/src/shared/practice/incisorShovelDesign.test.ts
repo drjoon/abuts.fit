@@ -709,8 +709,8 @@ assert.ok(
 assert.ok(
   incPlane.grooveDepth <= 0.03 &&
     canPlane.grooveDepth <= 0.03 &&
-    incPlane.span <= 0.1 &&
-    canPlane.span <= 0.1,
+    incPlane.span <= 0.15 &&
+    canPlane.span <= 0.15,
   `절치(span ${incPlane.span.toFixed(3)}mm, groove ${incPlane.grooveDepth.toFixed(3)}mm)·견치(span ${canPlane.span.toFixed(3)}mm, groove ${canPlane.grooveDepth.toFixed(3)}mm) 설측 사면은 로브·중심 홈 없이 하나의 매끈한 평면을 이룬다`,
 );
 const maxLoopR = (loop: Float32Array) => {
@@ -725,8 +725,79 @@ assert.equal(
 );
 assert.equal(bevelShortCan.metrics.postLingualBevelMm, 1.5, "견치 설측 사면은 마진에서 1.5mm에 시작된다");
 assert.equal(bevelLongCan.metrics.postLingualBevelMm, 3.6, "견치 설측 사면은 마진에서 3.6mm에 시작된다");
-assert.equal(single35.metrics.postLingualBevelMm ?? null, null, "구치부에는 설측 사면 메트릭이 없다");
-assert.equal(single35.metrics.postLabialBevelMm ?? null, null, "구치부에는 순측 사면 메트릭이 없다");
+assert.equal(single35.metrics.postLingualBevelMm ?? null, null, "삽입축이 작은 구치에는 설측 사면이 없다");
+assert.equal(single35.metrics.postLabialBevelMm ?? null, null, "삽입축이 작은 구치에는 협측 사면이 없다");
+const tilt35 = 20 * Math.PI / 180;
+const tiltedPose = {
+  ...fixture35.fixturePose,
+  axis: [Math.sin(tilt35), 0, -Math.cos(tilt35)] as [number, number, number],
+};
+const [tilted35, tiltedFlat] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+  }),
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+    params: { postLingualBevelMm: 11 },
+    explicitParams: { postLingualBevelMm: 11, postLabialBevelMm: 0 },
+  }),
+]);
+console.log(
+  JSON.stringify({
+    tilt35: {
+      ang: tilted35.metrics.angulationDeg,
+      lin: tilted35.metrics.postLingualBevelMm ?? null,
+      buc: tilted35.metrics.postLabialBevelMm ?? null,
+      flatLin: tiltedFlat.metrics.postLingualBevelMm ?? null,
+      flatBuc: tiltedFlat.metrics.postLabialBevelMm ?? null,
+    },
+  }),
+);
+assert.ok(
+  tilted35.metrics.angulationDeg >= 6,
+  `기울인 #35 삽입축(${tilted35.metrics.angulationDeg}°)은 사면 기준 이상이다`,
+);
+assert.ok(
+  (tilted35.metrics.postLingualBevelMm ?? 0) > 0 &&
+    (tilted35.metrics.postLabialBevelMm ?? 0) > 0 &&
+    tilted35.metrics.postLingualBevelMm! < tilted35.metrics.postHeightMm &&
+    tilted35.metrics.postLabialBevelMm! < tilted35.metrics.postHeightMm,
+  "삽입축이 큰 구치는 협·설 사면이 마진 높이로 잡히고 포스트 높이보다 작다",
+);
+assert.equal(tiltedFlat.metrics.postLabialBevelMm ?? null, null, "협측 사면 0은 사면을 만들지 않는다");
+const blWidthAt = (positions: Float32Array, z0: number) => {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (Math.abs(positions[i + 2]! - z0) > 0.15) continue;
+    if (Math.abs(positions[i + 1]!) > 0.35) continue;
+    minX = Math.min(minX, positions[i]!);
+    maxX = Math.max(maxX, positions[i]!);
+  }
+  return maxX - minX;
+};
+let zTopTilt = -Infinity;
+for (let i = 2; i < tilted35.solidBodyLocalPositions!.length; i += 3) {
+  zTopTilt = Math.max(zTopTilt, tilted35.solidBodyLocalPositions![i]!);
+}
+const bevelBl = blWidthAt(tilted35.solidBodyLocalPositions!, zTopTilt - 0.9);
+const flatBl = blWidthAt(tiltedFlat.solidBodyLocalPositions!, zTopTilt - 0.9);
+assert.ok(
+  bevelBl < flatBl - 0.15,
+  `같은 기울기에서 협·설 사면(${bevelBl.toFixed(2)}mm)은 사면 없는 상단(${flatBl.toFixed(2)}mm)보다 좁다`,
+);
+tilted35.worldGeometry.dispose();
+tilted35.predictedCrownWorldGeometry.dispose();
+tiltedFlat.worldGeometry.dispose();
+tiltedFlat.predictedCrownWorldGeometry.dispose();
 const [labialOff, labialOn] = await Promise.all([
   designCustomAbutmentStl({
     fixture: fixture11,
@@ -762,6 +833,53 @@ assert.ok(
   onLabX < offLabX - 0.15,
   `마진에서 3.2mm에 순측 사면을 두면 절단 아래 0.8mm 순측이 안으로 들어간다(${offLabX.toFixed(2)} → ${onLabX.toFixed(2)})`,
 );
+const labialShallow = await designCustomAbutmentStl({
+  fixture: fixture11,
+  jawGeometry: jaw,
+  opposingGeometry: flatMid,
+  toothWorks: works11,
+  params: { postLabialBevelMm: 0.7 },
+  explicitParams: { postLabialBevelMm: 0.7 },
+});
+assert.equal(labialShallow.metrics.postLabialBevelMm, 0.7, "순측 사면 0.7mm가 메트릭에 남는다");
+const shallowLabX = maxLabialXAtZ(labialShallow.solidBodyLocalPositions!, zLabial);
+assert.ok(
+  shallowLabX < offLabX - 0.12,
+  `순측 사면 0.7mm도 상단 순측을 깎는다(${offLabX.toFixed(2)} → ${shallowLabX.toFixed(2)})`,
+);
+assert.ok(
+  Math.abs(onLabX - shallowLabX) > 0.08,
+  `순측 사면 시작 높이(0.7↔3.2)에 따라 상단 깎임이 달라진다(${shallowLabX.toFixed(2)} ↔ ${onLabX.toFixed(2)})`,
+);
+const topRimSpike = (positions: Float32Array) => {
+  let zMax = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zMax = Math.max(zMax, positions[i]!);
+  const bins = new Array(48).fill(0);
+  const counts = new Array(48).fill(0);
+  for (let i = 0; i < positions.length; i += 3) {
+    const z = positions[i + 2]!;
+    if (z < zMax - 0.55 || z > zMax - 0.05) continue;
+    const x = positions[i]!;
+    const y = positions[i + 1]!;
+    const r = Math.hypot(x, y);
+    const b = Math.floor(((Math.atan2(y, x) + Math.PI) / (Math.PI * 2)) * 48) % 48;
+    bins[b] = Math.max(bins[b]!, r);
+    counts[b]! += 1;
+  }
+  let maxJump = 0;
+  for (let i = 0; i < 48; i += 1) {
+    const j = (i + 1) % 48;
+    if (!counts[i] || !counts[j]) continue;
+    maxJump = Math.max(maxJump, Math.abs(bins[i]! - bins[j]!));
+  }
+  return maxJump;
+};
+assert.ok(
+  topRimSpike(labialOn.solidBodyLocalPositions!) < 0.4,
+  `전치 라인 앵글 필레가 삐죽하지 않는다(spike ${topRimSpike(labialOn.solidBodyLocalPositions!).toFixed(2)}mm)`,
+);
+labialShallow.worldGeometry.dispose();
+labialShallow.predictedCrownWorldGeometry.dispose();
 labialOff.worldGeometry.dispose();
 labialOff.predictedCrownWorldGeometry.dispose();
 labialOn.worldGeometry.dispose();

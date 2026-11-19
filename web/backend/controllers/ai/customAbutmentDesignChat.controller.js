@@ -465,7 +465,7 @@ function buildPrompt({ message, history, teeth, selectedTooth, preference, hasIm
     "\n규칙:\n" +
     "- 치아를 안 말하면 selectedTooth, 없으면 toothNumber \"all\".\n" +
     "- 「조금」 범위 10~15%, 「많이」 25~35%. 숫자가 있으면 그 값.\n" +
-    "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓. 전치부 설측 사면(마진에서 사면 시작 높이)=postLingualBevelMm(0.5~11.5mm, 포스트 높이 미만, -1=자동). 전치부 순측 사면(마진에서 사면 시작 높이, 기본 0)=postLabialBevelMm(0=없음·절단연 두께 부족 시 자동, 양수=그 높이). 포스트 회전/돌려=postYawDeg(교합면 시점 반시계 +, 시계 -, 그림 선이 있으면 현재 포스트에서 목표 선까지 각도만큼 보정).\n" +
+    "- 포스트 낮춰=postHeightOffsetMm 음수. 얇게=postWidthScale↓. 더 수직=postTaperDeg↓. 전치부 설측 사면(마진에서 사면 시작 높이)=postLingualBevelMm(0.5~11.5mm, 포스트 높이 미만, -1=자동). 전치부 순측·구치 협측 사면=postLabialBevelMm(0=없음, 양수=마진에서의 시작 높이). 구치는 삽입축 각도가 크면 협·설 사면을 자동으로 잡는다. 포스트 회전/돌려=postYawDeg(교합면 시점 반시계 +, 시계 -, 그림 선이 있으면 현재 포스트에서 목표 선까지 각도만큼 보정).\n" +
     "- 마진 깊게/치은 하방=marginDepthMm(얕은 끝). 치은 연하 구간=marginSubgMinMm~marginSubgMaxMm(기본 0.5~1.0). 근원심 마진 치관쪽 상승·스캘럽(scallop)·치은 라인 추종=marginScallopMm↑(평평·완만=↓). 마진 넓게/좁게=marginShoulderMm.\n" +
     "- 질문이거나 바꿀 게 없으면 changes [].\n" +
     "- 조정값으로 바꿀 수 없는 요청이면 unsupported true와 changes []. 질문·이미 그 값이면 unsupported false.\n" +
