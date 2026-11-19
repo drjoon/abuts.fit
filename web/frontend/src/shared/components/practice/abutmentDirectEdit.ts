@@ -1,6 +1,6 @@
 // 커스텀어벗 뷰어의 직접 편집.
 // 검볼 UI 원점은 포스트 중심이다. 클릭·드래그 종류와 관계없이 검볼 위치는 거기에 고정된다.
-// 파란 회전의 형상 힌지는 피니시라인 중앙이며, 메시 변형·회전 제스처 측정만 그 점을 피봇으로 쓴다.
+// 파란 회전의 형상 힌지는 피니시라인 중앙이다. 호를 끄는 각도는 검볼(호) 중심에서 잰다.
 // 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
 // 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
@@ -1865,13 +1865,13 @@ function alongAxis(mesh: THREE.Object3D, axis: number, distance: number) {
   else if (axis === 2) mesh.rotation.x = Math.PI / 2;
 }
 
-function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, onNegative: number) {
+function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, at: number, radius = 0.07) {
   const scaleMat = basicMat(AXIS_COLOR[axis]!);
-  const dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 10), scaleMat), "scale", axis, -1, scaleMat);
-  dot.position.set(axis === 0 ? onNegative : 0, axis === 1 ? onNegative : 0, 0.02);
+  const dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(radius, 14, 10), scaleMat), "scale", axis, -1, scaleMat);
+  dot.position.set(axis === 0 ? at : 0, axis === 1 ? at : 0, 0.04);
   dot.renderOrder = 46;
   const scaleHit = tagHandle(
-    new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.SphereGeometry(radius + 0.045, 12, 8), basicMat(0xffffff, 0)),
     "scale",
     axis,
     -1,
@@ -1890,14 +1890,14 @@ function addCornerMoveArrow(
   colorMat: THREE.MeshBasicMaterial,
 ) {
   const shaft = tagHandle(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, len * 0.55, 10), colorMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, len * 0.62, 10), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
     colorMat,
   );
   const head = tagHandle(
-    new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 12), colorMat),
+    new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.14, 12), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
@@ -1921,33 +1921,35 @@ export function makeGumball(tooth: string) {
   group.userData.tooth = tooth;
   group.frustumCulled = false;
 
-  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖).
-  // 이동(화살표)은 +축·1사분면 코너, 스케일(점 3개)은 같은 코너·뱃지 쪽, 회전 호는 3사분면(−축)에 둔다.
+  // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 60px.
+  // 스케일 점은 뱃지 바로 밖(우상), 이동 화살표는 그 바깥으로 간격을 두고 짧게 둔다. 회전 호는 좌하.
+  const scaleAxisDist = 0.3;
+  const scale2Corner = 0.26;
   for (const axis of [0, 1] as const) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
+    const shaftLen = 0.28;
+    const shaftAt = 0.64;
     const shaft = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.34, 12), mat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, shaftLen, 12), mat),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(shaft, axis, 0.6);
-    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 14), mat), "move", axis, -1, mat);
-    alongAxis(head, axis, 0.8);
+    alongAxis(shaft, axis, shaftAt);
+    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.16, 14), mat), "move", axis, -1, mat);
+    alongAxis(head, axis, shaftAt + shaftLen * 0.5 + 0.06);
     const hit = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.52, 10), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, shaftLen + 0.16, 10), basicMat(0xffffff, 0)),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(hit, axis, 0.68);
+    alongAxis(hit, axis, shaftAt + 0.04);
     group.add(shaft, head, hit);
   }
-  const scaleAxisDist = 0.36;
-  const scale2Corner = 0.34;
   for (const axis of [0, 1] as const) {
     addAxisScaleDot(group, axis, scaleAxisDist);
   }
@@ -1975,27 +1977,27 @@ export function makeGumball(tooth: string) {
   arcHit.rotation.z = arcStart;
   group.add(arc, arcHit);
 
-  const moveCorner = 0.5;
-  const moveCornerLen = 0.3;
+  const moveCorner = 0.46;
+  const moveCornerLen = 0.22;
   addCornerMoveArrow(group, 0, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[0]!));
   addCornerMoveArrow(group, 1, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[1]!));
   const move2Hit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.18), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.14), basicMat(0xffffff, 0)),
     "move2",
     0,
     1,
     basicMat(AXIS_COLOR[0]!),
   );
-  move2Hit.position.set(moveCorner + moveCornerLen * 0.35, moveCorner + moveCornerLen * 0.35, 0.02);
+  move2Hit.position.set(moveCorner + moveCornerLen * 0.42, moveCorner + moveCornerLen * 0.42, 0.02);
   group.add(move2Hit);
 
-  // 노란 2D 스케일 점: 코너 이동 화살표(0.5) 안쪽·뱃지 방향.
+  // 노란 2D 스케일 점: 축 스케일 점과 코너 화살표 사이, 뱃지 우상.
   const planeMat = basicMat(0xf5d90a, 0.94);
-  const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), planeMat), "scale2", 0, 1, planeMat);
+  const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.078, 14, 10), planeMat), "scale2", 0, 1, planeMat);
   scale2Dot.position.set(scale2Corner, scale2Corner, 0.02);
   scale2Dot.renderOrder = 47;
   const scale2Hit = tagHandle(
-    new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 8), basicMat(0xffffff, 0)),
     "scale2",
     0,
     1,
@@ -2508,10 +2510,8 @@ export class AbutmentDirectEditSession {
       return true;
     }
     const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
-    const center =
-      handle.op === "rot"
-        ? this.marginPivotWorld(view, start)
-        : this.resolveGumballCenter(view, start, handle.tooth);
+    // 호는 검볼(포스트) 중심에 그려진다. 각도를 피니시라인에서 재면 좌하 호가 힌지 근처라 회전이 튀거나 안 된다.
+    const center = this.resolveGumballCenter(view, start, handle.tooth);
     if (handle.op === "move" || handle.op === "scale") {
       const axis = this.cameraAxis(handle.axis, vC).clone();
       this.axisPlane(axis, center);
@@ -3273,23 +3273,7 @@ export class AbutmentDirectEditSession {
     ).applyMatrix4(view.fixture);
   }
 
-  /** 파란 회전 호·형상 힌지 — 피니시라인 루프 중심. */
-  private marginPivotWorld(view: ToothView, edit: AbutmentEdit) {
-    const zone = view.zone;
-    const l0 = zone.marginCenterL ?? zone.centerL ?? 0;
-    const m0 = zone.marginCenterM ?? zone.centerM ?? 0;
-    const z0 = zone.marginCenterZ ?? zone.meanMarginZ ?? zone.marginZ;
-    const zLift = computeZLift(z0, zone.fixedZ, zone.marginZ, view.topZ, edit);
-    const l = l0 + edit.shiftLabialMm;
-    const m = m0 + edit.shiftMesialMm;
-    return new THREE.Vector3(
-      l * zone.labial[0] + m * zone.mesial[0],
-      l * zone.labial[1] + m * zone.mesial[1],
-      z0 + zLift,
-    ).applyMatrix4(view.fixture);
-  }
-
-  /** 검볼 UI·이동·스케일 피봇 — 포스트 중심. */
+  /** 검볼 UI·이동·스케일·회전 드래그 피봇 — 포스트 중심. 형상 힌지는 피니시라인. */
   private resolveGumballCenter(view: ToothView, edit: AbutmentEdit, _tooth: string): THREE.Vector3 {
     return this.gumballPosition(view, edit);
   }
