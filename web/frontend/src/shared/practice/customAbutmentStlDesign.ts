@@ -299,8 +299,20 @@ function rayCircleRadius(cx: number, cy: number, r: number, dx: number, dy: numb
   return Math.max(0, b + Math.sqrt(disc));
 }
 
-/** 픽스쳐 주변 대합 스캔 삼각형을 로컬 좌표로 모은다. 9 float = 삼각형 하나. */
-function opposingTrianglesInFixtureFrame(
+const localTrianglesCache = new WeakMap<THREE.BufferGeometry, Map<string, Float32Array>>();
+const occlusalFacingCache = new WeakMap<Float32Array, Map<string, Float32Array>>();
+
+function geometryPosSignature(pos: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): string {
+  const n = pos.count;
+  if (n <= 0) return "0";
+  const mid = n >> 1;
+  const last = n - 1;
+  const r = (v: number) => Math.round(v * 1000);
+  return `${n}:${r(pos.getX(0))},${r(pos.getY(mid))},${r(pos.getZ(last))}`;
+}
+
+/** 픽스쳐 주변 스캔 삼각형을 로컬 좌표로 모은다. 9 float = 삼각형 하나. 지오메트리·자세·반경별 WeakMap 캐시. */
+export function cropTrianglesInFixtureFrame(
   geometry: THREE.BufferGeometry | null | undefined,
   pose: FixtureWorldPose,
   radiusMm: number,
@@ -310,39 +322,103 @@ function opposingTrianglesInFixtureFrame(
   if (!pos || pos.count < 3) return new Float32Array(0);
   const index = geometry.getIndex();
   const triCount = Math.floor((index ? index.count : pos.count) / 3);
+  if (triCount < 1) return new Float32Array(0);
+
+  const r4 = (v: number) => Math.round(v * 1e4);
+  const cacheKey = `${geometryPosSignature(pos)}|${index ? index.count : -1}|${Math.round(radiusMm * 100)}|${r4(pose.origin[0])},${r4(pose.origin[1])},${r4(pose.origin[2])}|${r4(pose.axis[0])},${r4(pose.axis[1])},${r4(pose.axis[2])}|${r4(pose.hexX[0])},${r4(pose.hexX[1])},${r4(pose.hexX[2])}`;
+  let byKey = localTrianglesCache.get(geometry);
+  if (!byKey) {
+    byKey = new Map();
+    localTrianglesCache.set(geometry, byKey);
+  }
+  const hit = byKey.get(cacheKey);
+  if (hit) return hit;
+
   const r2 = radiusMm * radiusMm;
   const [ox, oy, oz] = pose.origin;
+  const hx0 = pose.hexX[0], hx1 = pose.hexX[1], hx2 = pose.hexX[2];
+  const hy0 = pose.hexY[0], hy1 = pose.hexY[1], hy2 = pose.hexY[2];
+  const az0 = pose.axis[0], az1 = pose.axis[1], az2 = pose.axis[2];
+  const rawPos =
+    !("isInterleavedBufferAttribute" in pos && pos.isInterleavedBufferAttribute) &&
+    pos.itemSize === 3 &&
+    pos.array instanceof Float32Array
+      ? pos.array
+      : null;
+  const rawIdx =
+    index && !("isInterleavedBufferAttribute" in index && index.isInterleavedBufferAttribute)
+      ? (index.array as Uint32Array | Uint16Array)
+      : null;
+
   const out: number[] = [];
-  const far = (x: number, y: number, z: number) => {
-    const dx = x - ox;
-    const dy = y - oy;
-    const dz = z - oz;
-    return dx * dx + dy * dy + dz * dz > r2;
-  };
-  for (let t = 0; t < triCount; t += 1) {
-    const i0 = index ? index.getX(t * 3) : t * 3;
-    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
-    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
-    const x0 = pos.getX(i0);
-    const y0 = pos.getY(i0);
-    const z0 = pos.getZ(i0);
-    const x1 = pos.getX(i1);
-    const y1 = pos.getY(i1);
-    const z1 = pos.getZ(i1);
-    const x2 = pos.getX(i2);
-    const y2 = pos.getY(i2);
-    const z2 = pos.getZ(i2);
-    if (far(x0, y0, z0) && far(x1, y1, z1) && far(x2, y2, z2)) continue;
-    const a = worldPointToFixtureLocal([x0, y0, z0], pose);
-    const b = worldPointToFixtureLocal([x1, y1, z1], pose);
-    const c = worldPointToFixtureLocal([x2, y2, z2], pose);
-    out.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  if (rawPos) {
+    for (let t = 0; t < triCount; t += 1) {
+      const base = t * 3;
+      const p0 = (rawIdx ? rawIdx[base]! : base) * 3;
+      const p1 = (rawIdx ? rawIdx[base + 1]! : base + 1) * 3;
+      const p2 = (rawIdx ? rawIdx[base + 2]! : base + 2) * 3;
+      const dx0 = rawPos[p0]! - ox, dy0 = rawPos[p0 + 1]! - oy, dz0 = rawPos[p0 + 2]! - oz;
+      const dx1 = rawPos[p1]! - ox, dy1 = rawPos[p1 + 1]! - oy, dz1 = rawPos[p1 + 2]! - oz;
+      const dx2 = rawPos[p2]! - ox, dy2 = rawPos[p2 + 1]! - oy, dz2 = rawPos[p2 + 2]! - oz;
+      if (
+        dx0 * dx0 + dy0 * dy0 + dz0 * dz0 > r2 &&
+        dx1 * dx1 + dy1 * dy1 + dz1 * dz1 > r2 &&
+        dx2 * dx2 + dy2 * dy2 + dz2 * dz2 > r2
+      ) {
+        continue;
+      }
+      out.push(
+        dx0 * hx0 + dy0 * hx1 + dz0 * hx2,
+        dx0 * hy0 + dy0 * hy1 + dz0 * hy2,
+        dx0 * az0 + dy0 * az1 + dz0 * az2,
+        dx1 * hx0 + dy1 * hx1 + dz1 * hx2,
+        dx1 * hy0 + dy1 * hy1 + dz1 * hy2,
+        dx1 * az0 + dy1 * az1 + dz1 * az2,
+        dx2 * hx0 + dy2 * hx1 + dz2 * hx2,
+        dx2 * hy0 + dy2 * hy1 + dz2 * hy2,
+        dx2 * az0 + dy2 * az1 + dz2 * az2,
+      );
+    }
+  } else {
+    const far = (x: number, y: number, z: number) => {
+      const dx = x - ox;
+      const dy = y - oy;
+      const dz = z - oz;
+      return dx * dx + dy * dy + dz * dz > r2;
+    };
+    for (let t = 0; t < triCount; t += 1) {
+      const i0 = index ? index.getX(t * 3) : t * 3;
+      const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+      const x0 = pos.getX(i0), y0 = pos.getY(i0), z0 = pos.getZ(i0);
+      const x1 = pos.getX(i1), y1 = pos.getY(i1), z1 = pos.getZ(i1);
+      const x2 = pos.getX(i2), y2 = pos.getY(i2), z2 = pos.getZ(i2);
+      if (far(x0, y0, z0) && far(x1, y1, z1) && far(x2, y2, z2)) continue;
+      const a = worldPointToFixtureLocal([x0, y0, z0], pose);
+      const b = worldPointToFixtureLocal([x1, y1, z1], pose);
+      const c = worldPointToFixtureLocal([x2, y2, z2], pose);
+      out.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    }
   }
-  return new Float32Array(out);
+  const built = new Float32Array(out);
+  byKey.set(cacheKey, built);
+  return built;
 }
+
+const opposingTrianglesInFixtureFrame = cropTrianglesInFixtureFrame;
 
 /** 법선이 삽입축과 |dot| 이상인 삼각형만 남긴다. 수직 벽의 최하단이 교합면 높이로 잡히지 않게 한다. */
 function filterOcclusalFacingTriangles(tris: Float32Array, up: Vec3, minAbsDot: number): Float32Array {
+  if (tris.length < 9) return new Float32Array(0);
+  const key = `${Math.round(up[0] * 1e4)},${Math.round(up[1] * 1e4)},${Math.round(up[2] * 1e4)}:${Math.round(minAbsDot * 1e3)}`;
+  let byKey = occlusalFacingCache.get(tris);
+  if (!byKey) {
+    byKey = new Map();
+    occlusalFacingCache.set(tris, byKey);
+  }
+  const cached = byKey.get(key);
+  if (cached) return cached;
+
   const triCount = Math.floor(tris.length / 9);
   const out: number[] = [];
   for (let i = 0; i < triCount; i += 1) {
@@ -364,7 +440,9 @@ function filterOcclusalFacingTriangles(tris: Float32Array, up: Vec3, minAbsDot: 
     if (Math.max(ha, hb, hc) - Math.min(ha, hb, hc) > 1.15) continue;
     out.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   }
-  return new Float32Array(out);
+  const built = new Float32Array(out);
+  byKey.set(key, built);
+  return built;
 }
 
 function measurePostTopClearanceMm(
@@ -1845,6 +1923,13 @@ function getJawDentalFrame(jawGeometry: THREE.BufferGeometry, fixture: MatchedSc
   return frame;
 }
 
+const contralateralMirrorCache = new WeakMap<
+  THREE.BufferGeometry,
+  Map<string, ContralateralCrownMirror | null>
+>();
+const cylSampleCache = new WeakMap<THREE.BufferGeometry, Map<string, Float32Array>>();
+const neighborFilteredPtsCache = new WeakMap<Float32Array, Map<string, Float32Array>>();
+
 /**
  * 같은 악 스캔에 반대측 동일 치아(예: #36 ↔ #46)가 자연치로 있으면 정중면 대칭 거울상으로
  * 순설·근원심 폭, 치관 높이, 단면 윤곽 비율을 잰다. 편측 스캔·무치악·스캔바디면 null.
@@ -1863,11 +1948,19 @@ function measureContralateralMirrorCrown(
   const contraTooth = `${contraQuad}${m[2]}`;
   if (neighbors.some((nb) => String(nb.toothNumber).trim() === contraTooth)) return null;
 
-  const frame = getJawDentalFrame(jawGeometry, fixture);
-  if (!frame) return null;
-
   const posAttr = jawGeometry.getAttribute("position");
   if (!posAttr || posAttr.count < 200) return null;
+  const cacheKey = `${fixture.toothNumber}|${geometryPosSignature(posAttr)}|${Math.round(meanMarginZ * 4)}|${Math.round(fixture.fixturePose.origin[0] * 100)},${Math.round(fixture.fixturePose.origin[1] * 100)},${Math.round(fixture.fixturePose.origin[2] * 100)}`;
+  let byKey = contralateralMirrorCache.get(jawGeometry);
+  if (!byKey) {
+    byKey = new Map();
+    contralateralMirrorCache.set(jawGeometry, byKey);
+  }
+  if (byKey.has(cacheKey)) return byKey.get(cacheKey) ?? null;
+
+  const computed = ((): ContralateralCrownMirror | null => {
+    const frame = getJawDentalFrame(jawGeometry, fixture);
+    if (!frame) return null;
   const sampleStride = Math.max(1, Math.floor(posAttr.count / 2500));
   const rSamples: number[] = [];
   for (let i = 0; i < posAttr.count; i += sampleStride) {
@@ -1994,6 +2087,9 @@ function measureContralateralMirrorCrown(
   const contourRatio = lowPassCircular(rawRatio, 4).map((v) => clamp(v, 0.9, 1.1));
 
   return { toothNumber: contraTooth, blMm, mdMm, crownHeightMm, contourRatio };
+  })();
+  byKey.set(cacheKey, computed);
+  return computed;
 }
 
 /**
@@ -2048,6 +2144,8 @@ type IncisorNeighborGuide = {
  * 절치 옆 자연치의 절단연 길이와 장축 기울기.
  * 순측으로 빠진 절단연도 포함하되, 측절치·견치·중절치 치관 단차와 양옆 짧은 치아 경계를 함께 지킨다.
  */
+const incisorGuideCache = new WeakMap<Float32Array, Map<string, IncisorNeighborGuide | null>>();
+
 function measureAdjacentIncisorGuide(
   pts: Float32Array,
   c0: Vec3,
@@ -2064,6 +2162,16 @@ function measureAdjacentIncisorGuide(
     negClinicalHeightMm?: number;
   },
 ): IncisorNeighborGuide | null {
+  const r3 = (v: number) => Math.round(v * 200);
+  const gKey = `${r3(c0[2])}|${r3(up[0])},${r3(up[1])},${r3(up[2])}|${r3(labialHint[0])},${r3(labialHint[1])}|${r3(mesialHint[0])},${r3(mesialHint[1])}|${r3(halfMdMm)}|${opts?.skipPos ? 1 : 0}${opts?.skipNeg ? 1 : 0}|${r3(opts?.ownClinicalHeightMm ?? 9.2)},${r3(opts?.posClinicalHeightMm ?? 9.2)},${r3(opts?.negClinicalHeightMm ?? 9.2)}`;
+  let byGKey = incisorGuideCache.get(pts);
+  if (!byGKey) {
+    byGKey = new Map();
+    incisorGuideCache.set(pts, byGKey);
+  }
+  if (byGKey.has(gKey)) return byGKey.get(gKey) ?? null;
+
+  const computed = ((): IncisorNeighborGuide | null => {
   const archFr = insertionFrame(norm3(up), labialHint);
   const vMes = dot3(archFr.vSide, mesialHint) >= 0 ? archFr.vSide : scale3(archFr.vSide, -1);
   const sides: Array<Array<{ h: number; u: number; v: number }>> = [[], []];
@@ -2140,6 +2248,9 @@ function measureAdjacentIncisorGuide(
     labialSlope: labialSlope / guides.length,
     mesialSlope: mesialSlope / guides.length,
   };
+  })();
+  byGKey.set(gKey, computed);
+  return computed;
 }
 
 type IncisorNeighborShovel = {
@@ -2502,6 +2613,8 @@ type AdjacentLongAxisEstimate = {
   bridged: boolean;
 };
 
+const adjacentLongAxesCache = new WeakMap<Float32Array, Map<string, AdjacentLongAxisEstimate[]>>();
+
 function estimateAdjacentLongAxes(
   pts: Float32Array,
   o: {
@@ -2515,6 +2628,16 @@ function estimateAdjacentLongAxes(
     distalBridgedAbutment?: boolean;
   },
 ): AdjacentLongAxisEstimate[] {
+  const r3 = (v: number) => Math.round(v * 500);
+  const key = `${r3(o.wOcc[0])},${r3(o.wOcc[1])},${r3(o.wOcc[2])}|${r3(o.labXY[0])},${r3(o.labXY[1])}|${r3(o.mesXY[0])},${r3(o.mesXY[1])}|${r3(o.ownRadius)},${r3(o.ownHeight)}|${o.skipDistal ? 1 : 0}${o.mesialBridgedAbutment ? 1 : 0}${o.distalBridgedAbutment ? 1 : 0}`;
+  let byKey = adjacentLongAxesCache.get(pts);
+  if (!byKey) {
+    byKey = new Map();
+    adjacentLongAxesCache.set(pts, byKey);
+  }
+  const hit = byKey.get(key);
+  if (hit) return hit;
+
   const found: AdjacentLongAxisEstimate[] = [];
   for (const sign of [1, -1] as const) {
     if (sign < 0 && o.skipDistal) continue;
@@ -2539,10 +2662,16 @@ function estimateAdjacentLongAxes(
       bridged: bridgedThisSide,
     });
   }
-  if (found.length <= 1) return found;
-  if (found[0]!.weight >= found[1]!.weight * 2) return [found[0]!];
-  if (found[1]!.weight >= found[0]!.weight * 2) return [found[1]!];
-  return found;
+  const out =
+    found.length <= 1
+      ? found
+      : found[0]!.weight >= found[1]!.weight * 2
+        ? [found[0]!]
+        : found[1]!.weight >= found[0]!.weight * 2
+          ? [found[1]!]
+          : found;
+  byKey.set(key, out);
+  return out;
 }
 
 function adjacentProximalCorridor(
@@ -2772,6 +2901,11 @@ type NeighborLocal = {
   height: number;
 };
 
+const oppHeightFieldCache = new WeakMap<
+  Float32Array,
+  Map<string, { list: Array<{ h: number; u: number; v: number }>; heightAt: (u: number, v: number, radius: number) => number }>
+>();
+
 /** 대합치 교합면을 삽입축 평면 격자(0.5mm)로 내려다본 가장 가까운 높이. */
 function buildOpposingHeightField(
   pts: Float32Array,
@@ -2779,36 +2913,61 @@ function buildOpposingHeightField(
   frame: InsertionFrame,
   maxLateral: number,
 ) {
-  const cells = new Map<string, { h: number; u: number; v: number }>();
+  const r3 = (v: number) => Math.round(v * 200);
+  const fKey = `${r3(c0[2])}|${r3(frame.w[0])},${r3(frame.w[1])},${r3(frame.w[2])}|${r3(frame.uLabial[0])},${r3(frame.uLabial[1])}|${Math.round(maxLateral * 20)}`;
+  let byFKey = oppHeightFieldCache.get(pts);
+  if (!byFKey) {
+    byFKey = new Map();
+    oppHeightFieldCache.set(pts, byFKey);
+  }
+  const hitField = byFKey.get(fKey);
+  if (hitField) return hitField;
+
+  const cells = new Map<number, { h: number; u: number; v: number }>();
+  const r2Max = maxLateral * maxLateral;
+  const c0x = c0[0], c0y = c0[1], c0z = c0[2];
+  const wx = frame.w[0], wy = frame.w[1], wz = frame.w[2];
+  const ux = frame.uLabial[0], uy = frame.uLabial[1], uz = frame.uLabial[2];
+  const vx = frame.vSide[0], vy = frame.vSide[1], vz = frame.vSide[2];
   for (let i = 0; i < pts.length; i += 3) {
-    const rel = sub3([pts[i]!, pts[i + 1]!, pts[i + 2]!], c0);
-    const h = dot3(rel, frame.w);
+    const rx = pts[i]! - c0x;
+    const ry = pts[i + 1]! - c0y;
+    const rz = pts[i + 2]! - c0z;
+    const h = rx * wx + ry * wy + rz * wz;
     if (h < 1 || h > 18) continue;
-    const u = dot3(rel, frame.uLabial);
-    const v = dot3(rel, frame.vSide);
-    if (Math.hypot(u, v) > maxLateral) continue;
-    const key = `${Math.round(u / OPP_CELL_MM)},${Math.round(v / OPP_CELL_MM)}`;
+    const u = rx * ux + ry * uy + rz * uz;
+    const v = rx * vx + ry * vy + rz * vz;
+    if (u * u + v * v > r2Max) continue;
+    const iu = Math.round(u / OPP_CELL_MM);
+    const iv = Math.round(v / OPP_CELL_MM);
+    const key = (iu + 128) * 256 + (iv + 128);
     const prev = cells.get(key);
     if (!prev || h < prev.h) cells.set(key, { h, u, v });
   }
   const list = [...cells.values()];
   const heightAt = (u: number, v: number, radius: number) => {
     let best = Infinity;
+    const radSq = radius * radius;
     const iu0 = Math.floor((u - radius) / OPP_CELL_MM);
     const iu1 = Math.ceil((u + radius) / OPP_CELL_MM);
     const iv0 = Math.floor((v - radius) / OPP_CELL_MM);
     const iv1 = Math.ceil((v + radius) / OPP_CELL_MM);
     for (let iu = iu0; iu <= iu1; iu += 1) {
+      const rowKey = (iu + 128) * 256 + 128;
       for (let iv = iv0; iv <= iv1; iv += 1) {
-        const cell = cells.get(`${iu},${iv}`);
+        const cell = cells.get(rowKey + iv);
         if (!cell) continue;
-        if (Math.hypot(cell.u - u, cell.v - v) > radius) continue;
+        const du = cell.u - u;
+        const dv = cell.v - v;
+        if (du * du + dv * dv > radSq) continue;
         if (cell.h < best) best = cell.h;
       }
     }
     return best;
   };
-  return { list, heightAt };
+  const builtField = { list, heightAt };
+  byFKey.set(fKey, builtField);
+  return builtField;
 }
 
 /**
@@ -3572,22 +3731,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     .filter((nb) => Math.hypot(nb.origin[0], nb.origin[1]) < 16);
 
   // 이웃 스캔바디 기둥은 인접치가 아니다. 인접 간격·크라운 접촉 계산에서 뺀다.
-  const jawKeep: number[] = [];
-  for (let i = 0; i < jawLocalAll.length; i += 3) {
-    const p: Vec3 = [jawLocalAll[i]!, jawLocalAll[i + 1]!, jawLocalAll[i + 2]!];
-    let onNeighbor = false;
-    for (const nb of neighbors) {
-      const rel = sub3(p, nb.origin);
-      const t = dot3(rel, nb.axis);
-      if (t < -0.5 || t > nb.height + 1.2) continue;
-      if (Math.hypot(...sub3(rel, scale3(nb.axis, t))) < nb.radius + 0.95) {
-        onNeighbor = true;
-        break;
-      }
+  const jawLocalPts = (() => {
+    if (neighbors.length === 0) return jawLocalAll;
+    const nbSig = neighbors
+      .map((nb) => `${nb.toothNumber}:${Math.round(nb.origin[0] * 100)},${Math.round(nb.origin[1] * 100)},${Math.round(nb.origin[2] * 100)}`)
+      .join(";");
+    let byNb = neighborFilteredPtsCache.get(jawLocalAll);
+    if (!byNb) {
+      byNb = new Map();
+      neighborFilteredPtsCache.set(jawLocalAll, byNb);
     }
-    if (!onNeighbor) jawKeep.push(p[0], p[1], p[2]);
-  }
-  const jawLocalPts = new Float32Array(jawKeep);
+    const cached = byNb.get(nbSig);
+    if (cached) return cached;
+    const jawKeep: number[] = [];
+    for (let i = 0; i < jawLocalAll.length; i += 3) {
+      const px = jawLocalAll[i]!, py = jawLocalAll[i + 1]!, pz = jawLocalAll[i + 2]!;
+      let onNeighbor = false;
+      for (const nb of neighbors) {
+        const rx = px - nb.origin[0], ry = py - nb.origin[1], rz = pz - nb.origin[2];
+        const t = rx * nb.axis[0] + ry * nb.axis[1] + rz * nb.axis[2];
+        if (t < -0.5 || t > nb.height + 1.2) continue;
+        const rLimit = nb.radius + 0.95;
+        if (rx * rx + ry * ry + rz * rz - t * t < rLimit * rLimit) {
+          onNeighbor = true;
+          break;
+        }
+      }
+      if (!onNeighbor) jawKeep.push(px, py, pz);
+    }
+    const built = new Float32Array(jawKeep);
+    byNb.set(nbSig, built);
+    return built;
+  })();
 
   const biFrame = getBiJawDentalFrame(jawGeometry, opposingGeometry, fixture.jaw);
   const jawFrame = biFrame ? null : getJawDentalFrame(jawGeometry, fixture);
@@ -3670,6 +3845,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (!geo) return new Float32Array(0);
       const pos = geo.getAttribute("position");
       if (!pos || pos.count === 0) return new Float32Array(0);
+      const sbSig = skipScanbodies
+        ? allJawFixtures
+            .map((sb) => `${sb.toothNumber}:${Math.round(sb.fixturePose.origin[0] * 20)},${Math.round(sb.fixturePose.origin[1] * 20)}`)
+            .join(";")
+        : "0";
+      const cylKey = `${geometryPosSignature(pos)}|${Math.round(fixture.fixturePose.origin[0] * 100)},${Math.round(fixture.fixturePose.origin[1] * 100)},${Math.round(fixture.fixturePose.origin[2] * 100)}|${Math.round(trueOccWorld[0] * 1000)},${Math.round(trueOccWorld[1] * 1000)},${Math.round(trueOccWorld[2] * 1000)}|${sbSig}`;
+      let cylByKey = cylSampleCache.get(geo);
+      if (!cylByKey) {
+        cylByKey = new Map();
+        cylSampleCache.set(geo, cylByKey);
+      }
+      const cylHit = cylByKey.get(cylKey);
+      if (cylHit) return cylHit;
       const stride = Math.max(1, Math.floor(pos.count / 14000));
       const [ox, oy, oz] = fixture.fixturePose.origin;
       const out: number[] = [];
@@ -3706,7 +3894,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           dx * fixture.fixturePose.axis[0] + dy * fixture.fixturePose.axis[1] + dz * fixture.fixturePose.axis[2],
         );
       }
-      return new Float32Array(out);
+      const built = new Float32Array(out);
+      cylByKey.set(cylKey, built);
+      return built;
     };
     const jawArchPts = sampleCylInFix(jawGeometry, true);
     const oppArchPts = sampleCylInFix(opposingGeometry, false);
@@ -4595,13 +4785,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     skipDistal: hasDistalRetromolarPad,
   });
 
+  const steerH = tpl.postHeightMm;
+  const steerHLo = Math.max(2.6, steerH * 0.38);
+  const steerHHi = steerH * 0.98;
+  const steerCoreU = Math.max(2.2, marginA * 0.88);
+  const proxRelPts = (() => {
+    const maxRelSq = steerHHi * steerHHi + steerCoreU * steerCoreU + 8.5 * 8.5 + 1e-3;
+    const minRelSq = steerHLo * steerHLo * 0.9;
+    const sbR2 = (sbR + 0.55) * (sbR + 0.55);
+    const c0x = c0[0], c0y = c0[1], c0z = c0[2];
+    const out: number[] = [];
+    for (let i = 0; i < jawLocalPts.length; i += 3) {
+      const px = jawLocalPts[i]!, py = jawLocalPts[i + 1]!, pz = jawLocalPts[i + 2]!;
+      if (px * px + py * py < sbR2 && pz > -0.5 && pz < sbH + 0.75) continue;
+      const rx = px - c0x, ry = py - c0y, rz = pz - c0z;
+      const dSq = rx * rx + ry * ry + rz * rz;
+      if (dSq < minRelSq || dSq > maxRelSq) continue;
+      out.push(rx, ry, rz);
+    }
+    return new Float32Array(out);
+  })();
+
   const steerAxisForProximalClearance = (wInit: Vec3, capRad: number): Vec3 => {
     let wCur = wInit;
-    const H = tpl.postHeightMm;
-    const hLo = Math.max(2.6, H * 0.38);
-    const hHi = H * 0.98;
+    const H = steerH;
+    const hLo = steerHLo;
+    const hHi = steerHHi;
     const hRef = H * 0.72;
-    const coreU = Math.max(2.2, marginA * 0.88);
+    const coreU = steerCoreU;
     const baseHalfMdEst = posterior
       ? Math.max(1.55, boreTopR + SCREW_WALL_MM + 0.25)
       : Math.max(1.65, marginB - shoulderW * 0.85);
@@ -4617,19 +4828,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     for (let iter = 0; iter < 4 && movedAbs < maxProxShiftMm; iter += 1) {
       const fr = insertionFrame(wCur, labXY);
       const vMes: Vec3 = dot3(fr.vSide, mesXY) >= 0 ? fr.vSide : scale3(fr.vSide, -1);
+      const wx = fr.w[0], wy = fr.w[1], wz = fr.w[2];
+      const ux = fr.uLabial[0], uy = fr.uLabial[1], uz = fr.uLabial[2];
+      const vmx = vMes[0], vmy = vMes[1], vmz = vMes[2];
       // 높이별 여유(실제 벽 거리 - 해당 높이 포스트 반폭)를 재서 중단 풍융부에서도 1.0mm 크라운 두께를 지킨다.
       const mesClearSamples: number[] = [];
       const disClearSamples: number[] = [];
-      for (let i = 0; i < jawLocalPts.length; i += 3) {
-        const p: Vec3 = [jawLocalPts[i]!, jawLocalPts[i + 1]!, jawLocalPts[i + 2]!];
-        if (Math.hypot(p[0], p[1]) < sbR + 0.55 && p[2] > -0.5 && p[2] < sbH + 0.75) continue;
-        const rel = sub3(p, c0);
-        const h = dot3(rel, fr.w);
+      for (let i = 0; i < proxRelPts.length; i += 3) {
+        const rx = proxRelPts[i]!, ry = proxRelPts[i + 1]!, rz = proxRelPts[i + 2]!;
+        const h = rx * wx + ry * wy + rz * wz;
         if (h < hLo || h > hHi) continue;
-        if (Math.abs(dot3(rel, fr.uLabial)) > coreU) continue;
+        if (Math.abs(rx * ux + ry * uy + rz * uz) > coreU) continue;
         const uH = clamp((h - 0.8) / Math.max(1.5, H - 0.8), 0, 1);
         const postHalfAtH = baseHalfMdEst + (topHalfMdEst - baseHalfMdEst) * uH;
-        const v = dot3(rel, vMes);
+        const v = rx * vmx + ry * vmy + rz * vmz;
         if (v > 0.6 && v < 8.5) mesClearSamples.push(v - mesialAllowance.wallMm - postHalfAtH);
         else if (!hasDistalRetromolarPad && v < -0.6 && v > -8.5) {
           disClearSamples.push(-v - distalAllowance.wallMm - postHalfAtH);
@@ -5175,10 +5387,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : (() => {
           const axisH = oppField.heightAt(0.45, 0, 1.35);
           if (Number.isFinite(axisH)) return axisH;
-          if (archOppHit) return archOppHit.h;
+          if (archOppHit) {
+            const archLatGap = Math.max(0, Math.abs(archOppHit.u) - footR);
+            if (archLatGap > 0) {
+              if (archLatGap >= clearance) return Infinity;
+              const reqDz = Math.sqrt(Math.max(0, clearance * clearance - archLatGap * archLatGap));
+              return archOppHit.h + (clearance - reqDz);
+            }
+            return archOppHit.h;
+          }
           return opposingBandMinHeight(
             oppFieldArch ?? oppField,
-            -4.5,
+            -2.4,
             5.5,
             Math.max(2.4, marginB * 0.75),
           );
@@ -10665,22 +10885,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     marginLoopLocal[col * 3 + 2] = mp[2];
   }
 
-  // 대합 거리는 어벗 겉면과 대합 스캔의 가장 가까운 점 사이 거리.
-  // 윗면 수직 레이가 놓치는 축벽·절단연 접촉을 포함한다.
-  let sampleCount = 1;
-  for (const post of postByCol) sampleCount += post.length;
-  const abutmentSurface = new Float32Array(sampleCount * 3);
-  let sampleWrite = 0;
-  const putSample = (p: Vec3) => {
-    abutmentSurface[sampleWrite] = p[0];
-    abutmentSurface[sampleWrite + 1] = p[1];
-    abutmentSurface[sampleWrite + 2] = p[2];
-    sampleWrite += 3;
-  };
-  putSample(postApex);
-  for (const post of postByCol) {
-    for (const p of post) putSample(p);
+  // 대합 거리는 크라운이 올라가는 포스트 표면(마진 연하 제외 · 윗면 내부 + 상단 라운드 + 축벽·사면)과
+  // 자기 치아 근원심 범위 안 대합 스캔 사이의 최단 3D 거리(수직 침투 시 0mm).
+  const surfaceCoords: number[] = [postApex[0], postApex[1], postApex[2]];
+  const topCapCoords: number[] = [postApex[0], postApex[1], postApex[2]];
+  for (let col = 0; col < postByCol.length; col += 1) {
+    const post = postByCol[col]!;
+    if (post.length === 0) continue;
+    const minColPostZ = cols[col]!.marginPt[2] + 0.2;
+    const topStart = Math.max(0, post.length - TOP_ROUND_STEPS - 1);
+    for (let idx = 0; idx < post.length; idx += 1) {
+      const p = post[idx]!;
+      if (p[2] >= minColPostZ || idx >= topStart) {
+        surfaceCoords.push(p[0], p[1], p[2]);
+      }
+      if (idx >= topStart && (col % 2 === 0 || idx === post.length - 1)) {
+        topCapCoords.push(p[0], p[1], p[2]);
+      }
+    }
+    if (col % 2 === 0) {
+      const rim = post[post.length - 1]!;
+      const p1x = rim[0] * 0.67 + postApex[0] * 0.33;
+      const p1y = rim[1] * 0.67 + postApex[1] * 0.33;
+      const p1z = rim[2] * 0.67 + postApex[2] * 0.33;
+      const p2x = rim[0] * 0.34 + postApex[0] * 0.66;
+      const p2y = rim[1] * 0.34 + postApex[1] * 0.66;
+      const p2z = rim[2] * 0.34 + postApex[2] * 0.66;
+      surfaceCoords.push(p1x, p1y, p1z, p2x, p2y, p2z);
+      topCapCoords.push(p1x, p1y, p1z, p2x, p2y, p2z);
+    }
   }
+  const abutmentSurface = new Float32Array(surfaceCoords);
+  const topCapSurface = new Float32Array(topCapCoords);
   const axisClearMeasureH = oppField?.heightAt(0.45, 0, 1.35) ?? Infinity;
   const archClearMeasureOpts =
     !posterior && !Number.isFinite(axisClearMeasureH)
@@ -10693,7 +10929,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : undefined;
   const meshClearanceMm =
     oppTrisAll.length >= 9
-      ? closestSurfaceClearanceMm({ points: abutmentSurface, opposingTris: oppTrisAll })
+      ? closestSurfaceClearanceMm({
+          points: abutmentSurface,
+          topPoints: topCapSurface,
+          opposingTris: oppTrisAll,
+          origin: c0,
+          up: frame.w,
+          labialHint: frame.uLabial,
+          minHeightMm: 0.35,
+          maxHeightMm: 22,
+          maxAbsUMm: 12,
+          postCorridorMarginMm: Math.max(2.2, crownHalfMd - marginB + 1.5),
+        })
       : null;
   const axialClearanceMm =
     meshClearanceMm != null
@@ -10842,11 +11089,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       return pOut + minCrownWall * ramp;
     };
 
-    const jawPosAttr = jawGeometry.getAttribute("position");
-    const jawIndex = jawGeometry.getIndex();
-    if (jawPosAttr && jawPosAttr.count >= 3) {
-      const triCount = Math.floor((jawIndex ? jawIndex.count : jawPosAttr.count) / 3);
-      const [ox, oy, oz] = fixture.fixturePose.origin;
+    const jawLocalTris = cropTrianglesInFixtureFrame(jawGeometry, fixture.fixturePose, 12.6);
+    if (jawLocalTris.length >= 9) {
+      const localTriCount = Math.floor(jawLocalTris.length / 9);
       const cropR2 = 12 * 12;
       type SideAccum = {
         tris: number[];
@@ -10876,23 +11121,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const rawIntrusion = reqR - r;
         return { h, u, v, r, phi, rawIntrusion };
       };
-      for (let t = 0; t < triCount; t += 1) {
-        const i0 = jawIndex ? jawIndex.getX(t * 3) : t * 3;
-        const i1 = jawIndex ? jawIndex.getX(t * 3 + 1) : t * 3 + 1;
-        const i2 = jawIndex ? jawIndex.getX(t * 3 + 2) : t * 3 + 2;
-        const wx0 = jawPosAttr.getX(i0);
-        const wy0 = jawPosAttr.getY(i0);
-        const wz0 = jawPosAttr.getZ(i0);
-        if ((wx0 - ox) ** 2 + (wy0 - oy) ** 2 + (wz0 - oz) ** 2 > cropR2) continue;
-        const a = worldPointToFixtureLocal([wx0, wy0, wz0], fixture.fixturePose);
-        const b = worldPointToFixtureLocal(
-          [jawPosAttr.getX(i1), jawPosAttr.getY(i1), jawPosAttr.getZ(i1)],
-          fixture.fixturePose,
-        );
-        const d = worldPointToFixtureLocal(
-          [jawPosAttr.getX(i2), jawPosAttr.getY(i2), jawPosAttr.getZ(i2)],
-          fixture.fixturePose,
-        );
+      for (let t = 0; t < localTriCount; t += 1) {
+        const o = t * 9;
+        const ax = jawLocalTris[o]!, ay = jawLocalTris[o + 1]!, az = jawLocalTris[o + 2]!;
+        if (ax * ax + ay * ay + az * az > cropR2) continue;
+        const a: Vec3 = [ax, ay, az];
+        const b: Vec3 = [jawLocalTris[o + 3]!, jawLocalTris[o + 4]!, jawLocalTris[o + 5]!];
+        const d: Vec3 = [jawLocalTris[o + 6]!, jawLocalTris[o + 7]!, jawLocalTris[o + 8]!];
         const va = evalVert(a);
         const vb = evalVert(b);
         const vd = evalVert(d);

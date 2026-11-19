@@ -2072,6 +2072,17 @@ export function fixturePoseToMatrix4(pose: FixtureWorldPose): THREE.Matrix4 {
   );
 }
 
+const croppedPointsCache = new WeakMap<THREE.BufferGeometry, Map<string, Float32Array>>();
+
+function geometryPositionFingerprint(pos: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): string {
+  const n = pos.count;
+  if (n <= 0) return "0";
+  const mid = n >> 1;
+  const last = n - 1;
+  const r = (v: number) => Math.round(v * 1000);
+  return `${n}:${r(pos.getX(0))},${r(pos.getY(mid))},${r(pos.getZ(last))}`;
+}
+
 /** 월드 점들을 픽스쳐 로컬 좌표(+Z 임플란트 축)로 옮긴다. */
 export function cropScanPointsInFixtureFrame(
   geometry: THREE.BufferGeometry | null,
@@ -2081,27 +2092,68 @@ export function cropScanPointsInFixtureFrame(
   if (!geometry) return new Float32Array(0);
   const pos = geometry.getAttribute("position");
   if (!pos || pos.count === 0) return new Float32Array(0);
+  const r4 = (v: number) => Math.round(v * 1e4);
+  const cacheKey = `${geometryPositionFingerprint(pos)}|${Math.round(radiusMm * 100)}|${r4(pose.origin[0])},${r4(pose.origin[1])},${r4(pose.origin[2])}|${r4(pose.axis[0])},${r4(pose.axis[1])},${r4(pose.axis[2])}|${r4(pose.hexX[0])},${r4(pose.hexX[1])},${r4(pose.hexX[2])}`;
+  let byKey = croppedPointsCache.get(geometry);
+  if (!byKey) {
+    byKey = new Map();
+    croppedPointsCache.set(geometry, byKey);
+  }
+  const cached = byKey.get(cacheKey);
+  if (cached) return cached;
+
   const r2 = radiusMm * radiusMm;
   const out: number[] = [];
   const seen = new Set<number>();
   const [ox, oy, oz] = pose.origin;
-  for (let i = 0; i < pos.count; i += 1) {
-    const dx = pos.getX(i) - ox;
-    const dy = pos.getY(i) - oy;
-    const dz = pos.getZ(i) - oz;
-    if (dx * dx + dy * dy + dz * dz > r2) continue;
-    const lx = dx * pose.hexX[0] + dy * pose.hexX[1] + dz * pose.hexX[2];
-    const ly = dx * pose.hexY[0] + dy * pose.hexY[1] + dz * pose.hexY[2];
-    const lz = dx * pose.axis[0] + dy * pose.axis[1] + dz * pose.axis[2];
-    const key =
-      (Math.floor(lx * 20) + 2048) * 16777216 +
-      (Math.floor(ly * 20) + 2048) * 4096 +
-      (Math.floor(lz * 20) + 2048);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(lx, ly, lz);
+  const hx0 = pose.hexX[0], hx1 = pose.hexX[1], hx2 = pose.hexX[2];
+  const hy0 = pose.hexY[0], hy1 = pose.hexY[1], hy2 = pose.hexY[2];
+  const az0 = pose.axis[0], az1 = pose.axis[1], az2 = pose.axis[2];
+  const rawArr =
+    !("isInterleavedBufferAttribute" in pos && pos.isInterleavedBufferAttribute) &&
+    pos.itemSize === 3 &&
+    pos.array instanceof Float32Array
+      ? pos.array
+      : null;
+  if (rawArr) {
+    const end = pos.count * 3;
+    for (let o = 0; o < end; o += 3) {
+      const dx = rawArr[o]! - ox;
+      const dy = rawArr[o + 1]! - oy;
+      const dz = rawArr[o + 2]! - oz;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      const lx = dx * hx0 + dy * hx1 + dz * hx2;
+      const ly = dx * hy0 + dy * hy1 + dz * hy2;
+      const lz = dx * az0 + dy * az1 + dz * az2;
+      const key =
+        (Math.floor(lx * 20) + 2048) * 16777216 +
+        (Math.floor(ly * 20) + 2048) * 4096 +
+        (Math.floor(lz * 20) + 2048);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(lx, ly, lz);
+    }
+  } else {
+    for (let i = 0; i < pos.count; i += 1) {
+      const dx = pos.getX(i) - ox;
+      const dy = pos.getY(i) - oy;
+      const dz = pos.getZ(i) - oz;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      const lx = dx * hx0 + dy * hx1 + dz * hx2;
+      const ly = dx * hy0 + dy * hy1 + dz * hy2;
+      const lz = dx * az0 + dy * az1 + dz * az2;
+      const key =
+        (Math.floor(lx * 20) + 2048) * 16777216 +
+        (Math.floor(ly * 20) + 2048) * 4096 +
+        (Math.floor(lz * 20) + 2048);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(lx, ly, lz);
+    }
   }
-  return new Float32Array(out);
+  const built = new Float32Array(out);
+  byKey.set(cacheKey, built);
+  return built;
 }
 
 /**

@@ -20,9 +20,14 @@ import { cuffProfile } from "../../practice/cuffProfile";
 import {
   buildJawGingivaMarginProbe,
   buildMinkowskiCuffRadiusEvaluator,
+  cropTrianglesInFixtureFrame,
   resolveScrewChannelProfile,
   type JawGingivaMarginProbe,
 } from "../../practice/customAbutmentStlDesign";
+import {
+  buildOpposingClearanceIndex,
+  type OpposingClearanceIndex,
+} from "../../practice/occlusalClearanceRay";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   computeOptimalPostTaperDeg,
@@ -122,6 +127,8 @@ export type EditedAbutmentMetrics = {
   cutbackMm: number | null;
   crownOverPostMm: number | null;
   occlusalClearanceMm?: number | null;
+  /** 대합 스캔 프로브로 실제 3D 거리를 판정했는지 여부(대합치 범위 밖이면 occlusalClearanceMm = null). */
+  hasOpposingProbe?: boolean;
 };
 
 export type AbutmentEditSummary = {
@@ -191,6 +198,7 @@ type OpposingClearanceProbe = {
   rows: number;
   grid: Float32Array;
   measureMinClearance: (positions: Float32Array, sampleVertices: Uint32Array) => number | null;
+  measureSurfaceClearance: (positions: Float32Array, marginLocal: Float32Array | null) => number | null;
 };
 
 type ToothView = {
@@ -1387,28 +1395,15 @@ function collectTopSampleVertices(src: Float32Array, zone: Zone): Uint32Array {
   return new Uint32Array(out);
 }
 
-function buildOpposingClearanceProbe(
+export function buildOpposingClearanceProbe(
   opposingGeometry: THREE.BufferGeometry | null | undefined,
   fixture: DirectEditFixture,
   zone: Zone,
 ): OpposingClearanceProbe | null {
   if (!opposingGeometry) return null;
-  const pos = opposingGeometry.getAttribute("position");
-  if (!pos || pos.count < 3) return null;
   const pose = fixture.fixturePose;
-  const ox = pose.origin[0] ?? 0;
-  const oy = pose.origin[1] ?? 0;
-  const oz = pose.origin[2] ?? 0;
-  const toLocalPt = (wx: number, wy: number, wz: number): [number, number, number] => {
-    const dx = wx - ox;
-    const dy = wy - oy;
-    const dz = wz - oz;
-    return [
-      dx * (pose.hexX[0] ?? 1) + dy * (pose.hexX[1] ?? 0) + dz * (pose.hexX[2] ?? 0),
-      dx * (pose.hexY[0] ?? 0) + dy * (pose.hexY[1] ?? 1) + dz * (pose.hexY[2] ?? 0),
-      dx * (pose.axis[0] ?? 0) + dy * (pose.axis[1] ?? 0) + dz * (pose.axis[2] ?? 1),
-    ];
-  };
+  const oppTris = cropTrianglesInFixtureFrame(opposingGeometry, pose, 18);
+  if (oppTris.length < 9) return null;
 
   let up: [number, number, number] = [0, 0, 1];
   if (fixture.archOcclusalDir && fixture.archOcclusalDir.length >= 3) {
@@ -1424,11 +1419,18 @@ function buildOpposingClearanceProbe(
       up = [(lx * sign) / len, (ly * sign) / len, (lz * sign) / len];
     }
   }
-  const helper: [number, number, number] = Math.abs(up[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
-  let ux = helper[1] * up[2] - helper[2] * up[1];
-  let uy = helper[2] * up[0] - helper[0] * up[2];
-  let uz = helper[0] * up[1] - helper[1] * up[0];
-  const uLen = Math.hypot(ux, uy, uz) || 1;
+  const labialHint: [number, number, number] = [zone.labial[0], zone.labial[1], 0];
+  let ux = labialHint[0] - up[0] * (labialHint[0] * up[0] + labialHint[1] * up[1]);
+  let uy = labialHint[1] - up[1] * (labialHint[0] * up[0] + labialHint[1] * up[1]);
+  let uz = -up[2] * (labialHint[0] * up[0] + labialHint[1] * up[1]);
+  let uLen = Math.hypot(ux, uy, uz);
+  if (uLen < 1e-6) {
+    const helper: [number, number, number] = Math.abs(up[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+    ux = helper[1] * up[2] - helper[2] * up[1];
+    uy = helper[2] * up[0] - helper[0] * up[2];
+    uz = helper[0] * up[1] - helper[1] * up[0];
+    uLen = Math.hypot(ux, uy, uz) || 1;
+  }
   ux /= uLen;
   uy /= uLen;
   uz /= uLen;
@@ -1439,6 +1441,16 @@ function buildOpposingClearanceProbe(
     up[0] * uy - up[1] * ux,
   ];
 
+  const baseMeanMarginZ = zone.meanMarginZ ?? zone.marginZ;
+  const surfaceIndex: OpposingClearanceIndex | null = buildOpposingClearanceIndex(oppTris, {
+    origin: [0, 0, baseMeanMarginZ],
+    up,
+    labialHint: u,
+    minHeightMm: 0.35,
+    maxHeightMm: 22,
+    maxAbsUMm: 12.5,
+  });
+
   const step = 0.15;
   const halfSpan = 8.4;
   const minU = -halfSpan;
@@ -1447,41 +1459,27 @@ function buildOpposingClearanceProbe(
   const rows = cols;
   const grid = new Float32Array(cols * rows).fill(Infinity);
 
-  const index = opposingGeometry.getIndex();
-  const triCount = Math.floor((index ? index.count : pos.count) / 3);
-  const maxR2 = 16.5 * 16.5;
-  const minH = (zone.meanMarginZ ?? zone.marginZ) * up[2] + 0.8;
+  const triCount = Math.floor(oppTris.length / 9);
+  const minH = baseMeanMarginZ * up[2] + 0.8;
   const maxH = minH + 17.5;
   let written = 0;
 
   for (let t = 0; t < triCount; t += 1) {
-    const i0 = index ? index.getX(t * 3) : t * 3;
-    const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
-    const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
-    const x0 = pos.getX(i0), y0 = pos.getY(i0), z0 = pos.getZ(i0);
-    const x1 = pos.getX(i1), y1 = pos.getY(i1), z1 = pos.getZ(i1);
-    const x2 = pos.getX(i2), y2 = pos.getY(i2), z2 = pos.getZ(i2);
-    if (
-      (x0 - ox) ** 2 + (y0 - oy) ** 2 + (z0 - oz) ** 2 > maxR2 &&
-      (x1 - ox) ** 2 + (y1 - oy) ** 2 + (z1 - oz) ** 2 > maxR2 &&
-      (x2 - ox) ** 2 + (y2 - oy) ** 2 + (z2 - oz) ** 2 > maxR2
-    ) {
-      continue;
-    }
-    const a = toLocalPt(x0, y0, z0);
-    const b = toLocalPt(x1, y1, z1);
-    const c = toLocalPt(x2, y2, z2);
-    const ah = a[0] * up[0] + a[1] * up[1] + a[2] * up[2];
-    const bh = b[0] * up[0] + b[1] * up[1] + b[2] * up[2];
-    const ch = c[0] * up[0] + c[1] * up[1] + c[2] * up[2];
+    const o = t * 9;
+    const ax = oppTris[o]!, ay = oppTris[o + 1]!, az = oppTris[o + 2]!;
+    const bx = oppTris[o + 3]!, by = oppTris[o + 4]!, bz = oppTris[o + 5]!;
+    const cx = oppTris[o + 6]!, cy = oppTris[o + 7]!, cz = oppTris[o + 8]!;
+    const ah = ax * up[0] + ay * up[1] + az * up[2];
+    const bh = bx * up[0] + by * up[1] + bz * up[2];
+    const ch = cx * up[0] + cy * up[1] + cz * up[2];
     if (Math.max(ah, bh, ch) < minH || Math.min(ah, bh, ch) > maxH) continue;
 
-    const au = a[0] * u[0] + a[1] * u[1] + a[2] * u[2];
-    const av = a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
-    const bu = b[0] * u[0] + b[1] * u[1] + b[2] * u[2];
-    const bv = b[0] * v[0] + b[1] * v[1] + b[2] * v[2];
-    const cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
-    const cv = c[0] * v[0] + c[1] * v[1] + c[2] * v[2];
+    const au = ax * u[0] + ay * u[1] + az * u[2];
+    const av = ax * v[0] + ay * v[1] + az * v[2];
+    const bu = bx * u[0] + by * u[1] + bz * u[2];
+    const bv = bx * v[0] + by * v[1] + bz * v[2];
+    const cu = cx * u[0] + cy * u[1] + cz * u[2];
+    const cv = cx * v[0] + cy * v[1] + cz * v[2];
 
     const uLo = Math.max(0, Math.floor((Math.min(au, bu, cu) - minU) / step));
     const uHi = Math.min(cols - 1, Math.ceil((Math.max(au, bu, cu) - minU) / step));
@@ -1514,7 +1512,7 @@ function buildOpposingClearanceProbe(
       }
     }
   }
-  if (written === 0) return null;
+  if (written === 0 && !surfaceIndex) return null;
 
   const probeDiskOffsets: Array<{ di: number; dj: number; dLatSq: number; dLat: number }> = [];
   const latCells = Math.round(0.9 / step);
@@ -1530,7 +1528,7 @@ function buildOpposingClearanceProbe(
   probeDiskOffsets.sort((a, b) => a.dLatSq - b.dLatSq);
 
   const measureMinClearance = (positions: Float32Array, sampleVertices: Uint32Array): number | null => {
-    if (sampleVertices.length === 0) return null;
+    if (written === 0 || sampleVertices.length === 0) return null;
     let best = Infinity;
     let apexX = 0, apexY = 0, apexZ = -Infinity;
     for (let k = 0; k < sampleVertices.length; k += 1) {
@@ -1570,17 +1568,108 @@ function buildOpposingClearanceProbe(
     for (let k = 0; k < sampleVertices.length; k += 1) {
       const o = sampleVertices[k]! * 3;
       const px = positions[o]!;
-      const py = positions[o + 1]!;
+      const py = positions[o]!;
       const pz = positions[o + 2]!;
-      checkPoint(px, py, pz);
-      checkPoint(px * 0.75 + apexX * 0.25, py * 0.75 + apexY * 0.25, pz * 0.75 + apexZ * 0.25);
-      checkPoint((px + apexX) * 0.5, (py + apexY) * 0.5, (pz + apexZ) * 0.5);
+      const pyActual = positions[o + 1]!;
+      checkPoint(px, pyActual, pz);
+      checkPoint(px * 0.75 + apexX * 0.25, pyActual * 0.75 + apexY * 0.25, pz * 0.75 + apexZ * 0.25);
+      checkPoint((px + apexX) * 0.5, (pyActual + apexY) * 0.5, (pz + apexZ) * 0.5);
     }
     if (!Number.isFinite(best) || best >= 15) return null;
     return best;
   };
 
-  return { up, u, v, minU, minV, step, cols, rows, grid, measureMinClearance };
+  const measureSurfaceClearance = (
+    positions: Float32Array,
+    marginLocal: Float32Array | null,
+  ): number | null => {
+    if (!surfaceIndex || positions.length < 9) return null;
+    let marginFloorZ = zone.marginZ;
+    let marginMeanZ = baseMeanMarginZ;
+    let marginCx = 0;
+    let marginCy = 0;
+    if (marginLocal && marginLocal.length >= 9) {
+      let minMz = Infinity;
+      let sumMz = 0;
+      let sumMx = 0;
+      let sumMy = 0;
+      const mCount = Math.floor(marginLocal.length / 3);
+      for (let i = 0; i < mCount; i += 1) {
+        const mx = marginLocal[i * 3]!;
+        const my = marginLocal[i * 3 + 1]!;
+        const mz = marginLocal[i * 3 + 2]!;
+        if (mz < minMz) minMz = mz;
+        sumMx += mx;
+        sumMy += my;
+        sumMz += mz;
+      }
+      if (Number.isFinite(minMz)) marginFloorZ = minMz;
+      marginCx = sumMx / mCount;
+      marginCy = sumMy / mCount;
+      marginMeanZ = sumMz / mCount;
+    }
+
+    let maxPostZ = -Infinity;
+    for (let i = 2; i < positions.length; i += 3) {
+      const z = positions[i]!;
+      if (z > maxPostZ) maxPostZ = z;
+    }
+    if (!Number.isFinite(maxPostZ) || maxPostZ <= marginFloorZ + 0.3) return null;
+
+    const minSampleZ = marginFloorZ + 0.22;
+    const topBandZ = maxPostZ - 0.75;
+    const boreWallR2 = Math.max(0.28, (zone.boreTopR ?? zone.screwR) + 0.08) ** 2;
+    const pts: number[] = [];
+    const topPts: number[] = [];
+
+    const triCountMesh = Math.floor(positions.length / 9);
+    for (let t = 0; t < triCountMesh; t += 1) {
+      const o = t * 9;
+      const az = positions[o + 2]!;
+      const bz = positions[o + 5]!;
+      const cz = positions[o + 8]!;
+      if (az < minSampleZ && bz < minSampleZ && cz < minSampleZ) continue;
+      const ax = positions[o]!, ay = positions[o + 1]!;
+      // 인접 삼각형끼리 정점을 공유하는 soup에서 삼각형 첫 정점만 취해도 모든 격자 정점이 빠짐없이 덮인다.
+      if (az >= minSampleZ && !(az < maxPostZ - 0.18 && ax * ax + ay * ay <= boreWallR2)) {
+        pts.push(ax, ay, az);
+        if (az >= topBandZ) topPts.push(ax, ay, az);
+      }
+
+      if (az >= topBandZ && bz >= topBandZ && cz >= topBandZ) {
+        const bx = positions[o + 3]!, by = positions[o + 4]!;
+        const cx = positions[o + 6]!, cy = positions[o + 7]!;
+        if (cz >= maxPostZ - 0.06 && !(cx * cx + cy * cy <= boreWallR2 && cz < maxPostZ - 0.18)) {
+          pts.push(cx, cy, cz);
+          topPts.push(cx, cy, cz);
+        }
+        const eMaxSq = Math.max(
+          (bx - ax) ** 2 + (by - ay) ** 2 + (bz - az) ** 2,
+          (cx - bx) ** 2 + (cy - by) ** 2 + (cz - bz) ** 2,
+          (ax - cx) ** 2 + (ay - cy) ** 2 + (az - cz) ** 2,
+        );
+        if (eMaxSq > 0.25 && (t & 1) === 0) {
+          const mx = (ax + bx + cx) * (1 / 3);
+          const my = (ay + by + cy) * (1 / 3);
+          const mz = (az + bz + cz) * (1 / 3);
+          pts.push(mx, my, mz);
+          topPts.push(mx, my, mz);
+        }
+      }
+    }
+
+    if (pts.length < 3) return null;
+    void marginCx;
+    void marginCy;
+    void marginMeanZ;
+    return surfaceIndex.measureClearanceMm({
+      points: new Float32Array(pts),
+      topPoints: topPts.length >= 3 ? new Float32Array(topPts) : null,
+      postCorridorMarginMm: 2.2,
+    });
+  };
+
+  return { up, u, v, minU, minV, step, cols, rows, grid, measureMinClearance, measureSurfaceClearance };
 }
 
 function applyMatrixToPositions(src: Float32Array, matrix: THREE.Matrix4, out: Float32Array) {
@@ -2879,11 +2968,12 @@ export class AbutmentDirectEditSession {
       const proposalSurface = view.proposalSolid ?? view.proposal;
       if (!baselineMeasured) {
         baselineMeasured = measureEditedAbutment(proposalSurface, view.proposalMargin, view.proposalCrown);
-        if (baselineMeasured && view.oppProbe && view.topSampleVertices.length > 0) {
-          const baseClear = view.oppProbe.measureMinClearance(proposalSurface, view.topSampleVertices);
-          if (baseClear != null) {
-            baselineMeasured.occlusalClearanceMm = Math.max(0, Math.round(baseClear * 100) / 100);
-          }
+        if (baselineMeasured && view.oppProbe) {
+          baselineMeasured.hasOpposingProbe = true;
+          baselineMeasured.occlusalClearanceMm = view.oppProbe.measureSurfaceClearance(
+            proposalSurface,
+            view.proposalMargin,
+          );
         }
         view.baselineMeasure = baselineMeasured;
       }
@@ -2891,16 +2981,9 @@ export class AbutmentDirectEditSession {
       const surface =
         cached && savedSolid && savedSolid.length >= 9 ? savedSolid : local;
       measured = measureEditedAbutment(surface, marginLocal, crownLocal ?? view.proposalCrown);
-      if (
-        measured &&
-        view.oppProbe &&
-        view.topSampleVertices.length > 0 &&
-        surface.length === proposalSurface.length
-      ) {
-        const liveClear = view.oppProbe.measureMinClearance(surface, view.topSampleVertices);
-        if (liveClear != null) {
-          measured.occlusalClearanceMm = Math.max(0, Math.round(liveClear * 100) / 100);
-        }
+      if (measured && view.oppProbe) {
+        measured.hasOpposingProbe = true;
+        measured.occlusalClearanceMm = view.oppProbe.measureSurfaceClearance(surface, marginLocal);
       }
     }
     return {
