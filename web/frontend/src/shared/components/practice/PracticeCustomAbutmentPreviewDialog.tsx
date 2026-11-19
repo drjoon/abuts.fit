@@ -9,8 +9,9 @@
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
-// 화살표는 이동, 상자는 그 방향 크기, 흰 고리는 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
+// 화살표는 이동, −축·좌하 점은 크기, 흰 점은 전체 크기다. 커넥션과 2° 테이퍼는 고정이다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
+// - 2026-11-19: 치과 소통은 세로로 긴 좁은 열. 제목은 치과 소통.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
@@ -153,6 +154,7 @@ import {
   parseAbutmentGenerationRules,
   type AbutmentGenerationRule,
 } from "@/shared/practice/abutmentDesignLogic";
+import { getDesignControls, matchDesignKey } from "@/shared/practice/labDesignControls";
 import {
   detectAndMatchScanbodiesOnJaw,
   locateNominalToothSlot,
@@ -5272,6 +5274,32 @@ export function PracticeCustomAbutmentPreviewDialog({
   const canResetAny = canUndoEdit || hasInfoFieldEdits;
   const viewerLive = ready || status.kind === "pick";
 
+  useEffect(() => {
+    if (!open || !canEditDesign) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const action = matchDesignKey(getDesignControls().keys, event);
+      if (action !== "undo" && action !== "redo") return;
+      event.preventDefault();
+      const session = directEditRef.current;
+      if (!session) return;
+      if (action === "undo" && session.canUndo()) session.undo();
+      else if (action === "redo" && session.canRedo()) session.redo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canEditDesign, open]);
+
   const handleResetToInitial = useCallback(() => {
     const ctx = designContextRef.current;
     if (!ctx) return;
@@ -5460,8 +5488,37 @@ export function PracticeCustomAbutmentPreviewDialog({
             {ready && canEditDesign ? (
               <>
                 <HeaderIconButton
+                  label="검볼"
+                  active={gumballOn && !paint.paintOn}
+                  tip={
+                    <>
+                      화살표는 이동, −축·좌하 점은 크기입니다.
+                      <br />
+                      노란 점은 평면 크기, 흰 점은 전체 크기입니다.
+                      <br />
+                      커넥션과 2° 테이퍼는 고정이고, 커프부터 바뀝니다.
+                    </>
+                  }
+                  onClick={() => {
+                    touchViewer("gumball");
+                    if (paint.paintOn) paint.setPaintOn(false);
+                    setGumballOn((on) => {
+                      viewerPrefsRef.current = { ...viewerPrefsRef.current, gumballOn: !on };
+                      return !on;
+                    });
+                  }}
+                >
+                  <Axis3d className="h-4 w-4" />
+                </HeaderIconButton>
+                <HeaderIconButton
                   label="되돌리기"
-                  tip="직전 변형을 되돌립니다."
+                  tip={
+                    <>
+                      직전 변형을 되돌립니다.
+                      <br />
+                      Ctrl+Z 단축키와 같습니다.
+                    </>
+                  }
                   disabled={!canUndoEdit}
                   onClick={() => directEditRef.current?.undo()}
                 >
@@ -5469,7 +5526,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </HeaderIconButton>
                 <HeaderIconButton
                   label="다시실행"
-                  tip="되돌린 변형을 다시 적용합니다."
+                  tip={
+                    <>
+                      되돌린 변형을 다시 적용합니다.
+                      <br />
+                      Ctrl+Y 단축키와 같습니다.
+                    </>
+                  }
                   disabled={!canRedoEdit}
                   onClick={() => directEditRef.current?.redo()}
                 >
@@ -5488,29 +5551,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                   onClick={handleResetToInitial}
                 >
                   <RotateCcw className="h-4 w-4" />
-                </HeaderIconButton>
-                <HeaderIconButton
-                  label="검볼"
-                  active={gumballOn && !paint.paintOn}
-                  tip={
-                    <>
-                      화살표는 그 방향으로 포스트를 옮깁니다.
-                      <br />
-                      상자는 그 방향 크기, 노란 면은 평면, 흰 고리는 전체 크기입니다.
-                      <br />
-                      커넥션과 2° 테이퍼는 고정이고, 커프부터 바뀝니다.
-                    </>
-                  }
-                  onClick={() => {
-                    touchViewer("gumball");
-                    if (paint.paintOn) paint.setPaintOn(false);
-                    setGumballOn((on) => {
-                      viewerPrefsRef.current = { ...viewerPrefsRef.current, gumballOn: !on };
-                      return !on;
-                    });
-                  }}
-                >
-                  <Axis3d className="h-4 w-4" />
                 </HeaderIconButton>
               </>
             ) : null}
@@ -5798,16 +5838,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {!readOnly && manualChatOpen && transferIdParam ? (
                   <div
-                    className="pointer-events-auto flex max-h-[min(15rem,calc(100dvh-20rem))] w-[min(20rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
+                    className="pointer-events-auto flex h-[min(36rem,calc(100dvh-12rem))] w-[min(16rem,calc(100vw-2rem))] max-h-[calc(100dvh-12rem)] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
                       <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
                         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
                         <span className="truncate">
-                          {isLabViewer
-                            ? "치과 소통 · 수작업 디자인 요청"
-                            : "수작업 의뢰 · 기공소 전달"}
+                          {isLabViewer ? "치과 소통" : "수작업 의뢰 · 기공소 전달"}
                         </span>
                         {paint.count > 0 ? (
                           <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">

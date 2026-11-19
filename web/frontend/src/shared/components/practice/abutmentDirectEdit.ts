@@ -1996,16 +1996,21 @@ export function makeGumball(tooth: string) {
   scale2Hit.position.copy(scale2Dot.position);
   group.add(scale2Dot, scale2Hit);
 
+  // 균일 스케일 흰 점: 중앙(뱃지)과 겹치지 않게 −X 쪽 스케일 묶음에 둔다.
   const ringMat = basicMat(0xf8fafc);
-  const ring = tagHandle(new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.036, 8, 28), ringMat), "scale3", 0, -1, ringMat);
-  const ringHit = tagHandle(
-    new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.062, 6, 22), basicMat(0xffffff, 0)),
+  const uniformDot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.095, 14, 10), ringMat), "scale3", 0, -1, ringMat);
+  uniformDot.position.set(-0.58, -0.2, 0.02);
+  uniformDot.renderOrder = 46;
+  const uniformHit = tagHandle(
+    new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), basicMat(0xffffff, 0)),
     "scale3",
     0,
     -1,
     ringMat,
   );
-  const centerMat = basicMat(0xe2e8f0);
+  uniformHit.position.copy(uniformDot.position);
+  // 중심 이동은 히트만 두고 뱃지 위 회색 구는 그리지 않는다.
+  const centerMat = basicMat(0xe2e8f0, 0);
   const center = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), centerMat), "center", 0, -1, centerMat);
   const centerHit = tagHandle(
     new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10), basicMat(0xffffff, 0)),
@@ -2014,7 +2019,7 @@ export function makeGumball(tooth: string) {
     -1,
     centerMat,
   );
-  group.add(ring, ringHit, center, centerHit);
+  group.add(uniformDot, uniformHit, center, centerHit);
   return group;
 }
 
