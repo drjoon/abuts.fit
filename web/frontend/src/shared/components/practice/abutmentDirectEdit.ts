@@ -1786,6 +1786,12 @@ export function applyWorldDeltaToAbutmentEdit(
 
 const rotCross = new THREE.Vector3();
 
+function projectOntoPlane(vec: THREE.Vector3, normal: THREE.Vector3, out: THREE.Vector3) {
+  out.copy(vec);
+  out.addScaledVector(normal, -out.dot(normal));
+  return out;
+}
+
 /**
  * 월드 회전축(worldAxis) 주위로 오른손 법칙 각도 deg만큼 돌렸을 때 포스트 상단(+axes[2])이 움직이는 방향
  * (worldAxis × axes[2])과 단면 수평 회전 방향(worldAxis × axes[0])이 사분면 좌·우수계(Q1·Q3 vs Q2·Q4)에
@@ -1927,9 +1933,9 @@ export function makeGumball(tooth: string) {
       -1,
       mat,
     );
-    alongAxis(shaft, axis, 0.52);
+    alongAxis(shaft, axis, 0.6);
     const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 14), mat), "move", axis, -1, mat);
-    alongAxis(head, axis, 0.71);
+    alongAxis(head, axis, 0.8);
     const hit = tagHandle(
       new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.52, 10), basicMat(0xffffff, 0)),
       "move",
@@ -1937,7 +1943,7 @@ export function makeGumball(tooth: string) {
       -1,
       mat,
     );
-    alongAxis(hit, axis, 0.6);
+    alongAxis(hit, axis, 0.68);
     group.add(shaft, head, hit);
   }
   const scaleAxisDist = 0.36;
@@ -1969,8 +1975,8 @@ export function makeGumball(tooth: string) {
   arcHit.rotation.z = arcStart;
   group.add(arc, arcHit);
 
-  const moveCorner = 0.41;
-  const moveCornerLen = 0.26;
+  const moveCorner = 0.5;
+  const moveCornerLen = 0.3;
   addCornerMoveArrow(group, 0, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[0]!));
   addCornerMoveArrow(group, 1, moveCorner, moveCornerLen, basicMat(AXIS_COLOR[1]!));
   const move2Hit = tagHandle(
@@ -1983,7 +1989,7 @@ export function makeGumball(tooth: string) {
   move2Hit.position.set(moveCorner + moveCornerLen * 0.35, moveCorner + moveCornerLen * 0.35, 0.02);
   group.add(move2Hit);
 
-  // 노란 2D 스케일 점: 코너 이동 화살표(0.41) 안쪽·뱃지 방향.
+  // 노란 2D 스케일 점: 코너 이동 화살표(0.5) 안쪽·뱃지 방향.
   const planeMat = basicMat(0xf5d90a, 0.94);
   const scale2Dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), planeMat), "scale2", 0, 1, planeMat);
   scale2Dot.position.set(scale2Corner, scale2Corner, 0.02);
@@ -2397,7 +2403,7 @@ export class AbutmentDirectEditSession {
       const hit = pickGumballHit(groups);
       const handle = hit ? handleFrom(hit.object) : null;
       if (handle) {
-        if (this.beginHandle(event, handle)) {
+        if (this.beginHandle(event, handle, hit.point)) {
           this.armDragGroup(handle.tooth);
           event.preventDefault();
           event.stopPropagation();
@@ -2480,7 +2486,7 @@ export class AbutmentDirectEditSession {
     this.commitDragGroup();
   };
 
-  private beginHandle(event: PointerEvent, handle: HandleHit) {
+  private beginHandle(event: PointerEvent, handle: HandleHit, pickWorld?: THREE.Vector3) {
     const view = this.views.get(handle.tooth);
     const camera = this.bridge.getCamera();
     if (!view || !camera || !this.dom) return false;
@@ -2528,14 +2534,16 @@ export class AbutmentDirectEditSession {
     if (handle.op === "rot") {
       const axis = this.cameraAxis(handle.axis, vC).clone();
       plane.setFromNormalAndCoplanarPoint(axis, center);
-      const hit = this.rayOnPlane(event);
-      if (!hit) return false;
+      const seed = pickWorld ?? this.rayOnPlane(event);
+      if (!seed) return false;
+      projectOntoPlane(vA.copy(seed).sub(center), axis, vA);
+      if (vA.lengthSq() < 1e-8) return false;
       this.drag = {
         kind: "rot",
         tooth: handle.tooth,
         axis: handle.axis,
         start,
-        startVec: hit.sub(center),
+        startVec: vA.clone(),
         worldAxis: axis,
         pivotWorld: center.clone(),
         pointerId: event.pointerId,
@@ -2671,10 +2679,10 @@ export class AbutmentDirectEditSession {
       plane.setFromNormalAndCoplanarPoint(drag.worldAxis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
-      const cur = hit.sub(center);
+      projectOntoPlane(hit.sub(center), drag.worldAxis, vA);
       const angle = Math.atan2(
-        vA.crossVectors(drag.startVec, cur).dot(drag.worldAxis),
-        drag.startVec.dot(cur),
+        vB.crossVectors(drag.startVec, vA).dot(drag.worldAxis),
+        drag.startVec.dot(vA),
       );
       return { kind: "rotate", axis: drag.worldAxis.clone(), deg: (angle * 180) / Math.PI };
     }
