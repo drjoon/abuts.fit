@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-11-19: 채팅 위에서도 포커스·바깥 클릭으로 부모 채팅이 닫히지 않게 한다.
+// - 2026-11-19: 바깥 클릭·오버레이로 닫힌다.
 // - 2026-11-19: 설정 메뉴 — 아노다이징 On/Off를 간단 모달로 고른다.
 // related files:
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
@@ -48,9 +48,6 @@ export function AnodizingSettingsDialog({
       <DialogContent
         className="z-[330] gap-4 sm:max-w-sm"
         overlayClassName="z-[325]"
-        onFocusOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-slate-800">

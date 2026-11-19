@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-19: 바깥 클릭·오버레이로 닫힌다. 3D 확인 위 포커스 훔침만 onFocusOutside로 막는다.
 // - 2026-10-25: 3D 확인 모달 위에서는 포커스가 빠져도 닫지 않는다. 보이기 전에 닫히면 선택으로 치지 않는다.
 // - 2026-10-24: 유지홈 버튼은 이 사진 모달로 고른다. 문구·사진·너비를 줄임.
 // related files:
@@ -101,8 +102,6 @@ export function ShortPostRetentionDialog({
         className="z-[330] max-h-[90vh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto p-4 sm:w-[520px] sm:max-w-[520px]"
         overlayClassName="z-[325]"
         onFocusOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-slate-800">
