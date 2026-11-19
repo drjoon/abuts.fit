@@ -5806,7 +5806,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col items-start gap-2">
+              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-20 flex min-h-0 flex-col items-start gap-2">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -5838,7 +5838,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {!readOnly && manualChatOpen && transferIdParam ? (
                   <div
-                    className="pointer-events-auto flex w-[min(15rem,calc(100vw-2rem))] max-h-[min(28rem,calc(100dvh-13.5rem))] flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
+                    className="pointer-events-auto flex min-h-0 w-[min(15rem,calc(100vw-2rem))] flex-1 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
