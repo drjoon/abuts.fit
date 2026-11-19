@@ -2405,14 +2405,14 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
       });
     }
 
-    const { toothStages, linkedRequestIds } =
+    const { toothStages, cancelReadyTeeth, linkedRequestIds } =
       await resolveRelatedAbutmentPastReady(fresh);
     const stages = Array.isArray(toothStages) ? toothStages : [];
     const requestedTooth = String(req.body?.tooth || "").trim();
-    let readyTeeth = stages
-      .filter((row) => String(row?.stage || "").trim() === "준비")
-      .map((row) => String(row?.tooth || "").trim())
+    const allCancelTeeth = (Array.isArray(cancelReadyTeeth) ? cancelReadyTeeth : [])
+      .map((tooth) => String(tooth || "").trim())
       .filter(Boolean);
+    let readyTeeth = allCancelTeeth;
     if (requestedTooth) {
       if (!readyTeeth.includes(requestedTooth)) {
         const known = stages.some(
@@ -2474,7 +2474,8 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
     const remainingStages = stages.filter(
       (row) => !cancelSet.has(String(row?.tooth || "").trim()),
     );
-    const noActive = remainingStages.length === 0;
+    const stillCancelable = allCancelTeeth.filter((tooth) => !cancelSet.has(tooth));
+    const noActive = remainingStages.length === 0 && stillCancelable.length === 0;
     const nextFiles = prevFiles.filter((row) => {
       const tooth = String(row?.tooth || "").trim();
       if (cancelSet.has(tooth)) return false;

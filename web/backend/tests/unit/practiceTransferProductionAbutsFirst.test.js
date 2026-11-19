@@ -520,5 +520,22 @@ describe("abutment pastReady work-cancel guard", () => {
       { tooth: "11", stage: "가공" },
       { tooth: "21", stage: "준비" },
     ]);
+
+    // 기공의뢰에 묶인 준비는 제조 진입(designCompletedAt) 전에 준비로 보이지 않는다.
+    expect(
+      listAbutmentToothStagesFromRows([
+        {
+          manufacturerStage: "준비",
+          partnerBilling: { relatedPracticeTransferId: "ptx-1" },
+          caseInfos: { tooth: "15" },
+        },
+        {
+          manufacturerStage: "준비",
+          designCompletedAt: new Date(),
+          partnerBilling: { relatedPracticeTransferId: "ptx-1" },
+          caseInfos: { tooth: "16" },
+        },
+      ]),
+    ).toEqual([{ tooth: "16", stage: "준비" }]);
   });
 });

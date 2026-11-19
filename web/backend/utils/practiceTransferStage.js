@@ -66,24 +66,40 @@ export const isPracticeTransferAbutmentOutbound = (abutmentDeliveryInfo) => {
   );
 };
 
-/** 어벗 디자인(designFiles) 또는 보철(resultFiles) 업로드 여부 */
+/**
+ * 치과가 플랫폼 디자인을 확정했고, 수행 기공소가 아직 확정하지 않은 구간.
+ * 이 동안에는 제조사 준비·채팅 어벗 STL에 올리지 않는다.
+ */
+export function isPlatformAbutmentDesignHeldForLabReview(production) {
+  if (!production || typeof production !== "object") return false;
+  if (String(production.abutmentFeeRoute || "").trim() !== "platform") return false;
+  if (!production.practiceDesignConfirmedAt) return false;
+  if (production.labDesignConfirmedAt) return false;
+  return true;
+}
+
 export const practiceTransferHasDesignOrResultFiles = (transferDoc) => {
   const production =
     transferDoc?.production && typeof transferDoc.production === "object"
       ? transferDoc.production
       : {};
-  const designFiles = Array.isArray(production.designFiles)
-    ? production.designFiles
-    : Array.isArray(transferDoc?.designFiles)
-      ? transferDoc.designFiles
-      : [];
+  const held = isPlatformAbutmentDesignHeldForLabReview(production);
+  const designFiles = held
+    ? []
+    : Array.isArray(production.designFiles)
+      ? production.designFiles
+      : Array.isArray(transferDoc?.designFiles)
+        ? transferDoc.designFiles
+        : [];
   const resultFiles = Array.isArray(transferDoc?.resultFiles)
     ? transferDoc.resultFiles
     : [];
-  const designCount = Math.max(
-    designFiles.length,
-    Number(production.designFileCount || transferDoc?.designFileCount || 0) || 0,
-  );
+  const designCount = held
+    ? 0
+    : Math.max(
+        designFiles.length,
+        Number(production.designFileCount || transferDoc?.designFileCount || 0) || 0,
+      );
   const resultCount = Math.max(
     resultFiles.length,
     Number(transferDoc?.resultFileCount || 0) || 0,
@@ -91,7 +107,7 @@ export const practiceTransferHasDesignOrResultFiles = (transferDoc) => {
   return (
     designCount > 0 ||
     resultCount > 0 ||
-    Boolean(production.designReadyAt || transferDoc?.designReadyAt)
+    (!held && Boolean(production.designReadyAt || transferDoc?.designReadyAt))
   );
 };
 

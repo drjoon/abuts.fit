@@ -1492,16 +1492,20 @@ export const PracticeFileTransferPage = ({
   const [abutmentProcessCancelBusy, setAbutmentProcessCancelBusy] =
     useState(false);
   const practiceAbutmentCancelOpen = useMemo(() => {
-    const ready = (selectedTransfer?.abutmentToothStages || []).some(
+    if (!selectedTransfer) return false;
+    const manufacturerReady = (selectedTransfer.abutmentToothStages || []).some(
       (row) => String(row.stage || "").trim() === "준비",
     );
-    if (!ready) return false;
-    if (selectedTransfer?.abutmentFeeRoute !== "platform") return true;
-    if (selectedTransfer.labDesignConfirmedAt) return false;
-    const deadline = selectedTransfer.abutmentCancelDeadlineAt;
-    if (!deadline) return true;
-    const at = new Date(deadline).getTime();
-    return Number.isNaN(at) || Date.now() <= at;
+    // 플랫폼 확정은 기공소 검토가 끝나기 전(제조 준비 전)에도 취소할 수 있다.
+    if (selectedTransfer.abutmentFeeRoute === "platform") {
+      if (selectedTransfer.labDesignConfirmedAt) return false;
+      if (!selectedTransfer.practiceDesignConfirmedAt) return manufacturerReady;
+      const deadline = selectedTransfer.abutmentCancelDeadlineAt;
+      if (!deadline) return true;
+      const at = new Date(deadline).getTime();
+      return Number.isNaN(at) || Date.now() <= at;
+    }
+    return manufacturerReady;
   }, [selectedTransfer]);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -7272,7 +7276,11 @@ export const PracticeFileTransferPage = ({
       .filter((row) => String(row.stage || "").trim() === "준비")
       .map((row) => String(row.tooth || "").trim())
       .filter(Boolean);
-    if (readyTeeth.length === 0) return;
+    const reviewCancel =
+      selectedTransfer.abutmentFeeRoute === "platform" &&
+      Boolean(selectedTransfer.practiceDesignConfirmedAt) &&
+      !selectedTransfer.labDesignConfirmedAt;
+    if (readyTeeth.length === 0 && !reviewCancel) return;
 
     setAbutmentProcessCancelBusy(true);
     try {

@@ -2016,6 +2016,21 @@ export function RequestorPracticeReceivePage({
       const serverFiles = Array.isArray(server.production?.designFiles)
         ? server.production.designFiles
         : [];
+      const serverHoldingDesign =
+        String(server.production?.abutmentFeeRoute || "").trim() === "platform" &&
+        Boolean(String(server.production?.practiceDesignConfirmedAt || "").trim()) &&
+        !String(server.production?.labDesignConfirmedAt || "").trim();
+      if (serverHoldingDesign) {
+        return withPreservedScans({
+          ...server,
+          production: {
+            ...server.production,
+            designFiles: serverFiles,
+            designFileCount: serverFiles.length,
+            designReadyAt: server.production?.designReadyAt || null,
+          },
+        });
+      }
       if (localFiles.length === 0) return withPreservedScans(server);
 
       const localByKey = new Map(

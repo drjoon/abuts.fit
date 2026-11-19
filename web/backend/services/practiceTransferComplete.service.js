@@ -23,6 +23,7 @@ import {
 } from "./practiceTransferProduction.service.js";
 import { postPracticeTransferSystemChatMessage } from "./chatSystemMessage.service.js";
 import { isLabProsthesisUploadRequired } from "../utils/practiceProsthesisUploadRequirement.js";
+import { isPlatformAbutmentDesignHeldForLabReview } from "../utils/practiceTransferStage.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import {
   formatPracticeTransferWorkCompletedChat,
@@ -55,7 +56,8 @@ export {
 
 function toProductionApiFields(production) {
   const p = production && typeof production === "object" ? production : {};
-  const designFiles = normalizeResultFiles(p.designFiles);
+  const holdDesign = isPlatformAbutmentDesignHeldForLabReview(p);
+  const designFiles = normalizeResultFiles(holdDesign ? [] : p.designFiles);
   return {
     shippingMode:
       p.shippingMode === "express"
@@ -66,7 +68,7 @@ function toProductionApiFields(production) {
     rushProcessing: Boolean(p.rushProcessing),
     skipDesignConfirm: p.skipDesignConfirm !== false,
     skipJig: Boolean(p.skipJig),
-    designReadyAt: p.designReadyAt || null,
+    designReadyAt: holdDesign ? null : p.designReadyAt || null,
     designFileCount: designFiles.length,
     designFiles: designFiles.map((item, idx) => ({
       id: `design::${idx + 1}`,

@@ -877,8 +877,8 @@ function buildConfirmedRhinoFileName(requestDoc) {
 }
 
 /**
- * 치과 「디자인 확정」: 커스텀어벗 STL을 Request·PTX(designFiles)에 미러하고
- * 기공소 검토로 넘긴다. 제조사 준비·filled-STL(JS 파이프라인)은 기공소 「디자인 확정」에서 연다.
+ * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 기공소 검토로 넘긴다.
+ * PTX designFiles·제조사 준비·filled-STL은 기공소 「디자인 확정」에서 연다.
  * 기공소 labRevision은 같은 API로 수정 STL만 반영한다(제조 진입은 confirm-abutment-design).
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
@@ -1037,6 +1037,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)
         ? transferDoc.production.designFiles
         : [];
+      const labAlreadyConfirmed = Boolean(transferDoc.production?.labDesignConfirmedAt);
       const confirmedToothSet = new Set(validTeeth.map((t) => t.toothNumber));
       const keptDesignFiles = prevDesignFiles.filter(
         (entry) => !confirmedToothSet.has(String(entry?.tooth || "").trim()),
@@ -1079,10 +1080,13 @@ export async function confirmCustomAbutmentDesign(req, res) {
         cancelDeadlineAt = await abutmentLabCheckDeadline(now);
       }
       const productionSet = {
-        "production.designFiles": mergedDesignFiles,
-        "production.designReadyAt": now,
         "production.customAbutmentPreview": nextPreview,
       };
+      // 채팅 STL·designReadyAt은 기공소가 확정한 뒤에만. 검토 중 수정은 이미 공개된 파일만 갱신.
+      if (labRevision && labAlreadyConfirmed) {
+        productionSet["production.designFiles"] = mergedDesignFiles;
+        productionSet["production.designReadyAt"] = now;
+      }
       if (!labRevision) {
         productionSet["production.practiceDesignConfirmedAt"] = now;
         productionSet["production.practiceDesignConfirmedBy"] = userOid;

@@ -264,6 +264,7 @@ import {
   tryStartAbutmentProduction,
   practiceTransferNeedsMoreAbutmentDesigns,
   promotePlatformAbutmentDesignsToManufacturerReady,
+  publishPlatformAbutmentDesignFiles,
   isPracticeAbutmentDesignAwaitingDentist,
 } from "../../services/practiceTransferProduction.service.js";
 import {
@@ -299,6 +300,7 @@ import {
   practiceTransferDeletedMongoFilter,
   practiceTransferNotDeletedMongoFilter,
   resolvePracticeTransferManufacturerStage,
+  isPlatformAbutmentDesignHeldForLabReview,
 } from "../../utils/practiceTransferStage.js";
 import {
   isLabBasketTagOccupyingDoc,
@@ -1009,7 +1011,8 @@ const toProductionApiFields = (
   { abutmentPastReady, abutmentPastReadyTeeth, abutmentToothStages } = {},
 ) => {
   const p = production && typeof production === "object" ? production : {};
-  const designFiles = normalizeResultFiles(p.designFiles);
+  const holdDesign = isPlatformAbutmentDesignHeldForLabReview(p);
+  const designFiles = normalizeResultFiles(holdDesign ? [] : p.designFiles);
   // 목록 등에서 라이브 pastReady를 넘기면 sticky startedAt보다 우선(가공→준비 복귀).
   const pastReady =
     abutmentPastReady !== undefined
@@ -1031,7 +1034,7 @@ const toProductionApiFields = (
     // 미설정·레거시 null은 생략(true)로 취급
     skipDesignConfirm: p.skipDesignConfirm !== false,
     skipJig: Boolean(p.skipJig),
-    designReadyAt: p.designReadyAt || null,
+    designReadyAt: holdDesign ? null : p.designReadyAt || null,
     designFileCount: designFiles.length,
     designFiles: designFiles.map((item, idx) => ({
       id: `design::${idx + 1}`,
@@ -1482,9 +1485,12 @@ const toCalendarIndexRequestRow = (transferDoc) => {
     transferDoc?.production && typeof transferDoc.production === "object"
       ? transferDoc.production
       : {};
-  const designFiles = Array.isArray(production.designFiles)
-    ? production.designFiles
-    : [];
+  const holdDesign = isPlatformAbutmentDesignHeldForLabReview(production);
+  const designFiles = holdDesign
+    ? []
+    : Array.isArray(production.designFiles)
+      ? production.designFiles
+      : [];
   const arrivalDates = resolvePracticeArrivalDates(transferDoc);
   const currentArrivalYmd = resolveCurrentArrivalYmd(arrivalDates);
   const orderDates = resolvePracticeOrderDates(transferDoc);
@@ -1558,7 +1564,7 @@ const toCalendarIndexRequestRow = (transferDoc) => {
     resultFiles: [],
     production: {
       designFileCount: designFiles.length,
-      designReadyAt: production.designReadyAt || null,
+      designReadyAt: holdDesign ? null : production.designReadyAt || null,
       confirmedAt: production.confirmedAt || null,
       skipDesignConfirm: production.skipDesignConfirm !== false,
       skipJig: production.skipJig !== false,
@@ -12071,6 +12077,15 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       console.warn(
         "[practiceTransfer] promote platform design to manufacturer failed",
         promoteErr?.message || promoteErr,
+      );
+    }
+
+    try {
+      await publishPlatformAbutmentDesignFiles(doc);
+    } catch (publishErr) {
+      console.warn(
+        "[practiceTransfer] publish platform design files failed",
+        publishErr?.message || publishErr,
       );
     }
 

@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
 // - 2026-11-19: isPracticeAbutmentDesignAwaitingDentist — 치과 어벗·디자인 확정 전 작업시작 차단(FE SSOT).
 // - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
 // - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
@@ -2131,6 +2132,9 @@ export function listAbutmentToothStagesFromRows(rows = []) {
     if (stage === "준비" && row?.productionSchedule?.actualCamStart) {
       stage = "가공";
     }
+    // 기공의뢰에 묶인 준비는 designCompletedAt(기공소 확정·제조 진입) 뒤에만 준비로 보여 준다.
+    const linkedPtx = String(row?.partnerBilling?.relatedPracticeTransferId || "").trim();
+    if (stage === "준비" && linkedPtx && !row?.designCompletedAt) continue;
     const prev = byTooth.get(tooth);
     if (
       !prev ||
@@ -2143,6 +2147,26 @@ export function listAbutmentToothStagesFromRows(rows = []) {
   return [...byTooth.entries()]
     .map(([tooth, stage]) => ({ tooth, stage }))
     .sort((a, b) => toToothSortNumber(a.tooth) - toToothSortNumber(b.tooth));
+}
+
+/**
+ * 치과 취소 대상. 제조 큐에 보이기 전(기공소 검토 중) 준비도 포함한다.
+ * 가공 이후·취소·헥스 샘플은 제외.
+ */
+export function listAbutmentProcessCancelTeethFromRows(rows = []) {
+  const teeth = [];
+  const seen = new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.caseInfos?.hexVerificationSample === true) continue;
+    if (isAbutmentRequestPastReadyForCancel(row)) continue;
+    const stage = normalizeMonitoringStageLabel(row?.manufacturerStage);
+    if (stage !== "준비") continue;
+    const tooth = String(row?.caseInfos?.tooth || "").trim();
+    if (!tooth || seen.has(tooth)) continue;
+    seen.add(tooth);
+    teeth.push(tooth);
+  }
+  return teeth.sort((a, b) => toToothSortNumber(a) - toToothSortNumber(b));
 }
 
 /**
@@ -2241,6 +2265,8 @@ export async function resolveRelatedAbutmentPastReady(transferDoc, options = {})
     rows = await Request.find({ _id: { $in: linkedRequestIds } })
       .select({
         manufacturerStage: 1,
+        designCompletedAt: 1,
+        "partnerBilling.relatedPracticeTransferId": 1,
         "productionSchedule.actualCamStart": 1,
         "caseInfos.tooth": 1,
         "caseInfos.hexVerificationSample": 1,
@@ -2262,6 +2288,7 @@ export async function resolveRelatedAbutmentPastReady(transferDoc, options = {})
     pastReady,
     pastReadyTeeth,
     toothStages: listAbutmentToothStagesFromRows(rows),
+    cancelReadyTeeth: listAbutmentProcessCancelTeethFromRows(rows),
     linkedRequestIds,
   };
 }
@@ -2326,6 +2353,7 @@ export async function mapAbutmentPastReadyByTransferDocs(docs, options = {}) {
           .select({
             _id: 1,
             manufacturerStage: 1,
+            designCompletedAt: 1,
             "partnerBilling.relatedPracticeTransferId": 1,
             "productionSchedule.actualCamStart": 1,
             "caseInfos.tooth": 1,
@@ -2873,7 +2901,9 @@ export async function syncRelatedRequestOwnershipToAcceptingLab(transferDoc) {
 
 export function isAbutmentDesignReady(transferDoc) {
   const files = normalizeResultFiles(transferDoc?.production?.designFiles);
-  return files.length > 0 || Boolean(transferDoc?.production?.designReadyAt);
+  if (files.length > 0 || Boolean(transferDoc?.production?.designReadyAt)) return true;
+  // 치과 확정본은 기공소 확정 전까지 designFiles에 올리지 않는다.
+  return Boolean(transferDoc?.production?.practiceDesignConfirmedAt);
 }
 
 /**
@@ -2985,6 +3015,76 @@ export async function promotePlatformAbutmentDesignsToManufacturerReady({
   }
 
   return promoted;
+}
+
+/**
+ * 기공소 디자인 확정 때 플랫폼 STL을 기공의뢰 designFiles로 올린다.
+ * 치과 확정만으로는 채팅에 올리지 않는다.
+ */
+export async function publishPlatformAbutmentDesignFiles(transferDoc) {
+  const existing = normalizeResultFiles(transferDoc?.production?.designFiles);
+  if (existing.length > 0) return existing;
+
+  const relatedIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id))
+    : [];
+  if (relatedIds.length === 0) return [];
+
+  const requestDocs = await Request.find({ _id: { $in: relatedIds } })
+    .select({
+      "caseInfos.tooth": 1,
+      "caseInfos.patientName": 1,
+      "caseInfos.file": 1,
+      "caseInfos.hexVerificationSample": 1,
+      "caseInfos.designRoute": 1,
+      "partnerBilling.practiceConfirmedAiDesign": 1,
+      designCompletedAt: 1,
+    })
+    .lean();
+
+  const entries = [];
+  for (const reqDoc of requestDocs) {
+    if (reqDoc?.caseInfos?.hexVerificationSample === true) continue;
+    const route = currentDesignRoute(reqDoc);
+    const practiceAi = reqDoc?.partnerBilling?.practiceConfirmedAiDesign === true;
+    if (route !== DESIGN_ROUTE_PLATFORM && !practiceAi) continue;
+    const file = reqDoc?.caseInfos?.file;
+    const s3Key = String(file?.s3Key || "").trim();
+    const tooth = String(reqDoc?.caseInfos?.tooth || "").trim();
+    if (!s3Key || !tooth) continue;
+    entries.push({
+      patientName: String(reqDoc?.caseInfos?.patientName || "").trim(),
+      tooth,
+      file: {
+        originalName:
+          String(file?.originalName || file?.filePath || "").trim() ||
+          `custom_abutment_${tooth}.stl`,
+        mimetype: String(file?.fileType || "model/stl").trim() || "model/stl",
+        size: Number(file?.fileSize || 0) || 0,
+        s3Key,
+      },
+    });
+  }
+  if (entries.length === 0) return [];
+
+  const now = new Date();
+  const stamped = stampPracticeTransferFileBatch(entries, { uploadedAt: now, force: true });
+  await PracticeTransfer.updateOne(
+    { _id: transferDoc._id },
+    {
+      $set: {
+        "production.designFiles": stamped,
+        "production.designReadyAt": now,
+      },
+    },
+  );
+  if (!transferDoc.production) transferDoc.production = {};
+  transferDoc.production.designFiles = stamped;
+  transferDoc.production.designReadyAt = now;
+  return stamped;
 }
 
 const invokeMachiningApproval = (requestId, actorUserId) =>

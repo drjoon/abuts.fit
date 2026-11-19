@@ -23,7 +23,7 @@
 // - 2026-08-23: 채팅 높이 확보 — 치아 상세를 한 줄(인라인)로 압축.
 // - 2026-08-21: 미제공 CA 안내 문구 단문화(INTRO/OUTRO).
 // - 2026-08-21: 미제공 CA 안내 — 치아·임플란트 상세 + 기공소 자체 처리 문구.
-import { Fragment, useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -97,8 +97,15 @@ export type LabPendingAbutmentGuideProps = {
   abutsTrailing?: ReactNode;
   /** 치아별 제조사 공정 — 번호 뒤 `(준비)`·`(세척.패킹)` */
   abutmentToothStages?: Map<string, string> | null;
+  /** 기공소 검토 중. 제조 준비 전에는 치아 뒤 공정 접미를 붙이지 않는다. */
+  holdManufacturerStage?: boolean;
   className?: string;
 };
+
+/** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
+function InlineGroup({ children }: { children: ReactNode }) {
+  return <span className="contents">{children}</span>;
+}
 
 function sortByTooth(rows: ToothWorkSelection[]) {
   return rows.slice().sort(
@@ -179,12 +186,14 @@ function ToothNumberDetail({
   onToothCancel,
   onToothRemake,
   toothStages,
+  holdManufacturerStage,
 }: {
   rows: ToothWorkSelection[];
   struckTeeth?: Set<string>;
   pastReadyTeeth?: Set<string>;
   /** 있으면 치아 뒤에 `(준비)` · 미업로드는 `(업로드 대기)` */
   toothStages?: Map<string, string> | null;
+  holdManufacturerStage?: boolean;
   allowCancel?: boolean;
   allowRemake?: boolean;
   cancelBusy?: boolean;
@@ -210,17 +219,20 @@ function ToothNumberDetail({
           uploaded &&
           !pastReady &&
           typeof onToothCancel === "function";
-        const stageLabel = toothStages
-          ? !uploaded && !pastReady
-            ? "대기"
-            : toothStages.get(tooth) ||
-              (pastReady ? "가공" : "준비")
-          : "";
+        const stageLabel =
+          holdManufacturerStage && !uploaded && !pastReady
+            ? ""
+            : toothStages
+              ? !uploaded && !pastReady
+                ? "대기"
+                : toothStages.get(tooth) ||
+                  (pastReady ? "가공" : "준비")
+              : "";
         const stageSuffix = stageLabel ? (
           <span className="font-normal">({stageLabel})</span>
         ) : null;
         return (
-          <Fragment key={`${tooth}-${index}`}>
+          <InlineGroup key={`${tooth}-${index}`}>
             {index > 0 ? ", " : null}
             {canRemake ? (
               <Tooltip>
@@ -303,7 +315,7 @@ function ToothNumberDetail({
               </span>
             )}
             {stageSuffix}
-          </Fragment>
+          </InlineGroup>
         );
       })}
     </span>
@@ -387,6 +399,7 @@ export function LabPendingAbutmentGuide({
   pastReadyAbutmentTeeth = null,
   abutsTrailing = null,
   abutmentToothStages = null,
+  holdManufacturerStage = false,
   className,
 }: LabPendingAbutmentGuideProps) {
   const [stageOpen, setStageOpen] = useState(false);
@@ -420,15 +433,19 @@ export function LabPendingAbutmentGuide({
     if (!tooth) continue;
     const uploaded = struckTeeth.has(tooth);
     const pastReady = pastReadyTeeth.has(tooth);
-    const raw = abutmentToothStages
-      ? !uploaded && !pastReady
-        ? "대기"
-        : abutmentToothStages.get(tooth) || (pastReady ? "가공" : "준비")
-      : !uploaded
-        ? "대기"
-        : pastReady
-          ? "가공"
-          : "준비";
+    const raw =
+      holdManufacturerStage && !uploaded && !pastReady
+        ? ""
+        : abutmentToothStages
+          ? !uploaded && !pastReady
+            ? "대기"
+            : abutmentToothStages.get(tooth) || (pastReady ? "가공" : "준비")
+          : !uploaded
+            ? "대기"
+            : pastReady
+              ? "가공"
+              : "준비";
+    if (!raw) continue;
     const id = abutmentProductionStageId(raw);
     const list = stageTeeth.get(id) ?? [];
     list.push(tooth);
@@ -505,6 +522,7 @@ export function LabPendingAbutmentGuide({
           onToothCancel={onAbutsToothCancelClick}
           onToothRemake={onAbutsToothRemakeClick}
           toothStages={abutmentToothStages}
+          holdManufacturerStage={holdManufacturerStage}
         />
       }
       suffix={cancelAllSuffix}

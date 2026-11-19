@@ -275,6 +275,11 @@ export function PracticeLabReceiveWorkActionsBar({
       )}
       pastReadyAbutmentTeeth={pastReadyTeeth}
       abutmentToothStages={mapPracticeTransferAbutmentToothStages(transfer)}
+      holdManufacturerStage={
+        String(transfer.production?.abutmentFeeRoute || "").trim() === "platform" &&
+        Boolean(String(transfer.production?.practiceDesignConfirmedAt || "").trim()) &&
+        !String(transfer.production?.labDesignConfirmedAt || "").trim()
+      }
       abutsTrailing={abutsTrailing}
     />
   ) : null;
