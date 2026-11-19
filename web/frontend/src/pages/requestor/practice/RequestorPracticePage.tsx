@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 디자인 버튼 — 스냅샷·STL을 기다리지 않고 모달을 연다.
 // - 2026-11-20: 플랫폼 디자인 검토 — 확정 뱃지 제거. 어벗·디자인 깜빡임. 업로드 비활성.
 // - 2026-11-20: 치과 디자인 확정 소켓 — 작업시작을 바로 연다. 확정 시각을 작업완료로 보지 않는다.
 // - 2026-11-19: 기공소 디자인 모달 — 치과 확정이 아니면 열지 않는다. 뷰어로 대체하지 않는다.
@@ -304,7 +305,6 @@ import {
   anonymizeAutoMatchChatSenderName,
   isRedactedPracticeDisplayName,
 } from "@/shared/practice/autoMatchIdentity";
-import { fetchCustomAbutmentSnapshot } from "@/shared/practice/customAbutmentDesignCache";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
 import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
@@ -9669,36 +9669,15 @@ export function RequestorPracticeReceivePage({
       if (items.length === 0) return;
       const safe = Math.min(Math.max(0, startIndex), items.length - 1);
       const first = items[safe]!;
-      const transferKey = String(first.transferId || first._id || "").trim();
       const seq = ++labDesignOpenSeqRef.current;
+      const needsHydrate = !labTransferHasDesignScan(first);
+      setLabDesignRail(rail);
+      setLabDesignItems(items);
+      setLabDesignIndex(safe);
+      setLabDesignFilesPending(needsHydrate);
+      setLabDesignOpen(true);
 
       void (async () => {
-        if (!token || !transferKey) return;
-        const snap = await fetchCustomAbutmentSnapshot(token, transferKey);
-        if (labDesignOpenSeqRef.current !== seq) return;
-        if (!snap) {
-          toast({
-            title: "디자인 검토",
-            description: "디자인 상태를 확인하지 못했습니다.",
-          });
-          return;
-        }
-        if (snap.mode !== "confirmed") {
-          clearLabPracticeDesignConfirmed(transferKey);
-          toast({
-            title: "디자인 검토",
-            description: "치과 디자인 확정 후 검토할 수 있습니다.",
-          });
-          return;
-        }
-
-        const needsHydrate = !labTransferHasDesignScan(first);
-        setLabDesignRail(rail);
-        setLabDesignItems(items);
-        setLabDesignIndex(safe);
-        setLabDesignFilesPending(needsHydrate);
-        setLabDesignOpen(true);
-
         let next = items;
         if (needsHydrate) {
           const hydratedFirst = await hydrateLabTransferForDesign(first);
@@ -9730,13 +9709,7 @@ export function RequestorPracticeReceivePage({
         }
       })();
     },
-    [
-      applyHydratedLabTransfer,
-      clearLabPracticeDesignConfirmed,
-      hydrateLabTransferForDesign,
-      toast,
-      token,
-    ],
+    [applyHydratedLabTransfer, hydrateLabTransferForDesign],
   );
 
   /** 채팅이 열린 어벗 의뢰는 디자인 클릭 전에 스캔 키를 미리 채운다. */

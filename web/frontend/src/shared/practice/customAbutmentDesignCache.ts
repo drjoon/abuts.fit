@@ -2,6 +2,7 @@
 // 이 브라우저 IndexedDB에 두고, 모달을 다시 열면 스캔만 읽어 그대로 보여 준다.
 // 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
 // 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
+// 스냅샷 JSON과 STL은 나눈다. 같은 의뢰의 동시 조회는 한 번만 받고, 어벗·크라운 STL은 같이 받는다.
 // AI 대화는 정합 키와 따로, 의뢰 id(`chat:{transferId}`)로 둔다. 형상을 다시 만들어도 대화는 남는다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -482,164 +483,275 @@ async function presignPreviewStl(
   return s3Key;
 }
 
+type SnapshotShell = {
+  id: string;
+  chat: CustomAbutmentChatTurn[];
+  paint: CustomAbutmentPaintRecord | null;
+  mode: RemoteCustomAbutmentSnapshot["mode"];
+  manualDesign: RemoteCustomAbutmentSnapshot["manualDesign"];
+  feeGuide: CustomAbutmentRouteFeeGuide | null;
+  choice: CustomAbutmentChoice;
+  design: {
+    version: number;
+    fitVersion: number;
+    savedAt: number;
+    teeth: Array<Record<string, unknown>>;
+  } | null;
+};
+
+const snapshotShellInflight = new Map<string, Promise<SnapshotShell | null>>();
+const snapshotFullInflight = new Map<string, Promise<RemoteCustomAbutmentSnapshot | null>>();
+
+function rememberInflight<T>(
+  map: Map<string, Promise<T>>,
+  key: string,
+  factory: () => Promise<T>,
+): Promise<T> {
+  const existing = map.get(key);
+  if (existing) return existing;
+  const job = factory().finally(() => {
+    if (map.get(key) === job) map.delete(key);
+  });
+  map.set(key, job);
+  return job;
+}
+
+function emptySnapshot(
+  shell: Pick<
+    SnapshotShell,
+    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice"
+  >,
+): RemoteCustomAbutmentSnapshot {
+  return {
+    design: null,
+    chat: shell.chat,
+    hasStl: false,
+    paint: shell.paint,
+    mode: shell.mode,
+    manualDesign: shell.manualDesign,
+    feeGuide: shell.feeGuide,
+    choice: shell.choice,
+  };
+}
+
+async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotShell | null> {
+  return rememberInflight(snapshotShellInflight, id, async () => {
+    try {
+      const res = await request<{
+        data?: {
+          design?: {
+            version?: number;
+            fitVersion?: number;
+            savedAt?: number;
+            chat?: unknown;
+            teeth?: Array<Record<string, unknown>>;
+          } | null;
+          chat?: unknown;
+          paint?: {
+            shapes?: unknown;
+            view?: CustomAbutmentPaintView | null;
+            updatedAt?: string | null;
+            updatedSide?: string | null;
+          } | null;
+          mode?: "confirmed" | "manual" | null;
+          manualDesign?: { at?: string; message?: string; hasPaint?: boolean } | null;
+          feeGuide?: {
+            platformUnit?: number;
+            labTeeth?: Array<{ toothNumber?: string; feeName?: string; unit?: number }>;
+          } | null;
+          choice?: { cancelDeadlineAt?: string | null; labCheckedAt?: string | null } | null;
+        };
+      }>({
+        path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.data) return null;
+      const chat = normalizeCustomAbutmentChat(res.data.data.chat);
+      const rawPaint = res.data.data.paint;
+      const paint: CustomAbutmentPaintRecord | null =
+        rawPaint && Array.isArray(rawPaint.shapes)
+          ? {
+              shapes: rawPaint.shapes as PaintShape[],
+              view: rawPaint.view ?? null,
+              updatedAt: rawPaint.updatedAt ?? null,
+              updatedSide: rawPaint.updatedSide ?? null,
+            }
+          : null;
+      const mode =
+        res.data.data.mode === "confirmed" || res.data.data.mode === "manual"
+          ? res.data.data.mode
+          : null;
+      const rawGuide = res.data.data.feeGuide;
+      const feeGuide: CustomAbutmentRouteFeeGuide | null = rawGuide
+        ? {
+            platformUnit: Math.max(0, Math.round(Number(rawGuide.platformUnit || 0))),
+            labTeeth: (Array.isArray(rawGuide.labTeeth) ? rawGuide.labTeeth : [])
+              .map((row) => ({
+                toothNumber: String(row?.toothNumber || "").trim(),
+                feeName: String(row?.feeName || "").trim(),
+                unit: Math.max(0, Math.round(Number(row?.unit || 0))),
+              }))
+              .filter((row) => row.toothNumber && row.unit > 0),
+          }
+        : null;
+      const rawChoice = res.data.data.choice;
+      const raw = res.data.data.design;
+      const teeth = Array.isArray(raw?.teeth) ? raw.teeth : [];
+      return {
+        id,
+        chat,
+        paint,
+        mode,
+        manualDesign: res.data.data.manualDesign ?? null,
+        feeGuide,
+        choice: {
+          cancelDeadlineAt: rawChoice?.cancelDeadlineAt
+            ? String(rawChoice.cancelDeadlineAt)
+            : null,
+          labCheckedAt: rawChoice?.labCheckedAt ? String(rawChoice.labCheckedAt) : null,
+        },
+        design:
+          raw && teeth.length > 0
+            ? {
+                version: Number(raw.version) || 0,
+                fitVersion: Number(raw.fitVersion) || 0,
+                savedAt: Number(raw.savedAt) || 0,
+                teeth,
+              }
+            : null,
+      };
+    } catch {
+      return null;
+    }
+  });
+}
+
+async function toothFromSnapshotRow(
+  token: string,
+  row: Record<string, unknown>,
+  stlRevision: number,
+): Promise<{ tooth: CachedCustomAbutmentTooth; fromS3: boolean } | null> {
+  const fixture = row.fixture as MatchedScanbodyFixture | null;
+  if (!fixture) return null;
+  const fileName = String(row.fileName || "abutment.stl");
+  const s3Key = String(row.s3Key || "");
+  const crownKey = String(row.crownS3Key || "");
+  const [abutmentPositions, crownPositions] = await Promise.all([
+    s3Key ? positionsFromStl(token, s3Key, fileName, stlRevision) : Promise.resolve(null),
+    crownKey
+      ? positionsFromStl(
+          token,
+          crownKey,
+          fileName.replace(/\.stl$/i, "") + "-crown.stl",
+          stlRevision,
+        )
+      : Promise.resolve(null),
+  ]);
+  let localPositions = abutmentPositions;
+  let crownLocalPositions = crownPositions;
+  const marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || "")) || new ArrayBuffer(0);
+  const enameloplastyLocalPositions = base64ToBuffer(String(row.enameloplastyLocal || ""));
+  if (!localPositions) localPositions = base64ToBuffer(String(row.localPositions || ""));
+  if (!crownLocalPositions) {
+    crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
+  }
+  if (!localPositions) return null;
+  if (!crownLocalPositions) crownLocalPositions = new ArrayBuffer(0);
+  return {
+    fromS3: Boolean(abutmentPositions),
+    tooth: {
+    toothNumber: String(row.toothNumber || ""),
+    fileName,
+    fixture,
+    overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
+    params: row.params as CustomAbutmentDesignParams,
+    metrics: row.metrics as CustomAbutmentDesignMetrics,
+    ...(row.gumballEdit && typeof row.gumballEdit === "object"
+      ? { gumballEdit: row.gumballEdit as AbutmentEdit }
+      : {}),
+    ...(row.gumballBaseParams && typeof row.gumballBaseParams === "object"
+      ? { gumballBaseParams: row.gumballBaseParams as Partial<CustomAbutmentDesignParams> }
+      : {}),
+    ...(row.gumballBaseMetrics && typeof row.gumballBaseMetrics === "object"
+      ? { gumballBaseMetrics: row.gumballBaseMetrics as CustomAbutmentDesignMetrics }
+      : {}),
+    localPositions,
+    crownLocalPositions,
+    marginLoopLocal,
+    ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
+    ...(s3Key ? { sourceS3Key: s3Key, sourceCrownS3Key: crownKey } : {}),
+    },
+  };
+}
+
+async function hydrateSnapshotShell(
+  token: string,
+  shellPromise: Promise<SnapshotShell | null>,
+): Promise<RemoteCustomAbutmentSnapshot | null> {
+  const shell = await shellPromise;
+  if (!shell) return null;
+  if (!shell.design) return emptySnapshot(shell);
+  const stlRevision = shell.design.savedAt || shell.design.version || 0;
+  const loaded = await Promise.all(
+    shell.design.teeth.map((row) => toothFromSnapshotRow(token, row, stlRevision)),
+  );
+  const teeth = loaded.flatMap((row) => (row ? [row.tooth] : []));
+  if (teeth.length === 0) return emptySnapshot(shell);
+  const { version, fitVersion, savedAt } = shell.design;
+  return {
+    chat: shell.chat,
+    hasStl: loaded.some((row) => Boolean(row?.fromS3)),
+    paint: shell.paint,
+    mode: shell.mode,
+    manualDesign: shell.manualDesign,
+    feeGuide: shell.feeGuide,
+    choice: shell.choice,
+    design: {
+      key: shell.id,
+      version,
+      fitVersion,
+      savedAt,
+      alignedScans: [],
+      teeth,
+      chat: shell.chat,
+      designFresh:
+        version === CUSTOM_ABUTMENT_DESIGN_VERSION && fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
+    },
+  };
+}
+
+/** 확정 여부는 JSON만, 형상 STL은 `full()`을 부를 때 받는다. 같은 의뢰는 요청을 한 번 공유한다. */
+export function beginCustomAbutmentSnapshot(
+  token: string,
+  transferId: string,
+): {
+  mode: Promise<RemoteCustomAbutmentSnapshot["mode"] | "missing">;
+  full: () => Promise<RemoteCustomAbutmentSnapshot | null>;
+} {
+  const id = transferId.trim();
+  if (!id) return { mode: Promise.resolve("missing"), full: async () => null };
+  const shell = fetchSnapshotShell(token, id);
+  return {
+    mode: shell.then((row) => (row ? row.mode : "missing")).catch(() => "missing" as const),
+    full: () => {
+      const existing = snapshotFullInflight.get(id);
+      if (existing) return existing;
+      const job = hydrateSnapshotShell(token, shell).finally(() => {
+        if (snapshotFullInflight.get(id) === job) snapshotFullInflight.delete(id);
+      });
+      snapshotFullInflight.set(id, job);
+      return job;
+    },
+  };
+}
+
 /** 의뢰자에 저장된 형상·대화·3D 페인트. */
-export async function fetchCustomAbutmentSnapshot(
+export function fetchCustomAbutmentSnapshot(
   token: string,
   transferId: string,
 ): Promise<RemoteCustomAbutmentSnapshot | null> {
-  const id = transferId.trim();
-  if (!id) return null;
-  try {
-    const res = await request<{
-      data?: {
-        design?: {
-          version?: number;
-          fitVersion?: number;
-          savedAt?: number;
-          chat?: unknown;
-          teeth?: Array<Record<string, unknown>>;
-        } | null;
-        chat?: unknown;
-        paint?: {
-          shapes?: unknown;
-          view?: CustomAbutmentPaintView | null;
-          updatedAt?: string | null;
-          updatedSide?: string | null;
-        } | null;
-        mode?: "confirmed" | "manual" | null;
-        manualDesign?: { at?: string; message?: string; hasPaint?: boolean } | null;
-        feeGuide?: {
-          platformUnit?: number;
-          labTeeth?: Array<{ toothNumber?: string; feeName?: string; unit?: number }>;
-        } | null;
-        choice?: { cancelDeadlineAt?: string | null; labCheckedAt?: string | null } | null;
-      };
-    }>({
-      path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
-      method: "GET",
-      token,
-    });
-    if (!res.ok || !res.data?.data) return null;
-    const chat = normalizeCustomAbutmentChat(res.data.data.chat);
-    const rawPaint = res.data.data.paint;
-    const paint: CustomAbutmentPaintRecord | null =
-      rawPaint && Array.isArray(rawPaint.shapes)
-        ? {
-            shapes: rawPaint.shapes as PaintShape[],
-            view: rawPaint.view ?? null,
-            updatedAt: rawPaint.updatedAt ?? null,
-            updatedSide: rawPaint.updatedSide ?? null,
-          }
-        : null;
-    const mode =
-      res.data.data.mode === "confirmed" || res.data.data.mode === "manual"
-        ? res.data.data.mode
-        : null;
-    const manualDesign = res.data.data.manualDesign ?? null;
-    const rawGuide = res.data.data.feeGuide;
-    const feeGuide: CustomAbutmentRouteFeeGuide | null = rawGuide
-      ? {
-          platformUnit: Math.max(0, Math.round(Number(rawGuide.platformUnit || 0))),
-          labTeeth: (Array.isArray(rawGuide.labTeeth) ? rawGuide.labTeeth : [])
-            .map((row) => ({
-              toothNumber: String(row?.toothNumber || "").trim(),
-              feeName: String(row?.feeName || "").trim(),
-              unit: Math.max(0, Math.round(Number(row?.unit || 0))),
-            }))
-            .filter((row) => row.toothNumber && row.unit > 0),
-        }
-      : null;
-    const rawChoice = res.data.data.choice;
-    const choice: CustomAbutmentChoice = {
-      cancelDeadlineAt: rawChoice?.cancelDeadlineAt
-        ? String(rawChoice.cancelDeadlineAt)
-        : null,
-      labCheckedAt: rawChoice?.labCheckedAt ? String(rawChoice.labCheckedAt) : null,
-    };
-    const raw = res.data.data.design;
-    if (!raw || !Array.isArray(raw.teeth) || raw.teeth.length === 0) {
-      return { design: null, chat, hasStl: false, paint, mode, manualDesign, feeGuide, choice };
-    }
-    const teeth: CachedCustomAbutmentTooth[] = [];
-    let hasStl = false;
-    const stlRevision = Number(raw.savedAt) || Number(raw.version) || 0;
-    for (const row of raw.teeth) {
-      const fixture = row.fixture as MatchedScanbodyFixture | null;
-      if (!fixture) continue;
-      const fileName = String(row.fileName || "abutment.stl");
-      const s3Key = String(row.s3Key || "");
-      let localPositions = s3Key
-        ? await positionsFromStl(token, s3Key, fileName, stlRevision)
-        : null;
-      if (localPositions) hasStl = true;
-      const crownKey = String(row.crownS3Key || "");
-      let crownLocalPositions = crownKey
-        ? await positionsFromStl(
-            token,
-            crownKey,
-            fileName.replace(/\.stl$/i, "") + "-crown.stl",
-            stlRevision,
-          )
-        : null;
-      let marginLoopLocal = base64ToBuffer(String(row.marginLoopLocal || ""));
-      const enameloplastyLocalPositions = base64ToBuffer(String(row.enameloplastyLocal || ""));
-      if (!localPositions) localPositions = base64ToBuffer(String(row.localPositions || ""));
-      if (!crownLocalPositions) crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
-      if (!localPositions) continue;
-      if (!crownLocalPositions) crownLocalPositions = new ArrayBuffer(0);
-      if (!marginLoopLocal) marginLoopLocal = new ArrayBuffer(0);
-      teeth.push({
-        toothNumber: String(row.toothNumber || ""),
-        fileName,
-        fixture,
-        overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
-        params: row.params as CustomAbutmentDesignParams,
-        metrics: row.metrics as CustomAbutmentDesignMetrics,
-        ...(row.gumballEdit && typeof row.gumballEdit === "object"
-          ? { gumballEdit: row.gumballEdit as AbutmentEdit }
-          : {}),
-        ...(row.gumballBaseParams && typeof row.gumballBaseParams === "object"
-          ? { gumballBaseParams: row.gumballBaseParams as Partial<CustomAbutmentDesignParams> }
-          : {}),
-        ...(row.gumballBaseMetrics && typeof row.gumballBaseMetrics === "object"
-          ? { gumballBaseMetrics: row.gumballBaseMetrics as CustomAbutmentDesignMetrics }
-          : {}),
-        localPositions,
-        crownLocalPositions,
-        marginLoopLocal,
-        ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
-        ...(s3Key ? { sourceS3Key: s3Key, sourceCrownS3Key: crownKey } : {}),
-      });
-    }
-    if (teeth.length === 0) {
-      return { design: null, chat, hasStl: false, paint, mode, manualDesign, feeGuide, choice };
-    }
-    const version = Number(raw.version) || 0;
-    const fitVersion = Number(raw.fitVersion) || 0;
-    const savedAt = Number(raw.savedAt) || 0;
-    return {
-      chat,
-      hasStl,
-      paint,
-      mode,
-      manualDesign,
-      feeGuide,
-      choice,
-      design: {
-        key: id,
-        version,
-        fitVersion,
-        savedAt,
-        alignedScans: [],
-        teeth,
-        chat,
-        designFresh:
-          version === CUSTOM_ABUTMENT_DESIGN_VERSION && fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
-      },
-    };
-  } catch {
-    return null;
-  }
+  return beginCustomAbutmentSnapshot(token, transferId).full();
 }
 
 const uploadedBlobPromiseMap = new WeakMap<

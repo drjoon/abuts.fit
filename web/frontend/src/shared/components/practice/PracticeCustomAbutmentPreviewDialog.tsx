@@ -17,6 +17,7 @@
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: 기공소는 치과 디자인 확정 전 뷰어로 두지 않고 모달을 닫는다.
+// - 2026-11-20: 기공소 열기 — 확정 JSON만 먼저 보고, 스캔과 프리뷰 STL은 같이 받는다.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -118,10 +119,10 @@ import { preloadMeshUnion } from "@/shared/practice/meshUnion";
 import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
   CUSTOM_ABUTMENT_FIT_VERSION,
+  beginCustomAbutmentSnapshot,
   confirmCustomAbutmentDesignRemote,
   customAbutmentDesignCacheKey,
   preferFresherCustomAbutmentDesign,
-  fetchCustomAbutmentSnapshot,
   normalizeCustomAbutmentChat,
   pickCustomAbutmentChat,
   publishCustomAbutmentSnapshot,
@@ -3238,9 +3239,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           readOnly || isLabViewer
             ? Promise.resolve([] as CustomAbutmentChatTurn[])
             : readCustomAbutmentChat(transferIdParam || pipelineKey);
-        const remotePromise = transferIdParam
-          ? fetchCustomAbutmentSnapshot(token, transferIdParam)
-          : Promise.resolve(null);
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
         const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
         if (!hasWorkScans) targetRoles.add("bite");
@@ -3309,14 +3307,36 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
-        // 기공소는 스캔을 그리기 전에 확정을 본다. 아니면 뷰어가 잠깐 열린다.
-        const remoteFirst = isLabViewerRef.current ? await remotePromise : null;
+        const snapshotLoad = transferIdParam
+          ? beginCustomAbutmentSnapshot(token, transferIdParam)
+          : null;
+        const scansPromise = Promise.all(
+          toLoad.map((item, idx) =>
+            loadSingleScan(item, (pct) => {
+              progressByIdx[idx] = pct;
+              const avg =
+                progressByIdx.reduce((a, b) => a + b, 0) / Math.max(toLoad.length, 1);
+              if (!cancelled) {
+                setStatus({
+                  kind: "loading",
+                  percent: Math.round(8 + avg * 0.45),
+                  step: "구강 스캔을 불러오는 중…",
+                });
+              }
+            }),
+          ),
+        );
+        // 기공소는 스캔을 그리기 전에 확정만 본다. STL은 스캔과 같이 받는다.
+        const remoteModeFirst = isLabViewerRef.current ? await snapshotLoad?.mode : null;
         if (cancelled) return;
-        if (isLabViewerRef.current && remoteFirst?.mode !== "confirmed") {
-          if (remoteFirst) onActionCompleteRef.current?.("unconfirmed");
+        if (isLabViewerRef.current && remoteModeFirst !== "confirmed") {
+          abort.abort();
+          void scansPromise.catch(() => undefined);
+          const snapshotKnown = remoteModeFirst !== "missing";
+          if (snapshotKnown) onActionCompleteRef.current?.("unconfirmed");
           toastRef.current({
             title: "디자인 검토",
-            description: remoteFirst
+            description: snapshotKnown
               ? "치과 디자인 확정 후 검토할 수 있습니다."
               : "디자인 상태를 확인하지 못했습니다.",
           });
@@ -3324,25 +3344,10 @@ export function PracticeCustomAbutmentPreviewDialog({
           return;
         }
         const [rawLoadedScans, localCached, localChat, remote] = await Promise.all([
-          Promise.all(
-            toLoad.map((item, idx) =>
-              loadSingleScan(item, (pct) => {
-                progressByIdx[idx] = pct;
-                const avg =
-                  progressByIdx.reduce((a, b) => a + b, 0) / Math.max(toLoad.length, 1);
-                if (!cancelled) {
-                  setStatus({
-                    kind: "loading",
-                    percent: Math.round(8 + avg * 0.45),
-                    step: "구강 스캔을 불러오는 중…",
-                  });
-                }
-              }),
-            ),
-          ),
+          scansPromise,
           cachePromise,
           chatPromise,
-          isLabViewerRef.current ? Promise.resolve(remoteFirst) : remotePromise,
+          snapshotLoad ? snapshotLoad.full() : Promise.resolve(null),
         ]);
         if (cancelled) return;
         const serverDesign =
@@ -4125,7 +4130,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (
             builtAbutments.length > 0 &&
             Object.keys(candidateChoicesRef.current).length === 0 &&
-            (remoteNeedsPublish || redesignedFromFit || !restored)
+            (remoteNeedsPublish || redesignedFromFit || (!restored && !serverMeshRestore))
           ) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           }

@@ -386,10 +386,10 @@ async function findTransferForDesignChat(raw) {
   return PracticeTransfer.findOne({ transferId: id }).select(select).lean();
 }
 
-async function resolvePreferenceAnchor(req, rawTransferId) {
+async function resolvePreferenceAnchor(req, rawTransferId, preloaded) {
   const own = String(req.user?.businessAnchorId || "").trim();
   const transferId = String(rawTransferId || "").trim();
-  const t = await findTransferForDesignChat(transferId);
+  const t = preloaded === undefined ? await findTransferForDesignChat(transferId) : preloaded;
   if (t?.practiceBusinessAnchorId) {
     const practiceId = String(t.practiceBusinessAnchorId);
     const parties = [practiceId, String(t.targetLabAnchorId || ""), String(t.assigneeLabAnchorId || "")];
@@ -582,33 +582,39 @@ export async function presignCustomAbutmentDesignSnapshot(req, res) {
  */
 export async function getCustomAbutmentDesignSnapshot(req, res) {
   try {
-    const { anchorId, transferId } = await resolvePreferenceAnchor(req, req.query?.transferId);
+    const transferId = String(req.query?.transferId || "").trim();
     if (!transferId) {
       return res.status(400).json({ success: false, message: "의뢰를 확인해 주세요." });
     }
+    const [transfer, gaps] = await Promise.all([
+      PracticeTransfer.findOne({ transferId })
+        .select({
+          practiceBusinessAnchorId: 1,
+          targetLabAnchorId: 1,
+          assigneeLabAnchorId: 1,
+          toothWorks: 1,
+          "billing.lines": 1,
+          "production.customAbutmentPreview": 1,
+          "production.customAbutmentManualDesign": 1,
+          "production.practiceDesignConfirmedAt": 1,
+          "production.abutmentFeeRoute": 1,
+          "production.abutmentFeeRouteRevision": 1,
+          "production.abutmentCancelDeadlineAt": 1,
+          "production.labDesignConfirmedAt": 1,
+          "production.relatedRequestIds": 1,
+        })
+        .lean(),
+      AiDesignGap.find({ transferId })
+        .sort({ createdAt: 1 })
+        .select({ message: 1, reply: 1, manualChoice: 1 })
+        .lean(),
+    ]);
+    const { anchorId } = await resolvePreferenceAnchor(req, transferId, transfer || null);
     if (!anchorId && req.user?.role !== "admin") {
       return res.status(403).json({ success: false, message: "이 의뢰를 볼 수 없습니다." });
     }
-    const transfer = await PracticeTransfer.findOne({ transferId })
-      .select({
-        "production.customAbutmentPreview": 1,
-        "production.customAbutmentManualDesign": 1,
-        "production.practiceDesignConfirmedAt": 1,
-        "production.abutmentFeeRoute": 1,
-        "production.abutmentCancelDeadlineAt": 1,
-        "production.labDesignConfirmedAt": 1,
-        toothWorks: 1,
-        targetLabAnchorId: 1,
-        assigneeLabAnchorId: 1,
-        "billing.lines": 1,
-      })
-      .lean();
     const stored = transfer?.production?.customAbutmentPreview;
     const manualDesign = transfer?.production?.customAbutmentManualDesign || null;
-    const gaps = await AiDesignGap.find({ transferId })
-      .sort({ createdAt: 1 })
-      .select({ message: 1, reply: 1, manualChoice: 1 })
-      .lean();
     const fromGaps = gapChatTurns(gaps);
     const storedChat = snapshotChat(stored?.chat);
     const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
@@ -676,6 +682,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       const released = await releasePracticePlatformDesignHoldIfOrderGone(
         transfer._id,
         req.user?._id,
+        transfer,
       );
       if (released?.released) {
         mode = manualDesign ? "manual" : null;

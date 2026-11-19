@@ -1130,20 +1130,21 @@ async function loadAbutmentCoverageRows(requestIds) {
 export async function releasePracticePlatformDesignHoldIfOrderGone(
   transferId,
   actorUserId = null,
+  knownTransfer = null,
 ) {
-  const id = String(transferId || "").trim();
+  const id = String(knownTransfer?._id || transferId || "").trim();
   if (!id || !Types.ObjectId.isValid(id)) return { released: false };
-  const doc = await PracticeTransfer.findById(id);
-  if (!doc) return { released: false };
+  const probe = knownTransfer || (await PracticeTransfer.findById(id));
+  if (!probe) return { released: false };
   const production =
-    doc.production && typeof doc.production === "object" ? doc.production : {};
+    probe.production && typeof probe.production === "object" ? probe.production : {};
   const route = String(production.abutmentFeeRoute || "").trim();
   const confirmed =
     Boolean(production.practiceDesignConfirmedAt) ||
     Boolean(production.customAbutmentPreview?.confirmedAt);
   if (!confirmed && route !== "platform") return { released: false };
 
-  const linked = await collectLinkedAbutmentRequestObjectIds(doc);
+  const linked = await collectLinkedAbutmentRequestObjectIds(probe);
   if (linked.length > 0) {
     const rows = await Request.find({ _id: { $in: linked } })
       .select({
@@ -1155,6 +1156,8 @@ export async function releasePracticePlatformDesignHoldIfOrderGone(
     if (hasLiveAbutmentManufacturingRequest(rows)) return { released: false };
   }
 
+  const doc = knownTransfer ? await PracticeTransfer.findById(id) : probe;
+  if (!doc) return { released: false };
   const feeRevision =
     Math.max(0, Math.floor(Number(production.abutmentFeeRouteRevision || 0))) + 1;
   if (!doc.production || typeof doc.production !== "object") doc.production = {};
