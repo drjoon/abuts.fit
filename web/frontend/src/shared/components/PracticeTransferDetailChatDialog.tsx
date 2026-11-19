@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-20: 수작업 의뢰 뒤 치과 「디자인」은 비활성. 작업 스캔 타일은 미리보기만.
 // - 2026-11-19: 치과 헤더 — 디자인 모달 진입을 「디자인」+Sparkles로(작업 스캔 라벨 교체).
 // - 2026-11-19: 담당 기사 뱃지 — 다음 도착일과 같은 줄(헤더 1줄 절약).
 // - 2026-11-16: 치과 헤더 — 의뢰 수정 왼쪽에 「작업 스캔」(디자인 모달·프리뷰).
@@ -694,6 +695,8 @@ type PracticeTransferDetailChatDialogProps = {
   workScanAlignment?: WorkScanAlignment | null;
   /** 작업 스캔 타일 클릭. 있으면 스캔 프리뷰 대신 이 콜백을 연다. */
   onWorkScanTileClick?: () => void;
+  /** 수작업 의뢰 뒤. 「디자인」은 남기되 열지 않는다. */
+  practiceDesignEntryDisabled?: boolean;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -990,6 +993,7 @@ export function PracticeTransferDetailChatDialog({
   workScanFiles = [],
   workScanAlignment = null,
   onWorkScanTileClick,
+  practiceDesignEntryDisabled = false,
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -3008,7 +3012,8 @@ export function PracticeTransferDetailChatDialog({
         files.some((file) => isAbutsWorkScanFileName(file.fileName)));
     if (showWorkScanButton) {
       const opensDesign = Boolean(onWorkScanTileClick);
-      buttons.push(
+      const designLocked = opensDesign && practiceDesignEntryDisabled;
+      const designButton = (
         <Button
           key="work-scan"
           type="button"
@@ -3019,8 +3024,9 @@ export function PracticeTransferDetailChatDialog({
               ? "h-8 shrink-0 gap-1 border-primary/45 bg-background px-2.5 font-medium text-primary hover:bg-primary/10 hover:text-primary"
               : "h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
           }
-          disabled={!authToken}
+          disabled={!authToken || designLocked}
           onClick={() => {
+            if (designLocked) return;
             if (onWorkScanTileClick) {
               onWorkScanTileClick();
               return;
@@ -3036,7 +3042,21 @@ export function PracticeTransferDetailChatDialog({
           ) : (
             "작업 스캔"
           )}
-        </Button>,
+        </Button>
+      );
+      buttons.push(
+        designLocked ? (
+          <Tooltip key="work-scan">
+            <TooltipTrigger asChild>{designButton}</TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs text-xs">
+              수작업 의뢰 중입니다.
+              <br />
+              기공소가 디자인합니다.
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          designButton
+        ),
       );
     }
     if (onEditRequest) {
@@ -3546,7 +3566,7 @@ export function PracticeTransferDetailChatDialog({
         <button
           type="button"
           onClick={() => {
-            if (onWorkScanTileClick) {
+            if (onWorkScanTileClick && !practiceDesignEntryDisabled) {
               onWorkScanTileClick();
               return;
             }
@@ -3554,9 +3574,11 @@ export function PracticeTransferDetailChatDialog({
           }}
           disabled={!authToken}
           title={
-            onWorkScanTileClick
-              ? "클릭하여 커스텀어벗 디자인"
-              : "클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
+            onWorkScanTileClick && practiceDesignEntryDisabled
+              ? "수작업 의뢰 중입니다. 기공소가 디자인합니다."
+              : onWorkScanTileClick
+                ? "클릭하여 커스텀어벗 디자인"
+                : "클릭하여 최근 날짜의 상악·하악을 3D 미리보기"
           }
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >

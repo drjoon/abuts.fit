@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 수작업 의뢰 — 배지 제거. 디자인 자리에 「폴더 열기」.
 // - 2026-11-20: 디자인 버튼 — 스냅샷·STL을 기다리지 않고 모달을 연다.
 // - 2026-11-20: 플랫폼 디자인 검토 — 확정 뱃지 제거. 어벗·디자인 깜빡임. 업로드 비활성.
 // - 2026-11-20: 치과 디자인 확정 소켓 — 작업시작을 바로 연다. 확정 시각을 작업완료로 보지 않는다.
@@ -235,7 +236,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Hexagon, Pencil, Search, Truck, X } from "lucide-react";
+import { ChevronRight, FolderOpen, Hexagon, Pencil, Search, Truck, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import {
@@ -250,7 +251,10 @@ import {
   dcmFormatForDesignSoftware,
 } from "@/shared/files/labWorkFolder";
 import { useLabWorkFolderSave } from "@/shared/files/useLabWorkFolderSave";
-import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
+import {
+  readStoredDcmDownloadFormat,
+  type DcmDownloadFormat,
+} from "@/shared/files/dcmDownloadFormat";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
 import {
@@ -11655,68 +11659,84 @@ export function RequestorPracticeReceivePage({
                     (row) => row.customAbutment,
                   ) ? (
                     <>
-                      {(() => {
-                        const labAbutmentDesignReady = Boolean(
-                          selectedTransfer.production?.practiceDesignConfirmedAt,
-                        );
-                        const labDesignReviewPending =
-                          isPtxAbutmentDesignReviewForLab(
-                            labAbutmentInput(selectedTransfer),
+                      {selectedTransfer.production?.customAbutmentManualDesign?.at ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className={cn(
+                            "relative h-8 shrink-0 overflow-hidden tabular-nums",
+                            openInCadBusy && "disabled:opacity-100",
+                          )}
+                          disabled={openInCadBusy || downloadAllBusy}
+                          onClick={() => {
+                            const stored = readStoredDcmDownloadFormat();
+                            void handleOpenWork(
+                              stored ? { dcmFormat: stored } : undefined,
+                            );
+                          }}
+                        >
+                          <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+                          {openInCadBusy
+                            ? labSaveProgress != null
+                              ? `저장 중 ${labSaveProgress}%`
+                              : "저장 중..."
+                            : "폴더 열기"}
+                        </Button>
+                      ) : (
+                        (() => {
+                          const labAbutmentDesignReady = Boolean(
+                            selectedTransfer.production?.practiceDesignConfirmedAt,
                           );
-                        return (
-                          <PracticeCustomAbutmentPreviewButton
-                            viewerRole="lab"
-                            authToken={token}
-                            toothWorks={selectedTransferToothWorks}
-                            files={[]}
-                            disabled={!labAbutmentDesignReady}
-                            className={
-                              labDesignReviewPending
-                                ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
-                                : undefined
-                            }
-                            title={
-                              labAbutmentDesignReady
-                                ? undefined
-                                : "치과 디자인 확정 후 검토할 수 있습니다."
-                            }
-                            onOpen={() => {
-                              if (!labAbutmentDesignReady) return;
-                              const id = String(
-                                selectedTransfer.transferId || "",
-                              ).trim();
-                              const idx = labDesignReviewTransfers.findIndex(
-                                (row) =>
-                                  String(row.transferId || "").trim() === id,
-                              );
-                              if (idx >= 0) {
-                                void openLabAbutmentDesign(
-                                  labDesignReviewTransfers,
-                                  idx,
-                                  true,
-                                );
-                                return;
+                          const labDesignReviewPending =
+                            isPtxAbutmentDesignReviewForLab(
+                              labAbutmentInput(selectedTransfer),
+                            );
+                          return (
+                            <PracticeCustomAbutmentPreviewButton
+                              viewerRole="lab"
+                              authToken={token}
+                              toothWorks={selectedTransferToothWorks}
+                              files={[]}
+                              disabled={!labAbutmentDesignReady}
+                              className={
+                                labDesignReviewPending
+                                  ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+                                  : undefined
                               }
-                              void openLabAbutmentDesign(
-                                [selectedTransfer],
-                                0,
-                                false,
-                              );
-                            }}
-                          />
-                        );
-                      })()}
-                      {selectedTransfer.production
-                        ?.customAbutmentManualDesign ? (
-                        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
-                          수작업 의뢰
-                          {selectedTransfer.production
-                            .customAbutmentManualDesign.hasPaint
-                            ? " · 페인트"
-                            : ""}
-                        </span>
-                      ) : selectedTransfer.production
-                          ?.practiceDesignConfirmedAt ? null : (
+                              title={
+                                labAbutmentDesignReady
+                                  ? undefined
+                                  : "치과 디자인 확정 후 검토할 수 있습니다."
+                              }
+                              onOpen={() => {
+                                if (!labAbutmentDesignReady) return;
+                                const id = String(
+                                  selectedTransfer.transferId || "",
+                                ).trim();
+                                const idx = labDesignReviewTransfers.findIndex(
+                                  (row) =>
+                                    String(row.transferId || "").trim() === id,
+                                );
+                                if (idx >= 0) {
+                                  void openLabAbutmentDesign(
+                                    labDesignReviewTransfers,
+                                    idx,
+                                    true,
+                                  );
+                                  return;
+                                }
+                                void openLabAbutmentDesign(
+                                  [selectedTransfer],
+                                  0,
+                                  false,
+                                );
+                              }}
+                            />
+                          );
+                        })()
+                      )}
+                      {selectedTransfer.production?.customAbutmentManualDesign?.at ||
+                      selectedTransfer.production?.practiceDesignConfirmedAt ? null : (
                         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
                           치과 확정 대기
                         </span>
