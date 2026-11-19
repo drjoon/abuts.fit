@@ -4345,6 +4345,25 @@ export function PracticeCustomAbutmentPreviewDialog({
     [applyDesignChanges, persistDesign],
   );
 
+  // 단면 각이 어긋나 스캔바디 밖으로 나간 저장 형상을, 이 브라우저에서 한 번 정합 위치로 다시 만든다.
+  const scanbodyRealignRef = useRef(false);
+  useEffect(() => {
+    if (scanbodyRealignRef.current || !open || !canEditDesign) return;
+    if (designedList.length === 0 || redesigning.length > 0) return;
+    const key = "abuts.customAbutment.realignScanbody.v65";
+    try {
+      if (window.localStorage.getItem(key)) {
+        scanbodyRealignRef.current = true;
+        return;
+      }
+      window.localStorage.setItem(key, "1");
+    } catch {
+      return;
+    }
+    scanbodyRealignRef.current = true;
+    void regenerateDesigns();
+  }, [open, canEditDesign, designedList.length, redesigning.length, regenerateDesigns]);
+
   // PTX 공유 채팅방 조회 (치과↔기공소 동일 대화 공유)
   useEffect(() => {
     const token = String(authToken || "").trim();

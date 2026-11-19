@@ -7749,10 +7749,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             fromMargin: Math.round(Math.max(0, hStart - hMargin) * 10) / 10,
           };
         };
+        // 단면 각(footPsi)은 그대로 두고, 설·협 평면만 바꾼다. 각을 바꾸면 포스트가 소켓 밖으로 나간다.
         const linPlane = lingualOn
-          ? planeOf(Math.PI, hLinMargin, params.postLingualBevelMm, -1)
+          ? planeOf(0, hBucMargin, params.postLingualBevelMm, 1)
           : null;
-        const bucPlane = buccalOn ? planeOf(0, hBucMargin, bucParamMm, 1) : null;
+        const bucPlane = buccalOn ? planeOf(Math.PI, hLinMargin, bucParamMm, -1) : null;
         appliedLingualBevelMm = linPlane?.active ? linPlane.fromMargin : null;
         appliedLabialBevelMm = bucPlane?.active ? bucPlane.fromMargin : null;
 
@@ -7792,8 +7793,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               const sCap = (uPlane - cuSec - latU) / cp;
               if (sCap > 0.2) s = smoothMin(s, sCap, 0.04);
             };
-            if (linPlane?.active) clipU(linPlane, -1);
-            if (bucPlane?.active) clipU(bucPlane, 1);
+            if (linPlane?.active) clipU(linPlane, 1);
+            if (bucPlane?.active) clipU(bucPlane, -1);
             const u = cuSec + s * cp + latU;
             const v = cvSec + s * sp + dvLat * (1 - uSpan);
             postR[col]![k] = Math.hypot(u, v);

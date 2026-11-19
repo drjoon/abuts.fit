@@ -1495,6 +1495,25 @@ export function PracticeCustomAbutmentDesignTree({
     >
       <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] font-semibold text-foreground">
         <span className="shrink-0">어벗 정보</span>
+        {onRepickScanbody ? (
+          <button
+            type="button"
+            className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[0.6875rem] font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
+            aria-label="스캔바디 위치"
+            title="스캔바디 상단을 클릭해 어벗 위치를 지정합니다."
+            disabled={redesigning.length > 0}
+            onClick={() => {
+              const targets =
+                selectedTeeth.length > 0
+                  ? selectedTeeth
+                  : items.map((it) => it.toothNumber);
+              onRepickScanbody(targets);
+            }}
+          >
+            <Crosshair className="h-3.5 w-3.5" />
+            스캔바디
+          </button>
+        ) : null}
         <ScanbodyButton
           shown={anyScanbody}
           label="모든"
