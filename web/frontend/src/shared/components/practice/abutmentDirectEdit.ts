@@ -1921,23 +1921,23 @@ export function makeGumball(tooth: string) {
     const color = AXIS_COLOR[axis]!;
     const mat = basicMat(color);
     const shaft = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.44, 12), mat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.34, 12), mat),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(shaft, axis, 0.82);
-    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.28, 14), mat), "move", axis, -1, mat);
-    alongAxis(head, axis, 1.15);
+    alongAxis(shaft, axis, 0.52);
+    const head = tagHandle(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 14), mat), "move", axis, -1, mat);
+    alongAxis(head, axis, 0.71);
     const hit = tagHandle(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.68, 10), basicMat(0xffffff, 0)),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.52, 10), basicMat(0xffffff, 0)),
       "move",
       axis,
       -1,
       mat,
     );
-    alongAxis(hit, axis, 0.96);
+    alongAxis(hit, axis, 0.6);
     group.add(shaft, head, hit);
   }
   for (const axis of [0, 1] as const) {
