@@ -1,6 +1,6 @@
 // 커스텀어벗 뷰어의 직접 편집.
-// 검볼 UI 원점은 포스트 중심이며, 치아 선택 뱃지를 눌러도 움직이지 않는다.
-// 파란 회전의 형상 힌지는 피니시라인 중앙이며, 회전 제스처만 그 점을 피봇으로 쓴다.
+// 검볼 UI 원점은 포스트 중심이다. 클릭·드래그 종류와 관계없이 검볼 위치는 거기에 고정된다.
+// 파란 회전의 형상 힌지는 피니시라인 중앙이며, 메시 변형·회전 제스처 측정만 그 점을 피봇으로 쓴다.
 // 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
 // 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
@@ -2369,7 +2369,6 @@ export class AbutmentDirectEditSession {
     const picked = this.bridge.ui.selectedTeeth ?? [];
     const multi = picked.length > 1;
     const primary = picked[picked.length - 1] ?? this.bridge.ui.selected;
-    const drag = this.drag;
     for (const [tooth, view] of this.views) {
       const mesh = this.bridge.getAbutment(tooth);
       const visible = !!mesh && mesh.visible && this.bridge.ui.visible[tooth] !== false;
@@ -2378,14 +2377,7 @@ export class AbutmentDirectEditSession {
       const leadGumball = !multi || tooth === primary;
       view.gumball.visible = show && visible && expanded && leadGumball;
       view.gumball.quaternion.copy(gumballQuat);
-      const draggingPivot =
-        drag &&
-        drag.kind !== "sculpt" &&
-        drag.tooth === tooth &&
-        (drag.kind === "rot" || drag.kind === "scale" || drag.kind === "scale2" || drag.kind === "scale3")
-          ? drag.pivotWorld
-          : null;
-      view.gumball.position.copy(draggingPivot ?? this.gumballPosition(view, edit));
+      view.gumball.position.copy(this.gumballPosition(view, edit));
       view.gumball.scale.setScalar(worldPerPx * (expanded ? GUMBALL_SIZE_PX : 50));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
     }
