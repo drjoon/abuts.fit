@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-19: 담당 기사 뱃지 — 다음 도착일과 같은 줄(헤더 1줄 절약).
 // - 2026-11-16: 치과 헤더 — 의뢰 수정 왼쪽에 「작업 스캔」(디자인 모달·프리뷰).
 // - 2026-11-16: 작업 스캔 타일 — onWorkScanTileClick이 있으면 스캔 프리뷰 대신 연다.
 // - 2026-10-24: 채팅 헤더 담당 기사 — 작업시작 계정, 수행 기공소는 변경.
@@ -3102,10 +3103,10 @@ export function PracticeTransferDetailChatDialog({
     labIdentityDateRowActions || practiceHeaderActionButtons;
   /**
    * 헤더 1줄: 타이틀 + 아이콘
-   * 2줄: 주문/도착(+다음도착일)
-   * 3줄: 커스텀어벗 배송 · 담당 기사 — 다음 도착일 아래, 같은 줄
+   * 2줄: 주문/도착 · 다음 도착일 · 담당 기사
+   * 3줄(있을 때만): 커스텀어벗 배송
    * ─── 경계선
-   * 4줄: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
+   * 다음: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
    */
   const renderIdentityDateRow = (className?: string) => {
     if (
@@ -3156,21 +3157,15 @@ export function PracticeTransferDetailChatDialog({
             <span className="min-w-0 flex-1" aria-hidden />
           )}
           {rearrivalControl}
+          {labTechnicianControl}
         </div>
-        {labTechnicianControl || customAbutmentShippingLine ? (
-          <div className="mt-1 flex min-w-0 items-center gap-2">
-            {customAbutmentShippingLine ? (
-              <p
-                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                title={customAbutmentShippingLine}
-              >
-                {customAbutmentShippingLine}
-              </p>
-            ) : (
-              <span className="min-w-0 flex-1" aria-hidden />
-            )}
-            {labTechnicianControl}
-          </div>
+        {customAbutmentShippingLine ? (
+          <p
+            className="mt-1 min-w-0 truncate text-xs text-muted-foreground"
+            title={customAbutmentShippingLine}
+          >
+            {customAbutmentShippingLine}
+          </p>
         ) : null}
       </div>
     );
