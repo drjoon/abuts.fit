@@ -2995,7 +2995,6 @@ export class AbutmentDirectEditSession {
         pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
-      this.show(handle.tooth, false);
       return true;
     }
     if (handle.op === "rot") {
@@ -3015,7 +3014,6 @@ export class AbutmentDirectEditSession {
         pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
-      this.show(handle.tooth, false);
       return true;
     }
     if (handle.op === "move2") {
@@ -3032,7 +3030,6 @@ export class AbutmentDirectEditSession {
         pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
-      this.show(handle.tooth, false);
       return true;
     }
     if (handle.op !== "scale2" && handle.op !== "scale3") return false;
@@ -3052,7 +3049,6 @@ export class AbutmentDirectEditSession {
       pivotWorld: center.clone(),
       pointerId: event.pointerId,
     };
-    this.show(handle.tooth, false);
     return true;
   }
 
@@ -3364,7 +3360,8 @@ export class AbutmentDirectEditSession {
         0,
       );
       const tilting = Math.abs(edit.tiltLabialDeg) > 0.15 || Math.abs(edit.tiltMesialDeg) > 0.15;
-      if (!editsEqual(edit, EMPTY_EDIT) && view.gingivaProbe && !tilting) {
+      // 드래그 중 치은 재투영은 커프 재생성과 같이 포인터를 놓은 뒤에 한다. 그동안 마진 선과 메시는 같은 refit을 쓴다.
+      if (this.drag == null && !editsEqual(edit, EMPTY_EDIT) && view.gingivaProbe && !tilting) {
         const mCount = Math.floor(marginLocal.length / 3);
         const subgMinMm = design.params?.marginSubgMinMm ?? design.metrics?.marginSubgMinMm ?? 0.5;
         const subgMaxMm = design.params?.marginSubgMaxMm ?? design.metrics?.marginSubgMaxMm ?? 1.0;
@@ -3438,7 +3435,9 @@ export class AbutmentDirectEditSession {
       view.lastAutoLiftMm = autoLiftMm;
       view.lastMarginZCorr = marginZCorr;
       this.summary = measured;
-      if (marginLocal && view.proposalMargin && (cuffNeedsRegen(edit) || hasMarginZCorr)) {
+      // 드래그 중에는 refit 워프만 그린다. 커프 메시 재생성은 포인터를 놓은 뒤 한 번만 계산한다.
+      const dragging = this.drag != null;
+      if (!dragging && marginLocal && view.proposalMargin && (cuffNeedsRegen(edit) || hasMarginZCorr)) {
         regenerateCuffToMargin(previewSrc, local, view.proposalMargin, marginLocal, previewZone);
       }
     }
@@ -3478,9 +3477,12 @@ export class AbutmentDirectEditSession {
       if (bake && !silent) design.marginLoopLocal = marginLocal;
     }
 
-    const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
-    this.publishShape(summary, bake);
-    if (bake && !silent) this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary);
+    // 숫자 측정은 드래그가 끝난 뒤에만 한다. 이동 프레임에서는 정점 워프만 그린다.
+    if (this.drag == null || bake) {
+      const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
+      this.publishShape(summary, bake);
+      if (bake && !silent) this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary);
+    }
     this.moveBadge(mesh, this.resolveGumballCenter(view, edit, tooth), view.gumball.visible);
   }
 
