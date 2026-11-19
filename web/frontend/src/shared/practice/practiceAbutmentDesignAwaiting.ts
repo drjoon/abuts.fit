@@ -9,6 +9,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-11-19: 작업시작 비활성 툴팁 카피(LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT).
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
@@ -22,6 +23,8 @@ export const ABUTMENT_ORDER_BADGE_KEY = "abutmentOrder";
 /** 기공소 작업시작 — 치과 어벗·디자인 확정 대기 */
 export const LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT =
   "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업을 시작할 수 있습니다.";
+export const LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT =
+  "확인이 필요하면 채팅으로 연락해 주세요.";
 
 /** 작업시작 전 보철 업로드 요구 안내(모달) */
 export const LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED =

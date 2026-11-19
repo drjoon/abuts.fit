@@ -10947,12 +10947,6 @@ export function RequestorPracticeReceivePage({
                 {PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT}
               </span>
             </>
-          ) : selectedTransferAbutmentDesignAwaiting ? (
-            <p className="text-destructive">
-              {LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT}
-              <br />
-              확인이 필요하면 채팅으로 연락해 주세요.
-            </p>
           ) : null
         }
         abutmentDesignBlocksAccept={selectedTransferAbutmentDesignAwaiting}

@@ -179,6 +179,7 @@
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import {
+  type ReactElement,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -358,6 +359,10 @@ import {
   resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
+import {
+  LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT,
+  LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import { useAbutsLabCertified } from "@/shared/practice/useAbutsLabCertified";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -2708,6 +2713,27 @@ export function PracticeTransferDetailChatDialog({
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
   const acceptDisabled =
     acceptBusy || oralScanBlocksAccept || abutmentDesignBlocksAccept;
+  const wrapWorkStartButtonTooltip = (
+    button: ReactElement,
+  ): ReactNode => {
+    if (!abutmentDesignBlocksAccept) return button;
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">{button}</span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+            <p>
+              {LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT}
+              <br />
+              {LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
   const canOpenInDesignSoftware =
     Boolean(onOpenInDesignSoftware) &&
     (files.length > 0 ||
@@ -2880,30 +2906,36 @@ export function PracticeTransferDetailChatDialog({
             {openSubcontractBusy ? "전환 중..." : "하청 전환"}
           </Button>
         ) : null}
+        {wrapWorkStartButtonTooltip(
+          <Button
+            type="button"
+            size="sm"
+            className={cn(
+              "h-8 min-w-[5.5rem]",
+              guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
+            )}
+            onClick={() => void onAccept?.()}
+            disabled={acceptDisabled}
+          >
+            {acceptButtonLabel}
+          </Button>,
+        )}
+      </>
+    ) : null;
+  const reacceptBarPrimaryAction = showReacceptBar
+    ? wrapWorkStartButtonTooltip(
         <Button
           type="button"
           size="sm"
-          className={cn(
-            "h-8 min-w-[5.5rem]",
-            guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
-          )}
           onClick={() => void onAccept?.()}
-          disabled={acceptDisabled}
+          disabled={
+            acceptBusy || oralScanBlocksAccept || abutmentDesignBlocksAccept
+          }
         >
-          {acceptButtonLabel}
-        </Button>
-      </>
-    ) : null;
-  const reacceptBarPrimaryAction = showReacceptBar ? (
-    <Button
-      type="button"
-      size="sm"
-      onClick={() => void onAccept?.()}
-      disabled={acceptBusy || oralScanBlocksAccept || abutmentDesignBlocksAccept}
-    >
-      {reacceptButtonLabel}
-    </Button>
-  ) : null;
+          {reacceptButtonLabel}
+        </Button>,
+      )
+    : null;
   const detachPaintChatFile = (file: File) => {
     onRemoveAttachedChatFile(toTempUploadFileKey(file));
   };
