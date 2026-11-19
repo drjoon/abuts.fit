@@ -736,13 +736,22 @@ const tiltedPose = {
   ...fixture35.fixturePose,
   axis: [Math.sin(tilt35), 0, -Math.cos(tilt35)] as [number, number, number],
 };
-const [tilted35, tiltedFlat] = await Promise.all([
+const [tilted35, tiltedCut, tiltedFlat] = await Promise.all([
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
     jawGeometry: jaw,
     opposingGeometry: bridgeOpp,
     neighbors: [fixture34],
     toothWorks: singleWorks35,
+  }),
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+    params: { postLingualBevelMm: 1.5, postLabialBevelMm: 1.5 },
+    explicitParams: { postLingualBevelMm: 1.5, postLabialBevelMm: 1.5 },
   }),
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
@@ -760,6 +769,8 @@ console.log(
       ang: tilted35.metrics.angulationDeg,
       lin: tilted35.metrics.postLingualBevelMm ?? null,
       buc: tilted35.metrics.postLabialBevelMm ?? null,
+      cutLin: tiltedCut.metrics.postLingualBevelMm ?? null,
+      cutBuc: tiltedCut.metrics.postLabialBevelMm ?? null,
       flatLin: tiltedFlat.metrics.postLingualBevelMm ?? null,
       flatBuc: tiltedFlat.metrics.postLabialBevelMm ?? null,
     },
@@ -769,12 +780,19 @@ assert.ok(
   tilted35.metrics.angulationDeg >= 6,
   `기울인 #35 삽입축(${tilted35.metrics.angulationDeg}°)은 사면 기준 이상이다`,
 );
+assert.equal(tilted35.metrics.postLingualBevelMm ?? null, null, "기울인 구치도 설측 사면은 기본으로 깎지 않는다");
+assert.equal(tilted35.metrics.postLabialBevelMm ?? null, null, "기울인 구치도 협측 사면은 기본으로 깎지 않는다");
 assert.ok(
-  (tilted35.metrics.postLingualBevelMm ?? 0) > 0 &&
-    (tilted35.metrics.postLabialBevelMm ?? 0) > 0 &&
-    tilted35.metrics.postLingualBevelMm! < tilted35.metrics.postHeightMm &&
-    tilted35.metrics.postLabialBevelMm! < tilted35.metrics.postHeightMm,
-  "삽입축이 큰 구치는 협·설 사면이 마진 높이로 잡히고 포스트 높이보다 작다",
+  (tilted35.metrics.suggestedPostLingualBevelMm ?? 0) > 0 &&
+    (tilted35.metrics.suggestedPostLabialBevelMm ?? 0) > 0,
+  "기울인 구치는 체크 전에도 사면 시작 높이를 제안한다",
+);
+assert.ok(
+  (tiltedCut.metrics.postLingualBevelMm ?? 0) > 0 &&
+    (tiltedCut.metrics.postLabialBevelMm ?? 0) > 0 &&
+    tiltedCut.metrics.postLingualBevelMm! < tiltedCut.metrics.postHeightMm &&
+    tiltedCut.metrics.postLabialBevelMm! < tiltedCut.metrics.postHeightMm,
+  "체크한 구치 협·설 사면은 마진 높이로 잡히고 포스트 높이보다 작다",
 );
 assert.equal(tiltedFlat.metrics.postLabialBevelMm ?? null, null, "협측 사면 0은 사면을 만들지 않는다");
 const blWidthAt = (positions: Float32Array, z0: number) => {
@@ -788,18 +806,21 @@ const blWidthAt = (positions: Float32Array, z0: number) => {
   }
   return maxX - minX;
 };
-let zTopTilt = -Infinity;
-for (let i = 2; i < tilted35.solidBodyLocalPositions!.length; i += 3) {
-  zTopTilt = Math.max(zTopTilt, tilted35.solidBodyLocalPositions![i]!);
-}
-const bevelBl = blWidthAt(tilted35.solidBodyLocalPositions!, zTopTilt - 0.9);
-const flatBl = blWidthAt(tiltedFlat.solidBodyLocalPositions!, zTopTilt - 0.9);
+const widthNearTop = (positions: Float32Array) => {
+  let zTop = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zTop = Math.max(zTop, positions[i]!);
+  return blWidthAt(positions, zTop - 0.9);
+};
+const bevelBl = widthNearTop(tiltedCut.solidBodyLocalPositions!);
+const flatBl = widthNearTop(tilted35.solidBodyLocalPositions!);
 assert.ok(
   bevelBl < flatBl - 0.15,
   `같은 기울기에서 협·설 사면(${bevelBl.toFixed(2)}mm)은 사면 없는 상단(${flatBl.toFixed(2)}mm)보다 좁다`,
 );
 tilted35.worldGeometry.dispose();
 tilted35.predictedCrownWorldGeometry.dispose();
+tiltedCut.worldGeometry.dispose();
+tiltedCut.predictedCrownWorldGeometry.dispose();
 tiltedFlat.worldGeometry.dispose();
 tiltedFlat.predictedCrownWorldGeometry.dispose();
 const [labialOff, labialOn] = await Promise.all([

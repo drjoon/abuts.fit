@@ -14,9 +14,9 @@ export type CustomAbutmentDesignParams = {
   postTaperDeg: number;
   /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
   postTaperLink: number;
-  /** 전치부(절치·견치) 설측 사면 — 마진에서 사면이 시작되는 높이(mm, -1이면 자동). */
+  /** 설측 사면 — 마진에서 사면이 시작되는 높이(mm). -1은 전치 자동·구치 없음, 0은 없음. */
   postLingualBevelMm: number;
-  /** 전치부(절치·견치) 순측 사면 — 마진에서 사면이 시작되는 높이(mm). 0이면 없음. */
+  /** 순측·협측 사면 — 마진에서 사면이 시작되는 높이(mm). 0이면 없음. 구치는 양수일 때만 깎는다. */
   postLabialBevelMm: number;
   /** 악궁 접선 기준 포스트 수평 회전 보정(°, 교합면 시점 +=반시계, -=시계). */
   postYawDeg: number;
@@ -549,6 +549,7 @@ function clampDesignParam(
   // 마진에서 사면이 시작되는 높이(mm). 포스트 높이보다 작게 쓰며, 패널 max는 postHeight−0.5에서 한 번 더 자른다.
   if (key === "postLingualBevelMm") {
     if (raw < 0) return -1;
+    if (raw === 0) return 0;
     return Math.round(Math.min(spec.max, Math.max(0.5, raw)) * 10) / 10;
   }
   if (key === "postLabialBevelMm") {

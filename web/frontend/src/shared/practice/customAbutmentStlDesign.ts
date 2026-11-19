@@ -108,7 +108,7 @@ const PARALLEL_GROUP_MM = 13;
 const FLAT_TOP_MAX_TILT = Math.tan(18 * DEG);
 /** 교합 방향에서 본 구치 윗면 기울기. 0이면 교합면과 평행한 평평한 면. */
 const FLAT_TOP_ARCH_MAX_TILT = Math.tan(2 * DEG);
-/** 구치 삽입축이 이 각 이상이면 협·설 상단을 사면으로 깎는다. 구치 보정 상한은 약 10°다. */
+/** 구치 사면 제안 높이. 삽입축이 클수록 마진에 가깝게 시작한다. 깎는 것은 패널에서 체크했을 때뿐이다. */
 const POSTERIOR_BL_BEVEL_MIN_DEG = 6;
 /** 전치에서 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
 const POST_STEP_SLOPE = Math.tan(25 * DEG);
@@ -189,10 +189,14 @@ export type CustomAbutmentDesignMetrics = {
   postTaperDeg: number;
   /** 최소 테이퍼(2°) 클램프 전 포스트 높이·상단 벽 여유 기준 적정 편측 테이퍼(°). */
   idealPostTaperDeg?: number;
-  /** 전치부(절치·견치) 설측 사면 — 마진에서 사면이 시작되는 높이(mm). 구치는 삽입축 각도가 클 때만. */
+  /** 설측 사면 — 마진에서 사면이 시작되는 높이(mm). 없으면 사면을 깎지 않는다. */
   postLingualBevelMm?: number | null;
-  /** 전치 순측·구치 협측 사면 — 마진에서 사면이 시작되는 높이(mm). 0이면 없음. 구치는 삽입축 각도가 클 때만. */
+  /** 전치 순측·구치 협측 사면 — 마진에서 사면이 시작되는 높이(mm). 없거나 0이면 사면을 깎지 않는다. */
   postLabialBevelMm?: number | null;
+  /** 체크 전 입력에 보여줄 설측 사면 시작 높이(mm). 형상에는 아직 없다. */
+  suggestedPostLingualBevelMm?: number | null;
+  /** 체크 전 입력에 보여줄 협·순측 사면 시작 높이(mm). 형상에는 아직 없다. */
+  suggestedPostLabialBevelMm?: number | null;
   /** 포스트 윗면 → 대합치 최소 거리(mm). 대합치가 없으면 null. */
   occlusalClearanceMm: number | null;
   marginFilletRadiusMm: number;
@@ -7218,6 +7222,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let geomIdealTaperDeg: number | null = null;
     let appliedLingualBevelMm: number | null = null;
     let appliedLabialBevelMm: number | null = null;
+    let suggestedLingualBevelMm: number | null = null;
+    let suggestedLabialBevelMm: number | null = null;
     let wrapAnteriorScrew360 = false;
     if (posterior) {
       let pSecCu = mCu;
@@ -7282,18 +7288,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const maxFromMargin = Math.max(0.5, Math.min(wallFromMargin - 0.45, estPostH - 0.5));
         const tiltT = clamp((angulationDeg - POSTERIOR_BL_BEVEL_MIN_DEG) / 10, 0, 1);
         const autoFromMargin = clamp(wallFromMargin * (0.72 - 0.3 * tiltT), 0.5, maxFromMargin);
-        const explicitLin = Number.isFinite(params.postLingualBevelMm) && params.postLingualBevelMm >= 0;
-        const explicitBucRaw = args.explicitParams?.postLabialBevelMm;
-        const hasExplicitBucKey =
-          explicitBucRaw != null && Number.isFinite(Number(explicitBucRaw));
-        const bucParamMm = hasExplicitBucKey
-          ? Number(explicitBucRaw)
-          : Number.isFinite(params.postLabialBevelMm) && params.postLabialBevelMm > 0
+        // 제안 높이만 잡아 둔다. 삽입축이 기울어 어벗이 크라운 한쪽으로 치우쳐도 체크 전에는 깎지 않는다.
+        suggestedLingualBevelMm = Math.round(autoFromMargin * 10) / 10;
+        suggestedLabialBevelMm = suggestedLingualBevelMm;
+        const explicitLin = Number.isFinite(params.postLingualBevelMm) && params.postLingualBevelMm >= 0.5;
+        const bucParamMm =
+          Number.isFinite(params.postLabialBevelMm) && params.postLabialBevelMm > 0
             ? params.postLabialBevelMm
             : 0;
-        const largeAxis = angulationDeg >= POSTERIOR_BL_BEVEL_MIN_DEG;
-        const lingualOn = explicitLin || (!explicitLin && largeAxis);
-        const buccalOn = bucParamMm > 0 || (!hasExplicitBucKey && largeAxis);
+        const lingualOn = explicitLin;
+        const buccalOn = bucParamMm > 0;
         const sectionU = (phi: number, hVal: number) => {
           const uSpan = clamp((hVal - hPostBase) / Math.max(0.5, hTopPost - 0.45 - hPostBase), 0, 1);
           const blAt = Math.max(0.65, baseBl + (topBl - baseBl) * uSpan);
@@ -7334,11 +7338,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           };
         };
         const linPlane = lingualOn
-          ? planeOf(Math.PI, hLinMargin, explicitLin ? params.postLingualBevelMm : autoFromMargin, -1)
+          ? planeOf(Math.PI, hLinMargin, params.postLingualBevelMm, -1)
           : null;
-        const bucPlane = buccalOn
-          ? planeOf(0, hBucMargin, bucParamMm > 0 ? bucParamMm : autoFromMargin, 1)
-          : null;
+        const bucPlane = buccalOn ? planeOf(0, hBucMargin, bucParamMm, 1) : null;
         appliedLingualBevelMm = linPlane?.active ? linPlane.fromMargin : null;
         appliedLabialBevelMm = bucPlane?.active ? bucPlane.fromMargin : null;
 
@@ -8221,7 +8223,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const hasExplicitLingualBevel =
         !lockBasePass &&
         Number.isFinite(params.postLingualBevelMm) &&
-        params.postLingualBevelMm >= 0;
+        params.postLingualBevelMm >= 0.5;
+      const lingualExplicitOff =
+        !lockBasePass &&
+        Number.isFinite(params.postLingualBevelMm) &&
+        params.postLingualBevelMm === 0;
       const estAntTaperSlope = Math.tan(
         Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, effectiveTaperDeg) * DEG,
       );
@@ -9036,7 +9042,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           hLinStart,
           hIncisalTop - 0.45,
         );
-        appliedLingualBevelMm = Math.round((hBevelStart - hLinMargin) * 10) / 10;
+        appliedLingualBevelMm = lingualExplicitOff
+          ? null
+          : Math.round((hBevelStart - hLinMargin) * 10) / 10;
+        const lingualBevelActive = !lingualExplicitOff;
+        suggestedLingualBevelMm = appliedLingualBevelMm ?? Math.round(fromMarginMm * 10) / 10;
 
         const mdWallSlope = Math.max(
           minAntTaperSlope,
@@ -9165,6 +9175,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         appliedLabialBevelMm = labBevelActive
           ? Math.round(Math.max(0, hLabBevelStart - hLabMargin) * 10) / 10
           : 0;
+        suggestedLabialBevelMm =
+          appliedLabialBevelMm > 0
+            ? appliedLabialBevelMm
+            : Math.round(
+                clamp(labWallFromMargin * 0.42, 0.9, Math.max(0.9, maxLabFromMargin)) * 10,
+              ) / 10;
 
         // 순측 사면이 깎인 실제 상단 순측 위치(effLabTop)를 기준으로 설측 사면 목표 두께를 맞춘다.
         const effLabTop = labBevelActive ? uLabBevelTop : uLabTop;
@@ -9234,7 +9250,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             // 순면·설면 사면과 축벽이 만나는 수평 무릎 에지 및 근·원심 라인 앵글을 모두 C¹ 필레로 둥글리고,
             // 실제 사면 중심(cuRef)에서 광선 교차해 면 꼬임·로브·단차를 원천 차단한다.
             const uPlaneCenter = uBevelStart + bevelSlope * (h - hBevelStart);
-            const uLinEff = filletMax(uLinCollarAtH, uPlaneCenter, wKneeLin);
+            const uLinEff = lingualBevelActive
+              ? filletMax(uLinCollarAtH, uPlaneCenter, wKneeLin)
+              : uLinCollarAtH;
             const uLabPlaneCenter = labBevelActive
               ? uLabBevel0 + labBevelSlope * (h - hLabBevelStart)
               : Infinity;
@@ -9270,7 +9288,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 : Infinity;
             const wEuclid = clamp(0.28 * Math.min(uLabEff - uLinEff, bMdH), 0.16, 0.34);
             let s = sBody;
-            if (Number.isFinite(sLingual) && sLingual > 0) {
+            if (lingualBevelActive && Number.isFinite(sLingual) && sLingual > 0) {
               const wRayLin = wEuclid / Math.max(-denom, 0.32);
               s = filletMin(s, sLingual, wRayLin);
             }
@@ -10152,6 +10170,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       geomIdealTaperDeg,
       lingualBevelMm: appliedLingualBevelMm,
       labialBevelMm: appliedLabialBevelMm,
+      suggestedLingualBevelMm,
+      suggestedLabialBevelMm,
       postApex,
       crownApex,
       meanCrownCuspH,
@@ -10719,6 +10739,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     shape.labialBevelMm != null
       ? Math.round(Math.min(shape.labialBevelMm, Math.max(0, finalPostHeightMm - 0.5)) * 10) / 10
       : null;
+  const bevelSuggestCap = Math.max(0.5, finalPostHeightMm - 0.5);
+  const reportedSuggestedLingualBevelMm =
+    shape.suggestedLingualBevelMm != null
+      ? Math.round(Math.min(shape.suggestedLingualBevelMm, bevelSuggestCap) * 10) / 10
+      : null;
+  const reportedSuggestedLabialBevelMm =
+    shape.suggestedLabialBevelMm != null
+      ? Math.round(Math.min(shape.suggestedLabialBevelMm, bevelSuggestCap) * 10) / 10
+      : null;
   let marginZMinActual = Infinity;
   let marginZMaxActual = -Infinity;
   for (let i = 2; i < marginLoopLocal.length; i += 3) {
@@ -10755,6 +10784,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       idealPostTaperDeg,
       ...(reportedLingualBevelMm != null ? { postLingualBevelMm: reportedLingualBevelMm } : {}),
       ...(reportedLabialBevelMm != null ? { postLabialBevelMm: reportedLabialBevelMm } : {}),
+      ...(reportedSuggestedLingualBevelMm != null
+        ? { suggestedPostLingualBevelMm: reportedSuggestedLingualBevelMm }
+        : {}),
+      ...(reportedSuggestedLabialBevelMm != null
+        ? { suggestedPostLabialBevelMm: reportedSuggestedLabialBevelMm }
+        : {}),
       occlusalClearanceMm,
       marginFilletRadiusMm: Math.round(params.marginFilletRadiusMm * 10) / 10,
       marginSubgMinMm: round2(subgMin),

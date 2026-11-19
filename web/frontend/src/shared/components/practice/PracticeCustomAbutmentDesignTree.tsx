@@ -28,6 +28,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
   TooltipContent,
@@ -250,15 +251,18 @@ export function computeParamsFromInfoFieldEdit(
       };
     }
     case "postLingualBevelMm": {
+      if (num < 0) return { postLingualBevelMm: -1 };
+      if (num === 0) return { postLingualBevelMm: 0 };
       const maxBevel = Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)));
       return {
         postLingualBevelMm: Number(Math.min(maxBevel, Math.max(0.5, num)).toFixed(1)),
       };
     }
     case "postLabialBevelMm": {
-      const maxBevel = Math.max(0, Number((m.postHeightMm - 0.5).toFixed(1)));
+      if (num <= 0) return { postLabialBevelMm: 0 };
+      const maxBevel = Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)));
       return {
-        postLabialBevelMm: Number(Math.min(maxBevel, Math.max(0, num)).toFixed(1)),
+        postLabialBevelMm: Number(Math.min(maxBevel, Math.max(0.5, num)).toFixed(1)),
       };
     }
     case "occlusalClearanceMm": {
@@ -504,6 +508,8 @@ function EditableNumberRow({
   warning,
   warningTooltip,
   hint,
+  leading,
+  inactive,
   onCommit,
 }: {
   label: string;
@@ -518,6 +524,10 @@ function EditableNumberRow({
   warning?: boolean;
   warningTooltip?: ReactNode;
   hint?: ReactNode;
+  /** 입력 왼쪽. 사면 체크처럼 값과 한 묶음으로 둔다. */
+  leading?: ReactNode;
+  /** 체크 전. 숫자는 보이지만 형상에는 아직 없다. */
+  inactive?: boolean;
   onCommit: (next: number) => void;
 }) {
   const formatVal = (v: number) => cleanNum(v, digits);
@@ -668,7 +678,9 @@ function EditableNumberRow({
   const inputBox = (
     <div
       className={cn(
-        "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+        "flex h-7 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+        leading ? "min-w-0 flex-1 shrink" : "ml-auto w-[8.75rem] shrink-0",
+        inactive && "border-dashed",
         warning &&
           "border-amber-400/90 bg-amber-500/10 focus-within:border-amber-500 focus-within:ring-amber-500/40",
         scrubValue != null &&
@@ -696,6 +708,7 @@ function EditableNumberRow({
         readOnly={!editing}
         className={cn(
           "h-full w-full min-w-[2.5rem] flex-1 bg-transparent px-1 text-right text-[0.8125rem] font-medium tabular-nums text-foreground outline-none",
+          inactive && "text-muted-foreground",
           warning && "text-amber-700 dark:text-amber-300",
           !editing && !disabled && "cursor-ew-resize select-none",
         )}
@@ -704,9 +717,11 @@ function EditableNumberRow({
             ? undefined
             : disabled
               ? undefined
-              : editing
-                ? "숫자 입력 후 Enter"
-                : "클릭하여 직접 입력 · 드래그하여 조절"
+              : inactive
+                ? "체크하면 이 높이부터 깎습니다"
+                : editing
+                  ? "숫자 입력 후 Enter"
+                  : "클릭하여 직접 입력 · 드래그하여 조절"
         }
         onPointerDown={startScrub(true)}
         onPointerMove={moveScrub}
@@ -809,7 +824,14 @@ function EditableNumberRow({
       ) : (
         labelNode
       )}
-      {inputBox}
+      {leading ? (
+        <div className="ml-auto flex w-[8.75rem] shrink-0 items-center gap-1.5">
+          {leading}
+          {inputBox}
+        </div>
+      ) : (
+        inputBox
+      )}
     </div>
   );
   // 풀스크린 디자인 다이얼로그(z-480) 위에 보이려면 z-520이 필요하다.
@@ -821,6 +843,117 @@ function EditableNumberRow({
         {warningTooltip}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function posteriorBevelHint(side: "설측" | "협측") {
+  return (
+    <>
+      마진에서 {side} 사면이 시작되는 높이입니다.
+      <br />
+      삽입축이 기울어 어벗이 가상 크라운 {side}으로 치우치면 그 쪽을 깎습니다.
+    </>
+  );
+}
+
+/** 설측·협측 사면. 체크하기 전에는 숫자를 보여 주기만 하고 형상에 넣지 않는다. */
+function BevelNumberRow({
+  label,
+  hint,
+  appliedMm,
+  paramMm,
+  suggestedMm,
+  postHeightMm,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  hint: ReactNode;
+  appliedMm: number | null;
+  paramMm: number;
+  suggestedMm: number | null;
+  postHeightMm: number;
+  disabled?: boolean;
+  onCommit: (next: number) => void;
+}) {
+  const cap = Math.max(0.5, Number((postHeightMm - 0.5).toFixed(1)));
+  const raw =
+    suggestedMm != null && suggestedMm >= 0.5 ? suggestedMm : Math.max(0.5, postHeightMm * 0.5);
+  const fallback = Number(Math.min(cap, Math.max(0.5, raw)).toFixed(1));
+  const enabledFromProps = (appliedMm != null && appliedMm > 0) || paramMm >= 0.5;
+  const [pending, setPending] = useState<boolean | null>(null);
+  const enabled = pending ?? enabledFromProps;
+  const [held, setHeld] = useState(() =>
+    appliedMm != null && appliedMm > 0 ? appliedMm : paramMm >= 0.5 ? paramMm : fallback,
+  );
+  const heldRef = useRef(held);
+  const editedRef = useRef(false);
+  const seenAppliedRef = useRef(enabledFromProps);
+  heldRef.current = held;
+
+  useEffect(() => {
+    setPending(null);
+  }, [paramMm, appliedMm]);
+
+  useEffect(() => {
+    if (appliedMm != null && appliedMm > 0) {
+      seenAppliedRef.current = true;
+      heldRef.current = appliedMm;
+      setHeld(appliedMm);
+      return;
+    }
+    if (paramMm >= 0.5) {
+      seenAppliedRef.current = true;
+      heldRef.current = paramMm;
+      setHeld(paramMm);
+      return;
+    }
+    if (!seenAppliedRef.current && !editedRef.current) {
+      heldRef.current = fallback;
+      setHeld(fallback);
+    }
+  }, [appliedMm, paramMm, fallback]);
+
+  const shown = enabled ? (appliedMm != null && appliedMm > 0 ? appliedMm : held) : held;
+
+  return (
+    <EditableNumberRow
+      label={label}
+      hint={hint}
+      value={shown}
+      min={0.5}
+      max={cap}
+      step={0.1}
+      digits={1}
+      suffix="mm"
+      disabled={disabled}
+      inactive={!enabled}
+      leading={
+        <Checkbox
+          checked={enabled}
+          disabled={disabled}
+          aria-label={`${label} 적용`}
+          title={enabled ? `${label} 해제` : `${label} 적용`}
+          onCheckedChange={(state) => {
+            if (disabled) return;
+            if (state === true) {
+              setPending(true);
+              onCommit(heldRef.current);
+            } else {
+              setPending(false);
+              onCommit(0);
+            }
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      }
+      onCommit={(next) => {
+        editedRef.current = true;
+        heldRef.current = next;
+        setHeld(next);
+        if (enabled) onCommit(next);
+      }}
+    />
   );
 }
 
@@ -1671,98 +1804,50 @@ export function PracticeCustomAbutmentDesignTree({
                         </div>
                       );
                     })()}
-                    {m.postLingualBevelMm != null ? (
-                      editable ? (
-                        <EditableNumberRow
-                          label="설측 사면"
-                          hint={
-                            isAnteriorTooth(item.toothNumber) ? (
-                              "마진에서 설측 사면이 시작되는 높이입니다."
-                            ) : (
-                              <>
-                                마진에서 설측 사면이 시작되는 높이입니다.
-                                <br />
-                                삽입축 각도가 크면 잡힙니다.
-                              </>
-                            )
-                          }
-                          value={m.postLingualBevelMm}
-                          min={0.5}
-                          max={Math.max(0.5, Number((m.postHeightMm - 0.5).toFixed(1)))}
-                          step={0.1}
-                          digits={1}
-                          suffix="mm"
-                          disabled={rowDisabled}
-                          onCommit={(v) => onEditField?.(item, "postLingualBevelMm", v)}
-                        />
-                      ) : (
-                        <DetailRow
-                          label="설측 사면"
-                          hint={
-                            isAnteriorTooth(item.toothNumber) ? (
-                              "마진에서 설측 사면이 시작되는 높이입니다."
-                            ) : (
-                              <>
-                                마진에서 설측 사면이 시작되는 높이입니다.
-                                <br />
-                                삽입축 각도가 크면 잡힙니다.
-                              </>
-                            )
-                          }
-                          value={`${cleanNum(m.postLingualBevelMm, 1)}mm`}
-                        />
-                      )
-                    ) : null}
-                    {m.postLabialBevelMm != null ? (
-                      editable ? (
-                        <EditableNumberRow
-                          label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
-                          hint={
-                            isAnteriorTooth(item.toothNumber) ? (
-                              <>
-                                마진에서 순측 사면이 시작되는 높이입니다.
-                                <br />
-                                기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
-                              </>
-                            ) : (
-                              <>
-                                마진에서 협측 사면이 시작되는 높이입니다.
-                                <br />
-                                삽입축 각도가 크면 잡힙니다.
-                              </>
-                            )
-                          }
-                          value={m.postLabialBevelMm}
-                          min={0}
-                          max={Math.max(0, Number((m.postHeightMm - 0.5).toFixed(1)))}
-                          step={0.1}
-                          digits={1}
-                          suffix="mm"
-                          disabled={rowDisabled}
-                          onCommit={(v) => onEditField?.(item, "postLabialBevelMm", v)}
-                        />
-                      ) : (
-                        <DetailRow
-                          label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
-                          hint={
-                            isAnteriorTooth(item.toothNumber) ? (
-                              <>
-                                마진에서 순측 사면이 시작되는 높이입니다.
-                                <br />
-                                기본은 0이고, 절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
-                              </>
-                            ) : (
-                              <>
-                                마진에서 협측 사면이 시작되는 높이입니다.
-                                <br />
-                                삽입축 각도가 크면 잡힙니다.
-                              </>
-                            )
-                          }
-                          value={`${cleanNum(m.postLabialBevelMm, 1)}mm`}
-                        />
-                      )
-                    ) : null}
+                    <BevelNumberRow
+                      label="설측 사면"
+                      hint={
+                        isAnteriorTooth(item.toothNumber) ? (
+                          "마진에서 설측 사면이 시작되는 높이입니다."
+                        ) : (
+                          posteriorBevelHint("설측")
+                        )
+                      }
+                      appliedMm={
+                        m.postLingualBevelMm != null && m.postLingualBevelMm > 0
+                          ? m.postLingualBevelMm
+                          : null
+                      }
+                      paramMm={item.params.postLingualBevelMm}
+                      suggestedMm={m.suggestedPostLingualBevelMm ?? null}
+                      postHeightMm={m.postHeightMm}
+                      disabled={rowDisabled}
+                      onCommit={(v) => onEditField?.(item, "postLingualBevelMm", v)}
+                    />
+                    <BevelNumberRow
+                      label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
+                      hint={
+                        isAnteriorTooth(item.toothNumber) ? (
+                          <>
+                            마진에서 순측 사면이 시작되는 높이입니다.
+                            <br />
+                            절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
+                          </>
+                        ) : (
+                          posteriorBevelHint("협측")
+                        )
+                      }
+                      appliedMm={
+                        m.postLabialBevelMm != null && m.postLabialBevelMm > 0
+                          ? m.postLabialBevelMm
+                          : null
+                      }
+                      paramMm={item.params.postLabialBevelMm}
+                      suggestedMm={m.suggestedPostLabialBevelMm ?? null}
+                      postHeightMm={m.postHeightMm}
+                      disabled={rowDisabled}
+                      onCommit={(v) => onEditField?.(item, "postLabialBevelMm", v)}
+                    />
                     {m.occlusalClearanceMm != null && editable ? (
                       <EditableNumberRow
                         label="대합 거리"

@@ -117,6 +117,7 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
 test("전치부 설측 사면(마진에서 시작 높이)은 기본 자동(-1), 직접 지정 시 0.5~11.5mm로 맞춘다", () => {
   assert.equal(resolveCustomAbutmentParams("11").postLingualBevelMm, -1);
   assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelMm: -5 }).postLingualBevelMm, -1);
+  assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelMm: 0 }).postLingualBevelMm, 0);
   assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelMm: 0.2 }).postLingualBevelMm, 0.5);
   assert.equal(resolveCustomAbutmentParams("13", { postLingualBevelMm: 3.24 }).postLingualBevelMm, 3.2);
   assert.equal(resolveCustomAbutmentParams("21", { postLingualBevelMm: 20 }).postLingualBevelMm, 11.5);

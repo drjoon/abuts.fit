@@ -383,6 +383,7 @@ function clampParam(key: CustomAbutmentParamKey, v: number) {
   const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key];
   if (key === "postLingualBevelMm") {
     if (v < 0) return -1;
+    if (v === 0) return 0;
     const snapped = Math.round(v / spec.step) * spec.step;
     return Math.min(spec.max, Math.max(0.5, Number(snapped.toFixed(1))));
   }
