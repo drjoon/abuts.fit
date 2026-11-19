@@ -1510,7 +1510,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     });
     assert.ok(savedAnisoEdit != null && Math.abs(savedAnisoEdit.scale[0] - 1.34) < 1e-6);
 
-    // 대합 거리·포스트 높이·테이퍼·마진 챔퍼 R 개별 수정 시 피니시라인·협설/근원심 폭·최대 직경 불변 검증
+    // 대합 거리·포스트 높이·테이퍼·마진 필레 R 개별 수정 시 피니시라인·협설/근원심 폭·최대 직경 불변 검증
     const distalOpenJaw37 = makeGridSurface(-12, 12, -12, 12, 56, (x, y) => {
       const mesial36 = 7.8 * Math.exp(-((x * x) / 8.5 + ((y - 6.2) * (y - 6.2)) / 1.8));
       // 원심(y < 0)은 스캔바디 근처가 낮고 멀리(y ≈ -5.2)서야 치은 둔덕이 올라오는 지형
@@ -1563,7 +1563,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       params: { occlusalClearanceMm: 1.0, marginFilletRadiusMm: 0.7, postTaperLink: 0, postTaperDeg: 4.0 },
     });
     assert.equal(base37.metrics.maxDiameterMm, clearChanged37.metrics.maxDiameterMm, "대합 거리 변경 시 최대 직경이 변하지 않는다");
-    assert.equal(base37.metrics.maxDiameterMm, filletChanged37.metrics.maxDiameterMm, "마진 챔퍼 R 변경 시 최대 직경이 변하지 않는다");
+    assert.equal(base37.metrics.maxDiameterMm, filletChanged37.metrics.maxDiameterMm, "마진 필레 R 변경 시 최대 직경이 변하지 않는다");
     assert.equal(base37.metrics.maxDiameterMm, taperChanged37.metrics.maxDiameterMm, "테이퍼 변경 시 최대 직경이 변하지 않는다");
     for (let i = 0; i < base37.marginLoopLocal.length; i += 1) {
       assert.ok(

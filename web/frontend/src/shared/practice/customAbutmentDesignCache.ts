@@ -114,7 +114,21 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
-/** 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다. */
+function toothHasSolidBody(tooth: unknown): boolean {
+  if (!tooth || typeof tooth !== "object") return false;
+  const buf = (tooth as { solidBodyLocalPositions?: ArrayBuffer }).solidBodyLocalPositions;
+  return (buf?.byteLength ?? 0) > 0;
+}
+
+function designHasSolidBody(design: { teeth?: readonly unknown[] } | null | undefined): boolean {
+  return (design?.teeth ?? []).some(toothHasSolidBody);
+}
+
+/**
+ * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
+ * 서버 STL은 솔리드(스크류홀·solidBody 없음)라, 로컬에 solidBody가 있으면
+ * publish가 savedAt만 더 늦게 찍어도 로컬을 유지해 화면용 홀을 지킨다.
+ */
 export function preferFresherCustomAbutmentDesign<
   T extends { savedAt?: number; teeth?: readonly unknown[] },
 >(local: T | null, server: T | null): T | null {
@@ -122,6 +136,7 @@ export function preferFresherCustomAbutmentDesign<
   const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
   if (localCount === 0) return serverCount > 0 ? server : null;
   if (serverCount === 0 || !server) return local;
+  if (designHasSolidBody(local) && !designHasSolidBody(server)) return local;
   const localAt = Number(local?.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
   return serverAt > localAt ? server : local;

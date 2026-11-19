@@ -804,12 +804,14 @@ function findScrewMouthSurfaceZ(positions: Float32Array): number | null {
 /**
  * 디자인 화면용으로 막힌 솔리드에 스크류 채널을 연다.
  * 이미 열려 있으면 같은 배열을 돌려준다. 저장 STL은 이 결과를 쓰지 않는다.
+ * `force`는 서버 솔리드처럼 solidBody 없이 복원할 때 휴리스틱 오판을 피하려고 쓴다.
  */
 export async function openScrewChannelForView(
   positions: Float32Array,
   fixture: MatchedScanbodyFixture,
+  options?: { force?: boolean },
 ): Promise<Float32Array> {
-  if (!abutmentTopLooksClosed(positions)) return positions;
+  if (!options?.force && !abutmentTopLooksClosed(positions)) return positions;
   const conn = fixture.connectionSpec;
   const l2 = conn?.l2Mm ?? 2.75;
   let zTop = -Infinity;
@@ -7394,7 +7396,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       };
 
       if (!lockBasePass && lockedPosteriorBase) {
-        // 대합 거리·포스트 높이·마진 챔퍼 R을 바꿔도 마진 외경이 흔들리지 않도록 베이스 단면을 먼저 고정한다.
+        // 대합 거리·포스트 높이·마진 필레 R을 바꿔도 마진 외경이 흔들리지 않도록 베이스 단면을 먼저 고정한다.
         // 편측 테이퍼는 상단을 좁혀 맞춘다. 스크류 벽이 상단을 더 못 좁히면 그 각도만큼 베이스와 마진을 함께 넓힌다.
         pSecCu = lockedPosteriorBase.pSecCu;
         pSecCv = lockedPosteriorBase.pSecCv;
