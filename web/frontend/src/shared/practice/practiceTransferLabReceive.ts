@@ -1142,7 +1142,15 @@ export function resolvePracticeLabReceiveWorkActionState(
     enrichedTransfer,
     catalog,
   );
+  // 치과 플랫폼 확정본은 designFiles로 이미 넘어오므로 어벗 STL 업로드 CTA를 두지 않는다.
+  const platformAbutmentDesignHandedOff =
+    Boolean(
+      String(enrichedTransfer.production?.practiceDesignConfirmedAt || "").trim(),
+    ) &&
+    String(enrichedTransfer.production?.abutmentFeeRoute || "").trim() ===
+      "platform";
   const needsMoreAbutmentDesigns =
+    !platformAbutmentDesignHandedOff &&
     practiceTransferNeedsMoreAbutmentDesigns(enrichedTransfer, catalog);
   const expectedAbutment =
     countPracticeTransferExpectedAbutmentDesigns(enrichedTransfer, catalog);

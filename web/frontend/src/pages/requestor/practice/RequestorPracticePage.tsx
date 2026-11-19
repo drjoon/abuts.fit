@@ -5578,8 +5578,8 @@ export function RequestorPracticeReceivePage({
               ? (res.data as Record<string, unknown>)
               : {};
           toast({
-            title: "디자인 확인 실패",
-            description: String(body.message || "어벗 디자인 확인 중 오류가 발생했습니다."),
+            title: "디자인 확정 실패",
+            description: String(body.message || "어벗 디자인 확정 중 오류가 발생했습니다."),
             variant: "destructive",
           });
           return false;
@@ -5645,18 +5645,18 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: "어벗 디자인 확인",
+          title: "디자인 확정",
           description: data.abutmentProductionStarted
-            ? "디자인을 확인했습니다. 어벗츠 생산이 시작됩니다."
+            ? "제조사에 실물 생산을 의뢰했습니다. 어벗츠 생산이 시작됩니다."
             : data.awaitingPracticeDesignConfirm
-              ? "디자인을 확인했습니다. 치과 컨펌 후 생산이 시작됩니다."
-              : "디자인을 확인했습니다.",
+              ? "디자인을 확정했습니다. 치과 컨펌 후 생산이 시작됩니다."
+              : "제조사에 실물 어벗 생산을 의뢰했습니다.",
         });
         return true;
       } catch {
         toast({
-          title: "디자인 확인 실패",
-          description: "어벗 디자인 확인 요청 중 오류가 발생했습니다.",
+          title: "디자인 확정 실패",
+          description: "어벗 디자인 확정 요청 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return false;
@@ -11388,34 +11388,54 @@ export function RequestorPracticeReceivePage({
                     (row) => row.customAbutment,
                   ) ? (
                     <>
-                      <PracticeCustomAbutmentPreviewButton
-                        viewerRole="lab"
-                        authToken={token}
-                        toothWorks={selectedTransferToothWorks}
-                        files={[]}
-                        onOpen={() => {
-                          const id = String(
-                            selectedTransfer.transferId || "",
-                          ).trim();
-                          const idx = labDesignReviewTransfers.findIndex(
-                            (row) =>
-                              String(row.transferId || "").trim() === id,
+                      {(() => {
+                        const labAbutmentDesignReady =
+                          Boolean(
+                            selectedTransfer.production
+                              ?.practiceDesignConfirmedAt,
+                          ) ||
+                          Boolean(
+                            selectedTransfer.production
+                              ?.customAbutmentManualDesign,
                           );
-                          if (idx >= 0) {
-                            void openLabAbutmentDesign(
-                              labDesignReviewTransfers,
-                              idx,
-                              true,
-                            );
-                            return;
-                          }
-                          void openLabAbutmentDesign(
-                            [selectedTransfer],
-                            0,
-                            false,
-                          );
-                        }}
-                      />
+                        return (
+                          <PracticeCustomAbutmentPreviewButton
+                            viewerRole="lab"
+                            authToken={token}
+                            toothWorks={selectedTransferToothWorks}
+                            files={[]}
+                            disabled={!labAbutmentDesignReady}
+                            title={
+                              labAbutmentDesignReady
+                                ? undefined
+                                : "치과 디자인 확정 후 검토할 수 있습니다."
+                            }
+                            onOpen={() => {
+                              if (!labAbutmentDesignReady) return;
+                              const id = String(
+                                selectedTransfer.transferId || "",
+                              ).trim();
+                              const idx = labDesignReviewTransfers.findIndex(
+                                (row) =>
+                                  String(row.transferId || "").trim() === id,
+                              );
+                              if (idx >= 0) {
+                                void openLabAbutmentDesign(
+                                  labDesignReviewTransfers,
+                                  idx,
+                                  true,
+                                );
+                                return;
+                              }
+                              void openLabAbutmentDesign(
+                                [selectedTransfer],
+                                0,
+                                false,
+                              );
+                            }}
+                          />
+                        );
+                      })()}
                       {selectedTransfer.production
                         ?.customAbutmentManualDesign ? (
                         <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
@@ -11430,7 +11450,11 @@ export function RequestorPracticeReceivePage({
                         <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
                           치과 확정 디자인
                         </span>
-                      ) : null}
+                      ) : (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+                          치과 확정 대기
+                        </span>
+                      )}
                     </>
                   ) : null}
                 </div>
@@ -11490,7 +11514,7 @@ export function RequestorPracticeReceivePage({
                 preferredAbutmentShipBeforeArrivalBusinessDays
               }
               onDesignConfirm={() => {
-                void confirmAbutmentDesign(selectedTransfer);
+                void openLabAbutmentDesign([selectedTransfer], 0, false);
               }}
             />
           );

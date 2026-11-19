@@ -71,7 +71,8 @@ export function isPtxAbutmentManualOrder(
 
 /**
  * 기공소 「어벗 검토」.
- * 치과가 디자인을 확정했고, 수작업이 아니며, 기공소가 아직 확인하지 않은 자기 수행 건.
+ * 치과가 디자인을 확정했고, 수작업이 아니며, 기공소가 아직 디자인 확정하지 않은 자기 수행 건.
+ * 플랫폼 확정본은 designFiles가 이미 있어도 검토 대상으로 둔다(제조 진입은 기공소 확정 후).
  */
 export function isPtxAbutmentDesignReviewForLab(
   input: AbutmentDesignAwaitingInput | null | undefined,
@@ -82,7 +83,5 @@ export function isPtxAbutmentDesignReviewForLab(
   if (input.manualRequested) return false;
   if (!String(input.practiceDesignConfirmedAt || "").trim()) return false;
   if (String(input.labDesignConfirmedAt || "").trim()) return false;
-  if (String(input.designReadyAt || "").trim()) return false;
-  if (Math.max(0, Number(input.designFileCount || 0)) > 0) return false;
   return true;
 }

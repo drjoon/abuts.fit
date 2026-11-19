@@ -6,7 +6,10 @@ import { purgeStalePracticeTransferDrafts } from "../../utils/practiceTransferDr
 import File from "../../models/file.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { emitAppEventToUser } from "../../socket.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
+import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
+import { resolvePrcFileNames } from "../requests/prcMapping.utils.js";
 import {
   getRequestPerfCacheValue,
   setRequestPerfCacheValue,
@@ -260,6 +263,7 @@ import {
   restorePracticeTransferRequestFiles,
   tryStartAbutmentProduction,
   practiceTransferNeedsMoreAbutmentDesigns,
+  promotePlatformAbutmentDesignsToManufacturerReady,
 } from "../../services/practiceTransferProduction.service.js";
 import {
   isLabProsthesisUploadRequired,
@@ -12043,6 +12047,20 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       );
     }
 
+    // 치과 플랫폼 확정본 → 제조사 준비·Rhino (기공소 디자인 확정 시점)
+    let promoted = [];
+    try {
+      promoted = await promotePlatformAbutmentDesignsToManufacturerReady({
+        transferDoc: doc,
+        actorUserId: req.user?._id || null,
+      });
+    } catch (promoteErr) {
+      console.warn(
+        "[practiceTransfer] promote platform design to manufacturer failed",
+        promoteErr?.message || promoteErr,
+      );
+    }
+
     const productionStarting = canStartAbutmentProduction(doc);
     const fresh = await PracticeTransfer.findById(doc._id);
     const realtimePayload = {
@@ -12070,6 +12088,80 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       payload: realtimePayload,
     });
 
+    res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        production: toProductionApiFields(fresh?.production || doc.production),
+        abutmentProductionStarted: false,
+        abutmentProductionStarting: productionStarting,
+        manufacturerReadyPromoted: promoted.length,
+        awaitingPracticeDesignConfirm:
+          (fresh?.production || doc.production)?.skipDesignConfirm === false &&
+          !(fresh?.production || doc.production)?.practiceDesignConfirmedAt,
+      },
+    });
+
+    void (async () => {
+      for (const row of promoted) {
+        try {
+          if (row.mongoId && Types.ObjectId.isValid(row.mongoId)) {
+            const reqDoc = await Request.findById(row.mongoId)
+              .select({ caseInfos: 1 })
+              .lean();
+            if (reqDoc?.caseInfos) {
+              const prc = await resolvePrcFileNames(reqDoc.caseInfos);
+              const $set = {};
+              if (prc.faceHolePrcFileName) {
+                $set["caseInfos.faceHolePrcFileName"] = prc.faceHolePrcFileName;
+              }
+              if (prc.connectionPrcFileName) {
+                $set["caseInfos.connectionPrcFileName"] = prc.connectionPrcFileName;
+              }
+              if (Object.keys($set).length > 0) {
+                await Request.updateOne({ _id: row.mongoId }, { $set });
+              }
+            }
+          }
+          if (row.rhinoName && row.requestId) {
+            triggerRhinoProcessFileForRequest({
+              requestId: row.requestId,
+              filePath: row.rhinoName,
+              fileName: row.rhinoName,
+            });
+          }
+        } catch (err) {
+          console.warn(
+            "[practiceTransfer] lab confirm rhino trigger failed",
+            err?.message || err,
+          );
+        }
+      }
+      if (promoted.length > 0) {
+        try {
+          scheduleRequestReadyBadgeEmit();
+          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:updated", {
+            source: "lab-confirm-custom-abutment",
+            transferId: String(doc.transferId || "").trim(),
+          });
+        } catch (err) {
+          console.warn(
+            "[practiceTransfer] lab confirm worksheet emit failed",
+            err?.message || err,
+          );
+        }
+      }
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: doc._id,
+        senderUserId: req.user?._id,
+        content:
+          "기공소가 어벗 디자인을 확정하여 제조사에 실물 생산을 의뢰했습니다.",
+        systemEvent: "custom_abutment_lab_confirmed",
+      }).catch((err) =>
+        console.warn("[practiceTransfer] lab confirm chat failed", err),
+      );
+    })();
+
     if (productionStarting) {
       startAbutmentProductionInBackground({
         transferDoc: fresh || doc,
@@ -12079,19 +12171,6 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
         extraPracticeUserIds: [doc.practiceUserId],
       });
     }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        transferId: String(doc.transferId || "").trim(),
-        production: toProductionApiFields(fresh?.production || doc.production),
-        abutmentProductionStarted: false,
-        abutmentProductionStarting: productionStarting,
-        awaitingPracticeDesignConfirm:
-          (fresh?.production || doc.production)?.skipDesignConfirm === false &&
-          !(fresh?.production || doc.production)?.practiceDesignConfirmedAt,
-      },
-    });
   } catch (error) {
     return res.status(500).json({
       success: false,

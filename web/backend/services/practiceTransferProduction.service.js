@@ -106,7 +106,13 @@ import {
   toKstYmd,
   normalizeKoreanBusinessDay,
   computePriceForRequest,
+  ensureLotNumberOnReadyEnter,
 } from "../controllers/requests/utils.js";
+import {
+  clearMachiningBind,
+  currentDesignRoute,
+  DESIGN_ROUTE_PLATFORM,
+} from "./abutmentDesignRoute.js";
 import {
   calculateInitialProductionSchedule,
   resolveNormalParcelEstimatedShipYmdKst,
@@ -2886,6 +2892,95 @@ export function canStartAbutmentProduction(transferDoc) {
     transferDoc?.production?.practiceDesignConfirmedAt ||
       transferDoc?.production?.confirmedAt,
   );
+}
+
+function buildPlatformRhinoFileName(requestDoc) {
+  const requestId = String(requestDoc?.requestId || "").trim();
+  const ci = requestDoc?.caseInfos || {};
+  const original = String(ci?.file?.filePath || ci?.file?.originalName || "").trim();
+  const ext = original.includes(".")
+    ? `.${original.split(".").pop()?.toLowerCase() || "stl"}`
+    : ".stl";
+  if (!requestId) return original || "";
+  return `${requestId}-${String(ci.clinicName || "").trim()}-${String(ci.patientName || "").trim()}-${String(ci.tooth || "").trim()}${ext}`;
+}
+
+/**
+ * 기공소 「디자인 확정」: 치과가 넘긴 플랫폼 확정본을 제조사 준비 큐에 올린다.
+ * 치과 확정만으로는 designCompletedAt/Rhino를 열지 않는다.
+ * @returns {Promise<Array<{ requestId: string, rhinoName: string }>>}
+ */
+export async function promotePlatformAbutmentDesignsToManufacturerReady({
+  transferDoc,
+  actorUserId = null,
+}) {
+  const relatedIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
+    ? transferDoc.production.relatedRequestIds
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id))
+    : [];
+  if (relatedIds.length === 0) return [];
+
+  const requestDocs = await Request.find({ _id: { $in: relatedIds } });
+  const now = new Date();
+  const actorOid =
+    actorUserId && Types.ObjectId.isValid(String(actorUserId))
+      ? new Types.ObjectId(String(actorUserId))
+      : null;
+  const promoted = [];
+
+  for (const reqDoc of requestDocs) {
+    const route = currentDesignRoute(reqDoc);
+    const practiceAi =
+      reqDoc?.partnerBilling?.practiceConfirmedAiDesign === true;
+    if (route !== DESIGN_ROUTE_PLATFORM && !practiceAi) continue;
+
+    const fileKey = String(reqDoc?.caseInfos?.file?.s3Key || "").trim();
+    if (!fileKey) continue;
+
+    const stage = String(reqDoc.manufacturerStage || "").trim();
+    if (stage && stage !== "준비" && stage !== "취소") continue;
+
+    if (!reqDoc.caseInfos) reqDoc.caseInfos = {};
+    if (!reqDoc.partnerBilling) reqDoc.partnerBilling = {};
+    reqDoc.partnerBilling.practiceConfirmedAiDesign = true;
+    reqDoc.caseInfos.designRoute = DESIGN_ROUTE_PLATFORM;
+
+    const alreadyReady = Boolean(reqDoc.designCompletedAt);
+    if (!alreadyReady) {
+      reqDoc.designCompletedAt = now;
+      if (actorOid) reqDoc.designCompletedBy = actorOid;
+    }
+
+    reqDoc.manufacturerStage = "준비";
+    await ensureLotNumberOnReadyEnter(reqDoc);
+
+    const rhinoName = buildPlatformRhinoFileName(reqDoc);
+    if (rhinoName && reqDoc.caseInfos.file) {
+      reqDoc.caseInfos.file.filePath = rhinoName;
+      if (!alreadyReady) {
+        if (!reqDoc.productionSchedule) reqDoc.productionSchedule = {};
+        reqDoc.productionSchedule.stlPreload = {
+          status: "GENERATING",
+          updatedAt: now,
+        };
+      }
+    }
+    if (!alreadyReady) {
+      clearMachiningBind(reqDoc);
+    }
+    await reqDoc.save();
+    if (!alreadyReady && rhinoName) {
+      promoted.push({
+        requestId: String(reqDoc.requestId || "").trim(),
+        rhinoName,
+        mongoId: String(reqDoc._id || "").trim(),
+      });
+    }
+  }
+
+  return promoted;
 }
 
 const invokeMachiningApproval = (requestId, actorUserId) =>

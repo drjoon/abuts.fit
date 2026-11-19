@@ -466,12 +466,16 @@ export function PracticeLabReceiveWorkActionsBar({
       <p className="text-xs leading-relaxed text-muted-foreground">
         {platformCheckPassed ? (
           <>
-            확인 기한이 지났습니다.
+            확정 기한이 지났습니다.
             <br />
-            지금 확인해도 의뢰자 취소는 닫혀 있습니다.
+            지금 확정해도 의뢰자 취소는 닫혀 있습니다.
           </>
         ) : (
-          <>{platformCheckLabel}까지 확인해 주세요.</>
+          <>
+            {platformCheckLabel}까지 검토해 주세요.
+            <br />
+            디자인 확정하면 제조로 넘어갑니다.
+          </>
         )}
       </p>
     ) : null;
@@ -489,7 +493,7 @@ export function PracticeLabReceiveWorkActionsBar({
           onDesignConfirm();
         }}
       >
-        {designConfirmBusy ? "확인 중..." : "어벗 디자인 확인"}
+        {designConfirmBusy ? "확정 중..." : "디자인 확정"}
       </Button>
     ) : null;
 

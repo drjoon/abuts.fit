@@ -31,8 +31,7 @@ import {
   releaseAbutmentDesignHandoffLock,
   stampPracticeTransferFileBatch,
 } from "../../services/practiceTransferProduction.service.js";
-import { scheduleRequestReadyBadgeEmit } from "../../services/adminCommBadge.service.js";
-import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
+import { emitAppEventToUser } from "../../socket.js";
 import { clearFilledStlFileOnCaseInfos } from "../../utils/filledStlFile.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
@@ -57,8 +56,6 @@ import {
   sanitizeWorkFilePaintView,
 } from "../../utils/workFilePaint.js";
 import { resolvePrcFileNames } from "../requests/prcMapping.utils.js";
-import { ensureLotNumberOnReadyEnter } from "../requests/utils.js";
-import { triggerRhinoProcessFileForRequest } from "../rhino/rhino.controller.js";
 
 const MODEL = "gemini-3.5-flash-lite";
 const MAX_OUTPUT_TOKENS = 600;
@@ -880,8 +877,9 @@ function buildConfirmedRhinoFileName(requestDoc) {
 }
 
 /**
- * 치과 「확정 & 의뢰」: 현재 커스텀어벗 디자인 STL을 확정하여
- * 제조사 준비 큐(Request)를 즉시 등록하고 기공소 PTX(designFiles)에 미러한다.
+ * 치과 「디자인 확정」: 커스텀어벗 STL을 Request·PTX(designFiles)에 미러하고
+ * 기공소 검토로 넘긴다. 제조사 준비·Rhino는 기공소 「디자인 확정」에서 연다.
+ * 기공소 labRevision은 같은 API로 수정 STL만 반영한다(제조 진입은 confirm-abutment-design).
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
  */
@@ -1021,14 +1019,13 @@ export async function confirmCustomAbutmentDesign(req, res) {
         clearFilledStlFileOnCaseInfos(reqDoc.caseInfos);
         reqDoc.caseInfos.ncFile = undefined;
 
+        // 제조 진입(designCompletedAt·준비·Rhino)은 기공소 디자인 확정까지 미룬다.
+        // filePath는 나중에 Rhino용으로 맞춰 두되, stlPreload/worksheet는 열지 않는다.
         const rhinoName = buildConfirmedRhinoFileName(reqDoc);
         if (rhinoName && reqDoc.caseInfos.file) {
           reqDoc.caseInfos.file.filePath = rhinoName;
         }
 
-        reqDoc.designCompletedBy = userOid;
-        reqDoc.designCompletedAt = now;
-        reqDoc.manufacturerStage = "준비";
         reqDoc.partnerBilling = {
           ...(reqDoc.partnerBilling && typeof reqDoc.partnerBilling === "object"
             ? reqDoc.partnerBilling.toObject?.() || reqDoc.partnerBilling
@@ -1036,14 +1033,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
           practiceConfirmedAiDesign: true,
           billingDeferred: true,
         };
-        await ensureLotNumberOnReadyEnter(reqDoc);
-        if (rhinoName) {
-          if (!reqDoc.productionSchedule) reqDoc.productionSchedule = {};
-          reqDoc.productionSchedule.stlPreload = {
-            status: "GENERATING",
-            updatedAt: now,
-          };
-        }
         clearMachiningBind(reqDoc);
         await reqDoc.save();
         updatedRequests.push({ reqDoc, rhinoName });
@@ -1096,13 +1085,13 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const productionSet = {
         "production.designFiles": mergedDesignFiles,
         "production.designReadyAt": now,
-        "production.practiceDesignConfirmedAt": now,
-        "production.practiceDesignConfirmedBy": userOid,
-        "production.confirmedAt": now,
-        "production.confirmedBy": userOid,
         "production.customAbutmentPreview": nextPreview,
       };
       if (!labRevision) {
+        productionSet["production.practiceDesignConfirmedAt"] = now;
+        productionSet["production.practiceDesignConfirmedBy"] = userOid;
+        productionSet["production.confirmedAt"] = now;
+        productionSet["production.confirmedBy"] = userOid;
         productionSet["production.abutmentFeeRoute"] = "platform";
         productionSet["production.abutmentFeeRouteRevision"] = feeRevision;
         if (cancelDeadlineAt) {
@@ -1150,7 +1139,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
     });
 
     void (async () => {
-      for (const { reqDoc, rhinoName } of updatedRequests) {
+      for (const { reqDoc } of updatedRequests) {
         try {
           const prc = await resolvePrcFileNames(reqDoc.caseInfos);
           const $set = {};
@@ -1163,38 +1152,26 @@ export async function confirmCustomAbutmentDesign(req, res) {
           if (Object.keys($set).length > 0) {
             await Request.updateOne({ _id: reqDoc._id }, { $set });
           }
-          if (rhinoName) {
-            triggerRhinoProcessFileForRequest({
-              requestId: reqDoc.requestId,
-              filePath: rhinoName,
-              fileName: rhinoName,
-            });
-          }
         } catch (err) {
-          console.warn("[AI] confirm rhino trigger failed", err?.message || err);
-        }
-      }
-      if (updatedRequests.length > 0) {
-        try {
-          scheduleRequestReadyBadgeEmit();
-          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:updated", {
-            source: "practice-confirm-custom-abutment",
-            transferId,
-          });
-        } catch (err) {
-          console.warn("[AI] confirm worksheet emit failed", err?.message || err);
+          console.warn("[AI] confirm prc seed failed", err?.message || err);
         }
       }
       const toothListText = validTeeth.map((t) => `#${t.toothNumber}`).join(", ");
+      const chatContent = labRevision
+        ? `기공소가 커스텀어벗 디자인(${toothListText})을 수정 반영했습니다.`
+        : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다. 수행 기공소가 검토·수정한 뒤 제조에 넘깁니다.`;
       void postPracticeTransferSystemChatMessage({
         transferMongoId: transferDoc._id,
         senderUserId: req.user?._id,
-        content: `치과가 커스텀어벗 디자인(${toothListText})을 확정하여 생산을 의뢰했습니다.`,
-        systemEvent: "custom_abutment_confirmed",
+        content: chatContent,
+        systemEvent: labRevision
+          ? "custom_abutment_lab_revised"
+          : "custom_abutment_confirmed",
       }).catch((err) => console.warn("[AI] confirm system chat failed", err));
-      void emitCustomAbutmentTransferEvent(transferDoc, "abutment-design-confirmed").catch(
-        (err) => console.warn("[AI] confirm transfer emit failed", err),
-      );
+      void emitCustomAbutmentTransferEvent(
+        transferDoc,
+        labRevision ? "abutment-design-lab-revised" : "abutment-design-confirmed",
+      ).catch((err) => console.warn("[AI] confirm transfer emit failed", err));
     })();
   } catch (error) {
     console.error("[AI] confirmCustomAbutmentDesign error", error);
