@@ -38,6 +38,8 @@ export type PlatformIconKey =
   | "request"
   | "start"
   | "design"
+  | "abutment"
+  | "quality"
   | "ship"
   | "custom"
   | "store"

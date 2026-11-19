@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-19: pipeline 아이콘 abutment·quality 맵 누락으로 크래시 — Box·ShieldCheck 추가.
 // - 2026-10-11: 랜딩에 붙을 때는 헤더 여백을 빼고, 어벗츠기공소 링크는 같은 페이지 앵커로 스크롤.
 // - 2026-10-06: 월말 과오입금 카톡 사례 섹션(PlatformSettlementCase).
 // - 2026-10-05: FAQ — `/`·기공소와 같은 좌측 제목 + 카드 아코디언.
@@ -16,6 +17,7 @@ import type { CSSProperties } from "react";
 import {
   ArrowRight,
   BadgeCheck,
+  Box,
   Building2,
   Check,
   Cpu,
@@ -32,6 +34,7 @@ import {
   Receipt,
   RotateCcw,
   Activity,
+  ShieldCheck,
   Store,
   Truck,
   Users,
@@ -85,6 +88,8 @@ const ICONS: Record<PlatformIconKey, typeof Eye> = {
   request: FileText,
   start: Play,
   design: PenTool,
+  abutment: Box,
+  quality: ShieldCheck,
   ship: Truck,
   custom: Link2,
   store: Store,
