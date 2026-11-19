@@ -11548,9 +11548,6 @@ export function RequestorPracticeReceivePage({
               preferredAbutmentShipBeforeArrivalBusinessDays={
                 preferredAbutmentShipBeforeArrivalBusinessDays
               }
-              onDesignConfirm={() => {
-                void openLabAbutmentDesign([selectedTransfer], 0, false);
-              }}
             />
           );
         }}

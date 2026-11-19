@@ -968,20 +968,16 @@ export async function confirmCustomAbutmentDesign(req, res) {
         productionTargets.push({ toothRow, reqDoc });
       }
 
-      const productionTeeth = [];
-      for (const { toothRow, reqDoc } of productionTargets) {
-        const generation = newDesignGeneration();
-        const destKey = platformProductionKey(reqDoc.requestId, generation);
-        await copyObjectInS3(toothRow.s3Key, destKey);
-        productionTeeth.push({
-          toothRow,
-          reqDoc,
-          generation,
-          destKey,
-        });
-      }
+      const productionTeeth = await Promise.all(
+        productionTargets.map(async ({ toothRow, reqDoc }) => {
+          const generation = newDesignGeneration();
+          const destKey = platformProductionKey(reqDoc.requestId, generation);
+          await copyObjectInS3(toothRow.s3Key, destKey);
+          return { toothRow, reqDoc, generation, destKey };
+        }),
+      );
 
-      for (const { toothRow, reqDoc, generation, destKey } of productionTeeth) {
+      await Promise.all(productionTeeth.map(async ({ toothRow, reqDoc, generation, destKey }) => {
         if (!reqDoc.caseInfos) reqDoc.caseInfos = {};
         if (!reqDoc.rnd) reqDoc.rnd = {};
 
@@ -1036,7 +1032,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         clearMachiningBind(reqDoc);
         await reqDoc.save();
         updatedRequests.push({ reqDoc, processFileName });
-      }
+      }));
 
       const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)
         ? transferDoc.production.designFiles
@@ -1118,12 +1114,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
     } finally {
       await releaseAbutmentDesignHandoffLock(transferDoc._id);
     }
-    if (!labRevision) {
-      await syncPracticeTransferAbutmentFeeRoute({
-        transfer: transferDoc,
-        actorUserId: userId,
-      });
-    }
 
     res.json({
       success: true,
@@ -1139,6 +1129,16 @@ export async function confirmCustomAbutmentDesign(req, res) {
     });
 
     void (async () => {
+      if (!labRevision) {
+        try {
+          await syncPracticeTransferAbutmentFeeRoute({
+            transfer: transferDoc,
+            actorUserId: userId,
+          });
+        } catch (err) {
+          console.warn("[AI] confirm fee sync failed", err?.message || err);
+        }
+      }
       for (const { reqDoc } of updatedRequests) {
         try {
           const prc = await resolvePrcFileNames(reqDoc.caseInfos);

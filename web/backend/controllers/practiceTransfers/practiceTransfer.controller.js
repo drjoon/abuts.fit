@@ -12075,47 +12075,54 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
     }
 
     const productionStarting = canStartAbutmentProduction(doc);
-    const fresh = await PracticeTransfer.findById(doc._id);
+    const productionFields = toProductionApiFields(doc.production);
     const realtimePayload = {
       action: "abutment-design-confirmed",
       transferId: String(doc.transferId || "").trim(),
       transferMongoId: String(doc._id || "").trim(),
       targetLabAnchorId: labAnchorId,
       practiceUserId: String(doc.practiceUserId || "").trim() || null,
-      production: toProductionApiFields(fresh?.production || doc.production),
+      production: productionFields,
       abutmentProductionStarted: false,
       abutmentProductionStarting: productionStarting,
-      updatedAt: fresh?.updatedAt || now,
+      updatedAt: doc.updatedAt || now,
     };
-
-    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    await emitPracticeTransferEventToPracticeUsers({
-      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-      extraUserIds: [doc.practiceUserId],
-    });
-    await emitPracticeTransferEventToRequestorUsers({
-      targetLabAnchorId: labAnchorId,
-      type: "practice:transfer-updated",
-      payload: realtimePayload,
-    });
 
     res.status(200).json({
       success: true,
       data: {
         transferId: String(doc.transferId || "").trim(),
-        production: toProductionApiFields(fresh?.production || doc.production),
+        production: productionFields,
         abutmentProductionStarted: false,
         abutmentProductionStarting: productionStarting,
         manufacturerReadyPromoted: promoted.length,
         awaitingPracticeDesignConfirm:
-          (fresh?.production || doc.production)?.skipDesignConfirm === false &&
-          !(fresh?.production || doc.production)?.practiceDesignConfirmedAt,
+          doc.production?.skipDesignConfirm === false &&
+          !doc.production?.practiceDesignConfirmedAt,
       },
     });
 
     void (async () => {
+      try {
+        emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+        await emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+          extraUserIds: [doc.practiceUserId],
+        });
+        await emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: labAnchorId,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        });
+      } catch (err) {
+        console.warn(
+          "[practiceTransfer] lab confirm realtime emit failed",
+          err?.message || err,
+        );
+      }
+
       for (const row of promoted) {
         try {
           if (row.mongoId && Types.ObjectId.isValid(row.mongoId)) {
@@ -12181,7 +12188,7 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
 
     if (productionStarting) {
       startAbutmentProductionInBackground({
-        transferDoc: fresh || doc,
+        transferDoc: doc,
         actorUserId: req.user?._id || null,
         action: "abutment-production-started",
         labAnchorId,

@@ -68,6 +68,9 @@ export type CachedCustomAbutmentTooth = {
   crownLocalPositions: ArrayBuffer;
   marginLoopLocal: ArrayBuffer;
   enameloplastyLocalPositions?: ArrayBuffer;
+  /** 서버 프리뷰 STL. 형상을 안 바꿨으면 확정 때 다시 올리지 않는다. */
+  sourceS3Key?: string;
+  sourceCrownS3Key?: string;
 };
 
 /** 바이트 정렬로 옮긴 스캔 정점. 다시 열 때 정렬을 건너뛴다. */
@@ -605,6 +608,7 @@ export async function fetchCustomAbutmentSnapshot(
         crownLocalPositions,
         marginLoopLocal,
         ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
+        ...(s3Key ? { sourceS3Key: s3Key, sourceCrownS3Key: crownKey } : {}),
       });
     }
     if (teeth.length === 0) {
@@ -770,6 +774,32 @@ export async function saveCustomAbutmentDesignPaintRemote(
   return res.ok;
 }
 
+function uploadedToothFromExisting(
+  row: CustomAbutmentSnapshotUploadTooth,
+  existing: { s3Key: string; crownS3Key?: string },
+): UploadedCustomAbutmentSnapshotTooth {
+  const enameloplastyLocal =
+    row.enameloplastyLocalPositions && row.enameloplastyLocalPositions.length >= 9
+      ? bytesToBase64(toArrayBuffer(row.enameloplastyLocalPositions))
+      : undefined;
+  return {
+    toothNumber: row.toothNumber,
+    fileName: row.fileName || `#${row.toothNumber}.stl`,
+    fixture: row.fixture,
+    overrides: row.overrides,
+    params: row.params,
+    metrics: row.metrics,
+    ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
+    ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
+    ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
+    s3Key: existing.s3Key,
+    crownS3Key: existing.crownS3Key || "",
+    size: row.stlBlob.size,
+    marginLoopLocal: bytesToBase64(toArrayBuffer(row.marginLoopLocal)),
+    ...(enameloplastyLocal ? { enameloplastyLocal } : {}),
+  };
+}
+
 export async function confirmCustomAbutmentDesignRemote(
   token: string,
   transferId: string,
@@ -778,11 +808,20 @@ export async function confirmCustomAbutmentDesignRemote(
     version: number;
     fitVersion: number;
     teeth: readonly CustomAbutmentSnapshotUploadTooth[];
+    /** 서버에 이미 있는 프리뷰 STL. 있으면 바이트를 다시 올리지 않는다. */
+    existingS3?: Readonly<Record<string, { s3Key: string; crownS3Key?: string }>>;
   },
 ): Promise<{ ok: boolean; message?: string; cancelDeadlineAt?: string | null }> {
   const id = transferId.trim();
   if (!token || !id) return { ok: false, message: "의뢰 정보가 없습니다." };
-  const teeth = await uploadCustomAbutmentSnapshotTeeth(token, id, payload.teeth);
+  const existing = payload.existingS3;
+  const canReuse =
+    Boolean(existing) &&
+    payload.teeth.length > 0 &&
+    payload.teeth.every((row) => Boolean(existing?.[row.toothNumber]?.s3Key));
+  const teeth = canReuse
+    ? payload.teeth.map((row) => uploadedToothFromExisting(row, existing![row.toothNumber]!))
+    : await uploadCustomAbutmentSnapshotTeeth(token, id, payload.teeth);
   const res = await request<{
     message?: string;
     data?: { cancelDeadlineAt?: string | null };
