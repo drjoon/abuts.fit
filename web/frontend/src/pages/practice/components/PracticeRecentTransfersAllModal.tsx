@@ -1005,8 +1005,8 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      // 어벗(작업완료 필터키) + 디자인 확정 대기 → 디자인 화면에서 하나씩 확정.
-      if (filterKey === "작업완료" && abutmentDesignAwaitingCount > 0) {
+      // 치과 「어벗」=디자인 확정 대기. 클릭 시 디자인 화면에서 하나씩 확정.
+      if (filterKey === "작업완료") {
         openAbutmentDesignReview();
         return;
       }
@@ -1055,7 +1055,6 @@ export function PracticeRecentTransfersAllModal({
       );
     },
     [
-      abutmentDesignAwaitingCount,
       badgeClearedIds,
       badgeQueueTransfers,
       dateKey,
@@ -1069,23 +1068,31 @@ export function PracticeRecentTransfersAllModal({
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
     return PRACTICE_RECENT_STATUS_BADGES.map((item) => {
-      const isAbutment = item.countKey === "abutment";
-      const awaiting = isAbutment && abutmentDesignAwaitingCount > 0;
+      // 치과 「어벗」뱃지 건수 SSOT = 디자인 확정 대기(예전의 CA 업로드·미열람 집계 아님).
+      const isAbutmentReview = item.filter === "작업완료";
+      if (isAbutmentReview) {
+        const awaiting = abutmentDesignAwaitingCount > 0;
+        return {
+          key: item.filter,
+          label: item.label,
+          tone: resolvePracticeStatusFilterBadgeTone(item.filter),
+          count: abutmentDesignAwaitingCount,
+          unreadCount: 0,
+          tooltip:
+            "커스텀어벗 디자인 확정이 필요한 건입니다. 클릭하면 디자인 화면에서 하나씩 확정합니다.",
+          attention: awaiting,
+          attentionClassName: awaiting
+            ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+            : undefined,
+        };
+      }
       return {
         key: item.filter,
         label: item.label,
         tone: resolvePracticeStatusFilterBadgeTone(item.filter),
-        count: awaiting
-          ? abutmentDesignAwaitingCount
-          : statusCounts[item.countKey],
+        count: statusCounts[item.countKey],
         unreadCount: statusUnreadCounts[item.countKey],
-        tooltip: awaiting
-          ? "커스텀어벗 디자인 확정이 필요한 건입니다. 클릭하면 디자인 화면에서 하나씩 확정합니다."
-          : item.tooltip,
-        attention: awaiting,
-        attentionClassName: awaiting
-          ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
-          : undefined,
+        tooltip: item.tooltip,
       };
     });
   }, [abutmentDesignAwaitingCount, statusCounts, statusUnreadCounts]);
