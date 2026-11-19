@@ -765,6 +765,8 @@ type PracticeTransferDetailChatDialogProps = {
   /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
+  /** 치과 어벗·디자인 확정 전 — 작업시작 CTA 비활성 */
+  abutmentDesignBlocksAccept?: boolean;
   /** @deprecated 거절 CTA 제거(2026-09-07). 호환용으로 남겨 둠 */
   rejectBusy?: boolean;
   onReject?: () => void | Promise<void>;
@@ -1014,6 +1016,7 @@ export function PracticeTransferDetailChatDialog({
   abutmentMachiningStarted = false,
   workCancelBlocked = false,
   onAccept,
+  abutmentDesignBlocksAccept = false,
   rejectBusy: _rejectBusy = false,
   onReject: _onReject,
   openSubcontractBusy = false,
@@ -2703,7 +2706,8 @@ export function PracticeTransferDetailChatDialog({
       ? `다시 작업시작 [${remainingLabel}]`
       : "다시 작업시작";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
-  const acceptDisabled = acceptBusy || oralScanBlocksAccept;
+  const acceptDisabled =
+    acceptBusy || oralScanBlocksAccept || abutmentDesignBlocksAccept;
   const canOpenInDesignSoftware =
     Boolean(onOpenInDesignSoftware) &&
     (files.length > 0 ||
@@ -2895,7 +2899,7 @@ export function PracticeTransferDetailChatDialog({
       type="button"
       size="sm"
       onClick={() => void onAccept?.()}
-      disabled={acceptBusy || oralScanBlocksAccept}
+      disabled={acceptBusy || oralScanBlocksAccept || abutmentDesignBlocksAccept}
     >
       {reacceptButtonLabel}
     </Button>

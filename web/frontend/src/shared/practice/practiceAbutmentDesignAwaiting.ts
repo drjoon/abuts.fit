@@ -7,6 +7,9 @@
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// change-log:
+// - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
 export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =
@@ -15,6 +18,20 @@ export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =
 /** 상단 뱃지 키. 상태 필터가 아니라 디자인 화면·채팅으로 바로 연다. */
 export const ABUTMENT_REVIEW_BADGE_KEY = "abutmentReview";
 export const ABUTMENT_ORDER_BADGE_KEY = "abutmentOrder";
+
+/** 기공소 작업시작 — 치과 어벗·디자인 확정 대기 */
+export const LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT =
+  "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업을 시작할 수 있습니다.";
+
+/** 작업시작 전 보철 업로드 요구 안내(모달) */
+export const LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED =
+  "작업시작하면 치과에 확정 기공비가 표시됩니다.";
+export const LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED =
+  "이 치과는 완성 보철 디자인 파일 업로드를 요구합니다.";
+export const LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_SETTLEMENT =
+  "보철 파일을 올리면 작업완료로 처리되고, 보철 기공비 적립이 확정됩니다.";
+export const LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT =
+  "커스텀어벗 기공비는 디자인·생산이 끝난 뒤에 적립됩니다.";
 
 export type AbutmentDesignAwaitingInput = {
   status?: string | null;

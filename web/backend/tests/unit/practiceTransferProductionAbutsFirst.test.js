@@ -7,6 +7,7 @@ import {
   hasOralScanModelFile,
   canStartAbutmentProduction,
   hasCustomAbutmentToothWorks,
+  isPracticeAbutmentDesignAwaitingDentist,
   isAbutmentDesignReady,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
@@ -223,6 +224,29 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
       shouldLockLabOralScanDownload({
         toothWorks: [{ customAbutment: false, toothNumber: "16" }],
         production: {},
+      }),
+    ).toBe(false);
+  });
+
+  test("isPracticeAbutmentDesignAwaitingDentist mirrors FE awaiting gate", () => {
+    const caDoc = {
+      toothWorks: [{ toothNumber: "15", customAbutment: true }],
+      production: { abutmentFeeRoute: "pending" },
+    };
+    expect(isPracticeAbutmentDesignAwaitingDentist(caDoc)).toBe(true);
+    expect(
+      isPracticeAbutmentDesignAwaitingDentist({
+        ...caDoc,
+        production: {
+          ...caDoc.production,
+          practiceDesignConfirmedAt: new Date(),
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isPracticeAbutmentDesignAwaitingDentist({
+        ...caDoc,
+        production: { abutmentFeeRoute: "platform" },
       }),
     ).toBe(false);
   });

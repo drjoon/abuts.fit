@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-19: isPracticeAbutmentDesignAwaitingDentist — 치과 어벗·디자인 확정 전 작업시작 차단(FE SSOT).
 // - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
 // - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
 // - 2026-11-07: ensureAbutmentRequestsForHandoff — 다치아 병렬 handoff 시 생성 락(relatedRequestIds 이중 생성·빈 stub 방지).
@@ -3199,8 +3200,34 @@ function practiceTransferNeedsMoreAbutmentDesigns(doc) {
   return designCount < expected;
 }
 
+const PRACTICE_ABUTMENT_DESIGN_AWAITING_CLOSED = new Set([
+  "취소",
+  "canceled",
+  "deleted",
+  "임시저장",
+  "거부",
+  "작업취소",
+]);
+
+/** FE `isPtxAbutmentDesignAwaitingDentist`와 동일 — 치과가 어벗 경로·디자인을 아직 확정하지 않음 */
+function isPracticeAbutmentDesignAwaitingDentist(doc) {
+  if (!hasCustomAbutmentToothWorks(doc?.toothWorks)) return false;
+  const status = String(doc?.manufacturerStage || doc?.status || "").trim();
+  if (PRACTICE_ABUTMENT_DESIGN_AWAITING_CLOSED.has(status)) return false;
+  const production =
+    doc?.production && typeof doc.production === "object" ? doc.production : {};
+  if (String(production.practiceDesignConfirmedAt || "").trim()) return false;
+  if (production.designReadyAt) return false;
+  if (countPracticeTransferDesignFiles(doc) > 0) return false;
+  if (production.customAbutmentManualDesign?.at) return false;
+  const route = String(production.abutmentFeeRoute || "").trim();
+  if (route === "platform" || route === "lab") return false;
+  return true;
+}
+
 export {
   hasCustomAbutmentToothWorks,
+  isPracticeAbutmentDesignAwaitingDentist,
   listCustomAbutmentToothWorks,
   normalizeResultFiles,
   parseArrivalYmdFromMemo,

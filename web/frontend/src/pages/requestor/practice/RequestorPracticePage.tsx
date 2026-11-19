@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-19: 작업시작 — 치과 어벗·디자인 확정 전 CTA 비활성, 보철 업로드 안내 모달 카피 갱신.
 // - 2026-11-19: 디자인 모달 — 캘린더 hydrate를 열기 전에 기다리지 않는다. 선택 시 prefetch.
 // - 2026-11-19: 헤더 오른쪽 — 중요 사항 공지 레일(크레딧·공지 5초 롤링).
 // - 2026-11-19: 크레딧 hold 성공 전에는 어벗 STL을 업로드된 것으로 보이지 않는다.
@@ -437,6 +438,11 @@ import {
   isPtxAbutmentDesignAwaitingDentist,
   isPtxAbutmentDesignReviewForLab,
   isPtxAbutmentManualOrder,
+  LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
+  LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT,
+  LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED,
+  LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
+  LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_SETTLEMENT,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
@@ -6044,6 +6050,28 @@ export function RequestorPracticeReceivePage({
   const handleAcceptTransfer = useCallback(async () => {
     if (!selectedTransfer || acceptBusy || releaseBusy) return;
     if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
+    if (
+      isPtxAbutmentDesignAwaitingDentist({
+        status: getTransferDisplayStatus(selectedTransfer),
+        hasCustomAbutment:
+          Boolean(selectedTransfer.hasCustomAbutment) ||
+          practiceTransferHasCustomAbutment(selectedTransfer, implantCatalog),
+        abutmentFeeRoute: selectedTransfer.production?.abutmentFeeRoute,
+        practiceDesignConfirmedAt:
+          selectedTransfer.production?.practiceDesignConfirmedAt,
+        designReadyAt: selectedTransfer.production?.designReadyAt,
+        designFileCount: selectedTransfer.production?.designFileCount,
+        manualRequested: Boolean(
+          selectedTransfer.production?.customAbutmentManualDesign?.at,
+        ),
+      })
+    ) {
+      toast({
+        title: "작업시작 대기",
+        description: LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
+      });
+      return;
+    }
     if (isGuideTourDemoTransfer(selectedTransfer)) {
       toast({
         title: "가이드투어",
@@ -6089,6 +6117,7 @@ export function RequestorPracticeReceivePage({
     toast,
     user?.role,
     workStartUploadNoticeHiddenKey,
+    implantCatalog,
   ]);
 
   const handleConfirmWorkStartUploadNotice = useCallback(() => {
@@ -9320,6 +9349,11 @@ export function RequestorPracticeReceivePage({
     [implantCatalog],
   );
 
+  const selectedTransferAbutmentDesignAwaiting = useMemo(() => {
+    if (!selectedTransfer) return false;
+    return isPtxAbutmentDesignAwaitingDentist(labAbutmentInput(selectedTransfer));
+  }, [labAbutmentInput, selectedTransfer]);
+
   const labDesignReviewTransfers = useMemo(() => {
     return baseFilteredTransfers.filter((transfer) => {
       if (isGuideTourDemoTransfer(transfer)) return false;
@@ -10913,8 +10947,15 @@ export function RequestorPracticeReceivePage({
                 {PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT}
               </span>
             </>
+          ) : selectedTransferAbutmentDesignAwaiting ? (
+            <p className="text-destructive">
+              {LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT}
+              <br />
+              확인이 필요하면 채팅으로 연락해 주세요.
+            </p>
           ) : null
         }
+        abutmentDesignBlocksAccept={selectedTransferAbutmentDesignAwaiting}
         headerActionLeading={null}
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
@@ -11744,15 +11785,19 @@ export function RequestorPracticeReceivePage({
         panelClassName="max-w-lg"
         description={
           <div className="space-y-3 leading-relaxed">
+            <p>{LAB_WORK_START_UPLOAD_NOTICE_FEE_CONFIRMED}</p>
             <p>
-              이 의뢰는 작업 완료 후 반드시 디자인 파일을 업로드해야 합니다.
+              {LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED}
               <br />
-              <span className="font-semibold text-slate-900">
-                업로드되어야 기공비가 결제됩니다.
-              </span>
+              {LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_SETTLEMENT}
             </p>
-            {selectedTransfer?.hasCustomAbutment ? (
-              <p>커스텀어벗은 어벗 디자인 파일(STL)도 업로드해야 합니다.</p>
+            {selectedTransfer?.hasCustomAbutment ||
+            (selectedTransfer &&
+              practiceTransferHasCustomAbutment(
+                selectedTransfer,
+                implantCatalog,
+              )) ? (
+              <p>{LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT}</p>
             ) : null}
           </div>
         }

@@ -264,6 +264,7 @@ import {
   tryStartAbutmentProduction,
   practiceTransferNeedsMoreAbutmentDesigns,
   promotePlatformAbutmentDesignsToManufacturerReady,
+  isPracticeAbutmentDesignAwaitingDentist,
 } from "../../services/practiceTransferProduction.service.js";
 import {
   isLabProsthesisUploadRequired,
@@ -9421,6 +9422,18 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           String(scanErr?.message || "").trim() ||
           "구강스캔 파일이 없어 작업을 시작할 수 없습니다.",
         reason: scanErr?.code || "oral_scan_required",
+      });
+    }
+
+    if (
+      !doc.requestorDownloadedAt &&
+      isPracticeAbutmentDesignAwaitingDentist(doc)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업을 시작할 수 있습니다.",
+        reason: "abutment_design_awaiting_practice",
       });
     }
 
