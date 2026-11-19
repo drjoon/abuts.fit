@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { shortestPostTopClearanceMm } from "./occlusalClearanceRay";
+import { closestSurfaceClearanceMm, shortestPostTopClearanceMm } from "./occlusalClearanceRay";
 
 const up = [0, 0, 1] as const;
 const labial = [1, 0, 0] as const;
@@ -64,4 +64,22 @@ const archMissWithoutBias = shortestPostTopClearanceMm({
 });
 assert.equal(archMissWithoutBias, null, "바이어스 없이 순설 빗나간 대합은 수직 레이에 안 걸린다");
 
-console.log("occlusalClearanceRay ok", hit, archOffset);
+const sideWall = new Float32Array([
+  1.22, -0.35, 3.7,
+  1.22, 0.35, 3.7,
+  1.22, 0.35, 4.35,
+  1.22, -0.35, 3.7,
+  1.22, 0.35, 4.35,
+  1.22, -0.35, 4.35,
+]);
+const aboveAndSide = new Float32Array([...slab(7, -2, 2, -2, 2), ...sideWall]);
+const surfacePts = new Float32Array([0, 0, 5, 1, 0, 4]);
+const closest = closestSurfaceClearanceMm({ points: surfacePts, opposingTris: aboveAndSide });
+assert.ok(closest != null && closest < 0.35, `축벽 최근접(${closest})이 윗면 수직 간격보다 가깝다`);
+const planeOnly = closestSurfaceClearanceMm({
+  points: new Float32Array([0, 0, 5]),
+  opposingTris: new Float32Array(slab(6.4, -2, 2, -2, 2)),
+});
+assert.ok(planeOnly != null && Math.abs(planeOnly - 1.4) < 0.06, `평면까지 최근접 ${planeOnly}`);
+
+console.log("occlusalClearanceRay ok", hit, archOffset, closest, planeOnly);

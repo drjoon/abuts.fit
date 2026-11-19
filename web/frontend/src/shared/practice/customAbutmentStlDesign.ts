@@ -60,6 +60,7 @@ import {
 import { cuffProfile } from "@/shared/practice/cuffProfile";
 import { subtractTriangleSoups } from "@/shared/practice/meshUnion";
 import {
+  closestSurfaceClearanceMm,
   shortestPostTopClearanceMm,
   solvePostTopClearanceShiftMm,
 } from "@/shared/practice/occlusalClearanceRay";
@@ -336,6 +337,32 @@ function opposingTrianglesInFixtureFrame(
     const b = worldPointToFixtureLocal([x1, y1, z1], pose);
     const c = worldPointToFixtureLocal([x2, y2, z2], pose);
     out.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  }
+  return new Float32Array(out);
+}
+
+/** 법선이 삽입축과 |dot| 이상인 삼각형만 남긴다. 수직 벽의 최하단이 교합면 높이로 잡히지 않게 한다. */
+function filterOcclusalFacingTriangles(tris: Float32Array, up: Vec3, minAbsDot: number): Float32Array {
+  const triCount = Math.floor(tris.length / 9);
+  const out: number[] = [];
+  for (let i = 0; i < triCount; i += 1) {
+    const o = i * 9;
+    const ax = tris[o]!, ay = tris[o + 1]!, az = tris[o + 2]!;
+    const bx = tris[o + 3]!, by = tris[o + 4]!, bz = tris[o + 5]!;
+    const cx = tris[o + 6]!, cy = tris[o + 7]!, cz = tris[o + 8]!;
+    const nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+    const ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+    const nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-8) continue;
+    const facing = Math.abs((nx * up[0] + ny * up[1] + nz * up[2]) / nl);
+    if (facing < minAbsDot) continue;
+    const ha = ax * up[0] + ay * up[1] + az * up[2];
+    const hb = bx * up[0] + by * up[1] + bz * up[2];
+    const hc = cx * up[0] + cy * up[1] + cz * up[2];
+    // 한 삼각형 안에서 교합 방향 높이가 크게 벌어지면 수직 벽이다. 그 최하단은 교합면이 아니다.
+    if (Math.max(ha, hb, hc) - Math.min(ha, hb, hc) > 1.15) continue;
+    out.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   }
   return new Float32Array(out);
 }
@@ -2178,6 +2205,33 @@ function measureAdjacentIncisorShovel(
     }
   }
   return best;
+}
+
+/**
+ * 교합을 향한 면만 모은 높이장에서, 순설 구간의 교합면 높이.
+ * 낮은 꼬리(벽 하단·점 노이즈)가 교합면과 1.4mm 이상 벌어지면 그 꼬리를 버린다.
+ * 표본이 적으면 Infinity.
+ */
+function robustOcclusalTableHeight(
+  field: ReturnType<typeof buildOpposingHeightField> | null,
+  u0: number,
+  u1: number,
+  vHalf: number,
+): number {
+  if (!field) return Infinity;
+  const lo = Math.min(u0, u1);
+  const hi = Math.max(u0, u1);
+  const hs: number[] = [];
+  for (const cell of field.list) {
+    if (cell.u < lo || cell.u > hi || Math.abs(cell.v) > vHalf) continue;
+    hs.push(cell.h);
+  }
+  if (hs.length < 8) return Infinity;
+  hs.sort((a, b) => a - b);
+  const p20 = hs[Math.floor(hs.length * 0.2)]!;
+  const p55 = hs[Math.floor(hs.length * 0.55)]!;
+  if (p55 - p20 >= 1.4) return p55;
+  return p20;
 }
 
 /** 대합 높이장에서 순설 구간(u0~u1, |v|≤vHalf)의 가장 가까운 높이. 없으면 Infinity. */
@@ -5093,6 +5147,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     !posterior && opposingLocalPts.length > 0
       ? buildOpposingHeightField(opposingLocalPts, c0, frame, 11)
       : oppField;
+  // 절치 높이 상한은 교합을 향한 면만 쓴다. 수직 벽 최하단은 대합거리 표시에만 남긴다.
+  const oppTrisAll = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
+  const incisorFaceTris =
+    tpl.kind === "incisor" ? filterOcclusalFacingTriangles(oppTrisAll, frame.w, 0.45) : oppTrisAll;
+  const oppTableField =
+    tpl.kind === "incisor" && incisorFaceTris.length >= 9
+      ? buildOpposingHeightField(incisorFaceTris, c0, frame, 9)
+      : null;
   const footR = Math.max(marginA, marginB) - shoulderW + 0.6;
   const oppFootH = oppField ? oppField.heightAt(0, 0, footR) : Infinity;
   // 악궁상 대합치 중심(전치·견치). 삽입축 Z만 보면 순설로 빗나간 대합을 "없음"으로 놓친다.
@@ -5195,19 +5257,43 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : baseCap + offsetH,
   );
   const noOppTop = Number.isFinite(archCrownTopH) ? baseCap : Math.min(baseCap, tpl.postHeightMm);
-  // 대합치가 있으면 대합 거리(기본 1.5mm, 최소 0.7mm)를 1순위로 잡아 포스트 높이를 먼저 결정한다.
+  // 절치 교합면(수직 벽 제외, 낮은 꼬리 제외). 없으면 인접 절단연만 따른다.
+  const incisorTableH =
+    tpl.kind === "incisor"
+      ? robustOcclusalTableHeight(oppTableField, -2.4, 4.6, Math.max(2.4, marginB * 0.9))
+      : Infinity;
+  const neighborPostH = Number.isFinite(antIncisalCap)
+    ? antIncisalCap
+    : Number.isFinite(noOppTop)
+      ? noOppTop
+      : tpl.postHeightMm;
+  // 절치는 인접 절단연 길이가 1순위. 교합을 향한 대합면이 더 가까울 때만 그 면까지 낮춘다.
+  // 구치·대합 거리를 직접 고친 경우는 대합 거리를 높이에 맞춘다.
   let postTopH =
-    (hasOpposing
-      ? posterior || hasExplicitClearance
-        ? oppRefH - clearance
-        : Math.min(antIncisalCap, oppRefH - clearance)
-      : noOppTop) + offsetH;
-  if (hasOpposing && offsetH <= 0) postTopH = Math.min(postTopH, oppRefH - clearance);
+    (tpl.kind === "incisor" && !hasExplicitClearance
+      ? Math.min(neighborPostH, Number.isFinite(incisorTableH) ? incisorTableH - clearance : Infinity)
+      : hasOpposing
+        ? posterior || hasExplicitClearance
+          ? oppRefH - clearance
+          : Math.min(antIncisalCap, oppRefH - clearance)
+        : noOppTop) + offsetH;
+  if (tpl.kind === "incisor" && !hasExplicitClearance) {
+    if (Number.isFinite(incisorTableH) && offsetH <= 0) {
+      postTopH = Math.min(postTopH, incisorTableH - clearance);
+    }
+  } else if (hasOpposing && offsetH <= 0) {
+    postTopH = Math.min(postTopH, oppRefH - clearance);
+  }
   postTopH = Math.max(minSafePostHeightMm, postTopH);
-  if (hasOpposing) {
+  if (tpl.kind === "incisor" && !hasExplicitClearance) {
+    if (Number.isFinite(incisorTableH)) {
+      postTopH = Math.min(postTopH, Math.max(minSafePostHeightMm, incisorTableH - minClearanceFloor));
+    }
+  } else if (hasOpposing) {
     // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
     postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
   }
+  postTopMax = Math.max(postTopMax, postTopH);
   // 절치 딥바이트·수평피개: 설측 대합만 가깝고 순측이 비어 있거나 멀면 포스트 전체를 짧게 만들지 않는다.
   // 순측 절단 높이는 인접 자연치 기준(baseCap)과 순측 대합 거리 중 낮은 쪽까지 올리고, 설측은 사선으로 비운다.
   let incisorDeepBite = false;
@@ -5830,17 +5916,29 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const defaultRefClearance = resolveCustomAbutmentParams(fixture.toothNumber).occlusalClearanceMm;
   const refBasePostTopH = (() => {
     const refClear = defaultRefClearance;
-    const rawRef = hasOpposing
-      ? posterior
-        ? oppRefH - refClear
-        : Math.min(
-            Number.isFinite(archCrownTopH)
-              ? archCrownTopH - Math.max(1.35, tpl.crownOcclusalMm * 0.88)
-              : Infinity,
-            oppRefH - refClear,
-          )
-      : noOppTop;
+    const incisorRef =
+      tpl.kind === "incisor" && !hasExplicitClearance
+        ? Math.min(neighborPostH, Number.isFinite(incisorTableH) ? incisorTableH - refClear : Infinity)
+        : null;
+    const rawRef =
+      incisorRef != null
+        ? incisorRef
+        : hasOpposing
+          ? posterior
+            ? oppRefH - refClear
+            : Math.min(
+                Number.isFinite(archCrownTopH)
+                  ? archCrownTopH - Math.max(1.35, tpl.crownOcclusalMm * 0.88)
+                  : Infinity,
+                oppRefH - refClear,
+              )
+          : noOppTop;
     const bounded = Math.max(minSafePostHeightMm, rawRef);
+    if (incisorRef != null) {
+      return Number.isFinite(incisorTableH)
+        ? Math.min(bounded, Math.max(minSafePostHeightMm, incisorTableH - CROWN_THICKNESS_FLOOR_MM))
+        : bounded;
+    }
     return hasOpposing
       ? Math.min(bounded, Math.max(1.8, oppRefH - CROWN_THICKNESS_FLOOR_MM))
       : bounded;
@@ -6601,11 +6699,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         : Math.min(0.85, Math.max(0.45, r0 - targetShoulderW - 1.0));
     const tu = dot3(dir, frame.uLabial) * tipR;
     const tv = dot3(dir, frame.vSide) * tipR;
-    if (oppField) {
+    const incisorKeepsNeighborHeight = tpl.kind === "incisor" && !hasExplicitClearance;
+    const heightField = incisorKeepsNeighborHeight ? oppTableField : oppField;
+    if (heightField) {
       const deepLabialTip = incisorDeepBite && tu > incisorPalatalContactU + 0.35;
       const oppH = deepLabialTip
-        ? opposingBandMinHeight(oppField, tu - 0.35, tu + 0.5, Math.abs(tv) + 0.4)
-        : oppField.heightAt(tu, tv, 1.05);
+        ? opposingBandMinHeight(heightField, tu - 0.35, tu + 0.5, Math.abs(tv) + 0.4)
+        : heightField.heightAt(tu, tv, 1.05);
       if (Number.isFinite(oppH)) {
         hasColOpp = true;
         hTop = posterior ? oppH - clearance + Math.max(0, offsetH) : Math.min(hTop, oppH - clearance);
@@ -6808,8 +6908,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const evalOpposingCaps = (slopeU: number, slopeV: number) => {
       let aClear = Infinity;
       let aHard = Infinity;
-      if (hasOpposing && oppField) {
-        for (const cell of oppField.list) {
+      // 절치 기본 생성은 교합을 향한 면만 높이 상한으로 쓴다. 수직 벽 최하단은 빼 둔다.
+      const capField =
+        tpl.kind === "incisor" && !curExplicit ? oppTableField : oppField;
+      if (hasOpposing && capField) {
+        for (const cell of capField.list) {
           const du = (cell.u - initMarginCu) / topCapHalfU;
           const dv = (cell.v - initMarginCv) / topCapHalfV;
           if (du * du + dv * dv > 1) {
@@ -6822,7 +6925,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           aHard = Math.min(aHard, cell.h - curFloor - planeSub);
         }
       }
-      if (!incisorDeepBite && !Number.isFinite(aClear) && hasOpposing && Number.isFinite(oppRefH)) {
+      if (
+        !incisorDeepBite &&
+        !Number.isFinite(aClear) &&
+        hasOpposing &&
+        Number.isFinite(oppRefH) &&
+        !(tpl.kind === "incisor" && !curExplicit)
+      ) {
         aClear = oppRefH - effClearance;
         aHard = oppRefH - curFloor;
       }
@@ -6868,10 +6977,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 딥바이트 절치는 순측 절단 대합 여유만 확인하고 설측 공간은 단일 설측 사면 평면이 확보한다.
       let labialU = 0.45;
       for (const c of cols) if (c.tipU > labialU) labialU = c.tipU;
-      if (incisorDeepBite && hasOpposing && oppField) {
+      const incisorCapField = oppTableField ?? (curExplicit ? oppField : null);
+      if (incisorDeepBite && hasOpposing && incisorCapField) {
         let labialCap = Infinity;
         const tipLo = Math.max(incisorPalatalContactU + 0.55, labialU - 0.85);
-        for (const cell of oppField.list) {
+        for (const cell of incisorCapField.list) {
           if (cell.u < tipLo || cell.u > labialU + 0.4 || Math.abs(cell.v) > 1.2) continue;
           labialCap = Math.min(labialCap, cell.h - effClearance - gv * cell.v);
         }
@@ -10292,7 +10402,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 평평한 포스트 상단 경사(gu, gv)를 그대로 유지한 채, 실제 포스트 상단(라운드·정점 포함)에서
   // 대합치까지의 최단 거리가 설정한 대합 거리(clearance)에 정확히 맞도록 상단 평면 높이(planeShift)만 평행이동한다.
   // 높이·테이퍼가 연결되어 있으면 실제 포스트 높이에 맞춰 최적 접착력 테이퍼도 함께 수렴시킨다.
-  const oppTrisLocal = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
+  // 절치 기본 생성은 교합을 향한 면만으로 높이를 맞추고, 수직 벽 때문에 인접 절단연 아래로 내리지 않는다.
+  const oppTrisLocal =
+    tpl.kind === "incisor" && !hasExplicitClearance ? incisorFaceTris : oppTrisAll;
+  const shiftDownLimit = tpl.kind === "incisor" && !hasExplicitClearance ? -0.7 : -20;
   // 대합 거리·포스트 높이·테이퍼·챔퍼 R 편집과 무관한 기준 상태에서 마진·베이스 단면을 먼저 1회 확정한다.
   buildShape(true);
   // 연결이 끊기면 높이 맞춤은 기준 테이퍼로 하고, 사용자가 준 각은 그 높이에 나중에 얹는다.
@@ -10307,7 +10420,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
   let shape = buildShape(false);
   const maxShiftUpBase = posterior || hasExplicitClearance || offsetH > 0.01 ? 8.0 : 0;
-  if (hasOpposing && (oppTrisLocal.length >= 9 || oppNear.length > 0)) {
+  const canShiftToOpposing =
+    hasOpposing &&
+    (tpl.kind === "incisor" && !hasExplicitClearance
+      ? oppTrisLocal.length >= 9
+      : oppTrisLocal.length >= 9 || oppNear.length > 0);
+  if (canShiftToOpposing) {
     const targetClear =
       offsetH >= 0
         ? Math.max(minClearanceFloor, clearance - offsetH)
@@ -10396,7 +10514,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (!Number.isFinite(min3D)) hasDelta = false;
         else delta = min3D - targetClear;
       }
-      const nextShift = hasDelta ? clamp(planeShift + delta, -20.0, maxShiftUp) : planeShift;
+      const nextShift = hasDelta ? clamp(planeShift + delta, shiftDownLimit, maxShiftUp) : planeShift;
       if (!taperChanged && (!hasDelta || Math.abs(nextShift - planeShift) < 0.008)) break;
       planeShift = nextShift;
       shape = buildShape();
@@ -10420,7 +10538,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const shiftCap = incisorDeepBite
         ? Math.max(maxShiftUpBase, postTopH - measureShapePostHeightMm(shape) + planeShift)
         : maxShiftUpBase;
-      planeShift = clamp(planeShift + deltaH, -20, shiftCap);
+      planeShift = clamp(planeShift + deltaH, shiftDownLimit, shiftCap);
       shape = buildShape(false);
     }
   }
@@ -10547,8 +10665,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     marginLoopLocal[col * 3 + 2] = mp[2];
   }
 
-  // 포스트 윗면 0.1mm 그리드에서 교합 방향 레이 → 대합 스캔 면까지의 최단 거리.
-  // 삽입축 바로 위가 비고 악궁·수평피개로만 대합이 있을 때 순설 바이어스 탐색을 켠다.
+  // 대합 거리는 어벗 겉면과 대합 스캔의 가장 가까운 점 사이 거리.
+  // 윗면 수직 레이가 놓치는 축벽·절단연 접촉을 포함한다.
+  let sampleCount = 1;
+  for (const post of postByCol) sampleCount += post.length;
+  const abutmentSurface = new Float32Array(sampleCount * 3);
+  let sampleWrite = 0;
+  const putSample = (p: Vec3) => {
+    abutmentSurface[sampleWrite] = p[0];
+    abutmentSurface[sampleWrite + 1] = p[1];
+    abutmentSurface[sampleWrite + 2] = p[2];
+    sampleWrite += 3;
+  };
+  putSample(postApex);
+  for (const post of postByCol) {
+    for (const p of post) putSample(p);
+  }
   const axisClearMeasureH = oppField?.heightAt(0.45, 0, 1.35) ?? Infinity;
   const archClearMeasureOpts =
     !posterior && !Number.isFinite(axisClearMeasureH)
@@ -10559,24 +10691,31 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           lateralMm: Math.max(2.5, Math.min(5.2, Math.abs(archOppHit?.u ?? 2.5) * 0.6 + 1.4)),
         }
       : undefined;
-  const occlusalClearanceMm =
-    oppTrisLocal.length >= 9
-      ? shortestPostTopClearanceMm({
-          columns: postByCol,
-          apex: postApex,
-          roundSteps: TOP_ROUND_STEPS,
-          opposingTris: oppTrisLocal,
-          up: occInFix,
-          ...archClearMeasureOpts,
-        })
-      : measurePostTopClearanceMm(
-          opposingGeometry,
-          fixture.fixturePose,
-          postByCol,
-          postApex,
-          occInFix,
-          archClearMeasureOpts,
-        );
+  const meshClearanceMm =
+    oppTrisAll.length >= 9
+      ? closestSurfaceClearanceMm({ points: abutmentSurface, opposingTris: oppTrisAll })
+      : null;
+  const axialClearanceMm =
+    meshClearanceMm != null
+      ? null
+      : oppTrisAll.length >= 9
+        ? shortestPostTopClearanceMm({
+            columns: postByCol,
+            apex: postApex,
+            roundSteps: TOP_ROUND_STEPS,
+            opposingTris: oppTrisAll,
+            up: occInFix,
+            ...archClearMeasureOpts,
+          })
+        : measurePostTopClearanceMm(
+            opposingGeometry,
+            fixture.fixturePose,
+            postByCol,
+            postApex,
+            occInFix,
+            archClearMeasureOpts,
+          );
+  const occlusalClearanceMm = meshClearanceMm ?? axialClearanceMm;
 
   let zMinLocal = Infinity;
   let zMaxLocal = -Infinity;

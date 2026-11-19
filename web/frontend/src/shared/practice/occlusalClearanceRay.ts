@@ -442,3 +442,141 @@ export function solvePostTopClearanceShiftMm(
   if (!Number.isFinite(minAllowShift)) return null;
   return minAllowShift;
 }
+
+const CLEAR_CELL_MM = 2.5;
+const CLEAR_SEARCH_MM = 12;
+
+function distPointTriangle(px: number, py: number, pz: number, tri: Float32Array, o: number): number {
+  const ax = tri[o]!, ay = tri[o + 1]!, az = tri[o + 2]!;
+  const bx = tri[o + 3]!, by = tri[o + 4]!, bz = tri[o + 5]!;
+  const cx = tri[o + 6]!, cy = tri[o + 7]!, cz = tri[o + 8]!;
+  const abx = bx - ax, aby = by - ay, abz = bz - az;
+  const acx = cx - ax, acy = cy - ay, acz = cz - az;
+  const apx = px - ax, apy = py - ay, apz = pz - az;
+  const d1 = abx * apx + aby * apy + abz * apz;
+  const d2 = acx * apx + acy * apy + acz * apz;
+  if (d1 <= 0 && d2 <= 0) return Math.hypot(apx, apy, apz);
+
+  const bpx = px - bx, bpy = py - by, bpz = pz - bz;
+  const d3 = abx * bpx + aby * bpy + abz * bpz;
+  const d4 = acx * bpx + acy * bpy + acz * bpz;
+  if (d3 >= 0 && d4 <= d3) return Math.hypot(bpx, bpy, bpz);
+
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3);
+    return Math.hypot(ax + abx * v - px, ay + aby * v - py, az + abz * v - pz);
+  }
+
+  const cpx = px - cx, cpy = py - cy, cpz = pz - cz;
+  const d5 = abx * cpx + aby * cpy + abz * cpz;
+  const d6 = acx * cpx + acy * cpy + acz * cpz;
+  if (d6 >= 0 && d5 <= d6) return Math.hypot(cpx, cpy, cpz);
+
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6);
+    return Math.hypot(ax + acx * w - px, ay + acy * w - py, az + acz * w - pz);
+  }
+
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+    return Math.hypot(bx + (cx - bx) * w - px, by + (cy - by) * w - py, bz + (cz - bz) * w - pz);
+  }
+
+  const denom = 1 / (va + vb + vc);
+  const v = vb * denom;
+  const w = vc * denom;
+  return Math.hypot(ax + abx * v + acx * w - px, ay + aby * v + acy * w - py, az + abz * v + acz * w - pz);
+}
+
+function packClearCell(ix: number, iy: number, iz: number) {
+  return (ix + 512) * 1_048_576 + (iy + 512) * 1024 + (iz + 512);
+}
+
+/**
+ * 어벗 겉면 점과 대합 스캔 삼각형의 최단 거리(mm).
+ * 윗면 수직 간격이 아니라, 축벽·절단연을 포함한 가장 가까운 점 쌍이다.
+ * 닿는 면이 없으면 null.
+ */
+export function closestSurfaceClearanceMm(args: {
+  points: Float32Array;
+  opposingTris: Float32Array;
+}): number | null {
+  const tris = args.opposingTris;
+  const pts = args.points;
+  const triCount = Math.floor(tris.length / 9);
+  const pointCount = Math.floor(pts.length / 3);
+  if (triCount < 1 || pointCount < 1) return null;
+
+  const grid = new Map<number, number[]>();
+  for (let i = 0; i < triCount; i += 1) {
+    const o = i * 9;
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    for (let k = 0; k < 9; k += 3) {
+      const x = tris[o + k]!, y = tris[o + k + 1]!, z = tris[o + k + 2]!;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    const ix0 = Math.floor(minX / CLEAR_CELL_MM);
+    const iy0 = Math.floor(minY / CLEAR_CELL_MM);
+    const iz0 = Math.floor(minZ / CLEAR_CELL_MM);
+    const ix1 = Math.floor(maxX / CLEAR_CELL_MM);
+    const iy1 = Math.floor(maxY / CLEAR_CELL_MM);
+    const iz1 = Math.floor(maxZ / CLEAR_CELL_MM);
+    for (let ix = ix0; ix <= ix1; ix += 1) {
+      for (let iy = iy0; iy <= iy1; iy += 1) {
+        for (let iz = iz0; iz <= iz1; iz += 1) {
+          const key = packClearCell(ix, iy, iz);
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(i);
+          else grid.set(key, [i]);
+        }
+      }
+    }
+  }
+
+  const seen = new Int32Array(triCount);
+  let stamp = 1;
+  let best = CLEAR_SEARCH_MM;
+  for (let p = 0; p < pointCount; p += 1) {
+    if (best <= 0.02) break;
+    const o = p * 3;
+    const px = pts[o]!, py = pts[o + 1]!, pz = pts[o + 2]!;
+    const ix = Math.floor(px / CLEAR_CELL_MM);
+    const iy = Math.floor(py / CLEAR_CELL_MM);
+    const iz = Math.floor(pz / CLEAR_CELL_MM);
+    stamp += 1;
+    if (stamp > 2_000_000_000) {
+      seen.fill(0);
+      stamp = 1;
+    }
+    for (let r = 0; r <= 8; r += 1) {
+      if (r > 0 && (r - 1) * CLEAR_CELL_MM >= best) break;
+      for (let dx = -r; dx <= r; dx += 1) {
+        for (let dy = -r; dy <= r; dy += 1) {
+          for (let dz = -r; dz <= r; dz += 1) {
+            if (r > 0 && Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;
+            const bucket = grid.get(packClearCell(ix + dx, iy + dy, iz + dz));
+            if (!bucket) continue;
+            for (let b = 0; b < bucket.length; b += 1) {
+              const ti = bucket[b]!;
+              if (seen[ti] === stamp) continue;
+              seen[ti] = stamp;
+              const d = distPointTriangle(px, py, pz, tris, ti * 9);
+              if (d < best) best = d;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (!(best < CLEAR_SEARCH_MM - 1e-3)) return null;
+  return Math.max(0, Math.round(best * 100) / 100);
+}

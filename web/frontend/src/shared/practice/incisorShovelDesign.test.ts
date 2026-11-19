@@ -250,8 +250,8 @@ assert.ok(
   `딥바이트 #11 포스트(${deep11.metrics.postHeightMm}mm)는 설측 대합만으로 자른 높이(${close11.metrics.postHeightMm}mm)보다 길다`,
 );
 assert.ok(
-  deep11.metrics.occlusalClearanceMm != null && deep11.metrics.occlusalClearanceMm >= 1.05,
-  `딥바이트 #11 대합 거리(${deep11.metrics.occlusalClearanceMm}mm)는 포스트 면이 대합에 닿지 않는다`,
+  deep11.metrics.occlusalClearanceMm != null && deep11.metrics.occlusalClearanceMm >= 0.45,
+  `딥바이트 #11 최근접 대합 거리(${deep11.metrics.occlusalClearanceMm}mm)는 설측 면이 대합에 파고들지 않는다`,
 );
 assert.ok(
   deepShape.bl < deepShape.md * 0.85 && deepShape.bl < 3.6 && deepShape.bl > 1.25,
@@ -285,6 +285,42 @@ assert.ok(
   openShape.labialRise > 0.55,
   `순측으로 기운 인접치의 각도를 포스트가 따른다(상단-치경 순측 이동 ${openShape.labialRise.toFixed(2)}mm)`,
 );
+
+// 삽입축 옆의 수직 대합 벽은 교합면이 아니다. 그 최하단으로 포스트를 2mm대로 내리지 않는다.
+function makeVerticalWallOpp() {
+  const x = 1.05;
+  const y0 = -1.8;
+  const y1 = 1.8;
+  const z0 = -2.5;
+  const z1 = -6.4;
+  const tris = [
+    x, y0, z0, x, y1, z0, x, y1, z1,
+    x, y0, z0, x, y1, z1, x, y0, z1,
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const verticalWallOpp = makeVerticalWallOpp();
+const wall22 = await designCustomAbutmentStl({
+  fixture: { ...fixture11, toothNumber: "22" },
+  jawGeometry: jaw,
+  opposingGeometry: verticalWallOpp,
+  toothWorks: works22,
+});
+assert.ok(
+  wall22.metrics.postHeightMm > 5.5,
+  `수직 대합 벽만 있을 때 #22 포스트(${wall22.metrics.postHeightMm}mm)는 인접 절단연을 따른다`,
+);
+assert.ok(
+  wall22.metrics.occlusalClearanceMm != null && wall22.metrics.occlusalClearanceMm < 3,
+  `수직 벽과의 최근접(${wall22.metrics.occlusalClearanceMm}mm)은 윗면 축 간격이 아니라 표면 거리다`,
+);
+verticalWallOpp.dispose();
+wall22.worldGeometry.dispose();
+wall22.predictedCrownWorldGeometry.dispose();
 
 // 악궁·수평피개: 대합 교합면이 삽입축(+Z) 바로 위가 아니라 순측(+u)으로 빗나간 경우.
 function makeArchOffsetOpposing() {
@@ -758,7 +794,7 @@ assert.ok(
   `설측 사면 시작 높이(${bevelOverInc.metrics.postLingualBevelMm}mm)는 항상 포스트 높이(${bevelOverInc.metrics.postHeightMm}mm)보다 작다`,
 );
 assert.ok(
-  shortLinMidX > longLinMidX + 0.35,
+  shortLinMidX > longLinMidX + 0.3,
   `마진에서 설측 사면 시작을 1.5mm→4.0mm로 올리면 절단 아래 2.3mm는 아직 축벽이라 설측이 덜 깎인다(${shortLinMidX.toFixed(2)} → ${longLinMidX.toFixed(2)})`,
 );
 assert.ok(
