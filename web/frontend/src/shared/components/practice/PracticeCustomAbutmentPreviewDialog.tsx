@@ -5672,7 +5672,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 min-w-0 flex-1">
-          <div className="relative min-h-0 min-w-0 flex-1">
+          <div className="relative h-full min-h-0 min-w-0 flex-1">
             <div ref={bindHostRef} className="relative h-full w-full touch-none overflow-hidden" />
             <ViewPaintSurface
               {...viewPaintSurfaceProps(paint)}
@@ -5806,10 +5806,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute bottom-3 left-3 top-3 z-20 flex min-h-0 flex-col items-start gap-2">
+              <div className="pointer-events-none absolute left-3 top-3 z-20 grid h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] grid-rows-[auto_minmax(0,1fr)] gap-2">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
-                  className="shrink-0"
+                  className="shrink-0 justify-self-start"
                   faceLabels={cubeFaceLabels}
                   caption={cubeView ? `#${cubeView.toothNumber} 기준` : null}
                   pivotActive={pivotSet}
@@ -5838,7 +5838,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
                 {!readOnly && manualChatOpen && transferIdParam ? (
                   <div
-                    className="pointer-events-auto flex min-h-0 w-[min(15rem,calc(100vw-2rem))] flex-1 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
+                    className="pointer-events-auto flex h-full min-h-0 w-full flex-col self-stretch overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 text-xs">
