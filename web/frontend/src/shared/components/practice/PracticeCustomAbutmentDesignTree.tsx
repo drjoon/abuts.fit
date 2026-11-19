@@ -1295,7 +1295,7 @@ function EditableRangeRow({
 export function PracticeCustomAbutmentDesignTree({
   items,
   visibleTeeth,
-  selectedTooth,
+  selectedTeeth,
   redesigning,
   onToggleVisible,
   onSetAllVisible,
@@ -1323,11 +1323,11 @@ export function PracticeCustomAbutmentDesignTree({
   onSetAllPredictedCrowns: (shown: boolean) => void;
   items: readonly DesignedCustomAbutment[];
   visibleTeeth: Record<string, boolean>;
-  selectedTooth: string | null;
+  selectedTeeth: readonly string[];
   redesigning: readonly string[];
   onToggleVisible: (toothNumber: string) => void;
   onSetAllVisible: (visible: boolean) => void;
-  onSelect: (toothNumber: string) => void;
+  onSelect: (toothNumber: string, additive: boolean) => void;
   onDownload: (item: DesignedCustomAbutment) => void;
   onDownloadAll?: () => void;
   onRegenerate?: () => void;
@@ -1341,6 +1341,7 @@ export function PracticeCustomAbutmentDesignTree({
   onExpandedChange: (next: Record<string, boolean>) => void;
   className?: string;
 }) {
+  const primaryTooth = selectedTeeth[selectedTeeth.length - 1] ?? null;
   const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
   const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
   const anyScanbody = items.some((it) => shownScanbodies[it.toothNumber]);
@@ -1420,12 +1421,20 @@ export function PracticeCustomAbutmentDesignTree({
           </button>
         </div>
       </div>
+      {selectedTeeth.length > 1 ? (
+        <p className="px-3 pt-1.5 text-[0.75rem] leading-relaxed text-muted-foreground">
+          {selectedTeeth.length}개 선택입니다.
+          <br />
+          수치와 검볼은 같이 바뀝니다.
+        </p>
+      ) : null}
       <ul className="space-y-1 px-1.5 py-1.5">
         {items.map((item) => {
           const tooth = item.toothNumber;
           const open = Boolean(expanded[tooth]);
           const visible = visibleTeeth[tooth] !== false;
-          const selected = selectedTooth === tooth;
+          const selected = selectedTeeth.includes(tooth);
+          const primary = primaryTooth === tooth;
           const busy = redesigning.includes(tooth);
           const m = item.metrics;
           const conn = item.fixture.connectionSpec;
@@ -1436,13 +1445,18 @@ export function PracticeCustomAbutmentDesignTree({
               <div
                 className={cn(
                   "flex items-center gap-0.5 rounded-md py-0.5 pl-0.5 pr-0.5 text-[0.8125rem]",
-                  selected ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-muted/60",
+                  primary
+                    ? "bg-primary/10 ring-1 ring-primary/40"
+                    : selected
+                      ? "bg-primary/5 ring-1 ring-primary/25"
+                      : "hover:bg-muted/60",
                 )}
               >
                 <button
                   type="button"
                   className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left font-semibold text-foreground"
-                  onClick={() => onSelect(tooth)}
+                  title="Shift로 여러 개"
+                  onClick={(e) => onSelect(tooth, e.shiftKey)}
                 >
                   #{tooth}
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" /> : null}

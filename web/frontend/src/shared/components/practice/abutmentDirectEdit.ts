@@ -30,6 +30,7 @@ import {
   RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
+import { gumballGroupTeeth } from "../../practice/customAbutmentSelection";
 import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
 
@@ -294,11 +295,13 @@ export type AbutmentEditBridge = {
     radiusMm: number;
     readOnly: boolean;
     selected: string | null;
+    /** 다중 선택. 마지막이 패널·검볼 기준이다. 없으면 selected 하나. */
+    selectedTeeth?: readonly string[];
     visible: Record<string, boolean>;
-    /** 어벗 정보에서 펼친 치아. 검볼은 여기만 보인다. */
+    /** 어벗 정보에서 펼친 치아. 검볼은 여기만 보인다. 여러 개면 기준 치아만. */
     expanded: Record<string, boolean>;
   };
-  onBadge: (tooth: string) => void;
+  onBadge: (tooth: string, additive?: boolean) => void;
   onCommit: (summary: AbutmentEditSummary) => void;
   /** 드래그 중과 확정 직후. 어벗 정보 패널만 고치고 저장은 onCommit이 한다. */
   onShape?: (summary: AbutmentEditSummary) => void;
@@ -1907,13 +1910,24 @@ function pickGumballHit(groups: THREE.Object3D[]) {
 
 const EMPTY_EDIT = identityAbutmentEdit();
 
+type AbutmentEditStep = { tooth: string; before: AbutmentEdit; after: AbutmentEdit };
+
+type DragGesture =
+  | { kind: "translate"; delta: THREE.Vector3 }
+  | { kind: "rotate"; axis: THREE.Vector3; deg: number }
+  | { kind: "scaleAxes"; axes: THREE.Vector3[]; factor: number }
+  | { kind: "scaleUniform"; factor: number };
+
 export class AbutmentDirectEditSession {
   private readonly views = new Map<string, ToothView>();
   private readonly edits = new Map<string, AbutmentEdit>();
-  private history: Array<{ tooth: string; before: AbutmentEdit; after: AbutmentEdit }> = [];
-  private future: Array<{ tooth: string; before: AbutmentEdit; after: AbutmentEdit }> = [];
+  private history: AbutmentEditStep[][] = [];
+  private future: AbutmentEditStep[][] = [];
   private readonly stale = new Set<string>();
   private drag: Drag | null = null;
+  private dragGroup: Array<{ tooth: string; start: AbutmentEdit }> = [];
+  /** 드래그 한 프레임에서 선택 치아 패널을 같이 갱신한다. */
+  private shapeBatch = true;
   private pendingPick: { tooth: string; x: number; y: number; pointerId: number } | null = null;
   private dom: HTMLElement | null = null;
   private hover: THREE.Object3D | null = null;
@@ -1996,20 +2010,24 @@ export class AbutmentDirectEditSession {
   }
 
   undo() {
-    const step = this.history.pop();
-    if (!step) return;
-    this.future.push(step);
-    this.edits.set(step.tooth, cloneAbutmentEdit(step.before));
-    this.show(step.tooth, true);
+    const batch = this.history.pop();
+    if (!batch) return;
+    this.future.push(batch);
+    for (const step of batch) {
+      this.edits.set(step.tooth, cloneAbutmentEdit(step.before));
+      this.show(step.tooth, true);
+    }
     this.bridge.onHistory();
   }
 
   redo() {
-    const step = this.future.pop();
-    if (!step) return;
-    this.history.push(step);
-    this.edits.set(step.tooth, cloneAbutmentEdit(step.after));
-    this.show(step.tooth, true);
+    const batch = this.future.pop();
+    if (!batch) return;
+    this.history.push(batch);
+    for (const step of batch) {
+      this.edits.set(step.tooth, cloneAbutmentEdit(step.after));
+      this.show(step.tooth, true);
+    }
     this.bridge.onHistory();
   }
 
@@ -2018,23 +2036,34 @@ export class AbutmentDirectEditSession {
     const teeth = tooth
       ? [tooth]
       : [...this.edits.keys()].filter((key) => !editsEqual(this.edits.get(key) ?? EMPTY_EDIT, EMPTY_EDIT));
-    let changed = false;
+    const steps: AbutmentEditStep[] = [];
     for (const key of teeth) {
       const before = this.edits.get(key);
       if (!before || editsEqual(before, EMPTY_EDIT)) continue;
-      this.pushHistory(key, before, identityAbutmentEdit());
-      this.edits.set(key, identityAbutmentEdit());
+      const after = identityAbutmentEdit();
+      steps.push({
+        tooth: key,
+        before: cloneAbutmentEdit(before),
+        after: cloneAbutmentEdit(after),
+      });
+      this.edits.set(key, after);
       this.show(key, true);
-      changed = true;
     }
-    if (changed) this.bridge.onHistory();
+    if (steps.length > 0) {
+      this.pushHistoryBatch(steps);
+      this.bridge.onHistory();
+    }
   }
 
   clear(teeth: readonly string[]) {
     const drop = new Set(teeth);
     for (const tooth of teeth) this.edits.delete(tooth);
-    this.history = this.history.filter((step) => !drop.has(step.tooth));
-    this.future = this.future.filter((step) => !drop.has(step.tooth));
+    const keep = (batches: AbutmentEditStep[][]) =>
+      batches
+        .map((batch) => batch.filter((step) => !drop.has(step.tooth)))
+        .filter((batch) => batch.length > 0);
+    this.history = keep(this.history);
+    this.future = keep(this.future);
     for (const tooth of teeth) this.stale.add(tooth);
     this.bridge.onHistory();
   }
@@ -2094,11 +2123,15 @@ export class AbutmentDirectEditSession {
       if (rebuilt && wasStale) {
         const had =
           this.edits.has(design.toothNumber) ||
-          this.history.some((step) => step.tooth === design.toothNumber) ||
-          this.future.some((step) => step.tooth === design.toothNumber);
+          this.history.some((batch) => batch.some((step) => step.tooth === design.toothNumber)) ||
+          this.future.some((batch) => batch.some((step) => step.tooth === design.toothNumber));
         this.edits.delete(design.toothNumber);
-        this.history = this.history.filter((step) => step.tooth !== design.toothNumber);
-        this.future = this.future.filter((step) => step.tooth !== design.toothNumber);
+        const dropTooth = (batches: AbutmentEditStep[][]) =>
+          batches
+            .map((batch) => batch.filter((step) => step.tooth !== design.toothNumber))
+            .filter((batch) => batch.length > 0);
+        this.history = dropTooth(this.history);
+        this.future = dropTooth(this.future);
         if (had) this.bridge.onHistory();
       }
       const proposal = new Float32Array(design.localPositions);
@@ -2189,12 +2222,16 @@ export class AbutmentDirectEditSession {
     const worldPerPx = viewH / Math.max(host.clientHeight, 1);
     const show = this.bridge.ui.gumballOn && !this.bridge.ui.readOnly;
     const gumballQuat = this.viewQuaternion();
+    const picked = this.bridge.ui.selectedTeeth ?? [];
+    const multi = picked.length > 1;
+    const primary = picked[picked.length - 1] ?? this.bridge.ui.selected;
     for (const [tooth, view] of this.views) {
       const mesh = this.bridge.getAbutment(tooth);
       const visible = !!mesh && mesh.visible && this.bridge.ui.visible[tooth] !== false;
       const edit = this.edits.get(tooth) ?? EMPTY_EDIT;
       const expanded = this.bridge.ui.expanded[tooth] === true;
-      view.gumball.visible = show && visible && expanded;
+      const leadGumball = !multi || tooth === primary;
+      view.gumball.visible = show && visible && expanded && leadGumball;
       view.gumball.quaternion.copy(gumballQuat);
       view.gumball.position.copy(this.gumballPosition(view, edit));
       view.gumball.scale.setScalar(worldPerPx * (expanded ? GUMBALL_SIZE_PX : 50));
@@ -2215,6 +2252,7 @@ export class AbutmentDirectEditSession {
       const handle = hit ? handleFrom(hit.object) : null;
       if (handle) {
         if (this.beginHandle(event, handle)) {
+          this.armDragGroup(handle.tooth);
           event.preventDefault();
           event.stopPropagation();
           this.dom.setPointerCapture(event.pointerId);
@@ -2258,7 +2296,7 @@ export class AbutmentDirectEditSession {
     if (pending && event.pointerId === pending.pointerId && !this.drag) {
       this.pendingPick = null;
       if (Math.abs(event.clientX - pending.x) + Math.abs(event.clientY - pending.y) < 6) {
-        this.bridge.onBadge(pending.tooth);
+        this.bridge.onBadge(pending.tooth, event.shiftKey);
       }
       return;
     }
@@ -2275,22 +2313,25 @@ export class AbutmentDirectEditSession {
     if (drag.kind === "center") {
       const moved = Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y);
       if (moved < 6) {
-        this.edits.set(drag.tooth, drag.start);
-        this.show(drag.tooth, true, true);
-        this.bridge.onBadge(drag.tooth);
+        this.restoreDragGroup();
+        this.bridge.onBadge(drag.tooth, event.shiftKey);
         return;
       }
     }
-    if (drag.kind === "sculpt") this.finishSculpt(drag, event);
-    const edit = this.edits.get(drag.tooth);
-    if (!edit || editsEqual(edit, drag.start)) {
-      this.edits.set(drag.tooth, drag.start);
-      this.show(drag.tooth, true, true);
+    if (drag.kind === "sculpt") {
+      this.finishSculpt(drag, event);
+      const edit = this.edits.get(drag.tooth);
+      if (!edit || editsEqual(edit, drag.start)) {
+        this.edits.set(drag.tooth, drag.start);
+        this.show(drag.tooth, true, true);
+        return;
+      }
+      this.pushHistoryBatch([{ tooth: drag.tooth, before: drag.start, after: edit }]);
+      this.show(drag.tooth, true);
+      this.bridge.onHistory();
       return;
     }
-    this.pushHistory(drag.tooth, drag.start, edit);
-    this.show(drag.tooth, true);
-    this.bridge.onHistory();
+    this.commitDragGroup();
   };
 
   private beginHandle(event: PointerEvent, handle: HandleHit) {
@@ -2379,6 +2420,7 @@ export class AbutmentDirectEditSession {
     const radius = Math.hypot(l, m);
     if (radius <= view.zone.screwR) return false;
     const reach = clamp(this.bridge.ui.radiusMm, 0.6, 6);
+    this.dragGroup = [];
     this.drag = {
       kind: "sculpt",
       tooth,
@@ -2403,62 +2445,134 @@ export class AbutmentDirectEditSession {
     if (!drag || !camera || !this.dom) return;
     const view = this.views.get(drag.tooth);
     if (!view) return;
-    const edit = cloneAbutmentEdit(drag.start);
+    if (drag.kind === "sculpt") {
+      const edit = cloneAbutmentEdit(drag.start);
+      this.previewSculpt(drag, event, view, edit);
+      this.edits.set(drag.tooth, edit);
+      this.show(drag.tooth, false);
+      return;
+    }
+    const gesture = this.gestureFromDrag(drag, event, view);
+    if (!gesture) return;
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    this.shapeBatch = now - this.shapeAt >= 90;
+    if (this.shapeBatch) this.shapeAt = now;
+    const mates = this.dragGroup.length > 0 ? this.dragGroup : [{ tooth: drag.tooth, start: drag.start }];
+    for (const mate of mates) {
+      const mateView = this.views.get(mate.tooth);
+      if (!mateView) continue;
+      const edit = cloneAbutmentEdit(mate.start);
+      this.applyGesture(edit, mate.start, mateView, gesture);
+      clampAbutmentEdit(edit, mateView.zone.span);
+      this.edits.set(mate.tooth, edit);
+      this.show(mate.tooth, false);
+    }
+    this.shapeBatch = true;
+  }
+
+  private gestureFromDrag(
+    drag: Exclude<Drag, { kind: "sculpt" }>,
+    event: PointerEvent,
+    view: ToothView,
+  ): DragGesture | null {
     if (drag.kind === "center") {
       this.viewPlane(drag.startHit);
       const hit = this.rayOnPlane(event);
-      if (!hit) return;
-      const delta = hit.sub(drag.startHit);
-      applyWorldDeltaToAbutmentEdit(edit, delta, view.axes);
-    } else if (drag.kind === "move" || drag.kind === "scale") {
+      if (!hit) return null;
+      return { kind: "translate", delta: hit.sub(drag.startHit).clone() };
+    }
+    if (drag.kind === "move" || drag.kind === "scale") {
       const axis = drag.axisWorld;
       const center = this.gumballPosition(view, drag.start);
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
-      if (!hit) return;
+      if (!hit) return null;
       const along = hit.sub(center).dot(axis);
       const delta = along - drag.startAlong;
       if (drag.kind === "move") {
-        vB.copy(axis).multiplyScalar(delta);
-        applyWorldDeltaToAbutmentEdit(edit, vB, view.axes);
-      } else {
-        const refSpan = Math.max(Math.abs(drag.startAlong), 0.25);
-        const factor = clamp(1 + delta / refSpan, 0.4, 2.2);
-        this.scaleAlong(edit, drag.start, view, axis, factor);
+        return { kind: "translate", delta: axis.clone().multiplyScalar(delta) };
       }
-    } else if (drag.kind === "rot") {
+      const refSpan = Math.max(Math.abs(drag.startAlong), 0.25);
+      return { kind: "scaleAxes", axes: [axis.clone()], factor: clamp(1 + delta / refSpan, 0.4, 2.2) };
+    }
+    if (drag.kind === "rot") {
       const center = this.gumballPosition(view, drag.start);
       plane.setFromNormalAndCoplanarPoint(drag.worldAxis, center);
       const hit = this.rayOnPlane(event);
-      if (!hit) return;
+      if (!hit) return null;
       const cur = hit.sub(center);
-      const angle = Math.atan2(vA.crossVectors(drag.startVec, cur).dot(drag.worldAxis), drag.startVec.dot(cur));
-      const deg = (angle * 180) / Math.PI;
-      applyWorldRotationToAbutmentEdit(edit, drag.worldAxis, deg, view.axes);
-    } else if (drag.kind === "scale2" || drag.kind === "scale3") {
+      const angle = Math.atan2(
+        vA.crossVectors(drag.startVec, cur).dot(drag.worldAxis),
+        drag.startVec.dot(cur),
+      );
+      return { kind: "rotate", axis: drag.worldAxis.clone(), deg: (angle * 180) / Math.PI };
+    }
+    if (drag.kind === "scale2" || drag.kind === "scale3") {
       const center = this.gumballPosition(view, drag.start);
       this.viewPlane(center);
       const hit = this.rayOnPlane(event);
-      if (!hit) return;
+      if (!hit) return null;
       const proj = hit.sub(center).dot(drag.startRadialDir);
       const factor = clamp(proj / Math.max(drag.startRadialLen, 0.2), 0.4, 2.2);
-      if (drag.kind === "scale3") {
-        edit.scale[0] = drag.start.scale[0] * factor;
-        edit.scale[1] = drag.start.scale[1] * factor;
-        edit.scale[2] = drag.start.scale[2] * factor;
-      } else {
-        const a = this.cameraAxis(drag.axis, vB).clone();
-        const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC).clone() : null;
-        this.scaleAxes(edit, drag.start, view, b ? [a, b] : [a], factor);
-      }
-    } else if (drag.kind === "sculpt") {
-      this.previewSculpt(drag, event, view, edit);
-    } else {
+      if (drag.kind === "scale3") return { kind: "scaleUniform", factor };
+      const a = this.cameraAxis(drag.axis, vB).clone();
+      const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC).clone() : null;
+      return { kind: "scaleAxes", axes: b ? [a, b] : [a], factor };
+    }
+    return null;
+  }
+
+  private applyGesture(edit: AbutmentEdit, start: AbutmentEdit, view: ToothView, gesture: DragGesture) {
+    if (gesture.kind === "translate") {
+      applyWorldDeltaToAbutmentEdit(edit, gesture.delta, view.axes);
       return;
     }
-    clampAbutmentEdit(edit, view.zone.span);
-    this.edits.set(drag.tooth, edit);
-    this.show(drag.tooth, false);
+    if (gesture.kind === "rotate") {
+      applyWorldRotationToAbutmentEdit(edit, gesture.axis, gesture.deg, view.axes);
+      return;
+    }
+    if (gesture.kind === "scaleUniform") {
+      edit.scale[0] = start.scale[0] * gesture.factor;
+      edit.scale[1] = start.scale[1] * gesture.factor;
+      edit.scale[2] = start.scale[2] * gesture.factor;
+      return;
+    }
+    this.scaleAxes(edit, start, view, gesture.axes, gesture.factor);
+  }
+
+  private armDragGroup(lead: string) {
+    const selected = this.bridge.ui.selectedTeeth ?? [];
+    this.dragGroup = gumballGroupTeeth(selected, lead)
+      .filter((tooth) => this.views.has(tooth))
+      .map((tooth) => ({ tooth, start: cloneAbutmentEdit(this.ensureEdit(tooth)) }));
+  }
+
+  private restoreDragGroup() {
+    const mates = this.dragGroup;
+    this.dragGroup = [];
+    for (const mate of mates) {
+      this.edits.set(mate.tooth, mate.start);
+      this.show(mate.tooth, true, true);
+    }
+  }
+
+  private commitDragGroup() {
+    const mates = this.dragGroup;
+    this.dragGroup = [];
+    const steps: AbutmentEditStep[] = [];
+    for (const mate of mates) {
+      const edit = this.edits.get(mate.tooth);
+      if (!edit || editsEqual(edit, mate.start)) {
+        this.edits.set(mate.tooth, mate.start);
+        this.show(mate.tooth, true, true);
+        continue;
+      }
+      steps.push({ tooth: mate.tooth, before: mate.start, after: cloneAbutmentEdit(edit) });
+    }
+    if (steps.length === 0) return;
+    for (const step of steps) this.show(step.tooth, true);
+    this.pushHistoryBatch(steps);
+    this.bridge.onHistory();
   }
 
   private previewSculpt(drag: Extract<Drag, { kind: "sculpt" }>, event: PointerEvent, view: ToothView, edit: AbutmentEdit) {
@@ -2713,9 +2827,11 @@ export class AbutmentDirectEditSession {
   }
 
   private publishShape(summary: AbutmentEditSummary, bake: boolean) {
-    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (!bake && now - this.shapeAt < 90) return;
-    this.shapeAt = now;
+    if (!bake && !this.shapeBatch) return;
+    if (bake) {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      this.shapeAt = now;
+    }
     this.bridge.onShape?.(summary);
   }
 
@@ -2895,8 +3011,15 @@ export class AbutmentDirectEditSession {
     return edit;
   }
 
-  private pushHistory(tooth: string, before: AbutmentEdit, after: AbutmentEdit) {
-    this.history.push({ tooth, before: cloneAbutmentEdit(before), after: cloneAbutmentEdit(after) });
+  private pushHistoryBatch(steps: readonly AbutmentEditStep[]) {
+    if (steps.length === 0) return;
+    this.history.push(
+      steps.map((step) => ({
+        tooth: step.tooth,
+        before: cloneAbutmentEdit(step.before),
+        after: cloneAbutmentEdit(step.after),
+      })),
+    );
     if (this.history.length > HISTORY_LIMIT) this.history.shift();
     this.future = [];
   }

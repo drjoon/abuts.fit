@@ -169,6 +169,7 @@ import {
   type CustomAbutmentDesignMetrics,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
+import { abutmentEditTargets, nextAbutmentSelection } from "@/shared/practice/customAbutmentSelection";
 import { hydrateToothAnatomyCatalog } from "@/shared/practice/toothAnatomy";
 import {
   loadCustomAbutmentViewerPrefs,
@@ -922,7 +923,10 @@ export function PracticeCustomAbutmentPreviewDialog({
     lower: false,
   });
   const [visibleTeeth, setVisibleTeeth] = useState<Record<string, boolean>>({});
-  const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
+  const [selectedTeeth, setSelectedTeeth] = useState<string[]>([]);
+  const selectedTooth = selectedTeeth[selectedTeeth.length - 1] ?? null;
+  const selectedTeethRef = useRef<string[]>([]);
+  selectedTeethRef.current = selectedTeeth;
   const [hostEl, setHostEl] = useState<HTMLDivElement | null>(null);
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [redesigning, setRedesigning] = useState<string[]>([]);
@@ -1018,7 +1022,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     pivot: THREE.Vector3;
     t0: number;
   } | null>(null);
-  const badgeClickRef = useRef<(toothNumber: string) => void>(() => {});
+  const badgeClickRef = useRef<(toothNumber: string, additive?: boolean) => void>(() => {});
   const directEditRef = useRef<AbutmentDirectEditSession | null>(null);
   const canSavePreferenceRef = useRef(false);
   const authUserIdRef = useRef(authUserId);
@@ -1104,10 +1108,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         radiusMm: 2.4,
         readOnly: false,
         selected: null,
+        selectedTeeth: [],
         visible: {},
         expanded: {},
       },
-      onBadge: (tooth) => badgeClickRef.current(tooth),
+      onBadge: (tooth, additive) => badgeClickRef.current(tooth, additive),
       onCommit: () => {},
       onHistory: () => {},
     };
@@ -1277,7 +1282,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       "padding:0.18rem 0.42rem;white-space:nowrap;";
     tagEl.addEventListener("click", (e) => {
       e.stopPropagation();
-      badgeClickRef.current(d.toothNumber);
+      badgeClickRef.current(d.toothNumber, e.shiftKey);
     });
     const badge = new CSS2DObject(tagEl);
     const abutCenter = d.worldGeometry.boundingBox
@@ -1762,12 +1767,15 @@ export function PracticeCustomAbutmentPreviewDialog({
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 
-  const selectAbutmentOnly = (toothNumber: string) => {
-    setSelectedTooth(toothNumber);
+  const selectAbutments = (toothNumber: string, additive = false) => {
+    const nextTeeth = nextAbutmentSelection(selectedTeethRef.current, toothNumber, additive);
+    selectedTeethRef.current = nextTeeth;
+    setSelectedTeeth(nextTeeth);
+    const primary = nextTeeth[nextTeeth.length - 1] ?? null;
     viewerTouchRef.current.add("expanded");
     const next: Record<string, boolean> = {};
     for (const row of designedListRef.current) {
-      next[row.toothNumber] = row.toothNumber === toothNumber;
+      next[row.toothNumber] = primary != null && row.toothNumber === primary;
     }
     viewerPrefsRef.current = {
       ...viewerPrefsRef.current,
@@ -1779,7 +1787,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     setExpandedTeeth(next);
   };
 
-  badgeClickRef.current = selectAbutmentOnly;
+  badgeClickRef.current = selectAbutments;
 
   /** 대화를 의뢰 키로 남긴다. 빈 목록은 쓰지 않아 재계산이 대화를 지우지 않는다. */
   const persistChat = useCallback((chat?: readonly ChatTurn[]) => {
@@ -2013,7 +2021,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         designedListRef.current = list;
         setDesignedList(list);
       }
-      setSelectedTooth(toothNumber);
+      selectedTeethRef.current = [toothNumber];
+      setSelectedTeeth([toothNumber]);
       setExpandedTeeth((prev) => (prev[toothNumber] ? prev : { ...prev, [toothNumber]: true }));
       syncCandidateSceneForTooth(toothNumber);
       directEditRef.current?.sync();
@@ -2031,6 +2040,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     bridge.ui.sculptOn = false;
     bridge.ui.readOnly = !canEditDesign;
     bridge.ui.selected = selectedTooth;
+    bridge.ui.selectedTeeth = selectedTeeth;
     bridge.ui.visible = visibleTeeth;
     bridge.ui.expanded = expandedTeeth;
     bridge.onHistory = () => setEditRev((rev) => rev + 1);
@@ -2726,7 +2736,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         clearSceneObjects();
         setDesignedList([]);
         setAvailableJaws({ upper: false, lower: false });
-        setSelectedTooth(null);
+        selectedTeethRef.current = [];
+        setSelectedTeeth([]);
         setRestoredFromCache(false);
         designContextRef.current = null;
         const chatApplyEpoch = ++chatApplyEpochRef.current;
@@ -3630,7 +3641,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     for (const [tooth, mesh] of abutmentMeshesRef.current.entries()) {
       mesh.visible = visibleTeeth[tooth] !== false;
       const mat = mesh.material as THREE.MeshStandardMaterial;
-      mat.emissive.setHex(selectedTooth === tooth ? 0x332800 : 0x000000);
+      const picked = selectedTeeth.includes(tooth);
+      mat.emissive.setHex(picked ? (tooth === selectedTooth ? 0x332800 : 0x2a2200) : 0x000000);
     }
     for (const [tooth, mesh] of predictedCrownMeshesRef.current.entries()) {
       mesh.visible =
@@ -3658,6 +3670,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     shownScanbodies,
     scanTransparency,
     selectedTooth,
+    selectedTeeth,
     showFinishLine,
     showFixtureAnalog,
     shownPredictedCrowns,
@@ -3934,62 +3947,68 @@ export function PracticeCustomAbutmentPreviewDialog({
       nextValue: number | AbutmentAxisSource | { min: number; max: number },
     ) => {
       if (!canEditDesign) return;
-      const tooth = item.toothNumber;
-      if (!baselineMetricsRef.current[tooth]) {
-        baselineMetricsRef.current[tooth] = { ...item.metrics };
-      }
-      if (!baselineParamsRef.current[tooth]) {
-        baselineParamsRef.current[tooth] = { ...item.params };
-      }
-      const patch = computeParamsFromInfoFieldEdit(item, field, nextValue);
-      if (Object.keys(patch).length === 0) return;
-
-      if (field === "postTaperLink") {
-        const nextLinked = (patch.postTaperLink ?? 1) >= 0.5;
-        const targetDeg = patch.postTaperDeg ?? item.metrics.postTaperDeg;
-        const needsRedesign =
-          nextLinked && Math.abs(targetDeg - item.metrics.postTaperDeg) >= 0.05;
-        if (!needsRedesign) {
-          const ctx = designContextRef.current;
-          const updated: DesignedCustomAbutment = {
-            ...item,
-            params: { ...item.params, ...patch },
-          };
-          if (ctx) {
-            ctx.overrides[tooth] = { ...(ctx.overrides[tooth] ?? {}), ...patch };
-          }
-          const list = designedListRef.current.map((d) => (d.toothNumber === tooth ? updated : d));
-          designedListRef.current = list;
-          setDesignedList(list);
-          directEditRef.current?.sync();
-          persistDesign();
-          return;
+      const targetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
+      const targets = designedListRef.current.filter((row) => targetNumbers.includes(row.toothNumber));
+      if (targets.length === 0) return;
+      const changes: DesignChange[] = [];
+      let taperLinkLocal = field === "postTaperLink";
+      for (const row of targets) {
+        if (!baselineMetricsRef.current[row.toothNumber]) {
+          baselineMetricsRef.current[row.toothNumber] = { ...row.metrics };
         }
-        void applyDesignChanges([{ toothNumber: tooth, params: patch }]).then(() => {
-          persistDesign();
+        if (!baselineParamsRef.current[row.toothNumber]) {
+          baselineParamsRef.current[row.toothNumber] = { ...row.params };
+        }
+        const patch = computeParamsFromInfoFieldEdit(row, field, nextValue);
+        if (Object.keys(patch).length === 0) continue;
+        if (field === "postTaperLink") {
+          const nextLinked = (patch.postTaperLink ?? 1) >= 0.5;
+          const targetDeg = patch.postTaperDeg ?? row.metrics.postTaperDeg;
+          if (nextLinked && Math.abs(targetDeg - row.metrics.postTaperDeg) >= 0.05) taperLinkLocal = false;
+        }
+        changes.push({ toothNumber: row.toothNumber, params: patch });
+      }
+      if (changes.length === 0) return;
+
+      if (taperLinkLocal) {
+        const ctx = designContextRef.current;
+        const byTooth = new Map(changes.map((change) => [change.toothNumber, change.params]));
+        const list = designedListRef.current.map((row) => {
+          const patch = byTooth.get(row.toothNumber);
+          if (!patch) return row;
+          if (ctx) ctx.overrides[row.toothNumber] = { ...(ctx.overrides[row.toothNumber] ?? {}), ...patch };
+          return { ...row, params: { ...row.params, ...patch } };
         });
+        designedListRef.current = list;
+        setDesignedList(list);
+        directEditRef.current?.sync();
+        persistDesign();
         return;
       }
 
-      let set = editedInfoFieldsRef.current[tooth];
-      if (!set) {
-        set = new Set();
-        editedInfoFieldsRef.current[tooth] = set;
+      for (const change of changes) {
+        const row = targets.find((itemRow) => itemRow.toothNumber === change.toothNumber);
+        if (!row) continue;
+        let set = editedInfoFieldsRef.current[change.toothNumber];
+        if (!set) {
+          set = new Set();
+          editedInfoFieldsRef.current[change.toothNumber] = set;
+        }
+        const linked = (row.params.postTaperLink ?? 1) >= 0.5;
+        if (field === "occlusalClearanceMm") {
+          set.delete("postHeightMm");
+        } else if (field === "postHeightMm") {
+          set.delete("occlusalClearanceMm");
+        } else if (field === "postTaperDeg" && linked) {
+          set.delete("occlusalClearanceMm");
+          set.add("postHeightMm");
+        }
+        set.add(field);
       }
-      const linked = (item.params.postTaperLink ?? 1) >= 0.5;
-      if (field === "occlusalClearanceMm") {
-        set.delete("postHeightMm");
-      } else if (field === "postHeightMm") {
-        set.delete("occlusalClearanceMm");
-      } else if (field === "postTaperDeg" && linked) {
-        set.delete("occlusalClearanceMm");
-        set.add("postHeightMm");
-      }
-      set.add(field);
       if (field === "axisSource") {
-        directEditRef.current?.clear([tooth]);
+        directEditRef.current?.clear(changes.map((change) => change.toothNumber));
       }
-      void applyDesignChanges([{ toothNumber: tooth, params: patch }]).then(() => {
+      void applyDesignChanges(changes).then(() => {
         persistDesign();
       });
     },
@@ -4596,9 +4615,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   const handleResetToInitial = useCallback(() => {
     const ctx = designContextRef.current;
     if (!ctx) return;
-    const targets = selectedTooth
-      ? [selectedTooth]
-      : designedListRef.current.map((d) => d.toothNumber);
+    const targets =
+      selectedTeeth.length > 0
+        ? selectedTeeth
+        : designedListRef.current.map((d) => d.toothNumber);
     ignoreEditCommitRef.current = true;
     const previousList = designedListRef.current;
     const list = previousList.map((d) => {
@@ -4623,7 +4643,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       .finally(() => {
         ignoreEditCommitRef.current = false;
       });
-  }, [applyDesignChanges, persistDesign, selectedTooth]);
+  }, [applyDesignChanges, persistDesign, selectedTeeth]);
 
   const crownDownloadLockRef = useRef(false);
   const downloadCrownWorkScans = useCallback(async () => {
@@ -5085,7 +5105,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                   pivotArmed={pivotArmed}
                   onFace={jumpToFace}
                   onHome={() => {
-                    setSelectedTooth(null);
+                    selectedTeethRef.current = [];
+                    setSelectedTeeth([]);
                     fitDefaultCamera();
                   }}
                   onFit={fitCurrentView}
@@ -5115,7 +5136,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                     className="min-h-0 max-h-full"
                     items={designedList}
                     visibleTeeth={visibleTeeth}
-                    selectedTooth={selectedTooth}
+                    selectedTeeth={selectedTeeth}
                     redesigning={redesigning}
                     onToggleVisible={(toothNumber) =>
                       setVisibleTeeth((prev) => ({
@@ -5181,7 +5202,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       };
                       setExpandedTeeth(next);
                     }}
-                    onSelect={selectAbutmentOnly}
+                    onSelect={selectAbutments}
                     onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
                     onDownloadAll={() => {
                       const items = designedListRef.current;
