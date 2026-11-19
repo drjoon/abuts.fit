@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-09-26: 보철 업로드 버튼 — 남은 보철 디자인 파일이 있을 때.
 // - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
+// - 2026-11-19: abutmentLeadingActions — 업로드 클러스터 안, 어벗 STL 업로드 바로 왼쪽.
 // - 2026-09-20: abutmentLeadingActions — 어벗 건만 STL 업로드 왼쪽에 SW·아노 등.
 // - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
 // - 2026-10-14: 출고일 수동 선택 제거 — 택배 익영업일 자동. 도착−3 경고만.
@@ -77,8 +78,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   preferredAbutmentShipBeforeArrivalBusinessDays?: number | null;
   onDesignConfirm?: () => void;
   /**
-   * 어벗 있는 의뢰만 — 어벗 STL 업로드 왼쪽(디자인SW·아노 등).
-   * 업로드 버튼이 없어도 어벗 가이드/취소 행에 같이 둔다.
+   * 어벗 있는 의뢰만 — 어벗 STL 업로드 바로 왼쪽(디자인·SW·아노 등).
+   * 업로드 버튼이 없어도 어벗 가이드/취소 행 오른쪽 클러스터에 같이 둔다.
    */
   abutmentLeadingActions?: ReactNode;
   /**
@@ -389,12 +390,14 @@ export function PracticeLabReceiveWorkActionsBar({
   const abutmentLeading = showAbutmentLeading ? abutmentLeadingActions : null;
 
   const cancelCluster =
+    abutmentLeading ||
     abutmentUploadButton ||
     prostheticUploadButton ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {abutmentLeading}
         {abutmentUploadButton}
         {prostheticUploadButton}
         {productionCancelButton}
@@ -406,7 +409,6 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const renderActionRow = (primary: ReactNode) => (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
-      {abutmentLeading}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:flex-nowrap">
         {primary}
       </div>
@@ -497,7 +499,7 @@ export function PracticeLabReceiveWorkActionsBar({
       {standaloneOverdue}
       {abutmentShipBufferAlert}
       {pendingLabGuide}
-      {abutmentLeading || cancelCluster ? renderActionRow(null) : stickyOrTrailing}
+      {cancelCluster ? renderActionRow(null) : stickyOrTrailing}
     </div>
   );
 }

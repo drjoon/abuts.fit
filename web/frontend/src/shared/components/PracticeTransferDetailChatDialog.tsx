@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-19: 치과 헤더 — 디자인 모달 진입을 「디자인」+Sparkles로(작업 스캔 라벨 교체).
 // - 2026-11-19: 담당 기사 뱃지 — 다음 도착일과 같은 줄(헤더 1줄 절약).
 // - 2026-11-16: 치과 헤더 — 의뢰 수정 왼쪽에 「작업 스캔」(디자인 모달·프리뷰).
 // - 2026-11-16: 작업 스캔 타일 — onWorkScanTileClick이 있으면 스캔 프리뷰 대신 연다.
@@ -198,6 +199,7 @@ import {
   FolderOpen,
   RotateCcw,
   Settings,
+  Sparkles,
   Trash2,
   UploadCloud,
   X,
@@ -2969,13 +2971,18 @@ export function PracticeTransferDetailChatDialog({
       (Array.isArray(files) &&
         files.some((file) => isAbutsWorkScanFileName(file.fileName)));
     if (showWorkScanButton) {
+      const opensDesign = Boolean(onWorkScanTileClick);
       buttons.push(
         <Button
           key="work-scan"
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+          className={
+            opensDesign
+              ? "h-8 shrink-0 gap-1 border-primary/45 bg-background px-2.5 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+              : "h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+          }
           disabled={!authToken}
           onClick={() => {
             if (onWorkScanTileClick) {
@@ -2985,7 +2992,14 @@ export function PracticeTransferDetailChatDialog({
             setRequestPreview({ initialKey: "" });
           }}
         >
-          작업 스캔
+          {opensDesign ? (
+            <>
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+              <span>디자인</span>
+            </>
+          ) : (
+            "작업 스캔"
+          )}
         </Button>,
       );
     }

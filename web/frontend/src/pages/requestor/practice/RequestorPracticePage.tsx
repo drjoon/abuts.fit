@@ -69,6 +69,7 @@
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-20: 수신 헤더 xl 미만 — 배지·북마크·생산중 아이콘화. 상세 프린트·번호표는 아이콘+라벨.
 // - 2026-09-20: 수신 헤더 nowrap — 미처리 alert·배지·생산중이 두 줄로 밀리지 않게.
+// - 2026-11-19: 커스텀어벗 「디자인」버튼 — 헤더 → 어벗 STL 업로드 왼쪽.
 // - 2026-09-20: SW·아노 → 채팅 어벗 STL 업로드 왼쪽(어벗 건만). 미처리 alert를 헤더 왼쪽·배지 오른쪽.
 // - 2026-09-26: 보철 디자인 파일 필수 — 드롭·버튼으로 올리고 작업완료.
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
@@ -10781,40 +10782,7 @@ export function RequestorPracticeReceivePage({
             </>
           ) : null
         }
-        headerActionLeading={
-          selectedTransfer &&
-          (selectedTransfer.hasCustomAbutment ||
-            selectedTransferToothWorks.some((row) => row.customAbutment)) ? (
-            <div className="flex min-w-0 items-center gap-2" data-no-drag>
-              <PracticeCustomAbutmentPreviewButton
-                viewerRole="lab"
-                authToken={token}
-                toothWorks={selectedTransferToothWorks}
-                files={[]}
-                onOpen={() => {
-                  const id = String(selectedTransfer.transferId || "").trim();
-                  const idx = labDesignReviewTransfers.findIndex(
-                    (row) => String(row.transferId || "").trim() === id,
-                  );
-                  if (idx >= 0) {
-                    void openLabAbutmentDesign(labDesignReviewTransfers, idx, true);
-                    return;
-                  }
-                  void openLabAbutmentDesign([selectedTransfer], 0, false);
-                }}
-              />
-              {selectedTransfer.production?.customAbutmentManualDesign ? (
-                <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
-                  수작업 의뢰{selectedTransfer.production.customAbutmentManualDesign.hasPaint ? " · 페인트" : ""}
-                </span>
-              ) : selectedTransfer.production?.practiceDesignConfirmedAt ? (
-                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-                  치과 확정 디자인
-                </span>
-              ) : null}
-            </div>
-          ) : null
-        }
+        headerActionLeading={null}
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
@@ -11263,22 +11231,74 @@ export function RequestorPracticeReceivePage({
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
               abutmentLeadingActions={
-                <RequestSettingsToolbar
-                  designSoftwareLabel={String(designSoftwareValue || "").trim()}
-                  onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
-                  anodizingEnabled={anodizingEnabled}
-                  anodizingSaving={anodizingSaving}
-                  onAnodizingChange={(enabled) => {
-                    void saveAnodizingEnabled(enabled);
-                  }}
-                  retentionGroove={
-                    retentionGrooveDefault === "deep" ? "deep" : "none"
-                  }
-                  onRetentionGrooveChange={(value) => {
-                    void saveRetentionGroove(value);
-                  }}
-                  menu
-                />
+                <div className="flex min-w-0 items-center gap-1.5" data-no-drag>
+                  {selectedTransfer.hasCustomAbutment ||
+                  selectedTransferToothWorks.some((row) => row.customAbutment) ? (
+                    <>
+                      <PracticeCustomAbutmentPreviewButton
+                        viewerRole="lab"
+                        authToken={token}
+                        toothWorks={selectedTransferToothWorks}
+                        files={[]}
+                        onOpen={() => {
+                          const id = String(
+                            selectedTransfer.transferId || "",
+                          ).trim();
+                          const idx = labDesignReviewTransfers.findIndex(
+                            (row) =>
+                              String(row.transferId || "").trim() === id,
+                          );
+                          if (idx >= 0) {
+                            void openLabAbutmentDesign(
+                              labDesignReviewTransfers,
+                              idx,
+                              true,
+                            );
+                            return;
+                          }
+                          void openLabAbutmentDesign(
+                            [selectedTransfer],
+                            0,
+                            false,
+                          );
+                        }}
+                      />
+                      {selectedTransfer.production
+                        ?.customAbutmentManualDesign ? (
+                        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
+                          수작업 의뢰
+                          {selectedTransfer.production
+                            .customAbutmentManualDesign.hasPaint
+                            ? " · 페인트"
+                            : ""}
+                        </span>
+                      ) : selectedTransfer.production
+                          ?.practiceDesignConfirmedAt ? (
+                        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
+                          치과 확정 디자인
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <RequestSettingsToolbar
+                    designSoftwareLabel={String(
+                      designSoftwareValue || "",
+                    ).trim()}
+                    onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
+                    anodizingEnabled={anodizingEnabled}
+                    anodizingSaving={anodizingSaving}
+                    onAnodizingChange={(enabled) => {
+                      void saveAnodizingEnabled(enabled);
+                    }}
+                    retentionGroove={
+                      retentionGrooveDefault === "deep" ? "deep" : "none"
+                    }
+                    onRetentionGrooveChange={(value) => {
+                      void saveRetentionGroove(value);
+                    }}
+                    menu
+                  />
+                </div>
               }
               stickyTrailingActions={labZirStartButton}
               trailingActions={releaseTrailingOnly}
