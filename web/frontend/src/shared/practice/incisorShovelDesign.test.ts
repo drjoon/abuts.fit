@@ -531,63 +531,177 @@ taper2Deg11.predictedCrownWorldGeometry.dispose();
 taper35Deg11.worldGeometry.dispose();
 taper35Deg11.predictedCrownWorldGeometry.dispose();
 
-// 전치부(절치·견치) 포스트 설측 사면 각도 설정 검증
+// 전치부(절치·견치) 포스트 설측 사면 길이(절단에서 떨어진 거리) 및 단일 평면 검증
+function measureLingualPlaneFlatnessMm(
+  positions: Float32Array,
+  fixture: {
+    fixturePose: { hexX: readonly number[]; hexY: readonly number[]; axis: readonly number[] };
+    labialDir?: readonly number[];
+    mesialDir?: readonly number[];
+  },
+  zSlice: number,
+): { span: number; grooveDepth: number } {
+  const dot = (a: readonly number[], b: readonly number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  const pose = fixture.fixturePose;
+  const labW = fixture.labialDir ?? pose.hexX;
+  const mesW = fixture.mesialDir ?? pose.hexY;
+  const labRaw = [dot(labW, pose.hexX), dot(labW, pose.hexY)];
+  const labLen = Math.hypot(labRaw[0]!, labRaw[1]!) || 1;
+  const lux = labRaw[0]! / labLen;
+  const luy = labRaw[1]! / labLen;
+  const mesRaw = [dot(mesW, pose.hexX), dot(mesW, pose.hexY)];
+  const mesLen = Math.hypot(mesRaw[0]!, mesRaw[1]!) || 1;
+  const mvx = mesRaw[0]! / mesLen;
+  const mvy = mesRaw[1]! / mesLen;
+
+  // 삼각형 변과 z = zSlice 평면의 교점들을 모아 실제 표면 수평 단면을 측정한다.
+  const crossUV: Array<[number, number]> = [];
+  for (let i = 0; i < positions.length; i += 9) {
+    const verts: Array<[number, number, number]> = [
+      [positions[i]!, positions[i + 1]!, positions[i + 2]!],
+      [positions[i + 3]!, positions[i + 4]!, positions[i + 5]!],
+      [positions[i + 6]!, positions[i + 7]!, positions[i + 8]!],
+    ];
+    for (let e = 0; e < 3; e += 1) {
+      const a = verts[e]!;
+      const b = verts[(e + 1) % 3]!;
+      if ((a[2] - zSlice) * (b[2] - zSlice) > 0) continue;
+      const dz = b[2] - a[2];
+      const t = Math.abs(dz) < 1e-8 ? 0.5 : (zSlice - a[2]) / dz;
+      if (t < 0 || t > 1) continue;
+      const x = a[0] + (b[0] - a[0]) * t;
+      const y = a[1] + (b[1] - a[1]) * t;
+      crossUV.push([x * lux + y * luy, x * mvx + y * mvy]);
+    }
+  }
+
+  const bands = [-0.6, -0.3, 0, 0.3, 0.6];
+  const minUByBand: number[] = [];
+  for (const vb of bands) {
+    let minU = Infinity;
+    let n = 0;
+    for (const [u, v] of crossUV) {
+      if (Math.abs(v - vb) > 0.12) continue;
+      if (u < minU) minU = u;
+      n += 1;
+    }
+    if (n >= 2 && Number.isFinite(minU)) minUByBand.push(minU);
+  }
+  if (minUByBand.length < 5) return { span: Number.NaN, grooveDepth: Number.NaN };
+  const mid = minUByBand[2]!;
+  const ends = 0.5 * (minUByBand[0]! + minUByBand[4]!);
+  return {
+    span: Math.max(...minUByBand) - Math.min(...minUByBand),
+    grooveDepth: Math.max(0, mid - ends),
+  };
+}
+
+function minLingualXAtZ(positions: Float32Array, zSlice: number): number {
+  let minX = Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (Math.abs(positions[i + 2]! - zSlice) > 0.12) continue;
+    if (Math.abs(positions[i + 1]!) > 0.25) continue;
+    if (positions[i]! < minX) minX = positions[i]!;
+  }
+  return minX;
+}
+
 const works13 = [{ toothNumber: "13", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }];
 const fixture13 = { ...fixture11, toothNumber: "13" };
-const [bevel15Incisor, bevel45Incisor, bevel15Canine, bevel45Canine] = await Promise.all([
+const [bevelShortInc, bevelLongInc, bevelOverInc, bevelShortCan, bevelLongCan] = await Promise.all([
   designCustomAbutmentStl({
     fixture: fixture11,
     jawGeometry: jaw,
     opposingGeometry: flatMid,
     toothWorks: works11,
-    params: { postLingualBevelDeg: 15 },
-    explicitParams: { postLingualBevelDeg: 15 },
+    params: { postLingualBevelMm: 1.5 },
+    explicitParams: { postLingualBevelMm: 1.5 },
   }),
   designCustomAbutmentStl({
     fixture: fixture11,
     jawGeometry: jaw,
     opposingGeometry: flatMid,
     toothWorks: works11,
-    params: { postLingualBevelDeg: 45 },
-    explicitParams: { postLingualBevelDeg: 45 },
+    params: { postLingualBevelMm: 4.0 },
+    explicitParams: { postLingualBevelMm: 4.0 },
+  }),
+  designCustomAbutmentStl({
+    fixture: fixture11,
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: works11,
+    params: { postLingualBevelMm: 11.0 },
+    explicitParams: { postLingualBevelMm: 11.0 },
   }),
   designCustomAbutmentStl({
     fixture: fixture13,
     jawGeometry: jaw,
     opposingGeometry: flatMid,
     toothWorks: works13,
-    params: { postLingualBevelDeg: 15 },
-    explicitParams: { postLingualBevelDeg: 15 },
+    params: { postLingualBevelMm: 1.5 },
+    explicitParams: { postLingualBevelMm: 1.5 },
   }),
   designCustomAbutmentStl({
     fixture: fixture13,
     jawGeometry: jaw,
     opposingGeometry: flatMid,
     toothWorks: works13,
-    params: { postLingualBevelDeg: 45 },
-    explicitParams: { postLingualBevelDeg: 45 },
+    params: { postLingualBevelMm: 3.6 },
+    explicitParams: { postLingualBevelMm: 3.6 },
   }),
 ]);
-const inc15Shape = sectionMetrics(bevel15Incisor.solidBodyLocalPositions!);
-const inc45Shape = sectionMetrics(bevel45Incisor.solidBodyLocalPositions!);
-const can15Shape = sectionMetrics(bevel15Canine.solidBodyLocalPositions!);
-const can45Shape = sectionMetrics(bevel45Canine.solidBodyLocalPositions!);
+let zMaxShortInc = -Infinity;
+for (let i = 2; i < bevelShortInc.solidBodyLocalPositions!.length; i += 3) {
+  zMaxShortInc = Math.max(zMaxShortInc, bevelShortInc.solidBodyLocalPositions![i]!);
+}
+const zCheckMid = zMaxShortInc - 2.3;
+const shortLinMidX = minLingualXAtZ(bevelShortInc.solidBodyLocalPositions!, zCheckMid);
+const longLinMidX = minLingualXAtZ(bevelLongInc.solidBodyLocalPositions!, zCheckMid);
+let zMaxLongCan = -Infinity;
+for (let i = 2; i < bevelLongCan.solidBodyLocalPositions!.length; i += 3) {
+  zMaxLongCan = Math.max(zMaxLongCan, bevelLongCan.solidBodyLocalPositions![i]!);
+}
+const incPlane = measureLingualPlaneFlatnessMm(
+  bevelLongInc.solidBodyLocalPositions!,
+  bevelLongInc.fixture,
+  zMaxShortInc - 1.4,
+);
+const canPlane = measureLingualPlaneFlatnessMm(
+  bevelLongCan.solidBodyLocalPositions!,
+  bevelLongCan.fixture,
+  zMaxLongCan - 1.4,
+);
 console.log(
   JSON.stringify({
-    bevel: {
-      inc15: { deg: bevel15Incisor.metrics.postLingualBevelDeg, bl: +inc15Shape.bl.toFixed(2), maxD: bevel15Incisor.metrics.maxDiameterMm },
-      inc45: { deg: bevel45Incisor.metrics.postLingualBevelDeg, bl: +inc45Shape.bl.toFixed(2), maxD: bevel45Incisor.metrics.maxDiameterMm },
-      can15: { deg: bevel15Canine.metrics.postLingualBevelDeg, bl: +can15Shape.bl.toFixed(2), maxD: bevel15Canine.metrics.maxDiameterMm },
-      can45: { deg: bevel45Canine.metrics.postLingualBevelDeg, bl: +can45Shape.bl.toFixed(2), maxD: bevel45Canine.metrics.maxDiameterMm },
-      posterior35Deg: single35.metrics.postLingualBevelDeg ?? null,
+    bevelMm: {
+      shortInc: bevelShortInc.metrics.postLingualBevelMm,
+      longInc: bevelLongInc.metrics.postLingualBevelMm,
+      overInc: bevelOverInc.metrics.postLingualBevelMm,
+      overIncPostH: bevelOverInc.metrics.postHeightMm,
+      shortLinMidX: +shortLinMidX.toFixed(2),
+      longLinMidX: +longLinMidX.toFixed(2),
+      incPlane,
+      canPlane,
+      posterior35: single35.metrics.postLingualBevelMm ?? null,
     },
   }),
 );
-assert.equal(bevel15Incisor.metrics.postLingualBevelDeg, 15, "절치 설측 사면 15°가 메트릭에 반영된다");
-assert.equal(bevel45Incisor.metrics.postLingualBevelDeg, 45, "절치 설측 사면 45°가 메트릭에 반영된다");
+assert.equal(bevelShortInc.metrics.postLingualBevelMm, 1.5, "절치 설측 사면 길이 1.5mm가 반영된다");
+assert.equal(bevelLongInc.metrics.postLingualBevelMm, 4.0, "절치 설측 사면 길이 4.0mm가 반영된다");
 assert.ok(
-  inc45Shape.bl < inc15Shape.bl - 0.35,
-  `절치 설측 사면을 15°→45°로 키우면 상단 순설 폭이 줄어든다(${inc15Shape.bl.toFixed(2)}mm → ${inc45Shape.bl.toFixed(2)}mm)`,
+  bevelOverInc.metrics.postLingualBevelMm! < bevelOverInc.metrics.postHeightMm,
+  `설측 사면 길이(${bevelOverInc.metrics.postLingualBevelMm}mm)는 항상 포스트 높이(${bevelOverInc.metrics.postHeightMm}mm)보다 작다`,
+);
+assert.ok(
+  longLinMidX > shortLinMidX + 0.35,
+  `절단에서 떨어진 설측 사면 거리를 1.5mm→4.0mm로 늘리면 절단 아래 2.3mm 지점 설측이 사면으로 더 깎인다(${shortLinMidX.toFixed(2)} → ${longLinMidX.toFixed(2)})`,
+);
+assert.ok(
+  incPlane.grooveDepth <= 0.03 &&
+    canPlane.grooveDepth <= 0.03 &&
+    incPlane.span <= 0.1 &&
+    canPlane.span <= 0.1,
+  `절치(span ${incPlane.span.toFixed(3)}mm, groove ${incPlane.grooveDepth.toFixed(3)}mm)·견치(span ${canPlane.span.toFixed(3)}mm, groove ${canPlane.grooveDepth.toFixed(3)}mm) 설측 사면은 로브·중심 홈 없이 하나의 매끈한 평면을 이룬다`,
 );
 const maxLoopR = (loop: Float32Array) => {
   let r = 0;
@@ -595,18 +709,14 @@ const maxLoopR = (loop: Float32Array) => {
   return Math.round(r * 200) / 100;
 };
 assert.equal(
-  maxLoopR(bevel15Incisor.marginLoopLocal),
-  maxLoopR(bevel45Incisor.marginLoopLocal),
-  "설측 사면 각도를 바꿔도 피니시라인 외경은 유지된다",
+  maxLoopR(bevelShortInc.marginLoopLocal),
+  maxLoopR(bevelLongInc.marginLoopLocal),
+  "설측 사면 길이를 바꿔도 피니시라인 외경은 유지된다",
 );
-assert.equal(bevel15Canine.metrics.postLingualBevelDeg, 15, "견치 설측 사면 15°가 메트릭에 반영된다");
-assert.equal(bevel45Canine.metrics.postLingualBevelDeg, 45, "견치 설측 사면 45°가 메트릭에 반영된다");
-assert.ok(
-  can45Shape.bl < can15Shape.bl - 0.25,
-  `견치 설측 사면을 15°→45°로 키우면 상단 순설 폭이 줄어든다(${can15Shape.bl.toFixed(2)}mm → ${can45Shape.bl.toFixed(2)}mm)`,
-);
-assert.equal(single35.metrics.postLingualBevelDeg ?? null, null, "구치부에는 설측 사면 메트릭이 없다");
-for (const d of [bevel15Incisor, bevel45Incisor, bevel15Canine, bevel45Canine]) {
+assert.equal(bevelShortCan.metrics.postLingualBevelMm, 1.5, "견치 설측 사면 길이 1.5mm가 반영된다");
+assert.equal(bevelLongCan.metrics.postLingualBevelMm, 3.6, "견치 설측 사면 길이 3.6mm가 반영된다");
+assert.equal(single35.metrics.postLingualBevelMm ?? null, null, "구치부에는 설측 사면 메트릭이 없다");
+for (const d of [bevelShortInc, bevelLongInc, bevelOverInc, bevelShortCan, bevelLongCan]) {
   d.worldGeometry.dispose();
   d.predictedCrownWorldGeometry.dispose();
 }

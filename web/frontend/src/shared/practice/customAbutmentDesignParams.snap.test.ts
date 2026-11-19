@@ -114,10 +114,10 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   assert.equal(CUSTOM_ABUTMENT_PREFERENCE_KEYS.includes("postTaperDeg"), false);
 });
 
-test("전치부 포스트 설측 사면 각도는 기본 자동(-1), 직접 지정 시 2°~60°로 맞춘다", () => {
-  assert.equal(resolveCustomAbutmentParams("11").postLingualBevelDeg, -1);
-  assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelDeg: -5 }).postLingualBevelDeg, -1);
-  assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelDeg: 0.5 }).postLingualBevelDeg, 2);
-  assert.equal(resolveCustomAbutmentParams("13", { postLingualBevelDeg: 35.24 }).postLingualBevelDeg, 35.2);
-  assert.equal(resolveCustomAbutmentParams("21", { postLingualBevelDeg: 75 }).postLingualBevelDeg, 60);
+test("전치부 포스트 설측 사면 길이(절단에서 떨어진 거리)는 기본 자동(-1), 직접 지정 시 0.5~11.5mm로 맞춘다", () => {
+  assert.equal(resolveCustomAbutmentParams("11").postLingualBevelMm, -1);
+  assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelMm: -5 }).postLingualBevelMm, -1);
+  assert.equal(resolveCustomAbutmentParams("11", { postLingualBevelMm: 0.2 }).postLingualBevelMm, 0.5);
+  assert.equal(resolveCustomAbutmentParams("13", { postLingualBevelMm: 3.24 }).postLingualBevelMm, 3.2);
+  assert.equal(resolveCustomAbutmentParams("21", { postLingualBevelMm: 20 }).postLingualBevelMm, 11.5);
 });

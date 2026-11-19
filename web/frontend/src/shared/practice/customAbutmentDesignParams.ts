@@ -14,8 +14,8 @@ export type CustomAbutmentDesignParams = {
   postTaperDeg: number;
   /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
   postTaperLink: number;
-  /** 전치부(절치·견치) 포스트 설측 사면 각도(°, -1이면 자동). */
-  postLingualBevelDeg: number;
+  /** 전치부(절치·견치) 포스트 설측 사면 길이 — 절단에서 떨어진 거리(mm, -1이면 자동). */
+  postLingualBevelMm: number;
   /** 악궁 접선 기준 포스트 수평 회전 보정(°, 교합면 시점 +=반시계, -=시계). */
   postYawDeg: number;
   /** 대합치가 없을 때 포스트 높이 보정(mm). 대합치가 있으면 낮추기만 한다. */
@@ -68,7 +68,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
   postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 4.2, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
-  postLingualBevelDeg: { label: "설측 사면", unit: "°", min: -1, max: 60, step: 1 },
+  postLingualBevelMm: { label: "설측 사면", unit: "mm", min: -1, max: 11.5, step: 0.1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.7, max: 1.3, step: 0.01 },
@@ -494,7 +494,7 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     occlusalClearanceMm: 1.5,
     postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
     postTaperLink: 1,
-    postLingualBevelDeg: -1,
+    postLingualBevelMm: -1,
     postYawDeg: 0,
     postHeightOffsetMm: 0,
     postWidthScale: 1,
@@ -542,9 +542,10 @@ function clampDesignParam(
         ? RETENTION_BRIDGE_MAX_TAPER_DEG
         : RETENTION_SINGLE_MAX_TAPER_DEG
       : spec.max;
-  if (key === "postLingualBevelDeg") {
+  // 절단에서 떨어진 거리(mm). 포스트 높이보다 작게 쓰며, 패널 max는 postHeight−0.5에서 한 번 더 자른다.
+  if (key === "postLingualBevelMm") {
     if (raw < 0) return -1;
-    return Math.round(Math.min(spec.max, Math.max(RETENTION_SINGLE_MIN_TAPER_DEG, raw)) * 10) / 10;
+    return Math.round(Math.min(spec.max, Math.max(0.5, raw)) * 10) / 10;
   }
   let next = Math.min(max, Math.max(spec.min, raw));
   if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
@@ -648,7 +649,7 @@ export function describeCustomAbutmentPreference(pref: CustomAbutmentDesignPrefe
       .map(([key, v]) => {
         const num = Number(v);
         if (
-          (key === "axisTargetDeg" || key === "axisSourceCode" || key === "postLingualBevelDeg") &&
+          (key === "axisTargetDeg" || key === "axisSourceCode" || key === "postLingualBevelMm") &&
           num < 0
         ) {
           return "";
