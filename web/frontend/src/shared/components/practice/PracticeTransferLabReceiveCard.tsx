@@ -138,7 +138,9 @@ export function PracticeTransferLabReceiveCard({
   } = workState;
   const completeInputId = `practice-complete-${cardId}`;
   const allowCardDrop =
-    Boolean(onDropFiles) && designStlUploadMode !== "none";
+    Boolean(onDropFiles) &&
+    designStlUploadMode !== "none" &&
+    !workState.uploadLocked;
   const acceptOverdue = isPracticeTransferAcceptOverdue({
     status: workState.displayStatus,
     orderDate: transfer.orderDate,

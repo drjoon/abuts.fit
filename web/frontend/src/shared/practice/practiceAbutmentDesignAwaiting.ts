@@ -2,7 +2,7 @@
 // 접수 직원·위생사가 먼저 보내고, 치과의사가 나중에 디자인 화면에서 확정한다.
 // 수행 기공소 STL이 올라갔거나 수작업·플랫폼 경로가 정해지면 끝난다.
 // 상단은 「어벗 검토」(디자인 화면)와 「어벗 의뢰」(수작업·채팅)로 나눈다.
-// 검토 대기는 뱃지·육각형에 practice-abutment-design-awaiting-attention.
+// 검토 대기(치과 미확정·기공소 미확정)는 뱃지·육각형에 practice-abutment-design-awaiting-attention.
 // related files:
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -12,6 +12,7 @@
 // - 2026-11-19: 작업시작 비활성 툴팁 카피(LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT).
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 // - 2026-11-20: 작업시작 보철 업로드 안내 모달 문구 간소화.
+// - 2026-11-20: 기공소 미확정 검토도 육각형·디자인 버튼이 같은 깜빡임을 쓴다.
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
 export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =

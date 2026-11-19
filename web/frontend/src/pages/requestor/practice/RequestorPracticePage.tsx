@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 플랫폼 디자인 검토 — 확정 뱃지 제거. 어벗·디자인 깜빡임. 업로드 비활성.
 // - 2026-11-20: 치과 디자인 확정 소켓 — 작업시작을 바로 연다. 확정 시각을 작업완료로 보지 않는다.
 // - 2026-11-19: 기공소 디자인 모달 — 치과 확정이 아니면 열지 않는다. 뷰어로 대체하지 않는다.
 // - 2026-11-19: 기공소 디자인 확정 — 응답의 제조 STL·연동 의뢰를 바로 반영. 생산의뢰 완료가 새로고침 없이 보인다.
@@ -3533,6 +3534,18 @@ export function RequestorPracticeReceivePage({
           designFileCount: transfer.production?.designFileCount,
           manualRequested: Boolean(transfer.production?.customAbutmentManualDesign?.at),
         }),
+        abutmentLabReview: isPtxAbutmentDesignReviewForLab({
+          status: getTransferDisplayStatus(transfer),
+          hasCustomAbutment:
+            Boolean(transfer.hasCustomAbutment) ||
+            practiceTransferHasCustomAbutment(transfer, implantCatalog),
+          abutmentFeeRoute: transfer.production?.abutmentFeeRoute,
+          practiceDesignConfirmedAt: transfer.production?.practiceDesignConfirmedAt,
+          labDesignConfirmedAt: transfer.production?.labDesignConfirmedAt,
+          manualRequested: Boolean(
+            transfer.production?.customAbutmentManualDesign?.at,
+          ),
+        }),
         basketTag: normalizeLabBasketTag(transfer.labBasketTag) || null,
         receiveRole: resolveLabReceiveRoleMarker(transfer, {
           viewerIsPrime: viewerIsPrimeLab,
@@ -5428,6 +5441,16 @@ export function RequestorPracticeReceivePage({
       if (!nextFiles.length) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || workUploadBusy) return;
+      if (
+        resolvePracticeLabReceiveWorkActionState(transfer, implantCatalog)
+          .uploadLocked
+      ) {
+        toast({
+          title: "디자인 확정 전",
+          description: "디자인 확정 후 업로드할 수 있습니다.",
+        });
+        return;
+      }
 
       const pendingSlots = listPracticeTransferPendingProstheticSlots(transfer);
       const slotOptions = toLabReceiveSlotOptionsFromProsthetic(pendingSlots);
@@ -5547,6 +5570,7 @@ export function RequestorPracticeReceivePage({
     },
     [
       cardActionBusyId,
+      implantCatalog,
       openWorkUploadDialog,
       resolveProstheticAssignments,
       submitProstheticAssignments,
@@ -7885,6 +7909,13 @@ export function RequestorPracticeReceivePage({
         transfer,
         implantCatalog,
       );
+      if (workState.uploadLocked) {
+        toast({
+          title: "디자인 확정 전",
+          description: "디자인 확정 후 업로드할 수 있습니다.",
+        });
+        return;
+      }
       if (
         !workState.showWorkActions ||
         (workState.designStlUploadMode !== "abutment" &&
@@ -8236,6 +8267,13 @@ export function RequestorPracticeReceivePage({
         transfer,
         implantCatalog,
       );
+      if (workState.uploadLocked) {
+        toast({
+          title: "디자인 확정 전",
+          description: "디자인 확정 후 업로드할 수 있습니다.",
+        });
+        return;
+      }
       const mode = workState.designStlUploadMode;
       if (!workState.showWorkActions || mode === "none") {
         toast({
@@ -8276,7 +8314,11 @@ export function RequestorPracticeReceivePage({
       implantCatalog,
     );
     // 카드 드롭과 동일 — 수락 전(거부/수락 버튼 단계)에는 어벗 STL 드롭 비활성
-    if (!workState.showWorkActions || workState.designStlUploadMode === "none") {
+    if (
+      workState.uploadLocked ||
+      !workState.showWorkActions ||
+      workState.designStlUploadMode === "none"
+    ) {
       return null;
     }
     const transferKey = String(
@@ -11644,6 +11686,10 @@ export function RequestorPracticeReceivePage({
                         const labAbutmentDesignReady = Boolean(
                           selectedTransfer.production?.practiceDesignConfirmedAt,
                         );
+                        const labDesignReviewPending =
+                          isPtxAbutmentDesignReviewForLab(
+                            labAbutmentInput(selectedTransfer),
+                          );
                         return (
                           <PracticeCustomAbutmentPreviewButton
                             viewerRole="lab"
@@ -11651,6 +11697,11 @@ export function RequestorPracticeReceivePage({
                             toothWorks={selectedTransferToothWorks}
                             files={[]}
                             disabled={!labAbutmentDesignReady}
+                            className={
+                              labDesignReviewPending
+                                ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+                                : undefined
+                            }
                             title={
                               labAbutmentDesignReady
                                 ? undefined
@@ -11692,11 +11743,7 @@ export function RequestorPracticeReceivePage({
                             : ""}
                         </span>
                       ) : selectedTransfer.production
-                          ?.practiceDesignConfirmedAt ? (
-                        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-                          치과 확정 디자인
-                        </span>
-                      ) : (
+                          ?.practiceDesignConfirmedAt ? null : (
                         <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
                           치과 확정 대기
                         </span>
