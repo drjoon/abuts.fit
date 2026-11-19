@@ -133,9 +133,13 @@ export function formatAbutmentInfoFieldValue(
     case "postTaperDeg":
       return `${cleanNum(m.postTaperDeg, 1)}°`;
     case "postLingualBevelMm":
-      return m.postLingualBevelMm != null ? `${cleanNum(m.postLingualBevelMm, 1)}mm` : "-";
+      return m.postLingualBevelMm != null && m.postLingualBevelMm > 0
+        ? `${cleanNum(m.postLingualBevelMm, 1)}mm`
+        : "없음";
     case "postLabialBevelMm":
-      return m.postLabialBevelMm != null ? `${cleanNum(m.postLabialBevelMm, 1)}mm` : "-";
+      return m.postLabialBevelMm != null && m.postLabialBevelMm > 0
+        ? `${cleanNum(m.postLabialBevelMm, 1)}mm`
+        : "없음";
     case "occlusalClearanceMm":
       return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
     case "axisSource":

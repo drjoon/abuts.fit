@@ -4550,6 +4550,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         const beforeText = formatAbutmentInfoFieldValue(baseM, field);
         const afterText = formatAbutmentInfoFieldValue(d.metrics, field);
         if (beforeText === afterText) continue;
+        // 사면 해제는 이번 케이스만 — 다음 케이스 기본값 모달에는 넣지 않는다.
+        if (field === "postLingualBevelMm" || field === "postLabialBevelMm") {
+          const afterMm =
+            field === "postLingualBevelMm"
+              ? d.metrics.postLingualBevelMm
+              : d.metrics.postLabialBevelMm;
+          if (afterMm == null || afterMm <= 0) continue;
+        }
         let params: Partial<CustomAbutmentDesignParams> = {};
         switch (field) {
           case "marginSubgMm":
