@@ -26,6 +26,8 @@ type Props = {
   panelRef?: RefObject<HTMLElement | null>;
   minW: number;
   minH: number;
+  /** 내용이 접히면 높이만 내용에 맞춘다. 자리·가로는 유지한다. */
+  hugContent?: boolean;
   /** 한 번도 옮기지 않았을 때의 자리. */
   anchorClassName: string;
   className?: string;
@@ -38,6 +40,7 @@ export function ViewerFloatingFrame({
   panelRef,
   minW,
   minH,
+  hugContent = false,
   anchorClassName,
   className,
   children,
@@ -59,6 +62,10 @@ export function ViewerFloatingFrame({
   const [moving, setMoving] = useState(false);
   const boxRef = useRef(box);
   boxRef.current = box;
+  /** 펼친 높이. 접힌 뒤에도 유지한다. */
+  const openHeightRef = useRef(0);
+  /** 접힌 막대의 아래 변. */
+  const dockBottomRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const bounds = boundsRef.current;
@@ -90,6 +97,34 @@ export function ViewerFloatingFrame({
     return () => observer.disconnect();
   }, [boundsRef, box?.corner, box?.w]);
 
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current;
+    if (!bounds || !panel) return;
+    if (hugContent) {
+      const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+      dockBottomRef.current = top + panel.offsetHeight;
+      return;
+    }
+    const measured = boxRef.current?.h || panel.offsetHeight;
+    if (measured > 80) openHeightRef.current = measured;
+    const bottom = dockBottomRef.current;
+    dockBottomRef.current = null;
+    if (bottom == null || openHeightRef.current <= 80) return;
+    const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+    const maxH = Math.max(minH, bounds.height - VIEWER_PANEL_EDGE * 2);
+    const height = Math.min(openHeightRef.current, maxH);
+    const nearBottom = bounds.height - bottom <= top + 48;
+    let y = nearBottom ? bottom - height : top;
+    y = Math.max(VIEWER_PANEL_EDGE, Math.min(y, bounds.height - height - VIEWER_PANEL_EDGE));
+    setBox((prev) => {
+      const w = prev?.w ?? panel.offsetWidth;
+      const x = prev?.x ?? panel.getBoundingClientRect().left - bounds.left;
+      if (prev && prev.y === y && prev.h === height) return prev;
+      return { x, y, w, h: height, corner: prev?.corner ?? null };
+    });
+  }, [boundsRef, hugContent, minH]);
+
   const readBox = () => {
     const bounds = boundsRef.current?.getBoundingClientRect();
     const panel = frameRef.current?.getBoundingClientRect();
@@ -116,7 +151,16 @@ export function ViewerFloatingFrame({
       y: current.y,
       moved: false,
     };
-    setBox({ x: current.x, y: current.y, w: current.w, h: current.h, corner: null });
+    if (!hugContent) openHeightRef.current = current.h;
+    setBox((prev) => ({
+      x: current.x,
+      y: current.y,
+      w: current.w,
+      h: hugContent
+        ? Math.max(prev?.h ?? 0, openHeightRef.current) || current.h
+        : current.h,
+      corner: null,
+    }));
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -171,9 +215,16 @@ export function ViewerFloatingFrame({
       true,
       peers,
     );
+    const bottomGap = bounds.height - (placed.y + panel.offsetHeight);
+    pinBottomRef.current =
+      bottomGap <= VIEWER_PANEL_EDGE + 2 || placed.corner === "se" || placed.corner === "sw";
     setBox((prev) =>
       prev
-        ? { ...prev, ...placed }
+        ? {
+            ...prev,
+            ...placed,
+            h: hugContent ? Math.max(prev.h, openHeightRef.current) : prev.h,
+          }
         : { ...placed, w: panel.offsetWidth, h: panel.offsetHeight },
     );
   };
@@ -270,14 +321,22 @@ export function ViewerFloatingFrame({
         if (panelRef) panelRef.current = node;
       }}
       className={cn(
-        "pointer-events-auto absolute z-20 flex min-h-0 flex-col",
+        "pointer-events-auto absolute z-20 flex min-h-0 flex-col overflow-y-auto",
         !floated && anchorClassName,
         floated && !moving && "transition-[left,top] duration-200 ease-out",
+        hugContent && "h-auto",
         className,
       )}
       style={
         floated
-          ? { left: box.x, top: box.y, width: box.w, height: box.h, right: "auto", bottom: "auto" }
+          ? {
+              left: box.x,
+              top: box.y,
+              width: box.w,
+              height: hugContent ? "auto" : box.h,
+              right: "auto",
+              bottom: "auto",
+            }
           : undefined
       }
       onPointerDown={onPointerDown}

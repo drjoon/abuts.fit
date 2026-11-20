@@ -239,6 +239,10 @@ export function DesignShareChatPanel({
   const shown = messages.slice(-20);
   const boxRef = useRef(box);
   boxRef.current = box;
+  /** 펼친 높이. 접힌 막대를 끌어도 이 값은 유지한다. */
+  const openHeightRef = useRef(448);
+  /** 접힌 막대의 아래 변. 펼칠 때 이 변을 기준으로 위로 키운다. */
+  const dockBottomRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const bounds = boundsRef.current;
@@ -260,6 +264,34 @@ export function DesignShareChatPanel({
     observer.observe(bounds);
     return () => observer.disconnect();
   }, [boundsRef, box?.corner, box?.w, collapsed]);
+
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current;
+    if (!bounds || !panel) return;
+    if (collapsed) {
+      const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+      dockBottomRef.current = top + panel.offsetHeight;
+      return;
+    }
+    const h = panel.offsetHeight;
+    if (h > 120) openHeightRef.current = boxRef.current?.h && boxRef.current.h > 120 ? boxRef.current.h : h;
+    const bottom = dockBottomRef.current;
+    dockBottomRef.current = null;
+    if (bottom == null) return;
+    const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+    const maxH = Math.max(160, bounds.height - EDGE * 2);
+    const height = Math.min(Math.max(openHeightRef.current, 220), maxH);
+    const nearBottom = bounds.height - bottom <= top + 48;
+    let y = nearBottom ? bottom - height : top;
+    y = Math.max(EDGE, Math.min(y, bounds.height - height - EDGE));
+    setBox((prev) => {
+      const w = prev?.w ?? panel.offsetWidth;
+      const x = prev?.x ?? panel.getBoundingClientRect().left - bounds.left;
+      if (prev && prev.y === y && prev.h === height && prev.w === w) return prev;
+      return { x, y, w, h: height, corner: prev?.corner ?? null };
+    });
+  }, [boundsRef, collapsed]);
 
   const readBox = () => {
     const bounds = boundsRef.current?.getBoundingClientRect();
@@ -285,11 +317,14 @@ export function DesignShareChatPanel({
       y: current.y,
       moved: false,
     };
+    const keptH = collapsed
+      ? Math.max(openHeightRef.current, boxRef.current?.h && boxRef.current.h > 120 ? boxRef.current.h : 0)
+      : (boxRef.current?.h ?? current.h);
     setBox((prev) => ({
       x: current.x,
       y: current.y,
       w: current.w,
-      h: prev?.h ?? current.h,
+      h: keptH || current.h,
       corner: null,
     }));
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -346,10 +381,15 @@ export function DesignShareChatPanel({
       true,
       peers,
     );
+    if (collapsed) dockBottomRef.current = placed.y + panel.offsetHeight;
     setBox((prev) =>
       prev
-        ? { ...prev, ...placed }
-        : { ...placed, w: panel.offsetWidth, h: panel.offsetHeight },
+        ? { ...prev, ...placed, h: collapsed ? Math.max(prev.h, openHeightRef.current) : prev.h }
+        : {
+            ...placed,
+            w: panel.offsetWidth,
+            h: collapsed ? openHeightRef.current : panel.offsetHeight,
+          },
     );
   };
 
@@ -448,6 +488,7 @@ export function DesignShareChatPanel({
       true,
       peers,
     );
+    if (!collapsed && drag.next.h > 120) openHeightRef.current = drag.next.h;
     setBox((prev) =>
       prev
         ? { ...prev, ...placed, w: drag.next.w, h: collapsed ? prev.h : drag.next.h }
@@ -657,7 +698,8 @@ export function DesignShareChatPanel({
           className="space-y-1.5 px-2.5 pb-2 pt-2 sm:px-2.5 sm:pb-2 sm:pt-2"
         />
       ) : null}
-      {VIEWER_RESIZE_HANDLES.map((handle) => (
+      {!collapsed
+        ? VIEWER_RESIZE_HANDLES.map((handle) => (
         <div
           key={handle.edge}
           role="separator"
@@ -675,7 +717,8 @@ export function DesignShareChatPanel({
           onPointerUp={onResizeUp}
           onPointerCancel={onResizeUp}
         />
-      ))}
+      ))
+        : null}
     </div>
   );
 }

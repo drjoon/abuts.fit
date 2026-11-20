@@ -6076,10 +6076,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 peerRefs={[viewCubeStackRef, chatPanelRef, viewerBottomChromeRef]}
                 minW={220}
                 minH={160}
-                anchorClassName="bottom-3 right-3 top-3 w-[17.5rem]"
+                hugContent={
+                  designedList.length > 0 &&
+                  designedList.every((row) => expandedTeeth[row.toothNumber] === false)
+                }
+                anchorClassName="right-3 top-3 w-[17.5rem] max-h-[calc(100%-1.5rem)]"
               >
                 <PracticeCustomAbutmentDesignTree
-                    className="min-h-0 max-h-full flex-1"
+                    className="min-h-0 w-full"
                     items={designedList}
                     visibleTeeth={visibleTeeth}
                     selectedTeeth={selectedTeeth}

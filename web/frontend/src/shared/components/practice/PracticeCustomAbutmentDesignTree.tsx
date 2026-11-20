@@ -1492,7 +1492,7 @@ export function PracticeCustomAbutmentDesignTree({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex min-h-0 w-full min-w-0 shrink-0 flex-col overflow-x-hidden overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
+        "pointer-events-auto flex min-h-0 w-full min-w-0 shrink-0 flex-col overflow-x-hidden rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
       onContextMenu={(e) => e.preventDefault()}
