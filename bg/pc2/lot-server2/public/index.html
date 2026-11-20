@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>로트 촬영</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 1.5rem;
+      }
+      button {
+        font-size: 1.25rem;
+        padding: 0.6rem 1.4rem;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      p {
+        line-height: 1.5;
+      }
+      img {
+        display: block;
+        margin-top: 0.75rem;
+        max-width: min(100%, 48rem);
+      }
+    </style>
+  </head>
+  <body>
+    <button id="shot" type="button">촬영</button>
+    <p id="help">
+      촬영을 누르면 초점을 맞춘 뒤 저장합니다.
+      <br />
+      현미경 제어가 안 되면 영상만 저장합니다.
+    </p>
+    <p id="camera"></p>
+    <p id="status"></p>
+    <img id="preview" alt="" />
+    <script>
+      const shot = document.querySelector("#shot");
+      const camera = document.querySelector("#camera");
+      const status = document.querySelector("#status");
+      const preview = document.querySelector("#preview");
+
+      function showLines(text) {
+        status.replaceChildren();
+        String(text || "")
+          .split("\n")
+          .forEach((line, index) => {
+            if (index) status.appendChild(document.createElement("br"));
+            status.appendChild(document.createTextNode(line));
+          });
+      }
+
+      async function loadDevices() {
+        const res = await fetch("/devices");
+        const data = await res.json();
+        if (!res.ok) {
+          showLines(data.message || "카메라를 찾지 못했습니다.");
+          return;
+        }
+        camera.textContent = data.selected
+          ? "카메라: " + data.selected
+          : "카메라를 찾지 못했습니다.";
+      }
+
+      shot.addEventListener("click", async () => {
+        shot.disabled = true;
+        showLines("촬영 중");
+        try {
+          const res = await fetch("/capture", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          });
+          const data = await res.json();
+          showLines(data.message || "촬영에 실패했습니다.");
+          if (res.ok && data.fileName) {
+            preview.alt = data.fileName;
+            preview.src = "/image?name=" + encodeURIComponent(data.fileName);
+          }
+        } catch {
+          showLines("촬영에 실패했습니다.");
+        } finally {
+          shot.disabled = false;
+        }
+      });
+
+      loadDevices().catch(() => {
+        showLines("카메라를 찾지 못했습니다.");
+      });
+    </script>
+  </body>
+</html>
