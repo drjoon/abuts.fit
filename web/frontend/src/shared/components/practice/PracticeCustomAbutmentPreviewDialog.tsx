@@ -6360,13 +6360,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         overlayClassName="z-[535]"
         onContextMenu={(e) => e.preventDefault()}
       >
-        <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="text-base font-semibold">어벗 비용</DialogTitle>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            디자인 확정 후 수행 기공소가 검토·수정한 뒤 제조에 넘깁니다.
-            <br />
-            수작업 의뢰는 수행 기공소가 3Shape·ExoCAD로 새로 디자인합니다.
-          </p>
+        <DialogHeader className="text-left">
+          <DialogTitle className="text-base font-semibold">어벗 디자인 결정</DialogTitle>
         </DialogHeader>
         <div className="space-y-2" role="radiogroup" aria-label="어벗 진행 방식">
           <button
@@ -6383,16 +6378,16 @@ export function PracticeCustomAbutmentPreviewDialog({
           >
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="font-medium">디자인 확정</span>
-              <span className="shrink-0 font-semibold tabular-nums">
+              <span className="shrink-0 text-right font-semibold tabular-nums">
+                어벗츠에{" "}
                 {formatWon(
                   feeGuide?.platformUnit || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-                )}
+                )}{" "}
+                납부
               </span>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              어벗츠에 냅니다.
-              <br />
-              기공소가 이 화면에서 수정한 뒤 제조에 넘깁니다.
+              수행 기공소가 검토·수정한 뒤 제조사에 넘깁니다.
             </p>
           </button>
           <button
@@ -6411,14 +6406,16 @@ export function PracticeCustomAbutmentPreviewDialog({
               <span className="font-medium">수작업 의뢰</span>
               <span className="shrink-0 text-right font-semibold tabular-nums">
                 {(feeGuide?.labTeeth.length ?? 0) === 0 ? (
-                  "기공소 수가"
+                  "기공소 수가로 납부"
                 ) : new Set(feeGuide?.labTeeth.map((row) => row.unit)).size === 1 ? (
-                  formatWon(feeGuide?.labTeeth[0]?.unit || 0)
+                  <>
+                    기공소에 {formatWon(feeGuide?.labTeeth[0]?.unit || 0)} 납부
+                  </>
                 ) : (
                   <span className="block">
                     {feeGuide?.labTeeth.map((row) => (
                       <span key={row.toothNumber} className="block">
-                        #{row.toothNumber} {formatWon(row.unit)}
+                        기공소에 #{row.toothNumber} {formatWon(row.unit)} 납부
                       </span>
                     ))}
                   </span>
@@ -6426,30 +6423,26 @@ export function PracticeCustomAbutmentPreviewDialog({
               </span>
             </div>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              기공소에 냅니다.
-              <br />
               기공소 프로그램으로 처음부터 작업합니다.
             </p>
           </button>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox
-            checked={routeCostHideNext}
-            onCheckedChange={(val) => setRouteCostHideNext(val === true)}
-          />
-          <span>다시 표시하지 않기</span>
-        </label>
-        <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
-          <Button type="button" variant="outline" size="sm" onClick={() => setRouteCostOpen(false)}>
-            취소
-          </Button>
-          <Button type="button" size="sm" onClick={proceedRouteCost}>
-            {routeCostAction === "confirm"
-              ? "디자인 확정"
-              : manualChatOpen
-                ? "수작업 의뢰 전달"
-                : "수작업 의뢰"}
-          </Button>
+        <DialogFooter className="flex w-full flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:justify-between sm:space-x-0">
+          <label className="flex shrink-0 cursor-pointer items-center justify-start gap-2 text-sm">
+            <Checkbox
+              checked={routeCostHideNext}
+              onCheckedChange={(val) => setRouteCostHideNext(val === true)}
+            />
+            <span>다시 표시하지 않기</span>
+          </label>
+          <div className="ml-auto flex shrink-0 flex-row justify-end gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setRouteCostOpen(false)}>
+              취소
+            </Button>
+            <Button type="button" size="sm" onClick={proceedRouteCost}>
+              {routeCostAction === "confirm" ? "디자인 확정" : "수작업 의뢰"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
