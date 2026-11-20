@@ -13,7 +13,7 @@
 // - 2026-11-19: 기공소가 제조 주문을 취소한 뒤 치과 「취소 가능」은 확정을 해제하고 다시 확정한다.
 // - 2026-11-19: 기공소 디자인 확정 — 제조 의뢰 응답을 부모에 넘겨 목록 상태를 바로 갱신한다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
-// - 2026-11-20: 소통 패널은 뷰어 위 플로팅. 최소 가로 260px, 이동·크기 조절, 귀퉁이 스냅.
+// - 2026-11-20: 소통 패널은 뷰어 위 플로팅. 최소 가로 260px, 이동·크기 조절, 귀퉁이·다른 패널 스냅.
 // - 2026-11-20: 소통 패널은 DesignShareChatPanel. 치과·기공소 공통.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
@@ -1213,6 +1213,9 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewerFrameRef = useRef<HTMLDivElement | null>(null);
+  const viewCubeStackRef = useRef<HTMLDivElement | null>(null);
+  const designTreeStackRef = useRef<HTMLDivElement | null>(null);
+  const viewerBottomChromeRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
     hostRef.current = node;
     setHostEl((prev) => (prev === node ? prev : node));
@@ -5626,8 +5629,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         hideClose
         onContextMenu={(e) => e.preventDefault()}
       >
-        <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-5 pr-14 text-left">
+        <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-4 pr-14 text-left">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+            <AbutsLogo
+              variant="light"
+              className="pointer-events-none shrink-0"
+              iconClassName="h-7 w-7"
+              wordmarkClassName="text-base"
+            />
             <DialogTitle className="shrink-0 text-base sm:text-lg">
               커스텀어벗 디자인
             </DialogTitle>
@@ -5989,7 +5998,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col items-start">
+              <div
+                ref={viewCubeStackRef}
+                className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col items-start"
+              >
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -6024,6 +6036,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             {viewerLive && !readOnly && transferIdParam ? (
               <DesignShareChatPanel
                 boundsRef={viewerFrameRef}
+                snapPeerRefs={[viewCubeStackRef, designTreeStackRef, viewerBottomChromeRef]}
                 title={isLabViewer ? "치과 소통" : "기공소 소통"}
                 peerName={isLabViewer ? "치과" : "기공소"}
                 collapsed={manualChatCollapsed}
@@ -6053,15 +6066,11 @@ export function PracticeCustomAbutmentPreviewDialog({
               />
             ) : null}
 
-            <AbutsLogo
-              variant="light"
-              className="pointer-events-none absolute bottom-4 left-4 z-10 opacity-80"
-              iconClassName="h-7 w-7"
-              wordmarkClassName="text-base"
-            />
-
             {viewerLive && designedList.length > 0 ? (
-              <div className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex min-h-0 flex-col items-end">
+              <div
+                ref={designTreeStackRef}
+                className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex min-h-0 flex-col items-end"
+              >
                 <PracticeCustomAbutmentDesignTree
                     className="min-h-0 max-h-full"
                     items={designedList}
@@ -6175,7 +6184,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {!readOnly ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-2 px-3">
+              <div
+                ref={viewerBottomChromeRef}
+                className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-2 px-3"
+              >
                 {paint.paintOn && viewerLive ? (
                   <ViewPaintToolbar paint={paint} onSaveImage={saveViewImage} />
                 ) : null}
@@ -6216,7 +6228,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                               ) : (
                                 <Check className="h-4 w-4" />
                               )}
-                              <span>디자인 확정</span>
+                              <span>디자인 종료</span>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="z-[520] max-w-xs text-xs">

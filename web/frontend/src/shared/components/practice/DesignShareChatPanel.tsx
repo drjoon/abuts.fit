@@ -1,6 +1,6 @@
 // 커스텀어벗 디자인 화면의 소통 패널. 치과·기공소가 같은 컴포넌트를 쓴다.
 // 뷰어 위에 떠 있고, 헤더로 옮기며, 가장자리로 크기를 바꾼다. 최소 가로는 260px.
-// 귀퉁이 근처에서 놓으면 그 모서리에 붙는다. 입력은 가로 전체, 전송·첨부는 아랫줄.
+// 귀퉁이·다른 패널(큐브 등) 근처에서 놓으면 붙는다. 입력은 가로 전체, 전송·첨부는 아랫줄.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
@@ -20,8 +20,9 @@ import { cn } from "@/shared/ui/cn";
 /** 크기 조절 하한. 사용자가 지정한 최소 가로. */
 const MIN_W = 260;
 const MIN_H = 220;
+/** 작업영역 가장자리·패널 사이 여백(귀퉁이 스냅과 동일). */
 const EDGE = 12;
-/** 이 거리 안의 귀퉁이면 그 모서리에 붙인다. */
+/** 이 거리 안이면 귀퉁이·다른 패널에 붙인다. */
 const SNAP = 72;
 
 type Corner = "nw" | "ne" | "sw" | "se";
@@ -54,6 +55,45 @@ function cornerPoint(
   return { x: right, y: bottom };
 }
 
+type LocalRect = { x: number; y: number; w: number; h: number };
+
+function clampInBounds(
+  x: number,
+  y: number,
+  boundsW: number,
+  boundsH: number,
+  width: number,
+  height: number,
+) {
+  const maxX = Math.max(EDGE, boundsW - width - EDGE);
+  const maxY = Math.max(EDGE, boundsH - height - EDGE);
+  return {
+    x: Math.min(Math.max(x, EDGE), maxX),
+    y: Math.min(Math.max(y, EDGE), maxY),
+  };
+}
+
+function readPeerRects(
+  bounds: DOMRect,
+  peers: readonly RefObject<HTMLElement | null>[],
+  self: HTMLElement | null,
+): LocalRect[] {
+  const out: LocalRect[] = [];
+  for (const ref of peers) {
+    const el = ref.current;
+    if (!el || el === self) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) continue;
+    out.push({
+      x: r.left - bounds.left,
+      y: r.top - bounds.top,
+      w: r.width,
+      h: r.height,
+    });
+  }
+  return out;
+}
+
 function placeBox(
   x: number,
   y: number,
@@ -62,25 +102,67 @@ function placeBox(
   width: number,
   height: number,
   snap: boolean,
+  peers: LocalRect[],
 ): Pick<FrameBox, "x" | "y" | "corner"> {
-  const maxX = Math.max(EDGE, boundsW - width - EDGE);
-  const maxY = Math.max(EDGE, boundsH - height - EDGE);
-  const nextX = Math.min(Math.max(x, EDGE), maxX);
-  const nextY = Math.min(Math.max(y, EDGE), maxY);
-  if (!snap) return { x: nextX, y: nextY, corner: null };
-  const corners: Corner[] = ["nw", "ne", "sw", "se"];
-  let best: { dist: number; corner: Corner; x: number; y: number } | null = null;
-  for (const corner of corners) {
+  const base = clampInBounds(x, y, boundsW, boundsH, width, height);
+  if (!snap) return { x: base.x, y: base.y, corner: null };
+
+  type SnapTarget = { x: number; y: number; corner: Corner | null; dist: number };
+  const targets: SnapTarget[] = [];
+
+  for (const corner of ["nw", "ne", "sw", "se"] as const) {
     const point = cornerPoint(corner, boundsW, boundsH, width, height);
-    const dist = Math.hypot(nextX - point.x, nextY - point.y);
-    if (dist <= SNAP && (!best || dist < best.dist)) best = { dist, corner, ...point };
+    targets.push({
+      ...point,
+      corner,
+      dist: Math.hypot(base.x - point.x, base.y - point.y),
+    });
   }
-  if (!best) return { x: nextX, y: nextY, corner: null };
+
+  const pushPeer = (tx: number, ty: number) => {
+    const clamped = clampInBounds(tx, ty, boundsW, boundsH, width, height);
+    targets.push({
+      x: clamped.x,
+      y: clamped.y,
+      corner: null,
+      dist: Math.hypot(base.x - clamped.x, base.y - clamped.y),
+    });
+  };
+
+  for (const peer of peers) {
+    const peerRight = peer.x + peer.w;
+    const peerBottom = peer.y + peer.h;
+    // 같은 변 맞춤(여백은 패널이 작업영역 가장자리에서 쓰는 EDGE와 같게 유지)
+    pushPeer(peer.x, base.y);
+    pushPeer(peer.x, peer.y);
+    pushPeer(peerRight - width, base.y);
+    pushPeer(peerRight - width, peer.y);
+    pushPeer(base.x, peer.y);
+    pushPeer(base.x, peerBottom - height);
+    // 이웃 배치 — 패널 사이 EDGE
+    pushPeer(peer.x, peerBottom + EDGE);
+    pushPeer(peerRight - width, peerBottom + EDGE);
+    pushPeer(base.x, peerBottom + EDGE);
+    pushPeer(peerRight + EDGE, peer.y);
+    pushPeer(peerRight + EDGE, peerBottom - height);
+    pushPeer(peer.x - width - EDGE, peer.y);
+    pushPeer(peer.x - width - EDGE, peerBottom - height);
+    pushPeer(peer.x, peer.y - height - EDGE);
+    pushPeer(peerRight - width, peer.y - height - EDGE);
+  }
+
+  let best: SnapTarget | null = null;
+  for (const target of targets) {
+    if (target.dist <= SNAP && (!best || target.dist < best.dist)) best = target;
+  }
+  if (!best) return { x: base.x, y: base.y, corner: null };
   return { x: best.x, y: best.y, corner: best.corner };
 }
 
 type Props = {
   boundsRef: RefObject<HTMLElement | null>;
+  /** 작업영역 안 다른 패널 — 드롭 시 변·스택 정렬에 스냅 */
+  snapPeerRefs?: readonly RefObject<HTMLElement | null>[];
   title: string;
   peerName: string;
   collapsed: boolean;
@@ -100,6 +182,7 @@ type Props = {
 
 export function DesignShareChatPanel({
   boundsRef,
+  snapPeerRefs = [],
   title,
   peerName,
   collapsed,
@@ -206,7 +289,16 @@ export function DesignShareChatPanel({
     drag.moved = true;
     drag.x = rawX;
     drag.y = rawY;
-    const placed = placeBox(rawX, rawY, bounds.width, bounds.height, panel.offsetWidth, panel.offsetHeight, false);
+    const placed = placeBox(
+      rawX,
+      rawY,
+      bounds.width,
+      bounds.height,
+      panel.offsetWidth,
+      panel.offsetHeight,
+      false,
+      [],
+    );
     setMoving(true);
     setBox((prev) =>
       prev
@@ -226,6 +318,7 @@ export function DesignShareChatPanel({
     const bounds = boundsRef.current?.getBoundingClientRect();
     const panel = frameRef.current;
     if (!bounds || !panel) return;
+    const peers = readPeerRects(bounds, snapPeerRefs, panel);
     const placed = placeBox(
       drag.x,
       drag.y,
@@ -234,6 +327,7 @@ export function DesignShareChatPanel({
       panel.offsetWidth,
       panel.offsetHeight,
       true,
+      peers,
     );
     setBox((prev) =>
       prev
@@ -326,6 +420,7 @@ export function DesignShareChatPanel({
     const bounds = boundsRef.current?.getBoundingClientRect();
     const panel = frameRef.current;
     if (!bounds || !panel) return;
+    const peers = readPeerRects(bounds, snapPeerRefs, panel);
     const placed = placeBox(
       drag.next.x,
       drag.next.y,
@@ -334,6 +429,7 @@ export function DesignShareChatPanel({
       drag.next.w,
       collapsed ? (boxRef.current?.h ?? drag.next.h) : drag.next.h,
       true,
+      peers,
     );
     setBox((prev) =>
       prev
@@ -405,7 +501,7 @@ export function DesignShareChatPanel({
           "flex shrink-0 cursor-grab touch-none select-none items-center justify-between gap-2 px-3 py-1.5 text-xs active:cursor-grabbing",
           !collapsed && "border-b",
         )}
-        title="끌어 옮기면 귀퉁이에 붙습니다"
+        title="끌어 옮기면 귀퉁이나 다른 패널에 붙습니다"
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
