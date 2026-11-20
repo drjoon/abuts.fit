@@ -10,6 +10,7 @@
 // - 2026-11-19: 취소된 CA Request는 치아를 덮지 않는다. 다시 확정하면 그 치아만 새로 만든다.
 // - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
 // - 2026-11-20: 작업시작 게이트는 치과 확정·수작업 시각만 본다. 수가 경로·작업취소 단계는 결정을 끝내지 않는다.
+// - 2026-11-20: 치과 결정 전에는 기공소 구강스캔 다운로드를 잠근다.
 // - 2026-11-19: isPracticeAbutmentDesignAwaitingDentist — 치과 어벗·디자인 확정 전 작업시작 차단(FE SSOT).
 // - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
 // - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
@@ -3081,6 +3082,10 @@ async function emitPracticeTransferAbutmentStageChangedRealtime(
   if (!transfer) return;
   const { pastReady, pastReadyTeeth, toothStages } =
     await resolveRelatedAbutmentPastReady(transfer, { skipStickyHeal: true });
+  const production = transfer.production || {};
+  const designFiles = Array.isArray(production.designFiles)
+    ? production.designFiles
+    : [];
   await emitAbutmentRealtimeToTransferParties(transfer, {
     action: "abutment-stage-changed",
     transferId: String(transfer.transferId || "").trim(),
@@ -3095,11 +3100,28 @@ async function emitPracticeTransferAbutmentStageChangedRealtime(
       abutmentToothStages: Array.isArray(toothStages) ? toothStages : [],
       // 취소로 비면 null. 기공소가 확정 전 디자인 모달을 열지 않게 한다.
       practiceDesignConfirmedAt: (() => {
-        const raw = transfer.production?.practiceDesignConfirmedAt;
+        const raw = production.practiceDesignConfirmedAt;
         if (!raw) return null;
         const ms = new Date(raw).getTime();
         return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
       })(),
+      designReadyAt: production.designReadyAt || null,
+      designFileCount: designFiles.length,
+      abutmentFeeRoute: String(production.abutmentFeeRoute || "").trim() || null,
+      designFiles: designFiles.map((item, idx) => ({
+        id: `design::${idx + 1}`,
+        patientName: String(item?.patientName || "").trim(),
+        tooth: String(item?.tooth || "").trim(),
+        originalName: String(item?.file?.originalName || "").trim(),
+        mimetype: String(
+          item?.file?.mimetype || "application/octet-stream",
+        ).trim(),
+        size: Number(item?.file?.size || 0),
+        s3Key: String(item?.file?.s3Key || "").trim(),
+        uploadedAt: item?.uploadedAt
+          ? new Date(item.uploadedAt).toISOString()
+          : null,
+      })),
     },
     updatedAt: transfer.updatedAt || new Date(),
   });
@@ -3166,12 +3188,16 @@ export function isAbutmentDesignReady(transferDoc) {
   return Boolean(transferDoc?.production?.practiceDesignConfirmedAt);
 }
 
+/** 치과가 어벗 방식·디자인을 정하기 전. 기공소 업로드·작업 API */
+export const PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE =
+  "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업할 수 있습니다.";
+
 /**
- * 기공소: 예전 Abuts 선디자인 정책에서 구강스캔 다운로드를 잠갔.
- * 수락 기공소가 디자인하는 현재 정책에서는 잠그지 않는다.
+ * 치과가 어벗 생성 방식·디자인을 정하기 전에는 기공소가 의뢰 스캔을 받지 않는다.
+ * 확정·수작업 의뢰·이미 올라간 디자인 뒤에는 연다.
  */
-export function shouldLockLabOralScanDownload(_transferDoc) {
-  return false;
+export function shouldLockLabOralScanDownload(transferDoc) {
+  return isPracticeAbutmentDesignAwaitingDentist(transferDoc);
 }
 
 export function canStartAbutmentProduction(transferDoc) {

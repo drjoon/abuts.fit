@@ -266,6 +266,7 @@ import {
   promotePlatformAbutmentDesignsToManufacturerReady,
   publishPlatformAbutmentDesignFiles,
   isPracticeAbutmentDesignAwaitingDentist,
+  PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
 } from "../../services/practiceTransferProduction.service.js";
 import {
   isLabProsthesisUploadRequired,
@@ -10170,6 +10171,14 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
+    if (isPracticeAbutmentDesignAwaitingDentist(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
+        reason: "abutment_design_awaiting_practice",
+      });
+    }
+
     // 보철 슬롯이 있으면 치아(또는 스팬)마다 디자인 파일이 있어야 작업 완료.
     const result = await completePracticeTransferWork({
       doc,
@@ -10296,6 +10305,14 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
         success: false,
         message: "아직 작업이 시작되지 않은 의뢰입니다.",
         data: toAutoMatchApiFields(doc, labAnchorId),
+      });
+    }
+
+    if (isPracticeAbutmentDesignAwaitingDentist(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
+        reason: "abutment_design_awaiting_practice",
       });
     }
 

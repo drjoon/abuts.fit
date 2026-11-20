@@ -223,18 +223,30 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     ).toBe(true);
   });
 
-  test("shouldLockLabOralScanDownload always unlocked (lab designs CA)", () => {
+  test("shouldLockLabOralScanDownload until the clinic decides the abutment", () => {
     const ca = [{ customAbutment: true, toothNumber: "16" }];
     expect(
       shouldLockLabOralScanDownload({
         toothWorks: ca,
-        production: {},
+        production: { abutmentFeeRoute: "pending" },
+      }),
+    ).toBe(true);
+    expect(
+      shouldLockLabOralScanDownload({
+        toothWorks: ca,
+        production: { designReadyAt: new Date() },
       }),
     ).toBe(false);
     expect(
       shouldLockLabOralScanDownload({
         toothWorks: ca,
-        production: { designReadyAt: new Date() },
+        production: { practiceDesignConfirmedAt: new Date() },
+      }),
+    ).toBe(false);
+    expect(
+      shouldLockLabOralScanDownload({
+        toothWorks: ca,
+        production: { customAbutmentManualDesign: { at: new Date() } },
       }),
     ).toBe(false);
     expect(

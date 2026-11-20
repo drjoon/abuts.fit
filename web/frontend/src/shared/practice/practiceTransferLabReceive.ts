@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
 // - 2026-11-20: 플랫폼 디자인 기공소 검토 중에는 uploadLocked. 버튼은 두고 업로드는 막는다.
+// - 2026-11-20: 치과가 어벗 방식·디자인을 정하기 전에는 업로드를 막는다.
 // - 2026-10-24: practice 납품 주소·전화 — 기공소 택배 라벨.
 // - 2026-09-27: 표시 단계 작업완료와 UI 완료 뱃지(isPracticeRecentFinishedBadgeStatus)를 주석으로 구분.
 // - 2026-09-27: 협력 원청은 작업 CTA 숨김(viewerOperatesLabReceiveWork). 하청·자체는 원청도 작업.
@@ -68,8 +69,10 @@ import {
 } from "@/shared/practice/labFeeSchedule";
 import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import {
+  isLabWorkBlockedUntilPracticeAbutmentDecision,
   isPlatformAbutmentDesignHeldForLabReview,
   isPtxAbutmentDesignAwaitingDentist,
+  type LabUploadLockReason,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
@@ -1091,10 +1094,11 @@ export type PracticeLabReceiveWorkActionState = {
   /** 레거시: 디자인 업로드 후 기공소 확인 CTA */
   showDesignConfirm: boolean;
   /**
-   * 치과 플랫폼 디자인을 기공소가 아직 확정하지 않음.
+   * 치과 결정 전, 또는 플랫폼 디자인을 기공소가 아직 확정하지 않음.
    * 업로드 버튼은 보이되 비활성. 드롭·파일창도 막는다.
    */
   uploadLocked: boolean;
+  uploadLockReason: LabUploadLockReason | null;
   /** @deprecated 수동 작업완료 CTA 폐지 — 항상 false(도착일 경과 자동 완료) */
   showMarkCompleteWithoutFiles: boolean;
 };
@@ -1141,6 +1145,7 @@ export function resolvePracticeLabReceiveWorkActionState(
     showDesignConfirm: false,
     showMarkCompleteWithoutFiles: false,
     uploadLocked: false,
+    uploadLockReason: null,
   };
   if (!transfer) return empty;
 
@@ -1176,6 +1181,27 @@ export function resolvePracticeLabReceiveWorkActionState(
       enrichedTransfer.production?.customAbutmentManualDesign?.at,
     ),
   });
+  const designFiles = enrichedTransfer.production?.designFiles;
+  const awaitingPracticeDecision = isLabWorkBlockedUntilPracticeAbutmentDecision({
+    status: displayStatus,
+    workCanceledAt: enrichedTransfer.workCanceledAt,
+    labRejected: enrichedTransfer.labRejected,
+    hasCustomAbutment: hasCa,
+    abutmentFeeRoute: enrichedTransfer.production?.abutmentFeeRoute,
+    practiceDesignConfirmedAt:
+      enrichedTransfer.production?.practiceDesignConfirmedAt,
+    designReadyAt: enrichedTransfer.production?.designReadyAt,
+    designFileCount,
+    designFilesKnownEmpty: Array.isArray(designFiles) && designFiles.length === 0,
+    manualRequested: Boolean(
+      enrichedTransfer.production?.customAbutmentManualDesign?.at,
+    ),
+  });
+  const uploadLockReason: LabUploadLockReason | null = reviewingPlatformDesign
+    ? "platform_review"
+    : awaitingPracticeDecision
+      ? "awaiting_practice"
+      : null;
   const platformAbutmentDesignHandedOff =
     reviewingPlatformDesign ||
     (Boolean(
@@ -1318,7 +1344,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     showCompletedStageHeaderCancel,
     showDesignConfirm,
     showMarkCompleteWithoutFiles,
-    uploadLocked: reviewingPlatformDesign,
+    uploadLocked: uploadLockReason != null,
+    uploadLockReason,
   };
 }
 

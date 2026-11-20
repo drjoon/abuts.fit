@@ -1,6 +1,7 @@
 // - 2026-11-19: 기공소 제조 주문 취소로 활성 어벗이 없으면 치과 플랫폼 확정을 푼다.
 // - 2026-11-19: PTX CA 크레딧 부족이면 그 치아 Request를 준비 큐에 남기지 않는다.
 // - 2026-11-19: PTX CA 402 — 무료크레딧 잔액 문구를 「충전하세요」로 바꾸지 않는다.
+// - 2026-11-20: 치과 결정 전 어벗 STL 업로드를 거절한다.
 // - 2026-11-16: 치과 발신 — 준비 단계 커스텀어벗 공정 취소(제조사 큐에서 내림). 가공 이후는 불가.
 // - 2026-11-07: PTX abutment-design-handoff — 같은 의뢰 hold를 서버 락으로 직렬화(병렬 WriteConflict로 한 치아만 탈락 방지).
 // - 2026-11-07: PTX 다치아 — 일부 STL만 업로드 시 sibling 미업로드를 준비 큐에 노출(누락 피드백).
@@ -94,6 +95,8 @@ import {
   releaseAbutmentDesignHandoffLock,
   releasePracticePlatformDesignHoldIfOrderGone,
   hasCustomAbutmentToothWorks,
+  isPracticeAbutmentDesignAwaitingDentist,
+  PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
   resolveRelatedAbutmentPastReady,
@@ -810,6 +813,17 @@ export async function handoffDesignToProduction(req, res) {
         message: request?.partnerBilling?.relatedPracticeTransferId
           ? "기공의뢰 커스텀어벗 디자인은 작업을 시작한 기공소만 할 수 있습니다."
           : "디자인 큐 접근 권한이 없습니다.",
+      });
+    }
+
+    if (
+      transferDocEarly &&
+      isPracticeAbutmentDesignAwaitingDentist(transferDocEarly)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
+        reason: "abutment_design_awaiting_practice",
       });
     }
 
@@ -2207,6 +2221,14 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
       return res.status(409).json({
         success: false,
         message: "작업을 시작한 뒤에 어벗 디자인을 업로드할 수 있습니다.",
+      });
+    }
+
+    if (isPracticeAbutmentDesignAwaitingDentist(transferDoc)) {
+      return res.status(409).json({
+        success: false,
+        message: PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE,
+        reason: "abutment_design_awaiting_practice",
       });
     }
 

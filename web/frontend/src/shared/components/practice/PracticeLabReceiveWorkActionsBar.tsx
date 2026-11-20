@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-11-20: 디자인 상태 뱃지 — 생산의뢰 줄 오른쪽 끝(업로드 위).
 // - 2026-11-20: 플랫폼 디자인 검토 중 업로드 버튼은 보이되 비활성.
+// - 2026-11-20: 치과 결정 전 업로드 버튼도 비활성. 툴팁은 잠금 이유.
 // - 2026-11-19: 업로드 메뉴 — 보철→보철 STL. 어벗·보철 아래 설명 문구 제거.
 // - 2026-11-19: 어벗·보철 업로드를 「업로드」한 버튼+선택 팝오버로 통합.
 // - 2026-09-26: 보철 업로드 버튼 — 남은 보철 디자인 파일이 있을 때.
@@ -62,7 +63,10 @@ import {
   resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
-import { isPlatformAbutmentDesignHeldForLabReview } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import {
+  isPlatformAbutmentDesignHeldForLabReview,
+  labUploadLockedNotice,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
 import { cn } from "@/shared/ui/cn";
 
@@ -304,6 +308,7 @@ export function PracticeLabReceiveWorkActionsBar({
       ? `보철 STL (${state.pendingProstheticCount})`
       : "보철 STL";
   const uploadLocked = state.uploadLocked;
+  const uploadLockNotice = labUploadLockedNotice(state.uploadLockReason);
   const uploadBoth = showAbutmentUpload && showProstheticUpload;
   const uploadSingle =
     (showAbutmentUpload && !showProstheticUpload) ||
@@ -389,7 +394,7 @@ export function PracticeLabReceiveWorkActionsBar({
       <Tooltip>
         <TooltipTrigger asChild>{workUploadButton}</TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
-          디자인 확정 후 업로드할 수 있습니다.
+          {uploadLockNotice?.description}
         </TooltipContent>
       </Tooltip>
     ) : (

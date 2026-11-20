@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 치과가 어벗을 다시 정하기 전에는 업로드·의뢰 파일을 막는다.
 // - 2026-11-20: 디자인 상태 뱃지 — 생산의뢰 줄 오른쪽 끝(업로드 위). 수작업·치과 확정 디자인 복원.
 // - 2026-11-20: 수작업 의뢰 — 배지 제거. 디자인 자리에 「폴더 열기」.
 // - 2026-11-20: 디자인 버튼 — 스냅샷·STL을 기다리지 않고 모달을 연다.
@@ -446,10 +447,13 @@ import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practic
 import {
   ABUTMENT_ORDER_BADGE_KEY,
   ABUTMENT_REVIEW_BADGE_KEY,
+  isLabWorkBlockedUntilPracticeAbutmentDecision,
   isPtxAbutmentDesignAwaitingDentist,
   isPtxAbutmentDesignReviewForLab,
   isPtxAbutmentManualOrder,
+  LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT,
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
+  labUploadLockedNotice,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
   labWorkStartUploadNoticeCaLine,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
@@ -2943,6 +2947,61 @@ export function RequestorPracticeReceivePage({
                             productionRawFromRealtime.practiceDesignConfirmedAt,
                           )
                         : null,
+                  }
+                : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "designReadyAt",
+              )
+                ? {
+                    designReadyAt: productionRawFromRealtime.designReadyAt
+                      ? String(productionRawFromRealtime.designReadyAt)
+                      : null,
+                  }
+                : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "designFiles",
+              )
+                ? {
+                    designFiles: (Array.isArray(productionRawFromRealtime.designFiles)
+                      ? productionRawFromRealtime.designFiles
+                      : []
+                    ).flatMap((row, idx) => {
+                      if (!row || typeof row !== "object") return [];
+                      const file = row as Record<string, unknown>;
+                      const s3Key = String(file.s3Key || "").trim();
+                      if (!s3Key) return [];
+                      return [
+                        {
+                          id: String(file.id || `design-${idx + 1}`),
+                          patientName: String(file.patientName || "").trim(),
+                          tooth: String(file.tooth || "").trim(),
+                          originalName: String(file.originalName || "").trim(),
+                          mimetype: String(
+                            file.mimetype || "application/octet-stream",
+                          ).trim(),
+                          size: Number(file.size || 0),
+                          s3Key,
+                          uploadedAt: String(file.uploadedAt || "").trim() || null,
+                        },
+                      ];
+                    }),
+                    designFileCount: Array.isArray(
+                      productionRawFromRealtime.designFiles,
+                    )
+                      ? productionRawFromRealtime.designFiles.length
+                      : 0,
+                  }
+                : {}),
+              ...(productionRawFromRealtime?.abutmentFeeRoute === "platform" ||
+              productionRawFromRealtime?.abutmentFeeRoute === "lab" ||
+              productionRawFromRealtime?.abutmentFeeRoute === "pending" ||
+              productionRawFromRealtime?.abutmentFeeRoute === null
+                ? {
+                    abutmentFeeRoute: productionRawFromRealtime.abutmentFeeRoute,
                   }
                 : {}),
             },
@@ -5456,13 +5515,14 @@ export function RequestorPracticeReceivePage({
       if (!nextFiles.length) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id || cardActionBusyId || workUploadBusy) return;
-      if (
+      const uploadLock = labUploadLockedNotice(
         resolvePracticeLabReceiveWorkActionState(transfer, implantCatalog)
-          .uploadLocked
-      ) {
+          .uploadLockReason,
+      );
+      if (uploadLock) {
         toast({
-          title: "디자인 확정 전",
-          description: "디자인 확정 후 업로드할 수 있습니다.",
+          title: uploadLock.title,
+          description: uploadLock.description,
         });
         return;
       }
@@ -7926,10 +7986,11 @@ export function RequestorPracticeReceivePage({
         transfer,
         implantCatalog,
       );
-      if (workState.uploadLocked) {
+      const uploadLock = labUploadLockedNotice(workState.uploadLockReason);
+      if (uploadLock) {
         toast({
-          title: "디자인 확정 전",
-          description: "디자인 확정 후 업로드할 수 있습니다.",
+          title: uploadLock.title,
+          description: uploadLock.description,
         });
         return;
       }
@@ -8284,10 +8345,11 @@ export function RequestorPracticeReceivePage({
         transfer,
         implantCatalog,
       );
-      if (workState.uploadLocked) {
+      const uploadLock = labUploadLockedNotice(workState.uploadLockReason);
+      if (uploadLock) {
         toast({
-          title: "디자인 확정 전",
-          description: "디자인 확정 후 업로드할 수 있습니다.",
+          title: uploadLock.title,
+          description: uploadLock.description,
         });
         return;
       }
@@ -9593,7 +9655,12 @@ export function RequestorPracticeReceivePage({
 
   const selectedTransferAbutmentDesignAwaiting = useMemo(() => {
     if (!selectedTransfer) return false;
-    return isPtxAbutmentDesignAwaitingDentist(labAbutmentInput(selectedTransfer));
+    const designFiles = selectedTransfer.production?.designFiles;
+    return isLabWorkBlockedUntilPracticeAbutmentDecision({
+      ...labAbutmentInput(selectedTransfer),
+      designFilesKnownEmpty:
+        Array.isArray(designFiles) && designFiles.length === 0,
+    });
   }, [labAbutmentInput, selectedTransfer]);
 
   const labDesignReviewTransfers = useMemo(() => {
@@ -11435,7 +11502,10 @@ export function RequestorPracticeReceivePage({
           })) satisfies PracticeTransferDialogFileItem[]
         }
         oralScanAttachMode={null}
-        requestFilesDownloadLocked={false}
+        requestFilesDownloadLocked={selectedTransferAbutmentDesignAwaiting}
+        requestFilesDownloadLockedReason={
+          LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT
+        }
         designFiles={
           (selectedTransfer?.production?.designFiles || []).map((file) => ({
             id: file.id,

@@ -694,7 +694,7 @@ const canUserAccessS3Key = async (req, key) => {
       !!currentAnchorId &&
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
 
-    if (isPracticeOwner || isPracticeBusinessMember || req.user?.role === "internalLab") {
+    if (isPracticeOwner || isPracticeBusinessMember) {
       return true;
     }
     if (isTargetLabMember || isAssigneeLabMember) {
@@ -705,6 +705,9 @@ const canUserAccessS3Key = async (req, key) => {
       if (isOralScanKey && shouldLockLabOralScanDownload(practiceTransfer)) {
         return false;
       }
+      return true;
+    }
+    if (req.user?.role === "internalLab") {
       return true;
     }
   }
