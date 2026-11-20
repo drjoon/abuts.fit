@@ -450,8 +450,8 @@ import {
   isPtxAbutmentDesignReviewForLab,
   isPtxAbutmentManualOrder,
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
-  LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
+  labWorkStartUploadNoticeCaLine,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { LabPartialAbutmentUploadToolbarAlert } from "@/shared/components/practice/LabPartialAbutmentUploadToolbarAlert";
@@ -9586,6 +9586,11 @@ export function RequestorPracticeReceivePage({
     [implantCatalog],
   );
 
+  const workStartUploadNoticeCaLine = useMemo(() => {
+    if (!selectedTransfer) return null;
+    return labWorkStartUploadNoticeCaLine(labAbutmentInput(selectedTransfer));
+  }, [labAbutmentInput, selectedTransfer]);
+
   const selectedTransferAbutmentDesignAwaiting = useMemo(() => {
     if (!selectedTransfer) return false;
     return isPtxAbutmentDesignAwaitingDentist(labAbutmentInput(selectedTransfer));
@@ -12056,13 +12061,8 @@ export function RequestorPracticeReceivePage({
         description={
           <div className="space-y-3 leading-relaxed">
             <p>{LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED}</p>
-            {selectedTransfer?.hasCustomAbutment ||
-            (selectedTransfer &&
-              practiceTransferHasCustomAbutment(
-                selectedTransfer,
-                implantCatalog,
-              )) ? (
-              <p>{LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT}</p>
+            {workStartUploadNoticeCaLine ? (
+              <p>{workStartUploadNoticeCaLine}</p>
             ) : null}
           </div>
         }

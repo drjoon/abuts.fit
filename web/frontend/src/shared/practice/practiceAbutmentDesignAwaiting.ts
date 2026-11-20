@@ -12,6 +12,7 @@
 // - 2026-11-19: 작업시작 비활성 툴팁 카피(LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT).
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 // - 2026-11-20: 작업시작 보철 업로드 안내 모달 문구 간소화.
+// - 2026-11-20: 플랫폼 확정은 커스텀어벗 제작비가 어벗츠에게만 지급. 수작업만 기공소 적립.
 // - 2026-11-20: 기공소 미확정 검토도 육각형·디자인 버튼이 같은 깜빡임을 쓴다.
 // - 2026-11-20: 수가 경로만으로는 결정을 끝내지 않는다. 작업취소·거부 뒤에도 확정·수작업 전이면 디자인 강조·작업시작 잠금.
 // - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」잠금을 푼다.
@@ -33,8 +34,36 @@ export const LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT =
 /** 작업시작 전 보철 업로드 요구 안내(모달) */
 export const LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED =
   "이 치과는 보철 디자인 파일 업로드를 요구합니다.";
+/** 수작업. 기공소 커스텀어벗 수가. */
 export const LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT =
   "커스텀어벗 기공비는 생산이 끝난 뒤에 적립됩니다.";
+/** 플랫폼 확정. 디자인+생산비는 어벗츠만. 기공소 어벗 수가는 없다. */
+export const LAB_WORK_START_UPLOAD_NOTICE_CA_ABUTS_ONLY =
+  "커스텀어벗 제작비는 어벗츠에게만 지급됩니다.";
+
+/** 커스텀어벗이 있을 때 작업시작 모달의 정산 한 줄. 없으면 null. */
+export function labWorkStartUploadNoticeCaLine(
+  input: Pick<
+    AbutmentDesignAwaitingInput,
+    | "hasCustomAbutment"
+    | "abutmentFeeRoute"
+    | "manualRequested"
+    | "practiceDesignConfirmedAt"
+  > | null | undefined,
+): string | null {
+  if (!input?.hasCustomAbutment) return null;
+  const route = String(input.abutmentFeeRoute || "").trim();
+  const manual = Boolean(input.manualRequested) || route === "lab";
+  if (manual) return LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT;
+  if (
+    route === "platform" ||
+    route === "pending" ||
+    String(input.practiceDesignConfirmedAt || "").trim()
+  ) {
+    return LAB_WORK_START_UPLOAD_NOTICE_CA_ABUTS_ONLY;
+  }
+  return LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT;
+}
 
 export type AbutmentDesignAwaitingInput = {
   status?: string | null;
