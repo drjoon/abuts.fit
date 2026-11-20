@@ -1,4 +1,5 @@
 // related files:
+// - 2026-11-20: 디자인 상태 뱃지 — 생산의뢰 줄 오른쪽 끝(업로드 위). 수작업·치과 확정 디자인 복원.
 // - 2026-11-20: 수작업 의뢰 — 배지 제거. 디자인 자리에 「폴더 열기」.
 // - 2026-11-20: 디자인 버튼 — 스냅샷·STL을 기다리지 않고 모달을 연다.
 // - 2026-11-20: 플랫폼 디자인 검토 — 확정 뱃지 제거. 어벗·디자인 깜빡임. 업로드 비활성.
@@ -11639,6 +11640,24 @@ export function RequestorPracticeReceivePage({
           ) : null;
           const releaseTrailingOnly =
             completedCancelAction || releaseTrailing || null;
+          const manualDesign = selectedTransfer.production?.customAbutmentManualDesign;
+          const hasAbutmentDesignStatus =
+            selectedTransfer.hasCustomAbutment ||
+            selectedTransferToothWorks.some((row) => row.customAbutment);
+          const abutmentStatusBadge = !hasAbutmentDesignStatus ? null : manualDesign?.at ? (
+            <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900">
+              수작업 의뢰
+              {manualDesign.hasPaint ? " · 페인트" : ""}
+            </span>
+          ) : selectedTransfer.production?.practiceDesignConfirmedAt ? (
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
+              치과 확정 디자인
+            </span>
+          ) : (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
+              치과 확정 대기
+            </span>
+          );
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
@@ -11646,6 +11665,7 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
+              abutmentStatusBadge={abutmentStatusBadge}
               abutmentLeadingActions={
                 <div className="flex min-w-0 items-center gap-1.5" data-no-drag>
                   <RequestSettingsToolbar
@@ -11746,12 +11766,6 @@ export function RequestorPracticeReceivePage({
                             />
                           );
                         })()
-                      )}
-                      {selectedTransfer.production?.customAbutmentManualDesign?.at ||
-                      selectedTransfer.production?.practiceDesignConfirmedAt ? null : (
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
-                          치과 확정 대기
-                        </span>
                       )}
                     </>
                   ) : null}

@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-11-20: 디자인 상태 뱃지 — 생산의뢰 줄 오른쪽 끝(업로드 위).
 // - 2026-11-20: 플랫폼 디자인 검토 중 업로드 버튼은 보이되 비활성.
 // - 2026-11-19: 업로드 메뉴 — 보철→보철 STL. 어벗·보철 아래 설명 문구 제거.
 // - 2026-11-19: 어벗·보철 업로드를 「업로드」한 버튼+선택 팝오버로 통합.
@@ -91,6 +92,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
    * 업로드 버튼이 없어도 어벗 가이드/취소 행 오른쪽 클러스터에 같이 둔다.
    */
   abutmentLeadingActions?: ReactNode;
+  /** 생산의뢰 줄 오른쪽 끝. 치과 확정 대기·치과 확정 디자인·수작업 의뢰 */
+  abutmentStatusBadge?: ReactNode;
   /**
    * 업로드·취소 옆 상시 CTA(지르 작업 시작 등).
    * 어벗 완료 줄이 취소·리메이크를 맡아도 숨기지 않는다.
@@ -142,6 +145,7 @@ export function PracticeLabReceiveWorkActionsBar({
   preferredAbutmentShipBeforeArrivalBusinessDays = null,
   onDesignConfirm,
   abutmentLeadingActions = null,
+  abutmentStatusBadge = null,
   stickyTrailingActions = null,
   trailingActions = null,
   className,
@@ -184,7 +188,8 @@ export function PracticeLabReceiveWorkActionsBar({
     !uploadOverdue &&
     !showAbutmentUpload &&
     !showProstheticUpload &&
-    !showAbutmentLeading
+    !showAbutmentLeading &&
+    !abutmentStatusBadge
   ) {
     return null;
   }
@@ -207,9 +212,13 @@ export function PracticeLabReceiveWorkActionsBar({
     />
   ) : null;
 
-  const abutsTrailing = abutsInlineOverdue ? (
-    <div className="flex shrink-0 items-center gap-1.5">{abutsInlineOverdue}</div>
-  ) : null;
+  const abutsTrailing =
+    abutsInlineOverdue || abutmentStatusBadge ? (
+      <div className="flex shrink-0 items-center justify-end gap-1.5">
+        {abutsInlineOverdue}
+        {abutmentStatusBadge}
+      </div>
+    ) : null;
 
   const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
   const labDesignReviewHold = isPlatformAbutmentDesignHeldForLabReview({
@@ -505,6 +514,11 @@ export function PracticeLabReceiveWorkActionsBar({
       </p>
     ) : null;
 
+  const statusAboveActions =
+    !hasAbutmentGuide && abutmentStatusBadge ? (
+      <div className="flex w-full justify-end">{abutmentStatusBadge}</div>
+    ) : null;
+
   const designConfirmButton =
     state.showDesignConfirm && onDesignConfirm ? (
       <Button
@@ -528,6 +542,7 @@ export function PracticeLabReceiveWorkActionsBar({
         {standaloneOverdue}
         {abutmentShipBufferAlert}
         {pendingLabGuide}
+        {statusAboveActions}
         {designConfirmButton && platformCheckNote}
         {renderActionRow(designConfirmButton)}
       </div>
@@ -544,6 +559,7 @@ export function PracticeLabReceiveWorkActionsBar({
         {standaloneOverdue}
         {abutmentShipBufferAlert}
         {pendingLabGuide}
+        {statusAboveActions}
         {renderActionRow(null)}
       </div>
     );
@@ -562,6 +578,7 @@ export function PracticeLabReceiveWorkActionsBar({
       {standaloneOverdue}
       {abutmentShipBufferAlert}
       {pendingLabGuide}
+      {statusAboveActions}
       {cancelCluster ? renderActionRow(null) : stickyOrTrailing}
     </div>
   );

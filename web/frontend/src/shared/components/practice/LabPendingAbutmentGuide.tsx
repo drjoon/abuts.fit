@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-11-20: 생산의뢰 줄 오른쪽 끝 — 디자인 상태 뱃지(확정 대기·확정·수작업).
 // - 2026-09-30: 「어벗츠생산」 줄을 누르면 공정 단계 도표.
 // - 2026-09-30: 줄은 「어벗츠생산 - 24(대기)」. 업로드 전은 대기, 업로드 후는 준비.
 // - 2026-09-16: 후속(지르) 행은 안내 치아번호에서 제외(임시치아 CA 중복 방지).
@@ -405,7 +406,14 @@ export function LabPendingAbutmentGuide({
   const [stageOpen, setStageOpen] = useState(false);
   const pendingRows = listPendingRows(toothWorks);
   const abutsRows = listAbutsOrderRows(toothWorks);
-  if (pendingRows.length === 0 && abutsRows.length === 0) return null;
+  if (pendingRows.length === 0 && abutsRows.length === 0) {
+    if (!abutsTrailing) return null;
+    return (
+      <div className={cn("flex w-full justify-end", className)}>
+        {abutsTrailing}
+      </div>
+    );
+  }
 
   const struckTeeth = toToothSet(uploadedAbutmentTeeth);
   const pastReadyTeeth = toToothSet(pastReadyAbutmentTeeth);
@@ -557,22 +565,27 @@ export function LabPendingAbutmentGuide({
 
   const pendingLine =
     pendingRows.length > 0 ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="w-fit max-w-full cursor-help">
-            <GuideLine
-              label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
-              detail={<ToothNumberDetail rows={pendingRows} />}
-            />
-          </div>
-        </TooltipTrigger>
-        <TooltipContent
-          side="bottom"
-          className="max-w-xs text-xs leading-relaxed"
-        >
-          <TooltipMultiline text={tooltipBody} />
-        </TooltipContent>
-      </Tooltip>
+      <div className="flex w-full min-w-0 items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="w-fit max-w-full cursor-help">
+              <GuideLine
+                label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
+                detail={<ToothNumberDetail rows={pendingRows} />}
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            className="max-w-xs text-xs leading-relaxed"
+          >
+            <TooltipMultiline text={tooltipBody} />
+          </TooltipContent>
+        </Tooltip>
+        {abutsRows.length === 0 && abutsTrailing ? (
+          <div className="ml-auto shrink-0">{abutsTrailing}</div>
+        ) : null}
+      </div>
     ) : null;
 
   return (
