@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-20: 치과 디자인 미확정 — 「디자인」버튼에 확정 대기 깜빡임.
 // - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」을 다시 연다. 수작업 중에는 비활성.
 // - 2026-11-19: 치과 헤더 — 디자인 모달 진입을 「디자인」+Sparkles로(작업 스캔 라벨 교체).
 // - 2026-11-19: 담당 기사 뱃지 — 다음 도착일과 같은 줄(헤더 1줄 절약).
@@ -363,6 +364,7 @@ import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPending
 import {
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT,
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
+  PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import { useAbutsLabCertified } from "@/shared/practice/useAbutsLabCertified";
@@ -697,6 +699,8 @@ type PracticeTransferDetailChatDialogProps = {
   onWorkScanTileClick?: () => void;
   /** 수작업 의뢰 중이고 기공소가 취소·거부하지 않았을 때. 「디자인」은 남기되 열지 않는다. */
   practiceDesignEntryDisabled?: boolean;
+  /** 치과가 디자인 확정·수작업 의뢰를 아직 고르지 않음. 「디자인」을 깜빡인다. */
+  practiceDesignEntryAttention?: boolean;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -994,6 +998,7 @@ export function PracticeTransferDetailChatDialog({
   workScanAlignment = null,
   onWorkScanTileClick,
   practiceDesignEntryDisabled = false,
+  practiceDesignEntryAttention = false,
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -3027,11 +3032,15 @@ export function PracticeTransferDetailChatDialog({
           type="button"
           variant="outline"
           size="sm"
-          className={
+          className={cn(
             opensDesign
               ? "h-8 shrink-0 gap-1 border-primary/45 bg-background px-2.5 font-medium text-primary hover:bg-primary/10 hover:text-primary"
-              : "h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
-          }
+              : "h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary",
+            opensDesign &&
+              practiceDesignEntryAttention &&
+              !designLocked &&
+              PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+          )}
           disabled={!authToken || designLocked}
           onClick={() => {
             if (designLocked) return;

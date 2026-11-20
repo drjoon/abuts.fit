@@ -9,6 +9,7 @@
 // - 2026-11-19: 기공소가 제조 주문을 취소하면 치과 플랫폼 확정을 풀어 다시 확정하게 한다.
 // - 2026-11-19: 취소된 CA Request는 치아를 덮지 않는다. 다시 확정하면 그 치아만 새로 만든다.
 // - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
+// - 2026-11-20: 작업시작 게이트는 치과 확정·수작업 시각만 본다. 수가 경로·작업취소 단계는 결정을 끝내지 않는다.
 // - 2026-11-19: isPracticeAbutmentDesignAwaitingDentist — 치과 어벗·디자인 확정 전 작업시작 차단(FE SSOT).
 // - 2026-11-19: 어벗 STL handoff는 그 치아만 만든다. 크레딧 hold 실패 건은 준비 큐에 남기지 않는다.
 // - 2026-11-07: abutment-design-handoff — PTX 단위 락으로 크레딧 hold를 직렬화. 치아 지정 시 다른 치아로 폴백하지 않음.
@@ -3573,14 +3574,17 @@ const PRACTICE_ABUTMENT_DESIGN_AWAITING_CLOSED = new Set([
   "canceled",
   "deleted",
   "임시저장",
-  "거부",
-  "작업취소",
 ]);
 
-/** FE `isPtxAbutmentDesignAwaitingDentist`와 동일 — 치과가 어벗 경로·디자인을 아직 확정하지 않음 */
+/**
+ * FE `isPtxAbutmentDesignAwaitingDentist`와 동일.
+ * 치과 확정 시각 또는 수작업 의뢰 시각이 있을 때만 끝난다.
+ * 수가 경로(lab/platform)와 작업취소·거부 단계는 결정을 대신하지 않는다.
+ */
 function isPracticeAbutmentDesignAwaitingDentist(doc) {
   if (!hasCustomAbutmentToothWorks(doc?.toothWorks)) return false;
-  const status = String(doc?.manufacturerStage || doc?.status || "").trim();
+  // 저장 status만 본다. 표시 단계 작업취소·거부는 문서 status가 active라 여기서 닫히지 않는다.
+  const status = String(doc?.status || "").trim();
   if (PRACTICE_ABUTMENT_DESIGN_AWAITING_CLOSED.has(status)) return false;
   const production =
     doc?.production && typeof doc.production === "object" ? doc.production : {};
@@ -3588,8 +3592,6 @@ function isPracticeAbutmentDesignAwaitingDentist(doc) {
   if (production.designReadyAt) return false;
   if (countPracticeTransferDesignFiles(doc) > 0) return false;
   if (production.customAbutmentManualDesign?.at) return false;
-  const route = String(production.abutmentFeeRoute || "").trim();
-  if (route === "platform" || route === "lab") return false;
   return true;
 }
 

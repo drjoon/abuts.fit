@@ -3,6 +3,7 @@
 // - 2026-11-20: 수작업 의뢰 — 배지 제거. 디자인 자리에 「폴더 열기」.
 // - 2026-11-20: 디자인 버튼 — 스냅샷·STL을 기다리지 않고 모달을 연다.
 // - 2026-11-20: 플랫폼 디자인 검토 — 확정 뱃지 제거. 어벗·디자인 깜빡임. 업로드 비활성.
+// - 2026-11-20: 디자인 미확정·수작업 해제 뒤에는 작업시작을 잠근다. 작업취소 표시 단계도 결정을 끝내지 않는다.
 // - 2026-11-20: 치과 디자인 확정 소켓 — 작업시작을 바로 연다. 확정 시각을 작업완료로 보지 않는다.
 // - 2026-11-19: 기공소 디자인 모달 — 치과 확정이 아니면 열지 않는다. 뷰어로 대체하지 않는다.
 // - 2026-11-19: 기공소 디자인 확정 — 응답의 제조 STL·연동 의뢰를 바로 반영. 생산의뢰 완료가 새로고침 없이 보인다.
@@ -6267,6 +6268,8 @@ export function RequestorPracticeReceivePage({
     if (
       isPtxAbutmentDesignAwaitingDentist({
         status: getTransferDisplayStatus(selectedTransfer),
+        workCanceledAt: selectedTransfer.workCanceledAt,
+        labRejected: selectedTransfer.labRejected,
         hasCustomAbutment:
           Boolean(selectedTransfer.hasCustomAbutment) ||
           practiceTransferHasCustomAbutment(selectedTransfer, implantCatalog),
@@ -9568,6 +9571,8 @@ export function RequestorPracticeReceivePage({
   const labAbutmentInput = useCallback(
     (transfer: ReceivedPracticeTransfer) => ({
       status: getTransferDisplayStatus(transfer),
+      workCanceledAt: transfer.workCanceledAt,
+      labRejected: transfer.labRejected,
       hasCustomAbutment:
         Boolean(transfer.hasCustomAbutment) ||
         practiceTransferHasCustomAbutment(transfer, implantCatalog),

@@ -1,6 +1,6 @@
 // 기공의뢰에 커스텀어벗이 있는데 치과가 아직 확정하지 않은 상태.
 // 접수 직원·위생사가 먼저 보내고, 치과의사가 나중에 디자인 화면에서 확정한다.
-// 수행 기공소 STL이 올라갔거나 수작업·플랫폼 경로가 정해지면 끝난다.
+// 수행 기공소 STL이 올라갔거나 치과 확정·수작업 의뢰가 있으면 끝난다.
 // 상단은 「어벗 검토」(디자인 화면)와 「어벗 의뢰」(수작업·채팅)로 나눈다.
 // 검토 대기(치과 미확정·기공소 미확정)는 뱃지·육각형에 practice-abutment-design-awaiting-attention.
 // related files:
@@ -13,6 +13,7 @@
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
 // - 2026-11-20: 작업시작 보철 업로드 안내 모달 문구 간소화.
 // - 2026-11-20: 기공소 미확정 검토도 육각형·디자인 버튼이 같은 깜빡임을 쓴다.
+// - 2026-11-20: 수가 경로만으로는 결정을 끝내지 않는다. 작업취소·거부 뒤에도 확정·수작업 전이면 디자인 강조·작업시작 잠금.
 // - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」잠금을 푼다.
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
@@ -37,6 +38,9 @@ export const LAB_WORK_START_UPLOAD_NOTICE_CA_SETTLEMENT =
 
 export type AbutmentDesignAwaitingInput = {
   status?: string | null;
+  /** 기공소 작업취소. 표시 단계가 「취소」로 접혀도 치과 결정은 끝나지 않는다. */
+  workCanceledAt?: string | null;
+  labRejected?: boolean | null;
   hasCustomAbutment?: boolean | null;
   abutmentFeeRoute?: string | null;
   practiceDesignConfirmedAt?: string | null;
@@ -46,35 +50,41 @@ export type AbutmentDesignAwaitingInput = {
   manualRequested?: boolean | null;
 };
 
-const CLOSED_STATUS = new Set([
-  "취소",
-  "canceled",
-  "deleted",
-  "임시저장",
-  "거부",
-  "작업취소",
-]);
+/** 휴지통·임시저장만 닫는다. 작업취소·거부는 치과가 다시 고르는 상태다. */
+const CLOSED_STATUS = new Set(["취소", "canceled", "deleted", "임시저장"]);
 
 const LAB_REVIEW_CLOSED_STATUS = new Set([
   ...CLOSED_STATUS,
+  "작업취소",
+  "거부",
   "작업완료",
   "생산진행",
   "포장.발송",
   "기한만료",
 ]);
 
+function isAbutmentDecisionClosed(
+  input: AbutmentDesignAwaitingInput,
+) {
+  const status = String(input.status || "").trim();
+  const workReleased =
+    Boolean(String(input.workCanceledAt || "").trim()) ||
+    status === "작업취소" ||
+    status === "거부" ||
+    Boolean(input.labRejected);
+  if (workReleased) return false;
+  return CLOSED_STATUS.has(status);
+}
+
 export function isPtxAbutmentDesignAwaitingDentist(
   input: AbutmentDesignAwaitingInput | null | undefined,
 ) {
   if (!input?.hasCustomAbutment) return false;
-  const status = String(input.status || "").trim();
-  if (CLOSED_STATUS.has(status)) return false;
+  if (isAbutmentDecisionClosed(input)) return false;
   if (String(input.practiceDesignConfirmedAt || "").trim()) return false;
   if (String(input.designReadyAt || "").trim()) return false;
   if (Math.max(0, Number(input.designFileCount || 0)) > 0) return false;
   if (input.manualRequested) return false;
-  const route = String(input.abutmentFeeRoute || "").trim();
-  if (route === "platform" || route === "lab") return false;
   return true;
 }
 

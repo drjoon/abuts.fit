@@ -264,6 +264,23 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         ...caDoc,
         production: { abutmentFeeRoute: "platform" },
       }),
+    ).toBe(true);
+    expect(
+      isPracticeAbutmentDesignAwaitingDentist({
+        ...caDoc,
+        production: { abutmentFeeRoute: "lab" },
+        workCanceledAt: new Date(),
+        status: "active",
+      }),
+    ).toBe(true);
+    expect(
+      isPracticeAbutmentDesignAwaitingDentist({
+        ...caDoc,
+        production: {
+          abutmentFeeRoute: "lab",
+          customAbutmentManualDesign: { at: new Date() },
+        },
+      }),
     ).toBe(false);
   });
 

@@ -12461,14 +12461,33 @@ export async function confirmPracticeTransferProduction(req, res) {
 
 /**
  * 지정 기공소 작업취소·거부: 수작업 의뢰를 푼다.
- * 치과 채팅 「디자인」이 다시 열린다. 수가 경로 lab은 남겨 작업시작 게이트를 바꾸지 않는다.
+ * 치과가 디자인 확정 또는 수작업을 다시 고르기 전에는 작업시작이 잠긴다.
+ * 수가 경로 lab만 남아 있으면 pending으로 되돌린다.
  * 자동매칭 재공개는 다음 기공소가 수작업을 이어가므로 풀지 않는다.
- * @returns {Record<string, string> | null} $unset 조각
+ * @returns {{ unset: Record<string, string>, set: Record<string, unknown> } | null}
  */
 function releaseDirectManualAbutmentDesign(doc) {
-  if (!doc?.production?.customAbutmentManualDesign?.at) return null;
-  doc.production.customAbutmentManualDesign = undefined;
-  return { "production.customAbutmentManualDesign": "" };
+  const hadManual = Boolean(doc?.production?.customAbutmentManualDesign?.at);
+  const route = String(doc?.production?.abutmentFeeRoute || "").trim();
+  const staleLabRoute =
+    route === "lab" && !doc?.production?.practiceDesignConfirmedAt;
+  if (!hadManual && !staleLabRoute) return null;
+  if (!doc.production || typeof doc.production !== "object") doc.production = {};
+  const unset = {};
+  const set = {};
+  if (hadManual) {
+    doc.production.customAbutmentManualDesign = undefined;
+    unset["production.customAbutmentManualDesign"] = "";
+  }
+  if (staleLabRoute) {
+    const feeRevision =
+      Math.max(0, Math.floor(Number(doc.production.abutmentFeeRouteRevision || 0))) + 1;
+    doc.production.abutmentFeeRoute = "pending";
+    doc.production.abutmentFeeRouteRevision = feeRevision;
+    set["production.abutmentFeeRoute"] = "pending";
+    set["production.abutmentFeeRouteRevision"] = feeRevision;
+  }
+  return { unset, set };
 }
 
 /**
@@ -12541,9 +12560,22 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         }
         // 이미 취소된 지정 건에 수작업 잠금이 남아 있으면 여기서 푼다.
         if (!isAutoEarly && alreadyWorkCanceled) {
-          const unsetManual = releaseDirectManualAbutmentDesign(doc);
-          if (unsetManual) {
-            await PracticeTransfer.updateOne({ _id: doc._id }, { $unset: unsetManual });
+          const releasedManual = releaseDirectManualAbutmentDesign(doc);
+          const unsetManual = releasedManual?.unset || {};
+          const setManual = releasedManual?.set || {};
+          if (
+            Object.keys(unsetManual).length > 0 ||
+            Object.keys(setManual).length > 0
+          ) {
+            await PracticeTransfer.updateOne(
+              { _id: doc._id },
+              {
+                ...(Object.keys(setManual).length > 0 ? { $set: setManual } : {}),
+                ...(Object.keys(unsetManual).length > 0
+                  ? { $unset: unsetManual }
+                  : {}),
+              },
+            );
           }
         }
         return res.status(200).json({
@@ -12713,8 +12745,10 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         doc.autoMatch.completedAt = null;
         doc.autoMatch.completedBy = null;
       }
-      const unsetManualDesign = releaseDirectManualAbutmentDesign(doc);
-      manualDesignReleased = Boolean(unsetManualDesign);
+      const releasedManual = releaseDirectManualAbutmentDesign(doc);
+      manualDesignReleased = Boolean(
+        releasedManual?.unset?.["production.customAbutmentManualDesign"],
+      );
       await PracticeTransfer.updateOne(
         { _id: doc._id },
         {
@@ -12727,8 +12761,11 @@ export async function markReceivedPracticeTransferRelease(req, res) {
             billing: billingReset,
             "autoMatch.completedAt": null,
             "autoMatch.completedBy": null,
+            ...(releasedManual?.set || {}),
           },
-          ...(unsetManualDesign ? { $unset: unsetManualDesign } : {}),
+          ...(releasedManual && Object.keys(releasedManual.unset).length > 0
+            ? { $unset: releasedManual.unset }
+            : {}),
         },
       );
     }
@@ -13338,7 +13375,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
     doc.labRejectedAt = now;
     doc.labRejectedByLabAnchorId = labOid;
     doc.billing = billingReset;
-    const unsetManualDesign = releaseDirectManualAbutmentDesign(doc);
+    const releasedManual = releaseDirectManualAbutmentDesign(doc);
 
     await PracticeTransfer.updateOne(
       { _id: doc._id },
@@ -13352,8 +13389,11 @@ export async function markReceivedPracticeTransferReject(req, res) {
           labRejectedAt: now,
           labRejectedByLabAnchorId: labOid,
           billing: billingReset,
+          ...(releasedManual?.set || {}),
         },
-        ...(unsetManualDesign ? { $unset: unsetManualDesign } : {}),
+        ...(releasedManual && Object.keys(releasedManual.unset).length > 0
+          ? { $unset: releasedManual.unset }
+          : {}),
       },
     );
 

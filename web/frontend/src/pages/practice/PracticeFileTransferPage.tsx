@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-11-20: 치과 디자인 미확정 — 채팅 「디자인」버튼을 깜빡인다.
  * - 2026-11-20: 기공소 작업취소·거부 뒤 치과 채팅 「디자인」을 다시 연다.
  * - 2026-11-20: 수작업 의뢰 뒤 치과 채팅 「디자인」비활성.
  * - 2026-11-19: 치과 채팅 — 디자인 모달 진입 버튼을 「디자인」+Sparkles로 표시.
@@ -5582,6 +5583,19 @@ export const PracticeFileTransferPage = ({
       (selectedTransfer?.hasCustomAbutment &&
         (selectedTransferDetailModel?.toothWorks || []).some((row) => row.customAbutment)),
   );
+  const practiceDesignEntryAttention = isPtxAbutmentDesignAwaitingDentist({
+    status: selectedTransfer?.status,
+    hasCustomAbutment:
+      Boolean(selectedTransfer?.hasCustomAbutment) ||
+      Boolean(
+        selectedTransferDetailModel?.toothWorks?.some((row) => row.customAbutment),
+      ),
+    abutmentFeeRoute: selectedTransfer?.abutmentFeeRoute,
+    practiceDesignConfirmedAt: selectedTransfer?.practiceDesignConfirmedAt,
+    designReadyAt: selectedTransfer?.designReadyAt,
+    designFileCount: selectedTransfer?.designFileCount,
+    manualRequested: selectedTransfer?.manualRequested,
+  });
 
   const [legendLabDots, setLegendLabDots] = useState<
     Map<string, CalendarLabDotAssignment>
@@ -12935,6 +12949,7 @@ export const PracticeFileTransferPage = ({
             manualRequested: selectedTransfer?.manualRequested,
             status: selectedTransfer?.status,
           })}
+          practiceDesignEntryAttention={practiceDesignEntryAttention}
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
             practiceAbutmentCancelOpen ? (
