@@ -1492,12 +1492,16 @@ export function PracticeCustomAbutmentDesignTree({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex min-h-0 w-[17.5rem] shrink-0 flex-col overflow-x-hidden overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
+        "pointer-events-auto flex min-h-0 w-full min-w-0 shrink-0 flex-col overflow-x-hidden overflow-y-auto rounded-lg border bg-background/95 shadow-sm",
         className,
       )}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="sticky top-0 z-[1] flex items-center gap-0.5 border-b bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] font-semibold text-foreground">
+      <div
+        data-snap-drag=""
+        title="끌어 옮기면 귀퉁이나 다른 패널에 붙습니다"
+        className="sticky top-0 z-[1] flex cursor-grab touch-none select-none items-center gap-0.5 border-b bg-background py-1.5 pl-3 pr-1.5 text-[0.8125rem] font-semibold text-foreground active:cursor-grabbing"
+      >
         <span className="shrink-0">어벗 정보</span>
         <ScanbodyButton
           shown={anyScanbody}

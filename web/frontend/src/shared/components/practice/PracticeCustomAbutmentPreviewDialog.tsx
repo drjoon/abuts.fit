@@ -224,6 +224,7 @@ import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatMessageAttachment } from "@/shared/hooks/useBackgroundTempUpload";
 import { DesignShareChatPanel } from "@/shared/components/practice/DesignShareChatPanel";
+import { ViewerFloatingFrame } from "@/shared/components/practice/ViewerFloatingFrame";
 import { useToast } from "@/shared/hooks/use-toast";
 import { onAppEvent } from "@/shared/realtime/socket";
 import {
@@ -1214,7 +1215,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewerFrameRef = useRef<HTMLDivElement | null>(null);
   const viewCubeStackRef = useRef<HTMLDivElement | null>(null);
-  const designTreeStackRef = useRef<HTMLDivElement | null>(null);
+  const designTreeStackRef = useRef<HTMLElement | null>(null);
+  const chatPanelRef = useRef<HTMLElement | null>(null);
   const viewerBottomChromeRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
     hostRef.current = node;
@@ -6036,6 +6038,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             {viewerLive && !readOnly && transferIdParam ? (
               <DesignShareChatPanel
                 boundsRef={viewerFrameRef}
+                panelRef={chatPanelRef}
                 snapPeerRefs={[viewCubeStackRef, designTreeStackRef, viewerBottomChromeRef]}
                 title={isLabViewer ? "치과 소통" : "기공소 소통"}
                 peerName={isLabViewer ? "치과" : "기공소"}
@@ -6067,12 +6070,16 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive && designedList.length > 0 ? (
-              <div
-                ref={designTreeStackRef}
-                className="pointer-events-none absolute bottom-3 right-3 top-3 z-10 flex min-h-0 flex-col items-end"
+              <ViewerFloatingFrame
+                boundsRef={viewerFrameRef}
+                panelRef={designTreeStackRef}
+                peerRefs={[viewCubeStackRef, chatPanelRef, viewerBottomChromeRef]}
+                minW={220}
+                minH={160}
+                anchorClassName="bottom-3 right-3 top-3 w-[17.5rem]"
               >
                 <PracticeCustomAbutmentDesignTree
-                    className="min-h-0 max-h-full"
+                    className="min-h-0 max-h-full flex-1"
                     items={designedList}
                     visibleTeeth={visibleTeeth}
                     selectedTeeth={selectedTeeth}
@@ -6180,7 +6187,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                     }
                     onEditField={canEditDesign ? handleEditInfoField : undefined}
                   />
-              </div>
+              </ViewerFloatingFrame>
             ) : null}
 
             {!readOnly ? (

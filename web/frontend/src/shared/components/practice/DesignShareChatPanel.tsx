@@ -21,15 +21,16 @@ import { cn } from "@/shared/ui/cn";
 const MIN_W = 260;
 const MIN_H = 220;
 /** 작업영역 가장자리·패널 사이 여백(귀퉁이 스냅과 동일). */
-const EDGE = 12;
+export const VIEWER_PANEL_EDGE = 12;
 /** 이 거리 안이면 귀퉁이·다른 패널에 붙인다. */
 const SNAP = 72;
+const EDGE = VIEWER_PANEL_EDGE;
 
 type Corner = "nw" | "ne" | "sw" | "se";
 type FrameBox = { x: number; y: number; w: number; h: number; corner: Corner | null };
-type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+export type ViewerResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
-const RESIZE_HANDLES: { edge: ResizeEdge; className: string }[] = [
+export const VIEWER_RESIZE_HANDLES: { edge: ViewerResizeEdge; className: string }[] = [
   { edge: "n", className: "left-2 right-2 top-0 h-1.5 cursor-ns-resize" },
   { edge: "s", className: "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize" },
   { edge: "w", className: "bottom-2 left-0 top-2 w-1.5 cursor-ew-resize" },
@@ -73,7 +74,7 @@ function clampInBounds(
   };
 }
 
-function readPeerRects(
+export function readPeerRects(
   bounds: DOMRect,
   peers: readonly RefObject<HTMLElement | null>[],
   self: HTMLElement | null,
@@ -94,7 +95,7 @@ function readPeerRects(
   return out;
 }
 
-function placeBox(
+export function placeViewerPanel(
   x: number,
   y: number,
   boundsW: number,
@@ -129,30 +130,43 @@ function placeBox(
     });
   };
 
+  const overlapsPeer = (tx: number, ty: number) =>
+    peers.some(
+      (peer) =>
+        tx < peer.x + peer.w - 1 &&
+        tx + width > peer.x + 1 &&
+        ty < peer.y + peer.h - 1 &&
+        ty + height > peer.y + 1,
+    );
+
   for (const peer of peers) {
     const peerRight = peer.x + peer.w;
     const peerBottom = peer.y + peer.h;
-    // 같은 변 맞춤(여백은 패널이 작업영역 가장자리에서 쓰는 EDGE와 같게 유지)
-    pushPeer(peer.x, base.y);
-    pushPeer(peer.x, peer.y);
-    pushPeer(peerRight - width, base.y);
-    pushPeer(peerRight - width, peer.y);
-    pushPeer(base.x, peer.y);
-    pushPeer(base.x, peerBottom - height);
-    // 이웃 배치 — 패널 사이 EDGE
-    pushPeer(peer.x, peerBottom + EDGE);
-    pushPeer(peerRight - width, peerBottom + EDGE);
-    pushPeer(base.x, peerBottom + EDGE);
-    pushPeer(peerRight + EDGE, peer.y);
-    pushPeer(peerRight + EDGE, peerBottom - height);
-    pushPeer(peer.x - width - EDGE, peer.y);
-    pushPeer(peer.x - width - EDGE, peerBottom - height);
-    pushPeer(peer.x, peer.y - height - EDGE);
-    pushPeer(peerRight - width, peer.y - height - EDGE);
+    const candidates = [
+      // 같은 변 맞춤 — 겹치면 아래에서 버린다
+      [peer.x, base.y],
+      [peerRight - width, base.y],
+      [base.x, peer.y],
+      [base.x, peerBottom - height],
+      // 이웃 배치 — 창 가장자리와 같은 EDGE
+      [peer.x, peerBottom + EDGE],
+      [peerRight - width, peerBottom + EDGE],
+      [peerRight + EDGE, peer.y],
+      [peerRight + EDGE, peerBottom - height],
+      [peer.x - width - EDGE, peer.y],
+      [peer.x - width - EDGE, peerBottom - height],
+      [peer.x, peer.y - height - EDGE],
+      [peerRight - width, peer.y - height - EDGE],
+    ];
+    for (const [tx, ty] of candidates) {
+      if (overlapsPeer(tx, ty)) continue;
+      pushPeer(tx, ty);
+    }
   }
 
   let best: SnapTarget | null = null;
   for (const target of targets) {
+    if (target.corner == null && overlapsPeer(target.x, target.y)) continue;
     if (target.dist <= SNAP && (!best || target.dist < best.dist)) best = target;
   }
   if (!best) return { x: base.x, y: base.y, corner: null };
@@ -163,6 +177,8 @@ type Props = {
   boundsRef: RefObject<HTMLElement | null>;
   /** 작업영역 안 다른 패널 — 드롭 시 변·스택 정렬에 스냅 */
   snapPeerRefs?: readonly RefObject<HTMLElement | null>[];
+  /** 다른 패널이 이 프레임에 스냅할 때 쓴다. */
+  panelRef?: RefObject<HTMLElement | null>;
   title: string;
   peerName: string;
   collapsed: boolean;
@@ -183,6 +199,7 @@ type Props = {
 export function DesignShareChatPanel({
   boundsRef,
   snapPeerRefs = [],
+  panelRef,
   title,
   peerName,
   collapsed,
@@ -206,7 +223,7 @@ export function DesignShareChatPanel({
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<null | { ox: number; oy: number; x: number; y: number; moved: boolean }>(null);
   const resizeRef = useRef<null | {
-    edge: ResizeEdge;
+    edge: ViewerResizeEdge;
     x: number;
     y: number;
     l: number;
@@ -289,7 +306,7 @@ export function DesignShareChatPanel({
     drag.moved = true;
     drag.x = rawX;
     drag.y = rawY;
-    const placed = placeBox(
+    const placed = placeViewerPanel(
       rawX,
       rawY,
       bounds.width,
@@ -319,7 +336,7 @@ export function DesignShareChatPanel({
     const panel = frameRef.current;
     if (!bounds || !panel) return;
     const peers = readPeerRects(bounds, snapPeerRefs, panel);
-    const placed = placeBox(
+    const placed = placeViewerPanel(
       drag.x,
       drag.y,
       bounds.width,
@@ -336,7 +353,7 @@ export function DesignShareChatPanel({
     );
   };
 
-  const onResizeDown = (edge: ResizeEdge) => (event: ReactPointerEvent<HTMLElement>) => {
+  const onResizeDown = (edge: ViewerResizeEdge) => (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.stopPropagation();
     const current = readBox();
@@ -421,7 +438,7 @@ export function DesignShareChatPanel({
     const panel = frameRef.current;
     if (!bounds || !panel) return;
     const peers = readPeerRects(bounds, snapPeerRefs, panel);
-    const placed = placeBox(
+    const placed = placeViewerPanel(
       drag.next.x,
       drag.next.y,
       bounds.width,
@@ -475,7 +492,10 @@ export function DesignShareChatPanel({
   const floated = box != null;
   return (
     <div
-      ref={frameRef}
+      ref={(node) => {
+        frameRef.current = node;
+        if (panelRef) panelRef.current = node;
+      }}
       className={cn(
         "pointer-events-auto absolute z-30 flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
         !floated && "min-w-[260px]",
@@ -637,7 +657,7 @@ export function DesignShareChatPanel({
           className="space-y-1.5 px-2.5 pb-2 pt-2 sm:px-2.5 sm:pb-2 sm:pt-2"
         />
       ) : null}
-      {RESIZE_HANDLES.map((handle) => (
+      {VIEWER_RESIZE_HANDLES.map((handle) => (
         <div
           key={handle.edge}
           role="separator"
