@@ -12667,6 +12667,35 @@ export const PracticeFileTransferPage = ({
                 );
               }}
               onActionComplete={(action) => {
+                const id = String(
+                  dialogTransfer.transferId || dialogTransfer.id || "",
+                ).trim();
+                if (id && (action === "confirmed" || action === "manual")) {
+                  const confirmedAt = new Date().toISOString();
+                  const patch =
+                    action === "confirmed"
+                      ? {
+                          practiceDesignConfirmedAt: confirmedAt,
+                          abutmentFeeRoute: "platform" as const,
+                          manualRequested: false,
+                        }
+                      : {
+                          manualRequested: true,
+                          abutmentFeeRoute: "lab" as const,
+                        };
+                  setRecentRequests((prev) =>
+                    prev.map((row) =>
+                      String(row.transferId || "").trim() === id
+                        ? { ...row, ...patch }
+                        : row,
+                    ),
+                  );
+                  setSelectedTransfer((prev) =>
+                    prev && String(prev.transferId || "").trim() === id
+                      ? { ...prev, ...patch }
+                      : prev,
+                  );
+                }
                 void loadRecentRequests({ silent: true });
                 if (designReviewItems.length === 0) return;
                 if (action !== "confirmed" && action !== "manual") return;

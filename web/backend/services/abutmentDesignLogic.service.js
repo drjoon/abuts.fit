@@ -202,7 +202,11 @@ export async function recordGenerationEdits(input) {
     });
     changed += removed.deletedCount || 0;
   }
-  if (changed > 0) await refreshLogicProposals();
+  if (changed > 0) {
+    void refreshLogicProposals().catch((err) =>
+      console.warn("[abutment-design-logic] proposal refresh failed", err?.message || err),
+    );
+  }
   return { recorded: changed };
 }
 

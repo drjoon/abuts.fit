@@ -19,6 +19,7 @@
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
 // - 2026-11-19: 기공소는 치과 디자인 확정 전 뷰어로 두지 않고 모달을 닫는다.
+// - 2026-11-20: 디자인 확정 뒤 스냅샷을 다시 올리지 않는다. 확정 저장이 프리뷰를 이미 남긴다.
 // - 2026-11-20: 기공소 열기 — 확정 JSON만 먼저 보고, 스캔과 프리뷰 STL은 같이 받는다.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
@@ -1164,6 +1165,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [routeCostAction, setRouteCostAction] = useState<"confirm" | "manual">("confirm");
   const [routeCostHideNext, setRouteCostHideNext] = useState(false);
   const routeCostPassedRef = useRef<"confirm" | "manual" | null>(null);
+  /** 확정이 프리뷰를 저장한 뒤에는 닫기 flush가 같은 STL을 다시 올리지 않는다. */
+  const skipSnapshotFlushRef = useRef(false);
   /** 서버 프리뷰 STL. 이번 세션에서 형상을 바꾸기 전에만 재업로드를 건너뛴다. */
   const labSourceStlRef = useRef<Record<string, { s3Key: string; crownS3Key: string }>>({});
   const labGeometryTouchedRef = useRef(false);
@@ -2824,7 +2827,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const flushSessionWork = useCallback(() => {
     window.clearTimeout(editCommitTimerRef.current);
     editCommitTimerRef.current = 0;
-    persistDesign();
+    if (!skipSnapshotFlushRef.current) persistDesign();
     const cam = cameraRef.current;
     const controls = controlsRef.current;
     if (viewReadyRef.current && cam && controls) {
@@ -4826,6 +4829,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const generationEdits = snapshotGenerationEdits();
 
       setActionBusy("confirm");
+      skipSnapshotFlushRef.current = true;
       try {
         if (selectedPrefChanges.length > 0) {
           const mergedParams: Partial<CustomAbutmentDesignParams> = {};
@@ -4878,6 +4882,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
 
         if (!res.ok) {
+          skipSnapshotFlushRef.current = false;
           toast({
             title: "디자인 확정 실패",
             description: res.message || "잠시 후 다시 시도해 주세요.",
@@ -4896,6 +4901,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
         onActionComplete?.("confirmed");
       } catch (err) {
+        skipSnapshotFlushRef.current = false;
         toast({
           title: "디자인 확정 실패",
           description: err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",
@@ -4925,6 +4931,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!token || !tid) return;
 
     setActionBusy("confirm");
+    let remoteSaved = false;
     try {
       for (const tooth of Object.keys(candidateChoicesRef.current)) {
         confirmCandidateForTooth(tooth, false);
@@ -4963,6 +4970,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           return;
         }
+        remoteSaved = true;
+        skipSnapshotFlushRef.current = true;
         if (res.cancelDeadlineAt) setCancelDeadlineAt(res.cancelDeadlineAt);
         setRemoteMode("confirmed");
         reportGenerationEdits("confirm", generationEdits);
@@ -4996,6 +5005,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       onActionComplete?.("checked", { body: checkRes.data });
       handleOpenChange(false);
     } catch (err) {
+      if (!remoteSaved) skipSnapshotFlushRef.current = false;
       toast({
         title: "디자인 확정 실패",
         description: err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",

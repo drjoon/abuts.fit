@@ -921,8 +921,8 @@ function buildConfirmedRhinoFileName(requestDoc) {
 }
 
 /**
- * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 제조사 준비에 올린다.
- * 채팅 designFiles는 기공소 검토 확정 뒤에 공개한다.
+ * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 확정 시각을 남긴다.
+ * 제조사 준비·수가·Rhino는 응답 뒤에 한다. 채팅 designFiles는 기공소 검토 확정 뒤에 공개한다.
  * 기공소 labRevision은 같은 API로 수정 STL만 반영한다.
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
@@ -935,11 +935,22 @@ const CONFIRM_REQUEST_SELECT = {
   partnerBilling: 1,
 };
 
-function confirmToothMatches(doc, toothNumber) {
-  if (String(doc?.manufacturerStage || "").trim() === "취소") return false;
+function confirmToothMatches(doc, toothNumber, { allowCancelled = false } = {}) {
   if (doc?.caseInfos?.hexVerificationSample === true) return false;
+  const stage = String(doc?.manufacturerStage || "").trim();
+  if (stage === "취소" && !allowCancelled) return false;
   const tooth = String(doc?.caseInfos?.tooth || "").trim();
   return tooth === toothNumber || tooth === String(Number(toothNumber));
+}
+
+function findConfirmRequest(requestDocs, toothNumber) {
+  const active = requestDocs.find((doc) => confirmToothMatches(doc, toothNumber));
+  if (active) return active;
+  return (
+    requestDocs.find((doc) =>
+      confirmToothMatches(doc, toothNumber, { allowCancelled: true }),
+    ) || null
+  );
 }
 
 async function loadConfirmRequests(ids) {
@@ -964,23 +975,24 @@ export async function confirmCustomAbutmentDesign(req, res) {
     }
 
     const now = new Date();
+    const t0 = Date.now();
     const [transferDoc, checkedTeeth, freshDeadline] = await Promise.all([
-      PracticeTransfer.findOne({ transferId: transferIdInput }),
+      PracticeTransfer.findOne({ transferId: transferIdInput }).lean(),
       Promise.all(
         incoming.map(async (row) => {
           if (!row.s3Key) return null;
-          const [size, crownSize] = await Promise.all([
-            headObjectSizeInS3(row.s3Key),
-            row.crownS3Key ? headObjectSizeInS3(row.crownS3Key) : Promise.resolve(null),
-          ]);
+          // 프리뷰 업로드가 이미 크기를 넘긴다. 없거나 한도를 넘을 때만 S3 HEAD.
+          let size = Number(row.size) || 0;
+          if (!size || size > PREVIEW_STL_MAX) {
+            size = await headObjectSizeInS3(row.s3Key);
+          }
           if (!size || size > PREVIEW_STL_MAX) return null;
-          const crownS3Key =
-            row.crownS3Key && crownSize && crownSize <= PREVIEW_STL_MAX ? row.crownS3Key : "";
-          return { ...row, size, crownS3Key };
+          return { ...row, size, crownS3Key: row.crownS3Key || "" };
         }),
       ),
       abutmentLabCheckDeadline(now),
     ]);
+    const tLoad = Date.now();
     if (!transferDoc) {
       return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
@@ -1011,7 +1023,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
 
     const userOid = new Types.ObjectId(userId);
     const updatedRequests = [];
-    let promotedRows = [];
     let cancelDeadlineAt = null;
     let handoffReleased = false;
     let handoffClaimed = false;
@@ -1026,9 +1037,10 @@ export async function confirmCustomAbutmentDesign(req, res) {
     try {
       await claimAbutmentDesignHandoffLock(transferDoc._id);
       handoffClaimed = true;
+      const tLocked = Date.now();
       let requestDocs = await requestDocsPromise;
       const covered = validTeeth.every((toothRow) =>
-        requestDocs.some((doc) => confirmToothMatches(doc, toothRow.toothNumber)),
+        Boolean(findConfirmRequest(requestDocs, toothRow.toothNumber)),
       );
       if (!covered) {
         const ensure = await ensureAbutmentRequestsForHandoff({
@@ -1041,12 +1053,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
           .filter((id) => id && !shellIdsBeforeEnsure.has(id));
         requestDocs = await loadConfirmRequests(ensure?.requestIds);
       }
+      const tReady = Date.now();
 
       const productionTargets = [];
       for (const toothRow of validTeeth) {
-        const reqDoc = requestDocs.find((doc) =>
-          confirmToothMatches(doc, toothRow.toothNumber),
-        );
+        const reqDoc = findConfirmRequest(requestDocs, toothRow.toothNumber);
         if (!reqDoc) continue;
         const blocked = designRouteBlockMessage(reqDoc, DESIGN_ROUTE_PLATFORM);
         if (blocked) {
@@ -1065,12 +1076,26 @@ export async function confirmCustomAbutmentDesign(req, res) {
         productionTargets.map(async ({ toothRow, reqDoc }) => {
           const generation = newDesignGeneration();
           const destKey = platformProductionKey(reqDoc.requestId, generation);
-          await copyObjectInS3(toothRow.s3Key, destKey);
+          try {
+            await copyObjectInS3(toothRow.s3Key, destKey);
+          } catch (copyErr) {
+            console.warn(
+              "[AI] confirm STL copy failed",
+              toothRow.s3Key,
+              copyErr?.message || copyErr,
+            );
+            const error = new Error(
+              "커스텀어벗 STL 파일을 확인하지 못했습니다. 다시 시도해 주세요.",
+            );
+            error.statusCode = 400;
+            throw error;
+          }
           return { toothRow, reqDoc, generation, destKey };
         }),
       );
+      const tCopied = Date.now();
 
-      await Promise.all(productionTeeth.map(async ({ toothRow, reqDoc, generation, destKey }) => {
+      const requestWrites = productionTeeth.map(({ toothRow, reqDoc, generation, destKey }) => {
         const caseInfos = reqDoc.caseInfos && typeof reqDoc.caseInfos === "object" ? reqDoc.caseInfos : {};
         const prevPrimaryKey = String(caseInfos.file?.s3Key || "").trim();
         const prevSources = Array.isArray(caseInfos.designSourceFiles)
@@ -1111,7 +1136,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
         if (Number.isFinite(maxD) && maxD > 0) {
           $set["caseInfos.maxDiameter"] = maxD;
         }
-        await Request.updateOne(
+        if (String(reqDoc.manufacturerStage || "").trim() === "취소") {
+          $set.manufacturerStage = "준비";
+        }
+        updatedRequests.push({ reqDoc, processFileName });
+        return Request.updateOne(
           { _id: reqDoc._id },
           {
             $set,
@@ -1122,8 +1151,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
             },
           },
         );
-        updatedRequests.push({ reqDoc, processFileName });
-      }));
+      });
 
       const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)
         ? transferDoc.production.designFiles
@@ -1197,31 +1225,34 @@ export async function confirmCustomAbutmentDesign(req, res) {
           transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
         }
       }
-      promotedRows = await promotePlatformAbutmentDesignsToManufacturerReady({
-        transferDoc,
-        actorUserId: userId,
-      });
-      await PracticeTransfer.updateOne(
-        { _id: transferDoc._id },
-        {
-          $set: productionSet,
-          $unset: {
-            "production.customAbutmentManualDesign": "",
-            "production.abutmentDesignHandoffLockAt": "",
-            // confirmedAt은 크라운 작업완료 후 생산 진행. 디자인 확정으로 찍으면 기공소 작업시작이 완료로 숨는다.
-            ...(!labRevision
-              ? {
-                  "production.confirmedAt": "",
-                  "production.confirmedBy": "",
-                }
-              : {}),
+      await Promise.all([
+        ...requestWrites,
+        PracticeTransfer.updateOne(
+          { _id: transferDoc._id },
+          {
+            $set: productionSet,
+            $unset: {
+              "production.customAbutmentManualDesign": "",
+              "production.abutmentDesignHandoffLockAt": "",
+              // confirmedAt은 크라운 작업완료 후 생산 진행. 디자인 확정으로 찍으면 기공소 작업시작이 완료로 숨는다.
+              ...(!labRevision
+                ? {
+                    "production.confirmedAt": "",
+                    "production.confirmedBy": "",
+                  }
+                : {}),
+            },
           },
-        },
-      );
+        ),
+      ]);
       handoffReleased = true;
+      const tWrote = Date.now();
+      console.log(
+        `[abutment-confirm] ${transferId} ${tWrote - t0}ms load=${tLoad - t0} lock=${tLocked - tLoad} ready=${tReady - tLocked} copy=${tCopied - tReady} write=${tWrote - tCopied}`,
+      );
     } finally {
       if (createdShellIds.length > 0) {
-        await discardUnreadyAbutmentShells({
+        const discard = discardUnreadyAbutmentShells({
           transferDoc,
           requestIds: createdShellIds,
         }).catch((discardErr) => {
@@ -1230,6 +1261,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
             discardErr?.message || discardErr,
           );
         });
+        if (!handoffReleased) await discard;
       }
       if (handoffClaimed && !handoffReleased) {
         await releaseAbutmentDesignHandoffLock(transferDoc._id);
@@ -1242,7 +1274,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
         confirmed: true,
         transferId,
         requestCount: updatedRequests.length,
-        manufacturerReadyPromoted: promotedRows.length,
         teeth: validTeeth.map((t) => t.toothNumber),
         cancelDeadlineAt: cancelDeadlineAt
           ? new Date(cancelDeadlineAt).toISOString()
@@ -1251,6 +1282,15 @@ export async function confirmCustomAbutmentDesign(req, res) {
     });
 
     void (async () => {
+      let promotedRows = [];
+      try {
+        promotedRows = await promotePlatformAbutmentDesignsToManufacturerReady({
+          transferDoc,
+          actorUserId: userId,
+        });
+      } catch (err) {
+        console.warn("[AI] confirm manufacturer promote failed", err?.message || err);
+      }
       try {
         await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
       } catch (err) {
@@ -1332,7 +1372,8 @@ export async function confirmCustomAbutmentDesign(req, res) {
     })();
   } catch (error) {
     console.error("[AI] confirmCustomAbutmentDesign error", error);
-    return res.status(500).json({
+    const statusCode = Number(error?.statusCode) || 500;
+    return res.status(statusCode).json({
       success: false,
       message: error?.message || "커스텀어벗 확정 처리 중 오류가 발생했습니다.",
     });
