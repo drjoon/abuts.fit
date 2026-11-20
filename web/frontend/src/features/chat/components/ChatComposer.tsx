@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-11-20: sendPlacement=below — 입력은 가로 전체, 전송·첨부는 아랫줄.
 // - 2026-10-04: onActivate — 입력 포커스 시(헬퍼 설치 안내 등).
 // - 2026-09-15: 의뢰건 불러오기 — native title → Radix Tooltip(600ms)로 첨부·사진찍기와 동일.
 // - 2026-09-13: compact — 전송 버튼을 입력창 오른쪽(도구 줄 위)으로 올려 글로벌 채팅 FAB와 겹침 방지.
@@ -19,7 +20,7 @@
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
 // - 2026-09-09: Ctrl/Cmd+V 클립보드 파일·스크린샷 붙여넣기 → onPickFiles.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -33,7 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Camera, DollarSign, Paperclip, Send } from "lucide-react";
+import { Camera, DollarSign, Loader2, Paperclip, Send } from "lucide-react";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
 import {
@@ -100,6 +101,14 @@ type Props = {
   /** 입력창 포커스(헬퍼 설치 안내 등) */
   onActivate?: () => void;
   className?: string;
+  /**
+   * auto: compact 데스크톱은 전송을 입력 옆에 둔다.
+   * below: 입력은 가로 전체, 전송·첨부는 아랫줄(카카오톡 입력).
+   */
+  sendPlacement?: "auto" | "below";
+  /** 전송 버튼 글자. 없으면 아이콘만. */
+  sendLabel?: string;
+  inputRef?: Ref<HTMLTextAreaElement>;
 };
 
 export const ChatComposer = (props: Props) => {
@@ -124,6 +133,9 @@ export const ChatComposer = (props: Props) => {
     toolbarExtra = null,
     onActivate,
     className,
+    sendPlacement = "auto",
+    sendLabel,
+    inputRef,
   } = props;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -350,11 +362,36 @@ export const ChatComposer = (props: Props) => {
     }
   };
 
-  const sendBesideInput = compact && !isMobile;
+  const sendBesideInput = sendPlacement !== "below" && compact && !isMobile;
 
   const iconBtnClass = cn(
     "shrink-0",
     isMobile ? "h-11 w-11 touch-manipulation" : "h-9 w-9",
+  );
+
+  const bindTextareaRef = (node: HTMLTextAreaElement | null) => {
+    textareaRef.current = node;
+    if (!inputRef) return;
+    if (typeof inputRef === "function") {
+      inputRef(node);
+      return;
+    }
+    (inputRef as { current: HTMLTextAreaElement | null }).current = node;
+  };
+
+  const sendButtonClass = sendLabel
+    ? "h-8 shrink-0 gap-1 px-3 text-xs"
+    : cn(iconBtnClass, sendBesideInput && "mt-1.5 sm:mt-2", isMobile && !sendBesideInput && "rounded-xl");
+
+  const sendButtonInner = (
+    <>
+      {isSending && sendLabel ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Send className={sendLabel ? "h-3.5 w-3.5" : isMobile ? "h-5 w-5" : "h-4 w-4"} />
+      )}
+      {sendLabel ? <span>{sendLabel}</span> : null}
+    </>
   );
 
   const renderPickList = (onPick: (pick: RequestPickItem) => void) => (
@@ -443,7 +480,7 @@ export const ChatComposer = (props: Props) => {
       {sendBesideInput ? (
         <div className="flex items-start gap-2">
           <Textarea
-            ref={textareaRef}
+            ref={bindTextareaRef}
             value={draft}
             onChange={(e) => {
               onDraftChange(e.target.value);
@@ -462,18 +499,18 @@ export const ChatComposer = (props: Props) => {
           />
           <Button
             type="button"
-            size="icon"
+            size={sendLabel ? "sm" : "icon"}
             onClick={onSend}
             disabled={sendDisabled}
-            className={cn(iconBtnClass, "mt-1.5 shrink-0 sm:mt-2")}
+            className={sendButtonClass}
             aria-label="보내기"
           >
-            <Send className="h-4 w-4" />
+            {sendButtonInner}
           </Button>
         </div>
       ) : (
         <Textarea
-          ref={textareaRef}
+          ref={bindTextareaRef}
           value={draft}
           onChange={(e) => {
             onDraftChange(e.target.value);
@@ -489,9 +526,11 @@ export const ChatComposer = (props: Props) => {
             "resize-none",
             compact &&
               "min-h-0 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            sendPlacement === "below" &&
+              "min-h-[3.25rem] rounded-md border bg-muted/40 px-2.5 py-2 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-primary",
             isMobile && "min-h-[4.5rem] text-base",
           )}
-          rows={isMobile ? 2 : compact ? 2 : 3}
+          rows={isMobile ? 2 : sendPlacement === "below" ? 2 : compact ? 2 : 3}
           disabled={!!disabled || !!isSending}
           onKeyDown={handleComposerKeyDown}
         />
@@ -621,13 +660,13 @@ export const ChatComposer = (props: Props) => {
         {!sendBesideInput ? (
           <Button
             type="button"
-            size="icon"
+            size={sendLabel ? "sm" : "icon"}
             onClick={onSend}
             disabled={sendDisabled}
-            className={cn(iconBtnClass, isMobile && "rounded-xl")}
+            className={sendButtonClass}
             aria-label="보내기"
           >
-            <Send className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+            {sendButtonInner}
           </Button>
         ) : null}
       </div>

@@ -1,0 +1,565 @@
+// 커스텀어벗 디자인 화면의 소통 패널. 치과·기공소가 같은 컴포넌트를 쓴다.
+// 뷰어 위에 떠 있고, 헤더로 옮기며, 가장자리로 크기를 바꾼다. 최소 가로는 260px.
+// 귀퉁이 근처에서 놓으면 그 모서리에 붙는다. 입력은 가로 전체, 전송·첨부는 아랫줄.
+// related files:
+// - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
+// - web/frontend/src/features/chat/components/ChatComposer.tsx
+
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref, type RefObject } from "react";
+import { ChevronDown, Loader2, MessageSquare, Paintbrush, Paperclip } from "lucide-react";
+import { ChatComposer } from "@/features/chat/components/ChatComposer";
+import {
+  useBackgroundTempUpload,
+  type ChatMessageAttachment,
+} from "@/shared/hooks/useBackgroundTempUpload";
+import type { ChatMessage } from "@/shared/hooks/useChatRooms";
+import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
+import { cn } from "@/shared/ui/cn";
+
+/** 크기 조절 하한. 사용자가 지정한 최소 가로. */
+const MIN_W = 260;
+const MIN_H = 220;
+const EDGE = 12;
+/** 이 거리 안의 귀퉁이면 그 모서리에 붙인다. */
+const SNAP = 72;
+
+type Corner = "nw" | "ne" | "sw" | "se";
+type FrameBox = { x: number; y: number; w: number; h: number; corner: Corner | null };
+type ResizeEdge = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+
+const RESIZE_HANDLES: { edge: ResizeEdge; className: string }[] = [
+  { edge: "n", className: "left-2 right-2 top-0 h-1.5 cursor-ns-resize" },
+  { edge: "s", className: "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize" },
+  { edge: "w", className: "bottom-2 left-0 top-2 w-1.5 cursor-ew-resize" },
+  { edge: "e", className: "bottom-2 right-0 top-2 w-1.5 cursor-ew-resize" },
+  { edge: "nw", className: "left-0 top-0 h-3 w-3 cursor-nwse-resize" },
+  { edge: "ne", className: "right-0 top-0 h-3 w-3 cursor-nesw-resize" },
+  { edge: "sw", className: "bottom-0 left-0 h-3 w-3 cursor-nesw-resize" },
+  { edge: "se", className: "bottom-0 right-0 h-3 w-3 cursor-nwse-resize" },
+];
+
+function cornerPoint(
+  corner: Corner,
+  boundsW: number,
+  boundsH: number,
+  width: number,
+  height: number,
+) {
+  const right = Math.max(EDGE, boundsW - width - EDGE);
+  const bottom = Math.max(EDGE, boundsH - height - EDGE);
+  if (corner === "nw") return { x: EDGE, y: EDGE };
+  if (corner === "ne") return { x: right, y: EDGE };
+  if (corner === "sw") return { x: EDGE, y: bottom };
+  return { x: right, y: bottom };
+}
+
+function placeBox(
+  x: number,
+  y: number,
+  boundsW: number,
+  boundsH: number,
+  width: number,
+  height: number,
+  snap: boolean,
+): Pick<FrameBox, "x" | "y" | "corner"> {
+  const maxX = Math.max(EDGE, boundsW - width - EDGE);
+  const maxY = Math.max(EDGE, boundsH - height - EDGE);
+  const nextX = Math.min(Math.max(x, EDGE), maxX);
+  const nextY = Math.min(Math.max(y, EDGE), maxY);
+  if (!snap) return { x: nextX, y: nextY, corner: null };
+  const corners: Corner[] = ["nw", "ne", "sw", "se"];
+  let best: { dist: number; corner: Corner; x: number; y: number } | null = null;
+  for (const corner of corners) {
+    const point = cornerPoint(corner, boundsW, boundsH, width, height);
+    const dist = Math.hypot(nextX - point.x, nextY - point.y);
+    if (dist <= SNAP && (!best || dist < best.dist)) best = { dist, corner, ...point };
+  }
+  if (!best) return { x: nextX, y: nextY, corner: null };
+  return { x: best.x, y: best.y, corner: best.corner };
+}
+
+type Props = {
+  boundsRef: RefObject<HTMLElement | null>;
+  title: string;
+  peerName: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  paintCount: number;
+  paintOn: boolean;
+  onTogglePaint: () => void;
+  loading: boolean;
+  messages: readonly ChatMessage[];
+  authUserId: string;
+  draft: string;
+  onDraft: (value: string) => void;
+  sending: boolean;
+  onSend: (attachments: ChatMessageAttachment[]) => Promise<boolean>;
+  inputRef?: Ref<HTMLTextAreaElement>;
+};
+
+export function DesignShareChatPanel({
+  boundsRef,
+  title,
+  peerName,
+  collapsed,
+  onToggleCollapsed,
+  paintCount,
+  paintOn,
+  onTogglePaint,
+  loading,
+  messages,
+  authUserId,
+  draft,
+  onDraft,
+  sending,
+  onSend,
+  inputRef,
+}: Props) {
+  const { toast } = useToast();
+  const token = useAuthStore((state) => state.token);
+  const uploads = useBackgroundTempUpload({ token });
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<null | { ox: number; oy: number; x: number; y: number; moved: boolean }>(null);
+  const resizeRef = useRef<null | {
+    edge: ResizeEdge;
+    x: number;
+    y: number;
+    l: number;
+    t: number;
+    w: number;
+    h: number;
+    moved: boolean;
+    next: { x: number; y: number; w: number; h: number };
+  }>(null);
+  const [busy, setBusy] = useState(false);
+  const [box, setBox] = useState<FrameBox | null>(null);
+  const [moving, setMoving] = useState(false);
+  const shown = messages.slice(-20);
+  const boxRef = useRef(box);
+  boxRef.current = box;
+
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current;
+    if (!bounds) return;
+    const apply = () => {
+      const current = boxRef.current;
+      if (!current?.corner) return;
+      const area = bounds.getBoundingClientRect();
+      const height = frameRef.current?.offsetHeight ?? current.h;
+      const next = cornerPoint(current.corner, area.width, area.height, current.w, height);
+      setBox((prev) => {
+        if (!prev || prev.corner !== current.corner) return prev;
+        if (prev.x === next.x && prev.y === next.y) return prev;
+        return { ...prev, ...next };
+      });
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bounds);
+    return () => observer.disconnect();
+  }, [boundsRef, box?.corner, box?.w, collapsed]);
+
+  const readBox = () => {
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current?.getBoundingClientRect();
+    if (!bounds || !panel) return null;
+    return {
+      x: panel.left - bounds.left,
+      y: panel.top - bounds.top,
+      w: panel.width,
+      h: panel.height,
+    };
+  };
+
+  const onHeaderPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+    const current = readBox();
+    if (!current) return;
+    dragRef.current = {
+      ox: event.clientX - (boundsRef.current?.getBoundingClientRect().left ?? 0) - current.x,
+      oy: event.clientY - (boundsRef.current?.getBoundingClientRect().top ?? 0) - current.y,
+      x: current.x,
+      y: current.y,
+      moved: false,
+    };
+    setBox((prev) => ({
+      x: current.x,
+      y: current.y,
+      w: current.w,
+      h: prev?.h ?? current.h,
+      corner: null,
+    }));
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onHeaderPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current;
+    if (!drag || !bounds || !panel) return;
+    const rawX = event.clientX - bounds.left - drag.ox;
+    const rawY = event.clientY - bounds.top - drag.oy;
+    if (!drag.moved && Math.hypot(rawX - drag.x, rawY - drag.y) < 4) return;
+    drag.moved = true;
+    drag.x = rawX;
+    drag.y = rawY;
+    const placed = placeBox(rawX, rawY, bounds.width, bounds.height, panel.offsetWidth, panel.offsetHeight, false);
+    setMoving(true);
+    setBox((prev) =>
+      prev
+        ? { ...prev, x: placed.x, y: placed.y, corner: null }
+        : { x: placed.x, y: placed.y, w: panel.offsetWidth, h: panel.offsetHeight, corner: null },
+    );
+  };
+
+  const onHeaderPointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setMoving(false);
+    if (!drag?.moved) return;
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current;
+    if (!bounds || !panel) return;
+    const placed = placeBox(
+      drag.x,
+      drag.y,
+      bounds.width,
+      bounds.height,
+      panel.offsetWidth,
+      panel.offsetHeight,
+      true,
+    );
+    setBox((prev) =>
+      prev
+        ? { ...prev, ...placed }
+        : { ...placed, w: panel.offsetWidth, h: panel.offsetHeight },
+    );
+  };
+
+  const onResizeDown = (edge: ResizeEdge) => (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    const current = readBox();
+    if (!current) return;
+    resizeRef.current = {
+      edge,
+      x: event.clientX,
+      y: event.clientY,
+      l: current.x,
+      t: current.y,
+      w: current.w,
+      h: current.h,
+      moved: false,
+      next: { x: current.x, y: current.y, w: current.w, h: current.h },
+    };
+    setBox((prev) => ({
+      x: current.x,
+      y: current.y,
+      w: current.w,
+      h: prev?.h ?? current.h,
+      corner: null,
+    }));
+    setMoving(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onResizeMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = resizeRef.current;
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    if (!drag || !bounds) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 2) return;
+    drag.moved = true;
+    const maxW = Math.max(MIN_W, bounds.width - EDGE * 2);
+    const maxH = Math.max(MIN_H, bounds.height - EDGE * 2);
+    let left = drag.l;
+    let top = drag.t;
+    let width = drag.w;
+    let height = drag.h;
+    const growWest = drag.edge.includes("w");
+    const growEast = drag.edge.includes("e");
+    const growNorth = drag.edge.includes("n");
+    const growSouth = drag.edge.includes("s");
+    if (growEast) width = drag.w + dx;
+    if (growWest) {
+      width = drag.w - dx;
+      left = drag.l + dx;
+    }
+    if (!collapsed) {
+      if (growSouth) height = drag.h + dy;
+      if (growNorth) {
+        height = drag.h - dy;
+        top = drag.t + dy;
+      }
+    }
+    width = Math.min(Math.max(width, Math.min(MIN_W, maxW)), maxW);
+    height = Math.min(Math.max(height, Math.min(MIN_H, maxH)), maxH);
+    if (growWest) left = drag.l + (drag.w - width);
+    if (growNorth && !collapsed) top = drag.t + (drag.h - height);
+    left = Math.min(Math.max(left, EDGE), Math.max(EDGE, bounds.width - width - EDGE));
+    top = Math.min(Math.max(top, EDGE), Math.max(EDGE, bounds.height - height - EDGE));
+    drag.next = { x: left, y: top, w: width, h: height };
+    setBox((prev) => ({
+      x: left,
+      y: top,
+      w: width,
+      h: collapsed ? (prev?.h ?? height) : height,
+      corner: null,
+    }));
+  };
+
+  const onResizeUp = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = resizeRef.current;
+    resizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setMoving(false);
+    if (!drag?.moved) return;
+    const bounds = boundsRef.current?.getBoundingClientRect();
+    const panel = frameRef.current;
+    if (!bounds || !panel) return;
+    const placed = placeBox(
+      drag.next.x,
+      drag.next.y,
+      bounds.width,
+      bounds.height,
+      drag.next.w,
+      collapsed ? (boxRef.current?.h ?? drag.next.h) : drag.next.h,
+      true,
+    );
+    setBox((prev) =>
+      prev
+        ? { ...prev, ...placed, w: drag.next.w, h: collapsed ? prev.h : drag.next.h }
+        : { ...placed, w: drag.next.w, h: drag.next.h },
+    );
+  };
+
+  useEffect(() => {
+    if (collapsed) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [collapsed, messages]);
+
+  const submit = () => {
+    if (busy || sending) return;
+    void (async () => {
+      setBusy(true);
+      try {
+        if (uploads.hasError) {
+          toast({
+            title: "파일 업로드 실패",
+            description: "첨부 파일을 확인한 뒤 다시 보내 주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const attachments = await uploads.ensureChatAttachments();
+        const ok = await onSend(attachments);
+        if (ok) uploads.clear();
+      } catch {
+        toast({
+          title: "파일 업로드 실패",
+          description: "잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        });
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
+  const floated = box != null;
+  return (
+    <div
+      ref={frameRef}
+      className={cn(
+        "pointer-events-auto absolute z-30 flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
+        !floated && "min-w-[260px]",
+        !floated && "left-3 top-[11.5rem] w-[20rem] max-w-[calc(100%-1.5rem)]",
+        !floated && !collapsed && "h-[min(28rem,calc(100%-13rem))]",
+        floated && !moving && "transition-[left,top] duration-200 ease-out",
+        floated && collapsed && "h-auto",
+      )}
+      style={
+        floated
+          ? {
+              left: box.x,
+              top: box.y,
+              width: box.w,
+              height: collapsed ? undefined : box.h,
+            }
+          : undefined
+      }
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div
+        className={cn(
+          "flex shrink-0 cursor-grab touch-none select-none items-center justify-between gap-2 px-3 py-1.5 text-xs active:cursor-grabbing",
+          !collapsed && "border-b",
+        )}
+        title="끌어 옮기면 귀퉁이에 붙습니다"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
+      >
+        <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
+          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="truncate">{title}</span>
+          {paintCount > 0 ? (
+            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
+              페인트 {paintCount}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className={cn(
+              "flex h-6 cursor-pointer items-center gap-1 rounded px-2 text-[0.6875rem] font-medium transition-colors",
+              paintOn
+                ? "bg-primary text-primary-foreground"
+                : "border text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+            onClick={onTogglePaint}
+          >
+            <Paintbrush className="h-3 w-3" />
+            <span>페인트</span>
+          </button>
+          <button
+            type="button"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={collapsed ? "소통 패널 펼치기" : "소통 패널 접기"}
+            aria-expanded={!collapsed}
+            onClick={onToggleCollapsed}
+          >
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 transition-transform", !collapsed && "rotate-180")}
+            />
+          </button>
+        </div>
+      </div>
+
+      {!collapsed ? (
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 space-y-1 overflow-y-auto px-1.5 py-1.5 text-xs"
+        >
+          {loading ? (
+            <p className="flex items-center gap-1.5 px-1 py-1 text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>대화를 불러오는 중…</span>
+            </p>
+          ) : shown.length === 0 ? (
+            <p className="px-1 py-1 text-muted-foreground">
+              화면·페인트·대화를 같이 봅니다.
+            </p>
+          ) : (
+            shown.map((msg) => {
+              const senderId = String(msg.sender?._id || "").trim();
+              const mine = Boolean(authUserId && senderId === authUserId);
+              const isSystem = msg.messageKind === "system" || Boolean(msg.systemEvent);
+              if (isSystem) {
+                return (
+                  <div
+                    key={msg._id}
+                    className="rounded bg-muted/70 px-2 py-1 text-[0.6875rem] text-muted-foreground"
+                  >
+                    {msg.content}
+                  </div>
+                );
+              }
+              const files = Array.isArray(msg.attachments) ? msg.attachments : [];
+              return (
+                <div
+                  key={msg._id}
+                  className={cn(
+                    "flex items-baseline gap-1.5 leading-snug",
+                    mine ? "justify-end" : "justify-start",
+                  )}
+                >
+                  {!mine ? (
+                    <span className="shrink-0 font-semibold text-muted-foreground">
+                      {msg.sender?.name || peerName}
+                    </span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      "max-w-[82%] break-words rounded-lg px-2.5 py-1",
+                      mine
+                        ? "bg-primary text-primary-foreground"
+                        : "border bg-muted/50 text-foreground",
+                    )}
+                  >
+                    {msg.content ? (
+                      <span className="whitespace-pre-wrap">{msg.content}</span>
+                    ) : null}
+                    {files.length > 0 ? (
+                      <span className={cn("flex flex-col gap-0.5", msg.content && "mt-1")}>
+                        {files.map((file) => (
+                          <span
+                            key={file.s3Key || file.fileName}
+                            className="inline-flex min-w-0 items-center gap-1"
+                          >
+                            <Paperclip className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{file.fileName}</span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+
+      {!collapsed ? (
+        <ChatComposer
+          draft={draft}
+          onDraftChange={onDraft}
+          onSend={submit}
+          placeholder="메시지 입력"
+          isSending={sending || busy}
+          pendingUploads={uploads.items}
+          onPickFiles={uploads.addFiles}
+          onRemovePendingFile={uploads.removeItem}
+          onRetryPendingFile={uploads.retryItem}
+          sendPlacement="below"
+          sendLabel="전송"
+          inputRef={inputRef}
+          compact
+          className="space-y-1.5 px-2.5 pb-2 pt-2 sm:px-2.5 sm:pb-2 sm:pt-2"
+        />
+      ) : null}
+      {RESIZE_HANDLES.map((handle) => (
+        <div
+          key={handle.edge}
+          role="separator"
+          aria-label="소통 패널 크기"
+          aria-orientation={
+            handle.edge === "n" || handle.edge === "s"
+              ? "horizontal"
+              : handle.edge === "e" || handle.edge === "w"
+                ? "vertical"
+                : undefined
+          }
+          className={cn("absolute z-10 touch-none", handle.className)}
+          onPointerDown={onResizeDown(handle.edge)}
+          onPointerMove={onResizeMove}
+          onPointerUp={onResizeUp}
+          onPointerCancel={onResizeUp}
+        />
+      ))}
+    </div>
+  );
+}

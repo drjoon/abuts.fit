@@ -13,6 +13,8 @@
 // - 2026-11-19: 기공소가 제조 주문을 취소한 뒤 치과 「취소 가능」은 확정을 해제하고 다시 확정한다.
 // - 2026-11-19: 기공소 디자인 확정 — 제조 의뢰 응답을 부모에 넘겨 목록 상태를 바로 갱신한다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
+// - 2026-11-20: 소통 패널은 뷰어 위 플로팅. 최소 가로 260px, 이동·크기 조절, 귀퉁이 스냅.
+// - 2026-11-20: 소통 패널은 DesignShareChatPanel. 치과·기공소 공통.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
@@ -47,14 +49,11 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Axis3d,
   Check,
-  ChevronDown,
   Download,
   Loader2,
-  MessageSquare,
   Paintbrush,
   Redo2,
   RotateCcw,
-  Send,
   Settings,
   Sparkles,
   Undo2,
@@ -223,6 +222,8 @@ import {
 } from "@/shared/components/practice/viewPaintSpace";
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
+import type { ChatMessageAttachment } from "@/shared/hooks/useBackgroundTempUpload";
+import { DesignShareChatPanel } from "@/shared/components/practice/DesignShareChatPanel";
 import { useToast } from "@/shared/hooks/use-toast";
 import { onAppEvent } from "@/shared/realtime/socket";
 import {
@@ -1147,8 +1148,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [ptxRoomLoading, setPtxRoomLoading] = useState(false);
   const [sharedChatDraft, setSharedChatDraft] = useState("");
   const [sharedChatSending, setSharedChatSending] = useState(false);
-  const sharedChatInputRef = useRef<HTMLInputElement | null>(null);
-  const sharedChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const sharedChatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [actionBusy, setActionBusy] = useState<
     "confirm" | "manual" | "check" | "cancel" | null
   >(null);
@@ -1212,6 +1212,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const editBridgeRef = useRef<AbutmentEditBridge | null>(null);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewerFrameRef = useRef<HTMLDivElement | null>(null);
   const bindHostRef = useCallback((node: HTMLDivElement | null) => {
     hostRef.current = node;
     setHostEl((prev) => (prev === node ? prev : node));
@@ -4552,12 +4553,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
   }, [authToken, open, transferIdParam]);
 
-  useEffect(() => {
-    if (manualChatCollapsed) return;
-    const el = sharedChatScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [manualChatCollapsed, ptxMessages, manualChatOpen]);
-
   // 상대방이 3D 페인트를 갱신하면 실시간 반영
   useEffect(() => {
     if (!open || !transferIdParam) return;
@@ -5134,13 +5129,17 @@ export function PracticeCustomAbutmentPreviewDialog({
   ]);
 
   const sendTextToSharedChat = useCallback(
-    async (rawText: string): Promise<boolean> => {
+    async (
+      rawText: string,
+      attachments: ChatMessageAttachment[] = [],
+    ): Promise<boolean> => {
       const text = rawText.trim();
+      const files = attachments.filter((row) => String(row?.fileName || "").trim());
       const token = String(authToken || "").trim();
       const tid = transferIdRef.current;
-      if (!text || !token || !tid) return false;
+      if ((!text && files.length === 0) || !token || !tid) return false;
       if (ptxRoomId) {
-        const sent = await sendPtxChatMessage(text, []);
+        const sent = await sendPtxChatMessage(text, files);
         return Boolean(sent);
       }
       const roomRes = await apiFetch<{ data?: { _id?: string } }>({
@@ -5155,36 +5154,40 @@ export function PracticeCustomAbutmentPreviewDialog({
         path: `/api/chats/rooms/${resolvedRoomId}/messages`,
         method: "POST",
         token,
-        jsonBody: { content: text, attachments: [] },
+        jsonBody: { content: text, attachments: files },
       });
       return msgRes.ok;
     },
     [authToken, ptxRoomId, sendPtxChatMessage],
   );
 
-  const handleSendSharedChat = useCallback(async () => {
-    const text = sharedChatDraft.trim();
-    if (!text || sharedChatSending) return;
-    setSharedChatSending(true);
-    setSharedChatDraft("");
-    try {
-      const ok = await sendTextToSharedChat(text);
-      if (!ok) {
-        setSharedChatDraft(text);
-        toast({
-          title: "메시지 전송 실패",
-          description: "잠시 후 다시 시도해 주세요.",
-          variant: "destructive",
-        });
-        return;
+  const handleSendSharedChat = useCallback(
+    async (attachments: ChatMessageAttachment[] = []) => {
+      const text = sharedChatDraft.trim();
+      if ((!text && attachments.length === 0) || sharedChatSending) return false;
+      setSharedChatSending(true);
+      setSharedChatDraft("");
+      try {
+        const ok = await sendTextToSharedChat(text, attachments);
+        if (!ok) {
+          setSharedChatDraft(text);
+          toast({
+            title: "메시지 전송 실패",
+            description: "잠시 후 다시 시도해 주세요.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (canEditDesign && transferIdRef.current) {
+          persistDesign();
+        }
+        return true;
+      } finally {
+        setSharedChatSending(false);
       }
-      if (canEditDesign && transferIdRef.current) {
-        persistDesign();
-      }
-    } finally {
-      setSharedChatSending(false);
-    }
-  }, [canEditDesign, persistDesign, sendTextToSharedChat, sharedChatDraft, sharedChatSending, toast]);
+    },
+    [canEditDesign, persistDesign, sendTextToSharedChat, sharedChatDraft, sharedChatSending, toast],
+  );
 
   const handleClickManualDesign = useCallback(async () => {
     if (actionBusy) return;
@@ -5852,7 +5855,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 min-w-0 flex-1">
-          <div className="relative h-full min-h-0 min-w-0 flex-1">
+          <div ref={viewerFrameRef} className="relative h-full min-h-0 min-w-0 flex-1">
             <div ref={bindHostRef} className="relative h-full w-full touch-none overflow-hidden" />
             <ViewPaintSurface
               {...viewPaintSurfaceProps(paint)}
@@ -5986,7 +5989,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute left-3 top-3 z-20 flex h-[calc(100%-4.25rem)] w-[min(15rem,calc(100vw-2rem))] flex-col items-start gap-2">
+              <div className="pointer-events-none absolute left-3 top-3 z-20 flex flex-col items-start">
                 <PracticeCustomAbutmentViewCube
                   ref={viewCubeRef}
                   className="shrink-0"
@@ -6016,173 +6019,38 @@ export function PracticeCustomAbutmentPreviewDialog({
                   }}
                   onOrbit={(gesture) => applyExternalView(controlsRef.current, gesture)}
                 />
-                {!readOnly && transferIdParam ? (
-                  <div
-                    className={cn(
-                      "pointer-events-auto flex w-full flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
-                      manualChatCollapsed ? "h-auto shrink-0" : "min-h-0 flex-1",
-                    )}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <div
-                      className={cn(
-                        "flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-xs",
-                        !manualChatCollapsed && "border-b",
-                      )}
-                    >
-                      <div className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
-                        <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
-                        <span className="truncate">
-                          {isLabViewer ? "치과 소통" : "기공소 소통"}
-                        </span>
-                        {paint.count > 0 ? (
-                          <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-                            페인트 {paint.count}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          className={cn(
-                            "flex h-6 items-center gap-1 rounded px-2 text-[0.6875rem] font-medium transition-colors",
-                            paint.paintOn
-                              ? "bg-primary text-primary-foreground"
-                              : "border text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                          onClick={() => paint.setPaintOn((on) => !on)}
-                        >
-                          <Paintbrush className="h-3 w-3" />
-                          <span>페인트</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                          aria-label={manualChatCollapsed ? "소통 패널 펼치기" : "소통 패널 접기"}
-                          aria-expanded={!manualChatCollapsed}
-                          onClick={() => {
-                            viewerTouchRef.current.add("chat");
-                            setManualChatCollapsed((collapsed) => {
-                              const next = !collapsed;
-                              if (!next) {
-                                window.requestAnimationFrame(() =>
-                                  sharedChatInputRef.current?.focus(),
-                                );
-                              }
-                              return next;
-                            });
-                          }}
-                        >
-                          <ChevronDown
-                            className={cn(
-                              "h-3.5 w-3.5 transition-transform",
-                              !manualChatCollapsed && "rotate-180",
-                            )}
-                          />
-                        </button>
-                      </div>
-                    </div>
-
-                    {!manualChatCollapsed ? (
-                    <div
-                      ref={sharedChatScrollRef}
-                      className="min-h-[3.25rem] flex-1 space-y-1 overflow-y-auto px-2.5 py-1.5 text-xs"
-                    >
-                      {ptxRoomLoading || ptxMessagesLoading ? (
-                        <p className="flex items-center gap-1.5 py-1 text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>대화를 불러오는 중…</span>
-                        </p>
-                      ) : ptxMessages.length === 0 ? (
-                        <p className="py-1 text-muted-foreground">
-                          {isLabViewer
-                            ? "치과와 이 디자인 화면·페인트·대화를 실시간으로 공유합니다."
-                            : "기공소와 이 디자인 화면·페인트·대화를 실시간으로 공유합니다."}
-                        </p>
-                      ) : (
-                        ptxMessages.slice(-20).map((msg) => {
-                          const senderId = String(msg.sender?._id || "").trim();
-                          const mine = Boolean(authUserId && senderId === authUserId);
-                          const isSystem =
-                            msg.messageKind === "system" || Boolean(msg.systemEvent);
-                          if (isSystem) {
-                            return (
-                              <div
-                                key={msg._id}
-                                className="rounded bg-muted/70 px-2 py-1 text-[0.6875rem] text-muted-foreground"
-                              >
-                                {msg.content}
-                              </div>
-                            );
-                          }
-                          return (
-                            <div
-                              key={msg._id}
-                              className={cn(
-                                "flex items-baseline gap-1.5 leading-snug",
-                                mine ? "justify-end" : "justify-start",
-                              )}
-                            >
-                              {!mine ? (
-                                <span className="shrink-0 font-semibold text-muted-foreground">
-                                  {msg.sender?.name || (isLabViewer ? "치과" : "기공소")}
-                                </span>
-                              ) : null}
-                              <span
-                                className={cn(
-                                  "max-w-[82%] break-words rounded-lg px-2.5 py-1",
-                                  mine
-                                    ? "bg-primary text-primary-foreground"
-                                    : "border bg-muted/50 text-foreground",
-                                )}
-                              >
-                                {msg.content}
-                              </span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                    ) : null}
-
-                    {!manualChatCollapsed ? (
-                    <form
-                      className="flex shrink-0 items-center gap-1.5 border-t bg-background px-2.5 py-1.5"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void handleSendSharedChat();
-                      }}
-                    >
-                      <input
-                        ref={sharedChatInputRef}
-                        type="text"
-                        value={sharedChatDraft}
-                        onChange={(e) => setSharedChatDraft(e.target.value)}
-                        placeholder={
-                          isLabViewer
-                            ? "치과에 전달할 메시지를 입력하세요…"
-                            : "기공소에 전달할 메시지를 입력하세요…"
-                        }
-                        className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2.5 text-xs text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
-                      />
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={!sharedChatDraft.trim() || sharedChatSending}
-                        className="h-8 shrink-0 gap-1 px-3 text-xs"
-                      >
-                        {sharedChatSending ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Send className="h-3.5 w-3.5" />
-                        )}
-                        <span>전송</span>
-                      </Button>
-                    </form>
-                    ) : null}
-                  </div>
-                ) : null}
               </div>
+            ) : null}
+            {viewerLive && !readOnly && transferIdParam ? (
+              <DesignShareChatPanel
+                boundsRef={viewerFrameRef}
+                title={isLabViewer ? "치과 소통" : "기공소 소통"}
+                peerName={isLabViewer ? "치과" : "기공소"}
+                collapsed={manualChatCollapsed}
+                onToggleCollapsed={() => {
+                  viewerTouchRef.current.add("chat");
+                  setManualChatCollapsed((collapsed) => {
+                    const next = !collapsed;
+                    if (!next) {
+                      window.requestAnimationFrame(() =>
+                        sharedChatInputRef.current?.focus(),
+                      );
+                    }
+                    return next;
+                  });
+                }}
+                paintCount={paint.count}
+                paintOn={paint.paintOn}
+                onTogglePaint={() => paint.setPaintOn((on) => !on)}
+                loading={ptxRoomLoading || ptxMessagesLoading}
+                messages={ptxMessages}
+                authUserId={authUserId}
+                draft={sharedChatDraft}
+                onDraft={setSharedChatDraft}
+                sending={sharedChatSending}
+                onSend={handleSendSharedChat}
+                inputRef={sharedChatInputRef}
+              />
             ) : null}
 
             <AbutsLogo
