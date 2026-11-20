@@ -2490,14 +2490,22 @@ export function PracticeTransferDetailChatDialog({
     </div>
   );
   const handlePrintDetail = useCallback(() => {
+    const identityTitle = String(caseIdentityStrip?.primary || "").trim();
     printPracticeTransferDetail({
-      title,
+      title: identityTitle || title,
       summaryItems,
       toothWorks: printToothWorks,
       memo,
       basketTag: labBasketTag,
     });
-  }, [title, summaryItems, printToothWorks, memo, labBasketTag]);
+  }, [
+    caseIdentityStrip?.primary,
+    title,
+    summaryItems,
+    printToothWorks,
+    memo,
+    labBasketTag,
+  ]);
   const labBasketToolbar =
     feeViewer === "lab" ? (
       <LabBasketTagToolbar

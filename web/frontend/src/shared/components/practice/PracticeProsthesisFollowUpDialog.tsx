@@ -291,8 +291,10 @@ export function PracticeProsthesisFollowUpDialog({
 
   useEffect(() => {
     if (!open) return;
-    setArrivalDate(String(defaultArrivalYmd || "").trim());
-    setArrivalPickerOpen(!isEdit);
+    const nextArrival = String(defaultArrivalYmd || "").trim();
+    setArrivalDate(nextArrival);
+    // 도착일이 있으면 달력을 바로 열지 않는다. 없는 경우에만 고르게 한다.
+    setArrivalPickerOpen(!isEdit && !nextArrival);
     setIsRemake(false);
     const nextMap = new Map<string, FollowUpRow>();
     for (const row of draftRows) {

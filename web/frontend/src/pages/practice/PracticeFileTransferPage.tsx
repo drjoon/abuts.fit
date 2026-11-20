@@ -11755,8 +11755,11 @@ export const PracticeFileTransferPage = ({
                 <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
             {editingSentTransfer ? (
               <div className="mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
-                기공소가 작업시작하기 전인 의뢰를 수정 중입니다. 저장하면 같은 의뢰가
-                업데이트됩니다. 새로 작성하면 수정이 취소됩니다.
+                작업시작 전 의뢰를 수정 중입니다.
+                <br />
+                저장하면 이 의뢰가 바뀝니다.
+                <br />
+                새로 작성하면 수정이 취소됩니다.
               </div>
             ) : null}
             <CardContent className="min-w-0 px-0 pt-0">
@@ -13599,7 +13602,12 @@ export const PracticeFileTransferPage = ({
                   : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
-                {`첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`}
+                <>
+                  첨부 파일 {deleteTargetTransfer?.fileCount || 0}건과 함께
+                  휴지통으로 이동합니다.
+                  <br />
+                  휴지통에서 다시 복구할 수 있습니다.
+                </>
               </div>
             </div>
           }

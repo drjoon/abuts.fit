@@ -1342,6 +1342,7 @@ export function RequestorPracticeReceivePage({
   >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [labTechnicianBusy, setLabTechnicianBusy] = useState(false);
+  const [workReleaseConfirmOpen, setWorkReleaseConfirmOpen] = useState(false);
   const [workStartUploadNoticeOpen, setWorkStartUploadNoticeOpen] =
     useState(false);
   const [workStartUploadNoticeHide, setWorkStartUploadNoticeHide] =
@@ -3046,6 +3047,10 @@ export function RequestorPracticeReceivePage({
                   action === "downloaded" || action === "accepted"
                     ? requestorDownloadedAt || row.requestorAcceptedAt
                     : row.requestorAcceptedAt,
+                workCanceledAt:
+                  action === "downloaded" || action === "accepted"
+                    ? null
+                    : row.workCanceledAt,
                 ...((action === "downloaded" || action === "accepted") &&
                 Object.prototype.hasOwnProperty.call(payload, "labTechnician")
                   ? {
@@ -3105,6 +3110,10 @@ export function RequestorPracticeReceivePage({
                 action === "downloaded" || action === "accepted"
                   ? requestorDownloadedAt || prev.requestorAcceptedAt
                   : prev.requestorAcceptedAt,
+              workCanceledAt:
+                action === "downloaded" || action === "accepted"
+                  ? null
+                  : prev.workCanceledAt,
               ...((action === "downloaded" || action === "accepted") &&
               Object.prototype.hasOwnProperty.call(payload, "labTechnician")
                 ? {
@@ -11533,7 +11542,10 @@ export function RequestorPracticeReceivePage({
         arrivalDate={selectedTransfer?.arrivalDate || null}
         orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
-        onRelease={() => void handleReleaseTransfer()}
+        onRelease={() => {
+          if (releaseBusy || acceptBusy) return;
+          setWorkReleaseConfirmOpen(true);
+        }}
         operateLabWork={viewerOperatesLabReceiveWork(
           selectedTransfer,
           user?.role,
@@ -11859,8 +11871,8 @@ export function RequestorPracticeReceivePage({
             seen.add(requestId);
             picks.push({
               requestId,
-              patientName: String(row.patientName || "").trim(),
-              tooth: String(row.tooth || row.toothWorksSummary || "").trim(),
+              patientName: resolvePracticeTransferListPatientName(row),
+              tooth: resolvePracticeTransferListToothNumbers(row),
             });
             if (picks.length >= 40) break;
           }
@@ -12051,6 +12063,33 @@ export function RequestorPracticeReceivePage({
         confirmTone="primary"
         onConfirm={handleConfirmWorkStartUploadNotice}
         onCancel={() => setWorkStartUploadNoticeOpen(false)}
+      />
+      <ConfirmDialog
+        open={workReleaseConfirmOpen}
+        title="작업을 취소할까요?"
+        panelClassName="max-w-lg"
+        description={
+          <div className="space-y-1.5 text-sm leading-relaxed">
+            <p>작업시작이 해제됩니다.</p>
+            <p>
+              치과가 다른 기공소를 지정하거나
+              <br />
+              휴지통으로 옮길 수 있습니다.
+            </p>
+          </div>
+        }
+        confirmLabel={releaseBusy ? "취소 중..." : "작업취소"}
+        cancelLabel="닫기"
+        confirmTone="danger"
+        busy={releaseBusy}
+        onConfirm={() => {
+          setWorkReleaseConfirmOpen(false);
+          void handleReleaseTransfer();
+        }}
+        onCancel={() => {
+          if (releaseBusy) return;
+          setWorkReleaseConfirmOpen(false);
+        }}
       />
       <ConfirmDialog
         open={billing402Dialog != null}

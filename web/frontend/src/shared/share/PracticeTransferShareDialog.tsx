@@ -74,12 +74,20 @@ function ParticipantChips({ view }: { view: CaseShareView | null }) {
   const p = view?.participants;
   if (!p) return null;
   const chips: { label: string; name: string }[] = [];
+  const assigneeName = String(p.assigneeLabName || "").trim();
+  const primeName = String(p.primeLabName || "").trim();
+  const hasDistinctAssignee = Boolean(assigneeName && assigneeName !== primeName);
   if (p.practiceName) chips.push({ label: "치과", name: p.practiceName });
-  if (p.primeLabName) chips.push({ label: "원청", name: p.primeLabName });
-  if (p.assigneeLabName && p.assigneeLabName !== p.primeLabName) {
+  if (primeName) {
+    chips.push({
+      label: hasDistinctAssignee ? "원청" : "기공소",
+      name: primeName,
+    });
+  }
+  if (hasDistinctAssignee) {
     chips.push({
       label: p.assigneeKind === "subcontract" ? "하청" : "협력",
-      name: p.assigneeLabName,
+      name: assigneeName,
     });
   }
   if (chips.length === 0) return null;

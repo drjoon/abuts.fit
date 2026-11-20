@@ -8,6 +8,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import * as React from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ko } from "date-fns/locale";
 import { DayPicker, type DayContentProps } from "react-day-picker";
 
 import { cn } from "@/shared/ui/cn";
@@ -56,6 +57,11 @@ function Calendar({
 
   return (
     <DayPicker
+      locale={ko}
+      labels={{
+        labelPrevious: () => "이전 달",
+        labelNext: () => "다음 달",
+      }}
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
       classNames={{

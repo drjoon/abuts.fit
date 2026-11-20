@@ -89,10 +89,15 @@ export function printPracticeTransferDetail(params: {
       : "";
   const basketTagOk = Boolean(basketTag);
   const summaryItems = params.summaryItems || [];
+  const printSummaryLabel = (label: string) => {
+    if (label === "어벗디자인") return "디자인 파일";
+    if (label === "보철물") return "보철 파일";
+    return label;
+  };
   const summaryCells = summaryItems
     .map(
       (row) => `<div class="summary-item">
-        <span class="label">${escapeHtml(row.label)}</span>
+        <span class="label">${escapeHtml(printSummaryLabel(row.label))}</span>
         <span class="value">${escapeHtml(row.value || "-")}</span>
       </div>`,
     )

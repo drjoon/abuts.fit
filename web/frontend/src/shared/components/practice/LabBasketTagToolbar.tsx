@@ -419,7 +419,17 @@ function LabBasketTagGuideDialog({
             <GuideStep
               step={3}
               title="의뢰에 선택"
-              body="헤더 번호표 = 바구니 번호. 프린트·목록에도 표시. 작업 중에는 번호를 겹쳐 쓰지 않으며, 완료 후 재사용"
+              body={
+                <>
+                  헤더 번호표는 바구니 번호입니다.
+                  <br />
+                  프린트와 목록에도 표시됩니다.
+                  <br />
+                  작업 중에는 번호를 겹쳐 쓰지 않습니다.
+                  <br />
+                  완료 후 다시 쓸 수 있습니다.
+                </>
+              }
             >
               <MatchIllustration />
             </GuideStep>
@@ -698,7 +708,7 @@ function GuideStep({
 }: {
   step: number;
   title: string;
-  body: string;
+  body: ReactNode;
   titleAction?: ReactNode;
   children: ReactNode;
 }) {

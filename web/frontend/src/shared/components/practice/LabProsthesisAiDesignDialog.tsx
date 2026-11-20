@@ -4738,7 +4738,7 @@ function LabProsthesisAiDesignDialog({
                           : `미완료 ${caseNav.count}건`
                       }
                     >
-                      {caseNav.count}
+                      {caseNav.count}건
                     </span>
                     <Button
                       type="button"
