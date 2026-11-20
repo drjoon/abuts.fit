@@ -14,6 +14,7 @@ import {
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
   resolveManufacturerTargetShipYmd,
+  resolveDesignCompleteShipYmd,
   resolvePtxCaTargetShipYmd,
   resolvePtxAbutmentAutoShipYmd,
   resolveOralScanFilesForAccept,
@@ -55,6 +56,19 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         arrivalDate: "2026-08-20",
       }),
     ).toBe(null);
+  });
+
+  test("resolveDesignCompleteShipYmd replaces an earlier shell date on first ready", () => {
+    expect(resolveDesignCompleteShipYmd("2026-11-19", "2026-11-20", true)).toBe(
+      "2026-11-20",
+    );
+    expect(resolveDesignCompleteShipYmd("2026-11-21", "2026-11-20", true)).toBe(
+      "2026-11-21",
+    );
+    expect(resolveDesignCompleteShipYmd("", "2026-11-20", true)).toBe("2026-11-20");
+    expect(resolveDesignCompleteShipYmd("2026-11-19", "2026-11-20", false)).toBe(
+      "2026-11-19",
+    );
   });
 
   test("resolvePtxAbutmentAutoShipYmd matches next business day parcel pickup", async () => {

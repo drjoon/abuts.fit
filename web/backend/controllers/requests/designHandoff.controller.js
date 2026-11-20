@@ -88,6 +88,7 @@ import {
   cancelUnheldPtxAbutmentRequest,
   claimAbutmentDesignHandoffLock,
   collectLinkedAbutmentRequestObjectIds,
+  discardUnreadyAbutmentShells,
   ensureAbutmentRequestsForHandoff,
   findRelatedAbutmentRequestIdForTooth,
   releaseAbutmentDesignHandoffLock,
@@ -1033,6 +1034,7 @@ export async function handoffDesignToProduction(req, res) {
     if (labAnchorId && Types.ObjectId.isValid(labAnchorId)) {
       request.designLabBusinessAnchorId = new Types.ObjectId(labAnchorId);
     }
+    const firstDesignComplete = !request.designCompletedAt;
     request.designCompletedBy = new Types.ObjectId(userId);
     request.designCompletedAt = new Date();
     clearOwnPtxDesignUploadMissingVisible(request);
@@ -1081,6 +1083,7 @@ export async function handoffDesignToProduction(req, res) {
               requestedAt: now,
               scheduleMode: "holdFast",
               forceRemake: caRemakeReupload,
+              firstDesignComplete,
             })
           : Promise.resolve(null),
       ]);
@@ -2216,6 +2219,14 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
 
     // 같은 PTX의 크레딧 hold·저장은 한 번에 하나. 탭/인스턴스가 달라도 치아가 빠지지 않게.
     await claimAbutmentDesignHandoffLock(transferDoc._id);
+    const shellIdsBeforeEnsure = new Set(
+      (Array.isArray(transferDoc.production?.relatedRequestIds)
+        ? transferDoc.production.relatedRequestIds
+        : []
+      ).map((id) => String(id)),
+    );
+    let createdShellIds = [];
+    let designHandoffSaved = false;
     try {
     // 구강스캔(transfer.files)은 선택 — 어벗 디자인 STL만 있으면 제조사 의뢰 생성.
     const tooth = String(
@@ -2270,6 +2281,9 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     }
 
     const relatedIds = Array.isArray(ensure?.requestIds) ? ensure.requestIds : [];
+    createdShellIds = relatedIds
+      .map((id) => String(id))
+      .filter((id) => !shellIdsBeforeEnsure.has(id));
     if (relatedIds.length === 0) {
       return res.status(409).json({
         success: false,
@@ -2311,6 +2325,7 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     const relatedIdStrings = relatedIds.map((id) => String(id));
     const originalJson = res.json.bind(res);
     res.json = (payload) => {
+      if (payload?.success === true) designHandoffSaved = true;
       if (payload && typeof payload === "object") {
         const data =
           payload.data && typeof payload.data === "object" ? payload.data : {};
@@ -2331,6 +2346,17 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     req.params = { ...(req.params || {}), id: requestId };
     return await handoffDesignToProduction(req, res);
     } finally {
+      if (!designHandoffSaved && createdShellIds.length > 0) {
+        await discardUnreadyAbutmentShells({
+          transferDoc,
+          requestIds: createdShellIds,
+        }).catch((discardErr) => {
+          console.error(
+            "[PTX_ABUTMENT_DESIGN_HANDOFF] unready shell discard failed",
+            discardErr?.message || discardErr,
+          );
+        });
+      }
       await releaseAbutmentDesignHandoffLock(transferDoc._id);
     }
   } catch (error) {

@@ -27,7 +27,9 @@ import {
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
   claimAbutmentDesignHandoffLock,
+  discardUnreadyAbutmentShells,
   ensureAbutmentRequestsForHandoff,
+  promotePlatformAbutmentDesignsToManufacturerReady,
   readRelatedRequestIdsFromProduction,
   releaseAbutmentDesignHandoffLock,
   releasePracticePlatformDesignHoldIfOrderGone,
@@ -919,9 +921,9 @@ function buildConfirmedRhinoFileName(requestDoc) {
 }
 
 /**
- * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 기공소 검토로 넘긴다.
- * PTX designFiles·제조사 준비·filled-STL은 기공소 「디자인 확정」에서 연다.
- * 기공소 labRevision은 같은 API로 수정 STL만 반영한다(제조 진입은 confirm-abutment-design).
+ * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 제조사 준비에 올린다.
+ * 채팅 designFiles는 기공소 검토 확정 뒤에 공개한다.
+ * 기공소 labRevision은 같은 API로 수정 STL만 반영한다.
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
  */
@@ -1009,9 +1011,14 @@ export async function confirmCustomAbutmentDesign(req, res) {
 
     const userOid = new Types.ObjectId(userId);
     const updatedRequests = [];
+    let promotedRows = [];
     let cancelDeadlineAt = null;
     let handoffReleased = false;
     let handoffClaimed = false;
+    const shellIdsBeforeEnsure = new Set(
+      readRelatedRequestIdsFromProduction(transferDoc.production).map(String),
+    );
+    let createdShellIds = [];
 
     const requestDocsPromise = loadConfirmRequests(
       readRelatedRequestIdsFromProduction(transferDoc.production),
@@ -1029,6 +1036,9 @@ export async function confirmCustomAbutmentDesign(req, res) {
           actorUserId: userId,
           allowPracticeConfirmed: true,
         });
+        createdShellIds = (Array.isArray(ensure?.requestIds) ? ensure.requestIds : [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => id && !shellIdsBeforeEnsure.has(id));
         requestDocs = await loadConfirmRequests(ensure?.requestIds);
       }
 
@@ -1177,6 +1187,20 @@ export async function confirmCustomAbutmentDesign(req, res) {
           productionSet["production.abutmentCancelDeadlineAt"] = cancelDeadlineAt;
         }
       }
+      if (!transferDoc.production) transferDoc.production = {};
+      if (!labRevision) {
+        transferDoc.production.practiceDesignConfirmedAt = now;
+        transferDoc.production.practiceDesignConfirmedBy = userOid;
+        transferDoc.production.abutmentFeeRoute = "platform";
+        transferDoc.production.abutmentFeeRouteRevision = feeRevision;
+        if (cancelDeadlineAt) {
+          transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
+        }
+      }
+      promotedRows = await promotePlatformAbutmentDesignsToManufacturerReady({
+        transferDoc,
+        actorUserId: userId,
+      });
       await PracticeTransfer.updateOne(
         { _id: transferDoc._id },
         {
@@ -1195,15 +1219,18 @@ export async function confirmCustomAbutmentDesign(req, res) {
         },
       );
       handoffReleased = true;
-      if (!transferDoc.production) transferDoc.production = {};
-      if (!labRevision) {
-        transferDoc.production.abutmentFeeRoute = "platform";
-        transferDoc.production.abutmentFeeRouteRevision = feeRevision;
-        if (cancelDeadlineAt) {
-          transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
-        }
-      }
     } finally {
+      if (createdShellIds.length > 0) {
+        await discardUnreadyAbutmentShells({
+          transferDoc,
+          requestIds: createdShellIds,
+        }).catch((discardErr) => {
+          console.error(
+            "[AI] confirm unready shell discard failed",
+            discardErr?.message || discardErr,
+          );
+        });
+      }
       if (handoffClaimed && !handoffReleased) {
         await releaseAbutmentDesignHandoffLock(transferDoc._id);
       }
@@ -1215,6 +1242,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         confirmed: true,
         transferId,
         requestCount: updatedRequests.length,
+        manufacturerReadyPromoted: promotedRows.length,
         teeth: validTeeth.map((t) => t.toothNumber),
         cancelDeadlineAt: cancelDeadlineAt
           ? new Date(cancelDeadlineAt).toISOString()
@@ -1258,7 +1286,37 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const toothListText = validTeeth.map((t) => `#${t.toothNumber}`).join(", ");
       const chatContent = labRevision
         ? `기공소가 커스텀어벗 디자인(${toothListText})을 수정 반영했습니다.`
-        : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다. 수행 기공소가 검토·수정한 뒤 제조에 넘깁니다.`;
+        : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.\n제조사 준비에 등록했습니다.`;
+      if (promotedRows.length > 0) {
+        try {
+          const { triggerRhinoProcessFileForRequest } = await import(
+            "../rhino/rhino.controller.js"
+          );
+          const { scheduleRequestReadyBadgeEmit } = await import(
+            "../../services/adminCommBadge.service.js"
+          );
+          const { emitAppEventToRoles } = await import("../../socket.js");
+          for (const row of promotedRows) {
+            const processFileName = String(row.processFileName || "").trim();
+            if (!processFileName || !row.requestId) continue;
+            triggerRhinoProcessFileForRequest({
+              requestId: row.requestId,
+              filePath: processFileName,
+              fileName: processFileName,
+            });
+          }
+          scheduleRequestReadyBadgeEmit();
+          emitAppEventToRoles(["manufacturer", "admin"], "worksheet:updated", {
+            source: "practice-confirm-custom-abutment",
+            transferId,
+          });
+        } catch (pipelineErr) {
+          console.warn(
+            "[AI] confirm filled-STL pipeline failed",
+            pipelineErr?.message || pipelineErr,
+          );
+        }
+      }
       void postPracticeTransferSystemChatMessage({
         transferMongoId: transferDoc._id,
         senderUserId: req.user?._id,

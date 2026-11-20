@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-11-20: 치과 디자인 확정은 제조사 준비로 연다. 빈 의뢰의 출고일은 잠그지 않고, 준비 진입 시각이 더 뒤면 출고일을 다시 잡는다.
 // - 2026-11-19: 기공소가 제조 주문을 취소하면 치과 플랫폼 확정을 풀어 다시 확정하게 한다.
 // - 2026-11-19: 취소된 CA Request는 치아를 덮지 않는다. 다시 확정하면 그 치아만 새로 만든다.
 // - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
@@ -791,6 +792,22 @@ export function resolvePtxCaTargetShipYmd(transferDoc, _arrivalYmd = null, opts 
 }
 
 /**
+ * 제조사 준비에 처음 들어가는 출고일.
+ * 빈 의뢰를 만들 때 잠근 날짜가 준비 진입일보다 이르면, 진입 시각의 택배일로 바꾼다.
+ * 기공소가 더 늦은 날짜를 넣어 둔 값은 유지한다.
+ */
+export function resolveDesignCompleteShipYmd(stored, autoShipYmd, firstDesignComplete) {
+  const storedYmd = /^\d{4}-\d{2}-\d{2}$/.test(String(stored || "").trim())
+    ? String(stored).trim()
+    : "";
+  const auto = /^\d{4}-\d{2}-\d{2}$/.test(String(autoShipYmd || "").trim())
+    ? String(autoShipYmd).trim()
+    : "";
+  if (firstDesignComplete && auto && (!storedYmd || storedYmd < auto)) return auto;
+  return storedYmd || auto || null;
+}
+
+/**
  * PTX 어벗 STL 업로드 시점 택배 묶음 출고일(KST YMD).
  */
 export async function resolvePtxAbutmentAutoShipYmd({
@@ -1477,21 +1494,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     weeklyBatchDays,
     anodizingEnabled,
   });
-  const storedShipYmd = String(
-    transferDoc?.production?.abutmentShipYmd || "",
-  ).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(storedShipYmd) && autoShipYmd) {
-    await PracticeTransfer.updateOne(
-      { _id: transferDoc._id },
-      { $set: { "production.abutmentShipYmd": autoShipYmd } },
-    );
-    transferDoc.production = {
-      ...(transferDoc.production && typeof transferDoc.production === "object"
-        ? transferDoc.production
-        : {}),
-      abutmentShipYmd: autoShipYmd,
-    };
-  }
+  // 출고일은 제조사 준비에 들어갈 때 잠근다. 빈 의뢰 생성 시각으로 두면
+  // designCompletedAt 전에 숨은 동안 마감이 지나 있다.
   const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
     autoShipYmd,
   });
@@ -2145,6 +2149,62 @@ export async function ensureAbutmentRequestsForHandoff({
 /** @deprecated use ensureAbutmentRequestsForHandoff — accept-time create removed */
 export const ensureAbutmentRequestsOnAccept = ensureAbutmentRequestsForHandoff;
 
+const UNREADY_ABUTMENT_SHELL_STAGES = new Set(["", "준비", "취소", "의뢰"]);
+
+/**
+ * 확정·핸드오프가 끝나기 전에 생긴 빈 CA 의뢰를 지운다.
+ * 제조 파일이 있거나 designCompletedAt이 있으면 남긴다.
+ */
+export async function discardUnreadyAbutmentShells({
+  transferDoc,
+  requestIds,
+}) {
+  const ids = (Array.isArray(requestIds) ? requestIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+  if (!ids.length || !transferDoc?._id) return { discarded: [] };
+
+  const docs = await Request.find({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+  })
+    .select({
+      designCompletedAt: 1,
+      manufacturerStage: 1,
+      "caseInfos.hexVerificationSample": 1,
+      "caseInfos.file.s3Key": 1,
+    })
+    .lean();
+
+  const dropIds = docs
+    .filter((doc) => {
+      if (doc?.caseInfos?.hexVerificationSample === true) return false;
+      if (doc?.designCompletedAt) return false;
+      const key = String(doc?.caseInfos?.file?.s3Key || "").trim();
+      if (key && !key.includes("/custom-abutment-preview/")) return false;
+      const stage = String(doc?.manufacturerStage || "").trim();
+      return UNREADY_ABUTMENT_SHELL_STAGES.has(stage);
+    })
+    .map((doc) => doc._id);
+  if (!dropIds.length) return { discarded: [] };
+
+  await Request.deleteMany({
+    _id: { $in: dropIds },
+    designCompletedAt: null,
+  });
+  await PracticeTransfer.updateOne(
+    { _id: transferDoc._id },
+    { $pull: { "production.relatedRequestIds": { $in: dropIds } } },
+  );
+  const dropSet = new Set(dropIds.map((id) => String(id)));
+  if (Array.isArray(transferDoc.production?.relatedRequestIds)) {
+    transferDoc.production.relatedRequestIds =
+      transferDoc.production.relatedRequestIds.filter(
+        (id) => !dropSet.has(String(id)),
+      );
+  }
+  return { discarded: dropIds.map((id) => String(id)) };
+}
+
 /**
  * relatedRequestIds 중 tooth와 일치하는 CA Request를 고른다.
  * tooth가 있으면 불일치 시 null — 다른 치아(미완료 첫 건)에 붙이면 남은 치아 STL이 빈다.
@@ -2324,7 +2384,7 @@ export function listAbutmentToothStagesFromRows(rows = []) {
     if (stage === "준비" && row?.productionSchedule?.actualCamStart) {
       stage = "가공";
     }
-    // 기공의뢰에 묶인 준비는 designCompletedAt(기공소 확정·제조 진입) 뒤에만 준비로 보여 준다.
+    // 기공의뢰에 묶인 준비는 designCompletedAt(제조 진입) 뒤에만 준비로 보여 준다.
     const linkedPtx = String(row?.partnerBilling?.relatedPracticeTransferId || "").trim();
     if (stage === "준비" && linkedPtx && !row?.designCompletedAt) continue;
     const prev = byTooth.get(tooth);
@@ -3137,8 +3197,9 @@ function buildPlatformStlProcessFileName(requestDoc) {
 }
 
 /**
- * 기공소 「디자인 확정」: 치과가 넘긴 플랫폼 확정본을 제조사 준비 큐에 올린다.
- * 치과 확정만으로는 designCompletedAt·filled-STL 파이프라인을 열지 않는다.
+ * 플랫폼 확정본을 제조사 준비 큐에 올린다.
+ * 치과 디자인 확정과 기공소 디자인 확정이 같은 진입을 쓴다.
+ * 출고일은 이 시각 기준으로 다시 잡는다. 더 늦은 기공소 지정일은 유지한다.
  * @returns {Promise<Array<{ requestId: string, processFileName: string, mongoId: string }>>}
  */
 export async function promotePlatformAbutmentDesignsToManufacturerReady({
@@ -3182,6 +3243,14 @@ export async function promotePlatformAbutmentDesignsToManufacturerReady({
     if (!alreadyReady) {
       reqDoc.designCompletedAt = now;
       if (actorOid) reqDoc.designCompletedBy = actorOid;
+      await repriceAndReschedulePtxAbutmentRequest({
+        requestDoc: reqDoc,
+        transferDoc,
+        requestedAt: now,
+        scheduleMode: "holdFast",
+        firstDesignComplete: true,
+        actorUserId,
+      });
     }
 
     reqDoc.manufacturerStage = "준비";
@@ -3542,6 +3611,7 @@ export {
  * @param {"full"|"holdFast"} [options.scheduleMode="full"]
  *   holdFast: 크레딧 hold에 필요한 price·shippingMode·estimatedShipYmd만.
  *   calculateInitialProductionSchedule(리드타임 DB)은 생략 — 응답 후 full로 채움.
+ * @param {boolean} [options.firstDesignComplete] 준비 큐에 처음 들어갈 때. 이른 저장 출고일을 진입일로 당긴다.
  */
 export async function repriceAndReschedulePtxAbutmentRequest({
   requestDoc,
@@ -3552,6 +3622,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   forceRemake = false,
   beforeArrivalBusinessDays = null,
   actorUserId = null,
+  firstDesignComplete = false,
 }) {
   if (!requestDoc || !transferDoc) return requestDoc;
 
@@ -3674,20 +3745,21 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   const storedShipYmd = String(
     transferDoc?.production?.abutmentShipYmd || "",
   ).trim();
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(storedShipYmd) &&
-    autoShipYmd &&
-    transferDoc?._id
-  ) {
+  const nextShipYmd = resolveDesignCompleteShipYmd(
+    storedShipYmd,
+    autoShipYmd,
+    Boolean(firstDesignComplete),
+  );
+  if (nextShipYmd && nextShipYmd !== storedShipYmd && transferDoc?._id) {
     await PracticeTransfer.updateOne(
       { _id: transferDoc._id },
-      { $set: { "production.abutmentShipYmd": autoShipYmd } },
+      { $set: { "production.abutmentShipYmd": nextShipYmd } },
     );
     transferDoc.production = {
       ...(transferDoc.production && typeof transferDoc.production === "object"
         ? transferDoc.production
         : {}),
-      abutmentShipYmd: autoShipYmd,
+      abutmentShipYmd: nextShipYmd,
     };
   }
   const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
@@ -3772,7 +3844,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     if (!requestDoc.timeline || typeof requestDoc.timeline !== "object") {
       requestDoc.timeline = {};
     }
-    if (!requestDoc.timeline.originalEstimatedShipYmd) {
+    if (!requestDoc.timeline.originalEstimatedShipYmd || firstDesignComplete) {
       requestDoc.timeline.originalEstimatedShipYmd = estimatedShipYmd;
     }
     requestDoc.timeline.nextEstimatedShipYmd = estimatedShipYmd;
