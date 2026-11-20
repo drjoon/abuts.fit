@@ -5,7 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
-// - 2026-11-20: 치과 디자인 확정은 제조사 준비로 연다. 빈 의뢰의 출고일은 잠그지 않고, 준비 진입 시각이 더 뒤면 출고일을 다시 잡는다.
+// - 2026-11-20: 치과 디자인 확정은 제조사 준비로 올리지 않는다. 기공소 디자인 확정 뒤에만 준비 큐·출고일을 연다.
 // - 2026-11-19: 기공소가 제조 주문을 취소하면 치과 플랫폼 확정을 풀어 다시 확정하게 한다.
 // - 2026-11-19: 취소된 CA Request는 치아를 덮지 않는다. 다시 확정하면 그 치아만 새로 만든다.
 // - 2026-11-19: 플랫폼 치과 확정본은 기공소 확정 전 제조 준비·채팅 STL에서 뺀다.
@@ -3199,7 +3199,7 @@ function buildPlatformStlProcessFileName(requestDoc) {
 
 /**
  * 플랫폼 확정본을 제조사 준비 큐에 올린다.
- * 치과 디자인 확정과 기공소 디자인 확정이 같은 진입을 쓴다.
+ * 기공소가 디자인을 확정한 뒤에만 연다. 치과 확정만으로는 올리지 않는다.
  * 출고일은 이 시각 기준으로 다시 잡는다. 더 늦은 기공소 지정일은 유지한다.
  * @returns {Promise<Array<{ requestId: string, processFileName: string, mongoId: string }>>}
  */
@@ -3207,6 +3207,8 @@ export async function promotePlatformAbutmentDesignsToManufacturerReady({
   transferDoc,
   actorUserId = null,
 }) {
+  if (!transferDoc?.production?.labDesignConfirmedAt) return [];
+
   const relatedIds = Array.isArray(transferDoc?.production?.relatedRequestIds)
     ? transferDoc.production.relatedRequestIds
         .map((id) => String(id || "").trim())

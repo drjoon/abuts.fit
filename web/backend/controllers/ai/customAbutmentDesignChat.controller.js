@@ -922,7 +922,8 @@ function buildConfirmedRhinoFileName(requestDoc) {
 
 /**
  * 치과 「디자인 확정」: 커스텀어벗 STL을 Request에 저장하고 확정 시각을 남긴다.
- * 제조사 준비·수가·Rhino는 응답 뒤에 한다. 채팅 designFiles는 기공소 검토 확정 뒤에 공개한다.
+ * 제조사 준비·Rhino는 기공소가 이미 디자인을 확정한 뒤에만 연다.
+ * 채팅 designFiles도 기공소 검토 확정 뒤에 공개한다.
  * 기공소 labRevision은 같은 API로 수정 STL만 반영한다.
  * (과금/정산 hold는 유예)
  * @route POST /api/ai/custom-abutment-design-confirm
@@ -1009,6 +1010,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
     const anchorId = party ? practiceId : canSave ? own : "";
     const transferId = String(transferDoc.transferId || transferIdInput);
     const labRevision = Boolean(canEditShared) && !canSave && !privileged;
+    const labAlreadyConfirmed = Boolean(transferDoc.production?.labDesignConfirmedAt);
     if ((!canSave && !privileged && !labRevision) || !anchorId) {
       return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
     }
@@ -1156,7 +1158,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const prevDesignFiles = Array.isArray(transferDoc.production?.designFiles)
         ? transferDoc.production.designFiles
         : [];
-      const labAlreadyConfirmed = Boolean(transferDoc.production?.labDesignConfirmedAt);
       const confirmedToothSet = new Set(validTeeth.map((t) => t.toothNumber));
       const keptDesignFiles = prevDesignFiles.filter(
         (entry) => !confirmedToothSet.has(String(entry?.tooth || "").trim()),
@@ -1283,13 +1284,16 @@ export async function confirmCustomAbutmentDesign(req, res) {
 
     void (async () => {
       let promotedRows = [];
-      try {
-        promotedRows = await promotePlatformAbutmentDesignsToManufacturerReady({
-          transferDoc,
-          actorUserId: userId,
-        });
-      } catch (err) {
-        console.warn("[AI] confirm manufacturer promote failed", err?.message || err);
+      // 치과 확정만으로는 제조사 준비에 올리지 않는다. 기공소 확정이 이미 있으면 그 진입을 유지한다.
+      if (labAlreadyConfirmed) {
+        try {
+          promotedRows = await promotePlatformAbutmentDesignsToManufacturerReady({
+            transferDoc,
+            actorUserId: userId,
+          });
+        } catch (err) {
+          console.warn("[AI] confirm manufacturer promote failed", err?.message || err);
+        }
       }
       try {
         await syncRelatedRequestOwnershipToAcceptingLab(transferDoc);
@@ -1326,7 +1330,9 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const toothListText = validTeeth.map((t) => `#${t.toothNumber}`).join(", ");
       const chatContent = labRevision
         ? `기공소가 커스텀어벗 디자인(${toothListText})을 수정 반영했습니다.`
-        : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.\n제조사 준비에 등록했습니다.`;
+        : promotedRows.length > 0
+          ? `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.\n제조사 준비에 등록했습니다.`
+          : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.`;
       if (promotedRows.length > 0) {
         try {
           const { triggerRhinoProcessFileForRequest } = await import(

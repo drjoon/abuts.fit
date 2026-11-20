@@ -6,6 +6,7 @@ import {
   assertOralScanFilesForCreate,
   hasOralScanModelFile,
   canStartAbutmentProduction,
+  promotePlatformAbutmentDesignsToManufacturerReady,
   hasCustomAbutmentToothWorks,
   isPracticeAbutmentDesignAwaitingDentist,
   hasLiveAbutmentManufacturingRequest,
@@ -282,6 +283,18 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         },
       }),
     ).toBe(false);
+  });
+
+  test("clinic design confirm does not enter manufacturer prep before lab review", async () => {
+    const rows = await promotePlatformAbutmentDesignsToManufacturerReady({
+      transferDoc: {
+        production: {
+          practiceDesignConfirmedAt: new Date(),
+          relatedRequestIds: ["6afef2572e8f2f04d50c2252"],
+        },
+      },
+    });
+    expect(rows).toEqual([]);
   });
 
   test("canStartAbutmentProduction gates", () => {
