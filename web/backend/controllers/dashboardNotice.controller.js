@@ -21,11 +21,6 @@ const SHIP_HOLIDAY_COPY =
   "10월 9일 금요일은 택배사 휴무이므로, 10월 6일 화요일에 발송합니다.";
 /** 선발송일(10/6) 종료 시각. 이후에는 안내가 필요 없다. */
 const SHIP_HOLIDAY_ENDS_AT = new Date("2026-10-06T23:59:59.999+09:00");
-/** 기공소 헤더 중요 공지 레일 롤링 확인용. */
-const LAB_IMPORTANT_RAIL_NOTICE_CODE = "lab-important-rail-demo";
-const LAB_IMPORTANT_RAIL_TITLE = "기공소 중요 안내";
-const LAB_IMPORTANT_RAIL_BODY =
-  "헤더 오른쪽 중요 사항 영역에서 공지와 크레딧 안내를 확인하세요.";
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = new Set([
@@ -83,27 +78,6 @@ export function ensureDashboardNoticeSeed() {
         },
         { $addToSet: { audiences: "manufacturer" } },
       );
-      // 로컬·테스트만 — 기공소 헤더 중요 공지 레일 롤링 확인용.
-      if (String(process.env.NODE_ENV || "").trim() !== "production") {
-        await DashboardNotice.updateOne(
-          { code: LAB_IMPORTANT_RAIL_NOTICE_CODE },
-          {
-            $set: {
-              code: LAB_IMPORTANT_RAIL_NOTICE_CODE,
-              title: LAB_IMPORTANT_RAIL_TITLE,
-              body: LAB_IMPORTANT_RAIL_BODY,
-              audiences: ["lab"],
-              published: true,
-              endsAt: null,
-            },
-            $setOnInsert: {
-              images: [],
-              startsAt: null,
-            },
-          },
-          { upsert: true },
-        );
-      }
     })().catch((error) => {
       seedPromise = null;
       if (Number(error?.code) === 11000) return null;
