@@ -4907,16 +4907,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
         const oppLocal = localArchTangent(oppCenterStations);
         const expectedOverjetU = fixture.jaw === "upper" ? 1.35 : -1.35;
-        const jawLocal = localArchTangent(jawCenterStations, {
+        // 인접 커스텀어벗 픽스쳐도 악궁 스테이션에 넣는다. #24처럼 한쪽이 임플란트 자리여도
+        // 양옆 기준이 잡혀 협측 벽 vs 설측 악궁 충돌·후보가 자연치 양옆 케이스와 같이 동작한다.
+        const jawArchStations =
+          jawImplantStations.length > 0
+            ? [...jawCenterStations, ...jawImplantStations]
+            : jawCenterStations;
+        const jawLocal = localArchTangent(jawArchStations, {
           refSlope: oppLocal?.hasSlope ? oppLocal.slope : null,
           refOffsetU: oppLocal ? oppLocal.offsetU + expectedOverjetU : null,
         });
-        const slopeStations =
-          jawCenterStations.length >= 2
-            ? jawCenterStations
-            : [...jawCenterStations, ...jawImplantStations];
         const solvedJoint = solveJointArchSlope(
-          [slopeStations, jawBuccalStations, oppCenterStations],
+          [jawArchStations, jawBuccalStations, oppCenterStations],
           -0.0009,
         );
         // 바로 옆 인접 어벗(FDI 1칸, 같은 사분악) 중심을 잇는 선의 기울기(단독이면 null).
@@ -7619,6 +7621,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const refBaseTaperSlope = Math.tan(refBaseTaperDeg * DEG);
   const refBaseChamfer = chamferGeometry(shoulderW, 0.6, refBaseTaperSlope);
 
+  // 같은 악 인접 어벗이 있으면 그 픽스쳐도 악궁 점으로 쓴다. 자연치 양옆이 아니어도
+  // (#24·#25처럼) 협측 벽 vs 설측 악궁 충돌을 같은 규칙으로 본다.
+  const hasAdjacentSameJawImplant = neighbors.some((nb) => nb.jaw === fixture.jaw);
+  const hasSameJawArchLine =
+    archCenterReady && (jawArchBothSides || hasAdjacentSameJawImplant);
+
   // 구치부는 경사진 임플란트에서 포스트가 솔리드로 스크류 채널을 감싸면서도 4방위 마진 폭이 일정하도록
   // 마진 중심·반축이 처음부터 스크류 채널 + 최소 벽 + 균일 마진 폭을 함께 품고 출발한다.
   if (posterior) {
@@ -7630,7 +7638,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const estVScrewTop = (estHTop / estAxCos) * frame.vSide[2];
     const estUScrewBase = (refBaseChamfer.height / estAxCos) * frame.uLabial[2];
     const estVScrewBase = (refBaseChamfer.height / estAxCos) * frame.vSide[2];
-    const hasSameJawArchLine = archCenterReady && jawArchBothSides;
     const hasLingualArchGoal =
       !hasManualAxisShift &&
       hasSameJawArchLine &&
@@ -10036,8 +10043,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const buccalArchWall =
           !hasManualAxisShift &&
-          archCenterReady &&
-          jawArchBothSides &&
+          hasSameJawArchLine &&
           targetArchRelC0U != null &&
           targetArchRelC0U < -0.12 &&
           uScrewTop > 0.1;

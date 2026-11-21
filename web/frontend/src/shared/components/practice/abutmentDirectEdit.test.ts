@@ -2391,7 +2391,49 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     plain.every((c) => c.id !== "buccal_top_open" && c.id !== "buccal_shift"),
     `BL이 정상이면 협측 벽 후보를 띄우지 않는다 (${plain.map((c) => c.id).join(",")})`,
   );
-  for (const cand of [...cands, ...plain]) {
+
+  // 인접 어벗만 있고 원심 자연치가 없어도(#24↔#25) 같은 규칙으로 후보가 뜬다.
+  const mesialOnlyTooth = (x: number, y: number) => {
+    const dy = Math.abs(y - 8.1);
+    const dx = x + 2.3;
+    if (dy > 2.6 || Math.abs(dx) > 3.6) return 0;
+    const yf = dy < 1.5 ? 1 : Math.cos(((dy - 1.5) / 1.1) * Math.PI * 0.5);
+    const xf = Math.abs(dx) < 2.7 ? 1 : Math.cos(((Math.abs(dx) - 2.7) / 0.9) * Math.PI * 0.5);
+    return 7.2 * yf * Math.max(0, xf);
+  };
+  const mesialOnlyJaw = makeGrid(-14, 12, -14, 14, 64, (x, y) => 3.05 + mesialOnlyTooth(x, y));
+  const neighbor25 = {
+    ...buccalFixture,
+    toothNumber: "25",
+    fixturePose: {
+      origin: [0, -7.2, 0] as [number, number, number],
+      axis: [Math.sin(tilt), 0, Math.cos(tilt)] as [number, number, number],
+      hexX: [Math.cos(tilt), 0, -Math.sin(tilt)] as [number, number, number],
+      hexY: [0, 1, 0] as [number, number, number],
+    },
+    scanbodyTop: [5 * Math.sin(tilt), -7.2, 5 * Math.cos(tilt)] as [number, number, number],
+  };
+  const premolar24 = {
+    ...buccalFixture,
+    toothNumber: "24",
+    jaw: "upper" as const,
+  };
+  const pairCands = await designCustomAbutmentCandidates({
+    fixture: premolar24,
+    jawGeometry: mesialOnlyJaw,
+    opposingGeometry: archOpp,
+    neighbors: [neighbor25],
+    toothWorks: [
+      { toothNumber: "24", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+      { toothNumber: "25", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+    ],
+    params: { occlusalClearanceMm: 1.2 },
+  });
+  const pairLabels = pairCands.map((c) => `${c.id}:${c.label}`).join(" | ");
+  assert.equal(pairCands[0]?.id, "buccal_top_open", `인접 어벗만 있어도 (1)이 뜬다 (${pairLabels})`);
+  assert.equal(pairCands[1]?.id, "buccal_shift", `인접 어벗만 있어도 (2)가 뜬다 (${pairLabels})`);
+
+  for (const cand of [...cands, ...plain, ...pairCands]) {
     cand.design.worldGeometry.dispose();
     cand.design.predictedCrownWorldGeometry.dispose();
     cand.design.enameloplastyWorldGeometry?.dispose();
@@ -2400,6 +2442,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   archOpp.dispose();
   flatJaw.dispose();
   flatOpp.dispose();
+  mesialOnlyJaw.dispose();
 }
 
 console.log("abutment direct edit ok");
