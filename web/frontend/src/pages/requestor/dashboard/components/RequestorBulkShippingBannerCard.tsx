@@ -284,14 +284,21 @@ const carrierDisplayLabel = (
 
 function BulkShippingDeliveryCells({ item }: { item: ShippingItemApi }) {
   const di = item.delivery || null;
-  const trackingNumber = String(di?.trackingNumber || "").trim();
+  const selfShipment = (
+    item as ShippingItemApi & {
+      selfShipment?: { carrier?: string | null; trackingNumber?: string | null };
+    }
+  ).selfShipment;
+  const trackingNumber = String(
+    di?.trackingNumber || selfShipment?.trackingNumber || "",
+  ).trim();
   const location = getDeliveryCurrentLocation(di);
   const statusLabel = getRequestorShippingStatusLabel(di);
   const trackUrl = trackingNumber
     ? buildCourierTrackingUrl(di?.carrier || "hanjin", trackingNumber)
     : null;
   const carrier = trackingNumber
-    ? carrierDisplayLabel(di?.carrier, item.shippingMode)
+    ? carrierDisplayLabel(di?.carrier || selfShipment?.carrier, item.shippingMode)
     : "";
 
   return (

@@ -11,6 +11,7 @@ interface SignupWizardStep1Props {
   kakaoUrl?: string;
   onGoogleClick?: () => void;
   onKakaoClick?: () => void;
+  hideSocial?: boolean;
 }
 
 export const SignupWizardStep1 = ({
@@ -19,12 +20,15 @@ export const SignupWizardStep1 = ({
   kakaoUrl = "/api/auth/oauth/kakao/start",
   onGoogleClick,
   onKakaoClick,
+  hideSocial = false,
 }: SignupWizardStep1Props) => {
   const navigate = useNavigate();
 
   return (
     <div className="space-y-10 pt-4">
-      <div className="grid grid-cols-3 gap-3">
+      <div className={hideSocial ? "grid grid-cols-1 gap-3" : "grid grid-cols-3 gap-3"}>
+        {hideSocial ? null : (
+        <>
         <Button
           variant="outline"
           type="button"
@@ -72,6 +76,8 @@ export const SignupWizardStep1 = ({
           </svg>
           <span className="text-xs font-medium">카카오</span>
         </Button>
+        </>
+        )}
 
         <Button
           type="button"

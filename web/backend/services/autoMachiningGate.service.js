@@ -312,6 +312,7 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
 
   const candidates = await Request.find({
     manufacturerStage: "준비",
+    producerControl: { $ne: "self" },
     source: { $ne: "dummy_sample" },
     ...(createdAt ? { createdAt } : {}),
     $and: [READY_QUEUE_GUARD],

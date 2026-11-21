@@ -12,6 +12,7 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import {
   applyRequestorDepartmentAccess,
   anchorUsesInternalDepartments,
@@ -284,6 +285,21 @@ async function resolveReferrerTargets({
 
 const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
 
+async function withManufacturerProduction(user) {
+  if (!user || user.role !== "manufacturer") return user;
+  if (!user.businessAnchorId) {
+    return { ...user, productionControl: "self", operatingStatus: "running" };
+  }
+  const anchor = await BusinessAnchor.findById(user.businessAnchorId)
+    .select({ productionControl: 1, operatingStatus: 1 })
+    .lean();
+  return {
+    ...user,
+    productionControl: anchor?.productionControl === "self" ? "self" : "platform",
+    operatingStatus: anchor?.operatingStatus === "paused" ? "paused" : "running",
+  };
+}
+
 const sendLoginSuccessResponse = async ({
   user,
   res,
@@ -317,7 +333,9 @@ const sendLoginSuccessResponse = async ({
   const workspaceUser = await applyAdminDepartmentWorkspace(plainUser);
   const accessUser = await applyRequestorDepartmentAccess(workspaceUser);
   voidRecordUserAccessDay({ userId: user._id, role: accessUser?.role });
-  const userWithoutPassword = applyGuideTourAlwaysOnToUserPayload(accessUser);
+  const userWithoutPassword = await withManufacturerProduction(
+    applyGuideTourAlwaysOnToUserPayload(accessUser),
+  );
 
   res.status(200).json({
     success: true,
@@ -561,6 +579,7 @@ async function register(req, res) {
       socialProvider,
       socialProviderUserId,
       socialToken,
+      manufacturerSignupToken,
     } = req.body;
 
     const normalizedRole = String(role || "requestor").trim();
@@ -616,7 +635,26 @@ async function register(req, res) {
       normalizedRole === "salesman" ? 3 : 5,
     );
 
-    if (normalizedRole !== "requestor" && normalizedRole !== "salesman") {
+    const isManufacturerSignup = normalizedRole === "manufacturer";
+    if (isManufacturerSignup) {
+      if (socialProvider) {
+        return res.status(400).json({
+          success: false,
+          message: "제조사 가입은 이메일로만 가능합니다.",
+        });
+      }
+      const settings = await SystemSettings.findOne({ key: "global" })
+        .select({ manufacturerSignupToken: 1 })
+        .lean();
+      const expected = String(settings?.manufacturerSignupToken || "").trim();
+      const given = String(manufacturerSignupToken || "").trim();
+      if (!expected || given !== expected) {
+        return res.status(400).json({
+          success: false,
+          message: "제조사 가입 링크가 올바르지 않습니다.",
+        });
+      }
+    } else if (normalizedRole !== "requestor" && normalizedRole !== "salesman") {
       return res.status(400).json({
         success: false,
         message: "공개 가입은 의뢰자 또는 딜러만 가능합니다.",
@@ -636,8 +674,8 @@ async function register(req, res) {
       }
     }
 
-    // 사용자 생성 - 모든 역할 즉시 승인 (통일된 가입/온보딩 플로우)
-    const isInstantApprove = true;
+    // 공개 가입은 즉시 승인. 제조사 비공개 가입은 관리자 승인 전 로그인 불가.
+    const isInstantApprove = !isManufacturerSignup;
 
     const userDoc = {
       name,
@@ -1364,7 +1402,9 @@ async function getCurrentUser(req, res) {
     res.status(200).json({
       success: true,
       data: {
-        ...applyGuideTourAlwaysOnToUserPayload(accessUser),
+        ...(await withManufacturerProduction(
+          applyGuideTourAlwaysOnToUserPayload(accessUser),
+        )),
         dbVersion,
       },
     });

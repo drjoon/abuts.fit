@@ -132,6 +132,7 @@ type RecentRequestCardItem = {
   } | null;
   title?: string;
   manufacturerStage?: string;
+  selfShipment?: { carrier?: string | null; trackingNumber?: string | null } | null;
   createdAt?: string;
   estimatedShipYmd?: string;
   nextEstimatedShipYmd?: string | null;
@@ -359,6 +360,10 @@ const renderRecentRequestSummaryLine = (
   if (!item) return null;
   const clinicName = String(item.caseInfos?.clinicName || "").trim();
   const patientName = String(item.caseInfos?.patientName || "").trim();
+  const trackingNumber = String(item.selfShipment?.trackingNumber || "").trim();
+  const tracking = trackingNumber ? (
+    <span className="ml-1">운송장 {trackingNumber}</span>
+  ) : null;
 
   if (isDesignCustomAbutmentItem(item)) {
     const qty = resolveCustomAbutmentQty(item);
@@ -371,6 +376,7 @@ const renderRecentRequestSummaryLine = (
         <span className={clinicName || patientName ? "ml-1" : undefined}>
           커스텀어벗 {qty}개
         </span>
+        {tracking}
       </>
     );
   }
@@ -388,6 +394,7 @@ const renderRecentRequestSummaryLine = (
       ) : null}
       <span className="ml-1">{formatImplantDisplay(item.caseInfos)}</span>
       <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+      {tracking}
     </>
   );
 };

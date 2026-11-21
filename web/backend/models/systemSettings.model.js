@@ -16,6 +16,8 @@ const systemSettingsSchema = new mongoose.Schema(
       unique: true,
       default: "global",
     },
+    /** 제조사 비공개 가입 URL 토큰. 공개 가입 role에는 넣지 않는다. */
+    manufacturerSignupToken: { type: String, default: "" },
     deliveryEtaLeadDays: {
       d6: { type: Number, default: 1 },
       d8: { type: Number, default: 1 },

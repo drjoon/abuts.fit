@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
@@ -15,6 +15,8 @@ import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { User, Users, Bell, Shield, Building2 } from "lucide-react";
 import { ManufacturerSecurity } from "./Security";
 import { BusinessTab } from "./components/BusinessTab";
+import { apiFetch } from "@/shared/api/apiClient";
+import { Button } from "@/components/ui/button";
 
 type TabKey =
   | "account"
@@ -24,7 +26,11 @@ type TabKey =
   | "security";
 
 export const ManufacturerSettingsPage = () => {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const [operatingStatus, setOperatingStatus] = useState(
+    user?.operatingStatus === "paused" ? "paused" : "running",
+  );
+  const [savingOperating, setSavingOperating] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tabs: SettingsTabDef[] = useMemo(
@@ -71,10 +77,40 @@ export const ManufacturerSettingsPage = () => {
     : (tabs[0]?.key as TabKey);
 
   return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {user?.productionControl === "self" && user?.subRole === "owner" ? (
+        <div className="mx-3 mt-3 flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <span className="text-sm text-slate-700">
+            {operatingStatus === "paused" ? "가동 중단" : "가동 중"}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={savingOperating}
+            onClick={() => {
+              const next = operatingStatus === "paused" ? "running" : "paused";
+              setSavingOperating(true);
+              void apiFetch({
+                path: "/api/manufacturer/operating-status",
+                method: "PUT",
+                token,
+                jsonBody: { operatingStatus: next },
+              }).then((res) => {
+                setSavingOperating(false);
+                if (res.ok) setOperatingStatus(next);
+              });
+            }}
+          >
+            {operatingStatus === "paused" ? "가동" : "중단"}
+          </Button>
+        </div>
+      ) : null}
     <SettingsScaffold
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => setSearchParams({ tab: next })}
     />
+    </div>
   );
 };

@@ -2446,6 +2446,7 @@ export const listPendingStl = asyncHandler(async (req, res) => {
   const readyGuard = buildWorksheetReadyQueueGuard();
   const requests = await Request.find({
     manufacturerStage: "준비",
+    producerControl: { $ne: "self" },
     "caseInfos.file.filePath": { $exists: true, $ne: null },
     // 준비 탭「중단」— CANCELLED/FAILED 건은 재기동 복구 큐에서 제외
     "productionSchedule.stlPreload.status": {

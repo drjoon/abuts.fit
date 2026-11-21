@@ -25,6 +25,7 @@ import {
   cancelDesignHandoff,
   handoffDesignToProduction,
 } from "../../controllers/requests/designHandoff.controller.js";
+import { updateSelfProduction } from "../../controllers/manufacturers/selfProduction.controller.js";
 
 // 새 의뢰 생성 (의뢰자만 가능) — 유료(paid+verified) 필수
 router.post(
@@ -519,6 +520,13 @@ router.patch(
   authenticate,
   authorizeManufacturerOrDesignPartner(),
   requestController.updateReviewStatusByStage,
+);
+
+router.patch(
+  "/:id/self-production",
+  authenticate,
+  authorize(["manufacturer"]),
+  updateSelfProduction,
 );
 
 router.patch(

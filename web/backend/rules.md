@@ -479,7 +479,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     `productionSchedule.assignedMachine/queuePosition`에 즉시 반영합니다.
   - 성능 규칙: `review-status` 승인 경로에서 "호환성 검사"와 "실제 배정"은 동일 선택 결과를 재사용해 장비 선택 쿼리를 1회로 유지합니다(중복 호출 금지).
   - 가공 진입 후처리 큐(`CAM_STAGE_APPROVED`)는 Next Up 반영/로트 보정 후, 장비가 비어 있고 `allowAutoMachining`이면 `kickIdleAutoMachiningIfNeeded`로 Now Playing을 바로 시작한다. 가공 중인 장비는 건너뛴다.
-  - `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
+  - 플랫폼 제어(`producerControl`이 `self`가 아님)는 `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
+  - 자체 생산(`Request.producerControl=self`)은 `PATCH /api/requests/:id/self-production`에서 `CAM`을 그대로 저장합니다. 이 경로는 에스프리·장비·우편함·한진을 호출하지 않고, 가공 진입과 포장.발송 진입의 과금만 기존 시점에 적용합니다. `review-status`·자동가공·pending-stl은 `producerControl=self`를 제외합니다.
 
 - 준비→가공 자동 승인 게이트(야간 무인 가공):
   - `SystemSettings.autoMachiningGate`: `enabled`(기본 OFF). 섀도 모드는 없다(켜면 통과 건을 바로 승인). 제조사 준비·가공 페이지의 같은 스위치(`AutoApprovalGateSwitch`)가 `GET/PUT /api/cnc-machines/machining/auto-gate`(manufacturer·admin)로 켜고 끈다. 장비 `allowAutoMachining`도 이 스위치가 함께 바꾼다. `jobs/autoMachiningGateWorker.js`가 30초마다 준비 단계 의뢰를 판정한다.

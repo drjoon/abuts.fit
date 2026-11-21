@@ -10,6 +10,8 @@
 // - web/backend/controllers/requests/common.review.controller.js
 import { Suspense, lazy } from "react";
 import { useLocation } from "react-router-dom";
+import { useAuthStore } from "@/store/useAuthStore";
+import { SelfProductionPage } from "./self/SelfProductionPage";
 import {
   deriveStageForFilter,
   isDesignCustomAbutmentRequest,
@@ -51,6 +53,10 @@ const isWorksheetReadyQueueRequest = (
 
 export const ManufacturerWorksheetPage = () => {
   const location = useLocation();
+  const productionControl = useAuthStore((state) => state.user?.productionControl);
+  if (productionControl === "self") {
+    return <SelfProductionPage />;
+  }
   const worksheetParams = new URLSearchParams(location.search);
 
   // Default to custom_abutment/request if no params provided

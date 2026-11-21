@@ -2091,7 +2091,7 @@ export const DashboardLayout = () => {
                       </div>
                     )}
 
-                    {isWorksheetRoute && (
+                    {isWorksheetRoute && user?.productionControl !== "self" && (
                       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3 lg:flex-nowrap lg:justify-between">
                         <div className="flex gap-2 flex-shrink-0">
                           <PeriodFilter value={period} onChange={setPeriod} />

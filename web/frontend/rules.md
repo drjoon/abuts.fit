@@ -167,6 +167,7 @@ Notes:
   - `src/pages/requestor/design/DesignRequestCardGrid.tsx`
   - `src/pages/requestor/design/DesignRequestTransferView.tsx`
   - 제조사 워크시트
+  - 플랫폼 제어(`productionControl`이 `self`가 아님)는 기존 단계 탭. 자체 생산은 `src/pages/manufacturer/worksheet/self/SelfProductionPage.tsx` 한 화면. 스토어 제조자 표기·Esprit·PRC는 자체 생산 화면에 넣지 않는다.
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`

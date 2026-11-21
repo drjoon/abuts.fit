@@ -1067,6 +1067,9 @@ export async function updateMyBusiness(req, res) {
 
         const created = await BusinessAnchor.create({
           businessType,
+          ...(businessType === "manufacturer"
+            ? { productionControl: "self", operatingStatus: "running" }
+            : {}),
           businessNumberNormalized,
           name: nextName,
           primaryContactUserId: req.user._id,

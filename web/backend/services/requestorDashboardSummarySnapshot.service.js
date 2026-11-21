@@ -422,6 +422,7 @@ export const recomputeSingleRequestorDashboardSummarySnapshot = async ({
           requestId: 1,
           title: 1,
           manufacturerStage: 1,
+          selfShipment: 1,
           createdAt: 1,
           caseInfos: 1,
           timeline: 1,
@@ -626,6 +627,7 @@ export const recomputeSingleRequestorDashboardSummarySnapshot = async ({
       requestId: r.requestId,
       title: r.title,
       manufacturerStage: r.manufacturerStage,
+      selfShipment: r.selfShipment || null,
       date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
       estimatedShipYmd: r.estimatedShipYmd || null,
       originalEstimatedShipYmd:

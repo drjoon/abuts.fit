@@ -34,6 +34,7 @@ import { normalizeScrewSupply } from "../../utils/labPracticeScrewSupply.js";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
 import { stampDirectDesignRoute } from "../../services/abutmentDesignRoute.js";
+import { assignProducerFields } from "../../services/producerAssignment.service.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import User from "../../models/user.model.js";
@@ -2104,6 +2105,7 @@ export async function createRequestsFromDraft(req, res) {
           }
 
           stampDirectDesignRoute(newRequest);
+          await assignProducerFields(newRequest, newRequest.caseInfos);
           requestDocs.push(newRequest);
         }
 
@@ -2227,6 +2229,7 @@ export async function createRequestsFromDraft(req, res) {
       // 헥스 확인용 복사샘플은 라이노를 돌리지 않는다 — 원본 2-filled 완료 시 stlFile(+legacy camFile)을 복사한다.
       // 의뢰별로 STL이 있으면 각각 트리거. 실패해도 의뢰 생성은 그대로 성공 응답된다.
       const rhinoJobs = createdRequests
+        .filter((doc) => doc?.producerControl !== "self")
         .filter((doc) => doc?.caseInfos?.hexVerificationSample !== true)
         .filter(
           (doc) => doc?.caseInfos?.unsupportedConnection?.pendingCancel !== true,

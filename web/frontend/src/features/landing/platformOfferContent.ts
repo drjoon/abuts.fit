@@ -330,7 +330,7 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
       {
         icon: "cnc",
         title: "CNC 생산",
-        line: "업로드하면 애크로덴트 생산이 자동으로 시작됩니다.",
+        line: "업로드하면 배정된 제조회원 생산이 시작됩니다.",
       },
       { icon: "ship", title: "납품", line: "어벗과 보철이 함께 치과로 나갑니다." },
     ],
@@ -411,8 +411,8 @@ export const PLATFORM_OFFER_EXTRAS: PlatformOfferExtras = {
         line: "커스텀어벗 주문용 거래 선수금이에요. 외부 기공비는 기공소 계좌로 입금합니다.",
       },
       {
-        term: "애크로덴트",
-        line: "어벗츠 제품을 만드는 제조사예요. CNC 생산을 맡습니다.",
+        term: "제조회원",
+        line: "임플란트 브랜드에 따라 생산을 맡는 제조사예요. 플랫폼 제어와 자체 생산이 있습니다.",
       },
     ],
   },

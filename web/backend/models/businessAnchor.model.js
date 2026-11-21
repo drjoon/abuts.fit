@@ -43,6 +43,20 @@ const businessAnchorSchema = new mongoose.Schema(
       index: true,
     },
     /**
+     * 제조사만. platform=애크로덴트처럼 플랫폼이 공정을 제어.
+     * self=자체 생산. 없는 값은 platform으로 본다(기존 제조사).
+     */
+    productionControl: {
+      type: String,
+      enum: ["platform", "self"],
+    },
+    /** 제조사만. paused면 신규 자동 선정에서 빠진다. */
+    operatingStatus: {
+      type: String,
+      enum: ["running", "paused"],
+      default: "running",
+    },
+    /**
      * 동일 법인(사업자등록) 하위 조직.
      * 예: admin「어벗츠 주식회사」← internalLab「기공사업부」
      */

@@ -506,6 +506,23 @@ export const triggerRhinoProcessFileForRequest = ({
   if (!targetName) return;
   const rid = String(requestId || "").trim() || null;
 
+  void (async () => {
+    if (rid) {
+      const row = await Request.findOne({ requestId: rid })
+        .select({ producerControl: 1 })
+        .lean();
+      if (row?.producerControl === "self") return;
+    }
+    dispatchRhinoFill({ rid, targetName });
+  })().catch((err) => {
+    console.warn(
+      `[rhino-trigger] producer check failed requestId=${rid || "-"}:`,
+      err?.message || err,
+    );
+  });
+};
+
+function dispatchRhinoFill({ rid, targetName }) {
   // 준비 탭「JS/Rhino 작업중」+ pending-stl 복구가 잡도록 enqueue 전에 GENERATING 표시
   const useJsEngine =
     /\.stl$/i.test(targetName) && isAbutmentStlJsPrimaryEnabled();

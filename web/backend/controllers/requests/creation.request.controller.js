@@ -12,6 +12,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { stampDirectDesignRoute } from "../../services/abutmentDesignRoute.js";
+import { assignProducerFields } from "../../services/producerAssignment.service.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import {
@@ -257,6 +258,7 @@ export async function createRequest(req, res) {
       anodizingEnabled: normalizedCaseInfos?.anodizingEnabled !== false,
     });
     newRequest.productionSchedule = productionSchedule;
+    await assignProducerFields(newRequest, newRequest.caseInfos);
 
     // 발송 예정일 (YYYY-MM-DD, KST)
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
@@ -1187,6 +1189,7 @@ export async function createRequestsBulk(req, res) {
           }
           const scheduleMs = Date.now() - tSched0;
           newRequest.productionSchedule = productionSchedule;
+          await assignProducerFields(newRequest, newRequest.caseInfos);
 
           const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
           const pickupYmd = productionSchedule?.scheduledShipPickup

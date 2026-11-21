@@ -15,6 +15,10 @@ import {
   getManufacturerCreditDailySummary,
 } from "../../controllers/manufacturers/manufacturer.controller.js";
 import { getManagementStatus } from "./manufacturer.controller.js";
+import {
+  getManufacturerOperatingStatus,
+  updateManufacturerOperatingStatus,
+} from "../../controllers/manufacturers/operatingStatus.controller.js";
 import { getManufacturerLowFinishLineWarning } from "../../controllers/admin/lowFinishLineWatch.controller.js";
 import {
   sendVerificationCode,
@@ -110,6 +114,13 @@ router.post(
 );
 
 router.get("/low-finish-line-warning", getManufacturerLowFinishLineWarning);
+
+router.get("/operating-status", getManufacturerOperatingStatus);
+router.put(
+  "/operating-status",
+  authorize(["manufacturer"], { subRoles: ["owner"] }),
+  updateManufacturerOperatingStatus,
+);
 
 // 전화번호 인증
 router.post(

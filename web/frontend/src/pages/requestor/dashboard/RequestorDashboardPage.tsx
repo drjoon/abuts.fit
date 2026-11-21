@@ -980,6 +980,7 @@ export const RequestorDashboardPage = () => {
           normalizedFrom === "준비" &&
           (normalizedTo === "cam" || normalizedTo === "가공");
         const isTrustedRequestToCamSource = [
+          "self-production",
           "bg-file-processed",
           "review-status-noop-nc-reuse",
           "review-status-cam-skip", // 레거시
@@ -1017,6 +1018,9 @@ export const RequestorDashboardPage = () => {
                     ? payload.request
                     : null),
                   manufacturerStage: toStage || row.manufacturerStage,
+                  ...(payload.selfShipment
+                    ? { selfShipment: payload.selfShipment }
+                    : {}),
                 };
               }
               return row;

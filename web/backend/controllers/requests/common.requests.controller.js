@@ -1655,6 +1655,7 @@ export async function getAllRequests(req, res) {
     // buildManufacturerOrgScopeFilter가 조직 멤버 기반 필터를 생성
     if (role === "manufacturer") {
       const manufacturerOrgScope = await buildManufacturerOrgScopeFilter(req);
+      const producerControlQuery = String(req.query.producerControl || "").trim();
 
       // related files:
       // - web/backend/controllers/requests/creation.from-draft.controller.js
@@ -1673,6 +1674,9 @@ export async function getAllRequests(req, res) {
           { manufacturerStage: { $ne: "취소" } },
           manufacturerOrgScope,
           excludePracticeRouteGuard,
+          ...(producerControlQuery === "self"
+            ? [{ producerControl: "self" }]
+            : []),
         ],
       };
     }
@@ -1714,6 +1718,8 @@ export async function getAllRequests(req, res) {
     const worksheetSelect = [
       "requestId",
       "manufacturerStage",
+      "producerControl",
+      "selfShipment",
       "createdAt",
       "lotNumber",
       "screwTracking",
@@ -1802,6 +1808,7 @@ export async function getAllRequests(req, res) {
       "productionSchedule.stlJsFallback",
       "productionSchedule.ncPreload",
       "timeline.estimatedShipYmd",
+      "timeline.nextEstimatedShipYmd",
       "designCompletedAt",
       "requestor",
       "shippingReceiver",
@@ -1936,6 +1943,9 @@ export async function getAllRequests(req, res) {
     const monitoringSelect = [
       "requestId",
       "manufacturerStage",
+      "producerControl",
+      "selfShipment.carrier",
+      "selfShipment.trackingNumber",
       "priority",
       "createdAt",
       "progress",
@@ -2018,6 +2028,12 @@ export async function getAllRequests(req, res) {
       query = query
         .select(selectedProjection)
         .populate("requestor", requestorPopulateSelect);
+      if (isMonitoringView) {
+        query = query.populate(
+          "caManufacturer",
+          "name business businessAnchorId",
+        );
+      }
 
       if (!isMonitoringView && worksheetProfile !== "tracking") {
         query = query.populate("rnd.memoUpdatedBy", "name");

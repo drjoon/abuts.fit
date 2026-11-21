@@ -92,6 +92,7 @@ import {
 } from "../utils/oralScanRole.js";
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
+import { assignProducerFields } from "./producerAssignment.service.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
@@ -1793,6 +1794,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       },
     });
 
+    await assignProducerFields(newRequest, newRequest.caseInfos);
     await newRequest.save();
     created.push(newRequest);
   }

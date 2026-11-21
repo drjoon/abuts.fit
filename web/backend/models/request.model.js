@@ -969,6 +969,22 @@ const requestSchema = new mongoose.Schema(
       ],
       default: "준비",
     },
+    /**
+     * 배정 시점의 생산 제어. self는 에스프리·자동가공·우편함 대상이 아니다.
+     * 없는 값은 platform.
+     */
+    producerControl: {
+      type: String,
+      enum: ["platform", "self"],
+      default: "platform",
+      index: true,
+    },
+    /** 자체 생산 제조사가 입력한 운송장. */
+    selfShipment: {
+      carrier: { type: String, default: "", trim: true },
+      trackingNumber: { type: String, default: "", trim: true },
+      updatedAt: { type: Date, default: null },
+    },
     // 배송 방식 SSOT(표시/조회 편의): finalShipping.mode 와 동기화
     shippingMode: {
       type: String,

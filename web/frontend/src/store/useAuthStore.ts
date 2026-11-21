@@ -69,6 +69,9 @@ export interface User {
   /** 처음 비밀번호. 본인 비밀번호로 바꾸기 전에는 true */
   mustChangePassword?: boolean;
   role: UserRole;
+  /** 제조사만. self면 자체 생산 화면. 없으면 플랫폼 제어. */
+  productionControl?: "platform" | "self";
+  operatingStatus?: "running" | "paused";
   subRole?: string | null;
   avatar?: string;
   profileImage?: string;

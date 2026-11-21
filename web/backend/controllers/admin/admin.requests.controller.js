@@ -7,6 +7,7 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { updateRequestStatus as updateManufacturerStage } from "../requests/common.requests.controller.js";
 
 export async function getAllRequests(req, res) {
@@ -135,10 +136,15 @@ export async function assignManufacturer(req, res) {
     }
 
     const manufacturer = await User.findById(manufacturerId);
-    if (!manufacturer || manufacturer.role !== "manufacturer") {
+    if (
+      !manufacturer ||
+      manufacturer.role !== "manufacturer" ||
+      !manufacturer.active ||
+      !manufacturer.approvedAt
+    ) {
       return res.status(400).json({
         success: false,
-        message: "유효한 제조사를 찾을 수 없습니다.",
+        message: "승인된 제조사를 찾을 수 없습니다.",
       });
     }
 
@@ -148,12 +154,27 @@ export async function assignManufacturer(req, res) {
         .status(404)
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
+    if (String(request.manufacturerStage || "준비") !== "준비") {
+      return res.status(409).json({
+        success: false,
+        message: "준비 단계 의뢰만 생산 제조사를 바꿀 수 있습니다.",
+      });
+    }
+
+    const anchor = manufacturer.businessAnchorId
+      ? await BusinessAnchor.findById(manufacturer.businessAnchorId)
+          .select({ productionControl: 1 })
+          .lean()
+      : null;
+    const producerControl =
+      anchor?.productionControl === "self" ? "self" : "platform";
 
     const updatedRequest = await Request.findByIdAndUpdate(
       requestId,
       {
         caManufacturer: manufacturerId,
         assignedAt: new Date(),
+        producerControl,
       },
       { new: true },
     )

@@ -175,6 +175,12 @@
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 공정 SSOT: `Request.manufacturerStage`
   - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
+- 생산 제어 SSOT: `BusinessAnchor.productionControl`
+  - `platform`: 플랫폼이 공정·장비·우편함·운송장을 제어한다. 없는 값은 platform.
+  - `self`: 제조사가 같은 단계를 직접 입력한다. 에스프리·CNC·우편함·한진·라벨 프린터는 호출하지 않는다.
+  - 과금 시점은 같다. 가공 진입 `REQUEST_SPEND_COMMIT`, 포장.발송 진입 배송비와 비거래처 어벗 해제. 장부는 그때의 `caManufacturer`.
+  - 신규 의뢰는 임플란트 브랜드(`implantManufacturer + implantBrand`)의 기본 제조사. 그 제조사가 승인되지 않았거나 `operatingStatus=paused`이면 그 브랜드의 대체 제조사, 없으면 platform 제조사. 매칭·가동을 바꿔도 이미 배정된 의뢰는 옮기지 않는다. 관리자는 준비 단계만 다시 고른다.
+  - 제조사 가입은 공개 role에 없다. `/signup/manufacturer?k=` 토큰과 관리자 승인 뒤에만 로그인한다.
 - 크레딧 이벤트 발생 시점 SSOT:
   - `REQUEST_SPEND_HOLD` / `SHIPPING_SPEND_HOLD`: **의뢰 제출** 시 에스크로 보류(기공비·신속·배송비).
   치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
@@ -226,7 +232,7 @@
   - 스토어 결제: **크레딧(유료 선수금) 기본** + 계좌이체 유지. 장바구니 합치기(기공+스토어 한 체크아웃)는 금지. 풀필먼트: `UNPAID→READY→SHIPPED→DELIVERED`.
 - **어벗츠 사업 다각화 SSOT:**
   1. **스토어** — 기성품(심플웨이 등) 과세 매출. `STORE_SALE`/`REV_STORE_TAXABLE`. 포함가 전액 어벗츠 · 딜러/제조/개발운영 분배 없음 · 월말 세금계산서.
-  2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 의뢰자(기공소·기공실)는 선불 크레딧. 판매가 1.2~1.5만(어벗 1개당, 판매자 결정). 어벗츠 1만원 = 제조 5,000 / 개발운영 1,000 / 어벗츠 4,000(부가세 포함). 나머지 2~5천은 판매자. 배송비는 판매자 몫에서.
+  2. **커스텀어벗** — 기공소 디자인 → 배정 제조사 생산 → 치과 납품. 의뢰자(기공소·기공실)는 선불 크레딧. 판매가 1.2~1.5만(어벗 1개당, 판매자 결정). 어벗츠 1만원 = 제조 5,000 / 개발운영 1,000 / 어벗츠 4,000(부가세 포함). 나머지 2~5천은 판매자. 배송비는 판매자 몫에서.
   3. **기공사업부** — 어벗츠 주식회사의 기공사업(`internalLab` 화면, 개인 기공소 없음). **돈**: 어벗츠가 수행한 기공·커스텀어벗·스토어는 치과 OB → **법인**. 다른 기공소가 수행한 기공만 그 기공소. 커스텀어벗 생산비는 법인 → 제조사·딜러·개발운영사. 법인↔개인 기공소 정액 청구(`corpPlatformFees`)는 쓰지 않는다. OB 집계는 `aggregatePracticeMonthUsage`(기공사업부 기공비는 `labDivisionAmount`로 법인 줄에 합산). 외부 수행은 두 종류:
     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠기공소 gross→수행 매입(플랫폼 사용료·하청 수수료 **미부과**, `CHARGE_LAB_PLATFORM_AND_SUBCONTRACT_FEES=false`). 치과 표시「어벗츠 · {파트너}」.
     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** 매입 공제 수수료는 미부과(휴면 정책 `subcontractFeeRate`+사용료는 `resolvePracticeTransferFeeRatePolicy`에 유지). 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
@@ -277,7 +283,7 @@
   - 의뢰비는 치과·기공소 모두 **어벗 1개당 15,000원 단일가**. 판매자(딜러·어벗츠, 영업팀 승인가)가 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
   - 분배(어벗 1개당, **부가세 포함**): 어벗츠 몫 **10,000** = 제조 **5,000**(50%) · 개발운영 **1,000**(10%) · 어벗츠 **4,000**(40%). 나머지 **판매자(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 판매자 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세 계산서)하고, 딜러·제조·개발운영에게는 부가세 포함으로 지급(세금계산서 ÷1.1). 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
   - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 커스텀어벗 의뢰하기 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
-  - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나(2026-10-13, §2.7). 거래처에게 배송비를 받지 않는다. **택배**: 제조사(애크로덴트)가 대납하고, 포장.발송 때 판매자 장부에서 박스당 택배비를 빼 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`). 딜러 없으면 어벗츠 판매자 몫(`REV_ADMIN`)에서 뺀다. 월 지급은 그 잔액. **딜리버리**: 판매자와 딜리버리사가 직접 계약한다. 어벗츠는 관여하지 않는다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
+  - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나(2026-10-13, §2.7). 거래처에게 배송비를 받지 않는다. **택배**: 배정 제조사가 대납하고, 포장.발송 때 판매자 장부에서 박스당 택배비를 빼 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`). 딜러 없으면 어벗츠 판매자 몫(`REV_ADMIN`)에서 뺀다. 월 지급은 그 잔액. **딜리버리**: 판매자와 딜리버리사가 직접 계약한다. 어벗츠는 관여하지 않는다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
   - **기공의뢰(PTX)**(`PRACTICE_TRANSFER_`*·디자인비 `ADJUST`·PTX 배송): 삭제·작업취소 시 원본 저널/라인 **물리 삭제**(과거 REFUND 쌍도 함께 삭제)
@@ -340,7 +346,7 @@
 
 ### 2.4 의뢰자 유형(발신/수신) · 가입/온보딩 · 기공의뢰서 전송
 
-- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorKind=practice`(의뢰 발신자)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
+- 가입 role SSOT: 공개 가입은 **requestor** | **salesman**만. 제조사(`manufacturer`)는 비공개 URL(`/signup/manufacturer?k=`)과 관리자 승인 뒤에만 쓴다. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorKind=practice`(의뢰 발신자)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
 - **네이밍 SSOT**: 발신(치과) 유형 식별자는 `practice`다. 예전 `clinic`과 동일 의미 — 코드/스키마에서 `clinic`이 발견되면 `practice`로 바꾼다.
   - `requestorCapabilities.practice` (레거시 키 `clinic`은 normalize·백필에서만 호환)
   - `clinicName`/`clinicPhone` 등 **연락처 필드**는 별도(점진 개명). filename-rule·묶음배송·Clinic CRUD 엔티티의 `clinic`은 해당 도메인 유지.

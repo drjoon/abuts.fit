@@ -218,6 +218,68 @@ export function normalizeImplantFields(caseInfos) {
   };
 }
 
+const ESPRIT_CONNECTION_DIR = path.resolve(
+  __dirname,
+  "../../..",
+  "bg/pc1/esprit-addin/AcroDent/2_Connection",
+);
+
+function koreanManufacturerLabel(canonical) {
+  const aliases = IMPLANT_MANUFACTURER_DEFS[canonical]?.aliases || [];
+  const kor = aliases.find((alias) => /[가-힣]/.test(String(alias || "")));
+  return kor || canonical;
+}
+
+/** 관리자 브랜드 매칭 행. PRC 파일은 읽기만 한다. */
+export function listImplantBrandRows() {
+  const seen = new Set();
+  const rows = [];
+  const push = (manufacturerRaw, brandRaw) => {
+    const implantManufacturer = normalizeImplantManufacturer(manufacturerRaw);
+    const implantBrand = normalizeImplantBrand(brandRaw, implantManufacturer);
+    const brandKey = getCanonicalManufacturerBrandKey(
+      implantManufacturer,
+      implantBrand,
+    );
+    if (!brandKey || seen.has(brandKey)) return;
+    seen.add(brandKey);
+    rows.push({
+      brandKey,
+      implantManufacturer,
+      implantBrand,
+      label: `${koreanManufacturerLabel(implantManufacturer)} ${implantBrand}`,
+    });
+  };
+
+  try {
+    const entries = fs.readdirSync(ESPRIT_CONNECTION_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const fileName = String(entry.name || "").trim();
+      const match = /^(.+?)_([^_]+?)_[A-Za-z0-9]{1,4}_Connection\.prc$/i.exec(
+        fileName,
+      );
+      if (!match) continue;
+      push(match[1], match[2]);
+    }
+  } catch {
+    // 카탈로그 폴더가 없으면 아래 별칭으로 채운다.
+  }
+
+  if (!rows.length) {
+    for (const [manufacturer, aliasMap] of Object.entries(
+      IMPLANT_BRAND_CANONICAL_ALIASES,
+    )) {
+      for (const brand of new Set(Object.values(aliasMap))) {
+        push(manufacturer, brand);
+      }
+    }
+  }
+
+  rows.sort((a, b) => a.label.localeCompare(b.label, "ko"));
+  return rows;
+}
+
 export function getCanonicalManufacturerBrandKey(manufacturer, brand) {
   const m = normalizeImplantManufacturer(manufacturer);
   const normalizedBrand = normalizeImplantBrand(brand, m);

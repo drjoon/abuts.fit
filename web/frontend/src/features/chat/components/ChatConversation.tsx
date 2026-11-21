@@ -26,7 +26,7 @@ const getRoleLabel = (role: string) => {
     case "practice":
       return getRequestorRoleBadgeLabel("practice");
     case "manufacturer":
-      return "애크로덴트(제조사)";
+      return "제조사";
     case "admin":
       return "관리자";
     default:

@@ -40,6 +40,11 @@ import {
   fixMissingBusinessAnchorId,
 } from "../../controllers/admin/admin.requests.controller.js";
 import {
+  getImplantProducerMatches,
+  saveImplantProducerMatches,
+  getManufacturerSignupLink,
+} from "../../controllers/admin/implantProducerMatch.controller.js";
+import {
   getAdminLowFinishLineWatch,
   setAdminLowFinishLineVerdict,
 } from "../../controllers/admin/lowFinishLineWatch.controller.js";
@@ -405,6 +410,9 @@ router.get("/requests", getAllRequests);
 router.get("/requests/:id", getRequestById);
 router.patch("/requests/:id/status", updateRequestStatus);
 router.patch("/requests/:id/assign", assignManufacturer);
+router.get("/implant-producer-matches", getImplantProducerMatches);
+router.put("/implant-producer-matches", saveImplantProducerMatches);
+router.get("/manufacturer-signup-link", getManufacturerSignupLink);
 router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 
 // 홈택스 장애로 보류된 사업자 검증(관리자 개입)

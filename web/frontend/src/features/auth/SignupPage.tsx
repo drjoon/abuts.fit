@@ -117,6 +117,12 @@ export const SignupPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const isManufacturerSignup = location.pathname.startsWith(
+    "/signup/manufacturer",
+  );
+  const manufacturerSignupToken = isManufacturerSignup
+    ? String(searchParams.get("k") || "").trim()
+    : "";
 
   // 온보딩을 중도에 그만두고 signup으로 다시 오면 위저드 진행 상태를 초기화
   useEffect(() => {
@@ -273,6 +279,7 @@ export const SignupPage = () => {
   }, [isSocialNewMode, searchParams]);
 
   const cardTitle = useMemo(() => {
+    if (isManufacturerSignup) return "제조사 가입";
     if (isWizardMode) {
       switch (wizardStep) {
         case 1:
@@ -298,7 +305,7 @@ export const SignupPage = () => {
     if (wizardStep === 3) return "계정 정보";
     if (wizardStep === 4) return "이메일 인증";
     return "완료";
-  }, [isSocialNewMode, isWizardMode, wizardStep]);
+  }, [isManufacturerSignup, isSocialNewMode, isWizardMode, wizardStep]);
 
   useEffect(() => {
     if (typeof referralCode !== "string") {
@@ -957,7 +964,10 @@ export const SignupPage = () => {
           name: formData.name,
           email: formData.email,
           password: formData.password,
-          role: signupRole,
+          role: isManufacturerSignup ? "manufacturer" : signupRole,
+          ...(isManufacturerSignup
+            ? { manufacturerSignupToken }
+            : {}),
           ...(effectiveReferralCode
             ? { referredByReferralCode: effectiveReferralCode }
             : {}),
@@ -984,8 +994,10 @@ export const SignupPage = () => {
         navigate("/dashboard", { replace: true });
       } else {
         toast({
-          title: "회원가입 완료",
-          description: "성공적으로 가입되었습니다. 로그인 페이지로 이동합니다.",
+          title: isManufacturerSignup ? "가입 신청을 접수했습니다" : "회원가입 완료",
+          description: isManufacturerSignup
+            ? "관리자 승인 후 로그인할 수 있습니다."
+            : "성공적으로 가입되었습니다. 로그인 페이지로 이동합니다.",
         });
         navigate("/login");
       }
@@ -1010,6 +1022,8 @@ export const SignupPage = () => {
     markSetupWizardRequired,
     navigate,
     signupRole,
+    isManufacturerSignup,
+    manufacturerSignupToken,
     socialInfo,
     toast,
     token,
@@ -1252,8 +1266,20 @@ export const SignupPage = () => {
             <CardContent className="px-4 pb-6 sm:px-6 sm:pb-8 md:px-8">
               {isWizardMode ? (
                 <>
-                  {wizardStep === 1 && (
+                  {wizardStep === 1 && isManufacturerSignup && !manufacturerSignupToken ? (
+                    <p className="text-sm text-white/80">
+                      제조사 가입 링크가 올바르지 않습니다.
+                      <br />
+                      관리자에게 링크를 다시 받아 주세요.
+                    </p>
+                  ) : null}
+                  {wizardStep === 1 && (!isManufacturerSignup || manufacturerSignupToken) && (
                     <div className="space-y-6">
+                      {isManufacturerSignup ? (
+                        <p className="text-sm text-white/70">
+                          신청 후 관리자 승인이 있어야 로그인할 수 있습니다.
+                        </p>
+                      ) : (
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
@@ -1284,6 +1310,7 @@ export const SignupPage = () => {
                           {getAppUserRoleLabel("salesman")}
                         </button>
                       </div>
+                      )}
                       {isSalesmanDisabled ? (
                         <p className="text-sm text-white/55">
                           소개 코드로는 의뢰자만 가입할 수 있습니다. 딜러 가입은
@@ -1312,6 +1339,7 @@ export const SignupPage = () => {
                           setSelectedMethod(null);
                           goSocialSignup("kakao");
                         }}
+                        hideSocial={isManufacturerSignup}
                         onEmailClick={() => {
                           setSelectedMethod("email");
                           setWizardStep(skipReferralCodeStep ? 3 : 2);

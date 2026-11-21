@@ -52,7 +52,7 @@ export const PARCEL_IS_DEFAULT_LINE = "택배는 기본입니다.";
 /** 딜리버리 적용 조건. 카드 제목이 이미 딜리버리일 때는 DELIVERY_CONDITION_LINE만 쓴다. */
 export const DELIVERY_APPLY_LINE = `딜리버리는 월 ${DELIVERY_MIN_MONTHLY_REQUESTS}건 이상이면 적용합니다.`;
 
-/** 판매자 정산. 제조사(애크로덴트)가 택배를 대납하고, 월 정산 때 판매자 몫에서 상계한다. */
+/** 판매자 정산. 배정 제조사가 택배를 대납하고, 월 정산 때 판매자 몫에서 상계한다. */
 export const PARCEL_DEALER_DEDUCT_LINE =
   "택배는 제조사가 대납한 뒤, 월 정산 때 판매자 몫에서 상계합니다.";
 

@@ -63,6 +63,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
+import { ImplantBrandProducerMatchDialog } from "./ImplantBrandProducerMatchDialog";
 import {
   approveProsthesisFeeItemRequest,
   dismissProsthesisFeeItemRequest,
@@ -746,6 +747,7 @@ export const AdminDashboardPage = () => {
     useState(false);
   const [machiningStatsDialogOpen, setMachiningStatsDialogOpen] =
     useState(false);
+  const [producerMatchDialogOpen, setProducerMatchDialogOpen] = useState(false);
   const [unsupportedAbutmentStatsDialogOpen, setUnsupportedAbutmentStatsDialogOpen] =
     useState(false);
   const [newConnectionRequestOpen, setNewConnectionRequestOpen] = useState(false);
@@ -2383,6 +2385,20 @@ export const AdminDashboardPage = () => {
               </DashTile>
               <DashTile
                 className={DASH_SPAN.c4}
+                title="임플란트 브랜드 · 생산 제조사"
+                onClick={() => setProducerMatchDialogOpen(true)}
+              >
+                <div className="flex min-h-full flex-col justify-end gap-0.5">
+                  <div className="truncate text-sm font-semibold text-slate-800">
+                    브랜드별 기본 · 대체
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    가동이 아니면 대체 제조사
+                  </p>
+                </div>
+              </DashTile>
+              <DashTile
+                className={DASH_SPAN.c4}
                 title="가공 통계"
                 icon={<BarChart3 className="h-4 w-4 text-muted-foreground" />}
                 onClick={() => setMachiningStatsDialogOpen(true)}
@@ -2800,6 +2816,12 @@ export const AdminDashboardPage = () => {
         period={period}
         token={token}
         onClose={() => setGrowthDetailMetric(null)}
+      />
+
+      <ImplantBrandProducerMatchDialog
+        open={producerMatchDialogOpen}
+        token={token}
+        onOpenChange={setProducerMatchDialogOpen}
       />
 
       <MachiningStatisticsModal

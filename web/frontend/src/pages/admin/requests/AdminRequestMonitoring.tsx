@@ -25,6 +25,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { Input } from "@/components/ui/input";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import {
@@ -228,9 +229,37 @@ export const AdminRequestMonitoring = () => {
   const [searchParams] = useSearchParams();
   const { period } = usePeriodStore();
   const { toast } = useToast();
+  const [stageReloadKey, setStageReloadKey] = useState(0);
+  const [producerOptions, setProducerOptions] = useState<
+    Array<{ ownerUserId: string; name: string; approved: boolean }>
+  >([]);
   const [opsRequests, setOpsRequests] = useState<any[]>([]);
   const [rndRequests, setRndRequests] = useState<any[]>([]);
   const [unmachinableRequests, setUnmachinableRequests] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void apiFetch<any>({
+      path: "/api/admin/implant-producer-matches",
+      method: "GET",
+      token,
+    }).then((res) => {
+      if (cancelled || !res.ok) return;
+      const rows = Array.isArray(res.data?.data?.manufacturers)
+        ? res.data.data.manufacturers
+        : [];
+      setProducerOptions(
+        rows.filter(
+          (row: { approved?: boolean; ownerUserId?: string }) =>
+            row.approved && row.ownerUserId,
+        ),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
   const initialQuery = String(searchParams.get("q") || "").trim();
   const focusRequestMongoId = String(
     searchParams.get("focusRequestMongoId") || "",
@@ -380,7 +409,14 @@ export const AdminRequestMonitoring = () => {
     return () => {
       canceled = true;
     };
-  }, [token, period]);
+  }, [token, period, stageReloadKey]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: ["request:stage-changed"],
+    delayMs: 250,
+    onMatch: () => setStageReloadKey((value) => value + 1),
+  });
 
   useEffect(() => {
     if (!token) return;
@@ -812,6 +848,59 @@ export const AdminRequestMonitoring = () => {
                             <p className="mt-0.5 truncate text-[11px] text-slate-500">
                               {orgLabel}
                             </p>
+                            {request.selfShipment?.trackingNumber ? (
+                              <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                                운송장 {request.selfShipment.trackingNumber}
+                              </p>
+                            ) : null}
+                            {stage === "준비" && producerOptions.length > 0 ? (
+                              <select
+                                className="mt-1 h-8 max-w-full rounded-md border border-slate-200 px-1 text-[11px]"
+                                value={String(
+                                  request.caManufacturer?._id ||
+                                    request.caManufacturer ||
+                                    "",
+                                )}
+                                onChange={(event) => {
+                                  const manufacturerId = event.target.value;
+                                  if (!manufacturerId || !token) return;
+                                  const chosen = producerOptions.find(
+                                    (row) => row.ownerUserId === manufacturerId,
+                                  );
+                                  void apiFetch<any>({
+                                    path: `/api/admin/requests/${request._id}/assign`,
+                                    method: "PATCH",
+                                    token,
+                                    jsonBody: { manufacturerId },
+                                  }).then((res) => {
+                                    if (!res.ok) {
+                                      toast({
+                                        title: "생산 제조사를 바꾸지 못했습니다",
+                                        description: res.data?.message,
+                                        variant: "destructive",
+                                      });
+                                      return;
+                                    }
+                                    patchRequestInBuckets(request._id, {
+                                      caManufacturer: {
+                                        _id: manufacturerId,
+                                        business: chosen?.name || "",
+                                      },
+                                    });
+                                  });
+                                }}
+                              >
+                                <option value="">생산 제조사</option>
+                                {producerOptions.map((row) => (
+                                  <option
+                                    key={row.ownerUserId}
+                                    value={row.ownerUserId}
+                                  >
+                                    {row.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                               <ShippingModeBadge source={request} size="sm" />
                               <span className="text-[11px] text-slate-400">

@@ -1340,6 +1340,13 @@ export async function updateReviewStatusByStage(req, res) {
         err.statusCode = 404;
         throw err;
       }
+      if (request.producerControl === "self") {
+        const err = new Error(
+          "자체 생산 의뢰는 제조사 화면에서 단계를 바꿉니다.",
+        );
+        err.statusCode = 409;
+        throw err;
+      }
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
 
