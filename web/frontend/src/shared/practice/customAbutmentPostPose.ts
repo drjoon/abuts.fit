@@ -25,37 +25,110 @@ function meanStation(rows: readonly ArchStation[]): ToothStation | null {
   return { v: sv / sw, u: su / sw, w: sw };
 }
 
-/** 2mm 간격으로 이어진 악궁에서도 가장 가까운 치아 하나만 집는다. */
-function nearestToothBand(side: readonly ArchStation[]): { mean: ToothStation; next: ToothStation | null } | null {
-  if (side.length === 0) return null;
-  const start = Math.abs(side[0]!.v);
-  const band = side.filter((s) => {
-    const av = Math.abs(s.v);
-    return av >= start - 0.8 && av <= start + 3.4;
-  });
-  const mean = meanStation(band);
-  if (!mean) return null;
-  const next = meanStation(
-    side.filter((s) => {
+/** 한쪽(근심 또는 원심)의 스테이션을 치아 폭(~5.8mm) 단위 밴드 목록으로 나눈다. */
+function splitSideTeeth(side: readonly ArchStation[]): ToothStation[] {
+  const out: ToothStation[] = [];
+  let remaining = side;
+  while (remaining.length > 0 && out.length < 4) {
+    const start = Math.abs(remaining[0]!.v);
+    const band = remaining.filter((s) => {
       const av = Math.abs(s.v);
-      return av > start + 3.4 && av <= start + 9.2;
-    }),
-  );
-  return { mean, next };
+      return av >= start - 0.8 && av <= start + 3.4;
+    });
+    const mean = meanStation(band);
+    if (mean) out.push(mean);
+    remaining = remaining.filter((s) => Math.abs(s.v) > start + 3.4);
+  }
+  return out;
 }
 
-function dropNearestTooth(side: readonly ArchStation[]): ArchStation[] {
-  if (side.length === 0) return [];
-  const start = Math.abs(side[0]!.v);
-  return side.filter((s) => Math.abs(s.v) > start + 3.4);
-}
+const ARCH_OUTLIER_MM = 1.25;
+const NOMINAL_ARCH_C2 = -0.0012;
 
-/** 반대편과 그다음 치아를 이은 선에서 1.55mm 넘게 벗어나면 그 치아는 부정교합으로 본다. */
-function offArchLine(tooth: ToothStation, anchor: ToothStation, far: ToothStation): boolean {
-  const dv = far.v - anchor.v;
-  if (Math.abs(dv) < 2.4) return false;
-  const pred = anchor.u + ((far.u - anchor.u) * (tooth.v - anchor.v)) / dv;
-  return Math.abs(tooth.u - pred) > 1.55;
+/**
+ * 악궁 내 여러 치아 중심 중 위치가 크게 벗어난 부정교합 치아를 제외한다.
+ * - 대합 악궁 힌트(refOffsetU, refSlope)가 있고 다수 치아가 힌트와 맞으면, 힌트에서 크게(> 2.0mm) 벗어난 치아를 먼저 제외한다.
+ * - 양쪽 치아와 멀리 있는 치아까지 포함해 다수결 합의 악궁(완만한 포물선)을 찾는다.
+ * - 한쪽에 2개 이상(정상 정렬), 반대쪽에 1개만 크게 벗어난 단독 부정교합 치아도 제외한다.
+ */
+function filterArchOutlierTeeth(
+  teeth: readonly ToothStation[],
+  opts?: { refSlope?: number | null; refOffsetU?: number | null },
+): ToothStation[] {
+  if (teeth.length < 3) return [...teeth];
+  const refSlope = opts?.refSlope != null && Number.isFinite(opts.refSlope) ? opts.refSlope : null;
+  const refOffsetU =
+    opts?.refOffsetU != null && Number.isFinite(opts.refOffsetU) ? opts.refOffsetU : null;
+
+  let pool: ToothStation[] = [...teeth];
+  if (refOffsetU != null) {
+    const s = refSlope ?? 0;
+    const consistent = pool.filter(
+      (t) => Math.abs(t.u - (refOffsetU + s * t.v + NOMINAL_ARCH_C2 * t.v * t.v)) <= 2.0,
+    );
+    if (consistent.length >= 2 && consistent.length < pool.length) {
+      pool = consistent;
+    }
+  }
+  if (pool.length < 3) return pool;
+
+  const predict = (a: ToothStation, b: ToothStation, v: number): { u: number; slope: number } => {
+    const dv = b.v - a.v;
+    const rawSlope = (b.u - a.u) / dv;
+    const slope = clamp(rawSlope, -TAN_20, TAN_20);
+    // 완만한 악궁 곡률(c2 <= 0)을 보정한 예측선: a, b를 통과하면서 양 끝이 약간 설측으로 휘는 곡선
+    const linearU = a.u + slope * (v - a.v);
+    const curve = NOMINAL_ARCH_C2 * (v - a.v) * (v - b.v);
+    return { u: linearU + curve, slope };
+  };
+
+  let bestInliers: ToothStation[] = [...pool];
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < pool.length; i += 1) {
+    for (let j = i + 1; j < pool.length; j += 1) {
+      const a = pool[i]!;
+      const b = pool[j]!;
+      const dv = Math.abs(b.v - a.v);
+      if (dv < 3.8) continue;
+      const rawSlope = (b.u - a.u) / (b.v - a.v);
+      if (Math.abs(rawSlope) > TAN_20 * 1.15) continue;
+
+      const inliers: ToothStation[] = [];
+      let errSqSum = 0;
+      for (const t of pool) {
+        const pred = predict(a, b, t.v);
+        const err = Math.abs(t.u - pred.u);
+        if (err <= ARCH_OUTLIER_MM) {
+          inliers.push(t);
+          errSqSum += err * err;
+        }
+      }
+      if (inliers.length < 2) continue;
+
+      const slopeAt0 = clamp(rawSlope, -TAN_20, TAN_20);
+      const uAt0 = predict(a, b, 0).u;
+      // 점수: (1) inlier 개수 최우선, (2) 대합 악궁 힌트 일관성, (3) 과도한 기울기 패널티, (4) 잔차·근접성
+      let score = inliers.length * 100;
+      if (refSlope != null) {
+        score -= Math.abs(slopeAt0 - refSlope) * 45;
+      }
+      if (refOffsetU != null) {
+        score -= Math.min(4.0, Math.abs(uAt0 - refOffsetU)) * 12;
+      }
+      score -= Math.abs(slopeAt0) * 18;
+      score -= (errSqSum / inliers.length) * 10;
+      const meanAbsV = inliers.reduce((s, t) => s + Math.abs(t.v), 0) / inliers.length;
+      score -= meanAbsV * 0.25;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestInliers = inliers;
+      }
+    }
+  }
+
+  return bestInliers;
 }
 
 function parabolaSagitta(
@@ -85,46 +158,47 @@ function parabolaSagitta(
 /**
  * 인접 치아 협설 중심을 이은 포물선의 v=0 접선(slope)과 협설 위치(offsetU).
  * 임플란트 원점을 통과한다고 가정하지 않는다.
+ * 악궁에서 크게 벗어난(부정교합) 치아는 단독 원심/근심 치아라도 제외한다.
  */
 export function localArchTangent(
   stations: readonly ArchStation[],
+  opts?: { refSlope?: number | null; refOffsetU?: number | null },
 ): { slope: number; offsetU: number } | null {
   const rows = stations.filter(
     (s) => s.w > 0 && Math.abs(s.v) >= 3.4 && Number.isFinite(s.u) && Number.isFinite(s.v),
   );
   if (rows.length === 0) return null;
-  let mesial = rows.filter((t) => t.v > 0).sort((a, b) => a.v - b.v);
-  let distal = rows.filter((t) => t.v < 0).sort((a, b) => b.v - a.v);
-  let bandM = nearestToothBand(mesial);
-  let bandD = nearestToothBand(distal);
-  if (bandM && bandD?.next && offArchLine(bandD.mean, bandM.mean, bandD.next)) {
-    distal = dropNearestTooth(distal);
-    bandD = nearestToothBand(distal);
-  }
-  if (bandD && bandM?.next && offArchLine(bandM.mean, bandD.mean, bandM.next)) {
-    mesial = dropNearestTooth(mesial);
-    bandM = nearestToothBand(mesial);
-  }
-  const nearM = bandM?.mean ?? null;
-  const nearD = bandD?.mean ?? null;
-  const teeth = rows;
+  const mesialRows = rows.filter((t) => t.v > 0).sort((a, b) => a.v - b.v);
+  const distalRows = rows.filter((t) => t.v < 0).sort((a, b) => b.v - a.v);
+  const mesialTeeth = splitSideTeeth(mesialRows);
+  const distalTeeth = splitSideTeeth(distalRows);
+  const allTeeth = [...mesialTeeth, ...distalTeeth];
+  if (allTeeth.length === 0) return null;
+
+  const cleanTeeth = filterArchOutlierTeeth(allTeeth, opts);
+  const cleanMesial = cleanTeeth.filter((t) => t.v > 0).sort((a, b) => a.v - b.v);
+  const cleanDistal = cleanTeeth.filter((t) => t.v < 0).sort((a, b) => b.v - a.v);
+  const nearM = cleanMesial[0] ?? null;
+  const nearD = cleanDistal[0] ?? null;
+
   if (nearM && nearD) {
     const dv = nearM.v - nearD.v;
     if (Math.abs(dv) < 3.8) return null;
     const slope = clamp((nearM.u - nearD.u) / dv, -TAN_20, TAN_20);
     const chordU = nearD.u + ((nearM.u - nearD.u) * (0 - nearD.v)) / dv;
     const half = Math.min(Math.abs(nearM.v), Math.abs(nearD.v));
-    const sagitta = parabolaSagitta(teeth, nearM, nearD, chordU, slope, half);
+    const sagitta = parabolaSagitta(cleanTeeth, nearM, nearD, chordU, slope, half);
     return { slope, offsetU: clamp(chordU + sagitta, -3.4, 3.4) };
   }
-  const sideRows = nearM ? mesial : distal;
-  const sideBand = nearestToothBand(sideRows);
-  const side = sideBand?.mean ?? null;
+  const sideTeeth = nearM ? cleanMesial : cleanDistal;
+  const side = sideTeeth[0] ?? null;
   if (!side) return null;
-  const next = sideBand?.next ?? null;
+  const next = sideTeeth[1] ?? null;
   if (!next || Math.abs(next.v - side.v) < 2.4) return { slope: 0, offsetU: clamp(side.u, -3.4, 3.4) };
   const slope = clamp((next.u - side.u) / (next.v - side.v), -TAN_20, TAN_20);
-  return { slope, offsetU: clamp(side.u + slope * (0 - side.v), -3.4, 3.4) };
+  // 편측 외삽 시 완만한 악궁 곡률(양 끝이 설측으로 휨)을 보정해 v=0 위치가 과도하게 직선 외삽되지 않게 한다.
+  const extrapU = side.u + slope * (0 - side.v);
+  return { slope, offsetU: clamp(extrapU, -3.4, 3.4) };
 }
 
 export type ArchCrownPoint = { v: number; u: number; h: number };
@@ -184,13 +258,31 @@ function windowPoints(
   return out;
 }
 
-function sideTooth(points: readonly ArchCrownPoint[], sign: 1 | -1): ToothCenter | null {
+function sideTooth(
+  points: readonly ArchCrownPoint[],
+  sign: 1 | -1,
+  archHint?: { slope: number | null; offsetU: number | null },
+): ToothCenter | null {
   const near = toothBlCenter(windowPoints(points, sign, 4.0, 11.4));
   const far = toothBlCenter(windowPoints(points, sign, 11.4, 19.0));
-  if (near && far && Math.abs(near.u - far.u) > 1.7) {
-    return far;
+  const refSlope = archHint?.slope ?? 0;
+  const refOffsetU = archHint?.offsetU ?? null;
+  const isOutlier = (t: ToothCenter | null): boolean => {
+    if (!t || refOffsetU == null) return false;
+    const pred = refOffsetU + refSlope * t.v + NOMINAL_ARCH_C2 * t.v * t.v;
+    return Math.abs(t.u - pred) > 1.55;
+  };
+  const validNear = near && !isOutlier(near) ? near : null;
+  const validFar = far && !isOutlier(far) ? far : null;
+  if (validNear && validFar && Math.abs(validNear.u - validFar.u) > 1.7) {
+    if (refOffsetU != null) {
+      const errNear = Math.abs(validNear.u - (refOffsetU + refSlope * validNear.v));
+      const errFar = Math.abs(validFar.u - (refOffsetU + refSlope * validFar.v));
+      return errNear <= errFar ? validNear : validFar;
+    }
+    return validFar;
   }
-  return near ?? far;
+  return validNear ?? validFar;
 }
 
 /**
@@ -276,21 +368,37 @@ export function proximalWallSlope(
 /**
  * 인접 치아 교두의 협설 중심(offsetU)과 회전(slope).
  * 회전은 악궁 접선과 인접 치아의 마주 보는 인접면 기울기를 함께 맞춘다.
- * 악궁에서 크게 어긋난(부정교합·회전된) 인접면은 빼고 나머지를 쓴다.
+ * 악궁에서 크게 어긋난(부정교합·회전된) 인접치·인접면은 빼고 나머지를 쓴다.
  */
 export function neighborCrownBlPose(
   points: readonly ArchCrownPoint[],
   archSlopeHint?: number | null,
+  archOffsetUHint?: number | null,
 ): { slope: number; offsetU: number; hasBothSides: boolean } | null {
-  const mesial = sideTooth(points, 1);
-  const distal = sideTooth(points, -1);
+  let archSlope: number | null =
+    archSlopeHint != null && Number.isFinite(archSlopeHint)
+      ? clamp(archSlopeHint, -TAN_20, TAN_20)
+      : null;
+  const archOffsetRef =
+    archOffsetUHint != null && Number.isFinite(archOffsetUHint) ? archOffsetUHint : null;
+
+  let mesial = sideTooth(points, 1, { slope: archSlope, offsetU: archOffsetRef });
+  let distal = sideTooth(points, -1, { slope: archSlope, offsetU: archOffsetRef });
+
+  const wallM = proximalWallSlope(points, 1, mesial?.u ?? archOffsetRef ?? 0);
+  const wallD = proximalWallSlope(points, -1, distal?.u ?? archOffsetRef ?? 0);
+
+  // 각도가 크게 돌아간(악궁과 15° 초과 어긋난) 부정교합 인접치는 회전뿐 아니라 위치 추정에서도 제외한다(정상 인접치가 있을 때).
+  const isBadAngle = (w: { slope: number; dist: number } | null): boolean =>
+    Boolean(w && archSlope != null && Math.abs(w.slope - archSlope) > Math.tan(15 * DEG));
+  const mesialBadAngle = isBadAngle(wallM);
+  const distalBadAngle = isBadAngle(wallD);
+  if (mesialBadAngle && (distal || archOffsetRef != null)) mesial = null;
+  if (distalBadAngle && (mesial || archOffsetRef != null)) distal = null;
+
   const hasBothSides = Boolean(mesial && distal);
 
-  let archSlope: number | null = archSlopeHint != null && Number.isFinite(archSlopeHint)
-    ? clamp(archSlopeHint, -TAN_20, TAN_20)
-    : null;
   let offsetU: number | null = null;
-
   if (mesial && distal) {
     const dv = mesial.v - distal.v;
     if (Math.abs(dv) >= 3.8) {
@@ -304,8 +412,6 @@ export function neighborCrownBlPose(
     offsetU = clamp(only.u - s * only.v, -3.4, 3.4);
   }
 
-  const wallM = proximalWallSlope(points, 1, mesial?.u ?? offsetU ?? 0);
-  const wallD = proximalWallSlope(points, -1, distal?.u ?? offsetU ?? 0);
   const walls: { slope: number; w: number }[] = [];
   for (const w of [wallM, wallD]) {
     if (!w) continue;
@@ -336,26 +442,84 @@ export function neighborCrownBlPose(
     slope = clamp(archSlope, -TAN_20, TAN_20);
   }
 
-  return { slope, offsetU: offsetU ?? 0, hasBothSides };
+  return { slope, offsetU: offsetU ?? archOffsetRef ?? 0, hasBothSides };
+}
+
+/**
+ * 대합 구치 교합면의 협측·설측 교두정(bucU, linU)과 외곽(uLo, uHi)에서
+ * 본 어벗 치아의 중심이 놓여야 할 교두 경사면 u 좌표를 계산한다.
+ * - 상악 어벗(예: #26): 하악 대합치(#36)의 협측 교두(bucU) 설측 경사면(중심구와 협측 교두정 사이).
+ * - 하악 어벗(예: #36): 상악 대합치(#26)의 설측 교두(linU) 설측 경사면(설측 교두정보다 약간 설측).
+ */
+export function opposingSlopeTargetU(args: {
+  jaw: "upper" | "lower";
+  uLo: number;
+  uHi: number;
+  bucU: number;
+  linU: number;
+}): { u: number; fossaU: number } {
+  const { jaw, uLo, uHi } = args;
+  const width = Math.max(1.0, uHi - uLo);
+  const mid = 0.5 * (uLo + uHi);
+  const bucU = clamp(args.bucU, mid + width * 0.12, uHi - width * 0.12);
+  const linU = clamp(args.linU, uLo + width * 0.12, mid - width * 0.12);
+  const third = width / 3;
+  const fossaU = clamp(0.5 * (bucU + linU), uLo + third, uHi - third);
+
+  if (jaw === "upper") {
+    // 하악 협측 교두(bucU)의 설측 경사면: 중심구(fossaU)와 협측 교두정(bucU) 사이
+    const raw = fossaU + (bucU - fossaU) * 0.55;
+    const u = clamp(raw, fossaU + 0.55, Math.min(bucU - 0.1, uHi - width * 0.16));
+    return { u, fossaU };
+  }
+  // 하악 어벗: 상악 설측 교두(linU)의 설측 경사면(linU에서 설측 외곽 uLo 쪽으로 약간)
+  const slopeStep = clamp((linU - uLo) * 0.25, 0.15, 0.5);
+  const raw = linU - slopeStep;
+  const u = clamp(raw, Math.max(uLo + 0.2, fossaU - 2.5), linU - 0.1);
+  return { u, fossaU };
 }
 
 /**
  * 악궁 연장선 근처에서 상악은 협측, 하악은 설측으로 둔다.
  * 대합 B가 그 악궁에서 많이 벗어나면 그 대합치는 쓰지 않는다.
- * 상악에서 대합 B가 같은 악 악궁보다 협측에 있으면 상악이 설측에 갇히지 않도록 대합 B 쪽으로 충분히 따라간다.
- * 하악은 같은 악 악궁과 대합 B(보다 약간 설측)를 균형 있게 맞춰 과도한 설측·협측 치우침을 막는다.
+ * contactIsFunctionalTarget=true이면 contactU가 이미 교두 경사면 목표 위치
+ * (상악: 하악 협측 교두 설측 경사면, 하악: 상악 설측 교두 설측 경사면)를 의미한다.
  */
 export function pickCompactFunctionalU(args: {
   jaw: "upper" | "lower";
   archU: number | null;
   contactU: number | null;
-  /** 넘기면 상악 협측·하악 설측 최소 이동을 이 값까지 보장한다. */
+  /** 넘기면 상악 협측·하악 설측 최소 이동을 이 값까지 보장한다(contactIsFunctionalTarget=false일 때). */
   biasMm?: number;
+  /** true이면 contactU 자체가 이미 교두 경사면 기준 목표 u 좌표다. */
+  contactIsFunctionalTarget?: boolean;
 }): number | null {
   const sign = args.jaw === "upper" ? 1 : -1;
   const slight = args.biasMm ?? 0.4;
   const { archU, contactU } = args;
   if (archU == null && contactU == null) return null;
+
+  if (args.contactIsFunctionalTarget) {
+    let target: number;
+    if (archU != null && contactU != null && Math.abs(contactU - archU) <= 2.8) {
+      // 대합 교두 경사면 목표(contactU)와 같은 악 인접치 중심구 악궁(archU)을 함께 반영한다.
+      // 상악은 더 협측, 하악은 더 설측인 방향(교합 관계 부합 방향)에 가중치를 더 준다.
+      const functionalSide = sign * (contactU - archU) >= 0;
+      const wContact = functionalSide ? 0.65 : 0.45;
+      target = archU * (1 - wContact) + contactU * wContact;
+    } else if (archU != null) {
+      target = archU;
+    } else {
+      target = contactU!;
+    }
+    const prefer = 2.2;
+    if (Math.abs(target) <= prefer) return target;
+    const pulled = Math.sign(target) * prefer;
+    const stillNear = Math.abs(target - pulled) <= 0.5;
+    const stillFunctional = archU == null || sign * (pulled - archU) >= -0.15;
+    if (stillNear && stillFunctional) return pulled;
+    return target;
+  }
 
   let target: number;
   if (archU != null && contactU != null && Math.abs(contactU - archU) <= 2.6) {

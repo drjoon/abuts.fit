@@ -5,6 +5,7 @@ import {
   clampLateralForCompactDiameter,
   localArchTangent,
   neighborCrownBlPose,
+  opposingSlopeTargetU,
   pickCompactFunctionalU,
   proximalWallSlope,
   type ArchCrownPoint,
@@ -188,4 +189,82 @@ test("직경이 커지는 이동은 목표 근처면 줄이고 멀면 그대로 
   assert.ok(Math.abs(near.u - 1.15) < 1e-9);
   const far = clampLateralForCompactDiameter(2.2, 0, 1.15, 0.55);
   assert.equal(far.u, 2.2);
+});
+
+test("원심 단독 치아가 설측으로 크게 벗어난 부정교합이면 제외하고 근심 악궁 연장선을 따른다", () => {
+  // #26 기준: 근심 #25(v=7), #24(v=14), #23(v=21)은 협측 아치에 정렬, 원심 #27/#28(v=-12)은 설측으로 크게 이탈
+  const fit = localArchTangent(
+    [tooth(-12, -2.1), tooth(7, 1.5), tooth(14, 1.3), tooth(21, 0.6)],
+    { refSlope: -0.02, refOffsetU: 1.5 },
+  );
+  assert.ok(fit);
+  assert.ok(fit.offsetU > 1.0 && fit.offsetU < 2.2, `expected ~1.6, got ${fit.offsetU}`);
+});
+
+test("치아 3개 중 원심 단독 치아가 대합 악궁 힌트와 어긋난 부정교합이면 제외한다", () => {
+  const fit = localArchTangent([tooth(-10, -2.0), tooth(7, 1.4), tooth(14, 1.3)], {
+    refSlope: 0,
+    refOffsetU: 1.4,
+  });
+  assert.ok(fit);
+  assert.ok(fit.offsetU > 1.0 && fit.offsetU < 2.0, `expected ~1.5, got ${fit.offsetU}`);
+});
+
+test("각도가 크게 돌아간 부정교합 인접치는 회전뿐 아니라 위치 추정에서도 제외한다", () => {
+  const pts = [
+    ...crown(-8, -1.8, 0), // 원심: 악궁과 어긋난 위치 + 회전
+    ...crown(8, 1.2, 0), // 근심: 정상 위치 + 정상 각도
+    ...proximalWall(-1, 4.5, -1.8, -0.45), // ~24° 돌아간 원심 치아
+    ...proximalWall(1, 4.5, 1.2, 0.02),
+  ];
+  const fit = neighborCrownBlPose(pts, 0, 1.2);
+  assert.ok(fit);
+  assert.ok(Math.abs(fit.slope) < 0.05);
+  assert.ok(fit.offsetU > 0.8 && fit.offsetU < 1.6, `expected ~1.2, got ${fit.offsetU}`);
+});
+
+test("상악 구치 중심은 대합 하악의 협측 교두 설측 경사면에 위치한다", () => {
+  // 대합 하악 #36: uLo=-3.6, linU=-2.2, fossaU=0, bucU=+2.2, uHi=+3.6
+  const res = opposingSlopeTargetU({
+    jaw: "upper",
+    uLo: -3.6,
+    uHi: 3.6,
+    bucU: 2.2,
+    linU: -2.2,
+  });
+  assert.ok(Math.abs(res.fossaU) < 0.05);
+  // 중심구(0)보다 협측이고, 협측 교두정(2.2)보다 설측인 협측 교두 설측 경사면
+  assert.ok(res.u > 1.0 && res.u < 2.0, `expected upper target on buccal cusp lingual slope, got ${res.u}`);
+});
+
+test("하악 구치 중심은 대합 상악의 설측 교두 설측 경사면에 위치한다", () => {
+  // 대합 상악 #26: uLo=-3.8, linU=-2.1, fossaU=0, bucU=+2.1, uHi=+3.8
+  const res = opposingSlopeTargetU({
+    jaw: "lower",
+    uLo: -3.8,
+    uHi: 3.8,
+    bucU: 2.1,
+    linU: -2.1,
+  });
+  assert.ok(Math.abs(res.fossaU) < 0.05);
+  // 상악 설측 교두정(-2.1)보다 약간 설측인 설측 교두 설측 경사면(uLo 안쪽)
+  assert.ok(res.u < -2.1 && res.u > -3.6, `expected lower target on lingual cusp lingual slope, got ${res.u}`);
+});
+
+test("contactIsFunctionalTarget 모드에서 상악·하악이 교두 경사면과 악궁곡선을 함께 반영한다", () => {
+  const upper = pickCompactFunctionalU({
+    jaw: "upper",
+    archU: 1.4,
+    contactU: 1.8,
+    contactIsFunctionalTarget: true,
+  });
+  assert.ok(upper != null && upper > 1.55 && upper < 1.85, `expected ~1.66, got ${upper}`);
+
+  const lower = pickCompactFunctionalU({
+    jaw: "lower",
+    archU: -1.2,
+    contactU: -1.8,
+    contactIsFunctionalTarget: true,
+  });
+  assert.ok(lower != null && lower < -1.45 && lower > -1.85, `expected ~-1.59, got ${lower}`);
 });

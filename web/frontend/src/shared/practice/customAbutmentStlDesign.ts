@@ -61,6 +61,7 @@ import {
   clampLateralForCompactDiameter,
   localArchTangent,
   neighborCrownBlPose,
+  opposingSlopeTargetU,
   pickCompactFunctionalU,
 } from "@/shared/practice/customAbutmentPostPose";
 import { cuffProfile } from "@/shared/practice/cuffProfile";
@@ -3126,16 +3127,24 @@ function opposingCenterPoint(
 }
 
 /**
- * 대합 교합면의 B 컨택(중심구).
- * 치관 외곽의 한가운데가 아니라, 협측·설측 교두끝 사이를 삼등분해 중앙 1/3에 둔다.
- * A·C(교두 사면)로는 나가지 않는다.
+ * 대합 교합면의 기능 교두 경사면 목표점과 중심구(fossaU).
+ * - 상악 어벗: 하악 대합치의 협측 교두 설측 경사면(중심구와 협측 교두정 사이).
+ * - 하악 어벗: 상악 대합치의 설측 교두 설측 경사면(설측 교두정보다 약간 설측).
+ * - jaw 미지정 시 기존과 동일하게 대합 중심구(B 컨택)를 반환한다.
+ * 반환 u, fossaU는 frame.uLabial 기준 좌표다.
  */
 function opposingBContactPoint(
   pts: Float32Array,
   c0: Vec3,
   frame: InsertionFrame,
-  opts?: { vCrownMm?: number; halfMdMm?: number; constrainMesiodistal?: boolean },
-): { u: number; v: number } | null {
+  opts?: {
+    vCrownMm?: number;
+    halfMdMm?: number;
+    constrainMesiodistal?: boolean;
+    jaw?: "upper" | "lower";
+    labSign?: 1 | -1;
+  },
+): { u: number; fossaU: number; v: number } | null {
   const field = buildOpposingHeightField(pts, c0, frame, 9.0);
   if (field.list.length < 12) return null;
   const vCrown = opts?.vCrownMm ?? 0;
@@ -3150,7 +3159,8 @@ function opposingBContactPoint(
   const table = pool.filter((c) => c.h <= minH + 2.5);
   if (table.length < 8) return null;
 
-  const us = table.map((c) => c.u).sort((a, b) => a - b);
+  const sign = opts?.labSign ?? 1;
+  const us = table.map((c) => c.u * sign).sort((a, b) => a - b);
   const vs = table.map((c) => c.v).sort((a, b) => a - b);
   const uLo = us[Math.floor(us.length * 0.1)]!;
   const uHi = us[Math.floor(us.length * 0.9)]!;
@@ -3158,27 +3168,56 @@ function opposingBContactPoint(
   if (width < 3.2) return null;
   const third = width / 3;
   const mid = 0.5 * (uLo + uHi);
-  let bucU = mid;
-  let bucH = Infinity;
-  let linU = mid;
-  let linH = Infinity;
+
+  let bucMinH = Infinity;
+  let linMinH = Infinity;
   for (const cell of table) {
-    if (cell.u >= mid) {
-      if (cell.h < bucH) {
-        bucH = cell.h;
-        bucU = cell.u;
-      }
-    } else if (cell.h < linH) {
-      linH = cell.h;
-      linU = cell.u;
+    const cu = cell.u * sign;
+    if (cu >= mid) {
+      if (cell.h < bucMinH) bucMinH = cell.h;
+    } else if (cell.h < linMinH) {
+      linMinH = cell.h;
     }
   }
-  const uB = clamp(0.5 * (bucU + linU), uLo + third, uHi - third);
+  let bucUSum = 0;
+  let bucCnt = 0;
+  let linUSum = 0;
+  let linCnt = 0;
+  for (const cell of table) {
+    const cu = cell.u * sign;
+    if (cu >= mid && cell.h <= bucMinH + 0.35) {
+      bucUSum += cu;
+      bucCnt += 1;
+    } else if (cu < mid && cell.h <= linMinH + 0.35) {
+      linUSum += cu;
+      linCnt += 1;
+    }
+  }
+  const bucU = bucCnt > 0 ? bucUSum / bucCnt : mid + width * 0.25;
+  const linU = linCnt > 0 ? linUSum / linCnt : mid - width * 0.25;
+
+  let uLab: number;
+  let fossaULab: number;
+  if (opts?.jaw) {
+    const target = opposingSlopeTargetU({
+      jaw: opts.jaw,
+      uLo,
+      uHi,
+      bucU,
+      linU,
+    });
+    uLab = target.u;
+    fossaULab = target.fossaU;
+  } else {
+    fossaULab = clamp(0.5 * (bucU + linU), uLo + third, uHi - third);
+    uLab = fossaULab;
+  }
+
   const vLo = vs[Math.floor(vs.length * 0.2)]!;
   const vHi = vs[Math.floor(vs.length * 0.8)]!;
   const vMid = 0.5 * (vLo + vHi);
   const vB = opts?.constrainMesiodistal ? vCrown * 0.75 + vMid * 0.25 : vCrown * 0.35 + vMid * 0.65;
-  return { u: uB, v: vB };
+  return { u: uLab * sign, fossaU: fossaULab * sign, v: vB };
 }
 
 /** 두 벡터 사이 각도를 t(0~1)만큼 돌린 방향. */
@@ -4288,7 +4327,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           }
         }
 
-        const jawLocal = localArchTangent(jawCenterStations);
+        const oppLocal = localArchTangent(oppCenterStations);
+        const expectedOverjetU = fixture.jaw === "upper" ? 1.35 : -1.35;
+        const jawLocal = localArchTangent(jawCenterStations, {
+          refSlope: oppLocal?.slope ?? null,
+          refOffsetU: oppLocal ? oppLocal.offsetU + expectedOverjetU : null,
+        });
         const slopeStations =
           jawCenterStations.length >= 2
             ? jawCenterStations
@@ -4297,9 +4341,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           [slopeStations, jawBuccalStations, oppCenterStations],
           -0.0009,
         );
-        const archHint = solvedJoint?.slope ?? jawLocal?.slope ?? null;
-        const crownPose = neighborCrownBlPose(jawCrownPts, archHint);
-        const oppLocal = localArchTangent(oppCenterStations);
+        const archHint = jawLocal?.slope ?? solvedJoint?.slope ?? null;
+        const crownPose = neighborCrownBlPose(jawCrownPts, archHint, jawLocal?.offsetU ?? null);
         const rotateBy = (slope: number) => {
           const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, slope)));
           const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
@@ -4318,9 +4361,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             } else {
               const diff = Math.abs(crownPose.offsetU - jawLocal.offsetU);
               if (diff > 1.0 && oppLocal) {
-                // 두 추정이 크게 갈리면 대합 악궁과 더 일관된 쪽을 우선한다.
-                const dJaw = Math.abs(jawLocal.offsetU - oppLocal.offsetU);
-                const dCrown = Math.abs(crownPose.offsetU - oppLocal.offsetU);
+                // 두 추정이 크게 갈리면 정상 교합 오버젯을 반영한 대합 악궁과 더 일관된 쪽을 우선한다.
+                const expectedJawU = oppLocal.offsetU + expectedOverjetU;
+                const dJaw = Math.abs(jawLocal.offsetU - expectedJawU);
+                const dCrown = Math.abs(crownPose.offsetU - expectedJawU);
                 const wJaw = dJaw <= dCrown ? 0.78 : 0.22;
                 jawArchOffsetU = jawLocal.offsetU * wJaw + crownPose.offsetU * (1 - wJaw);
               } else {
@@ -5146,6 +5190,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let axisSource: CustomAbutmentDesignMetrics["axisSource"] = "arch";
   /** 악궁 연장선·대합 B로 포스트 위치를 잡았으면 직경이 10mm 근처에 머물 각도까지 허용한다. */
   let anatomicalAxis = false;
+  let anatomicalFunctionalU: number | null = null;
   let neighborLockRad: number | null = null;
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
 
@@ -5255,65 +5300,48 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const labSignOcc = dot3(frameOccRef.uLabial, labXY) >= 0 ? 1 : -1;
       const mesSignOcc = dot3(frameOccRef.vSide, mesXY) >= 0 ? 1 : -1;
       let contactU: number | null = null;
+      let contactFossaU: number | null = null;
       if (opposingLocalPts.length > 0) {
         const bContact = opposingBContactPoint(opposingLocalPts, c0, frameOccRef, {
           vCrownMm: crownShiftMesMm * mesSignOcc,
           halfMdMm: crownHalfMd,
           constrainMesiodistal: hasProximalBound,
+          jaw: fixture.jaw,
+          labSign: labSignOcc,
         });
-        if (bContact) contactU = bContact.u * labSignOcc;
+        if (bContact) {
+          contactU = bContact.u * labSignOcc;
+          contactFossaU = bContact.fossaU * labSignOcc;
+        }
       }
-      // 바로 위 대합치가 다른 대합치 곡선에서 벗어나면 그 치아 대신 옆 대합치를 본다.
-      if (oppArchReady && (contactU == null || Math.abs(contactU - oppArchRelC0) > 1.7)) {
-        contactU = oppArchRelC0;
+      // 바로 위 대합치의 중심구(contactFossaU)가 대합 악궁 곡선(oppArchRelC0)에서 벗어나면
+      // 그 치아 대신 대합 악궁 기준 교두 경사면 위치를 쓴다.
+      const fallbackOppSlopeOffset = fixture.jaw === "upper" ? 1.35 : -1.55;
+      if (
+        oppArchReady &&
+        (contactU == null ||
+          contactFossaU == null ||
+          Math.abs(contactFossaU - oppArchRelC0) > 1.7)
+      ) {
+        contactU = oppArchRelC0 + fallbackOppSlopeOffset;
       }
       const archURel = archCenterReady ? jawArchRelC0 : null;
-      // 픽스쳐가 이미 악궁 중심·대합치보다 협측으로 식립/기울어진 경우(archURel < 0 또는 occU < -0.35),
-      // 상악 협측 추가 편향(biasMm)을 줄이고 대합 기능교두(하악 협측 교두 → 상악 중심구)도 함께 반영해 설측으로 세운다.
-      const buccalImplantShift = Math.max(
-        0,
-        -(archURel ?? 0),
-        contactU != null ? -(contactU + 0.35) : 0,
-        -occU * 0.55,
-      );
-      const baseBiasMm =
-        fixture.jaw === "upper"
-          ? tpl.kind === "molar"
-            ? 0.5
-            : 0.35
-          : tpl.kind === "molar"
-            ? 0.35
-            : 0.25;
-      const effBiasMm =
-        fixture.jaw === "upper" && buccalImplantShift > 0.25
-          ? Math.max(0.08, baseBiasMm - buccalImplantShift * 0.38)
-          : baseBiasMm;
-      let pickedU = pickCompactFunctionalU({
+      const pickedU = pickCompactFunctionalU({
         jaw: fixture.jaw,
         archU: archURel,
         contactU,
-        biasMm: effBiasMm,
+        contactIsFunctionalTarget: true,
       });
-      if (
-        pickedU != null &&
-        fixture.jaw === "upper" &&
-        contactU != null &&
-        buccalImplantShift > 0.35 &&
-        contactU + 0.35 < pickedU
-      ) {
-        // 상악 픽스쳐가 협측에 치우쳐 있을 때는 하악 협측 교두(contactU) + 0.35mm(상악 중심와) 쪽으로 설측 보정한다.
-        const fossaTargetU = contactU + 0.35;
-        pickedU = archURel != null ? pickedU * 0.55 + fossaTargetU * 0.45 : fossaTargetU;
-      }
       if (pickedU != null) {
+        anatomicalFunctionalU = pickedU;
         // pickedU는 마진 중심(c0)에서 교합축(frameOccRef) 기준 협설 오프셋이다.
-        // 임플란트 축이 협측 등으로 기울어 이머징할 때는 교합축 기울기(occU)를 더해 대합치·인접 악궁 방향으로 설측 절곡한다.
+        // 임플란트 축이 기울어 이머징할 때는 교합축 기울기(occU)를 더해 대합 교두 경사면·악궁 곡선으로 세운다.
         const targetLocalU = occU + pickedU;
         const maxLat = Math.tan(Math.min(tiltCapRad, 17.5 * DEG)) * H * 0.98;
         const uprightingBuccalImplant = occU < -0.35 && targetLocalU < -0.2;
         const compactU = uprightingBuccalImplant
           ? targetLocalU
-          : clampLateralForCompactDiameter(targetLocalU, 0, 1.65, 0.7).u;
+          : clampLateralForCompactDiameter(targetLocalU, 0, 2.15, 0.7).u;
         const buccalU = clamp(compactU, -maxLat, maxLat);
         let keepV = nearV;
         const roomV = Math.sqrt(Math.max(0, maxLat * maxLat - buccalU * buccalU));
@@ -5657,8 +5685,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let crownCenterU = 0;
   {
     const lim = labialLimitAt(frame.uLabial, contourH);
-    if (Number.isFinite(lim)) crownCenterU = Math.min(0, lim - natHalfBl);
-    crownCenterU = Math.max(crownCenterU, -Math.max(0, natHalfBl - postLabMin));
+    const minCrownU = -Math.max(0, natHalfBl - postLabMin);
+    if (posterior && anatomicalFunctionalU != null) {
+      const wOccLatU = (dot3(w, labXY) / Math.max(w[2], 0.25)) * tpl.postHeightMm;
+      const desiredU = clamp(anatomicalFunctionalU - wOccLatU * 0.45, -1.25, 1.25);
+      const maxCrownU = Number.isFinite(lim)
+        ? Math.min(1.25, Math.max(lim - natHalfBl, desiredU > 0 ? anatomicalFunctionalU * 0.5 : -Infinity))
+        : 1.25;
+      crownCenterU = clamp(desiredU, minCrownU, maxCrownU);
+    } else {
+      if (Number.isFinite(lim)) crownCenterU = Math.min(0, lim - natHalfBl);
+      crownCenterU = Math.max(crownCenterU, minCrownU);
+    }
   }
   const crownSideSign = dot3(frame.vSide, frame0.vSide) >= 0 ? 1 : -1;
   const mesialSignOnV = dot3(frame.vSide, mesXY) >= 0 ? 1 : -1;
@@ -6491,9 +6529,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : 0;
   const maxComfortShift = baseComfortShift + spaceExtraShift;
   let mCu = clamp(
-    crownCenterU * (posterior ? 0.32 : 0.38),
-    tpl.kind === "premolar" ? -0.18 : -0.65,
-    tpl.kind === "premolar" ? 0.28 : 0.65,
+    crownCenterU * (posterior ? 0.55 : 0.38),
+    tpl.kind === "premolar" ? -0.35 : -0.85,
+    tpl.kind === "premolar" ? 0.55 : 0.85,
   );
   const shiftGainV =
     spaceFillFactor > 0 && hasWideProximalSpace
