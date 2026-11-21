@@ -2232,6 +2232,7 @@ export async function holdPracticeTransferCredits({
       allowCreditOverdraft === false
         ? false
         : await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
+    const practiceOid = new Types.ObjectId(String(practiceAnchorId));
     let balance;
     if (!allowOverdraft) {
       balance = await computeBusinessCreditBalanceFromLedger({
@@ -2240,7 +2241,6 @@ export async function holdPracticeTransferCredits({
       });
     } else {
       // txn 안 LedgerLine aggregate는 Atlas에서 수 초. 후불은 스냅샷을 우선한다.
-      const practiceOid = new Types.ObjectId(String(practiceAnchorId));
       const snap = await BusinessCreditBalance.findOne({
         businessAnchorId: practiceOid,
       })
