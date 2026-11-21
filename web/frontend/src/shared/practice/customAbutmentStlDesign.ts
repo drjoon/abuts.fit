@@ -604,53 +604,48 @@ function compressOuterRadius(
   }
 }
 
-/** dot(p, n) ≥ offset 쪽 반공간을 reachMm 범위까지 덮는 닫힌 직육면체(바깥 법선) 삼각형 수프. */
-function halfSpaceBoxSoup(n: Vec3, offset: number, reachMm: number): Float32Array {
-  const t1 = norm3(cross3(n, Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
-  const t2 = cross3(n, t1);
-  const corner = (a: number, b: number, c: number): Vec3 =>
-    add3(add3(scale3(n, offset + a * reachMm * 2), scale3(t1, b * reachMm)), scale3(t2, c * reachMm));
-  const center = scale3(n, offset + reachMm);
-  const faces: Array<[Vec3, Vec3, Vec3, Vec3]> = [
-    [corner(0, -1, -1), corner(0, 1, -1), corner(0, 1, 1), corner(0, -1, 1)],
-    [corner(1, -1, -1), corner(1, 1, -1), corner(1, 1, 1), corner(1, -1, 1)],
-    [corner(0, -1, -1), corner(1, -1, -1), corner(1, -1, 1), corner(0, -1, 1)],
-    [corner(0, 1, -1), corner(1, 1, -1), corner(1, 1, 1), corner(0, 1, 1)],
-    [corner(0, -1, -1), corner(1, -1, -1), corner(1, 1, -1), corner(0, 1, -1)],
-    [corner(0, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(0, 1, 1)],
-  ];
-  const out: number[] = [];
-  for (const [a, b, c, d] of faces) {
-    const faceNormal = cross3(sub3(b, a), sub3(c, a));
-    const faceCenter = scale3(add3(add3(a, b), add3(c, d)), 0.25);
-    const outward = dot3(faceNormal, sub3(faceCenter, center)) > 0;
-    const quad = outward ? [a, b, c, a, c, d] : [a, c, b, a, d, c];
-    for (const p of quad) out.push(p[0], p[1], p[2]);
-  }
-  return new Float32Array(out);
-}
+type PeerSeparationPlane = {
+  toothNumber: string;
+  normal: Vec3;
+  offset: number;
+  midOffset: number;
+  shortMm: number;
+  maxSafeTopZ: number;
+  bridged: boolean;
+};
 
 /**
- * 같은 악 인접 어벗과 겹치지 않게 잘라낼 분리면(픽스쳐 로컬). 두 어벗이 같은 면을 쓴다.
- * - 면: 두 픽스쳐 원점의 중점을 지나고, 평균 픽스쳐 축에 수직인 원점 연결 방향이 법선.
+ * 같은 악 인접 어벗과 공유하는 엄밀 월드 분리면(픽스쳐 로컬).
+ * - 사후 불리언 절단 대신 단면·등폭 마진·커프 설계 단계에서 처음부터 이 분리면을 지켜,
+ *   전체 둘레 마진 폭이 균일하고 가로 단면이 급격히 꺾이지 않는 매끈한 볼록 곡선을 유지한다.
+ * - 면: 두 픽스쳐 원점 중점을 지나고 평균 픽스쳐 축에 수직인 원점 연결 방향이 법선.
  * - 각 어벗은 면에서 근원심 크라운 최소 두께만큼 물러나고, 수렴 픽스쳐는 체결 깊이만큼 더 띄운다.
- * - 스크류 벽·커넥션 쪽으로는 크라운 두께를 양보하지만, 면을 넘어 겹치지는 않는다. 양보한 양은 shortMm.
+ * - 장축이 강하게 수렴해 상방에서 스크류 벽+등폭 마진 여유가 부족하면 안전 포스트 상한(maxSafeTopZ)을 낮추고,
+ *   불가피하게 크라운 최소 두께를 양보한 양은 shortMm으로 기록하되 중점면(midOffset)은 절대 넘지 않는다.
  */
 function resolvePeerSeparationPlanes(args: {
   fixture: MatchedScanbodyFixture;
   neighbors: readonly MatchedScanbodyFixture[];
   crownMinMm: number;
   zLo: number;
+  zMargin: number;
   zHi: number;
+  minSafePostHeightMm: number;
+  frameW: Vec3;
+  minShoulderMm: number;
+  minTaperFloorMm: number;
   connectionTopZ: number;
   connectionKeepR: number;
   boreRadiusAtZ: (z: number) => number;
-}): Array<{ toothNumber: string; normal: Vec3; offset: number; shortMm: number }> {
+  isBridged?: (toothNumber: string) => boolean;
+}): PeerSeparationPlane[] {
   const pose = args.fixture.fixturePose;
   const ownOrigin = pose.origin as Vec3;
   const ownAxis = norm3(pose.axis as Vec3);
   const engageMm = Math.max(2.5, args.fixture.connectionSpec.l2Mm ?? 2.75);
-  const planes: Array<{ toothNumber: string; normal: Vec3; offset: number; shortMm: number }> = [];
+  const wn = args.frameW;
+  const axialCos = Math.max(wn[2], 0.35);
+  const planes: PeerSeparationPlane[] = [];
   for (const nb of args.neighbors) {
     if (nb.toothNumber === args.fixture.toothNumber || nb.jaw !== args.fixture.jaw) continue;
     let nbAxis = norm3(nb.fixturePose.axis as Vec3);
@@ -660,25 +655,107 @@ function resolvePeerSeparationPlanes(args: {
     const lateral = sub3(rel, scale3(avgAxis, dot3(rel, avgAxis)));
     const spacing = Math.hypot(...lateral);
     if (spacing < 1 || spacing > 16) continue;
-    const nWorld = scale3(lateral, 1 / spacing);
+    const lateralDir = scale3(lateral, 1 / spacing);
+    let nWorld = lateralDir;
+    const ownFdi = parseFdiTooth(args.fixture.toothNumber);
+    const nbFdi = parseFdiTooth(nb.toothNumber);
+    if (
+      ownFdi &&
+      nbFdi &&
+      ownFdi.digits[0] === nbFdi.digits[0] &&
+      Math.abs(ownFdi.pos - nbFdi.pos) === 1 &&
+      args.fixture.mesialDir &&
+      nb.mesialDir
+    ) {
+      const m1 =
+        dot3(args.fixture.mesialDir as Vec3, lateralDir) >= 0
+          ? (args.fixture.mesialDir as Vec3)
+          : scale3(args.fixture.mesialDir as Vec3, -1);
+      const m2 =
+        dot3(nb.mesialDir as Vec3, lateralDir) >= 0
+          ? (nb.mesialDir as Vec3)
+          : scale3(nb.mesialDir as Vec3, -1);
+      const mSum = add3(m1, m2);
+      const mOrtho = sub3(mSum, scale3(avgAxis, dot3(mSum, avgAxis)));
+      const mLen = Math.hypot(...mOrtho);
+      if (mLen > 1e-4) {
+        const archDir = scale3(mOrtho, 1 / mLen);
+        if (dot3(archDir, lateralDir) >= Math.cos(24 * DEG) && dot3(rel, archDir) >= 3.4) {
+          nWorld = norm3(add3(scale3(archDir, 0.85), scale3(lateralDir, 0.15)));
+        }
+      }
+    }
     const insertShiftMm = Math.max(0, dot3(ownAxis, nWorld)) * engageMm;
     let inset = Math.max(args.crownMinMm, insertShiftMm - args.crownMinMm);
     const normal = norm3(worldDirToFixtureLocal(nWorld, pose));
     const midOffset = dot3(worldPointToFixtureLocal(add3(ownOrigin, scale3(rel, 0.5)), pose), normal);
-    let shortMm = 0;
+    const nHoriz = Math.hypot(normal[0], normal[1]);
+    const wDotN = dot3(wn, normal);
+    const dirDotN = Math.sqrt(Math.max(0.25, 1 - wDotN * wDotN));
+    const marginStepN = (args.minShoulderMm + args.minTaperFloorMm) * dirDotN;
+
+    const minMarginNeedFromTop = (zTop: number) => {
+      const hSpan = Math.max(0, (zTop - args.zMargin) / axialCos);
+      const topDomeN = 0.08 * Math.max(0, normal[2]);
+      const topScrewN =
+        zTop * normal[2] +
+        topDomeN +
+        (args.boreRadiusAtZ(zTop) + MIN_POST_WALL_MM + 0.042) * nHoriz;
+      return topScrewN - hSpan * wDotN + marginStepN;
+    };
+
+    let maxSafeTopZ = Infinity;
+    const minAllowTopZ = args.zMargin + args.minSafePostHeightMm;
+    if (normal[2] > 0.04 && args.zHi > minAllowTopZ) {
+      // 먼저 크라운 최소 유격(inset)까지 지킬 수 있는 높이를 확인하고, 최소 포스트 높이 이하로 내려가면
+      // 중점면(midOffset - 0.024) 안에서 등폭 마진과 0.5mm 스크류 벽이 공존하는 높이까지만 낮춘다.
+      const limitWithInset = midOffset - inset - 0.016;
+      const limitHardMid = midOffset - 0.024;
+      const gentleFloorZ = Math.max(minAllowTopZ + 0.75, args.zMargin + 3.35);
+      if (minMarginNeedFromTop(args.zHi) > limitWithInset && minMarginNeedFromTop(gentleFloorZ) <= limitWithInset) {
+        let lo = gentleFloorZ;
+        let hi = args.zHi;
+        for (let it = 0; it < 18; it += 1) {
+          const mid = (lo + hi) * 0.5;
+          if (minMarginNeedFromTop(mid) <= limitWithInset) lo = mid;
+          else hi = mid;
+        }
+        maxSafeTopZ = lo;
+      } else if (minMarginNeedFromTop(args.zHi) > limitHardMid) {
+        let lo = minAllowTopZ;
+        let hi = args.zHi;
+        for (let it = 0; it < 20; it += 1) {
+          const mid = (lo + hi) * 0.5;
+          if (minMarginNeedFromTop(mid) <= limitHardMid) lo = mid;
+          else hi = mid;
+        }
+        maxSafeTopZ = lo;
+      }
+    }
+
+    const effZHi = Math.min(args.zHi, maxSafeTopZ);
+    let shortMm = Math.max(0, minMarginNeedFromTop(effZHi) - (midOffset - inset));
     const steps = 32;
     for (let s = 0; s <= steps; s += 1) {
-      const z = args.zLo + ((args.zHi - args.zLo) * s) / steps;
+      const z = args.zLo + ((effZHi - args.zLo) * s) / steps;
       const needR =
-        z <= args.connectionTopZ ? args.connectionKeepR : args.boreRadiusAtZ(z) + MIN_POST_WALL_MM;
-      shortMm = Math.max(shortMm, needR - (midOffset - inset - z * normal[2]));
+        z <= args.connectionTopZ
+          ? args.connectionKeepR * nHoriz
+          : z <= args.zMargin + 0.25
+            ? (args.boreRadiusAtZ(z) + MIN_POST_WALL_MM + args.minShoulderMm) * nHoriz
+            : (args.boreRadiusAtZ(z) + MIN_POST_WALL_MM + 0.028) * nHoriz;
+      shortMm = Math.max(shortMm, needR + z * normal[2] - (midOffset - inset));
     }
-    inset = Math.max(0, inset - shortMm);
+    shortMm = Math.max(shortMm, minMarginNeedFromTop(effZHi) - (midOffset - inset));
+    inset = Math.max(0.012, inset - shortMm);
     planes.push({
       toothNumber: nb.toothNumber,
       normal,
       offset: midOffset - inset,
+      midOffset,
       shortMm: Math.max(0, args.crownMinMm - inset),
+      maxSafeTopZ,
+      bridged: Boolean(args.isBridged?.(nb.toothNumber)),
     });
   }
   return planes;
@@ -3977,18 +4054,19 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
         const maxFlare = Math.tan((fTpl.anterior ? 40 : 45) * DEG);
         const estAnatMaxR = Math.min(
           fConeTopR + 2.4 * maxFlare,
-          Math.max(fTpl.naturalBlMm, fTpl.naturalMdMm) * 0.5,
+          Math.max(fTpl.maxMarginBlMm * 0.55, fTpl.naturalBlMm * 0.42),
         );
         let tx = wLocal[0] / wLocal[2];
         let ty = wLocal[1] / wLocal[2];
         let clampedLocal = false;
         // 전치(절치·견치)는 설측 사면으로 스크류 홀을 열 수 있으므로 360° 감싸기 기반 maxFreeTan으로 브리지 공통축을 묶지 않는다.
         if (!fTpl.anterior) {
+          const estWallH = Math.max(3.0, fTpl.postHeightMm - 0.45);
           const freeAllowShift = Math.max(
-            0.25,
-            estAnatMaxR - 0.22 - estSpanH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.06),
+            0.35,
+            estAnatMaxR - 0.22 - estWallH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.05),
           );
-          const maxFreeTan = freeAllowShift / estSpanH;
+          const maxFreeTan = freeAllowShift / estWallH;
           const curTanLen = Math.hypot(tx, ty);
           if (curTanLen > maxFreeTan + 1e-4) {
             const k = maxFreeTan / curTanLen;
@@ -4412,6 +4490,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let yawConfidence = 0.35;
   let jawArchOffsetU = 0;
   let archCenterReady = false;
+  let jawArchBothSides = false;
   let oppArchOffsetU = 0;
   let oppArchReady = false;
   {
@@ -4627,10 +4706,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           : ownFdi.pos === 7
             ? 18.5
             : ownFdi.pos === 6
-              ? 14.0
+              ? 16.5
               : ownFdi.pos === 5
-                ? 9.0
-                : 6.5;
+                ? 12.2
+                : 9.2;
       const vDistalOppMin = !ownFdi
         ? -16.0
         : ownFdi.pos === 8
@@ -4827,6 +4906,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             if (!crownPose.hasBothSides) {
               // 편측 외삽은 오차가 크므로 포물선 악궁 중심을 우선한다.
               jawArchOffsetU = jawLocal.offsetU;
+              jawArchBothSides = Boolean(jawLocal.hasBothSides);
             } else {
               const diff = Math.abs(crownPose.offsetU - jawLocal.offsetU);
               if (diff > 1.0 && oppLocal) {
@@ -4840,13 +4920,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 const wJaw = diff > 1.0 ? 0.72 : 0.55;
                 jawArchOffsetU = jawLocal.offsetU * wJaw + crownPose.offsetU * (1 - wJaw);
               }
+              jawArchBothSides = true;
             }
             archCenterReady = true;
           } else if (jawLocal) {
             jawArchOffsetU = jawLocal.offsetU;
+            jawArchBothSides = Boolean(jawLocal.hasBothSides);
             archCenterReady = true;
           } else if (crownPose) {
             jawArchOffsetU = crownPose.offsetU;
+            jawArchBothSides = Boolean(crownPose.hasBothSides);
             archCenterReady = true;
           }
         };
@@ -5727,9 +5810,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   /** 악궁·대합이 가리키는 협설/근원심 이동. 벽 타협 한도 안에서 이 값까지 포스트 중심을 맞춘다. */
   let idealOpposingOffsetU: number | null = null;
   let idealOpposingOffsetV: number | null = null;
+  let targetArchRelC0U: number | null = null;
   let neighborLockRad: number | null = null;
   /** 자동 세 요소 축. 구치 상단을 픽스쳐 중심으로 되돌리는 비율을 느슨히 한다. */
   let occlusalAxisLed = false;
+  const fixtureOccTiltRad = Math.acos(clamp(Math.abs(occInFix[2]), -1, 1));
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
   const explicitSource = Math.round(Number(params.axisSourceCode));
   const autoInsertionAxis = explicitSource !== 0 && explicitSource !== 1 && explicitSource !== 2;
@@ -5786,17 +5871,33 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
       const fallbackOppSlopeOffset = fixture.jaw === "upper" ? 1.35 : -1.55;
       if (
+        !jawArchBothSides &&
         oppArchReady &&
         (contactU == null || contactFossaU == null || Math.abs(contactFossaU - oppArchRelC0) > 1.7)
       ) {
         contactU = oppArchRelC0 + fallbackOppSlopeOffset;
       }
-      const pickedU = pickCompactFunctionalU({
-        jaw: fixture.jaw,
-        archU: archCenterReady ? jawArchRelC0 : null,
-        contactU,
-        contactIsFunctionalTarget: true,
-      });
+      let pickedU: number | null = null;
+      const implantDisplacedFromArch =
+        archCenterReady &&
+        jawArchBothSides &&
+        Math.abs(jawArchRelC0) >= 0.6 &&
+        c0OccShiftU * jawArchRelC0 < -0.1;
+      if (implantDisplacedFromArch) {
+        // 식립 위치·각도(c0OccShiftU)가 양옆 인접 자연치(#23·#26 등) 악궁 중심선에서 협설로 벗어난 경우,
+        // 인접치 악궁 중심선을 잇는 위치를 주 기준으로 삼는다.
+        pickedU =
+          contactU != null && Math.abs(contactU - jawArchRelC0) <= 1.15
+            ? jawArchRelC0 * 0.82 + contactU * 0.18
+            : jawArchRelC0;
+      } else {
+        pickedU = pickCompactFunctionalU({
+          jaw: fixture.jaw,
+          archU: archCenterReady ? jawArchRelC0 : null,
+          contactU,
+          contactIsFunctionalTarget: true,
+        });
+      }
       if (pickedU != null) {
         crownLabMm = clamp(pickedU, -2.4, 2.4);
         anatomicalFunctionalU = pickedU;
@@ -5852,8 +5953,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         crownLabMm = clamp(crownLabMm * 0.25 + anatomicalLabMm * 0.75, -2.4, 2.4);
       }
     }
-    const wCrown = axisTowardCrownCenter(wOcc, labDirAxis, vMesAxis, crownLabMm, crownMesMm, H);
+    const axisCrownLabMm =
+      posterior && crownLabMm < 0 ? crownLabMm * 0.32 : crownLabMm;
+    const wCrown = axisTowardCrownCenter(wOcc, labDirAxis, vMesAxis, axisCrownLabMm, crownMesMm, H);
     if (posterior) {
+      targetArchRelC0U = crownLabMm;
       const crownLabOff = (dot3(wCrown, labXY) / Math.max(wCrown[2], 0.25)) * H;
       if (Math.abs(crownLabOff) > 0.12) idealOpposingOffsetU = crownLabOff;
       if (anatomicalFunctionalV != null) {
@@ -5908,7 +6012,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
 
-    const steerCap = posterior ? Math.min(tiltCapRad, 12.5 * DEG) : tiltCapRad;
+    const posteriorUprightCap = Math.min(
+      Math.max(tiltCapRad, mode.probeAxis ? 17.5 * DEG : tiltCapRad),
+      Math.max(12.5 * DEG, fixtureOccTiltRad + 2.0 * DEG),
+    );
+    const steerCap = posterior ? posteriorUprightCap : tiltCapRad;
     w = steerAxisForProximalClearance(
       w,
       steerCap,
@@ -6347,7 +6455,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     w = norm3(top);
   }
   const effectiveTiltCapRad = posterior
-    ? Math.min(tiltCapRad, (anatomicalAxis ? 12.5 : 9.5) * DEG)
+    ? Math.min(
+        Math.max(tiltCapRad, mode.probeAxis ? 17.5 * DEG : tiltCapRad),
+        Math.max((anatomicalAxis ? 12.5 : 9.5) * DEG, anatomicalAxis ? fixtureOccTiltRad + 2.0 * DEG : 9.5 * DEG),
+      )
     : tiltCapRad;
   // 브리지·인접 평행 그룹(groupAxisWorld)은 이미 그룹 전체 각도 상한 안에서 공통 월드 축으로 맞췄으므로,
   // 치아마다 따로 capTilt·allowRatio로 꺾지 않아 모든 지대주 포스트가 완전히 같은 각도로 평행해진다.
@@ -6848,39 +6959,76 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ownFdi.digits[0] === otherDigits[0]
     );
   };
-  const crownMid = add3(c0, scale3(frame.w, 1.8));
-  const planes = neighbors.map((nb) => {
-    const nbEstMarginZ = clamp((nb.gingivaFloorMm || meanMarginZ) - 0.5, 1.5, 6.5);
-    const nbC0 = add3(nb.origin, scale3(nb.axis, nbEstMarginZ));
-    const nbMid = add3(nbC0, scale3(frame.w, 1.8));
-    let n = sub3(nbMid, crownMid);
-    n = sub3(n, scale3(frame.w, dot3(n, frame.w)));
-    return {
-      point: scale3(add3(crownMid, nbMid), 0.5),
-      normal: norm3(n),
-      bridged: isBridgeLinkedWithOwn(nb.toothNumber),
-    };
+  const peerHexFlatR = (conn.hexSizeMm || conn.originDiameterMm * 0.72) / 2;
+  const peerHexCornerR = conn.hexSizeMm ? (peerHexFlatR / Math.cos(Math.PI / 6)) * 0.982 : peerHexFlatR;
+  const peerConnectionKeepR = Math.max(peerHexCornerR, coneTopR) + 0.04;
+  const peerZBot = -(conn.l2Mm || 2.5);
+  const peerEstAxialCos = Math.max(frame.w[2], 0.35);
+  const peerActualMaxTopH = Math.max(
+    postTopH,
+    Number.isFinite(naturalTopH) ? Math.min(naturalTopH, postTopH + 8.0) : postTopH,
+  );
+  const peerEstTopZ = meanMarginZ + Math.max(minSafePostHeightMm, peerActualMaxTopH) / peerEstAxialCos;
+  const peerEstBore = resolveScrewChannelProfile(conn, peerEstTopZ);
+  const peerMinShoulderFloor = clamp(shoulderW * 0.62, 0.24, 0.34);
+  const peerMinTaperFloor = 0.05;
+  const peerPlanes = resolvePeerSeparationPlanes({
+    fixture,
+    neighbors: args.neighbors ?? [],
+    crownMinMm: crownWallStd.proximalMinMm,
+    zLo: peerZBot,
+    zMargin: meanMarginZ,
+    zHi: peerEstTopZ,
+    minSafePostHeightMm: minSafePostHeightMm / peerEstAxialCos,
+    frameW: frame.w,
+    minShoulderMm: peerMinShoulderFloor,
+    minTaperFloorMm: peerMinTaperFloor,
+    connectionTopZ: coneTopZ,
+    connectionKeepR: peerConnectionKeepR,
+    boreRadiusAtZ: (z) => peerEstBore.radiusAtZ(z),
+    isBridged: isBridgeLinkedWithOwn,
   });
+  let peerMaxPostTopH = Infinity;
+  for (const pl of peerPlanes) {
+    if (Number.isFinite(pl.maxSafeTopZ)) {
+      peerMaxPostTopH = Math.min(
+        peerMaxPostTopH,
+        Math.max(minSafePostHeightMm, (pl.maxSafeTopZ - meanMarginZ) * peerEstAxialCos),
+      );
+    }
+  }
   const planeLimitAt = (dir: Vec3, h: number) => {
     let lim = Infinity;
     const base = add3(c0, scale3(frame.w, h));
-    for (const pl of planes) {
+    for (const pl of peerPlanes) {
       const dn = dot3(dir, pl.normal);
       if (dn <= 1e-4) continue;
-      lim = Math.min(lim, dot3(sub3(pl.point, base), pl.normal) / dn);
+      lim = Math.min(lim, (pl.midOffset - dot3(base, pl.normal)) / dn);
     }
     return lim;
   };
-  // 이웃 크라운 경계면에서 벽 두께(insetMm)만큼 평행 이동한 내부 평면까지의 거리(볼록성 보존 평면 한계).
+  const peerSafeLimitAt = (dir: Vec3, h: number, safetyEps = 0.01) => {
+    let lim = Infinity;
+    const base = add3(c0, scale3(frame.w, h));
+    for (const pl of peerPlanes) {
+      const dn = dot3(dir, pl.normal);
+      if (dn <= 1e-4) continue;
+      lim = Math.min(lim, (pl.offset - safetyEps - dot3(base, pl.normal)) / dn);
+    }
+    return lim;
+  };
+  // 이웃 크라운 경계면(중점면 pl.midOffset)에서 벽 두께(insetMm)만큼 평행 이동한 내부 평면까지의 거리(볼록성 보존 평면 한계).
   const postPlaneLimitAt = (dir: Vec3, h: number, bridgedInsetMm: number, singleInsetMm: number) => {
     let lim = Infinity;
     const base = add3(c0, scale3(frame.w, h));
-    for (const pl of planes) {
+    for (const pl of peerPlanes) {
       const dn = dot3(dir, pl.normal);
       if (dn <= 1e-4) continue;
-      const dPerp = dot3(sub3(pl.point, base), pl.normal);
+      const dMid = pl.midOffset - dot3(base, pl.normal);
+      const dSafe = pl.offset - 0.012 - dot3(base, pl.normal);
       const inset = pl.bridged ? bridgedInsetMm : singleInsetMm;
-      lim = Math.min(lim, Math.max(0.85, dPerp - inset) / dn);
+      const dUse = Math.min(dSafe, Math.max(dMid - inset, Math.min(dSafe, dMid - 0.02)));
+      lim = Math.min(lim, Math.max(0.85, dUse) / dn);
     }
     return lim;
   };
@@ -7380,7 +7528,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 oppRefH - refClear,
               )
           : noOppTop;
-    const bounded = Math.max(minSafePostHeightMm, rawRef);
+    const bounded = Math.min(peerMaxPostTopH, Math.max(minSafePostHeightMm, rawRef));
     if (incisorRef != null) {
       return Number.isFinite(incisorTableH)
         ? Math.min(bounded, Math.max(minSafePostHeightMm, incisorTableH - CROWN_THICKNESS_FLOOR_MM))
@@ -7404,31 +7552,95 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const estHTop = Math.max(2.6, refBasePostTopH - topRoundMm * 0.85);
     const estSpan = Math.max(0.8, estHTop - refBaseChamfer.height);
     const estTaper = refBaseTaperSlope * estSpan;
-    const estWall = boreTopR + SCREW_WALL_MM;
     const estUScrewTop = (estHTop / estAxCos) * frame.uLabial[2];
     const estVScrewTop = (estHTop / estAxCos) * frame.vSide[2];
     const estUScrewBase = (refBaseChamfer.height / estAxCos) * frame.uLabial[2];
     const estVScrewBase = (refBaseChamfer.height / estAxCos) * frame.vSide[2];
-    const needMarginPosU = Math.max(estUScrewBase + estWall, estUScrewTop + estWall + estTaper) + shoulderW;
-    const needMarginNegU = Math.max(-estUScrewBase + estWall, -estUScrewTop + estWall + estTaper) + shoulderW;
-    const needMarginPosV = Math.max(estVScrewBase + estWall, estVScrewTop + estWall + estTaper) + shoulderW;
-    const needMarginNegV = Math.max(-estVScrewBase + estWall, -estVScrewTop + estWall + estTaper) + shoulderW;
-    const curPosU = mCu + mHalfBl;
-    const curNegU = -mCu + mHalfBl;
+    const hasSameJawArchLine = archCenterReady && jawArchBothSides;
+    const hasLingualArchGoal =
+      !hasManualAxisShift &&
+      hasSameJawArchLine &&
+      targetArchRelC0U != null &&
+      targetArchRelC0U < -0.12 &&
+      estUScrewTop > 0.1;
+    const hasBuccalArchGoal =
+      !hasManualAxisShift &&
+      hasSameJawArchLine &&
+      targetArchRelC0U != null &&
+      targetArchRelC0U > 0.12 &&
+      estUScrewTop < -0.1;
+    const estPosWallU = hasLingualArchGoal
+      ? boreTopR + POSTERIOR_POST_WALL_MIN_MM + 0.04
+      : boreTopR + SCREW_WALL_MM;
+    const estNegWallU = hasBuccalArchGoal
+      ? boreTopR + POSTERIOR_POST_WALL_MIN_MM + 0.04
+      : boreTopR + SCREW_WALL_MM;
+    const estWallV = boreTopR + SCREW_WALL_MM;
+    const estShoulderPosU = hasLingualArchGoal ? Math.max(0.28, shoulderW * 0.8) : shoulderW;
+    const estShoulderNegU = hasBuccalArchGoal ? Math.max(0.28, shoulderW * 0.8) : shoulderW;
+    const needMarginPosU =
+      Math.max(estUScrewBase + estPosWallU, estUScrewTop + estPosWallU + estTaper) + estShoulderPosU;
+    const needMarginNegU =
+      Math.max(-estUScrewBase + estNegWallU, -estUScrewTop + estNegWallU + estTaper) + estShoulderNegU;
+    const needMarginPosV = Math.max(estVScrewBase + estWallV, estVScrewTop + estWallV + estTaper) + shoulderW;
+    const needMarginNegV = Math.max(-estVScrewBase + estWallV, -estVScrewTop + estWallV + estTaper) + shoulderW;
+    if (!hasManualAxisShift && hasSameJawArchLine && targetArchRelC0U != null && Math.abs(targetArchRelC0U) > 0.1) {
+      const wOccInit: Vec3 = occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix);
+      const frOccInit = insertionFrame(wOccInit, labXY);
+      const labSignInit = dot3(frOccInit.uLabial, labXY) >= 0 ? 1 : -1;
+      const uOccInit = scale3(frOccInit.uLabial, labSignInit);
+      const wShiftMidInit =
+        (dot3(frame.w, uOccInit) / Math.max(dot3(frame.w, wOccInit), 0.25)) * (tpl.postHeightMm * 0.55);
+      const archGoalCu = clamp(targetArchRelC0U - wShiftMidInit, -1.05, 1.05);
+      if (archGoalCu < -0.08) {
+        const tightPos = Math.min(maxAnatHalfBl + 1.05, Math.max(minMarginRadius, needMarginPosU));
+        const maxArchNeg = maxAnatHalfBl + Math.min(1.05, Math.max(0.35, -archGoalCu + 0.32));
+        const wantNeg = clamp(
+          Math.max(needMarginNegU, tightPos - 2 * archGoalCu),
+          Math.max(minMarginRadius, mHalfBl * 0.92),
+          maxArchNeg,
+        );
+        mCu = clamp((tightPos - wantNeg) * 0.5, -1.15, 1.15);
+        mHalfBl = clamp((tightPos + wantNeg) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl + 0.85);
+      } else if (archGoalCu > 0.08) {
+        const tightNeg = Math.min(maxAnatHalfBl + 1.05, Math.max(minMarginRadius, needMarginNegU));
+        const maxArchPos = maxAnatHalfBl + Math.min(1.05, Math.max(0.35, archGoalCu + 0.32));
+        const wantPos = clamp(
+          Math.max(needMarginPosU, tightNeg + 2 * archGoalCu),
+          Math.max(minMarginRadius, mHalfBl * 0.92),
+          maxArchPos,
+        );
+        mCu = clamp((wantPos - tightNeg) * 0.5, -1.15, 1.15);
+        mHalfBl = clamp((wantPos + tightNeg) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl + 0.85);
+      } else {
+        const curPosU = mCu + mHalfBl;
+        const curNegU = -mCu + mHalfBl;
+        const nextPosU = Math.max(curPosU, Math.min(maxAnatHalfBl + 1.05, needMarginPosU));
+        const nextNegU = Math.max(curNegU, Math.min(maxAnatHalfBl + 1.05, needMarginNegU));
+        mCu = clamp((nextPosU - nextNegU) * 0.5, -1.15, 1.15);
+        mHalfBl = clamp((nextPosU + nextNegU) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl + 0.45);
+      }
+    } else {
+      const curPosU = mCu + mHalfBl;
+      const curNegU = -mCu + mHalfBl;
+      const nextPosU = Math.max(curPosU, Math.min(maxAnatHalfBl + 1.05, needMarginPosU));
+      const nextNegU = Math.max(curNegU, Math.min(maxAnatHalfBl + 1.05, needMarginNegU));
+      mCu = clamp((nextPosU - nextNegU) * 0.5, -1.15, 1.15);
+      mHalfBl = clamp((nextPosU + nextNegU) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl + 0.45);
+    }
     const curPosV = mCv + mHalfMd;
     const curNegV = -mCv + mHalfMd;
-    const nextPosU = Math.max(curPosU, Math.min(maxAnatHalfBl + 1.05, needMarginPosU));
-    const nextNegU = Math.max(curNegU, Math.min(maxAnatHalfBl + 1.05, needMarginNegU));
     const nextPosV = Math.max(curPosV, Math.min(maxAnatHalfMd + 1.05, needMarginPosV));
     const nextNegV = Math.max(curNegV, Math.min(maxAnatHalfMd + 1.05, needMarginNegV));
-    mCu = clamp((nextPosU - nextNegU) * 0.5, -1.15, 1.15);
-    mHalfBl = clamp((nextPosU + nextNegU) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl + 0.45);
     mCv = clamp((nextPosV - nextNegV) * 0.5, -1.15, 1.15);
     mHalfMd = clamp((nextPosV + nextNegV) * 0.5, minMarginRadius + 0.08, maxAnatHalfMd + 0.45);
   }
 
   const marginCap: number[] = [];
   const marginPlaneCap: number[] = [];
+  const marginCapObsDu: number[] = [];
+  const marginCapObsDv: number[] = [];
+  const marginCapCos: number[] = [];
   const colDuFix: number[] = [];
   const colDvFix: number[] = [];
   const colProjScale: number[] = [];
@@ -7447,16 +7659,35 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     colProjScale.push(projLen);
 
     const cuffHardMaxR = coneTopR + Math.max(2.15, localMarginZ - coneTopZ) * maxFlareSlope;
-    const limPlane = planeLimitAt(dirInFrame, localMarginZ - meanMarginZ);
-    // 인접 픽스쳐와 간격이 넓으면 권장 측면 두께 반유격(1.0mm, 양쪽 합 2.0mm)을 두고, 픽스쳐가 바짝 붙어 있어도
-    // 최소 물리 유격(반유격 0.5mm, 양쪽 합 ≥ 1.0mm = 최소 측면 두께×2)은 절대 침범하지 않아 정체결 간섭을 원천 차단한다.
+    const hMarginCol = (localMarginZ - meanMarginZ) * frame.w[2];
+    const limPlane = planeLimitAt(dirInFrame, hMarginCol);
+    const limPeerSafe = peerSafeLimitAt(dirInFrame, hMarginCol, 0.01);
+    let bestPl: PeerSeparationPlane | null = null;
+    let bestPlLim = Infinity;
+    let bestPlCos = 1;
+    for (const pl of peerPlanes) {
+      const denom = dot3(dirInFrame, pl.normal);
+      if (denom <= 0.08) continue;
+      const num = pl.offset - dot3(add3(c0, scale3(frame.w, hMarginCol)), pl.normal);
+      const rLim = num / denom;
+      if (rLim < bestPlLim) {
+        bestPlLim = rLim;
+        bestPl = pl;
+        bestPlCos = clamp(denom, 0.25, 1);
+      }
+    }
+    // 인접 픽스쳐와 간격이 넓으면 권장 측면 두께 반유격(1.0mm)을 두고, 좁아지면 공통 분리면(limPeerSafe)까지
+    // 매끈한 단면·등폭 마진을 유지하며 수렴시켜 사후 직선 절단 없이도 인접 어벗과 절대 겹치지 않게 한다.
     let planeMarginCap = Infinity;
-    if (Number.isFinite(limPlane)) {
-      const minPairGapHalf = MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM * 0.5;
-      const hardPhysicalCap = Math.max(boreTopR + 0.34, limPlane - minPairGapHalf);
+    if (Number.isFinite(limPlane) || Number.isFinite(limPeerSafe)) {
+      const hardPhysicalCap = Math.max(boreTopR + 0.34, limPeerSafe);
+      // limPlane은 이미 인접 크라운 최소 두께(0.5mm × 양쪽 = 1.0mm)가 반영된 분리면 한계이므로,
+      // 간격이 아주 넉넉할 때(limPlane > minMarginRadius + 0.65)만 소폭(0.18mm) 여유를 더 두고 협소 간격에서는 이중 차감하지 않는다.
+      const extraSoftGap =
+        bestPlCos >= 0.78 && limPlane > (minMarginRadius + 0.65) * projLen ? 0.18 : 0.015;
       const softPhysicalCap = Math.max(
         Math.min(minMarginRadius * projLen, hardPhysicalCap),
-        limPlane - NEIGHBOR_PLANE_MARGIN_GAP_MM,
+        limPlane - extraSoftGap,
       );
       planeMarginCap = Math.min(hardPhysicalCap, softPhysicalCap);
     }
@@ -7469,10 +7700,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       hardConnFloor,
       Math.min(adjacentMarginCapAt(phiInFrame), cuffCap),
     );
-    marginCap.push(Math.min(planeMarginCap, otherCap));
+    const finalColCap = Math.min(planeMarginCap, otherCap);
+    marginCap.push(finalColCap);
+    if (bestPl && planeMarginCap <= otherCap + 1e-4) {
+      const pnU = dot3(bestPl.normal, frame.uLabial);
+      const pnV = dot3(bestPl.normal, frame.vSide);
+      const pnLen = Math.hypot(pnU, pnV) || 1;
+      marginCapObsDu.push(pnU / pnLen);
+      marginCapObsDv.push(pnV / pnLen);
+      marginCapCos.push(bestPlCos);
+    } else {
+      marginCapObsDu.push(du);
+      marginCapObsDv.push(dv);
+      marginCapCos.push(1);
+    }
   }
 
   // 4방위 유격(협·설·근·원심)을 먼저 재서 중심(mCu, mCv)을 여유 있는 쪽으로 옮기고 양쪽 반축을 대칭으로 맞춘다.
+  let marginCapPosU = Infinity;
+  let marginCapNegU = Infinity;
   let marginCapPosV = Infinity;
   let marginCapNegV = Infinity;
   {
@@ -7483,7 +7729,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const dirCap = (targetDu: number, targetDv: number) => {
       let best = Infinity;
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
-        if (colDuFix[col]! * targetDu + colDvFix[col]! * targetDv >= Math.cos(20 * DEG)) {
+        if (colDuFix[col]! * targetDu + colDvFix[col]! * targetDv >= Math.cos(9 * DEG)) {
           best = Math.min(best, marginCap[col]!);
         }
       }
@@ -7493,6 +7739,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const capNegU = dirCap(-1, 0);
     const capPosV = dirCap(0, 1);
     const capNegV = dirCap(0, -1);
+    marginCapPosU = capPosU;
+    marginCapNegU = capNegU;
     marginCapPosV = capPosV;
     marginCapNegV = capNegV;
     const estMarginAxCos = Math.max(frame.w[2], 0.25);
@@ -7518,6 +7766,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       capNeg: number,
       reqPos: number,
       reqNeg: number,
+      extraAsymAllowance = 0,
     ) => {
       const availSpan = capPos + capNeg;
       if (availSpan < minPhysicalHalf * 1.6) {
@@ -7531,10 +7780,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const boundReqNeg = Number.isFinite(capNeg) ? Math.min(capNeg, reqNeg) : reqNeg;
       let extPos = Math.max(boundReqPos, Math.min(capPos, curC + curHalf));
       let extNeg = Math.max(boundReqNeg, Math.min(capNeg, -curC + curHalf));
-      const maxAsym =
+      const baseMaxAsym =
         posterior && !(spaceFillFactor > 0 && hasWideProximalSpace)
           ? maxComfortShift * 1.6
           : maxComfortShift * 2;
+      const maxAsym = Math.max(baseMaxAsym, extraAsymAllowance);
       if (extPos > extNeg + maxAsym) {
         extPos = Math.max(boundReqPos, extNeg + maxAsym);
       } else if (extNeg > extPos + maxAsym) {
@@ -7547,7 +7797,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
       return { c: nextC, half: nextHalf };
     };
-    const fitU = fitAxis1D(mCu, mHalfBl, capPosU, capNegU, reqPosU, reqNegU);
+    const archAsymAllowanceU =
+      posterior && !hasManualAxisShift && targetArchRelC0U != null
+        ? Math.min(1.6, Math.abs(targetArchRelC0U) * 2.0)
+        : 0;
+    const fitU = fitAxis1D(mCu, mHalfBl, capPosU, capNegU, reqPosU, reqNegU, archAsymAllowanceU);
     const fitV = fitAxis1D(mCv, mHalfMd, capPosV, capNegV, reqPosV, reqNegV);
     mCu = fitU.c;
     mHalfBl = fitU.half;
@@ -7703,6 +7957,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           capNegU,
           reqPosU,
           reqNegU,
+          archAsymAllowanceU,
         );
         const adjV = fitAxis1D(
           mCv,
@@ -7766,10 +8021,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         curR0[col] = r0Col;
         const cap = marginCap[col]!;
         if (Number.isFinite(cap) && r0Col > cap + 1e-4) {
-          const ex = r0Col - cap;
+          const ex = (r0Col - cap) * marginCapCos[col]!;
           if (ex > worstEx) {
             worstEx = ex;
-            worstWu = colDuFix[col]! * colDuFix[col]!;
+            worstWu = marginCapObsDu[col]! * marginCapObsDu[col]!;
             worstCol = col;
           }
         }
@@ -7781,8 +8036,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let rem = worstEx;
       if (oppSlack > 0.02) {
         const shMove = Math.min(oppSlack * 0.5, rem * 0.6, 0.2);
-        const nextCu = curCu - colDuFix[worstCol]! * shMove;
-        const nextCv = curCv - colDvFix[worstCol]! * shMove;
+        const nextCu = curCu - marginCapObsDu[worstCol]! * shMove;
+        const nextCv = curCv - marginCapObsDv[worstCol]! * shMove;
         if (Math.hypot(nextCu, nextCv) <= Math.hypot(curCu, curCv) + 0.06) {
           const moved = Math.hypot(nextCu - curCu, nextCv - curCv);
           curCu = nextCu;
@@ -8518,6 +8773,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       for (const c of cols) peak = Math.max(peak, a + gu * c.tipU + gv * c.tipV);
       if (peak > bridgeMatchedTopH + 0.04) a = Math.max(minTop, a - (peak - bridgeMatchedTopH));
     }
+    if (Number.isFinite(peerMaxPostTopH)) {
+      let peak = -Infinity;
+      for (const c of cols) peak = Math.max(peak, a + gu * c.tipU + gv * c.tipV);
+      if (peak > peerMaxPostTopH + 0.02) a = Math.max(minTop, a - (peak - peerMaxPostTopH));
+    }
     return { heightAt: (u: number, v: number) => a + gu * u + gv * v, center: a, gu, gv };
   };
 
@@ -8927,11 +9187,31 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       Math.abs(params.axisShiftLabialMm) > 0.01 || Math.abs(params.axisShiftMesialMm) > 0.01;
     let lingualScrewWallTargetMm = LINGUAL_SCREW_WALL_LIMIT_MM;
     let buccalScrewWallTargetMm = SCREW_WALL_MM;
-    if (posterior && !hasManualAxisShift && idealOpposingOffsetU != null && mHalfBl > 0) {
-      const targetResidualU = idealOpposingOffsetU;
-      if (Math.abs(targetResidualU) > 0.12) {
-        const postIdealLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
-        const postMinLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
+    if (
+      posterior &&
+      !hasManualAxisShift &&
+      (targetArchRelC0U != null || idealOpposingOffsetU != null) &&
+      mHalfBl > 0
+    ) {
+      const wOccRef: Vec3 = occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix);
+      const frOccRef = insertionFrame(wOccRef, labXY);
+      const labSignOccRef = dot3(frOccRef.uLabial, labXY) >= 0 ? 1 : -1;
+      const uOccLabDir = scale3(frOccRef.uLabial, labSignOccRef);
+      const wOccShiftMidU =
+        (dot3(frame.w, uOccLabDir) / Math.max(dot3(frame.w, wOccRef), 0.25)) *
+        (tpl.postHeightMm * 0.55);
+      const wLabAtPostH =
+        (dot3(frame.w, labXY) / Math.max(frame.w[2], 0.25)) * tpl.postHeightMm;
+      const targetResidualU =
+        targetArchRelC0U != null
+          ? targetArchRelC0U - wOccShiftMidU
+          : idealOpposingOffsetU! - wLabAtPostH;
+      if (Math.abs(targetResidualU) > 0.08) {
+        const prevPosExtU = mCu + mHalfBl;
+        const prevNegExtU = -mCu + mHalfBl;
+        const availGrowHalfBl = Math.max(mHalfBl, Math.min(maxAnatHalfBl + 0.35, (marginCapPosU + marginCapNegU) * 0.5));
+        const postIdealLimit = availGrowHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
+        const postMinLimit = availGrowHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
         const posIdealLimits = [postIdealLimit];
         const posMinLimits = [postMinLimit];
         const negIdealLimits = [postIdealLimit];
@@ -8951,10 +9231,42 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           negIdealLimitsMm: negIdealLimits,
           negMinLimitsMm: negMinLimits,
         });
-        if (targetResidualU > 0 && wantU > mCu + 0.05) {
-          mCu = Math.min(1.6, wantU);
-        } else if (targetResidualU < 0 && wantU < mCu - 0.05) {
-          mCu = Math.max(-1.5, wantU);
+        if (targetResidualU > 0 && wantU > mCu + 0.04) {
+          const clampedU = Math.min(1.5, wantU);
+          const actualTaperEst = passTaperSlope * Math.max(1.2, tpl.postHeightMm - 0.8);
+          const minScrewNegExt =
+            Math.max(-uScrewBase, -uScrewTop) +
+            boreTopR +
+            POSTERIOR_POST_WALL_MIN_MM +
+            0.05 +
+            actualTaperEst +
+            Math.max(MIN_MARGIN_SHOULDER_MM, targetShoulderW * 0.76);
+          const keepNeg = Math.min(marginCapNegU, Math.max(minScrewNegExt, Math.min(prevNegExtU, mHalfBl - clampedU)));
+          const maxArchPosExt = Math.min(
+            marginCapPosU,
+            maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
+          );
+          const needPos = clamp(keepNeg + 2 * clampedU, prevPosExtU, maxArchPosExt);
+          mCu = (needPos - keepNeg) * 0.5;
+          mHalfBl = Math.max(minMarginRadius + 0.08, (needPos + keepNeg) * 0.5);
+        } else if (targetResidualU < 0 && wantU < mCu - 0.04) {
+          const clampedU = Math.max(-1.4, wantU);
+          const actualTaperEst = passTaperSlope * Math.max(1.2, tpl.postHeightMm - 0.8);
+          const minScrewPosExt =
+            Math.max(uScrewBase, uScrewTop) +
+            boreTopR +
+            POSTERIOR_POST_WALL_MIN_MM +
+            0.05 +
+            actualTaperEst +
+            Math.max(MIN_MARGIN_SHOULDER_MM, targetShoulderW * 0.76);
+          const keepPos = Math.min(marginCapPosU, Math.max(minScrewPosExt, Math.min(prevPosExtU, mHalfBl + clampedU)));
+          const maxArchNegExt = Math.min(
+            marginCapNegU,
+            maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
+          );
+          const needNeg = clamp(keepPos - 2 * clampedU, prevNegExtU, maxArchNegExt);
+          mCu = (keepPos - needNeg) * 0.5;
+          mHalfBl = Math.max(minMarginRadius + 0.08, (keepPos + needNeg) * 0.5);
         }
         if (mCu > 0.05) {
           lingualScrewWallTargetMm = clamp(
@@ -9210,6 +9522,213 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
       };
 
+      const solvePosteriorMarginAndWalls = () => {
+        const offsetSolver = buildParallelOffsetMarginSolver(
+          pSecCu,
+          pSecCv,
+          (psi) =>
+            evalPostSectionRadiusAtPhi(
+              tpl.kind,
+              finalBaseBl / postUnitLab,
+              finalBaseBl / postUnitLin,
+              finalBaseMd,
+              psi,
+            ),
+          effUniformShoulder,
+        );
+        const solved = solveSmoothOffsetMarginLoop(
+          offsetSolver,
+          smoothMarginZAt,
+          meanMarginZ,
+          frame,
+          minSolveMarginR,
+          minMarginZ,
+          maxMarginZ,
+          occInFix,
+        );
+        marginRadii = solved.radii;
+        marginColZs = solved.zCols;
+        colFootPsis = solved.footPsis;
+        colDuLats = solved.duLats;
+        colDvLats = solved.dvLats;
+        mHalfBl = finalBaseBl + effUniformShoulder;
+        mHalfMd = finalBaseMd + effUniformShoulder;
+        syncColsMarginGeometry();
+        buildPosteriorWallColumns(
+          pSecCu,
+          pSecCv,
+          finalBaseBl,
+          finalBaseMd,
+          finalTopBlScaled,
+          finalTopMdScaled,
+          colFootPsis,
+          colDuLats,
+          colDvLats,
+        );
+      };
+
+      // 인접 어벗과 공유하는 엄밀 분리면(peerPlanes)을 사후 불리언으로 잘라내지 않고,
+      // 스크류 홀 최소 벽 두께를 지키는 범위 안에서 매끈한 볼록 포스트 단면(pSecCu, pSecCv, 반축)과
+      // 전 둘레 등폭 병행 마진(effUniformShoulder)만으로 완벽히 분리면 안쪽에 수렴시킨다.
+      const convergePosteriorSectionToPeerPlanes = () => {
+        if (peerPlanes.length === 0) return;
+        const mdScale = Math.max(0.8, postUnitMd);
+        const shFloor = Math.max(0.23, peerMinShoulderFloor);
+        const peerTaperFloorMm = Math.max(0.035, Math.tan(0.45 * DEG) * hRefSpan);
+        const normalTaperDropBl =
+          minWallTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
+        const normalTaperDropMdMm = minWallTaperSlope * hRefSpan;
+
+        for (let planeIt = 0; planeIt < 18; planeIt += 1) {
+          let worstEx = 0;
+          let worstCol = -1;
+          let worstPl: PeerSeparationPlane | null = null;
+          for (let col = 0; col < ANGULAR_COLS; col += 1) {
+            const mp = cols[col]!.marginPt;
+            const wallPts = postWallPtsByCol[col]!;
+            for (const pl of peerPlanes) {
+              const exM = dot3(mp, pl.normal) - (pl.offset - 0.018);
+              if (exM > worstEx + 1e-4) {
+                worstEx = exM;
+                worstCol = col;
+                worstPl = pl;
+              }
+              const topDomeExtra =
+                topRoundMm * 0.28 * Math.max(0, pl.normal[2]);
+              for (let k = 0; k <= POST_LEVELS; k += 1) {
+                const pt = wallPts[k]!;
+                const exW =
+                  dot3(pt, pl.normal) +
+                  (k === POST_LEVELS ? topDomeExtra : 0) -
+                  (pl.offset - 0.022);
+                if (exW > worstEx + 1e-4) {
+                  worstEx = exW;
+                  worstCol = col;
+                  worstPl = pl;
+                }
+              }
+            }
+          }
+          if (worstEx <= 1e-4 || worstCol < 0 || !worstPl) break;
+
+          const surfZPeer = meanMarginZ + top.heightAt(pSecCu, pSecCv) / axialCos;
+          const borePeer = resolveScrewChannelProfile(conn, surfZPeer);
+          const strictTopR =
+            borePeer.radiusAtZ(surfZPeer + topRoundMm * 0.65) + strictPostWallMm + strictTopCornerMm;
+          const strictBaseR =
+            borePeer.radiusAtZ(meanMarginZ + hPostBase / axialCos) + strictPostWallMm;
+
+          const reqTopPosU = Math.max(minPostR, uScrewTop + strictTopR);
+          const reqTopNegU = Math.max(minPostR, -uScrewTop + strictTopR);
+          const reqTopPosVMm = Math.max(minPostR * mdScale, vScrewTop + strictTopR);
+          const reqTopNegVMm = Math.max(minPostR * mdScale, -vScrewTop + strictTopR);
+
+          const reqBasePosU = Math.max(minPostR + 0.05, uScrewBase + strictBaseR, reqTopPosU + peerTaperFloorMm);
+          const reqBaseNegU = Math.max(minPostR + 0.05, -uScrewBase + strictBaseR, reqTopNegU + peerTaperFloorMm);
+          const reqBasePosVMm = Math.max((minPostR + 0.05) * mdScale, vScrewBase + strictBaseR, reqTopPosVMm + peerTaperFloorMm);
+          const reqBaseNegVMm = Math.max((minPostR + 0.05) * mdScale, -vScrewBase + strictBaseR, reqTopNegVMm + peerTaperFloorMm);
+
+          const nU = dot3(worstPl.normal, frame.uLabial);
+          const nV = dot3(worstPl.normal, frame.vSide);
+          const nLat = Math.max(0.35, Math.hypot(nU, nV));
+          const cDu = colDuFix[worstCol]!;
+          const cDv = colDvFix[worstCol]!;
+          const dirU = (nU / nLat) * 0.7 + cDu * 0.3;
+          const dirV = (nV / nLat) * 0.7 + cDv * 0.3;
+
+          let bPosU = pSecCu + finalBaseBl;
+          let bNegU = -pSecCu + finalBaseBl;
+          let bPosVMm = pSecCv + finalBaseMd * mdScale;
+          let bNegVMm = -pSecCv + finalBaseMd * mdScale;
+          const prevSum = bPosU + bNegU + bPosVMm + bNegVMm;
+          const prevCu = pSecCu;
+          const prevCv = pSecCv;
+
+          const stepNeed = worstEx / nLat + 0.004;
+          let remNeed = stepNeed;
+
+          // 1) 경계면을 향한 주 방향의 베이스 외경만 먼저 줄인다.
+          // 근·원심 인접 경계면(|nV| >= |nU|*1.4)에서 악궁 곡률로 생기는 작은 nU 성분 때문에
+          // 한쪽 어벗(#25)의 설측 외경이 먼저 깎여 협측으로 밀려나지 않도록 주축(V)을 먼저 줄인다.
+          const isProximalPlane = Math.abs(nV) >= Math.abs(nU) * 1.4;
+          const isLabioLingualPlane = Math.abs(nU) >= Math.abs(nV) * 1.4;
+          let axisShrunk = 0;
+          if (!isLabioLingualPlane && dirV > 0.14) {
+            const vStep = isProximalPlane ? remNeed / Math.max(0.6, Math.abs(nV / nLat)) : remNeed * Math.abs(dirV);
+            const next = Math.min(bPosVMm, Math.max(reqBasePosVMm, bPosVMm - vStep));
+            axisShrunk += (bPosVMm - next) * Math.abs(nV / nLat);
+            bPosVMm = next;
+          } else if (!isLabioLingualPlane && dirV < -0.14) {
+            const vStep = isProximalPlane ? remNeed / Math.max(0.6, Math.abs(nV / nLat)) : remNeed * Math.abs(dirV);
+            const next = Math.min(bNegVMm, Math.max(reqBaseNegVMm, bNegVMm - vStep));
+            axisShrunk += (bNegVMm - next) * Math.abs(nV / nLat);
+            bNegVMm = next;
+          }
+          if (!isProximalPlane && dirU > 0.18) {
+            const uStep = isLabioLingualPlane ? remNeed / Math.max(0.6, Math.abs(nU / nLat)) : remNeed * Math.abs(dirU);
+            const next = Math.min(bPosU, Math.max(reqBasePosU, bPosU - uStep));
+            axisShrunk += (bPosU - next) * Math.abs(nU / nLat);
+            bPosU = next;
+          } else if (!isProximalPlane && dirU < -0.18) {
+            const uStep = isLabioLingualPlane ? remNeed / Math.max(0.6, Math.abs(nU / nLat)) : remNeed * Math.abs(dirU);
+            const next = Math.min(bNegU, Math.max(reqBaseNegU, bNegU - uStep));
+            axisShrunk += (bNegU - next) * Math.abs(nU / nLat);
+            bNegU = next;
+          }
+          remNeed = Math.max(0, remNeed - axisShrunk);
+
+          // 2) 포스트 베이스가 스크류 최소 벽 하한에 닿았으면 전 둘레 등폭 숄더(effUniformShoulder)를 균일하게 줄인다.
+          const effShFloor = worstPl.shortMm > 0.01 ? Math.min(shFloor, 0.22) : shFloor;
+          let shDrop = 0;
+          if (remNeed > 1e-4 && effUniformShoulder > effShFloor + 1e-4) {
+            shDrop = Math.min(effUniformShoulder - effShFloor, remNeed * 0.9);
+            effUniformShoulder -= shDrop;
+            remNeed = Math.max(0, remNeed - shDrop);
+          }
+
+          // 3) 주축과 등폭 숄더를 하한까지 줄인 뒤에도 대각선 우각이 경계면을 넘을 때만 직교 반폭을 다듬는다.
+          // 단, 근원심 인접 경계면(isProximalPlane)에서는 악궁 중심선 보정 방향(설측·협측)을 거슬러 깎지 않는다.
+          const allowOrthoU =
+            !isProximalPlane ||
+            Math.abs(nU / nLat) >= 0.24 &&
+              !(!hasManualAxisShift && targetArchRelC0U != null && ((targetArchRelC0U < -0.12 && cDu < 0) || (targetArchRelC0U > 0.12 && cDu > 0)));
+          if (remNeed > 1e-4 && allowOrthoU && Math.abs(cDu) > 0.28 && Math.abs(dirV) > 0.45) {
+            if (cDu > 0) bPosU = Math.min(bPosU, Math.max(reqBasePosU, bPosU - remNeed * Math.abs(cDu) * 0.55));
+            else bNegU = Math.min(bNegU, Math.max(reqBaseNegU, bNegU - remNeed * Math.abs(cDu) * 0.55));
+          }
+
+          pSecCu = clamp((bPosU - bNegU) * 0.5, -1.45, 1.45);
+          pSecCv = clamp((bPosVMm - bNegVMm) * 0.5, -1.45, 1.45);
+          finalBaseBl = Math.max(minPostR + 0.05, (bPosU + bNegU) * 0.5);
+          const nextBaseMdMm = Math.max((minPostR + 0.05) * mdScale, (bPosVMm + bNegVMm) * 0.5);
+          finalBaseMd = nextBaseMdMm / mdScale;
+
+          const reqTopBlNow = Math.max(minPostR, Math.abs(uScrewTop - pSecCu) + strictTopR);
+          const reqTopMdNowMm = Math.max(minPostR * mdScale, Math.abs(vScrewTop - pSecCv) + strictTopR);
+          const curTopMdMm = finalTopMdScaled * mdScale;
+          const keepDropBl = Math.max(peerTaperFloorMm, Math.min(normalTaperDropBl, finalBaseBl - reqTopBlNow));
+          const keepDropMdMm = Math.max(peerTaperFloorMm, Math.min(normalTaperDropMdMm, nextBaseMdMm - reqTopMdNowMm));
+          finalTopBlScaled = Math.max(reqTopBlNow, Math.min(finalTopBlScaled, finalBaseBl - keepDropBl));
+          const nextTopMdMm = Math.max(reqTopMdNowMm, Math.min(curTopMdMm, nextBaseMdMm - keepDropMdMm));
+          finalTopMdScaled = nextTopMdMm / mdScale;
+          finalBaseBl = Math.max(finalBaseBl, finalTopBlScaled + peerTaperFloorMm);
+          finalBaseMd = Math.max(finalBaseMd, (nextTopMdMm + peerTaperFloorMm) / mdScale);
+
+          const effGeomDeg =
+            Math.atan(Math.min(finalBaseBl - finalTopBlScaled, finalBaseMd * mdScale - nextTopMdMm) / hRefSpan) / DEG;
+          if (effGeomDeg < RETENTION_SINGLE_MIN_TAPER_DEG - 0.05) {
+            geomIdealTaperDeg = Math.max(0.1, Math.floor(effGeomDeg * 10) / 10);
+          }
+
+          solvePosteriorMarginAndWalls();
+          const movedAmt =
+            Math.abs(prevSum - (bPosU + bNegU + bPosVMm + bNegVMm)) +
+            Math.hypot(pSecCu - prevCu, pSecCv - prevCv) +
+            shDrop;
+          if (movedAmt <= 1e-4) break;
+        }
+      };
+
       if (!lockBasePass && lockedPosteriorBase) {
         // 대합 거리·포스트 높이·마진 필레 R을 바꿔도 마진 외경이 흔들리지 않도록 베이스 단면을 먼저 고정한다.
         // 편측 테이퍼는 상단을 좁혀 맞춘다. 스크류 벽이 상단을 더 못 좁히면 그 각도만큼 베이스와 마진을 함께 넓힌다.
@@ -9299,6 +9818,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         );
         for (let topFix = 0; topFix < 4; topFix += 1) {
           let worstTopDef = 0;
+          let worstCp = 0;
           let worstWu = 0.5;
           const surfZNow = meanMarginZ + top.heightAt(pSecCu, pSecCv) / axialCos;
           const boreNow = resolveScrewChannelProfile(conn, surfZNow);
@@ -9315,7 +9835,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 const def = (req - rXY) / Math.max(k / POST_LEVELS, 0.35);
                 if (def > worstTopDef) {
                   worstTopDef = def;
-                  worstWu = Math.cos(colFootPsis[col]!) ** 2;
+                  worstCp = Math.cos(colFootPsis[col]!);
+                  worstWu = worstCp * worstCp;
                 }
               }
             }
@@ -9323,7 +9844,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           if (worstTopDef <= 1e-4) break;
           const addBl = (worstTopDef / axialCos) * (0.35 + 0.65 * worstWu) + 0.004;
           const addMd = (worstTopDef / axialCos) * (0.35 + 0.65 * (1 - worstWu)) + 0.004;
-          finalTopBlScaled += addBl;
+          if (Math.abs(worstCp) > 0.35) {
+            pSecCu = clamp(pSecCu + Math.sign(worstCp) * addBl * 0.5, -1.35, 1.35);
+            finalTopBlScaled += addBl * 0.5;
+          } else {
+            finalTopBlScaled += addBl;
+          }
           finalTopMdScaled += addMd;
           seatLockedTaper(finalTopBlScaled, finalTopMdScaled);
           buildPosteriorWallColumns(
@@ -9338,6 +9864,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             colDvLats,
           );
         }
+        convergePosteriorSectionToPeerPlanes();
+        pTopCu = pSecCu;
+        pTopCv = pSecCv;
+        topFaceCu = pSecCu;
+        topFaceCv = pSecCv;
+        mCu = pSecCu;
+        mCv = pSecCv;
       } else {
         // 구치부(특히 브리지 지대주)는 하단부터 상단까지 동일한 단면 중심(pSecCu, pSecCv)을 유지해 삽입축 평행(0.00°)을 보장한다.
         // 마진 중심(mCu, mCv)과 같은 중심·동일 마진 폭(targetShoulderW)에서 출발하고,
@@ -9358,8 +9891,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const effScrewReqR = screwReqR;
         const screwReqMd = effScrewReqR / Math.max(0.8, postUnitMd);
         const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
+        const buccalTightR =
+          !hasManualAxisShift &&
+          archCenterReady &&
+          jawArchBothSides &&
+          targetArchRelC0U != null &&
+          targetArchRelC0U < -0.12 &&
+          uScrewTop > 0.1
+            ? boreTopR + POSTERIOR_POST_WALL_MIN_MM + 0.14
+            : screwTightR;
         const lingualWallR = Math.max(screwTightR, boreTopR + lingualScrewWallTargetMm);
-        const buccalWallR = Math.max(effScrewReqR, boreTopR + buccalScrewWallTargetMm);
+        const buccalWallR = Math.max(buccalTightR, boreTopR + buccalScrewWallTargetMm);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const screwBaseTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const screwBaseTightMd = screwBaseTightR / Math.max(0.8, postUnitMd);
@@ -9405,7 +9947,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           let pNegU = mExtNegU - wNegU;
           let pPosV = mExtPosV - wPosV;
           let pNegV = mExtNegV - wNegV;
-          pPosU = Math.max(pPosU, uScrewBase + screwBaseTightR, uScrewTop + screwTightR + taperDeltaBl);
+          pPosU = Math.max(pPosU, uScrewBase + screwBaseTightR, uScrewTop + buccalTightR + taperDeltaBl);
           pNegU = Math.max(pNegU, -uScrewBase + lingualWallR, -uScrewTop + lingualWallR + taperDeltaBl);
           pPosV = Math.max(pPosV, vScrewBase + screwBaseTightMd, vScrewTop + screwTightMd + taperDeltaMd);
           pNegV = Math.max(pNegV, -vScrewBase + screwBaseTightMd, -vScrewTop + screwTightMd + taperDeltaMd);
@@ -9654,10 +10196,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             ).t;
             const r0AtCol = Math.hypot(uOff + rFix * gu, vOff + rFix * gv);
             if (Number.isFinite(r0AtCol) && r0AtCol > cap + 1e-4) {
-              const def = 1 - cap / r0AtCol;
+              const def = (1 - cap / r0AtCol) * marginCapCos[col]!;
               if (def > worstDef) {
                 worstDef = def;
-                worstWu = colDuFix[col]! * colDuFix[col]!;
+                worstWu = marginCapObsDu[col]! * marginCapObsDu[col]!;
               }
             }
           }
@@ -9666,20 +10208,59 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           syncedScaleBl *= 1 - worstDef * (crossShare + (1 - crossShare) * worstWu) - 0.002;
           syncedScaleMd *= 1 - worstDef * (crossShare + (1 - crossShare) * (1 - worstWu)) - 0.002;
         }
-        const syncedBaseScale = Math.min(syncedScaleBl, syncedScaleMd);
+        const syncedShoulderScale = Math.min(1, Math.max(0.72, Math.sqrt(syncedScaleBl * syncedScaleMd)));
         const minTaperDropBl = minWallTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
         const minTaperDropMd = (minWallTaperSlope * hRefSpan) / Math.max(0.8, postUnitMd);
         const maxUserTaperSlope = Math.tan(taperSpec.maxTaperDeg * DEG);
         const reserveTaperDropBl = maxUserTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
         const reserveTaperDropMd = (maxUserTaperSlope * hRefSpan) / Math.max(0.8, postUnitMd);
-        const wantDropBl = Math.max(reserveTaperDropBl, (convexBaseBl - convexTopBl) * syncedScaleBl);
+        const hasArchLingualGoal =
+          !hasManualAxisShift &&
+          archCenterReady &&
+          jawArchBothSides &&
+          targetArchRelC0U != null &&
+          targetArchRelC0U < -0.12 &&
+          uScrewTop > 0.1;
+        const effReserveDropBl = hasArchLingualGoal
+          ? Math.max(minTaperDropBl, passTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin))
+          : reserveTaperDropBl;
+        const wantDropBl = Math.max(effReserveDropBl, (convexBaseBl - convexTopBl) * syncedScaleBl);
         const wantDropMd = Math.max(reserveTaperDropMd, (convexBaseMd - convexTopMd) * syncedScaleMd);
+        const keepTargetCu = hasArchLingualGoal
+          ? -Math.max(Math.abs(mCu), Math.min(0.75, Math.abs(targetArchRelC0U!) * 0.72))
+          : mCu;
         let topPosU = pSecCu + Math.min(convexTopBl * syncedScaleBl, convexBaseBl * syncedScaleBl - minTaperDropBl);
         let topNegU = -pSecCu + Math.min(convexTopBl * syncedScaleBl, convexBaseBl * syncedScaleBl - minTaperDropBl);
         let topPosV = pSecCv + Math.min(convexTopMd * syncedScaleMd, convexBaseMd * syncedScaleMd - minTaperDropMd);
         let topNegV = -pSecCv + Math.min(convexTopMd * syncedScaleMd, convexBaseMd * syncedScaleMd - minTaperDropMd);
-        topPosU = Math.max(topPosU, uScrewTop + screwTightR);
+        topPosU = Math.max(topPosU, uScrewTop + buccalTightR);
         topNegU = Math.max(topNegU, -uScrewTop + lingualWallR);
+        // 협측 경사 식립(uScrewTop > 0)으로 topPosU가 밀려날 때 설측(topNegU)에 해부 여유가 있으면
+        // 단면 중심이 인접치 악궁 중심선(keepTargetCu)에서 협측으로 튕겨 나가지 않도록 설측 반폭을 함께 받쳐 준다.
+        if (hasArchLingualGoal && keepTargetCu < (topPosU - topNegU) * 0.5 - 0.04) {
+          const minAllowTopPosU = Math.max(
+            minPostR,
+            uScrewTop + buccalTightR,
+            uScrewBase + screwBaseTightR - wantDropBl,
+          );
+          const curSpanTopU = topPosU + topNegU;
+          const idealTopPosU = clamp(
+            curSpanTopU * 0.5 + keepTargetCu,
+            minAllowTopPosU,
+            topPosU,
+          );
+          topPosU = idealTopPosU;
+          const maxAllowTopNegU = Math.max(
+            topNegU,
+            Math.min(
+              marginCapNegU,
+              maxAnatHalfBl + Math.min(1.25, 0.25 + Math.max(Math.abs(keepTargetCu), Math.abs(targetArchRelC0U ?? 0) * 0.85)),
+            ) -
+              Math.max(MIN_MARGIN_SHOULDER_MM, uniformShoulder * syncedShoulderScale) -
+              wantDropBl,
+          );
+          topNegU = Math.max(topNegU, Math.min(maxAllowTopNegU, topPosU - 2 * keepTargetCu));
+        }
         topPosV = Math.max(topPosV, vScrewTop + screwTightMd);
         topNegV = Math.max(topNegV, -vScrewTop + screwTightMd);
         pSecCu = (topPosU - topNegU) * 0.5;
@@ -9695,10 +10276,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (rawGeomDeg < RETENTION_SINGLE_MIN_TAPER_DEG - 0.05) {
           geomIdealTaperDeg = Math.max(0.1, Math.floor(rawGeomDeg * 10) / 10);
         }
-        effUniformShoulder = Math.max(MIN_MARGIN_SHOULDER_MM, uniformShoulder * syncedBaseScale);
+        effUniformShoulder = Math.max(MIN_MARGIN_SHOULDER_MM, uniformShoulder * syncedShoulderScale);
         finalBaseBl = Math.max(
           minPostR + 0.08,
-          convexBaseBl * syncedScaleBl,
+          Math.abs(keepTargetCu) > 0.06 ? 0 : convexBaseBl * syncedScaleBl,
           finalTopBlScaled + wantDropBl,
         );
         finalBaseMd = Math.max(
@@ -9741,11 +10322,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
         // 구치부 해부 최대 반폭(maxAnatHalfBl/Md)을 넘는 불필요한 팽창을 막는다(스크류 최소 벽 두께·테이퍼 조절 여유는 유지).
         {
+          const archShiftSpanBonus =
+            !hasManualAxisShift && targetArchRelC0U != null && pSecCu * targetArchRelC0U > 0
+              ? Math.min(0.95, Math.max(Math.abs(pSecCu), Math.abs(targetArchRelC0U) * 0.55))
+              : 0;
+          const screwReqCapBl =
+            uScrewTop >= pSecCu
+              ? (uScrewTop - pSecCu) + buccalTightR + effReserveDropBl
+              : (pSecCu - uScrewTop) + lingualWallR + effReserveDropBl;
           const anatCapBl = Math.max(
             minPostR + 0.08,
-            Math.abs(uScrewTop - pSecCu) + screwTightR + reserveTaperDropBl,
+            screwReqCapBl,
             Math.abs(uScrewBase - pSecCu) + screwBaseTightR,
-            maxAnatHalfBl - effUniformShoulder,
+            maxAnatHalfBl + archShiftSpanBonus - effUniformShoulder,
           );
           const anatCapMd = Math.max(
             minPostR + 0.08,
@@ -9809,10 +10398,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             const cap = marginCap[col]!;
             if (!Number.isFinite(cap)) continue;
             if (r0AtCol > cap + 1e-4) {
-              const exMm = r0AtCol - cap;
+              const exMm = (r0AtCol - cap) * marginCapCos[col]!;
               if (exMm > worstExMm) {
                 worstExMm = exMm;
-                worstWu = colDuFix[col]! * colDuFix[col]!;
+                worstWu = marginCapObsDu[col]! * marginCapObsDu[col]!;
                 worstCol = col;
               }
             }
@@ -9820,17 +10409,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           if (worstExMm <= 1e-4 || worstCol < 0) break;
 
           const remEx = worstExMm;
-          const wDu = colDuFix[worstCol]!;
-          const wDv = colDvFix[worstCol]!;
+          const wDu = marginCapObsDu[worstCol]!;
+          const wDv = marginCapObsDv[worstCol]!;
+          const isProxObs = Math.abs(wDv) >= Math.abs(wDu) * 1.4;
+          const effWu = isProxObs ? 0 : worstWu;
           const reqPosUBase = Math.max(
             minPostR + 0.08,
             uScrewBase + screwBaseTightR,
-            uScrewTop + screwTightR + reserveTaperDropBl,
+            uScrewTop + buccalTightR + effReserveDropBl,
           );
           const reqNegUBase = Math.max(
             minPostR + 0.08,
             -uScrewBase + lingualWallR,
-            -uScrewTop + lingualWallR + reserveTaperDropBl,
+            -uScrewTop + lingualWallR + effReserveDropBl,
           );
           const reqPosVBase = Math.max(
             minPostR + 0.08,
@@ -9850,17 +10441,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const prevNegU = bNegU;
           const prevPosV = bPosV;
           const prevNegV = bNegV;
-          const capCrossShare = tpl.kind === "premolar" ? 0.08 : 0.22;
-          const dropU = remEx * (capCrossShare + (1 - capCrossShare) * worstWu);
-          const dropV = remEx * (capCrossShare + (1 - capCrossShare) * (1 - worstWu));
-          const posUShare = wDu >= 0 ? 0.55 + 0.45 * Math.abs(wDu) : 0.35 * (1 - Math.abs(wDu));
-          const negUShare = wDu <= 0 ? 0.55 + 0.45 * Math.abs(wDu) : 0.35 * (1 - Math.abs(wDu));
+          const capCrossShare = isProxObs || tpl.kind === "premolar" ? 0.0 : 0.12;
+          const dropU = remEx * (capCrossShare + (1 - capCrossShare) * effWu);
+          const dropV = remEx * (capCrossShare + (1 - capCrossShare) * (1 - effWu));
+          const posUShare = wDu >= 0 ? 0.55 + 0.45 * Math.abs(wDu) : keepTargetCu > 0.06 ? 0 : 0.35 * (1 - Math.abs(wDu));
+          const negUShare = wDu <= 0 ? 0.55 + 0.45 * Math.abs(wDu) : keepTargetCu < -0.06 ? 0 : 0.35 * (1 - Math.abs(wDu));
           const posVShare = wDv >= 0 ? 0.55 + 0.45 * Math.abs(wDv) : 0.35 * (1 - Math.abs(wDv));
           const negVShare = wDv <= 0 ? 0.55 + 0.45 * Math.abs(wDv) : 0.35 * (1 - Math.abs(wDv));
-          bPosU = Math.max(reqPosUBase, bPosU - dropU * posUShare);
-          bNegU = Math.max(reqNegUBase, bNegU - dropU * negUShare);
-          bPosV = Math.max(reqPosVBase, bPosV - dropV * posVShare);
-          bNegV = Math.max(reqNegVBase, bNegV - dropV * negVShare);
+          bPosU = Math.min(prevPosU, Math.max(reqPosUBase, bPosU - dropU * posUShare));
+          bNegU = Math.min(prevNegU, Math.max(reqNegUBase, bNegU - dropU * negUShare));
+          bPosV = Math.min(prevPosV, Math.max(reqPosVBase, bPosV - dropV * posVShare));
+          bNegV = Math.min(prevNegV, Math.max(reqNegVBase, bNegV - dropV * negVShare));
           const shrunk = Math.hypot(
             prevPosU - bPosU + (prevNegU - bNegU),
             prevPosV - bPosV + (prevNegV - bNegV),
@@ -9869,7 +10460,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           pSecCv = clamp((bPosV - bNegV) * 0.5, -1.35, 1.35);
           finalBaseBl = Math.max(minPostR + 0.08, (bPosU + bNegU) * 0.5);
           finalBaseMd = Math.max(minPostR + 0.08, (bPosV + bNegV) * 0.5);
-          const tPosU = Math.min(bPosU - minTaperDropBl, Math.max(pSecCu + finalTopBlScaled, uScrewTop + screwTightR));
+          const tPosU = Math.min(bPosU - minTaperDropBl, Math.max(pSecCu + finalTopBlScaled, uScrewTop + buccalTightR));
           const tNegU = Math.min(bNegU - minTaperDropBl, Math.max(-pSecCu + finalTopBlScaled, -uScrewTop + lingualWallR));
           const tPosV = Math.min(bPosV - minTaperDropMd, Math.max(pSecCv + finalTopMdScaled, vScrewTop + screwTightMd));
           const tNegV = Math.min(bNegV - minTaperDropMd, Math.max(-pSecCv + finalTopMdScaled, -vScrewTop + screwTightMd));
@@ -9882,54 +10473,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             );
           }
         }
-
-        // 확정된 매끈한 포스트 단면의 정확한 등폭 병행 곡선 γ_M = γ_P ⊕ B(0, effUniformShoulder)으로
-        // 피니시라인을 풀고, 실제 144열 3D 포스트 정점의 스크류 벽 여유가 부족하면
-        // 상단 반폭 보강 또는 편심 중심(pSecCu, pSecCv) 복귀만으로 메워 원호 배불뚝이(needsScrewPush)를 막는다.
-        const solvePosteriorMarginAndWalls = () => {
-          const offsetSolver = buildParallelOffsetMarginSolver(
-            pSecCu,
-            pSecCv,
-            (psi) =>
-              evalPostSectionRadiusAtPhi(
-                tpl.kind,
-                finalBaseBl / postUnitLab,
-                finalBaseBl / postUnitLin,
-                finalBaseMd,
-                psi,
-              ),
-            effUniformShoulder,
-          );
-          const solved = solveSmoothOffsetMarginLoop(
-            offsetSolver,
-            smoothMarginZAt,
-            meanMarginZ,
-            frame,
-            minSolveMarginR,
-            minMarginZ,
-            maxMarginZ,
-            occInFix,
-          );
-          marginRadii = solved.radii;
-          marginColZs = solved.zCols;
-          colFootPsis = solved.footPsis;
-          colDuLats = solved.duLats;
-          colDvLats = solved.dvLats;
-          mHalfBl = finalBaseBl + effUniformShoulder;
-          mHalfMd = finalBaseMd + effUniformShoulder;
-          syncColsMarginGeometry();
-          buildPosteriorWallColumns(
-            pSecCu,
-            pSecCv,
-            finalBaseBl,
-            finalBaseMd,
-            finalTopBlScaled,
-            finalTopMdScaled,
-            colFootPsis,
-            colDuLats,
-            colDvLats,
-          );
-        };
 
         solvePosteriorMarginAndWalls();
         const baseMinCuffMarginR = Math.max(minSolveMarginR + 0.02, coneTopR + 0.22);
@@ -9992,24 +10535,45 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             remNeed = Math.max(0, remNeed - Math.hypot(addBl, addMd));
           }
           // 2순위: 편심으로 한쪽 벽이 스크류에 가까워진 경우, 반대편 스크류 여유와 marginCap 안에서 중심을 옮긴다.
+          // 단, 악궁 중심선 보정(keepTargetCu)과 반대 방향(예: 설측 보정 중인데 협측으로 이동)이면 설측 외경을 깎지 않고 부족한 쪽만 편측 확장한다.
           const oppColExact = (worstCol + ANGULAR_COLS / 2) % ANGULAR_COLS;
           if (remNeed > 1e-4) {
             const capAtWorst = marginCap[worstCol]!;
             const capRoomMm = Number.isFinite(capAtWorst)
               ? Math.max(0, capAtWorst - cols[worstCol]!.r0)
               : remNeed;
-            const oppTopPt = postWallPtsByCol[oppColExact]![POST_LEVELS]!;
-            const oppReqTop =
-              boreExact.radiusAtZ(oppTopPt[2] + topRoundMm * 0.65) + strictPostWallMm + strictTopCornerMm;
-            const oppScrewSlackMm = Math.max(0, Math.hypot(oppTopPt[0], oppTopPt[1]) - oppReqTop - 0.02);
-            const shiftAmt = Math.min(remNeed, capRoomMm * 0.9, oppScrewSlackMm * 0.9, 0.45);
-            if (shiftAmt > 1e-4) {
-              const nextCu = pSecCu + cpW * shiftAmt;
-              const nextCv = pSecCv + spW * shiftAmt;
-              if (Math.hypot(nextCu, nextCv) <= 1.25) {
-                pSecCu = nextCu;
-                pSecCv = nextCv;
-                remNeed = Math.max(0, remNeed - shiftAmt);
+            const opposesArchGoalU =
+              (keepTargetCu < -0.06 && cpW > 0.15) || (keepTargetCu > 0.06 && cpW < -0.15);
+            if (opposesArchGoalU) {
+              const oneSideGrow = Math.min(remNeed, capRoomMm * 0.9, 0.55);
+              if (oneSideGrow > 1e-4) {
+                const addMdDiag = Math.abs(spW) > 0.25 ? oneSideGrow * Math.abs(spW) * 0.5 : 0;
+                const addU = oneSideGrow * wu;
+                if (addMdDiag > 1e-4) {
+                  finalBaseMd += addMdDiag;
+                  finalTopMdScaled = Math.min(finalBaseMd - 0.025, finalTopMdScaled + addMdDiag);
+                }
+                if (addU > 1e-4) {
+                  pSecCu = clamp(pSecCu + Math.sign(cpW) * addU * 0.5, -1.25, 1.25);
+                  finalBaseBl += addU * 0.5;
+                  finalTopBlScaled = Math.min(finalBaseBl - 0.025, finalTopBlScaled + addU * 0.5);
+                }
+                remNeed = Math.max(0, remNeed - Math.hypot(addU, addMdDiag));
+              }
+            } else {
+              const oppTopPt = postWallPtsByCol[oppColExact]![POST_LEVELS]!;
+              const oppReqTop =
+                boreExact.radiusAtZ(oppTopPt[2] + topRoundMm * 0.65) + strictPostWallMm + strictTopCornerMm;
+              const oppScrewSlackMm = Math.max(0, Math.hypot(oppTopPt[0], oppTopPt[1]) - oppReqTop - 0.02);
+              const shiftAmt = Math.min(remNeed, capRoomMm * 0.9, oppScrewSlackMm * 0.9, 0.45);
+              if (shiftAmt > 1e-4) {
+                const nextCu = pSecCu + cpW * shiftAmt;
+                const nextCv = pSecCv + spW * shiftAmt;
+                if (Math.hypot(nextCu, nextCv) <= 1.25) {
+                  pSecCu = nextCu;
+                  pSecCv = nextCv;
+                  remNeed = Math.max(0, remNeed - shiftAmt);
+                }
               }
             }
           }
@@ -10049,63 +10613,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
             solvePosteriorMarginAndWalls();
           }
-          // 이웃 어벗 경계면(marginPlaneCap)을 넘는 열이 있으면 열별 칼질(직선 절단 → #16 원심 각짐·오목 꺾임) 대신,
-          // 스크류 홀 최소 벽 두께(reqStrict)를 지키는 범위 안에서 둥근 사각형 단면 중심(pSecCu, pSecCv)·반축·숄더 폭만으로 매끈하게 수렴시킨다.
-          const strictTopRPlane = boreStrictTopR;
-          const strictTopMdPlane = strictTopRPlane / Math.max(0.8, postUnitMd);
-          const strictBaseRPlane = boreStrictBaseR;
-          const strictBaseMdPlane = strictBaseRPlane / Math.max(0.8, postUnitMd);
-          const reqPosUPlane = Math.max(minPostR + 0.06, uScrewBase + strictBaseRPlane, uScrewTop + strictTopRPlane + minTaperDropBl);
-          const reqNegUPlane = Math.max(minPostR + 0.06, -uScrewBase + strictBaseRPlane, -uScrewTop + strictTopRPlane + minTaperDropBl);
-          const reqPosVPlane = Math.max(minPostR + 0.06, vScrewBase + strictBaseMdPlane, vScrewTop + strictTopMdPlane + minTaperDropMd);
-          const reqNegVPlane = Math.max(minPostR + 0.06, -vScrewBase + strictBaseMdPlane, -vScrewTop + strictTopMdPlane + minTaperDropMd);
-          for (let planeIt = 0; planeIt < 12; planeIt += 1) {
-            let worstPlaneEx = 0;
-            let worstCol = -1;
-            for (let col = 0; col < ANGULAR_COLS; col += 1) {
-              const pCap = marginPlaneCap[col]!;
-              if (!Number.isFinite(pCap)) continue;
-              const ex = cols[col]!.r0 - pCap;
-              if (ex > worstPlaneEx + 1e-4) {
-                worstPlaneEx = ex;
-                worstCol = col;
-              }
-            }
-            if (worstPlaneEx <= 1e-4 || worstCol < 0) break;
-            const wDu = colDuFix[worstCol]!;
-            const wDv = colDvFix[worstCol]!;
-            const shFloor = Math.max(0.22, MIN_MARGIN_SHOULDER_MM * 0.85);
-            const shDrop = Math.min(Math.max(0, effUniformShoulder - shFloor), worstPlaneEx * 0.4);
-            effUniformShoulder -= shDrop;
-            const remEx = Math.max(0, worstPlaneEx - shDrop) + 0.004;
-            let bPosU = pSecCu + finalBaseBl;
-            let bNegU = -pSecCu + finalBaseBl;
-            let bPosV = pSecCv + finalBaseMd;
-            let bNegV = -pSecCv + finalBaseMd;
-            const prevSum = bPosU + bNegU + bPosV + bNegV;
-            const prevCu = pSecCu;
-            const prevCv = pSecCv;
-            if (wDu > 0.15) bPosU = Math.max(reqPosUPlane, bPosU - remEx * Math.abs(wDu));
-            if (wDu < -0.15) bNegU = Math.max(reqNegUPlane, bNegU - remEx * Math.abs(wDu));
-            if (wDv > 0.15) bPosV = Math.max(reqPosVPlane, bPosV - remEx * Math.abs(wDv));
-            if (wDv < -0.15) bNegV = Math.max(reqNegVPlane, bNegV - remEx * Math.abs(wDv));
-            pSecCu = clamp((bPosU - bNegU) * 0.5, -1.45, 1.45);
-            pSecCv = clamp((bPosV - bNegV) * 0.5, -1.45, 1.45);
-            finalBaseBl = Math.max(minPostR + 0.06, (bPosU + bNegU) * 0.5);
-            finalBaseMd = Math.max(minPostR + 0.06, (bPosV + bNegV) * 0.5);
-            const reqTopBlNow = Math.max(minPostR, Math.abs(uScrewTop - pSecCu) + strictTopRPlane);
-            const reqTopMdNow = Math.max(minPostR, Math.abs(vScrewTop - pSecCv) + strictTopMdPlane);
-            finalTopBlScaled = Math.max(reqTopBlNow, Math.min(finalTopBlScaled, finalBaseBl - minTaperDropBl));
-            finalTopMdScaled = Math.max(reqTopMdNow, Math.min(finalTopMdScaled, finalBaseMd - minTaperDropMd));
-            finalBaseBl = Math.max(finalBaseBl, finalTopBlScaled + minTaperDropBl);
-            finalBaseMd = Math.max(finalBaseMd, finalTopMdScaled + minTaperDropMd);
-            solvePosteriorMarginAndWalls();
-            const movedAmt =
-              Math.abs(prevSum - (bPosU + bNegU + bPosV + bNegV)) +
-              Math.hypot(pSecCu - prevCu, pSecCv - prevCv) +
-              shDrop;
-            if (movedAmt <= 1e-4) break;
-          }
+          convergePosteriorSectionToPeerPlanes();
         }
 
         pTopCu = pSecCu;
@@ -12311,6 +12819,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const axialH = measuredH / Math.max(frame.w[2], 0.35);
         maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, bridgeMatchedTopH - axialH));
       }
+      if (Number.isFinite(peerMaxPostTopH)) {
+        const axialH = measuredH / Math.max(frame.w[2], 0.35);
+        maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, peerMaxPostTopH - axialH));
+      }
       const taperChanged = syncLinkedTaperForHeight(measuredH);
       let delta = 0;
       let hasDelta = true;
@@ -12524,6 +13036,32 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   // 수평 등고선 커프 구간(coneTopZ .. horizTopZ)은 같은 높이 Z에서 144개 열의 반경을 구한 뒤
   // 매 층마다 2D 외측 볼록 포락선으로 마감해 커프 전 구간의 수평 단면 오목(설측 주름)을 수학적으로 0으로 만든다.
+  const clampCuffAlphaForPeers = (z: number, wantAlpha: number, uLin: number): number => {
+    if (peerPlanes.length === 0 || wantAlpha <= uLin + 1e-5) return wantAlpha;
+    const fits = (candAlpha: number): boolean => {
+      for (let col = 0; col < ANGULAR_COLS; col += 2) {
+        const th = (col / ANGULAR_COLS) * Math.PI * 2;
+        const r = evalMinkowskiCuffR(th, candAlpha);
+        const px = r * Math.cos(th);
+        const py = r * Math.sin(th);
+        for (const pl of peerPlanes) {
+          if (px * pl.normal[0] + py * pl.normal[1] + z * pl.normal[2] > pl.offset - 0.006) {
+            return false;
+          }
+        }
+      }
+      return true;
+    };
+    if (fits(wantAlpha)) return wantAlpha;
+    let lo = Math.min(uLin, wantAlpha);
+    let hi = wantAlpha;
+    for (let it = 0; it < 10; it += 1) {
+      const mid = (lo + hi) * 0.5;
+      if (fits(mid)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
   const horizRingZ: number[] = [];
   const horizRingRadii: number[][] = [];
   for (let k = 1; k <= horizCuffRows; k += 1) {
@@ -12531,11 +13069,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ? coneTopZ + ((horizTopZ - coneTopZ) * k) / horizCuffRows
       : coneTopZ + ((minMarginZForCuff - coneTopZ) * k) / cuffRows;
     horizRingZ.push(z);
+    const uMean = clamp((z - coneTopZ) / Math.max(0.35, minMarginZForCuff - coneTopZ), 0, 1);
+    const alphaCap = clampCuffAlphaForPeers(
+      z,
+      clamp(sharedCuffCurve(uMean * refCuffSpan) / refCuffDelta, 0, 1),
+      uMean,
+    );
     const rawR = cols.map((c, col) => {
       const theta = (col / ANGULAR_COLS) * Math.PI * 2;
       const zM = c.marginPt[2];
       const u = clamp((z - coneTopZ) / Math.max(0.35, zM - coneTopZ), 0, 1);
-      const alpha = clamp(sharedCuffCurve(u * refCuffSpan) / refCuffDelta, 0, 1);
+      const alpha = Math.min(alphaCap, clamp(sharedCuffCurve(u * refCuffSpan) / refCuffDelta, 0, 1));
       return evalMinkowskiCuffR(theta, alpha);
     });
     horizRingRadii.push(projectPolarRadiiToConvexHull(rawR));
@@ -12720,57 +13264,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const mouthSurfaceZ = postApex[2];
   const finalBore = resolveScrewChannelProfile(conn, mouthSurfaceZ);
 
-  // 인접 어벗과 한 곳이라도 겹치면 픽스쳐에 끼울 수 없다. 위 단계의 인접 한계는 양보될 수 있어 마지막에 공통 분리면으로 잘라 낸다.
   let peerGapShortMm = 0;
-  {
-    const planes = resolvePeerSeparationPlanes({
-      fixture,
-      neighbors: args.neighbors ?? [],
-      crownMinMm: crownMdMinMm,
-      zLo: zMinLocal,
-      zHi: zMaxLocal,
-      connectionTopZ: coneTopZ,
-      connectionKeepR,
-      boreRadiusAtZ: (z) => finalBore.radiusAtZ(z),
-    });
-    const crossing = planes.filter((pl) => {
-      for (let i = 0; i < bodySoup.length; i += 3) {
-        const d =
-          bodySoup[i]! * pl.normal[0] + bodySoup[i + 1]! * pl.normal[1] + bodySoup[i + 2]! * pl.normal[2];
-        if (d > pl.offset + 1e-3) return true;
-      }
-      return false;
-    });
-    if (crossing.length > 0) {
-      bodySoup = await subtractTriangleSoups(
-        bodySoup,
-        crossing.map((pl) => halfSpaceBoxSoup(pl.normal, pl.offset, 40)),
-        `#${fixture.toothNumber} 커스텀어벗 인접 분리`,
-      );
-      for (const pl of crossing) {
-        peerGapShortMm = Math.max(peerGapShortMm, pl.shortMm);
-        for (let i = 0; i < marginLoopLocal.length; i += 3) {
-          const over =
-            marginLoopLocal[i]! * pl.normal[0] +
-            marginLoopLocal[i + 1]! * pl.normal[1] +
-            marginLoopLocal[i + 2]! * pl.normal[2] -
-            pl.offset;
-          if (over <= 0) continue;
-          marginLoopLocal[i] = marginLoopLocal[i]! - pl.normal[0] * over;
-          marginLoopLocal[i + 1] = marginLoopLocal[i + 1]! - pl.normal[1] * over;
-          marginLoopLocal[i + 2] = marginLoopLocal[i + 2]! - pl.normal[2] * over;
-        }
-      }
-      maxOuterR = 0;
-      zMinLocal = Infinity;
-      zMaxLocal = -Infinity;
-      for (let i = 0; i < bodySoup.length; i += 3) {
-        const z = bodySoup[i + 2]!;
-        if (z < zMinLocal) zMinLocal = z;
-        if (z > zMaxLocal) zMaxLocal = z;
-        maxOuterR = Math.max(maxOuterR, Math.hypot(bodySoup[i]!, bodySoup[i + 1]!));
-      }
-    }
+  for (const pl of peerPlanes) {
+    peerGapShortMm = Math.max(peerGapShortMm, pl.shortMm);
   }
 
   let zTopMax = -Infinity;

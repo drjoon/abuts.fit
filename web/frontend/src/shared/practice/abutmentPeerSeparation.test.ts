@@ -105,6 +105,27 @@ function slabGap(a: Float32Array, b: Float32Array, dir: V3) {
   return minB - maxA;
 }
 
+/** 피니시라인 수평 연속 꺾임각 최댓값(평면 절단 시 ~35° 이상 급격히 꺾임). */
+function maxMarginLoopTurnDeg(loopLocal: Float32Array) {
+  const n = Math.floor(loopLocal.length / 3);
+  let maxDeg = 0;
+  for (let i = 0; i < n; i += 1) {
+    const i0 = (i - 1 + n) % n;
+    const i2 = (i + 1) % n;
+    const dx1 = loopLocal[i * 3]! - loopLocal[i0 * 3]!;
+    const dy1 = loopLocal[i * 3 + 1]! - loopLocal[i0 * 3 + 1]!;
+    const dx2 = loopLocal[i2 * 3]! - loopLocal[i * 3]!;
+    const dy2 = loopLocal[i2 * 3 + 1]! - loopLocal[i * 3 + 1]!;
+    const l1 = Math.hypot(dx1, dy1);
+    const l2 = Math.hypot(dx2, dy2);
+    if (l1 > 1e-5 && l2 > 1e-5) {
+      const c = Math.max(-1, Math.min(1, (dx1 * dx2 + dy1 * dy2) / (l1 * l2)));
+      maxDeg = Math.max(maxDeg, (Math.acos(c) * 180) / Math.PI);
+    }
+  }
+  return maxDeg;
+}
+
 const jaw = flatStrip(-2.8);
 const opp = flatStrip(-12.5);
 const works = [
@@ -160,6 +181,12 @@ for (const c of cases) {
   const allowShort = Math.abs(c.tilt) <= 4 ? 0 : Math.abs(c.tilt) <= 6 ? 0.1 : Infinity;
   if (shortSum > allowShort + 1e-6) {
     failures.push(`${c.name}: 흔한 간격·경사에서는 크라운 최소 두께를 양보하지 않는다(${shortSum.toFixed(2)}mm)`);
+  }
+  for (const [label, d] of [["#24", d24], ["#25", d25]] as const) {
+    const turnDeg = maxMarginLoopTurnDeg(d.marginLoopLocal);
+    if (turnDeg > 9.5) {
+      failures.push(`${c.name} ${label}: 평면 절단 없이 매끈한 마진 곡선을 유지해야 한다(최대 꺾임각 ${turnDeg.toFixed(2)}°)`);
+    }
   }
   for (const d of [d24, d25]) {
     d.worldGeometry.dispose();
