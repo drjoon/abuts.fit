@@ -1,4 +1,5 @@
 /**
+ * 2026-11-22: 헤더 어벗 뱃지 하나. 커스텀어벗·디자인 미확정만 센다.
  * 치과 기공의뢰 — 최근 전송 「전체 보기」 모달.
  * 3주 세로 스크롤 캘린더. 기간 필터 없음(년/월·검색·상태·요일 숨김).
  * 취소 뱃지=작업취소+기공소 거절(휴지통 취소는 제외 — 휴지통 서랍). 상단 상태 뱃지에 채팅 unread 합산.
@@ -62,7 +63,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ChevronRight, Hexagon, Pencil, Search, Trash2, X } from "lucide-react";
+import { ChevronRight, Hexagon, Search, Trash2, X } from "lucide-react";
 
 import {
   Dialog,
@@ -149,10 +150,8 @@ import {
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
 import {
-  ABUTMENT_ORDER_BADGE_KEY,
   ABUTMENT_REVIEW_BADGE_KEY,
   isPtxAbutmentDesignAwaitingDentist,
-  isPtxAbutmentManualOrder,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
@@ -974,16 +973,6 @@ export function PracticeRecentTransfersAllModal({
 
   const abutmentDesignAwaitingCount = abutmentDesignAwaitingItems.length;
 
-  const abutmentManualOrderItems = useMemo(() => {
-    return visibleGroupedTransfers.filter((transfer) =>
-      isPtxAbutmentManualOrder({
-        status: transfer.status,
-        hasCustomAbutment: transfer.hasCustomAbutment,
-        manualRequested: transfer.manualRequested,
-      }),
-    );
-  }, [visibleGroupedTransfers]);
-
   const transferByNoticeId = useMemo(() => {
     const map = new Map<string, (typeof visibleGroupedTransfers)[number]>();
     for (const transfer of visibleGroupedTransfers) {
@@ -1023,31 +1012,9 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      // 「어벗 검토」=디자인 확정 대기. 디자인 화면에서 하나씩 확정.
+      // 「어벗」=디자인 미확정. 디자인 화면에서 하나씩 확정.
       if (key === ABUTMENT_REVIEW_BADGE_KEY) {
         openAbutmentDesignReview();
-        return;
-      }
-      // 「어벗 의뢰」=수작업 의뢰. 채팅에서 확인.
-      if (key === ABUTMENT_ORDER_BADGE_KEY) {
-        const queue = abutmentManualOrderItems;
-        if (queue.length === 0) return;
-        const transferIdOf = (row: PracticeRecentTransferItem) =>
-          String(row.transferId || row.id || "").trim();
-        const lastId = unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] || "";
-        let candidates = queue;
-        if (lastId) {
-          const withoutLast = queue.filter((row) => transferIdOf(row) !== lastId);
-          if (withoutLast.length > 0) candidates = withoutLast;
-        }
-        const transfer = candidates[0];
-        if (!transfer) return;
-        unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] = transferIdOf(transfer);
-        focusCalendarTransfer(transfer);
-        onSelectTransfer(transfer, {
-          ...(viewMode === "list" ? { preferredDockSide: "right" as const } : {}),
-          panel: "chat",
-        });
         return;
       }
       // 배지 본문 건수와 동일하게 순회(완료·취소·어벗은 미열람만).
@@ -1095,7 +1062,6 @@ export function PracticeRecentTransfersAllModal({
       );
     },
     [
-      abutmentManualOrderItems,
       badgeClearedIds,
       badgeQueueTransfers,
       dateKey,
@@ -1122,37 +1088,24 @@ export function PracticeRecentTransfersAllModal({
         continue;
       }
       const awaiting = abutmentDesignAwaitingCount > 0;
-      items.push(
-        {
-          key: ABUTMENT_REVIEW_BADGE_KEY,
-          label: "어벗 검토",
-          icon: Hexagon,
-          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
-          count: abutmentDesignAwaitingCount,
-          unreadCount: 0,
-          tooltip:
-            "커스텀어벗 디자인 확정이 필요한 건입니다. 클릭하면 디자인 화면에서 하나씩 확정합니다.",
-          attention: awaiting,
-          attentionClassName: awaiting
-            ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
-            : undefined,
-        },
-        {
-          key: ABUTMENT_ORDER_BADGE_KEY,
-          label: "어벗 의뢰",
-          icon: Pencil,
-          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
-          count: abutmentManualOrderItems.length,
-          unreadCount: 0,
-          tooltip:
-            "수작업으로 의뢰한 커스텀어벗입니다. 클릭하면 채팅에서 확인합니다.",
-        },
-      );
+      items.push({
+        key: ABUTMENT_REVIEW_BADGE_KEY,
+        label: "어벗",
+        icon: Hexagon,
+        tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
+        count: abutmentDesignAwaitingCount,
+        unreadCount: 0,
+        tooltip:
+          "커스텀어벗 디자인이 아직 확정되지 않은 건입니다. 클릭하면 디자인 화면에서 확정합니다.",
+        attention: awaiting,
+        attentionClassName: awaiting
+          ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+          : undefined,
+      });
     }
     return items;
   }, [
     abutmentDesignAwaitingCount,
-    abutmentManualOrderItems.length,
     statusCounts,
     statusUnreadCounts,
   ]);

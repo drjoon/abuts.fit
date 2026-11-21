@@ -524,7 +524,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   tooltip: string;
 }>;
 
-/** 완료·어벗 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소 | 어벗 검토·어벗 의뢰 */
+/** 완료·어벗 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소 | 어벗 */
 export const PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS = [
   "도착완료",
   "작업완료",

@@ -1,3 +1,4 @@
+// - 2026-11-22: 헤더 어벗 뱃지 하나. 치과 의뢰·커스텀어벗·디자인 미확정만 센다.
 // related files:
 // - 2026-11-20: 치과가 어벗을 다시 정하기 전에는 업로드·의뢰 파일을 막는다.
 // - 2026-11-20: 디자인 상태 뱃지 — 생산의뢰 줄 오른쪽 끝(업로드 위). 수작업·치과 확정 디자인 복원.
@@ -239,7 +240,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, FolderOpen, Hexagon, Pencil, Search, Truck, X } from "lucide-react";
+import { ChevronRight, FolderOpen, Hexagon, Search, Truck, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import {
@@ -445,12 +446,10 @@ import {
 } from "@/shared/practice/practiceTransferLabReceive";
 import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practice/practiceTransferPartialAbutmentUpload";
 import {
-  ABUTMENT_ORDER_BADGE_KEY,
   ABUTMENT_REVIEW_BADGE_KEY,
   isLabWorkBlockedUntilPracticeAbutmentDecision,
   isPtxAbutmentDesignAwaitingDentist,
   isPtxAbutmentDesignReviewForLab,
-  isPtxAbutmentManualOrder,
   LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT,
   labUploadLockedNotice,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
@@ -9670,14 +9669,6 @@ export function RequestorPracticeReceivePage({
     });
   }, [baseFilteredTransfers, labAbutmentInput, user?.role]);
 
-  const labManualOrderTransfers = useMemo(() => {
-    return baseFilteredTransfers.filter((transfer) => {
-      if (isGuideTourDemoTransfer(transfer)) return false;
-      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return false;
-      return isPtxAbutmentManualOrder(labAbutmentInput(transfer));
-    });
-  }, [baseFilteredTransfers, labAbutmentInput, user?.role]);
-
   const hydrateLabTransferForDesign = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       const id = String(transfer.transferId || "").trim();
@@ -9911,38 +9902,25 @@ export function RequestorPracticeReceivePage({
         continue;
       }
       const reviewCount = labDesignReviewTransfers.length;
-      items.push(
-        {
-          key: ABUTMENT_REVIEW_BADGE_KEY,
-          label: "어벗 검토",
-          icon: Hexagon,
-          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
-          count: reviewCount,
-          unreadCount: 0,
-          tooltip:
-            "치과가 확정한 디자인입니다. 클릭하면 디자인 화면에서 검토합니다.",
-          attention: reviewCount > 0,
-          attentionClassName:
-            reviewCount > 0
-              ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
-              : undefined,
-        },
-        {
-          key: ABUTMENT_ORDER_BADGE_KEY,
-          label: "어벗 의뢰",
-          icon: Pencil,
-          tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
-          count: labManualOrderTransfers.length,
-          unreadCount: 0,
-          tooltip:
-            "치과가 수작업으로 의뢰한 커스텀어벗입니다. 클릭하면 채팅에서 확인합니다.",
-        },
-      );
+      items.push({
+        key: ABUTMENT_REVIEW_BADGE_KEY,
+        label: "어벗",
+        icon: Hexagon,
+        tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
+        count: reviewCount,
+        unreadCount: 0,
+        tooltip:
+          "치과가 의뢰한 커스텀어벗 중 디자인이 아직 확정되지 않은 건입니다. 클릭하면 디자인 화면에서 확정합니다.",
+        attention: reviewCount > 0,
+        attentionClassName:
+          reviewCount > 0
+            ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+            : undefined,
+      });
     }
     return items;
   }, [
     labDesignReviewTransfers.length,
-    labManualOrderTransfers.length,
     statusCounts,
     statusUnreadCounts,
   ]);
@@ -10165,24 +10143,6 @@ export function RequestorPracticeReceivePage({
         void openLabAbutmentDesign(labDesignReviewTransfers, 0, true);
         return;
       }
-      if (key === ABUTMENT_ORDER_BADGE_KEY) {
-        const queue = labManualOrderTransfers;
-        if (queue.length === 0) return;
-        const transferIdOf = (row: ReceivedPracticeTransfer) =>
-          String(row.transferId || row._id || "").trim();
-        const lastId = unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] || "";
-        let candidates = queue;
-        if (lastId) {
-          const withoutLast = queue.filter((row) => transferIdOf(row) !== lastId);
-          if (withoutLast.length > 0) candidates = withoutLast;
-        }
-        const transfer = candidates[0];
-        if (!transfer) return;
-        unreadNavigateLastIdRef.current[ABUTMENT_ORDER_BADGE_KEY] = transferIdOf(transfer);
-        if (!isMobile) focusCalendarTransfer(transfer);
-        void openTransferDialog(transfer, { panel: "chat" });
-        return;
-      }
       const filterKey = key as LabReceiveStatusFilterKey;
       const toMeta = (transfer: (typeof baseFilteredTransfers)[number]) => ({
         transfer,
@@ -10271,9 +10231,7 @@ export function RequestorPracticeReceivePage({
       focusCalendarTransfer,
       isMobile,
       labDesignReviewTransfers,
-      labManualOrderTransfers,
       openLabAbutmentDesign,
-      openTransferDialog,
       selectTransferFromCalendar,
       transferChatUnreadCount,
       viewMode,
