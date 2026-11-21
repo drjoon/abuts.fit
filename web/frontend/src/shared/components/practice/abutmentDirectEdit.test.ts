@@ -2205,4 +2205,201 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   }
 }
 
+// 구치: 협측 벽과 설측 악궁 중심선이 부딪혀 BL이 설측으로 길어지면
+// (1) 협측 상단 1/3 개방, (2) 협측 이동이 앞에 오고, 기존 후보는 최대 1개다.
+{
+  const makeGrid = (
+    xMin: number,
+    xMax: number,
+    yMin: number,
+    yMax: number,
+    steps: number,
+    zFn: (x: number, y: number) => number,
+  ) => {
+    const tris: number[] = [];
+    const dx = (xMax - xMin) / steps;
+    const dy = (yMax - yMin) / steps;
+    for (let ix = 0; ix < steps; ix += 1) {
+      for (let iy = 0; iy < steps; iy += 1) {
+        const x0 = xMin + ix * dx;
+        const x1 = x0 + dx;
+        const y0 = yMin + iy * dy;
+        const y1 = y0 + dy;
+        const z00 = zFn(x0, y0);
+        const z10 = zFn(x1, y0);
+        const z11 = zFn(x1, y1);
+        const z01 = zFn(x0, y1);
+        tris.push(x0, y0, z00, x1, y0, z10, x1, y1, z11);
+        tris.push(x0, y0, z00, x1, y1, z11, x0, y1, z01);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const tilt = (18 * Math.PI) / 180;
+  const buccalFixture = {
+    toothNumber: "36",
+    jaw: "lower" as const,
+    fixturePose: {
+      origin: [0, 0, 0] as [number, number, number],
+      axis: [Math.sin(tilt), 0, Math.cos(tilt)] as [number, number, number],
+      hexX: [Math.cos(tilt), 0, -Math.sin(tilt)] as [number, number, number],
+      hexY: [0, 1, 0] as [number, number, number],
+    },
+    scanbodyTop: [5 * Math.sin(tilt), 0, 5 * Math.cos(tilt)] as [number, number, number],
+    scanbodyRadiusMm: 2.25,
+    scanbodyHeightMm: 7,
+    gingivaFloorMm: 2.8,
+    rmsMm: 0.02,
+    topCoverage: 0.95,
+    matchedLibraryLabel: "지오메디 Ø4.5×7mm",
+    connectionSpec: {
+      manufacturer: "NEOBIOTECH",
+      brand: "IS2",
+      family: "IS",
+      type: "Hex",
+      originDiameterMm: 3.5,
+      hexSizeMm: 2.5,
+      l2Mm: 2.75,
+      prcConeTopMm: 1.0,
+      screwLowerDiameterMm: 2.0,
+      screwUpperDiameterMm: 2.4,
+    },
+    archOcclusalDir: [0, 0, 1] as [number, number, number],
+    labialDir: [1, 0, 0] as [number, number, number],
+    mesialDir: [0, 1, 0] as [number, number, number],
+  };
+  const neighborTooth = (x: number, y: number, cy: number) => {
+    const dy = Math.abs(y - cy);
+    const dx = x + 2.3;
+    if (dy > 2.6 || Math.abs(dx) > 3.6) return 0;
+    const yf = dy < 1.5 ? 1 : Math.cos(((dy - 1.5) / 1.1) * Math.PI * 0.5);
+    const xf = Math.abs(dx) < 2.7 ? 1 : Math.cos(((Math.abs(dx) - 2.7) / 0.9) * Math.PI * 0.5);
+    return 7.2 * yf * Math.max(0, xf);
+  };
+  const archJaw = makeGrid(-14, 12, -14, 14, 64, (x, y) => {
+    return 3.05 + neighborTooth(x, y, 8.1) + neighborTooth(x, y, -8.1);
+  });
+  const archOpp = makeGrid(-10, 10, -10, 10, 28, () => 12.4);
+  const cands = await designCustomAbutmentCandidates({
+    fixture: buccalFixture,
+    jawGeometry: archJaw,
+    opposingGeometry: archOpp,
+    toothWorks: [{ toothNumber: "36", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+    params: { occlusalClearanceMm: 1.2 },
+  });
+  const labels = cands.map((c) => `${c.id}:${c.label}`).join(" | ");
+  assert.ok(cands.length >= 2 && cands.length <= 3, `설측 BL 과신장 후보는 2~3개다 (${labels})`);
+  assert.equal(cands[0]!.id, "buccal_top_open", `(1)은 협측 상단 1/3 개방이다 (${labels})`);
+  assert.equal(cands[0]!.label, "협측 상단 1/3 개방");
+  assert.equal(cands[1]!.id, "buccal_shift", `(2)는 협측 이동이다 (${labels})`);
+  assert.equal(cands[1]!.label, "협측으로 이동");
+  const marginX = (loop: Float32Array) => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < loop.length; i += 3) {
+      const x = loop[i]!;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      sum += x;
+      n += 1;
+    }
+    return { minX, maxX, span: maxX - minX, mean: n > 0 ? sum / n : 0 };
+  };
+  const openMargin = marginX(cands[0]!.design.marginLoopLocal);
+  const shiftMargin = marginX(cands[1]!.design.marginLoopLocal);
+  const kept = cands.find((c) => c.id === "space_fill");
+  if (kept) {
+    const keptMargin = marginX(kept.design.marginLoopLocal);
+    assert.ok(
+      openMargin.span < keptMargin.span - 0.6,
+      `개방 안 BL(${openMargin.span.toFixed(2)})이 설측으로 늘린 기존 안(${keptMargin.span.toFixed(2)})보다 짧다`,
+    );
+    assert.ok(
+      openMargin.mean < keptMargin.mean - 0.2,
+      `개방 안 중심(${openMargin.mean.toFixed(2)})이 악궁(설측) 쪽에 남는다`,
+    );
+    assert.ok(
+      keptMargin.minX < shiftMargin.minX - 0.2,
+      `기존 안 설측 끝(${keptMargin.minX.toFixed(2)})이 협측 이동(${shiftMargin.minX.toFixed(2)})보다 설측으로 길다`,
+    );
+  }
+  assert.ok(
+    shiftMargin.mean > openMargin.mean + 0.15,
+    `협측 이동 마진 중심(${shiftMargin.mean.toFixed(2)})이 개방 안(${openMargin.mean.toFixed(2)})보다 협측이다`,
+  );
+  const bandMaxX = (pos: Float32Array, zLo: number, zHi: number) => {
+    let maxX = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i]!;
+      const y = pos[i + 1]!;
+      const z = pos[i + 2]!;
+      if (z < zLo || z >= zHi || Math.abs(y) > 1.15) continue;
+      if (x > maxX) maxX = x;
+    }
+    return maxX;
+  };
+  const openPos = cands[0]!.design.localPositions;
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (let i = 2; i < openPos.length; i += 3) {
+    zMin = Math.min(zMin, openPos[i]!);
+    zMax = Math.max(zMax, openPos[i]!);
+  }
+  const zSpan = Math.max(0.5, zMax - zMin);
+  const midX = bandMaxX(openPos, zMin + zSpan * 0.4, zMin + zSpan * 0.62);
+  const topX = bandMaxX(openPos, zMin + zSpan * 0.82, zMax + 0.01);
+  assert.ok(
+    Number.isFinite(midX) && Number.isFinite(topX) && topX < midX - 0.3,
+    `협측 상단(${topX.toFixed(2)})이 중간 벽(${midX.toFixed(2)})보다 안쪽으로 열린다`,
+  );
+  let minMidBuccalR = Infinity;
+  for (let i = 0; i < openPos.length; i += 3) {
+    const x = openPos[i]!;
+    const y = openPos[i + 1]!;
+    const z = openPos[i + 2]!;
+    if (z < zMin + zSpan * 0.4 || z >= zMin + zSpan * 0.62 || Math.abs(y) > 1.15 || x <= 0.4) continue;
+    minMidBuccalR = Math.min(minMidBuccalR, Math.hypot(x, y));
+  }
+  assert.ok(
+    minMidBuccalR > 1.45,
+    `개방 안의 치은측 협측 벽(${minMidBuccalR.toFixed(2)}mm)은 스크류를 감싼다`,
+  );
+  const flatJaw = makeGrid(-12, 12, -12, 12, 28, () => 3.1);
+  const flatOpp = makeGrid(-8, 8, -8, 8, 20, () => 12.2);
+  const plain = await designCustomAbutmentCandidates({
+    fixture: {
+      ...buccalFixture,
+      fixturePose: {
+        origin: [0, 0, 0] as [number, number, number],
+        axis: [0, 0, 1] as [number, number, number],
+        hexX: [1, 0, 0] as [number, number, number],
+        hexY: [0, 1, 0] as [number, number, number],
+      },
+      scanbodyTop: [0, 0, 5] as [number, number, number],
+    },
+    jawGeometry: flatJaw,
+    opposingGeometry: flatOpp,
+    toothWorks: [{ toothNumber: "36", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+    params: { occlusalClearanceMm: 1.2 },
+  });
+  assert.ok(
+    plain.every((c) => c.id !== "buccal_top_open" && c.id !== "buccal_shift"),
+    `BL이 정상이면 협측 벽 후보를 띄우지 않는다 (${plain.map((c) => c.id).join(",")})`,
+  );
+  for (const cand of [...cands, ...plain]) {
+    cand.design.worldGeometry.dispose();
+    cand.design.predictedCrownWorldGeometry.dispose();
+    cand.design.enameloplastyWorldGeometry?.dispose();
+  }
+  archJaw.dispose();
+  archOpp.dispose();
+  flatJaw.dispose();
+  flatOpp.dispose();
+}
+
 console.log("abutment direct edit ok");
