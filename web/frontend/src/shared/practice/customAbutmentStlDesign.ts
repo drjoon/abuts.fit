@@ -62,6 +62,8 @@ import {
 } from "@/shared/practice/abutmentDesignLogic";
 import {
   clampLateralForCompactDiameter,
+  LINGUAL_SCREW_WALL_LIMIT_MM,
+  maxBuccalOffsetForLingualScrewWall,
   localArchTangent,
   neighborCrownBlPose,
   opposingSlopeTargetU,
@@ -5202,6 +5204,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   /** 악궁 연장선·대합 B로 포스트 위치를 잡았으면 직경이 10mm 근처에 머물 각도까지 허용한다. */
   let anatomicalAxis = false;
   let anatomicalFunctionalU: number | null = null;
+  /** 악궁·대합이 가리키는 협측 이동. 설측 벽 한도 안에서 이 값까지 삽입축을 맞춘다. */
+  let idealBuccalOffsetMm: number | null = null;
   let neighborLockRad: number | null = null;
   /** 자동 세 요소 축. 구치 상단을 픽스쳐 중심으로 되돌리는 비율을 느슨히 한다. */
   let occlusalAxisLed = false;
@@ -5321,6 +5325,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
     const wCrown = axisTowardCrownCenter(wOcc, labDirAxis, vMesAxis, crownLabMm, crownMesMm, H);
+    if (posterior) {
+      const crownLabOff = (dot3(wCrown, labXY) / Math.max(wCrown[2], 0.25)) * H;
+      if (crownLabOff > 0.15) idealBuccalOffsetMm = crownLabOff;
+    }
     const adjSamples =
       adjLabSlope != null && !(tpl.kind === "incisor" && incisorGuide)
         ? [...alignSamples, axisFromFixtureSlopes(labXY, mesXY, adjLabSlope, 0)]
@@ -5588,6 +5596,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     } else if (!placedOnArch && explicitSourceCode === 0) {
       axisSource = "arch";
     }
+    if (wantU > 0.15) idealBuccalOffsetMm = wantU;
 
     const wantLat = Math.hypot(wantU, wantV);
     const effDeadzone = anatomicalAxis ? 0 : axisSource === "opposing" ? deadzoneMm * 0.6 : deadzoneMm;
@@ -8218,6 +8227,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 마진 해부 단면의 4방위(+u 협/순, -u 설/구개, +v, -v) 외경과 포스트 치종 단면 단위 계수.
     // 별다른 간섭(스크류 홀 벽 부족·한쪽 크라운 공간 협소)이 없으면 4방위 모두 동일한 마진 폭(targetShoulderW)을 유지하고,
     // 제약이 걸리는 방위만 필요한 만큼 조정해 반대쪽 마진 폭이 좁아지지 않게 한다.
+    // 악궁·대합이 임플란트보다 협측이면 포스트 중심을 그쪽으로 옮긴다.
+    // 마진 설측 벽이 1mm보다 얇아지는 지점에서는 멈춘다. 상단 홀은 아래에서 같은 두께로 다시 막는다.
+    if (posterior && idealBuccalOffsetMm != null && idealBuccalOffsetMm > 0.15 && mHalfBl > 0) {
+      const room = maxBuccalOffsetForLingualScrewWall({
+        lingualHalfMm: mHalfBl,
+        screwRadiusMm: boreTopR,
+      });
+      const want = Math.min(idealBuccalOffsetMm, room);
+      if (want > mCu + 0.05) mCu = Math.min(1.6, want);
+    }
     const mExtPosU = mCu + mHalfBl;
     const mExtNegU = -mCu + mHalfBl;
     const mExtPosV = mCv + mHalfMd;
@@ -8446,8 +8465,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const minTaperDropBl = minWallTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
         const minTaperDropMd = (minWallTaperSlope * hRefSpan) / Math.max(0.8, postUnitMd);
         const screwTightR = boreStrictTopR;
+        const lingualWallR = Math.max(screwTightR, boreTopR + LINGUAL_SCREW_WALL_LIMIT_MM);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
-        const reqTopBl = Math.max(minPostR, Math.abs(uScrewTop - pSecCu) + screwTightR);
+        const reqTopBl = Math.max(
+          minPostR,
+          Math.abs(uScrewTop - pSecCu) + screwTightR,
+          -uScrewTop + lingualWallR + pSecCu,
+        );
         const reqTopMd = Math.max(minPostR, Math.abs(vScrewTop - pSecCv) + screwTightMd);
         // 스크류가 상단을 더 못 좁히면 상단을 베이스에 붙여 각도를 지우지 않는다.
         // 상단은 스크류 벽 두께(topFloor)를 반드시 지키고, 부족한 편측 기울기만큼 매끈한 단면 증분으로 베이스와 마진을 넓힌다.
@@ -8563,13 +8587,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const effScrewReqR = screwReqR;
         const screwReqMd = effScrewReqR / Math.max(0.8, postUnitMd);
         const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
+        const lingualWallR = Math.max(screwTightR, boreTopR + LINGUAL_SCREW_WALL_LIMIT_MM);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const screwBaseTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const screwBaseTightMd = screwBaseTightR / Math.max(0.8, postUnitMd);
 
         const computeScrewMaxWidths = (tdBl: number, tdMd: number) => {
           const minPosU = Math.max(minPostR + 0.15, uScrewBase + effScrewReqR, uScrewTop + effScrewReqR + tdBl);
-          const minNegU = Math.max(minPostR + 0.15, -uScrewBase + effScrewReqR, -uScrewTop + effScrewReqR + tdBl);
+          const minNegU = Math.max(minPostR + 0.15, -uScrewBase + lingualWallR, -uScrewTop + lingualWallR + tdBl);
           const minPosV = Math.max(minPostR + 0.15, vScrewBase + screwReqMd, vScrewTop + screwReqMd + tdMd);
           const minNegV = Math.max(minPostR + 0.15, -vScrewBase + screwReqMd, -vScrewTop + screwReqMd + tdMd);
           return {
@@ -8609,7 +8634,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           let pPosV = mExtPosV - wPosV;
           let pNegV = mExtNegV - wNegV;
           pPosU = Math.max(pPosU, uScrewBase + screwBaseTightR, uScrewTop + screwTightR + taperDeltaBl);
-          pNegU = Math.max(pNegU, -uScrewBase + screwBaseTightR, -uScrewTop + screwTightR + taperDeltaBl);
+          pNegU = Math.max(pNegU, -uScrewBase + lingualWallR, -uScrewTop + lingualWallR + taperDeltaBl);
           pPosV = Math.max(pPosV, vScrewBase + screwBaseTightMd, vScrewTop + screwTightMd + taperDeltaMd);
           pNegV = Math.max(pNegV, -vScrewBase + screwBaseTightMd, -vScrewTop + screwTightMd + taperDeltaMd);
           pSecCu = (pPosU - pNegU) * 0.5;
@@ -8882,7 +8907,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         let topPosV = pSecCv + Math.min(convexTopMd * syncedScaleMd, convexBaseMd * syncedScaleMd - minTaperDropMd);
         let topNegV = -pSecCv + Math.min(convexTopMd * syncedScaleMd, convexBaseMd * syncedScaleMd - minTaperDropMd);
         topPosU = Math.max(topPosU, uScrewTop + screwTightR);
-        topNegU = Math.max(topNegU, -uScrewTop + screwTightR);
+        topNegU = Math.max(topNegU, -uScrewTop + lingualWallR);
         topPosV = Math.max(topPosV, vScrewTop + screwTightMd);
         topNegV = Math.max(topNegV, -vScrewTop + screwTightMd);
         pSecCu = (topPosU - topNegU) * 0.5;
@@ -9032,8 +9057,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           );
           const reqNegUBase = Math.max(
             minPostR + 0.08,
-            -uScrewBase + screwBaseTightR,
-            -uScrewTop + screwTightR + reserveTaperDropBl,
+            -uScrewBase + lingualWallR,
+            -uScrewTop + lingualWallR + reserveTaperDropBl,
           );
           const reqPosVBase = Math.max(
             minPostR + 0.08,
@@ -9073,7 +9098,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           finalBaseBl = Math.max(minPostR + 0.08, (bPosU + bNegU) * 0.5);
           finalBaseMd = Math.max(minPostR + 0.08, (bPosV + bNegV) * 0.5);
           const tPosU = Math.min(bPosU - minTaperDropBl, Math.max(pSecCu + finalTopBlScaled, uScrewTop + screwTightR));
-          const tNegU = Math.min(bNegU - minTaperDropBl, Math.max(-pSecCu + finalTopBlScaled, -uScrewTop + screwTightR));
+          const tNegU = Math.min(bNegU - minTaperDropBl, Math.max(-pSecCu + finalTopBlScaled, -uScrewTop + lingualWallR));
           const tPosV = Math.min(bPosV - minTaperDropMd, Math.max(pSecCv + finalTopMdScaled, vScrewTop + screwTightMd));
           const tNegV = Math.min(bNegV - minTaperDropMd, Math.max(-pSecCv + finalTopMdScaled, -vScrewTop + screwTightMd));
           finalTopBlScaled = Math.max(minPostR, (tPosU + tNegU) * 0.5);

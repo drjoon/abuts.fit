@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  clampBuccalOffsetForLingualScrewWall,
   clampLateralForCompactDiameter,
+  lingualHalfAtScrewExitMm,
   localArchTangent,
+  maxBuccalOffsetForLingualScrewWall,
   neighborCrownBlPose,
   opposingSlopeTargetU,
   pickCompactFunctionalU,
@@ -249,6 +252,51 @@ test("하악 구치 중심은 대합 상악의 설측 교두 설측 경사면에
   assert.ok(Math.abs(res.fossaU) < 0.05);
   // 상악 설측 교두정(-2.1)보다 약간 설측인 설측 교두 설측 경사면(uLo 안쪽)
   assert.ok(res.u < -2.1 && res.u > -3.6, `expected lower target on lingual cusp lingual slope, got ${res.u}`);
+});
+
+test("악궁·대합 협측 위치가 스크류 설측 벽을 뚫으면 벽이 1mm 남는 곳까지만 옮긴다", () => {
+  // 상악 제1대구치: 상단 설측 2.75, 마진 반폭 3.425, 포스트 5.5, 스크류 반경 1.225
+  const half = lingualHalfAtScrewExitMm({
+    topLingualHalfMm: 2.75,
+    marginHalfBlMm: 3.425,
+    postHeightMm: 5.5,
+  });
+  assert.ok(half > 2.85 && half < 3.05, `expected ~2.96, got ${half}`);
+  const room = maxBuccalOffsetForLingualScrewWall({ lingualHalfMm: half, screwRadiusMm: 1.225 });
+  const ideal = 2.2;
+  const placed = clampBuccalOffsetForLingualScrewWall({
+    buccalOffsetMm: ideal,
+    lingualHalfMm: half,
+    screwRadiusMm: 1.225,
+  });
+  assert.ok(placed < ideal - 0.8, `arch target should pull back, got ${placed}`);
+  assert.ok(Math.abs(placed - room) < 1e-9);
+  const wall = half - placed - 1.225;
+  assert.ok(Math.abs(wall - 1) < 1e-6, `lingual wall should stay 1mm, got ${wall}`);
+});
+
+test("설측 벽이 이미 충분하면 악궁 협측 위치를 그대로 둔다", () => {
+  const kept = clampBuccalOffsetForLingualScrewWall({
+    buccalOffsetMm: 0.4,
+    lingualHalfMm: 2.96,
+    screwRadiusMm: 1.225,
+  });
+  assert.equal(kept, 0.4);
+  const lingual = clampBuccalOffsetForLingualScrewWall({
+    buccalOffsetMm: -1.4,
+    lingualHalfMm: 2.96,
+    screwRadiusMm: 1.225,
+  });
+  assert.equal(lingual, -1.4);
+});
+
+test("상단이 스크류보다 좁으면 협측으로 더 밀지 않는다", () => {
+  const placed = clampBuccalOffsetForLingualScrewWall({
+    buccalOffsetMm: 1.6,
+    lingualHalfMm: 1.9,
+    screwRadiusMm: 1.225,
+  });
+  assert.equal(placed, 0);
 });
 
 test("contactIsFunctionalTarget 모드에서 상악·하악이 교두 경사면과 악궁곡선을 함께 반영한다", () => {

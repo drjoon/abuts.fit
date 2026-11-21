@@ -553,6 +553,54 @@ export function pickCompactFunctionalU(args: {
   return target;
 }
 
+/**
+ * 스크류 홀 설측 벽의 배치 한계.
+ * 구치 협설 최소 두께(1.0mm)보다 얇으면 홀이 설측으로 뚫린 것으로 본다.
+ * 파절 바닥(0.4mm)까지 붙인 뒤 벽을 덧대는 것과 다르다.
+ */
+export const LINGUAL_SCREW_WALL_LIMIT_MM = 1;
+
+/**
+ * 스크류가 빠지는 교합면 쪽 설측 반폭.
+ * 치종 상단과, 마진에서 3° 테이퍼로 좁힌 값의 중간이다.
+ * 상단 템플릿만 쓰면 악궁을 거의 못 따르고, 마진 전체는 상단보다 넓어 벽을 두껍게 본다.
+ */
+export function lingualHalfAtScrewExitMm(args: {
+  topLingualHalfMm: number;
+  marginHalfBlMm: number;
+  postHeightMm: number;
+}): number {
+  const taperDrop = Math.tan((3 * Math.PI) / 180) * Math.max(2.2, args.postHeightMm) * 0.9;
+  const fromMargin = Math.max(args.topLingualHalfMm, args.marginHalfBlMm - taperDrop);
+  const upper = Math.min(args.marginHalfBlMm, fromMargin);
+  return Math.max(0.8, args.topLingualHalfMm + (upper - args.topLingualHalfMm) * 0.5);
+}
+
+/** 설측 벽이 minWall 이상 남도록 허용하는 협측 이동. 반폭이 부족하면 0. */
+export function maxBuccalOffsetForLingualScrewWall(args: {
+  lingualHalfMm: number;
+  screwRadiusMm: number;
+  minLingualWallMm?: number;
+}): number {
+  const minWall = args.minLingualWallMm ?? LINGUAL_SCREW_WALL_LIMIT_MM;
+  return Math.max(0, args.lingualHalfMm - args.screwRadiusMm - minWall);
+}
+
+/**
+ * 악궁·대합이 가리키는 협측 위치까지 가면 임플란트 축 스크류가 설측 벽에 붙는다.
+ * 그 벽을 남기는 협측 이동까지만 허용한다. 설측 이동은 벽을 두껍게 하므로 그대로 둔다.
+ */
+export function clampBuccalOffsetForLingualScrewWall(args: {
+  buccalOffsetMm: number;
+  lingualHalfMm: number;
+  screwRadiusMm: number;
+  minLingualWallMm?: number;
+}): number {
+  const offset = args.buccalOffsetMm;
+  if (!(offset > 0) || !Number.isFinite(offset)) return offset;
+  return Math.min(offset, maxBuccalOffsetForLingualScrewWall(args));
+}
+
 /** 수평 이동이 목표 근처면 짧은 쪽으로 줄여 최대 직경 10mm를 넘기지 않게 한다. 멀면 그대로 둔다. */
 export function clampLateralForCompactDiameter(
   u: number,
