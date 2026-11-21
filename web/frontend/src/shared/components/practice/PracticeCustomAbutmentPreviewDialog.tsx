@@ -1,6 +1,7 @@
 // 치과 채팅의 작업 스캔 → 전체 화면 커스텀어벗 디자인 모달.
-// 헤더 다운로드는 스크류홀이 열린 어벗을 악궁에 넣은 상악·하악·바이트(기공소 크라운 작업용).
-// 포맷은 받을 포맷이 있으면 그걸, 없으면 디자인 소프트웨어 설정이다(3Shape DCM, 그 외 PLY 칼라).
+// 헤더 다운로드는 기공소 보철 작업용 구강스캔이다.
+// 기존 악궁에서 스캔바디를 빼고 디자인된 커스텀어벗을 붙인 모델 전체를 칼라 PLY로 저장한다.
+// 커스텀어벗 단독 파일은 받지 않는다.
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
@@ -21,6 +22,7 @@
 // - 2026-11-19: 기공소는 치과 디자인 확정 전 뷰어로 두지 않고 모달을 닫는다.
 // - 2026-11-20: 디자인 확정 뒤 스냅샷을 다시 올리지 않는다. 확정 저장이 프리뷰를 이미 남긴다.
 // - 2026-11-20: 기공소 열기 — 확정 JSON만 먼저 보고, 스캔과 프리뷰 STL은 같이 받는다.
+// - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -89,15 +91,9 @@ import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { PracticeAbutmentDesignReviewRail } from "@/shared/practice/practiceAbutmentDesignReview";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
 import {
-  readStoredDcmDownloadFormat,
-  type DcmDownloadFormat,
-} from "@/shared/files/dcmDownloadFormat";
-import {
   encodeLabMeshData,
   meshesToLabMeshData,
 } from "@/shared/files/labDownloadMeshes";
-import { dcmFormatForDesignSoftware } from "@/shared/files/labWorkFolder";
-import { useAccountDesignSoftware } from "@/shared/files/useAccountDesignSoftware";
 import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
@@ -691,14 +687,6 @@ function crownScanStem(patientName: string | undefined, role: string) {
   return `${safe}_${role}`;
 }
 
-/** 받을 포맷이 있으면 그걸, 없으면 디자인 소프트웨어(3Shape=DCM, ExoCAD·그외=PLY). */
-function crownDownloadFormat(designSoftware: string): DcmDownloadFormat {
-  return (
-    readStoredDcmDownloadFormat() ||
-    (designSoftware.trim() ? dcmFormatForDesignSoftware(designSoftware) : "dcm")
-  );
-}
-
 /** 바이트처럼 씬에 없는 스캔. 캐시·동반 텍스처를 쓰고, 복사본은 호출부가 버린다. */
 async function loadExportScanMesh(
   item: PracticeDesignPreviewFileItem,
@@ -1015,7 +1003,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   filesPending = false,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { toast } = useToast();
-  const designSoftware = useAccountDesignSoftware();
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
   const authUserId = useAuthStore((state) => {
     const user = state.user as { id?: string; _id?: string } | null;
@@ -5463,7 +5450,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   ]);
 
   const ready = status.kind === "ready" && (designedList.length > 0 || readOnly);
-  const crownFormat = crownDownloadFormat(designSoftware);
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
   const canRedoEdit = editRev >= 0 && Boolean(directEditRef.current?.canRedo());
   const hasInfoFieldEdits = designedList.some(
@@ -5543,9 +5529,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (designedListRef.current.length === 0) return;
     crownDownloadLockRef.current = true;
     setCrownDownloadBusy(true);
-    const format = crownDownloadFormat(designSoftware);
     const temps: THREE.Mesh[] = [];
     try {
+      // 스캔바디 조각은 넣지 않는다. 나머지 악궁에 디자인된 어벗만 붙여 한 메쉬로 쓴다.
       const jawMeshes = (jaw: "upper" | "lower") => {
         const key = jaw === "upper" ? "upperTrimmed" : "lowerTrimmed";
         const parts: THREE.Mesh[] = [...jawMeshesRef.current[key]];
@@ -5568,8 +5554,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       const packed: Array<{ name: string; blob: Blob }> = [];
       const upper = meshesToLabMeshData(jawMeshes("upper"));
       const lower = meshesToLabMeshData(jawMeshes("lower"));
-      if (upper) packed.push({ name: `${crownScanStem(patientName, "상악")}.${format}`, blob: encodeLabMeshData(upper, format) });
-      if (lower) packed.push({ name: `${crownScanStem(patientName, "하악")}.${format}`, blob: encodeLabMeshData(lower, format) });
+      if (upper) packed.push({ name: `${crownScanStem(patientName, "상악")}.ply`, blob: encodeLabMeshData(upper, "ply") });
+      if (lower) packed.push({ name: `${crownScanStem(patientName, "하악")}.ply`, blob: encodeLabMeshData(lower, "ply") });
 
       const usingWorkScans = workScanFiles.some((file) => isOralScanMeshName(file.fileName));
       const biteItems = scanSources.meshes.filter((file) => {
@@ -5600,8 +5586,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (!bite) biteMissing = true;
           else {
             packed.push({
-              name: `${crownScanStem(patientName, "바이트")}.${format}`,
-              blob: encodeLabMeshData(bite, format),
+              name: `${crownScanStem(patientName, "바이트")}.ply`,
+              blob: encodeLabMeshData(bite, "ply"),
             });
           }
         } finally {
@@ -5626,7 +5612,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       crownDownloadLockRef.current = false;
       setCrownDownloadBusy(false);
     }
-  }, [authToken, designSoftware, patientName, scanSources.companions, scanSources.meshes, toast, workScanFiles]);
+  }, [authToken, patientName, scanSources.companions, scanSources.meshes, toast, workScanFiles]);
 
   return (
     <>
@@ -5786,19 +5772,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
               tip={
                 <>
-                  스크류홀이 열린 어벗을 악궁에 넣어 받습니다.
+                  PLY로 저장합니다.
                   <br />
-                  {crownFormat === "dcm" ? (
-                    "3Shape DCM으로 저장합니다."
-                  ) : crownFormat === "stl" ? (
-                    "STL로 저장합니다."
-                  ) : (
-                    <>
-                      PLY로 저장합니다.
-                      <br />
-                      칼라가 보입니다.
-                    </>
-                  )}
+                  칼라가 보입니다.
                 </>
               }
               onClick={() => void downloadCrownWorkScans()}
@@ -6163,31 +6139,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                       setExpandedTeeth(next);
                     }}
                     onSelect={selectAbutments}
-                    onDownload={(item) => saveBlobAsDownload(item.stlBlob, item.fileName)}
-                    onDownloadAll={() => {
-                      const items = designedListRef.current;
-                      if (items.length === 0) return;
-                      if (items.length === 1) {
-                        const only = items[0]!;
-                        saveBlobAsDownload(only.stlBlob, only.fileName);
-                        return;
-                      }
-                      void (async () => {
-                        const { default: JSZip } = await import("jszip");
-                        const zip = new JSZip();
-                        const used = new Set<string>();
-                        for (const item of items) {
-                          let name = item.fileName || `#${item.toothNumber}.stl`;
-                          if (used.has(name)) name = `#${item.toothNumber}_${name}`;
-                          used.add(name);
-                          zip.file(name, item.stlBlob);
-                        }
-                        const blob = await zip.generateAsync({ type: "blob" });
-                        const safe =
-                          (patientName || "디자인").replace(/[\\/:*?"<>|]+/g, " ").trim() || "디자인";
-                        saveBlobAsDownload(blob, `커스텀어벗_${safe}.zip`);
-                      })();
-                    }}
                     onRegenerate={canEditDesign ? () => void regenerateDesigns() : undefined}
                     onRegenerateTooth={
                       canEditDesign ? (tooth) => void regenerateDesigns([tooth]) : undefined

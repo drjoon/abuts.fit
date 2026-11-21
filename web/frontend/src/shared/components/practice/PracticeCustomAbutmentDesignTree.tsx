@@ -1,5 +1,6 @@
 // 커스텀어벗 디자인 뷰어 오른쪽 위 「어벗 정보」 패널.
-// 치아마다 표시·치식·다운로드를 두고, 펼치면 세부 항목을 드래그·스피너(▲/▼)·직접 입력으로 바꿀 수 있다.
+// 치아마다 표시·치식을 두고, 펼치면 세부 항목을 드래그·스피너(▲/▼)·직접 입력으로 바꿀 수 있다.
+// 커스텀어벗 단독 파일은 받지 않는다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -21,7 +22,6 @@ import {
   Crown,
   Cylinder,
   Crosshair,
-  Download,
   Eye,
   EyeOff,
   Link2,
@@ -1444,8 +1444,6 @@ export function PracticeCustomAbutmentDesignTree({
   onTogglePredictedCrown,
   onSetAllPredictedCrowns,
   onSelect,
-  onDownload,
-  onDownloadAll,
   onRegenerate,
   onRegenerateTooth,
   onRepickScanbody,
@@ -1467,8 +1465,6 @@ export function PracticeCustomAbutmentDesignTree({
   onToggleVisible: (toothNumber: string) => void;
   onSetAllVisible: (visible: boolean) => void;
   onSelect: (toothNumber: string, additive: boolean) => void;
-  onDownload: (item: DesignedCustomAbutment) => void;
-  onDownloadAll?: () => void;
   onRegenerate?: () => void;
   onRegenerateTooth?: (toothNumber: string) => void;
   /** 스캔바디 위치를 다시 찍는다. 자동 배정이 틀렸을 때 쓴다. */
@@ -1551,17 +1547,6 @@ export function PracticeCustomAbutmentDesignTree({
               onClick={onRegenerate}
             >
               <RefreshCw className={cn("h-3.5 w-3.5", redesigning.length > 0 && "animate-spin")} />
-            </button>
-          ) : null}
-          {onDownloadAll ? (
-            <button
-              type="button"
-              className={headerBtn}
-              aria-label="모든 STL 다운로드"
-              title="모든 커스텀어벗 STL을 받습니다."
-              onClick={onDownloadAll}
-            >
-              <Download className="h-3.5 w-3.5" />
             </button>
           ) : null}
           <button
@@ -1678,15 +1663,6 @@ export function PracticeCustomAbutmentDesignTree({
                       <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                    aria-label={`#${tooth} STL 다운로드`}
-                    title={`#${tooth} STL 다운로드`}
-                    onClick={() => onDownload(item)}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
                   <button
                     type="button"
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
