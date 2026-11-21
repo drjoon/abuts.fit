@@ -1205,6 +1205,96 @@ open11.predictedCrownWorldGeometry.dispose();
   d22Overjet.predictedCrownWorldGeometry.dispose();
 }
 
+// 1) 비대칭 장스팬 브리지(#43 - 42,41,31,32 - #33,#34,#35):
+//    좌측 3개(#33,#34,#35)가 우측 단독 #43을 3:1로 압도하지 않고,
+//    #33과 #43이 서로 조금씩 양보해 평행 삽입축의 중간 균형을 잡는다.
+{
+  const tiltAxis = (degY: number): [number, number, number] => {
+    const rad = (degY * Math.PI) / 180;
+    return [0, Math.sin(rad), -Math.cos(rad)];
+  };
+  const crossBridgeWorks = [
+    { toothNumber: "43", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["42"] },
+    { toothNumber: "42", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["43", "41"] },
+    { toothNumber: "41", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["42", "31"] },
+    { toothNumber: "31", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["41", "32"] },
+    { toothNumber: "32", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["31", "33"] },
+    { toothNumber: "33", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["32", "34"] },
+    { toothNumber: "34", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["33", "35"] },
+    { toothNumber: "35", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["34"] },
+  ];
+  const mkBridgeFixture = (toothNumber: string, yMm: number, tiltDegY: number) => ({
+    ...fixture11,
+    toothNumber,
+    jaw: "lower" as const,
+    fixturePose: {
+      ...fixture11.fixturePose,
+      origin: [0, yMm, 0] as [number, number, number],
+      axis: tiltAxis(tiltDegY),
+    },
+  });
+  const f43 = mkBridgeFixture("43", -12, -4);
+  const f33 = mkBridgeFixture("33", 12, 14);
+  const f34 = mkBridgeFixture("34", 19, 14);
+  const f35 = mkBridgeFixture("35", 26, 14);
+  const allCross = [f43, f33, f34, f35];
+  const [d43, d33] = await Promise.all([
+    designCustomAbutmentStl({
+      fixture: f43,
+      neighbors: allCross.filter((f) => f.toothNumber !== "43"),
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: crossBridgeWorks,
+    }),
+    designCustomAbutmentStl({
+      fixture: f33,
+      neighbors: allCross.filter((f) => f.toothNumber !== "33"),
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: crossBridgeWorks,
+    }),
+  ]);
+  assert.equal(d43.metrics.axisSource, "parallel", "#43-#33-#34-#35 브리지의 #43은 평행 삽입축을 사용한다");
+  assert.equal(d33.metrics.axisSource, "parallel", "#43-#33-#34-#35 브리지의 #33은 평행 삽입축을 사용한다");
+  // 두 지대주 모두 0°에 가깝게 평행하며, 어느 한쪽(3:1 클러스터)으로 치우치지 않는다.
+  assert.ok(
+    Math.abs(d43.metrics.angulationDeg - d33.metrics.angulationDeg) <= 4.5,
+    `#43(${d43.metrics.angulationDeg}°)과 #33(${d33.metrics.angulationDeg}°)이 서로 균형 있게 각도를 나눈다`,
+  );
+  d43.worldGeometry.dispose();
+  d43.predictedCrownWorldGeometry.dispose();
+  d33.worldGeometry.dispose();
+  d33.predictedCrownWorldGeometry.dispose();
+}
+
+// 2) 설측 두께가 얇은 견치(#43)에서도 설측 사면이 입구 벽(uLinMouth)에 막히지 않고 사면 형식으로 깎인다.
+{
+  const slenderCanine = await designCustomAbutmentStl({
+    fixture: { ...fixture13, toothNumber: "43", jaw: "lower" },
+    jawGeometry: jaw,
+    opposingGeometry: flatMid,
+    toothWorks: [{ toothNumber: "43", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+    params: { postLingualBevelMm: 3.0, postLabialBevelMm: 3.0, marginSizeScale: 0.92 },
+    explicitParams: { postLingualBevelMm: 3.0, postLabialBevelMm: 3.0 },
+  });
+  const solid43 = slenderCanine.solidBodyLocalPositions!;
+  let zTop43 = -Infinity;
+  for (let i = 2; i < solid43.length; i += 3) zTop43 = Math.max(zTop43, solid43[i]!);
+  const linLow43 = minLingualXAtZ(solid43, zTop43 - 2.6);
+  const linHigh43 = minLingualXAtZ(solid43, zTop43 - 0.55);
+  assert.ok(
+    linHigh43 - linLow43 >= 0.45,
+    `설측이 얇은 견치(#43)도 설측 사면이 실제로 깎여 나간다(Δx=${(linHigh43 - linLow43).toFixed(2)}mm)`,
+  );
+  const plane43 = measureLingualPlaneFlatnessMm(solid43, slenderCanine.fixture, zTop43 - 1.3);
+  assert.ok(
+    plane43.grooveDepth <= 0.03 && plane43.span <= 0.15,
+    `견치(#43) 설측 사면은 로브·홈 없이 매끈한 평면을 이룬다(span=${plane43.span.toFixed(3)}mm, groove=${plane43.grooveDepth.toFixed(3)}mm)`,
+  );
+  slenderCanine.worldGeometry.dispose();
+  slenderCanine.predictedCrownWorldGeometry.dispose();
+}
+
 jaw.dispose();
 jawLean.dispose();
 deep.dispose();

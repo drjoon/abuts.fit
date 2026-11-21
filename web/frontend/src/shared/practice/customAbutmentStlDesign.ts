@@ -3592,7 +3592,7 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
   const sortedGroup = [...group].sort((a, b) => a.toothNumber.localeCompare(b.toothNumber));
   const autoParams = { ...(args.params ?? {}), axisShiftLabialMm: 0, axisShiftMesialMm: 0 };
   const allPool = [args.fixture, ...(args.neighbors ?? [])];
-  let sum: Vec3 = [0, 0, 0];
+  const groupAxes: Vec3[] = [];
   for (const f of sortedGroup) {
     const axis = await autoAxisWorld({
       ...args,
@@ -3600,10 +3600,44 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
       neighbors: allPool.filter((n) => n.toothNumber !== f.toothNumber),
       params: autoParams,
     });
-    sum = add3(sum, axis);
+    groupAxes.push(axis);
   }
-  let shared = norm3(sum);
-  // 그룹 내 모든 픽스쳐 장축에서 브리지 최대 허용 각도(구치 14°, 전치 18°) 안에 들어오도록 공통 축 자체를 조정한다.
+  // 공간 밀도 가중치: 한쪽에 몰린 다수 지대주(#33·#34·#35)가 폰틱 건너편 단독 지대주(#43)를
+  // 3:1로 압도하지 않도록, 가까운 이웃이 많을수록 개별 투표 비중을 낮춰 양측 균형을 맞춘다.
+  const weights = sortedGroup.map((f, i) => {
+    let density = 1;
+    for (let j = 0; j < sortedGroup.length; j += 1) {
+      if (i === j) continue;
+      const d = Math.hypot(...sub3(f.fixturePose.origin, sortedGroup[j]!.fixturePose.origin));
+      density += Math.exp(-((d / 11) ** 2));
+    }
+    return 1 / density;
+  });
+  let weightedSum: Vec3 = [0, 0, 0];
+  for (let i = 0; i < groupAxes.length; i += 1) {
+    weightedSum = add3(weightedSum, scale3(groupAxes[i]!, weights[i]!));
+  }
+  let shared = norm3(weightedSum);
+  // 3개 이상 지대주 브리지에서는 모든 지대주 이상 축까지의 최대 각도 편차를 줄이는 미니맥스 중심과 블렌딩해,
+  // 양쪽 지대주(#33·#43 등)가 조금씩 양보해 브리지가 편안하게 들어가고 인접치와도 어긋나지 않게 한다.
+  if (groupAxes.length >= 3) {
+    let minimax = shared;
+    for (let iter = 0; iter < 16; iter += 1) {
+      let worstIdx = 0;
+      let worstDot = Infinity;
+      for (let i = 0; i < groupAxes.length; i += 1) {
+        const d = dot3(minimax, groupAxes[i]!);
+        if (d < worstDot) {
+          worstDot = d;
+          worstIdx = i;
+        }
+      }
+      const step = 0.35 / (1 + iter * 0.25);
+      minimax = norm3(add3(scale3(minimax, 1 - step), scale3(groupAxes[worstIdx]!, step)));
+    }
+    shared = norm3(add3(scale3(shared, 0.4), scale3(minimax, 0.6)));
+  }
+  // 그룹 내 모든 픽스쳐 장축에서 브리지 최대 허용 각도(구치 14~24°, 전치 30°) 안에 들어오도록 공통 축 자체를 조정한다.
   // 개별 치아에서 따로 capTilt를 걸지 않아 모든 브리지 지대주의 포스트 각도가 0.00° 오차로 완전히 평행해진다.
   const anyAnterior = sortedGroup.some((f) => abutmentTemplateForTooth(f.toothNumber).anterior);
   const bridgeGroup = sortedGroup.some((f) => {
@@ -3614,15 +3648,18 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
   const maxGroupTilt = (anyAnterior ? 30 : bridgeGroup ? 24 : 14) * DEG;
   const minTaperSlopeGroup = Math.tan(RETENTION_SINGLE_MIN_TAPER_DEG * DEG);
   for (let iter = 0; iter < 12; iter += 1) {
-    let moved = false;
+    let sumNext: Vec3 = [0, 0, 0];
+    let movedCount = 0;
     for (const f of sortedGroup) {
+      let cand = shared;
+      let fMoved = false;
       const fAxis = norm3(f.fixturePose.axis);
-      const ang = Math.acos(clamp(dot3(shared, fAxis), -1, 1));
+      const ang = Math.acos(clamp(dot3(cand, fAxis), -1, 1));
       if (ang > maxGroupTilt + 1e-4) {
-        shared = slerpDir(shared, fAxis, (ang - maxGroupTilt) / ang);
-        moved = true;
+        cand = slerpDir(cand, fAxis, (ang - maxGroupTilt) / ang);
+        fMoved = true;
       }
-      const wLocal = worldDirToFixtureLocal(shared, f.fixturePose);
+      const wLocal = worldDirToFixtureLocal(cand, f.fixturePose);
       if (wLocal[2] > 0.25) {
         const fConn = f.connectionSpec;
         const fBoreTopR = fConn.screwUpperDiameterMm / 2;
@@ -3639,17 +3676,20 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
         let tx = wLocal[0] / wLocal[2];
         let ty = wLocal[1] / wLocal[2];
         let clampedLocal = false;
-        const freeAllowShift = Math.max(
-          0.25,
-          estAnatMaxR - 0.22 - estSpanH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.06),
-        );
-        const maxFreeTan = freeAllowShift / estSpanH;
-        const curTanLen = Math.hypot(tx, ty);
-        if (curTanLen > maxFreeTan + 1e-4) {
-          const k = maxFreeTan / curTanLen;
-          tx *= k;
-          ty *= k;
-          clampedLocal = true;
+        // 전치(절치·견치)는 설측 사면으로 스크류 홀을 열 수 있으므로 360° 감싸기 기반 maxFreeTan으로 브리지 공통축을 묶지 않는다.
+        if (!fTpl.anterior) {
+          const freeAllowShift = Math.max(
+            0.25,
+            estAnatMaxR - 0.22 - estSpanH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.06),
+          );
+          const maxFreeTan = freeAllowShift / estSpanH;
+          const curTanLen = Math.hypot(tx, ty);
+          if (curTanLen > maxFreeTan + 1e-4) {
+            const k = maxFreeTan / curTanLen;
+            tx *= k;
+            ty *= k;
+            clampedLocal = true;
+          }
         }
         for (const other of allPool) {
           if (other.toothNumber === f.toothNumber || other.jaw !== f.jaw) continue;
@@ -3691,12 +3731,20 @@ async function resolveGroupAxisWorld(args: DesignArgs): Promise<Vec3 | null> {
         }
         if (clampedLocal) {
           const nextLocal = norm3([tx, ty, 1]);
-          shared = fixtureLocalDirToWorld(nextLocal, f.fixturePose);
-          moved = true;
+          cand = fixtureLocalDirToWorld(nextLocal, f.fixturePose);
+          fMoved = true;
         }
       }
+      if (fMoved) {
+        sumNext = add3(sumNext, cand);
+        movedCount += 1;
+      }
     }
-    if (!moved) break;
+    if (movedCount === 0) break;
+    const avgTarget = norm3(sumNext);
+    const stepDot = dot3(shared, avgTarget);
+    shared = norm3(add3(scale3(shared, 0.35), scale3(avgTarget, 0.65)));
+    if (stepDot > 1 - 1e-7) break;
   }
   return shared;
 }
@@ -5415,7 +5463,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const wLabSlope = dot3(w, labXY) / Math.max(w[2], 0.25);
       const wMesSlope = dot3(w, mesXY) / Math.max(w[2], 0.25);
       const tgtMesSlope = dot3(target, mesXY) / Math.max(target[2], 0.25);
-      const blendedMes = wMesSlope + clamp(tgtMesSlope - wMesSlope, -Math.tan(6 * DEG), Math.tan(6 * DEG)) * 0.22;
+      const mesDeltaCap = Math.tan((posterior ? 6 : 11) * DEG);
+      const mesBlend = posterior ? 0.22 : 0.45;
+      const blendedMes = wMesSlope + clamp(tgtMesSlope - wMesSlope, -mesDeltaCap, mesDeltaCap) * mesBlend;
       w = capTilt(
         norm3([
           labXY[0] * wLabSlope + mesXY[0] * blendedMes,
@@ -9126,8 +9176,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             params.marginSizeScale >= 0.95 &&
             angulationDeg <= 13.5 &&
             reqWrapMdMargin <= maxAnatHalfMd + 0.45));
-      // 절치는 스크류를 360°로 감싸 원기둥이 되지 않게 한다. 홀은 설측·절단 사면으로 열고 순설은 삽형으로 좁힌다.
-      if (tpl.kind === "incisor") wrapAnteriorScrew360 = false;
+      // 절치 및 설측 사면이 켜진 견치는 스크류를 360°로 감싸 설측 사면이 막히거나 원기둥이 되지 않게 한다.
+      // 설측 두께가 얇아도 홀을 설측 사면으로 열어 사면 형식으로 깎여 나가게 둔다.
+      if (tpl.kind === "incisor" || (tpl.kind === "canine" && !lingualExplicitOff)) {
+        wrapAnteriorScrew360 = false;
+      }
       const maxTopShiftU = wrapAnteriorScrew360 ? 1.55 : tpl.kind === "incisor" ? 1.25 : 0.72;
       const maxTopShiftV = 1.35;
       pTopCu = wrapAnteriorScrew360
@@ -9913,14 +9966,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const uLabBase = pBaseCu + finalAntBaseBl;
         const uLabTop = pTopCu + tLab;
         const labWallSlope = (uLabBase - uLabTop) / Math.max(0.36, hIncisalTop - topRoundMm - hLabStart);
-        // 견치는 사면이 홀을 열어도 입구 벽을 남긴다. 필렛은 안쪽으로만 깎으므로 축벽이 이 한계 안으로 들어가면 깃이 된다.
-        // 절치는 딥바이트 설측 삭제가 이 한계보다 우선이라 여기서 막지 않는다.
-        const holdScrewMouth = tpl.kind === "canine";
+        // 견치도 설측 사면이 켜져 있으면 설측 두께가 얇을 때 사면 형식으로 깎여 나가도록
+        // 스크류 입구 벽(uLinMouth)으로 설측 축벽·사면을 막지 않는다.
+        // 순측 벽(uLabMouth)만 입구 벽을 남겨 홀이 순측으로 뚫리지 않게 한다.
+        const holdScrewMouth = tpl.kind === "canine" && lingualExplicitOff;
+        const holdLabScrewMouth = tpl.kind === "canine";
         const screwMouthWall = boreTopR + Math.max(ANTERIOR_SCREW_WALL_MM, MIN_FRACTURE_SAFE_POST_WALL_MM + 0.18);
         const uLinMouth = uScrewTop - screwMouthWall;
         const uLabMouth = uScrewTop + screwMouthWall;
-        // 견치 설측 축벽은 설정 테이퍼의 일부만 쓴다. 나머지는 사면이 입구 벽까지 더 가파르게 깎는다.
-        const linWallSlope = holdScrewMouth ? linCollarSlope * 0.42 : linCollarSlope;
+        // 견치 설측 축벽은 설정 테이퍼의 일부만 쓴다. 나머지는 사면이 더 가파르게 깎는다.
+        const linWallSlope = tpl.kind === "canine" ? linCollarSlope * 0.42 : linCollarSlope;
         const linCollarAt = (hVal: number) => {
           const dhLin = Math.max(0, hVal - hLinStart);
           const cuAt = pBaseCu + cuSlopeU * dhLin;
@@ -9937,7 +9992,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           naturalCrownR(frame.uLabial, hVal, hLabMargin, labR0, hCrownTop);
         const uLabWallAt = (hVal: number) => {
           const tapered = uLabBase - labWallSlope * Math.max(0, hVal - hLabStart);
-          return holdScrewMouth ? Math.max(tapered, uLabMouth) : tapered;
+          return holdLabScrewMouth ? Math.min(uLabBase, Math.max(tapered, uLabMouth)) : tapered;
         };
 
         // 순측 사면(기공소 양면 경사 스타일): 명시값 0은 사면 없음, 자동(기본)은 절치·순측경사 전치에서 치경 유지칼라 위부터 순면 경사를 준다.
@@ -10028,15 +10083,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             minIncisalBl;
           uLabBevelTop = Math.max(uLabBevelTop, minAllowedLabTop);
         }
-        if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
+        if (holdLabScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, Math.min(uLabBase, uLabMouth));
         uLabBevelTop = Math.min(uLabBevelTop, uLabWallAt(hIncisalTop) - 0.12);
-        if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
+        if (holdLabScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, Math.min(uLabBase, uLabMouth));
         if (labBevelActive && uLabBevelTop > uLabBevel0 - 0.12) {
           uLabBevelTop = Math.min(
             uLabBevelTop,
             uLabBevel0 - Math.max(0.2, labBevelRun * Math.tan(9.5 * DEG)),
           );
-          if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
+          if (holdLabScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, Math.min(uLabBase, uLabMouth));
           if (wrapAnteriorScrew360) {
             uLabBevelTop = Math.max(uLabBevelTop, uScrewTop + screwSafeR * 0.85);
           }
@@ -10055,18 +10110,24 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
         const uCollarTop = linCollarAt(hIncisalTop);
         let uBevelTop: number;
-        if (holdScrewMouth) {
-          // 설측 끝은 싱귤럼 각으로 정하고 스크류 입구 벽에서 멈춘다.
-          // 순측 사면이 안쪽으로 들어와도 이 끝을 같이 후퇴시키지 않는다.
+        if (tpl.kind === "canine") {
+          // 견치 설측 사면은 싱귤럼 각으로 깎고, 설측 두께가 얇아 스크류 홀과 만나더라도
+          // 입구 벽(uLinMouth)에서 멈추지 않고 최소 절단 폭(minIncisalBl) 한도까지 사면 형식으로 깎여 나가게 한다.
+          const effLabTop = labBevelActive ? uLabBevelTop : uLabTop;
           const lingualAngleDeg = clamp(cingulumPlan.angleDeg, 18, 36);
-          let uTargetBevelTop = Math.max(
+          const uTargetBevelTop = Math.max(
             pTopCu - tLin,
             hardLinCapU,
             uBevelStart + Math.tan(lingualAngleDeg * DEG) * bevelRun,
           );
-          const uLinStop = wrapAnteriorScrew360 ? Math.min(uLinMouth, uScrewTop - screwSafeR) : uLinMouth;
-          uTargetBevelTop = Math.min(uTargetBevelTop, uLinStop, uBevelStart + Math.tan(56 * DEG) * bevelRun);
-          uBevelTop = Math.max(Math.min(uTargetBevelTop, uLinStop), Math.min(uCollarTop, uLinStop));
+          const uMaxBevelTop = Math.min(
+            effLabTop - minIncisalBl,
+            uBevelStart + Math.tan(56 * DEG) * bevelRun,
+          );
+          const uLinCap = holdScrewMouth
+            ? Math.min(uMaxBevelTop, wrapAnteriorScrew360 ? Math.min(uLinMouth, uScrewTop - screwSafeR) : uLinMouth)
+            : uMaxBevelTop;
+          uBevelTop = clamp(uTargetBevelTop, uCollarTop, Math.max(uCollarTop, uLinCap));
         } else {
           // 절치는 순측 사면이 깎인 상단을 기준으로 설측 두께를 맞추고, 딥바이트는 설측 접촉 밖으로 뺀다.
           const effLabTop = labBevelActive ? uLabBevelTop : uLabTop;
