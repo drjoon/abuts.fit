@@ -330,12 +330,15 @@ const practiceTransferSchema = new mongoose.Schema(
         default: null,
       },
       /**
-       * 커스텀어벗 수가 경로. platform=치과 디자인 확정, lab=수작업, pending=다시 고르기.
+       * 커스텀어벗 수가 경로.
+       * platform=레거시 어벗츠 지급, lab=기공소 지급(디자인 완료·수작업), pending=다시 고르기.
        * 스키마에 없으면 strict 업데이트가 값을 버려 기공소 검토 판정이 풀린다.
        */
       abutmentFeeRoute: { type: String, default: null, trim: true },
       abutmentFeeRouteRevision: { type: Number, default: 0 },
       abutmentCancelDeadlineAt: { type: Date, default: null },
+      /** 이 시각이 지나면 제조사 준비로 올린다. 그 전에는 치과·기공소가 확정을 취소한다. */
+      abutmentGracePromoteAt: { type: Date, default: null, index: true },
       abutmentProductionStartedAt: { type: Date, default: null },
       /**
        * 기공소가 지정한 어벗 출고일(KST YMD).

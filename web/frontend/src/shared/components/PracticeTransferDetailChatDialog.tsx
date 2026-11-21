@@ -345,11 +345,7 @@ import {
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
-import {
-  LabProsthesisAiDesignButton,
-  type LabProsthesisAiCaseNav,
-  type WorkingScansPersisted,
-} from "@/shared/components/practice/LabProsthesisAiDesignDialog";
+import { type WorkingScansPersisted } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
 import {
   ORAL_SCAN_ROLE_OPTIONS,
   oralScanReviewBannerLines,
@@ -367,8 +363,7 @@ import {
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
-import { useAbutsLabCertified } from "@/shared/practice/useAbutsLabCertified";
-import { useAuthStore } from "@/store/useAuthStore";
+import { AbutmentDesignGraceControl } from "@/shared/practice/AbutmentDesignGraceControl";
 import {
   LabBasketTagToolbar,
   normalizeLabBasketTag,
@@ -670,9 +665,13 @@ type PracticeTransferDetailChatDialogProps = {
   transferId?: string | null;
   /** 케이스 공유(플랫폼 내·외부 링크). PracticeTransfer._id 또는 transferId. 없으면 버튼 숨김 */
   shareTransferKey?: string | null;
-  /** AI 디자인 헤더의 미완료 의뢰 이동 */
-  labAiCaseNav?: LabProsthesisAiCaseNav | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
+  /** 기공소 채팅 헤더. 작업시작 옆 디자인 버튼. */
+  labHeaderTrailing?: ReactNode;
+  /** 디자인 완료 후 제조사 준비 전. 이 시각까지 취소할 수 있다. */
+  abutmentGracePromoteAt?: string | null;
+  abutmentGraceCancelBusy?: boolean;
+  onCancelAbutmentGrace?: () => void;
   /** 기공소가 의뢰 스캔 역할을 고친다 */
   onChangeRequestScanRole?: (
     file: PracticeTransferDialogFileItem,
@@ -985,8 +984,10 @@ export function PracticeTransferDetailChatDialog({
   files,
   transferId = null,
   shareTransferKey = null,
-  labAiCaseNav = null,
-  onWorkingScansPersisted,
+  labHeaderTrailing = null,
+  abutmentGracePromoteAt = null,
+  abutmentGraceCancelBusy = false,
+  onCancelAbutmentGrace,
   onChangeRequestScanRole,
   trashedFiles = [],
   oralScanAttachMode = null,
@@ -1126,12 +1127,6 @@ export function PracticeTransferDetailChatDialog({
   const { toast } = useToast();
   const { promptFromChatInput, dialogs: labHelperInstallDialogs } =
     useLabHelperInstallPrompt();
-  const viewerRole = useAuthStore((s) => s.user?.role);
-  const internalLabAiDesign =
-    feeViewer === "lab" && String(viewerRole || "").trim() === "internalLab";
-  const labAiDesignAllowed = useAbutsLabCertified(
-    feeViewer === "lab" && !internalLabAiDesign,
-  );
   const isMobile = useIsMobile();
   const isInline = variant === "inline";
   const platformGuideTour = useGuideTour();
@@ -2962,57 +2957,31 @@ export function PracticeTransferDetailChatDialog({
           files.map((file) => toTempUploadFileKey(file)),
         )
     : undefined;
-  const labAiDesignButton =
-    internalLabAiDesign ||
-    (operateLabWork && feeViewer === "lab" && labAiDesignAllowed) ? (
-      <LabProsthesisAiDesignButton
-        toothWorks={chartToothWorks}
-        files={files}
-        authToken={authToken}
-        transferId={transferId}
-        caseNav={labAiCaseNav}
-        workScanFiles={(workScanFiles || []).map((file) => ({
-          fileName: file.fileName,
-          scanRole: file.scanRole,
-          s3Key: file.s3Key,
-          uploadedAt: file.uploadedAt,
-        }))}
-        workScanAlignment={workScanAlignment}
-        onWorkingScansPersisted={onWorkingScansPersisted}
-        onAttachChatFile={
-          onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
-        }
-        onRemoveChatFile={detachPaintChatFile}
-        onReorderChatFiles={reorderPaintChatFiles}
-        caseHeader={{
-          primary: caseIdentityStrip?.primary,
-          dates: identityDateLabel,
-        }}
-        basketTag={{
-          value: labBasketTag,
-          occupiedTags: labBasketOccupiedTags,
-          onChange: (tag) => {
-            const next = normalizeLabBasketTag(tag);
-            setLabBasketTag(next);
-            onLabBasketTagChange?.(next);
-          },
-        }}
+  const abutmentGraceControl =
+    abutmentGracePromoteAt && onCancelAbutmentGrace ? (
+      <AbutmentDesignGraceControl
+        key="abutment-grace"
+        deadlineAt={abutmentGracePromoteAt}
+        busy={abutmentGraceCancelBusy}
+        onCancel={onCancelAbutmentGrace}
       />
     ) : null;
   const labIdentityDateRowActions =
     acceptBarPrimaryActions ||
     reacceptBarPrimaryAction ||
     releaseAction ||
-    labAiDesignButton ? (
+    labHeaderTrailing ||
+    (feeViewer === "lab" && abutmentGraceControl) ? (
       <div
         className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
         data-no-drag
         {...(showAcceptBar ? { "data-guide-tour": "lab_accept" } : {})}
       >
+        {feeViewer === "lab" ? abutmentGraceControl : null}
         {acceptBarPrimaryActions}
         {reacceptBarPrimaryAction}
         {releaseAction}
-        {labAiDesignButton}
+        {labHeaderTrailing}
       </div>
     ) : null;
   const practiceHeaderActionButtons = (() => {
@@ -3162,6 +3131,7 @@ export function PracticeTransferDetailChatDialog({
         </Button>,
       );
     }
+    if (abutmentGraceControl) buttons.unshift(abutmentGraceControl);
     if (buttons.length === 0) return null;
     return (
       <div

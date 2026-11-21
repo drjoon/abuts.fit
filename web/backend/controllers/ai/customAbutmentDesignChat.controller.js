@@ -40,13 +40,14 @@ import { emitAppEventToUser } from "../../socket.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
   DESIGN_ROUTE_PLATFORM,
-  abutmentLabCheckDeadline,
+  abutmentDesignGraceDeadline,
   currentDesignRoute,
   designRouteBlockMessage,
   oralSourcesOnly,
   platformProductionKey,
   newDesignGeneration,
 } from "../../services/abutmentDesignRoute.js";
+import { ensureAbutmentDesignGraceWorker } from "../../jobs/abutmentDesignGraceWorker.js";
 import { syncPracticeTransferAbutmentFeeRoute } from "../../services/practiceTransferBilling.service.js";
 import {
   quoteCustomAbutmentRouteFees,
@@ -602,6 +603,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
           "production.abutmentFeeRoute": 1,
           "production.abutmentFeeRouteRevision": 1,
           "production.abutmentCancelDeadlineAt": 1,
+          "production.abutmentGracePromoteAt": 1,
           "production.labDesignConfirmedAt": 1,
           "production.relatedRequestIds": 1,
         })
@@ -676,6 +678,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     }
     let choice = {
       cancelDeadlineAt: transfer?.production?.abutmentCancelDeadlineAt || null,
+      gracePromoteAt: transfer?.production?.abutmentGracePromoteAt || null,
       labCheckedAt: transfer?.production?.labDesignConfirmedAt || null,
     };
     // 기공소가 제조 주문을 취소하면 확정·취소 기한이 남아 「취소 가능」이 뜬다.
@@ -688,7 +691,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       );
       if (released?.released) {
         mode = manualDesign ? "manual" : null;
-        choice = { cancelDeadlineAt: null, labCheckedAt: null };
+        choice = { cancelDeadlineAt: null, gracePromoteAt: null, labCheckedAt: null };
       }
     }
     return res.json({
@@ -799,6 +802,8 @@ async function emitCustomAbutmentTransferEvent(transferDoc, action) {
         "production.practiceDesignConfirmedAt": 1,
         "production.labDesignConfirmedAt": 1,
         "production.abutmentFeeRoute": 1,
+        "production.abutmentCancelDeadlineAt": 1,
+        "production.abutmentGracePromoteAt": 1,
         "production.designReadyAt": 1,
       })
       .lean();
@@ -807,6 +812,8 @@ async function emitCustomAbutmentTransferEvent(transferDoc, action) {
       practiceDesignConfirmedAt: saved.practiceDesignConfirmedAt || null,
       labDesignConfirmedAt: saved.labDesignConfirmedAt || null,
       abutmentFeeRoute: saved.abutmentFeeRoute || null,
+      abutmentCancelDeadlineAt: saved.abutmentCancelDeadlineAt || null,
+      abutmentGracePromoteAt: saved.abutmentGracePromoteAt || null,
       designReadyAt: saved.designReadyAt || null,
     };
   }
@@ -977,7 +984,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
 
     const now = new Date();
     const t0 = Date.now();
-    const [transferDoc, checkedTeeth, freshDeadline] = await Promise.all([
+    const [transferDoc, checkedTeeth] = await Promise.all([
       PracticeTransfer.findOne({ transferId: transferIdInput }).lean(),
       Promise.all(
         incoming.map(async (row) => {
@@ -991,7 +998,6 @@ export async function confirmCustomAbutmentDesign(req, res) {
           return { ...row, size, crownS3Key: row.crownS3Key || "" };
         }),
       ),
-      abutmentLabCheckDeadline(now),
     ]);
     const tLoad = Date.now();
     if (!transferDoc) {
@@ -1009,10 +1015,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
     const canEditShared = party ? labIds.includes(own) : false;
     const anchorId = party ? practiceId : canSave ? own : "";
     const transferId = String(transferDoc.transferId || transferIdInput);
-    const labRevision = Boolean(canEditShared) && !canSave && !privileged;
     const labAlreadyConfirmed = Boolean(transferDoc.production?.labDesignConfirmedAt);
-    if ((!canSave && !privileged && !labRevision) || !anchorId) {
-      return res.status(403).json({ success: false, message: "의뢰 치과만 확정할 수 있습니다." });
+    // 제조사 준비 전은 치과·기공소가 같은 확정이다. 들어간 뒤의 수정만 기존 파일을 갈아 끼운다.
+    const labRevision = labAlreadyConfirmed;
+    if ((!canSave && !canEditShared && !privileged) || !anchorId) {
+      return res.status(403).json({ success: false, message: "이 의뢰의 디자인을 확정할 수 없습니다." });
     }
 
     const validTeeth = checkedTeeth.filter(Boolean);
@@ -1195,14 +1202,13 @@ export async function confirmCustomAbutmentDesign(req, res) {
       const feeRevision = labRevision
         ? Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0)))
         : Math.max(0, Math.floor(Number(transferDoc.production?.abutmentFeeRouteRevision || 0))) + 1;
-      cancelDeadlineAt = transferDoc.production?.abutmentCancelDeadlineAt || null;
-      if (!labRevision && !cancelDeadlineAt) {
-        cancelDeadlineAt = freshDeadline;
-      }
+      cancelDeadlineAt = labRevision
+        ? transferDoc.production?.abutmentCancelDeadlineAt || null
+        : abutmentDesignGraceDeadline(now);
       const productionSet = {
         "production.customAbutmentPreview": nextPreview,
       };
-      // 채팅 STL·designReadyAt은 기공소가 확정한 뒤에만. 검토 중 수정은 이미 공개된 파일만 갱신.
+      // 채팅 STL·designReadyAt은 제조사 준비에 들어간 뒤에만. 유예 중에는 올리지 않는다.
       if (labRevision && labAlreadyConfirmed) {
         productionSet["production.designFiles"] = mergedDesignFiles;
         productionSet["production.designReadyAt"] = now;
@@ -1210,21 +1216,19 @@ export async function confirmCustomAbutmentDesign(req, res) {
       if (!labRevision) {
         productionSet["production.practiceDesignConfirmedAt"] = now;
         productionSet["production.practiceDesignConfirmedBy"] = userOid;
-        productionSet["production.abutmentFeeRoute"] = "platform";
+        productionSet["production.abutmentFeeRoute"] = "lab";
         productionSet["production.abutmentFeeRouteRevision"] = feeRevision;
-        if (cancelDeadlineAt) {
-          productionSet["production.abutmentCancelDeadlineAt"] = cancelDeadlineAt;
-        }
+        productionSet["production.abutmentCancelDeadlineAt"] = cancelDeadlineAt;
+        productionSet["production.abutmentGracePromoteAt"] = cancelDeadlineAt;
       }
       if (!transferDoc.production) transferDoc.production = {};
       if (!labRevision) {
         transferDoc.production.practiceDesignConfirmedAt = now;
         transferDoc.production.practiceDesignConfirmedBy = userOid;
-        transferDoc.production.abutmentFeeRoute = "platform";
+        transferDoc.production.abutmentFeeRoute = "lab";
         transferDoc.production.abutmentFeeRouteRevision = feeRevision;
-        if (cancelDeadlineAt) {
-          transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
-        }
+        transferDoc.production.abutmentCancelDeadlineAt = cancelDeadlineAt;
+        transferDoc.production.abutmentGracePromoteAt = cancelDeadlineAt;
       }
       await Promise.all([
         ...requestWrites,
@@ -1279,6 +1283,10 @@ export async function confirmCustomAbutmentDesign(req, res) {
         cancelDeadlineAt: cancelDeadlineAt
           ? new Date(cancelDeadlineAt).toISOString()
           : null,
+        gracePromoteAt:
+          !labRevision && cancelDeadlineAt
+            ? new Date(cancelDeadlineAt).toISOString()
+            : null,
       },
     });
 
@@ -1329,10 +1337,9 @@ export async function confirmCustomAbutmentDesign(req, res) {
       }
       const toothListText = validTeeth.map((t) => `#${t.toothNumber}`).join(", ");
       const chatContent = labRevision
-        ? `기공소가 커스텀어벗 디자인(${toothListText})을 수정 반영했습니다.`
-        : promotedRows.length > 0
-          ? `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.\n제조사 준비에 등록했습니다.`
-          : `치과가 커스텀어벗 디자인(${toothListText})을 확정했습니다.`;
+        ? `커스텀어벗 디자인(${toothListText})을 수정 반영했습니다.`
+        : `커스텀어벗 디자인(${toothListText})을 확정했습니다.\n5분 후 제조사 준비에 들어갑니다.`;
+      if (!labRevision) ensureAbutmentDesignGraceWorker();
       if (promotedRows.length > 0) {
         try {
           const { triggerRhinoProcessFileForRequest } = await import(

@@ -149,6 +149,8 @@ export type PracticeRecentRequestItem = {
   abutmentFeeRoute?: "platform" | "lab" | "pending" | null;
   /** 확정 후 기공소 확인·의뢰자 취소 마감(ISO). */
   abutmentCancelDeadlineAt?: string | null;
+  /** 이 시각에 제조사 준비로 올린다. 그 전에는 확정을 취소할 수 있다. */
+  abutmentGracePromoteAt?: string | null;
   abutmentToothStages?: { tooth: string; stage: string }[];
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
@@ -247,6 +249,7 @@ export type PracticeRecentTransferItem = {
   manualRequested?: boolean;
   abutmentFeeRoute?: "platform" | "lab" | "pending" | null;
   abutmentCancelDeadlineAt?: string | null;
+  abutmentGracePromoteAt?: string | null;
   /** 커스텀어벗 치아별 제조사 공정(준비·가공·세척.패킹·포장.발송·추적관리) */
   abutmentToothStages?: { tooth: string; stage: string }[];
   transferMemo: string;
@@ -1036,6 +1039,9 @@ export const mapMyPracticeTransferApiRows = (
         abutmentCancelDeadlineAt: productionRaw?.abutmentCancelDeadlineAt
           ? String(productionRaw.abutmentCancelDeadlineAt)
           : null,
+        abutmentGracePromoteAt: productionRaw?.abutmentGracePromoteAt
+          ? String(productionRaw.abutmentGracePromoteAt)
+          : null,
         abutmentToothStages: Array.isArray(productionRaw?.abutmentToothStages)
           ? (productionRaw.abutmentToothStages as unknown[])
               .map((row) => ({
@@ -1448,9 +1454,10 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     designReadyAt:
       openRows.find((r) => r.designReadyAt)?.designReadyAt || prev.designReadyAt || null,
     practiceDesignConfirmedAt:
-      openRows.find((r) => r.practiceDesignConfirmedAt)?.practiceDesignConfirmedAt ||
-      prev.practiceDesignConfirmedAt ||
-      null,
+      openRows.length > 0
+        ? openRows.find((r) => r.practiceDesignConfirmedAt)?.practiceDesignConfirmedAt ||
+          null
+        : prev.practiceDesignConfirmedAt || null,
     labDesignConfirmedAt:
       openRows.find((r) => r.labDesignConfirmedAt)?.labDesignConfirmedAt ||
       prev.labDesignConfirmedAt ||
@@ -1462,9 +1469,15 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       prev.abutmentFeeRoute ||
       null,
     abutmentCancelDeadlineAt:
-      openRows.find((r) => r.abutmentCancelDeadlineAt)?.abutmentCancelDeadlineAt ||
-      prev.abutmentCancelDeadlineAt ||
-      null,
+      openRows.length > 0
+        ? openRows.find((r) => r.abutmentCancelDeadlineAt)?.abutmentCancelDeadlineAt ||
+          null
+        : prev.abutmentCancelDeadlineAt || null,
+    abutmentGracePromoteAt:
+      openRows.length > 0
+        ? openRows.find((r) => r.abutmentGracePromoteAt)?.abutmentGracePromoteAt ||
+          null
+        : prev.abutmentGracePromoteAt || null,
     abutmentToothStages:
       openRows.find((r) => (r.abutmentToothStages || []).length > 0)
         ?.abutmentToothStages ||
@@ -1742,6 +1755,7 @@ export const groupPracticeRecentRequests = (
         manualRequested: Boolean(req.manualRequested),
         abutmentFeeRoute: req.abutmentFeeRoute || null,
         abutmentCancelDeadlineAt: req.abutmentCancelDeadlineAt || null,
+        abutmentGracePromoteAt: req.abutmentGracePromoteAt || null,
         abutmentToothStages: req.abutmentToothStages || [],
         transferMemo: req.transferMemo,
         rawTransferMemo: req.rawTransferMemo,
@@ -1922,8 +1936,11 @@ export const groupPracticeRecentRequests = (
     }
     if (req.manualRequested) existing.manualRequested = true;
     if (req.abutmentFeeRoute) existing.abutmentFeeRoute = req.abutmentFeeRoute;
-    if (req.abutmentCancelDeadlineAt) {
-      existing.abutmentCancelDeadlineAt = req.abutmentCancelDeadlineAt;
+    if ("abutmentCancelDeadlineAt" in req) {
+      existing.abutmentCancelDeadlineAt = req.abutmentCancelDeadlineAt || null;
+    }
+    if ("abutmentGracePromoteAt" in req) {
+      existing.abutmentGracePromoteAt = req.abutmentGracePromoteAt || null;
     }
     if ((req.abutmentToothStages || []).length > 0) {
       existing.abutmentToothStages = req.abutmentToothStages;

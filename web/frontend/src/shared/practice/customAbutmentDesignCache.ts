@@ -384,6 +384,7 @@ export type CustomAbutmentRouteFeeGuide = {
 export type CustomAbutmentChoice = {
   cancelDeadlineAt: string | null;
   labCheckedAt: string | null;
+  gracePromoteAt: string | null;
 };
 
 export type RemoteCustomAbutmentSnapshot = {
@@ -559,7 +560,11 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             platformUnit?: number;
             labTeeth?: Array<{ toothNumber?: string; feeName?: string; unit?: number }>;
           } | null;
-          choice?: { cancelDeadlineAt?: string | null; labCheckedAt?: string | null } | null;
+          choice?: {
+            cancelDeadlineAt?: string | null;
+            labCheckedAt?: string | null;
+            gracePromoteAt?: string | null;
+          } | null;
         };
       }>({
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -610,6 +615,9 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             ? String(rawChoice.cancelDeadlineAt)
             : null,
           labCheckedAt: rawChoice?.labCheckedAt ? String(rawChoice.labCheckedAt) : null,
+          gracePromoteAt: rawChoice?.gracePromoteAt
+            ? String(rawChoice.gracePromoteAt)
+            : null,
         },
         design:
           raw && teeth.length > 0
@@ -923,7 +931,12 @@ export async function confirmCustomAbutmentDesignRemote(
     /** 서버에 이미 있는 프리뷰 STL. 있으면 바이트를 다시 올리지 않는다. */
     existingS3?: Readonly<Record<string, { s3Key: string; crownS3Key?: string }>>;
   },
-): Promise<{ ok: boolean; message?: string; cancelDeadlineAt?: string | null }> {
+): Promise<{
+  ok: boolean;
+  message?: string;
+  cancelDeadlineAt?: string | null;
+  gracePromoteAt?: string | null;
+}> {
   const id = transferId.trim();
   if (!token || !id) return { ok: false, message: "의뢰 정보가 없습니다." };
   const existing = payload.existingS3;
@@ -936,7 +949,7 @@ export async function confirmCustomAbutmentDesignRemote(
     : await uploadCustomAbutmentSnapshotTeeth(token, id, payload.teeth);
   const res = await request<{
     message?: string;
-    data?: { cancelDeadlineAt?: string | null };
+    data?: { cancelDeadlineAt?: string | null; gracePromoteAt?: string | null };
   }>({
     path: "/api/ai/custom-abutment-design-confirm",
     method: "POST",
@@ -950,10 +963,12 @@ export async function confirmCustomAbutmentDesignRemote(
     },
   });
   const deadline = res.data?.data?.cancelDeadlineAt;
+  const grace = res.data?.data?.gracePromoteAt;
   return {
     ok: res.ok,
     message: res.data?.message,
     cancelDeadlineAt: deadline ? String(deadline) : null,
+    gracePromoteAt: grace ? String(grace) : deadline ? String(deadline) : null,
   };
 }
 

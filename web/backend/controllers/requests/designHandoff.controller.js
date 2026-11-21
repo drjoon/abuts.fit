@@ -68,8 +68,13 @@ import { syncPracticeTransferAbutmentFeeRoute } from "../../services/practiceTra
 import User from "../../models/user.model.js";
 import { clearFilledStlFileOnCaseInfos, applyStlPreloadCancelledOnRequest } from "../../utils/filledStlFile.js";
 import {
+  abutmentGraceParty,
+  releaseAbutmentDesignGrace,
+} from "../../services/abutmentDesignGrace.service.js";
+import {
   DESIGN_ROUTE_LAB,
   abutmentCancelClosedMessage,
+  isAbutmentGraceOpen,
   bindMachiningSource,
   clearMachiningBind,
   currentDesignRoute,
@@ -2403,12 +2408,6 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
   let lockedId = "";
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "requestor" && role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "커스텀어벗 공정 취소는 의뢰 치과만 할 수 있습니다.",
-      });
-    }
     const userId = req.user?._id ? String(req.user._id) : "";
     if (!userId) {
       return res.status(401).json({ success: false, message: "인증이 필요합니다." });
@@ -2429,6 +2428,69 @@ export async function cancelPracticeCustomAbutmentProcess(req, res) {
           ],
         }
       : { transferId: rawTransferId };
+
+    const graceProbe = await PracticeTransfer.findOne(transferIdFilter);
+    if (graceProbe && isAbutmentGraceOpen(graceProbe.production)) {
+      if (!abutmentGraceParty(req.user, graceProbe)) {
+        return res.status(403).json({
+          success: false,
+          message: "디자인 확정을 취소할 수 없습니다.",
+        });
+      }
+      if (isPracticeTransferDeletedStatus(graceProbe.status)) {
+        return res.status(409).json({
+          success: false,
+          message: "삭제된 기공의뢰는 커스텀어벗 공정을 취소할 수 없습니다.",
+        });
+      }
+      await claimAbutmentDesignHandoffLock(graceProbe._id);
+      lockedId = String(graceProbe._id);
+      const freshGrace = await PracticeTransfer.findById(graceProbe._id);
+      if (!freshGrace || !isAbutmentGraceOpen(freshGrace.production)) {
+        return res.status(409).json({
+          success: false,
+          message: "유예 시간이 지나 취소할 수 없습니다.",
+        });
+      }
+      const released = await releaseAbutmentDesignGrace({
+        transfer: freshGrace,
+        actorUserId: userId,
+      });
+      if (!released?.released) {
+        return res.status(409).json({
+          success: false,
+          message: "유예 시간이 지나 취소할 수 없습니다.",
+        });
+      }
+      res.status(200).json({
+        success: true,
+        message: "디자인 확정을 취소했습니다.",
+        data: {
+          transferId: String(freshGrace.transferId || "").trim(),
+          cancelledTeeth: [],
+          clearedAll: true,
+        },
+      });
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: freshGrace._id,
+        senderUserId: req.user?._id,
+        content: "디자인 확정을 취소했습니다.",
+        systemEvent: "custom_abutment_grace_cancelled",
+      }).catch((err) => {
+        console.warn(
+          "[PRACTICE_ABUTMENT_CANCEL] grace chat failed",
+          err?.message || err,
+        );
+      });
+      return;
+    }
+
+    if (role !== "practice" && role !== "requestor" && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "커스텀어벗 공정 취소는 의뢰 치과만 할 수 있습니다.",
+      });
+    }
     const anchorId = String(req.user?.businessAnchorId || "").trim();
     const ownerOr = [];
     if (role !== "admin") {

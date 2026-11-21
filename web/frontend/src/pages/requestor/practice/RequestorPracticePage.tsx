@@ -452,7 +452,6 @@ import {
   isPtxAbutmentDesignReviewForLab,
   isPtxAbutmentManualOrder,
   LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT,
-  LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
   labUploadLockedNotice,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
   labWorkStartUploadNoticeCaLine,
@@ -810,6 +809,12 @@ function applyLabDesignConfirmedProduction(
       ...(productionRaw?.abutmentFeeRoute
         ? { abutmentFeeRoute: String(productionRaw.abutmentFeeRoute) }
         : {}),
+      abutmentCancelDeadlineAt: productionRaw?.abutmentCancelDeadlineAt
+        ? String(productionRaw.abutmentCancelDeadlineAt)
+        : null,
+      abutmentGracePromoteAt: productionRaw?.abutmentGracePromoteAt
+        ? String(productionRaw.abutmentGracePromoteAt)
+        : null,
       designReadyAt: productionRaw?.designReadyAt
         ? String(productionRaw.designReadyAt)
         : row.production?.designReadyAt ||
@@ -861,6 +866,7 @@ function LabAbutmentDesignReviewDialog({
   onIndexChange,
   onChecked,
   onUnconfirmed,
+  onConfirmed,
 }: {
   open: boolean;
   items: ReceivedPracticeTransfer[];
@@ -873,6 +879,10 @@ function LabAbutmentDesignReviewDialog({
   onIndexChange: (index: number) => void;
   onChecked: (transferId: string, body?: unknown) => void;
   onUnconfirmed: (transferId: string) => void;
+  onConfirmed: (
+    transferId: string,
+    detail?: { gracePromoteAt?: string | null; cancelDeadlineAt?: string | null },
+  ) => void;
 }) {
   const entry = items[index];
   if (!open || !entry) return null;
@@ -923,8 +933,12 @@ function LabAbutmentDesignReviewDialog({
       onReviewIndexChange={onIndexChange}
       onActionComplete={(action, detail) => {
         const id = String(entry.transferId || entry._id || "");
-        if (action === "unconfirmed") {
+        if (action === "unconfirmed" || action === "cancelled") {
           onUnconfirmed(id);
+          return;
+        }
+        if (action === "confirmed") {
+          onConfirmed(id, detail);
           return;
         }
         if (action !== "checked") return;
@@ -1347,6 +1361,7 @@ export function RequestorPracticeReceivePage({
     "detail" | "chat" | undefined
   >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [abutmentGraceCancelBusy, setAbutmentGraceCancelBusy] = useState(false);
   const [labTechnicianBusy, setLabTechnicianBusy] = useState(false);
   const [workReleaseConfirmOpen, setWorkReleaseConfirmOpen] = useState(false);
   const [workStartUploadNoticeOpen, setWorkStartUploadNoticeOpen] =
@@ -1755,6 +1770,9 @@ export function RequestorPracticeReceivePage({
                   : null,
               abutmentCancelDeadlineAt: productionRaw.abutmentCancelDeadlineAt
                 ? String(productionRaw.abutmentCancelDeadlineAt)
+                : null,
+              abutmentGracePromoteAt: productionRaw.abutmentGracePromoteAt
+                ? String(productionRaw.abutmentGracePromoteAt)
                 : null,
               abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
                 ? String(productionRaw.abutmentProductionStartedAt)
@@ -3004,6 +3022,40 @@ export function RequestorPracticeReceivePage({
                     abutmentFeeRoute: productionRawFromRealtime.abutmentFeeRoute,
                   }
                 : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "labDesignConfirmedAt",
+              )
+                ? {
+                    labDesignConfirmedAt: productionRawFromRealtime.labDesignConfirmedAt
+                      ? String(productionRawFromRealtime.labDesignConfirmedAt)
+                      : null,
+                  }
+                : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "abutmentCancelDeadlineAt",
+              )
+                ? {
+                    abutmentCancelDeadlineAt:
+                      productionRawFromRealtime.abutmentCancelDeadlineAt
+                        ? String(productionRawFromRealtime.abutmentCancelDeadlineAt)
+                        : null,
+                  }
+                : {}),
+              ...(productionRawFromRealtime &&
+              Object.prototype.hasOwnProperty.call(
+                productionRawFromRealtime,
+                "abutmentGracePromoteAt",
+              )
+                ? {
+                    abutmentGracePromoteAt: productionRawFromRealtime.abutmentGracePromoteAt
+                      ? String(productionRawFromRealtime.abutmentGracePromoteAt)
+                      : null,
+                  }
+                : {}),
             },
           });
           setTransfers((prev) =>
@@ -3881,35 +3933,6 @@ export function RequestorPracticeReceivePage({
     () => resolvePracticeTransferToothWorks(selectedTransfer, implantCatalog),
     [selectedTransfer, implantCatalog],
   );
-  /** AI 디자인 헤더에서 넘겨 가며 작업할 미완료 의뢰. 도착일이 이른 순. */
-  const labAiOpenCases = useMemo(() => {
-    const rows = transfers.filter((transfer) => {
-      if (isGuideTourDemoTransfer(transfer)) return false;
-      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return false;
-      const status = getTransferDisplayStatus(transfer);
-      if (isLabReceiveHiddenTerminalStatus(status) || status === "기한만료") return false;
-      return !isPracticeRecentFinishedBadgeStatus({
-        status,
-        designFileCount: transfer.production?.designFileCount,
-        designFiles: transfer.production?.designFiles,
-        designReadyAt: transfer.production?.designReadyAt,
-      });
-    });
-    const arrival = (transfer: ReceivedPracticeTransfer) =>
-      String(transfer.arrivalDate || "").trim() || "9999-99-99";
-    return rows.sort((a, b) => {
-      const byArrival = arrival(a).localeCompare(arrival(b));
-      if (byArrival !== 0) return byArrival;
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
-  }, [transfers, user?.role]);
-  const labAiCasePosition = useMemo(() => {
-    const id = String(selectedTransfer?.transferId || "").trim();
-    if (!id) return -1;
-    return labAiOpenCases.findIndex(
-      (transfer) => String(transfer.transferId || "").trim() === id,
-    );
-  }, [labAiOpenCases, selectedTransfer?.transferId]);
   const practiceColorDots = useMemo(() => {
     const entries = sortedFilteredTransfers.map((transfer) => {
       const clinic =
@@ -6325,30 +6348,6 @@ export function RequestorPracticeReceivePage({
   const handleAcceptTransfer = useCallback(async () => {
     if (!selectedTransfer || acceptBusy || releaseBusy) return;
     if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
-    if (
-      isPtxAbutmentDesignAwaitingDentist({
-        status: getTransferDisplayStatus(selectedTransfer),
-        workCanceledAt: selectedTransfer.workCanceledAt,
-        labRejected: selectedTransfer.labRejected,
-        hasCustomAbutment:
-          Boolean(selectedTransfer.hasCustomAbutment) ||
-          practiceTransferHasCustomAbutment(selectedTransfer, implantCatalog),
-        abutmentFeeRoute: selectedTransfer.production?.abutmentFeeRoute,
-        practiceDesignConfirmedAt:
-          selectedTransfer.production?.practiceDesignConfirmedAt,
-        designReadyAt: selectedTransfer.production?.designReadyAt,
-        designFileCount: selectedTransfer.production?.designFileCount,
-        manualRequested: Boolean(
-          selectedTransfer.production?.customAbutmentManualDesign?.at,
-        ),
-      })
-    ) {
-      toast({
-        title: "작업시작 대기",
-        description: LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
-      });
-      return;
-    }
     if (isGuideTourDemoTransfer(selectedTransfer)) {
       toast({
         title: "가이드투어",
@@ -9741,15 +9740,71 @@ export function RequestorPracticeReceivePage({
       const same =
         String(row.transferId || "").trim() === id ||
         String(row._id || "").trim() === id;
-      if (!same || !row.production?.practiceDesignConfirmedAt) return row;
+      if (!same) return row;
       return {
         ...row,
-        production: { ...row.production, practiceDesignConfirmedAt: null },
+        production: {
+          ...(row.production || {}),
+          practiceDesignConfirmedAt: null,
+          abutmentFeeRoute: "pending",
+          abutmentGracePromoteAt: null,
+          abutmentCancelDeadlineAt: null,
+        },
       };
     };
     setTransfers((prev) => prev.map(patch));
     setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
   }, []);
+
+  const handleCancelAbutmentGrace = useCallback(async () => {
+    if (!token || !selectedTransfer || abutmentGraceCancelBusy) return;
+    const transferId = String(selectedTransfer.transferId || "").trim();
+    if (!transferId) return;
+    setAbutmentGraceCancelBusy(true);
+    try {
+      const res = await apiFetch<{ message?: string }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/custom-abutment-process/cancel`,
+        method: "POST",
+        token,
+      });
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { message?: string })
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "디자인 확정 취소 실패",
+          description:
+            String(body.message || "").trim() ||
+            "디자인 확정을 취소하는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      clearLabPracticeDesignConfirmed(transferId);
+      toast({
+        title: "디자인 확정 해제",
+        description: "디자인 확정을 해제했습니다.",
+      });
+    } catch (error) {
+      toast({
+        title: "디자인 확정 취소 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "디자인 확정을 취소하는 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setAbutmentGraceCancelBusy(false);
+    }
+  }, [
+    abutmentGraceCancelBusy,
+    clearLabPracticeDesignConfirmed,
+    selectedTransfer,
+    toast,
+    token,
+  ]);
 
   const openLabAbutmentDesign = useCallback(
     (
@@ -11274,7 +11329,7 @@ export function RequestorPracticeReceivePage({
             </>
           ) : null
         }
-        abutmentDesignBlocksAccept={selectedTransferAbutmentDesignAwaiting}
+        abutmentDesignBlocksAccept={false}
         headerActionLeading={null}
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
@@ -11431,53 +11486,38 @@ export function RequestorPracticeReceivePage({
           String(selectedTransfer?.transferId || "").trim() ||
           null
         }
-        labAiCaseNav={
-          labAiOpenCases.length > 0
-            ? {
-                count: labAiOpenCases.length,
-                position: labAiCasePosition >= 0 ? labAiCasePosition : null,
-                onMove: (step) => {
-                  const count = labAiOpenCases.length;
-                  const from =
-                    labAiCasePosition >= 0 ? labAiCasePosition : step > 0 ? -1 : 0;
-                  const target = labAiOpenCases[(from + step + count) % count];
-                  if (target) void openTransferDialog(target, { panel: "chat" });
-                },
-              }
+        labHeaderTrailing={
+          selectedTransfer &&
+          (selectedTransfer.hasCustomAbutment ||
+            selectedTransferToothWorks.some((row) => row.customAbutment)) &&
+          !selectedTransfer.production?.customAbutmentManualDesign?.at ? (
+            <PracticeCustomAbutmentPreviewButton
+              viewerRole="lab"
+              authToken={token}
+              toothWorks={selectedTransferToothWorks}
+              files={[]}
+              onOpen={() => {
+                const id = String(selectedTransfer.transferId || "").trim();
+                const idx = labDesignReviewTransfers.findIndex(
+                  (row) => String(row.transferId || "").trim() === id,
+                );
+                if (idx >= 0) {
+                  void openLabAbutmentDesign(labDesignReviewTransfers, idx, true);
+                  return;
+                }
+                void openLabAbutmentDesign([selectedTransfer], 0, false);
+              }}
+            />
+          ) : null
+        }
+        abutmentGracePromoteAt={
+          selectedTransfer?.production?.abutmentGracePromoteAt &&
+          !selectedTransfer.production?.labDesignConfirmedAt
+            ? selectedTransfer.production.abutmentGracePromoteAt
             : null
         }
-        onWorkingScansPersisted={(data) => {
-          const transferId = String(selectedTransfer?.transferId || "").trim();
-          if (!transferId) return;
-          const mongoId = String(selectedTransfer?._id || "");
-          if (Array.isArray(data.files)) {
-            patchReceivedRequestFiles(
-              transferId,
-              mapApiReceivedRequestFiles(data.files, mongoId),
-              mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
-            );
-          }
-          if (!Array.isArray(data.workScanFiles)) return;
-          const workScanFiles = mapApiReceivedRequestFiles(
-            data.workScanFiles,
-            mongoId,
-          );
-          const patchWorkScans = (
-            row: ReceivedPracticeTransfer,
-          ): ReceivedPracticeTransfer =>
-            String(row.transferId || "").trim() === transferId
-              ? {
-                  ...row,
-                  production: {
-                    ...(row.production || {}),
-                    labWorkScanFiles: workScanFiles,
-                    workScanAlignment: parseWorkScanAlignment(data.workScanAlignment),
-                  },
-                }
-              : row;
-          setSelectedTransfer((prev) => (prev ? patchWorkScans(prev) : prev));
-          setTransfers((prev) => prev.map(patchWorkScans));
-        }}
+        abutmentGraceCancelBusy={abutmentGraceCancelBusy}
+        onCancelAbutmentGrace={() => void handleCancelAbutmentGrace()}
         files={
           (selectedTransfer?.files || []).map((file) => ({
             id: file.id,
@@ -11731,13 +11771,9 @@ export function RequestorPracticeReceivePage({
             </span>
           ) : selectedTransfer.production?.practiceDesignConfirmedAt ? (
             <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary">
-              치과 확정 디자인
+              디자인 확정
             </span>
-          ) : (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">
-              치과 확정 대기
-            </span>
-          );
+          ) : null;
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
@@ -11766,88 +11802,29 @@ export function RequestorPracticeReceivePage({
                     }}
                     menu
                   />
-                  {selectedTransfer.hasCustomAbutment ||
-                  selectedTransferToothWorks.some(
-                    (row) => row.customAbutment,
-                  ) ? (
-                    <>
-                      {selectedTransfer.production?.customAbutmentManualDesign?.at ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className={cn(
-                            "relative h-8 shrink-0 overflow-hidden tabular-nums",
-                            openInCadBusy && "disabled:opacity-100",
-                          )}
-                          disabled={openInCadBusy || downloadAllBusy}
-                          onClick={() => {
-                            const stored = readStoredDcmDownloadFormat();
-                            void handleOpenWork(
-                              stored ? { dcmFormat: stored } : undefined,
-                            );
-                          }}
-                        >
-                          <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
-                          {openInCadBusy
-                            ? labSaveProgress != null
-                              ? `저장 중 ${labSaveProgress}%`
-                              : "저장 중..."
-                            : "폴더 열기"}
-                        </Button>
-                      ) : (
-                        (() => {
-                          const labAbutmentDesignReady = Boolean(
-                            selectedTransfer.production?.practiceDesignConfirmedAt,
-                          );
-                          const labDesignReviewPending =
-                            isPtxAbutmentDesignReviewForLab(
-                              labAbutmentInput(selectedTransfer),
-                            );
-                          return (
-                            <PracticeCustomAbutmentPreviewButton
-                              viewerRole="lab"
-                              authToken={token}
-                              toothWorks={selectedTransferToothWorks}
-                              files={[]}
-                              disabled={!labAbutmentDesignReady}
-                              className={
-                                labDesignReviewPending
-                                  ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
-                                  : undefined
-                              }
-                              title={
-                                labAbutmentDesignReady
-                                  ? undefined
-                                  : "치과 디자인 확정 후 검토할 수 있습니다."
-                              }
-                              onOpen={() => {
-                                if (!labAbutmentDesignReady) return;
-                                const id = String(
-                                  selectedTransfer.transferId || "",
-                                ).trim();
-                                const idx = labDesignReviewTransfers.findIndex(
-                                  (row) =>
-                                    String(row.transferId || "").trim() === id,
-                                );
-                                if (idx >= 0) {
-                                  void openLabAbutmentDesign(
-                                    labDesignReviewTransfers,
-                                    idx,
-                                    true,
-                                  );
-                                  return;
-                                }
-                                void openLabAbutmentDesign(
-                                  [selectedTransfer],
-                                  0,
-                                  false,
-                                );
-                              }}
-                            />
-                          );
-                        })()
+                  {selectedTransfer.production?.customAbutmentManualDesign?.at ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={cn(
+                        "relative h-8 shrink-0 overflow-hidden tabular-nums",
+                        openInCadBusy && "disabled:opacity-100",
                       )}
-                    </>
+                      disabled={openInCadBusy || downloadAllBusy}
+                      onClick={() => {
+                        const stored = readStoredDcmDownloadFormat();
+                        void handleOpenWork(
+                          stored ? { dcmFormat: stored } : undefined,
+                        );
+                      }}
+                    >
+                      <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+                      {openInCadBusy
+                        ? labSaveProgress != null
+                          ? `저장 중 ${labSaveProgress}%`
+                          : "저장 중..."
+                        : "폴더 열기"}
+                    </Button>
                   ) : null}
                 </div>
               }
@@ -12093,6 +12070,31 @@ export function RequestorPracticeReceivePage({
           }}
           onUnconfirmed={(transferId) => {
             clearLabPracticeDesignConfirmed(transferId);
+          }}
+          onConfirmed={(transferId, detail) => {
+            const id = String(transferId || "").trim();
+            if (!id) return;
+            const now = new Date().toISOString();
+            const grace = detail?.gracePromoteAt || detail?.cancelDeadlineAt || null;
+            const patch = (row: ReceivedPracticeTransfer): ReceivedPracticeTransfer => {
+              const same =
+                String(row.transferId || "").trim() === id ||
+                String(row._id || "").trim() === id;
+              if (!same) return row;
+              return {
+                ...row,
+                production: {
+                  ...(row.production || {}),
+                  practiceDesignConfirmedAt:
+                    row.production?.practiceDesignConfirmedAt || now,
+                  abutmentFeeRoute: "lab",
+                  abutmentGracePromoteAt: grace,
+                  abutmentCancelDeadlineAt: detail?.cancelDeadlineAt || grace,
+                },
+              };
+            };
+            setTransfers((prev) => prev.map(patch));
+            setSelectedTransfer((prev) => (prev ? patch(prev) : prev));
           }}
           onChecked={(transferId, body) => {
             const patch = (row: ReceivedPracticeTransfer) =>

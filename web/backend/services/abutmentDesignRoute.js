@@ -27,7 +27,28 @@ function nextWeekdayYmd(ymd) {
   return "";
 }
 
-/** 확정 시각의 다음 영업일 끝(KST). 기공소 확인·의뢰자 취소는 여기까지다. */
+/** 디자인 완료 후 제조사 준비 전 유예. 이 동안 치과·기공소 모두 취소할 수 있다. */
+export const ABUTMENT_DESIGN_GRACE_MS = 5 * 60 * 1000;
+
+export function abutmentDesignGraceDeadline(from = new Date()) {
+  const start = from instanceof Date ? from : new Date(from);
+  const ms = start.getTime();
+  if (!Number.isFinite(ms)) throw new Error("abutment design grace");
+  return new Date(ms + ABUTMENT_DESIGN_GRACE_MS);
+}
+
+/** 유예가 열려 있으면 제조사 준비 전이다. 기공소 확정 시각이 있으면 이미 들어갔다. */
+export function isAbutmentGraceOpen(production, now = new Date()) {
+  if (!production || typeof production !== "object") return false;
+  if (production.labDesignConfirmedAt) return false;
+  const raw = production.abutmentGracePromoteAt;
+  if (!raw) return false;
+  const deadline = new Date(raw);
+  if (Number.isNaN(deadline.getTime())) return false;
+  return now.getTime() < deadline.getTime();
+}
+
+/** 확정 시각의 다음 영업일 끝(KST). 레거시 기공소 검토 기한. */
 export async function abutmentLabCheckDeadline(from = new Date()) {
   const ymd = toKstYmd(from);
   let nextYmd = "";

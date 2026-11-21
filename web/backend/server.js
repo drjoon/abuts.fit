@@ -41,6 +41,7 @@ import { startAbutmentStlShadowWorker } from "./jobs/abutmentStlShadowWorker.js"
 import { startRequestSubmitReconcileWorker } from "./jobs/requestSubmitReconcileWorker.js";
 import { startAutoMachiningGateWorker } from "./jobs/autoMachiningGateWorker.js";
 import { startBusinessVerificationRetryWorker } from "./jobs/businessVerificationRetryWorker.js";
+import { startAbutmentDesignGraceWorker } from "./jobs/abutmentDesignGraceWorker.js";
 import { startEasyFinBankSyncWorker } from "./jobs/easyFinBankSyncWorker.js";
 import { startScheduledOutboundMailWorker } from "./jobs/scheduledOutboundMailWorker.js";
 import { startMonthlyPracticeObSettlementWorker } from "./jobs/monthlyPracticeObSettlementWorker.js";
@@ -191,6 +192,7 @@ dbReady
     startWorkScanAutoAlignWorker();
     startAbutmentStlShadowWorker();
     startBusinessVerificationRetryWorker();
+    startAbutmentDesignGraceWorker();
     startScheduledOutboundMailWorker();
     startEasyFinBankSyncWorker();
     startMonthlyPracticeObSettlementWorker();

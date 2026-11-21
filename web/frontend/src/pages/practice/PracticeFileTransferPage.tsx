@@ -7299,7 +7299,10 @@ export const PracticeFileTransferPage = ({
       selectedTransfer.abutmentFeeRoute === "platform" &&
       Boolean(selectedTransfer.practiceDesignConfirmedAt) &&
       !selectedTransfer.labDesignConfirmedAt;
-    if (readyTeeth.length === 0 && !reviewCancel) return;
+    const graceCancel =
+      Boolean(selectedTransfer.abutmentGracePromoteAt) &&
+      !selectedTransfer.labDesignConfirmedAt;
+    if (readyTeeth.length === 0 && !reviewCancel && !graceCancel) return;
 
     setAbutmentProcessCancelBusy(true);
     try {
@@ -7355,6 +7358,7 @@ export const PracticeFileTransferPage = ({
             practiceDesignConfirmedAt: null,
             abutmentFeeRoute: "pending" as const,
             abutmentCancelDeadlineAt: null,
+            abutmentGracePromoteAt: null,
             labDesignConfirmedAt: null,
           }
         : {};
@@ -12666,17 +12670,43 @@ export const PracticeFileTransferPage = ({
                   },
                 );
               }}
-              onActionComplete={(action) => {
+              onActionComplete={(action, detail) => {
                 const id = String(
                   dialogTransfer.transferId || dialogTransfer.id || "",
                 ).trim();
+                if (id && action === "cancelled") {
+                  const cleared = {
+                    practiceDesignConfirmedAt: null,
+                    abutmentFeeRoute: "pending" as const,
+                    abutmentCancelDeadlineAt: null,
+                    abutmentGracePromoteAt: null,
+                    manualRequested: false,
+                  };
+                  setRecentRequests((prev) =>
+                    prev.map((row) =>
+                      String(row.transferId || "").trim() === id
+                        ? { ...row, ...cleared }
+                        : row,
+                    ),
+                  );
+                  setSelectedTransfer((prev) =>
+                    prev && String(prev.transferId || "").trim() === id
+                      ? { ...prev, ...cleared }
+                      : prev,
+                  );
+                }
                 if (id && (action === "confirmed" || action === "manual")) {
                   const confirmedAt = new Date().toISOString();
+                  const grace =
+                    detail?.gracePromoteAt || detail?.cancelDeadlineAt || null;
                   const patch =
                     action === "confirmed"
                       ? {
                           practiceDesignConfirmedAt: confirmedAt,
-                          abutmentFeeRoute: "platform" as const,
+                          abutmentFeeRoute: "lab" as const,
+                          abutmentGracePromoteAt: grace,
+                          abutmentCancelDeadlineAt:
+                            detail?.cancelDeadlineAt || grace,
                           manualRequested: false,
                         }
                       : {
@@ -12979,6 +13009,14 @@ export const PracticeFileTransferPage = ({
             status: selectedTransfer?.status,
           })}
           practiceDesignEntryAttention={practiceDesignEntryAttention}
+          abutmentGracePromoteAt={
+            selectedTransfer?.abutmentGracePromoteAt &&
+            !selectedTransfer.labDesignConfirmedAt
+              ? selectedTransfer.abutmentGracePromoteAt
+              : null
+          }
+          abutmentGraceCancelBusy={abutmentProcessCancelBusy}
+          onCancelAbutmentGrace={() => void handleCancelCustomAbutmentProcess()}
           headerActionLeading={
             selectedTransferDetailModel?.abutmentStageLabel ||
             practiceAbutmentCancelOpen ? (

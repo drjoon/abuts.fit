@@ -3105,6 +3105,14 @@ async function emitPracticeTransferAbutmentStageChangedRealtime(
         const ms = new Date(raw).getTime();
         return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
       })(),
+      labDesignConfirmedAt: (() => {
+        const raw = production.labDesignConfirmedAt;
+        if (!raw) return null;
+        const ms = new Date(raw).getTime();
+        return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+      })(),
+      abutmentCancelDeadlineAt: production.abutmentCancelDeadlineAt || null,
+      abutmentGracePromoteAt: production.abutmentGracePromoteAt || null,
       designReadyAt: production.designReadyAt || null,
       designFileCount: designFiles.length,
       abutmentFeeRoute: String(production.abutmentFeeRoute || "").trim() || null,

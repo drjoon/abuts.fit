@@ -1075,6 +1075,7 @@ const toProductionApiFields = (
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentFeeRoute: String(p.abutmentFeeRoute || "").trim() || null,
     abutmentCancelDeadlineAt: p.abutmentCancelDeadlineAt || null,
+    abutmentGracePromoteAt: p.abutmentGracePromoteAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
     /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 FE는 도착−3영업일 기본. */
     abutmentShipYmd: (() => {
@@ -9436,18 +9437,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           String(scanErr?.message || "").trim() ||
           "구강스캔 파일이 없어 작업을 시작할 수 없습니다.",
         reason: scanErr?.code || "oral_scan_required",
-      });
-    }
-
-    if (
-      !doc.requestorDownloadedAt &&
-      isPracticeAbutmentDesignAwaitingDentist(doc)
-    ) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업을 시작할 수 있습니다.",
-        reason: "abutment_design_awaiting_practice",
       });
     }
 

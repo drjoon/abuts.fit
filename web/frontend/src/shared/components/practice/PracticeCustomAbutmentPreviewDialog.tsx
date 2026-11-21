@@ -19,7 +19,7 @@
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
 // - 2026-11-19: 소통 패널은 접기만 한다. chatOpen false는 숨김이 아니라 접힘. 뷰 큐브 크기는 그대로.
 // - 2026-11-19: 치과 소통은 뷰 큐브 아래 플로팅. 검토 안내는 디자인 확정 툴팁.
-// - 2026-11-19: 기공소는 치과 디자인 확정 전 뷰어로 두지 않고 모달을 닫는다.
+// - 2026-11-21: 치과·기공소 모두 디자인을 열고 완료한다. 5분 뒤 제조사 준비.
 // - 2026-11-20: 디자인 확정 뒤 스냅샷을 다시 올리지 않는다. 확정 저장이 프리뷰를 이미 남긴다.
 // - 2026-11-20: 기공소 열기 — 확정 JSON만 먼저 보고, 스캔과 프리뷰 STL은 같이 받는다.
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
@@ -124,7 +124,6 @@ import {
   publishCustomAbutmentSnapshot,
   readCustomAbutmentChat,
   readCustomAbutmentDesign,
-  requestManualCustomAbutmentDesignRemote,
   saveCustomAbutmentDesignPaintRemote,
   toArrayBuffer,
   writeCustomAbutmentChat,
@@ -133,9 +132,8 @@ import {
   type CustomAbutmentChatTurn,
   type CustomAbutmentPaintRecord,
   type CustomAbutmentPaintView,
-  type CustomAbutmentRouteFeeGuide,
 } from "@/shared/practice/customAbutmentDesignCache";
-import { ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE } from "@/shared/pricing/abutsAbutmentService";
+import { AbutmentDesignGraceControl } from "@/shared/practice/AbutmentDesignGraceControl";
 import {
   CUSTOM_ABUTMENT_PARAM_SPECS,
   EMPTY_CUSTOM_ABUTMENT_PREFERENCE,
@@ -291,10 +289,14 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   readOnly?: boolean;
   /** 치과(발신) 또는 기공소(수신) 역할 구분 */
   viewerRole?: "practice" | "lab";
-  /** 확정 & 의뢰, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
+  /** 디자인 완료, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
   onActionComplete?: (
     action: "confirmed" | "manual" | "checked" | "cancelled" | "unconfirmed",
-    detail?: { body?: unknown },
+    detail?: {
+      body?: unknown;
+      gracePromoteAt?: string | null;
+      cancelDeadlineAt?: string | null;
+    },
   ) => void;
   /** 검토 대기 의뢰. 헤더에서 한 건씩 넘긴다. */
   reviewItems?: readonly { id: string; label: string }[];
@@ -316,28 +318,6 @@ type PendingInfoChange = {
   afterText: string;
   params: Partial<CustomAbutmentDesignParams>;
 };
-
-const ROUTE_COST_DISMISS_PREFIX = "abuts.caRouteCost.v1.dismissed.";
-
-function routeCostDismissed(userId: string) {
-  try {
-    return window.localStorage.getItem(`${ROUTE_COST_DISMISS_PREFIX}${userId || "anon"}`) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function rememberRouteCostDismissed(userId: string) {
-  try {
-    window.localStorage.setItem(`${ROUTE_COST_DISMISS_PREFIX}${userId || "anon"}`, "1");
-  } catch {
-    // 저장이 안 되면 다음에도 모달을 보여 준다.
-  }
-}
-
-function formatWon(amount: number) {
-  return `${Math.max(0, Math.round(amount)).toLocaleString("ko-KR")}원`;
-}
 
 type CenterGuideMode = "off" | "center" | "grid";
 
@@ -1147,20 +1127,16 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [confirmPrefChanges, setConfirmPrefChanges] = useState<PendingInfoChange[]>([]);
   const [checkedChangeIds, setCheckedChangeIds] = useState<Set<string>>(new Set());
   const [remoteMode, setRemoteMode] = useState<"confirmed" | "manual" | null>(null);
-  const [feeGuide, setFeeGuide] = useState<CustomAbutmentRouteFeeGuide | null>(null);
   const [labCheckedAt, setLabCheckedAt] = useState<string | null>(null);
   const [cancelDeadlineAt, setCancelDeadlineAt] = useState<string | null>(null);
-  const [routeCostOpen, setRouteCostOpen] = useState(false);
-  const [routeCostAction, setRouteCostAction] = useState<"confirm" | "manual">("confirm");
-  const [routeCostHideNext, setRouteCostHideNext] = useState(false);
-  const routeCostPassedRef = useRef<"confirm" | "manual" | null>(null);
+  const [gracePromoteAt, setGracePromoteAt] = useState<string | null>(null);
   /** 확정이 프리뷰를 저장한 뒤에는 닫기 flush가 같은 STL을 다시 올리지 않는다. */
   const skipSnapshotFlushRef = useRef(false);
   /** 서버 프리뷰 STL. 이번 세션에서 형상을 바꾸기 전에만 재업로드를 건너뛴다. */
   const labSourceStlRef = useRef<Record<string, { s3Key: string; crownS3Key: string }>>({});
   const labGeometryTouchedRef = useRef(false);
-  const canEditDesign = !readOnly && (!isLabViewer || remoteMode === "confirmed");
-  const canChooseAbutmentRoute = !readOnly && !isLabViewer;
+  const gracePending = Boolean(gracePromoteAt) && !labCheckedAt;
+  const canEditDesign = !readOnly && !gracePending && remoteMode !== "manual";
   labCanReviseRef.current = canEditDesign && isLabViewer;
 
   const {
@@ -3347,23 +3323,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             }),
           ),
         );
-        // 기공소는 스캔을 그리기 전에 확정만 본다. STL은 스캔과 같이 받는다.
-        const remoteModeFirst = isLabViewerRef.current ? await snapshotLoad?.mode : null;
-        if (cancelled) return;
-        if (isLabViewerRef.current && remoteModeFirst !== "confirmed") {
-          abort.abort();
-          void scansPromise.catch(() => undefined);
-          const snapshotKnown = remoteModeFirst !== "missing";
-          if (snapshotKnown) onActionCompleteRef.current?.("unconfirmed");
-          toastRef.current({
-            title: "디자인 검토",
-            description: snapshotKnown
-              ? "치과 디자인 확정 후 검토할 수 있습니다."
-              : "디자인 상태를 확인하지 못했습니다.",
-          });
-          handleOpenChangeRef.current(false);
-          return;
-        }
         const [rawLoadedScans, localCached, localChat, remote] = await Promise.all([
           scansPromise,
           cachePromise,
@@ -3378,10 +3337,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                 alignedScans: remote.design.alignedScans,
               }
             : null;
-        const cached =
-          readOnly || isLabViewer
-            ? serverDesign
-            : preferFresherCustomAbutmentDesign(localCached, serverDesign);
+        const cached = readOnly
+          ? serverDesign
+          : preferFresherCustomAbutmentDesign(localCached, serverDesign);
         proposalInputRef.current = {};
         for (const row of cached?.teeth ?? []) {
           const saved = row.proposalInput;
@@ -3391,9 +3349,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         pendingRemotePaintRef.current = remote?.paint ?? null;
         setRemoteMode(remote?.mode ?? null);
-        setFeeGuide(remote?.feeGuide ?? null);
         setLabCheckedAt(remote?.choice?.labCheckedAt ?? null);
         setCancelDeadlineAt(remote?.choice?.cancelDeadlineAt ?? null);
+        setGracePromoteAt(remote?.choice?.gracePromoteAt ?? null);
         if (!viewerTouchRef.current.has("chat")) {
           if (viewerPrefsRef.current.chatOpen === false) {
             setManualChatOpen(true);
@@ -4904,14 +4862,19 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
 
         setConfirmPrefDialogOpen(false);
+        const graceAt = res.gracePromoteAt || res.cancelDeadlineAt || null;
         if (res.cancelDeadlineAt) setCancelDeadlineAt(res.cancelDeadlineAt);
+        setGracePromoteAt(graceAt);
         setRemoteMode("confirmed");
         reportGenerationEdits("confirm", generationEdits);
         toast({
-          title: "디자인 확정",
-          description: "수행 기공소가 검토·수정한 뒤 제조에 넘깁니다.",
+          title: "디자인을 확정했습니다",
+          description: "5분 후 제조사 준비에 들어갑니다.",
         });
-        onActionComplete?.("confirmed");
+        onActionComplete?.("confirmed", {
+          gracePromoteAt: graceAt,
+          cancelDeadlineAt: res.cancelDeadlineAt || null,
+        });
       } catch (err) {
         skipSnapshotFlushRef.current = false;
         toast({
@@ -5041,9 +5004,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   ]);
 
   const handlePracticeDesignConfirmCancel = useCallback(async () => {
-    if (isLabViewer || !canChooseAbutmentRoute || remoteMode !== "confirmed") return;
+    const graceOpen = Boolean(gracePromoteAt) && !labCheckedAt;
+    if (remoteMode !== "confirmed" || labCheckedAt) return;
+    if (!graceOpen && isLabViewer) return;
     if (!authToken || !transferIdParam || actionBusy) return;
-    if (labCheckedAt) return;
     const deadlineMs = cancelDeadlineAt
       ? new Date(cancelDeadlineAt).getTime()
       : Number.NaN;
@@ -5086,6 +5050,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
       setRemoteMode(null);
       setCancelDeadlineAt(null);
+      setGracePromoteAt(null);
       setLabCheckedAt(null);
       toast({
         title: "디자인 확정 해제",
@@ -5110,7 +5075,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     actionBusy,
     authToken,
     cancelDeadlineAt,
-    canChooseAbutmentRoute,
+    gracePromoteAt,
     isLabViewer,
     labCheckedAt,
     onActionComplete,
@@ -5121,20 +5086,6 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   const handleClickConfirmAndOrder = useCallback(() => {
     if (actionBusy || designedListRef.current.length === 0) return;
-    if (isLabViewer) {
-      void handleLabDesignConfirm();
-      return;
-    }
-    if (
-      routeCostPassedRef.current !== "confirm" &&
-      !routeCostDismissed(authUserIdRef.current)
-    ) {
-      setRouteCostAction("confirm");
-      setRouteCostHideNext(false);
-      setRouteCostOpen(true);
-      return;
-    }
-    routeCostPassedRef.current = null;
     for (const tooth of Object.keys(candidateChoicesRef.current)) {
       confirmCandidateForTooth(tooth, false);
     }
@@ -5151,8 +5102,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     collectPendingInfoChanges,
     confirmCandidateForTooth,
     executeConfirmAndOrder,
-    handleLabDesignConfirm,
-    isLabViewer,
   ]);
 
   const sendTextToSharedChat = useCallback(
@@ -5215,123 +5164,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [canEditDesign, persistDesign, sendTextToSharedChat, sharedChatDraft, sharedChatSending, toast],
   );
-
-  const handleClickManualDesign = useCallback(async () => {
-    if (actionBusy) return;
-    if (
-      routeCostPassedRef.current !== "manual" &&
-      !routeCostDismissed(authUserIdRef.current)
-    ) {
-      setRouteCostAction("manual");
-      setRouteCostHideNext(false);
-      setRouteCostOpen(true);
-      return;
-    }
-    routeCostPassedRef.current = null;
-    if (!manualChatOpen || manualChatCollapsed) {
-      viewerTouchRef.current.add("chat");
-      viewerPrefsRef.current = { ...viewerPrefsRef.current, chatOpen: true };
-      setManualChatOpen(true);
-      setManualChatCollapsed(false);
-      paint.setPaintOn(true);
-      persistDesign();
-      window.requestAnimationFrame(() => sharedChatInputRef.current?.focus());
-      return;
-    }
-
-    const token = String(authToken || "").trim();
-    const tid = transferIdRef.current;
-    if (!token || !tid) return;
-    const generationEdits = snapshotGenerationEdits();
-
-    setActionBusy("manual");
-    try {
-      const draftText = sharedChatDraft.trim();
-      let chatSentDirectly = false;
-      if (draftText) {
-        chatSentDirectly = await sendTextToSharedChat(draftText);
-        if (chatSentDirectly) setSharedChatDraft("");
-      }
-
-      const list = designedListRef.current;
-      const ctx = designContextRef.current;
-      const shapes = paint.paintRef.current?.getShapes() ?? [];
-      const res = await requestManualCustomAbutmentDesignRemote(token, tid, {
-        message: draftText || undefined,
-        chatSentDirectly,
-        version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-        fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-        teeth: list.map((d) => ({
-          toothNumber: d.toothNumber,
-          fileName: d.fileName,
-          fixture: d.fixture,
-          overrides: ctx?.overrides[d.toothNumber] ?? {},
-          params: d.params,
-          metrics: d.metrics,
-          stlBlob: d.stlBlob,
-          crownLocalPositions: d.crownLocalPositions,
-          marginLoopLocal: d.marginLoopLocal,
-          ...(d.enameloplastyLocalPositions?.length
-            ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
-            : {}),
-        })),
-        paint: {
-          shapes,
-          view: captureCurrentPaintView(),
-        },
-      });
-
-      if (!res.ok) {
-        toast({
-          title: "수작업 의뢰 실패",
-          description: res.message || "잠시 후 다시 시도해 주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setRemoteMode("manual");
-      reportGenerationEdits("manual", generationEdits);
-      toast({
-        title: "수작업 의뢰 전달 완료",
-        description: "디자인 프리뷰·페인트·전달 내용이 기공소와 공유되었습니다.",
-      });
-      onActionComplete?.("manual");
-      handleOpenChange(false);
-    } catch (err) {
-      toast({
-        title: "수작업 의뢰 실패",
-        description: err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionBusy(null);
-    }
-  }, [
-    actionBusy,
-    authToken,
-    captureCurrentPaintView,
-    handleOpenChange,
-    manualChatCollapsed,
-    manualChatOpen,
-    onActionComplete,
-    paint,
-    persistDesign,
-    reportGenerationEdits,
-    sendTextToSharedChat,
-    sharedChatDraft,
-    snapshotGenerationEdits,
-    toast,
-  ]);
-
-  const proceedRouteCost = useCallback(() => {
-    if (routeCostHideNext) rememberRouteCostDismissed(authUserIdRef.current);
-    const action = routeCostAction;
-    setRouteCostOpen(false);
-    routeCostPassedRef.current = action;
-    if (action === "confirm") handleClickConfirmAndOrder();
-    else void handleClickManualDesign();
-  }, [handleClickConfirmAndOrder, handleClickManualDesign, routeCostAction, routeCostHideNext]);
 
   const touchViewer = (key: string) => {
     viewerTouchRef.current.add(key);
@@ -6193,11 +6025,20 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ) : null}
 
 
-                {canChooseAbutmentRoute ||
-                (isLabViewer && remoteMode === "confirmed" && !labCheckedAt) ? (
+                {gracePending ||
+                (remoteMode !== "confirmed" && remoteMode !== "manual") ||
+                (remoteMode === "confirmed" && !labCheckedAt) ? (
                   <div className="pointer-events-auto">
                     <div className="flex items-center gap-2.5 rounded-xl border bg-background/95 p-1.5 shadow-lg backdrop-blur">
-                    {canChooseAbutmentRoute && remoteMode === "confirmed" ? (
+                    {gracePending ? (
+                      <AbutmentDesignGraceControl
+                        deadlineAt={gracePromoteAt}
+                        busy={actionBusy === "cancel"}
+                        onCancel={() => void handlePracticeDesignConfirmCancel()}
+                        className="h-9 px-3 text-sm"
+                      />
+                    ) : null}
+                    {!gracePending && !isLabViewer && remoteMode === "confirmed" ? (
                       <CancelWindowTimer
                         deadlineAt={cancelDeadlineAt}
                         closed={Boolean(labCheckedAt)}
@@ -6205,39 +6046,42 @@ export function PracticeCustomAbutmentPreviewDialog({
                         onCancel={() => void handlePracticeDesignConfirmCancel()}
                       />
                     ) : null}
-                    {canChooseAbutmentRoute &&
+                    {!gracePending &&
                     remoteMode !== "confirmed" &&
                     remoteMode !== "manual" ? (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={
-                                !ready ||
-                                designedList.length === 0 ||
-                                actionBusy !== null ||
-                                redesigning.length > 0
-                              }
-                              className="h-9 gap-1.5 px-4 text-sm font-semibold"
-                              onClick={handleClickConfirmAndOrder}
-                            >
-                              {actionBusy === "confirm" ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Check className="h-4 w-4" />
-                              )}
-                              <span>디자인 종료</span>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                            어벗 비용·진행 방식을 고른 뒤 확정합니다.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              !ready ||
+                              designedList.length === 0 ||
+                              actionBusy !== null ||
+                              redesigning.length > 0
+                            }
+                            className="h-9 gap-1.5 px-4 text-sm font-semibold"
+                            onClick={handleClickConfirmAndOrder}
+                          >
+                            {actionBusy === "confirm" ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
+                            <span>디자인 완료</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
+                          디자인을 확정합니다.
+                          <br />
+                          5분 후 제조사 준비에 들어갑니다.
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
-                    {isLabViewer && remoteMode === "confirmed" && !labCheckedAt ? (
+                    {!gracePending &&
+                    isLabViewer &&
+                    remoteMode === "confirmed" &&
+                    !labCheckedAt ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -6340,99 +6184,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           </div>
 
         </div>
-      </DialogContent>
-    </Dialog>
-
-    <Dialog open={routeCostOpen} onOpenChange={setRouteCostOpen}>
-      <DialogContent
-        className="z-[540] max-w-md space-y-3 p-5"
-        overlayClassName="z-[535]"
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        <DialogHeader className="text-left">
-          <DialogTitle className="text-base font-semibold">어벗 디자인 결정</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2" role="radiogroup" aria-label="어벗 진행 방식">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={routeCostAction === "confirm"}
-            onClick={() => setRouteCostAction("confirm")}
-            className={cn(
-              "w-full rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/30",
-              routeCostAction === "confirm"
-                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                : "bg-background",
-            )}
-          >
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium">디자인 확정</span>
-              <span className="shrink-0 text-right font-semibold tabular-nums">
-                어벗츠에{" "}
-                {formatWon(
-                  feeGuide?.platformUnit || ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
-                )}{" "}
-                납부
-              </span>
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              수행 기공소가 검토·수정한 뒤 제조사에 넘깁니다.
-            </p>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={routeCostAction === "manual"}
-            onClick={() => setRouteCostAction("manual")}
-            className={cn(
-              "w-full rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/30",
-              routeCostAction === "manual"
-                ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                : "bg-background",
-            )}
-          >
-            <div className="flex items-start justify-between gap-3 text-sm">
-              <span className="font-medium">수작업 의뢰</span>
-              <span className="shrink-0 text-right font-semibold tabular-nums">
-                {(feeGuide?.labTeeth.length ?? 0) === 0 ? (
-                  "기공소 수가로 납부"
-                ) : new Set(feeGuide?.labTeeth.map((row) => row.unit)).size === 1 ? (
-                  <>
-                    기공소에 {formatWon(feeGuide?.labTeeth[0]?.unit || 0)} 납부
-                  </>
-                ) : (
-                  <span className="block">
-                    {feeGuide?.labTeeth.map((row) => (
-                      <span key={row.toothNumber} className="block">
-                        기공소에 #{row.toothNumber} {formatWon(row.unit)} 납부
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </span>
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              기공소 프로그램으로 처음부터 작업합니다.
-            </p>
-          </button>
-        </div>
-        <DialogFooter className="flex w-full flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:justify-between sm:space-x-0">
-          <label className="flex shrink-0 cursor-pointer items-center justify-start gap-2 text-sm">
-            <Checkbox
-              checked={routeCostHideNext}
-              onCheckedChange={(val) => setRouteCostHideNext(val === true)}
-            />
-            <span>다시 표시하지 않기</span>
-          </label>
-          <div className="ml-auto flex shrink-0 flex-row justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setRouteCostOpen(false)}>
-              취소
-            </Button>
-            <Button type="button" size="sm" onClick={proceedRouteCost}>
-              {routeCostAction === "confirm" ? "디자인 확정" : "수작업 의뢰"}
-            </Button>
-          </div>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
 
