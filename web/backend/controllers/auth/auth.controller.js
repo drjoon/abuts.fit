@@ -637,12 +637,6 @@ async function register(req, res) {
 
     const isManufacturerSignup = normalizedRole === "manufacturer";
     if (isManufacturerSignup) {
-      if (socialProvider) {
-        return res.status(400).json({
-          success: false,
-          message: "제조사 가입은 이메일로만 가능합니다.",
-        });
-      }
       const settings = await SystemSettings.findOne({ key: "global" })
         .select({ manufacturerSignupToken: 1 })
         .lean();

@@ -43,6 +43,7 @@ export const OAuthCallbackPage = () => {
       const needsSignup = searchParams.get("needsSignup");
       const signupRole = searchParams.get("role");
       const ref = searchParams.get("ref");
+      const manufacturerKey = searchParams.get("k");
 
       const oauthIntent = sessionStorage.getItem("oauthIntent");
       const oauthReturnTo = sessionStorage.getItem("oauthReturnTo");
@@ -60,6 +61,7 @@ export const OAuthCallbackPage = () => {
           const qs = new URLSearchParams();
           if (oauthSignupRole) qs.set("role", oauthSignupRole);
           if (oauthSignupRef) qs.set("ref", oauthSignupRef);
+          if (manufacturerKey) qs.set("k", manufacturerKey);
           const target = oauthReturnTo || "/signup";
           sessionStorage.removeItem("oauthIntent");
           sessionStorage.removeItem("oauthReturnTo");
@@ -84,9 +86,15 @@ export const OAuthCallbackPage = () => {
         const effectiveRef = ref || oauthSignupRef || "";
         if (effectiveRole) qs.set("role", effectiveRole);
         if (effectiveRef) qs.set("ref", effectiveRef);
+        if (manufacturerKey) qs.set("k", manufacturerKey);
 
+        const manufacturerReturn =
+          effectiveRole === "manufacturer"
+            ? "/signup/manufacturer"
+            : "";
         const target =
-          oauthIntent === "signup" && oauthReturnTo ? oauthReturnTo : "/signup";
+          manufacturerReturn ||
+          (oauthIntent === "signup" && oauthReturnTo ? oauthReturnTo : "/signup");
         sessionStorage.removeItem("oauthIntent");
         sessionStorage.removeItem("oauthReturnTo");
         sessionStorage.removeItem("oauthSignupRole");

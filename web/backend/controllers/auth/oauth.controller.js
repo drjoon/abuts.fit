@@ -4,6 +4,7 @@
 // - web/backend/server.js
 import crypto from "crypto";
 import User from "../../models/user.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
 import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
 
@@ -75,6 +76,21 @@ function encodeOAuthState(input) {
   } catch {
     return "";
   }
+}
+
+async function resolveOAuthSignupRole(query) {
+  const raw = String(query?.role || "").trim();
+  if (raw === "manufacturer") {
+    const given = String(query?.k || "").trim();
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ manufacturerSignupToken: 1 })
+      .lean();
+    const expected = String(settings?.manufacturerSignupToken || "").trim();
+    if (!expected || given !== expected) return null;
+    return "manufacturer";
+  }
+  if (raw === "requestor" || raw === "salesman") return raw;
+  return "requestor";
 }
 
 function decodeOAuthState(raw) {
@@ -279,15 +295,25 @@ async function googleStart(req, res) {
   }
 
   const intent = String(req.query.intent || "").trim();
-  const role = ["requestor", "salesman"].includes(
-    String(req.query.role || "").trim(),
-  )
-    ? String(req.query.role).trim()
-    : "requestor";
+  const role =
+    intent === "signup" ? await resolveOAuthSignupRole(req.query) : "requestor";
+  if (intent === "signup" && !role) {
+    return redirectToFrontend(req, res, {
+      error: "제조사 가입 링크가 올바르지 않습니다.",
+      provider: "google",
+    });
+  }
   const ref = String(req.query.ref || "").trim();
+  const manufacturerKey =
+    role === "manufacturer" ? String(req.query.k || "").trim() : "";
   const state =
     intent === "signup"
-      ? encodeOAuthState({ intent: "signup", role, ref })
+      ? encodeOAuthState({
+          intent: "signup",
+          role,
+          ref,
+          ...(manufacturerKey ? { k: manufacturerKey } : {}),
+        })
       : "";
 
   const backendBase = getBackendBaseUrl(req);
@@ -330,6 +356,8 @@ async function googleCallback(req, res) {
     const isSignupIntent = oauthState?.intent === "signup";
     const intentRole = String(oauthState?.role || "").trim();
     const intentRef = String(oauthState?.ref || "").trim();
+    const intentKey =
+      intentRole === "manufacturer" ? String(oauthState?.k || "").trim() : "";
 
     const backendBase = getBackendBaseUrl(req);
     const redirectUri = `${backendBase}/api/auth/oauth/google/callback`;
@@ -422,6 +450,7 @@ async function googleCallback(req, res) {
       providerUserId: String(profile.sub || ""),
       ref: intentRef || "",
       role: intentRole || "",
+      ...(intentKey ? { k: intentKey } : {}),
     });
 
     return redirectToFrontend(req, res, {
@@ -430,6 +459,7 @@ async function googleCallback(req, res) {
       needsSignup: "1",
       ...(intentRole ? { role: intentRole } : {}),
       ...(intentRef ? { ref: intentRef } : {}),
+      ...(intentKey ? { k: intentKey } : {}),
     });
   } catch (error) {
     return redirectToFrontend(req, res, {
@@ -449,15 +479,25 @@ async function kakaoStart(req, res) {
   }
 
   const intent = String(req.query.intent || "").trim();
-  const role = ["requestor", "salesman"].includes(
-    String(req.query.role || "").trim(),
-  )
-    ? String(req.query.role).trim()
-    : "requestor";
+  const role =
+    intent === "signup" ? await resolveOAuthSignupRole(req.query) : "requestor";
+  if (intent === "signup" && !role) {
+    return redirectToFrontend(req, res, {
+      error: "제조사 가입 링크가 올바르지 않습니다.",
+      provider: "kakao",
+    });
+  }
   const ref = String(req.query.ref || "").trim();
+  const manufacturerKey =
+    role === "manufacturer" ? String(req.query.k || "").trim() : "";
   const state =
     intent === "signup"
-      ? encodeOAuthState({ intent: "signup", role, ref })
+      ? encodeOAuthState({
+          intent: "signup",
+          role,
+          ref,
+          ...(manufacturerKey ? { k: manufacturerKey } : {}),
+        })
       : "";
 
   const backendBase = getBackendBaseUrl(req);
@@ -500,6 +540,8 @@ async function kakaoCallback(req, res) {
     const isSignupIntent = oauthState?.intent === "signup";
     const intentRole = String(oauthState?.role || "").trim();
     const intentRef = String(oauthState?.ref || "").trim();
+    const intentKey =
+      intentRole === "manufacturer" ? String(oauthState?.k || "").trim() : "";
 
     const backendBase = getBackendBaseUrl(req);
     const redirectUri = `${backendBase}/api/auth/oauth/kakao/callback`;
@@ -600,6 +642,7 @@ async function kakaoCallback(req, res) {
       providerUserId: String(profile.id || ""),
       ref: intentRef || "",
       role: intentRole || "",
+      ...(intentKey ? { k: intentKey } : {}),
     });
 
     return redirectToFrontend(req, res, {
@@ -608,6 +651,7 @@ async function kakaoCallback(req, res) {
       needsSignup: "1",
       ...(intentRole ? { role: intentRole } : {}),
       ...(intentRef ? { ref: intentRef } : {}),
+      ...(intentKey ? { k: intentKey } : {}),
     });
   } catch (error) {
     return redirectToFrontend(req, res, {

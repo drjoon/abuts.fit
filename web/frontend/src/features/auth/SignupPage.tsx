@@ -155,8 +155,11 @@ export const SignupPage = () => {
   }, [labPartnerToken]);
 
   const isReferralSignupRoute = location.pathname === "/signup/referral";
-  const oauthReturnTo =
-    referralCode || isReferralSignupRoute ? "/signup/referral" : "/signup";
+  const oauthReturnTo = isManufacturerSignup
+    ? `/signup/manufacturer?k=${encodeURIComponent(manufacturerSignupToken)}`
+    : referralCode || isReferralSignupRoute
+      ? "/signup/referral"
+      : "/signup";
 
   const { token, user, loginWithToken, logout } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -380,19 +383,27 @@ export const SignupPage = () => {
     (provider: "google" | "kakao") => {
       const qs = new URLSearchParams({
         intent: "signup",
-        role: signupRole,
-        ...(effectiveReferralCode ? { ref: effectiveReferralCode } : {}),
+        role: isManufacturerSignup ? "manufacturer" : signupRole,
+        ...(isManufacturerSignup && manufacturerSignupToken
+          ? { k: manufacturerSignupToken }
+          : {}),
+        ...(!isManufacturerSignup && effectiveReferralCode
+          ? { ref: effectiveReferralCode }
+          : {}),
       });
       return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
     },
-    [effectiveReferralCode, signupRole],
+    [effectiveReferralCode, isManufacturerSignup, manufacturerSignupToken, signupRole],
   );
 
   const goSocialSignup = useCallback(
     (provider: "google" | "kakao") => {
       sessionStorage.setItem("oauthIntent", "signup");
       sessionStorage.setItem("oauthReturnTo", oauthReturnTo);
-      sessionStorage.setItem("oauthSignupRole", signupRole);
+      sessionStorage.setItem(
+        "oauthSignupRole",
+        isManufacturerSignup ? "manufacturer" : signupRole,
+      );
       if (effectiveReferralCode) {
         sessionStorage.setItem("oauthSignupRef", effectiveReferralCode);
       } else {
@@ -400,7 +411,13 @@ export const SignupPage = () => {
       }
       window.location.href = oauthStartUrl(provider);
     },
-    [effectiveReferralCode, oauthReturnTo, oauthStartUrl, signupRole],
+    [
+      effectiveReferralCode,
+      isManufacturerSignup,
+      oauthReturnTo,
+      oauthStartUrl,
+      signupRole,
+    ],
   );
 
   const allowedSignupRoles = useMemo<SignupRole[]>(() => {
@@ -416,8 +433,9 @@ export const SignupPage = () => {
   }, [allowedSignupRoles, effectiveReferralCode]);
 
   const skipReferralCodeStep =
-    typeof referralCode === "string" &&
-    enteredReferralCode === referralCode.trim();
+    isManufacturerSignup ||
+    (typeof referralCode === "string" &&
+      enteredReferralCode === referralCode.trim());
 
   const clearEnteredReferralCode = useCallback(() => {
     setEnteredReferralCode(undefined);
@@ -882,7 +900,8 @@ export const SignupPage = () => {
             name: formData.name,
             email: formData.email,
             password: Math.random().toString(36).slice(-12),
-            role: signupRole,
+            role: isManufacturerSignup ? "manufacturer" : signupRole,
+            ...(isManufacturerSignup ? { manufacturerSignupToken } : {}),
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
             socialToken: sessionStorage.getItem("socialToken") || undefined,
@@ -914,8 +933,12 @@ export const SignupPage = () => {
           navigate("/dashboard", { replace: true });
         } else {
           toast({
-            title: "회원가입 완료",
-            description: "가입이 완료되었습니다. 로그인 페이지로 이동합니다.",
+            title: isManufacturerSignup
+              ? "가입 신청을 접수했습니다"
+              : "회원가입 완료",
+            description: isManufacturerSignup
+              ? "관리자 승인 후 로그인할 수 있습니다."
+              : "가입이 완료되었습니다. 로그인 페이지로 이동합니다.",
           });
           navigate("/login", { replace: true });
         }
@@ -1317,7 +1340,10 @@ export const SignupPage = () => {
                           소개 코드 없이 진행하세요.
                         </p>
                       ) : null}
-                      {signupRole === "requestor" && (
+                      {isManufacturerSignup ? (
+                        <p className="text-sm text-white/70">제조사 대표자</p>
+                      ) : null}
+                      {signupRole === "requestor" && !isManufacturerSignup && (
                         <p className="text-sm text-white/70 text-left">
                           치과 또는 기공소
                         </p>
@@ -1339,7 +1365,6 @@ export const SignupPage = () => {
                           setSelectedMethod(null);
                           goSocialSignup("kakao");
                         }}
-                        hideSocial={isManufacturerSignup}
                         onEmailClick={() => {
                           setSelectedMethod("email");
                           setWizardStep(skipReferralCodeStep ? 3 : 2);

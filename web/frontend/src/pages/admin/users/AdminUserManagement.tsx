@@ -903,34 +903,6 @@ export const AdminUserManagement = ({
       }
     >
       <div className="flex w-full min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1.5 py-1.5">
-        <div className="flex w-fit">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void request<any>({
-                path: "/api/admin/manufacturer-signup-link",
-                method: "GET",
-                token,
-              }).then(async (res) => {
-                const path = String(res.data?.data?.path || "").trim();
-                if (!res.ok || !path) {
-                  toast({
-                    title: "가입 링크를 만들지 못했습니다",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                const url = `${window.location.origin}${path}`;
-                await navigator.clipboard.writeText(url);
-                toast({ title: "제조사 가입 링크를 복사했습니다" });
-              });
-            }}
-          >
-            제조사 가입 링크 복사
-          </Button>
-        </div>
         {unresolvedUsers.length > 0 && (
           <div className="rounded-2xl border border-accent-muted/80 bg-accent-soft/60 px-5 py-4 shadow-sm sm:px-6">
             <div className="mb-3">
