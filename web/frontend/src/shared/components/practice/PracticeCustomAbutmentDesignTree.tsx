@@ -48,6 +48,7 @@ import {
   computeOptimalPostTaperDeg,
   evaluatePostTaperRetention,
   isAnteriorTooth,
+  minOcclusalClearanceMmForTooth,
   postRetentionSurface,
   snapMaxDiameterMm,
   type CustomAbutmentDesignParams,
@@ -293,9 +294,10 @@ export function computeParamsFromInfoFieldEdit(
     }
     case "occlusalClearanceMm": {
       if (m.occlusalClearanceMm == null) return {};
+      const minOcc = minOcclusalClearanceMmForTooth(item.toothNumber);
       return {
         occlusalClearanceMm: Number(
-          clampParam("occlusalClearanceMm", num).toFixed(2),
+          Math.max(minOcc, clampParam("occlusalClearanceMm", num)).toFixed(2),
         ),
         postHeightOffsetMm: 0,
       };
@@ -1902,7 +1904,7 @@ export function PracticeCustomAbutmentDesignTree({
                       <EditableNumberRow
                         label="대합 거리"
                         value={m.occlusalClearanceMm}
-                        min={CUSTOM_ABUTMENT_PARAM_SPECS.occlusalClearanceMm.min}
+                        min={minOcclusalClearanceMmForTooth(item.toothNumber)}
                         step={0.05}
                         digits={2}
                         suffix="mm"

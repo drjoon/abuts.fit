@@ -491,10 +491,14 @@ export function computeOptimalPostHeightMmFromTaper(
   return Math.round(clamped * 100) / 100;
 }
 
+export function minOcclusalClearanceMmForTooth(toothNumber: string): number {
+  return isAnteriorTooth(toothNumber) ? 1.0 : 0.7;
+}
+
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   const anterior = isAnteriorTooth(toothNumber);
   return {
-    // 교합면/절단면 권장 두께: 구치부 1.2mm(최소 0.7mm), 전치부 1.5~2.0mm(최소 0.7mm).
+    // 교합면/절단면 권장 두께: 구치부 1.2mm(최소 0.7mm), 전치부 1.5~2.0mm(최소 1.0mm).
     occlusalClearanceMm: anterior ? 1.6 : 1.2,
     postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
     postTaperLink: 1,
@@ -577,6 +581,9 @@ export function resolveCustomAbutmentParams(
     const raw = Number(overrides[key]);
     if (!Number.isFinite(raw)) continue;
     out[key] = clampDesignParam(key, raw, isBridge);
+    if (key === "occlusalClearanceMm") {
+      out[key] = Math.max(minOcclusalClearanceMmForTooth(toothNumber), out[key]);
+    }
   }
   return out;
 }
