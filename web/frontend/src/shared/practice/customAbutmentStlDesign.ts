@@ -5187,10 +5187,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               : 0.25,
       });
       if (pickedU != null) {
+        // pickedU는 교합축(frameOccRef) 기준 협설 오프셋이다.
+        // 임플란트 축이 협측 등으로 기울어 이머징할 때는 교합축 기울기(occU)를 더해 대합치·교합축 방향으로 세운다.
+        const targetLocalU = occU + pickedU;
         // 협설 목표는 각도 상한까지 유지한다. 근원심 기울기는 남은 각도만 쓴다.
         const maxLat = Math.tan(Math.min(tiltCapRad, 12.5 * DEG)) * H * 0.98;
         const buccalU = clamp(
-          clampLateralForCompactDiameter(pickedU, 0, 1.65, 0.7).u,
+          clampLateralForCompactDiameter(targetLocalU, 0, 1.65, 0.7).u,
           -maxLat,
           maxLat,
         );
@@ -5775,7 +5778,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   );
   if (mode.probeHeight) return { kind: "height", naturalTopH, safeTopH, oppClearTopH: effClearTopH };
   let bridgeMatchedTopH: number | null = null;
-  if (Math.abs(offsetH) <= 0.05) {
+  if (!hasExplicitClearance && Math.abs(offsetH) <= 0.05) {
     const mates = bridgeAbutmentMates(fixture, args.neighbors, args.toothWorks);
     if (mates.length > 0) {
       const probed = await Promise.all(
@@ -11022,6 +11025,77 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (!taperChanged && (!hasDelta || Math.abs(nextShift - planeShift) < 0.008)) break;
       planeShift = nextShift;
       shape = buildShape();
+    }
+    // 구치부·명시적 대합 거리 지정 시: 수직 격자(occInFix) 기반 보정과 실제 3D 표면 최단 거리(closestSurfaceClearanceMm)
+    // 사이에 기울기·교두 경사 오차가 남으면 최종 측정 기준과 동일한 3D 거리로 최대 3회 미세 수렴한다.
+    if (oppTrisAll.length >= 9 && (posterior || hasExplicitClearance) && !incisorDeepBite) {
+      let prevAbsErr = Infinity;
+      for (let refine = 0; refine < 3; refine += 1) {
+        const refSurface: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
+        const refTopCap: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
+        for (let col = 0; col < shape.postByCol.length; col += 1) {
+          const post = shape.postByCol[col]!;
+          if (post.length === 0) continue;
+          const minColPostZ = cols[col]!.marginPt[2] + 0.2;
+          const topStart = Math.max(0, post.length - TOP_ROUND_STEPS - 1);
+          for (let idx = 0; idx < post.length; idx += 1) {
+            const p = post[idx]!;
+            if (p[2] >= minColPostZ || idx >= topStart) {
+              refSurface.push(p[0], p[1], p[2]);
+            }
+            if (idx >= topStart && (col % 2 === 0 || idx === post.length - 1)) {
+              refTopCap.push(p[0], p[1], p[2]);
+            }
+          }
+          if (col % 2 === 0) {
+            const rim = post[post.length - 1]!;
+            refSurface.push(
+              rim[0] * 0.67 + shape.postApex[0] * 0.33,
+              rim[1] * 0.67 + shape.postApex[1] * 0.33,
+              rim[2] * 0.67 + shape.postApex[2] * 0.33,
+              rim[0] * 0.34 + shape.postApex[0] * 0.66,
+              rim[1] * 0.34 + shape.postApex[1] * 0.66,
+              rim[2] * 0.34 + shape.postApex[2] * 0.66,
+            );
+            refTopCap.push(
+              rim[0] * 0.67 + shape.postApex[0] * 0.33,
+              rim[1] * 0.67 + shape.postApex[1] * 0.33,
+              rim[2] * 0.67 + shape.postApex[2] * 0.33,
+              rim[0] * 0.34 + shape.postApex[0] * 0.66,
+              rim[1] * 0.34 + shape.postApex[1] * 0.66,
+              rim[2] * 0.34 + shape.postApex[2] * 0.66,
+            );
+          }
+        }
+        const curMeshClear = closestSurfaceClearanceMm({
+          points: new Float32Array(refSurface),
+          topPoints: new Float32Array(refTopCap),
+          opposingTris: oppTrisAll,
+          origin: c0,
+          up: frame.w,
+          labialHint: frame.uLabial,
+          minHeightMm: 0.35,
+          maxHeightMm: 22,
+          maxAbsUMm: 12,
+          postCorridorMarginMm: Math.max(2.2, crownHalfMd - marginB + 1.5),
+        });
+        if (curMeshClear == null || !Number.isFinite(curMeshClear)) break;
+        const err = curMeshClear - targetClear;
+        const absErr = Math.abs(err);
+        if (absErr <= 0.04 || absErr >= prevAbsErr - 0.01) break;
+        prevAbsErr = absErr;
+        let maxShiftUp = maxShiftUpBase;
+        if (bridgeMatchedTopH != null) {
+          const axialH = measureShapePostHeightMm(shape) / Math.max(frame.w[2], 0.35);
+          maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, bridgeMatchedTopH - axialH));
+        }
+        const stepShift = clamp(err, -2.5, 2.5);
+        const nextShift = clamp(planeShift + stepShift, shiftDownLimit, maxShiftUp);
+        if (Math.abs(nextShift - planeShift) < 0.008) break;
+        planeShift = nextShift;
+        syncLinkedTaperForHeight(measureShapePostHeightMm(shape));
+        shape = buildShape();
+      }
     }
     if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
       shape = buildShape();

@@ -167,6 +167,8 @@ type Zone = {
   marginColAng?: Float32Array;
   topColZ?: Float32Array;
   topMinOuterR?: number;
+  topLabialOuterR?: number;
+  topMesialOuterR?: number;
   boreTopR?: number;
   anterior?: boolean;
   screwR: number;
@@ -608,9 +610,15 @@ function computeSafePostTopLean(
   const boreTopR = zone.boreTopR ?? 0;
   let maxAddR = 2.4;
   if (boreTopR > 0.1 && !zone.anterior && zone.topMinOuterR != null && zone.topMinOuterR > 0.4) {
-    const centerDist = Math.hypot(postCenterL, postCenterM);
-    const avail = zone.topMinOuterR - (boreTopR + 0.45) - centerDist * 0.55;
-    maxAddR = clamp(avail, 0.22, 1.55);
+    const dirL = wantL / wantR;
+    const dirM = wantM / wantR;
+    const rLab = zone.topLabialOuterR ?? zone.topMinOuterR;
+    const rMes = zone.topMesialOuterR ?? zone.topMinOuterR;
+    const dirOuterR = Math.hypot(dirL * rLab, dirM * rMes);
+    // 스크류 축(0,0)에서 더 멀어지는 방향의 편심만 여유에서 차감하고, 축 쪽으로 되돌아오는 회전은 막지 않는다.
+    const outwardEcc = Math.max(0, postCenterL * dirL + postCenterM * dirM);
+    const avail = dirOuterR - (boreTopR + 0.35) - outwardEcc * 0.45;
+    maxAddR = clamp(avail, 2.0, 2.8);
   }
   const effR = maxAddR * Math.tanh(wantR / maxAddR);
   const k = effR / wantR;
@@ -1802,6 +1810,8 @@ function zoneOf(
   }
 
   let topMinOuterR = Infinity;
+  let topLabialOuterR = 0;
+  let topMesialOuterR = 0;
   const bandZ = meanMarginZ + Math.max(0.8, top - meanMarginZ) * 0.72;
   const bandHalf = Math.max(0.25, (top - meanMarginZ) * 0.12);
   for (let i = 0; i < src.length; i += 3) {
@@ -1812,8 +1822,12 @@ function zoneOf(
     if (!proposalSolid && Math.hypot(x, y) <= screwR + 0.2) continue;
     const l = x * axes.labial[0] + y * axes.labial[1];
     const m = x * axes.mesial[0] + y * axes.mesial[1];
-    const rFromCenter = Math.hypot(l - centerL, m - centerM);
+    const dl = Math.abs(l - centerL);
+    const dm = Math.abs(m - centerM);
+    const rFromCenter = Math.hypot(dl, dm);
     if (rFromCenter > 0.55 && rFromCenter < topMinOuterR) topMinOuterR = rFromCenter;
+    if (dl > topLabialOuterR) topLabialOuterR = dl;
+    if (dm > topMesialOuterR) topMesialOuterR = dm;
   }
 
   return {
@@ -1826,6 +1840,8 @@ function zoneOf(
     marginColAng,
     topColZ,
     topMinOuterR: Number.isFinite(topMinOuterR) ? topMinOuterR : undefined,
+    topLabialOuterR: topLabialOuterR > 0.55 ? topLabialOuterR : undefined,
+    topMesialOuterR: topMesialOuterR > 0.55 ? topMesialOuterR : undefined,
     boreTopR,
     anterior: isAnteriorTooth(design.toothNumber),
     screwR,
