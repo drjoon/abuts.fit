@@ -446,6 +446,7 @@ import {
 } from "@/shared/practice/practiceTransferLabReceive";
 import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practice/practiceTransferPartialAbutmentUpload";
 import {
+  ABUTMENT_HEADER_BADGE_TOOLTIP,
   ABUTMENT_REVIEW_BADGE_KEY,
   isLabWorkBlockedUntilPracticeAbutmentDecision,
   isPtxAbutmentDesignAwaitingDentist,
@@ -9909,8 +9910,7 @@ export function RequestorPracticeReceivePage({
         tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
         count: reviewCount,
         unreadCount: 0,
-        tooltip:
-          "치과가 의뢰한 커스텀어벗 중 디자인이 아직 확정되지 않은 건입니다. 클릭하면 디자인 화면에서 확정합니다.",
+        tooltip: ABUTMENT_HEADER_BADGE_TOOLTIP,
         attention: reviewCount > 0,
         attentionClassName:
           reviewCount > 0

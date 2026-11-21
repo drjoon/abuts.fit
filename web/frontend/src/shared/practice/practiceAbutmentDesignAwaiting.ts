@@ -9,6 +9,7 @@
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-11-22: 기공소 「어벗」은 치과 확정 전 미확정도 센다. 툴팁은 치과·기공소 확정.
 // - 2026-11-22: 헤더 「어벗 검토」「어벗 의뢰」를 「어벗」 하나로 통일.
 // - 2026-11-19: 작업시작 비활성 툴팁 카피(LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT).
 // - 2026-11-19: 기공소 작업시작 게이트·보철 업로드 안내 모달 카피 SSOT.
@@ -25,6 +26,14 @@ export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =
 
 /** 상단 「어벗」뱃지. 상태 필터가 아니라 디자인 화면으로 바로 연다. */
 export const ABUTMENT_REVIEW_BADGE_KEY = "abutmentReview";
+
+/** 캘린더·목록 칩. 치과·기공소 중 확정하면 생산. */
+export const ABUTMENT_DESIGN_AWAITING_SHORT_HINT =
+  "디자인 확정 대기 · 치과·기공소 확정 시 생산";
+
+/** 헤더 「어벗」툴팁 본문(찾아가기 안내 앞). */
+export const ABUTMENT_HEADER_BADGE_TOOLTIP =
+  "커스텀어벗 디자인이 아직 확정되지 않은 건입니다. 클릭하면 디자인 화면에서 확정합니다.";
 
 /** 기공소 작업시작 — 치과 어벗·디자인 확정 대기 */
 export const LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT =
@@ -204,9 +213,9 @@ export function isPlatformAbutmentDesignHeldForLabReview(
 }
 
 /**
- * 기공소 헤더 「어벗」.
- * 치과가 의뢰한 커스텀어벗이고, 수작업이 아니며, 기공소가 아직 디자인 확정하지 않은 자기 수행 건.
- * 플랫폼 확정본은 designFiles가 이미 있어도 미확정으로 둔다(제조 진입은 기공소 확정 후).
+ * 기공소 헤더 「어벗」·캘린더 육각형.
+ * 치과 의뢰 커스텀어벗이고 수작업이 아니며, 기공소가 아직 디자인 확정하지 않은 건.
+ * 치과 확정 전이어도 센다. 치과·기공소 중 확정하면 생산.
  */
 export function isPtxAbutmentDesignReviewForLab(
   input: AbutmentDesignAwaitingInput | null | undefined,
@@ -215,7 +224,6 @@ export function isPtxAbutmentDesignReviewForLab(
   const status = String(input.status || "").trim();
   if (LAB_REVIEW_CLOSED_STATUS.has(status)) return false;
   if (input.manualRequested) return false;
-  if (!String(input.practiceDesignConfirmedAt || "").trim()) return false;
   if (String(input.labDesignConfirmedAt || "").trim()) return false;
   return true;
 }

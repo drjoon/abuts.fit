@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-11-22: 디자인 확정 대기 툴팁 — 치과·기공소 확정 시 생산. 한 줄.
  * - 2026-11-20: 기공소 디자인 미확정 — 어벗 육각형 깜빡임(abutmentLabReview).
  * - 2026-10-06: 숨길 요일 UI — 캘린더 툴바 → 헤더 설정(보기·캘린더 아래).
  * - 2026-10-06: 토·일·법정공휴일 일자 빨간 글자(미니월·주간·목록 헤더).
@@ -158,7 +159,10 @@ import {
   getPracticeAbutmentUploadOverdueTooltip,
   type PracticeAbutmentUploadOverdueViewer,
 } from "@/shared/practice/practiceAbutmentUploadOverdue";
-import { PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import {
+  ABUTMENT_DESIGN_AWAITING_SHORT_HINT,
+  PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
+} from "@/shared/practice/practiceAbutmentDesignAwaiting";
 import { ABUTS_PINNED_LAB_NAME } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import {
   formatAbutsCooperationLabLabel,
@@ -726,18 +730,8 @@ function PracticeCalendarChipHover({
         {statusLabel ? (
           <p className="text-muted-foreground">상태 · {statusLabel}</p>
         ) : null}
-        {item.abutmentLabReview ? (
-          <p className="text-emerald-800">
-            기공소 디자인 확정 대기
-            <br />
-            확정하면 제조로 넘어갑니다.
-          </p>
-        ) : item.abutmentDesignAwaiting ? (
-          <p className="text-emerald-800">
-            어벗 디자인 확정 대기
-            <br />
-            치과의사가 확정하면 생산이 시작됩니다.
-          </p>
+        {item.abutmentLabReview || item.abutmentDesignAwaiting ? (
+          <p className="text-emerald-800">{ABUTMENT_DESIGN_AWAITING_SHORT_HINT}</p>
         ) : item.hasCustomAbutment ? (
           <p className="text-emerald-800">커스텀 어벗 포함</p>
         ) : null}
@@ -2303,18 +2297,16 @@ export function PracticeRecentTransfersCalendar({
                                       PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
                                   )}
                                   title={
-                                    item.abutmentLabReview
-                                      ? "기공소 디자인 확정 대기"
-                                      : item.abutmentDesignAwaiting
-                                        ? "어벗 디자인 확정 대기"
-                                        : "커스텀 어벗 포함"
+                                    item.abutmentLabReview ||
+                                    item.abutmentDesignAwaiting
+                                      ? ABUTMENT_DESIGN_AWAITING_SHORT_HINT
+                                      : "커스텀 어벗 포함"
                                   }
                                   aria-label={
-                                    item.abutmentLabReview
-                                      ? "기공소 디자인 확정 대기"
-                                      : item.abutmentDesignAwaiting
-                                        ? "어벗 디자인 확정 대기"
-                                        : "커스텀 어벗 포함"
+                                    item.abutmentLabReview ||
+                                    item.abutmentDesignAwaiting
+                                      ? ABUTMENT_DESIGN_AWAITING_SHORT_HINT
+                                      : "커스텀 어벗 포함"
                                   }
                                 >
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
@@ -2580,18 +2572,16 @@ export function PracticeRecentTransfersCalendar({
                                       PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
                                   )}
                                   title={
-                                    item.abutmentLabReview
-                                      ? "기공소 디자인 확정 대기"
-                                      : item.abutmentDesignAwaiting
-                                        ? "어벗 디자인 확정 대기"
-                                        : "커스텀 어벗 포함"
+                                    item.abutmentLabReview ||
+                                    item.abutmentDesignAwaiting
+                                      ? ABUTMENT_DESIGN_AWAITING_SHORT_HINT
+                                      : "커스텀 어벗 포함"
                                   }
                                   aria-label={
-                                    item.abutmentLabReview
-                                      ? "기공소 디자인 확정 대기"
-                                      : item.abutmentDesignAwaiting
-                                        ? "어벗 디자인 확정 대기"
-                                        : "커스텀 어벗 포함"
+                                    item.abutmentLabReview ||
+                                    item.abutmentDesignAwaiting
+                                      ? ABUTMENT_DESIGN_AWAITING_SHORT_HINT
+                                      : "커스텀 어벗 포함"
                                   }
                                 >
                                   <Hexagon className="h-3 w-3" aria-hidden />

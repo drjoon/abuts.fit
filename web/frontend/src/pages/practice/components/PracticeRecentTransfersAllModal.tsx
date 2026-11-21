@@ -150,6 +150,8 @@ import {
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
 import {
+  ABUTMENT_DESIGN_AWAITING_SHORT_HINT,
+  ABUTMENT_HEADER_BADGE_TOOLTIP,
   ABUTMENT_REVIEW_BADGE_KEY,
   isPtxAbutmentDesignAwaitingDentist,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
@@ -1095,8 +1097,7 @@ export function PracticeRecentTransfersAllModal({
         tone: resolvePracticeStatusFilterBadgeTone("작업완료"),
         count: abutmentDesignAwaitingCount,
         unreadCount: 0,
-        tooltip:
-          "커스텀어벗 디자인이 아직 확정되지 않은 건입니다. 클릭하면 디자인 화면에서 확정합니다.",
+        tooltip: ABUTMENT_HEADER_BADGE_TOOLTIP,
         attention: awaiting,
         attentionClassName: awaiting
           ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
@@ -1336,8 +1337,8 @@ export function PracticeRecentTransfersAllModal({
                               "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-emerald-700",
                               PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
                             )}
-                            title="어벗 디자인 확정 대기"
-                            aria-label="어벗 디자인 확정 대기"
+                            title={ABUTMENT_DESIGN_AWAITING_SHORT_HINT}
+                            aria-label={ABUTMENT_DESIGN_AWAITING_SHORT_HINT}
                           >
                             <Hexagon className="h-3.5 w-3.5" aria-hidden />
                           </span>
