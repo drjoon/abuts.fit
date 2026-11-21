@@ -33,7 +33,10 @@ test("마진 챔퍼는 0.1mm 단위이고 기본값은 0.6mm, 최소는 0.5mm", 
 
 test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기준, 최소 2°, 브리지 가중을 따른다", () => {
   const def = resolveCustomAbutmentParams("36");
-  assert.equal(def.occlusalClearanceMm, 1.5);
+  assert.equal(def.occlusalClearanceMm, 1.2);
+  assert.equal(def.minCrownThicknessMm, 1.0);
+  assert.equal(resolveCustomAbutmentParams("11").occlusalClearanceMm, 1.6);
+  assert.equal(resolveCustomAbutmentParams("11").minCrownThicknessMm, 1.0);
   assert.equal(def.postTaperDeg, 2);
   assert.equal(def.postTaperLink, 1);
   assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 0.8 }).postTaperDeg, 2);

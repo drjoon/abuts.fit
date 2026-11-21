@@ -88,8 +88,10 @@ import { computeCreasedVertexNormals } from "@/shared/three/backFaceShell";
 
 const DEG = Math.PI / 180;
 const TAPER_11_SLOPE = Math.tan(11 * DEG);
-/** 지르코니아 크라운 두께 하한. 공간이 좁아도 이보다 얇게 두지 않는다(적절 두께 1.0~1.5mm). */
+/** 교합면·절단면 지르코니아 크라운 최소 두께 하한(mm). 구치 권장 1.2mm, 전치 권장 1.5~2.0mm. */
 const CROWN_THICKNESS_FLOOR_MM = 0.7;
+/** 측면(축벽) 지르코니아 크라운 최소 두께 하한(mm). 일부 좁은 영역만 최소 허용, 전체 권장 구치 1.0mm / 전치 1.0~1.5mm. */
+const CROWN_WALL_FLOOR_MM = 0.5;
 /** 스크류 채널 둘레 포스트 벽 최소 두께(구치부 360° 칼라 및 전치부 순·근·원심 칼라). 모든 포스트 외벽은 절대 0.3mm 이상을 유지한다. */
 const SCREW_WALL_MM = 0.55;
 const SCREW_WALL_TIGHT_MM = 0.4;
@@ -149,10 +151,10 @@ const CONTACT_CLIP_FROM_MM = 1.95;
 const CONTACT_CLIP_MIN_ABOVE_MEAN_MM = 2.6;
 /** 인접치·인접 기성 어벗과 마진 사이의 최소 유격(크라운 장착 시 간섭 방지: 내 크라운 출현 두께 + 인접 크라운 출현 두께 + 장착 여유). */
 const ADJACENT_MARGIN_CLEARANCE_MM = 1.6;
-/** 인접 디자인 크라운 중간 경계면에서 각 마진까지 띄우는 기본 반유격(여유 있을 때 양쪽 합 1.8mm). */
-const NEIGHBOR_PLANE_MARGIN_GAP_MM = 0.9;
-/** 인접 픽스쳐가 바짝 붙어 있을 때도 정체결 간섭이 없도록 반드시 지키는 마진 간 최소 물리 간격(양쪽 합 ≥ 0.6mm > 0.5mm). */
-const MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM = 0.62;
+/** 인접 디자인 크라운 중간 경계면에서 각 마진까지 띄우는 기본 반유격(권장 측면 크라운 두께 1.0mm × 양쪽 = 2.0mm). */
+const NEIGHBOR_PLANE_MARGIN_GAP_MM = 1.0;
+/** 인접 픽스쳐가 바짝 붙어 커프 하한과 충돌할 때도 두 어벗이 겹치지 않게 지키는 마진 간 최소 물리 간격. */
+const MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM = 0.7;
 /** 피니시라인을 스캔 잇몸 안쪽 면보다 이만큼 안에 둔다(잇몸을 누르지 않게). */
 const GINGIVA_INSET_MM = 0.2;
 /** 픽스쳐가 깊게 식립되어 커프 여유가 있을 때 우선 확보할 최소 포스트 높이(mm). 마진은 치은 연하 깊은 끝을 넘지 않는다. */
@@ -5640,12 +5642,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : guideAxial;
   }
   const offsetH = params.postHeightOffsetMm;
-  const desiredOccThickness = clamp(Math.max(clearance, params.minCrownThicknessMm + 0.15), 1.0, 1.5);
-  // 절치는 절단 도재 두께(중절치 약 1.35mm, 측절치 약 1.95mm)를 남기고 카탈로그 상한 안에서 인접 자연치 절단선을 따른다.
+  const desiredOccThickness = posterior
+    ? clamp(Math.max(clearance, 1.2), 1.0, 1.5)
+    : clamp(Math.max(clearance, params.minCrownThicknessMm + 0.35), 1.5, 2.0);
+  // 절치는 절단 도재 권장 두께(1.5~2.0mm)를 남기고 카탈로그 상한 안에서 인접 자연치 절단선을 따른다.
   const isLateralIncisor = tpl.kind === "incisor" && ownFdi?.pos === 2;
   const incisorCutbackMm = isLateralIncisor
-    ? clamp(tpl.crownOcclusalMm * 1.18, 1.85, 2.05)
-    : clamp(tpl.crownOcclusalMm * 0.78, 1.25, 1.45);
+    ? clamp(tpl.crownOcclusalMm * 1.18, 1.85, 2.0)
+    : clamp(tpl.crownOcclusalMm * 0.88, 1.5, 1.85);
   const antIncisalCap =
     !posterior && Number.isFinite(archCrownTopH)
       ? archCrownTopH -
@@ -6216,8 +6220,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         1.0,
       )
     : 1;
-  const emergeHalfBl = natHalfBl * (tpl.kind === "molar" ? 0.77 : posterior ? 0.82 : 0.85);
-  const emergeHalfMd = crownHalfMd * (tpl.kind === "molar" ? 0.81 : posterior ? 0.84 : 0.88);
+  // 구치부 출현 반폭은 예전(너무 얇은 첨1)보다 두껍게 잡되, 자연치−권장 크라운 두께 상한을 넘지 않게 한다.
+  const emergeHalfBl = natHalfBl * (tpl.kind === "molar" ? 0.8 : posterior ? 0.85 : 0.85);
+  const emergeHalfMd = crownHalfMd * (tpl.kind === "molar" ? 0.83 : posterior ? 0.86 : 0.88);
   const crownWeight = posterior ? 0.72 : 0.62;
   const maxFlareSlope = Math.tan((posterior ? 50 : 40) * DEG);
   const crownMinus1Bl = Math.max(
@@ -6228,23 +6233,30 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     boreTopR + 0.45,
     (crownHalfMd - params.minCrownThicknessMm + 0.1) * params.marginSizeScale,
   );
+  // 구치부도 자연치 반폭에서 측면 크라운 권장 두께(1.0mm, 최소 0.5mm)를 남긴 상한을 넘지 않아
+  // 소구치(#25 등)가 과도하게 커지거나 이웃 어벗·크라운을 침범하지 않게 한다.
+  const posteriorCrownAllowanceMm = Math.max(CROWN_WALL_FLOOR_MM, params.minCrownThicknessMm);
   const maxAnatHalfBl = Math.min(
     (tpl.maxMarginBlMm / 2) * params.marginSizeScale,
-    posterior ? (tpl.maxMarginBlMm / 2) * params.marginSizeScale : crownMinus1Bl,
+    posterior
+      ? Math.max(minMarginRadius + 0.1, (natHalfBl - posteriorCrownAllowanceMm) * params.marginSizeScale)
+      : crownMinus1Bl,
   );
   const maxAnatHalfMd = Math.min(
     (tpl.maxMarginMdMm / 2) * params.marginSizeScale,
-    posterior ? (tpl.maxMarginMdMm / 2) * params.marginSizeScale : crownMinus1Md,
+    posterior
+      ? Math.max(minMarginRadius + 0.1, (crownHalfMd - posteriorCrownAllowanceMm) * params.marginSizeScale)
+      : crownMinus1Md,
   );
 
   const floorMarginMd = posterior ? minMarginRadius + 0.08 : Math.max(boreTopR + 0.44, coneTopR + 0.22);
   const floorMarginBl = posterior ? minMarginRadius + 0.08 : Math.max(boreTopR + 0.48, coneTopR + 0.26);
-  // 구치부는 기존 출현부 공식을 유지하고, 전치·견치는 정상 크라운 반폭(natHalfBl, crownHalfMd)보다
-  // 편측 크라운 두께(~1.0mm 내외)만큼 작게 피니시라인 반폭을 잡는다(이중 축소 방지).
+  // 구치부는 측면 권장 두께(1.0mm)와 마진 숄더의 일부를 반영해 어벗이 지나치게 가늘어지지 않게 하고,
+  // 전치·견치는 정상 크라운 반폭(natHalfBl, crownHalfMd)에서 측면 권장 두께(1.0~1.5mm)를 뺀 크기로 잡는다.
   const cutbackBl = posterior
     ? Math.max(
         floorMarginBl,
-        (emergeHalfBl - params.minCrownThicknessMm + shoulderW * 0.55) * params.marginSizeScale,
+        (emergeHalfBl - params.minCrownThicknessMm + shoulderW * 0.7) * params.marginSizeScale,
       )
     : Math.max(
         floorMarginBl,
@@ -6253,7 +6265,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const cutbackMd = posterior
     ? Math.max(
         floorMarginMd,
-        (emergeHalfMd - params.minCrownThicknessMm + shoulderW * 0.55) * params.marginSizeScale,
+        (emergeHalfMd - params.minCrownThicknessMm + shoulderW * 0.7) * params.marginSizeScale,
       )
     : Math.max(
         floorMarginMd,
@@ -6417,8 +6429,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
     const cuffHardMaxR = coneTopR + Math.max(2.15, localMarginZ - coneTopZ) * maxFlareSlope;
     const limPlane = planeLimitAt(dirInFrame, localMarginZ - meanMarginZ);
-    // 인접 픽스쳐와 간격이 넓으면 0.9mm 반유격(양쪽 합 1.8mm)을 두고, 픽스쳐가 바짝 붙어 있어도
-    // 최소 물리 유격(반유격 0.31mm, 양쪽 합 ≥ 0.62mm > 0.5mm)은 절대 침범하지 않아 정체결 간섭을 원천 차단한다.
+    // 인접 픽스쳐와 간격이 넓으면 권장 측면 두께 반유격(1.0mm, 양쪽 합 2.0mm)을 두고, 픽스쳐가 바짝 붙어 있어도
+    // 최소 물리 유격(반유격 0.5mm, 양쪽 합 ≥ 1.0mm = 최소 측면 두께×2)은 절대 침범하지 않아 정체결 간섭을 원천 차단한다.
     let planeMarginCap = Infinity;
     if (Number.isFinite(limPlane)) {
       const minPairGapHalf = MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM * 0.5;
@@ -7558,10 +7570,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             adjacentBound = Math.min(adjacentBound, lim);
           }
         }
-        // 가상 치아 외형은 자신의 포스트 + 최소 두께보다 안쪽으로 꺼지지 않되, 인접치·인접 어벗 경계는 넘지 않는다.
+        // 가상 치아 외형은 자신의 포스트 + 최소 측면 두께보다 안쪽으로 꺼지지 않되, 인접치·인접 어벗 경계는 넘지 않는다.
         const postFloor = Math.min(
           adjacentBound,
-          c.postDesired(Math.max(h, c.h0 + hPostBase)) + CROWN_THICKNESS_FLOOR_MM * ramp,
+          c.postDesired(Math.max(h, c.h0 + hPostBase)) +
+            Math.max(CROWN_WALL_FLOOR_MM, Math.min(CROWN_THICKNESS_FLOOR_MM, params.minCrownThicknessMm)) *
+              ramp,
         );
         r = Math.max(
           postFloor,
@@ -7715,8 +7729,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                     Math.max(CONTACT_CLIP_MIN_ABOVE_MEAN_MM, Math.max(c.h0, 0) + CONTACT_CLIP_FROM_MM) -
                       supraClipRelief,
                   );
-          // 실제 스캔 인접치 표면(또는 인접 크라운 경계)에서 크라운 두께 목표(≥1.0mm)와 하한(≥0.7mm)을 지키되,
-          // 포스트 최소 벽 두께(≥0.3mm)와 충돌하면 인접치 인접면 미세 삭제(편측 최대 0.2mm) 여유를 허용하고 포스트 강도를 지킨다.
+          // 실제 스캔 인접치 표면(또는 인접 크라운 경계)에서 크라운 측면 권장 두께(구치 1.0mm / 전치 1.0~1.5mm)를 우선 확보하고,
+          // 일부 좁은 영역만 최소 측면 두께(0.5mm)까지 허용한다.
           let adjSoftPostCap = Infinity;
           let adjHardPostCap = Infinity;
           if (h >= clipStartH) {
@@ -7725,8 +7739,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               const adjSurface = sideAllow.wallMm <= 0 ? adjCrownLim - contact : adjCrownLim;
               const rawSoftCap = Math.max(
                 0.68,
-                adjSurface - Math.max(CROWN_THICKNESS_FLOOR_MM, params.minCrownThicknessMm),
+                adjSurface - Math.max(CROWN_WALL_FLOOR_MM, params.minCrownThicknessMm),
               );
+              // 하드 하한은 교합면 최소 두께(0.7mm)와 동일한 안전 마진을 인접 스캔에도 쓴다.
+              // 측면 권장(soft)은 위에서 minCrownThicknessMm(구치 1.0 / 전치 1.15)로 유지한다.
               const rawHardCap = Math.max(0.64, adjSurface - CROWN_THICKNESS_FLOOR_MM);
               if (sideAllow.wallMm <= 0 && (rawHardCap < tightScrewSafeR || supragingivalRaisedForStrength)) {
                 const strippedHardCap =
@@ -7743,18 +7759,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               }
             }
           }
-          // 인접 픽스쳐 경계면 쪽은 볼록성을 해치지 않는 평면 한계(postPlaneLimitAt)로 별도 처리한다.
-          // 특히 브리지로 연결된 이웃 어벗 경계(bridged=true)는 두 크라운 벽(1.0mm×2) 대신 커넥터 여유만 두어 포스트가 과도하게 뾰족해지지 않게 한다.
+          // 인접 픽스쳐 경계면 쪽은 각 어벗의 크라운 측면 두께(권장 1.0mm, 최소 0.5mm)를 고려해 평면 한계(postPlaneLimitAt)를 둔다.
+          // 브리지로 연결된 이웃 어벗이라도 두 어벗이 겹치지 않고 커넥터·크라운 벽 두께를 확보하도록 최소 0.5mm(권장 0.85mm)를 남긴다.
           const planePostSoft = postPlaneLimitAt(
             c.dir,
             h,
-            0.48 * ramp,
+            Math.max(0.75, params.minCrownThicknessMm * 0.85) * ramp,
             params.minCrownThicknessMm * ramp,
           );
           const planePostHard = postPlaneLimitAt(
             c.dir,
             h,
-            0.35 * ramp,
+            Math.max(0.45, CROWN_WALL_FLOOR_MM) * ramp,
             CROWN_THICKNESS_FLOOR_MM * ramp,
           );
           const hasNeighborPlane = Number.isFinite(planeLimitAt(c.dir, h));
@@ -8507,7 +8523,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           }
           const wantPremolarBl = (finalBaseMd + effUniformShoulder) * 1.13 - effUniformShoulder;
           if (finalBaseBl < wantPremolarBl) {
-            let capBlPremolar = Infinity;
+            let capBlPremolar = Math.max(minPostR + 0.08 + effUniformShoulder, maxAnatHalfBl);
             for (let col = 0; col < ANGULAR_COLS; col += 1) {
               if (Math.abs(colDuFix[col]!) >= Math.cos(18 * DEG)) {
                 capBlPremolar = Math.min(capBlPremolar, marginCap[col]! - Math.abs(pSecCu));
@@ -8517,6 +8533,31 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               finalBaseBl,
               Math.min(wantPremolarBl, capBlPremolar - effUniformShoulder),
             );
+          }
+        }
+        // 구치부 해부 최대 반폭(maxAnatHalfBl/Md)을 넘는 불필요한 팽창을 막는다(스크류 최소 벽 두께는 유지).
+        {
+          const anatCapBl = Math.max(
+            minPostR + 0.08,
+            Math.abs(uScrewTop - pSecCu) + screwTightR + minTaperDropBl,
+            Math.abs(uScrewBase - pSecCu) + screwBaseTightR,
+            maxAnatHalfBl - effUniformShoulder,
+          );
+          const anatCapMd = Math.max(
+            minPostR + 0.08,
+            Math.abs(vScrewTop - pSecCv) + screwTightMd + minTaperDropMd,
+            Math.abs(vScrewBase - pSecCv) + screwBaseTightMd,
+            maxAnatHalfMd - effUniformShoulder,
+          );
+          if (finalBaseBl > anatCapBl) {
+            const dropKeep = Math.max(minTaperDropBl, finalBaseBl - finalTopBlScaled);
+            finalBaseBl = anatCapBl;
+            finalTopBlScaled = Math.max(minPostR, Math.min(finalTopBlScaled, finalBaseBl - dropKeep));
+          }
+          if (finalBaseMd > anatCapMd) {
+            const dropKeep = Math.max(minTaperDropMd, finalBaseMd - finalTopMdScaled);
+            finalBaseMd = anatCapMd;
+            finalTopMdScaled = Math.max(minPostR, Math.min(finalTopMdScaled, finalBaseMd - dropKeep));
           }
         }
 
@@ -8793,6 +8834,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
             smoothMarginZAt = buildPeriodicSmoothCurve(smoothMarginZ, 3);
             solvePosteriorMarginAndWalls();
+          }
+          // 어떤 경우에도 이웃 어벗 경계면(marginPlaneCap)을 물리적으로 침범해 두 어벗이 겹치지 않도록 보장한다.
+          // 단, 커프 최소 반경(minCuffMarginR)은 유지해 커넥션 벽이 뚫리지 않게 한다.
+          let planeClamped = false;
+          for (let col = 0; col < ANGULAR_COLS; col += 1) {
+            const pCap = marginPlaneCap[col]!;
+            const floorR = minCuffMarginR;
+            if (Number.isFinite(pCap) && marginRadii[col]! > Math.max(floorR, pCap)) {
+              marginRadii[col] = Math.max(floorR, pCap);
+              planeClamped = true;
+            }
+          }
+          if (planeClamped) {
+            syncColsMarginGeometry();
           }
         }
 

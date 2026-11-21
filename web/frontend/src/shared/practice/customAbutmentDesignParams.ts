@@ -83,7 +83,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.7, max: 1.4, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
-  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.7, max: 2.5, step: 0.05 },
+  minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.5, max: 2.5, step: 0.05 },
   axisToOpposing: { label: "대합치 중심 반영", unit: "", min: 0, max: 1, step: 0.05 },
   axisMaxDeg: { label: "삽입축 최대 각도", unit: "°", min: 0, max: 32, step: 0.5 },
   axisTargetDeg: { label: "삽입축 각도", unit: "°", min: -1, max: 32, step: 0.1 },
@@ -494,7 +494,8 @@ export function computeOptimalPostHeightMmFromTaper(
 export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutmentDesignParams {
   const anterior = isAnteriorTooth(toothNumber);
   return {
-    occlusalClearanceMm: 1.5,
+    // 교합면/절단면 권장 두께: 구치부 1.2mm(최소 0.7mm), 전치부 1.5~2.0mm(최소 0.7mm).
+    occlusalClearanceMm: anterior ? 1.6 : 1.2,
     postTaperDeg: RETENTION_SINGLE_REF_TAPER_DEG,
     postTaperLink: 1,
     postLingualBevelMm: -1,
@@ -510,6 +511,7 @@ export function defaultCustomAbutmentParams(toothNumber: string): CustomAbutment
     marginScallopMm: anterior ? 0.75 : 0.55,
     marginSizeScale: 1,
     crownContactMm: 0.05,
+    // 측면(축벽) 권장 두께: 구치부 1.0mm(최소 0.5mm), 전치부 1.0~1.5mm(기본 1.0·최소 0.5mm).
     minCrownThicknessMm: 1.0,
     axisToOpposing: 1,
     axisMaxDeg: defaultAxisMaxDeg(toothNumber),
