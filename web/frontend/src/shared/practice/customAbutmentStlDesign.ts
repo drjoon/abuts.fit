@@ -62,8 +62,12 @@ import {
 } from "@/shared/practice/abutmentDesignLogic";
 import {
   ANTERIOR_MARGIN_POST_WALL_MIN_MM,
+  blendArchAndAdjacentYawSlope,
+  blendLocalCrownSizeScale,
   clampLateralForCompactDiameter,
   compromiseWallShiftFromArch,
+  harmonizeAdjacentAbutmentYaws,
+  harmonizeAdjacentSameKindSizes,
   LINGUAL_SCREW_WALL_LIMIT_MM,
   localArchTangent,
   neighborCrownBlPose,
@@ -71,7 +75,9 @@ import {
   POSTERIOR_POST_WALL_MIN_MM,
   opposingSlopeTargetU,
   pickCompactFunctionalU,
-  resolveAutoPlacementTradeoff,
+  resolveSignedPlacementTradeoff,
+  type PeerSizeEntry,
+  type PeerYawEntry,
 } from "@/shared/practice/customAbutmentPostPose";
 import {
   axisFromFixtureSlopes,
@@ -3181,7 +3187,7 @@ function opposingBContactPoint(
     jaw?: "upper" | "lower";
     labSign?: 1 | -1;
   },
-): { u: number; fossaU: number; v: number } | null {
+): { u: number; fossaU: number; v: number; widthU: number; widthV: number; isNaturalTooth: boolean } | null {
   const field = buildOpposingHeightField(pts, c0, frame, 9.0);
   if (field.list.length < 12) return null;
   const vCrown = opts?.vCrownMm ?? 0;
@@ -3192,6 +3198,7 @@ function opposingBContactPoint(
 
   const hs = pool.map((c) => c.h).sort((a, b) => a - b);
   const minH = hs[Math.floor(hs.length * 0.08)]!;
+  const maxH = hs[Math.floor(hs.length * 0.92)]!;
   if (!Number.isFinite(minH)) return null;
   const table = pool.filter((c) => c.h <= minH + 2.5);
   if (table.length < 8) return null;
@@ -3250,11 +3257,112 @@ function opposingBContactPoint(
     uLab = fossaULab;
   }
 
-  const vLo = vs[Math.floor(vs.length * 0.2)]!;
-  const vHi = vs[Math.floor(vs.length * 0.8)]!;
+  const vLo = vs[Math.floor(vs.length * 0.15)]!;
+  const vHi = vs[Math.floor(vs.length * 0.85)]!;
+  const widthV = vHi - vLo;
   const vMid = 0.5 * (vLo + vHi);
-  const vB = opts?.constrainMesiodistal ? vCrown * 0.75 + vMid * 0.25 : vCrown * 0.35 + vMid * 0.65;
-  return { u: uLab * sign, fossaU: fossaULab * sign, v: vB };
+  const heightRange = Number.isFinite(maxH) ? maxH - minH : 0;
+  // 합성 평면이나 광폭 무치악이 아닌 실제 대합 치관(교두 기복·정상 협설/근원심 폭)인지 판별한다.
+  const isNaturalTooth = width >= 4.2 && width <= 13.5 && widthV >= 3.2 && widthV <= 14.0 && heightRange >= 0.45;
+  const vB = opts?.constrainMesiodistal ? vCrown * 0.55 + vMid * 0.45 : vCrown * 0.25 + vMid * 0.75;
+  return { u: uLab * sign, fossaU: fossaULab * sign, v: vB, widthU: width, widthV, isNaturalTooth };
+}
+
+/**
+ * 대합 치아(예: #16 → #46)의 실제 치관 협설 폭을 재서 표준 대비 환자 크기 비율을 반환한다.
+ * 단독·복수 공통으로 사용하며, 합성 평면이나 비정상 광폭 점군은 자동 제외한다.
+ */
+function measureOpposingToothScale(
+  pts: Float32Array,
+  c0: Vec3,
+  frame: InsertionFrame,
+  toothNumber: string,
+  halfMdMm: number,
+): number | null {
+  if (pts.length < 36) return null;
+  const fdi = parseFdiTooth(toothNumber);
+  if (!fdi || fdi.pos < 4) return null;
+  const oppQuad = fdi.digits[0] === "1" ? "4" : fdi.digits[0] === "2" ? "3" : fdi.digits[0] === "3" ? "2" : "1";
+  const oppStd = getToothAnatomy(`${oppQuad}${fdi.pos}`);
+  const expectedBl = oppStd.crown.equator.blMm * 0.65 + oppStd.crown.occlusal.blMm * 0.35;
+  if (!(expectedBl > 4)) return null;
+
+  const field = buildOpposingHeightField(pts, c0, frame, 9.0);
+  if (field.list.length < 16) return null;
+  const vHalf = Math.max(2.6, halfMdMm * 0.72);
+  const slice = field.list.filter((cell) => Math.abs(cell.v) <= vHalf && Math.abs(cell.u) <= 8.5);
+  if (slice.length < 12) return null;
+
+  const hs = slice.map((c) => c.h).sort((a, b) => a - b);
+  const minH = hs[Math.floor(hs.length * 0.08)]!;
+  const maxH = hs[Math.floor(hs.length * 0.92)]!;
+  if (!Number.isFinite(minH) || !Number.isFinite(maxH) || maxH - minH < 0.55) return null;
+
+  const band = slice.filter((c) => c.h <= minH + 4.0);
+  if (band.length < 10) return null;
+  const us = band.map((c) => c.u).sort((a, b) => a - b);
+  const width = us[Math.floor(us.length * 0.92)]! - us[Math.floor(us.length * 0.08)]!;
+  if (width < expectedBl * 0.72 || width > expectedBl * 1.32) return null;
+  return clamp(width / expectedBl, 0.84, 1.16);
+}
+
+/**
+ * 같은 악 바로 옆 인접 자연치(근심·원심)의 실제 치관 협설 폭을 재서 표준 대비 환자 크기 비율 목록을 반환한다.
+ * 단독 대구치여도 옆 자연치 크기를 참고할 수 있게 한다.
+ */
+function measureAdjacentNaturalToothScales(
+  jawLocalPts: Float32Array,
+  c0: Vec3,
+  frame: InsertionFrame,
+  mesXY: Vec3,
+  sbR: number,
+  sbH: number,
+  opts: {
+    mesialAdjDigits: string | null;
+    distalAdjDigits: string | null;
+    skipMesial: boolean;
+    skipDistal: boolean;
+  },
+): number[] {
+  const out: number[] = [];
+  if (jawLocalPts.length < 48) return out;
+  const mesSign = dot3(frame.vSide, mesXY) >= 0 ? 1 : -1;
+
+  const measureSide = (sign: 1 | -1, digits: string | null, skip: boolean) => {
+    if (skip || !digits) return;
+    const anat = getToothAnatomy(digits);
+    const expectedBl = anat.crown.equator.blMm * 0.75 + anat.crown.occlusal.blMm * 0.25;
+    if (!(expectedBl > 4)) return;
+    const us: number[] = [];
+    const hs: number[] = [];
+    for (let i = 0; i < jawLocalPts.length; i += 3) {
+      const px = jawLocalPts[i]!;
+      const py = jawLocalPts[i + 1]!;
+      const pz = jawLocalPts[i + 2]!;
+      if (Math.hypot(px, py) < sbR + 0.7 && pz > -0.5 && pz < sbH + 0.9) continue;
+      const rel = sub3([px, py, pz], c0);
+      const h = dot3(rel, frame.w);
+      if (h < 2.4 || h > 9.5) continue;
+      const v = dot3(rel, frame.vSide) * mesSign * sign;
+      if (v < 3.8 || v > 11.2) continue;
+      const u = dot3(rel, frame.uLabial);
+      if (Math.abs(u) > 8.5) continue;
+      us.push(u);
+      hs.push(h);
+    }
+    if (us.length < 24) return;
+    hs.sort((a, b) => a - b);
+    const hTop = hs[Math.floor(hs.length * 0.92)]!;
+    if (hTop < 4.5) return;
+    us.sort((a, b) => a - b);
+    const width = us[Math.floor(us.length * 0.92)]! - us[Math.floor(us.length * 0.08)]!;
+    if (width < expectedBl * 0.72 || width > expectedBl * 1.32) return;
+    out.push(clamp(width / expectedBl, 0.84, 1.16));
+  };
+
+  measureSide(1, opts.mesialAdjDigits, opts.skipMesial);
+  measureSide(-1, opts.distalAdjDigits, opts.skipDistal);
+  return out;
 }
 
 /** 두 벡터 사이 각도를 t(0~1)만큼 돌린 방향. */
@@ -3413,11 +3521,37 @@ type ConflictHints = {
   hasGroupAxis: boolean;
 };
 
+type PeerPlanProbe = {
+  toothNumber: string;
+  fdiPos: number;
+  quadrant: string;
+  kind: ToothKind;
+  anterior: boolean;
+  occWorld: Vec3;
+  mesialWorld: Vec3;
+  yawConfidence: number;
+  yawLocked: boolean;
+  normScale: number;
+  minNormScale: number;
+  maxNormScale: number;
+  sizeLocked: boolean;
+};
+
+type PeerPlanAdjustment = {
+  /** 공통 교합축(occWorld) 기준 수평 회전 보정(rad). */
+  yawDeltaRad: number;
+  /** 같은 부위(대구치 등) 인접 어벗과 맞춘 목표 정규화 크기 배율. null이면 유지. */
+  targetNormScale: number | null;
+};
+
 type DesignMode = {
   probeAxis?: boolean;
   /** 브리지 높이 맞추기 전 이 치아의 자연 높이와 대합 상한만 반환한다. 형제 프로브는 다시 프로브하지 않는다. */
   probeHeight?: boolean;
+  /** 인접 어벗 회전·크기 조율용 경량 프로브. 형제 프로브는 다시 프로브하지 않는다. */
+  probePeerPlan?: boolean;
   groupAxisWorld?: Vec3 | null;
+  peerPlan?: PeerPlanAdjustment | null;
   /** 포스트 파절 방지 치은 연상 자동 승격 1회 실행 여부(재귀 루프 원천 차단). */
   supragingivalRetried?: boolean;
   variant?: CustomAbutmentConflictVariant;
@@ -3426,6 +3560,7 @@ type DesignMode = {
 type DesignResult =
   | { kind: "axis"; axisWorld: Vec3 }
   | { kind: "height"; naturalTopH: number; safeTopH: number; oppClearTopH: number }
+  | { kind: "peerPlan"; probe: PeerPlanProbe }
   | { kind: "design"; design: DesignedCustomAbutment; conflictHints: ConflictHints };
 
 /** 자동 삽입축(윗면 이동 전) 캐시. 붙은 치아 평행 축을 구할 때 이웃마다 다시 계산하지 않는다. */
@@ -3845,9 +3980,174 @@ function areCandidatesDistinct(a: DesignedCustomAbutment, b: DesignedCustomAbutm
   return maxDist >= 0.36;
 }
 
+/** 단위축 axis 주위로 벡터 v를 오른손 각도 rad만큼 회전(Rodrigues). */
+function rotateAroundAxis(v: Vec3, axis: Vec3, rad: number): Vec3 {
+  if (Math.abs(rad) <= 1e-6) return v;
+  const k = norm3(axis);
+  const cs = Math.cos(rad);
+  const sn = Math.sin(rad);
+  const kxv = cross3(k, v);
+  const kdv = dot3(k, v);
+  return add3(add3(scale3(v, cs), scale3(kxv, sn)), scale3(k, kdv * (1 - cs)));
+}
+
+const peerPlanGroupCache = new WeakMap<
+  THREE.BufferGeometry,
+  Map<string, Promise<Map<string, PeerPlanAdjustment>>>
+>();
+
+/** 같은 사분악에서 FDI 1~2칸 이내로 이어진 인접 어벗 묶음(자신 포함). */
+function adjacentPeerGroupOf(
+  fixture: MatchedScanbodyFixture,
+  all: readonly MatchedScanbodyFixture[],
+): MatchedScanbodyFixture[] {
+  const ownFdi = parseFdiTooth(fixture.toothNumber);
+  if (!ownFdi) return [fixture];
+  const pool = [
+    fixture,
+    ...all.filter((f) => {
+      if (f.toothNumber === fixture.toothNumber || f.jaw !== fixture.jaw) return false;
+      const fdi = parseFdiTooth(f.toothNumber);
+      return Boolean(fdi && fdi.digits[0] === ownFdi.digits[0]);
+    }),
+  ];
+  const group: MatchedScanbodyFixture[] = [fixture];
+  const seen = new Set<string>([fixture.toothNumber]);
+  for (let i = 0; i < group.length; i += 1) {
+    const curFdi = parseFdiTooth(group[i]!.toothNumber);
+    if (!curFdi) continue;
+    for (const f of pool) {
+      if (seen.has(f.toothNumber)) continue;
+      const fdi = parseFdiTooth(f.toothNumber);
+      if (!fdi || Math.abs(fdi.pos - curFdi.pos) > 2) continue;
+      const d = Math.hypot(...sub3(f.fixturePose.origin, group[i]!.fixturePose.origin));
+      if (d > 22) continue;
+      seen.add(f.toothNumber);
+      group.push(f);
+    }
+  }
+  return group;
+}
+
+/**
+ * 같은 사분악 인접 어벗끼리 수평 회전각(yaw)과 같은 부위(대구치끼리 등) 크기를 부드럽게 맞춘다.
+ * - 호출 순서에 무관하게 치아 번호 순으로 결정론적 계산 후 WeakMap에 캐시한다.
+ * - 수동 편집(postYawDeg / marginSizeScale / postWidthScale)이 명시된 치아는 보호한다.
+ */
+async function resolveGroupPeerPlan(
+  args: DesignArgs,
+  groupAxisWorld: Vec3 | null,
+): Promise<PeerPlanAdjustment | null> {
+  const group = adjacentPeerGroupOf(args.fixture, args.neighbors ?? []);
+  if (group.length <= 1) return null;
+
+  const sortedGroup = [...group].sort((a, b) => a.toothNumber.localeCompare(b.toothNumber));
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const cacheKey = JSON.stringify([
+    sortedGroup.map((f) => [f.toothNumber, r2(f.fixturePose.origin[0]), r2(f.fixturePose.origin[1]), r2(f.fixturePose.origin[2])]),
+    args.opposingGeometry?.uuid ?? null,
+    groupAxisWorld ? [r2(groupAxisWorld[0]), r2(groupAxisWorld[1]), r2(groupAxisWorld[2])] : null,
+    sortedGroup.map((f) => abutmentLogicSignature(f.toothNumber, args.logicRules)),
+  ]);
+
+  let byKey = peerPlanGroupCache.get(args.jawGeometry);
+  if (!byKey) {
+    byKey = new Map();
+    peerPlanGroupCache.set(args.jawGeometry, byKey);
+  }
+  let job = byKey.get(cacheKey);
+  if (!job) {
+    const allPool = [args.fixture, ...(args.neighbors ?? [])];
+    job = (async () => {
+      const probes: PeerPlanProbe[] = [];
+      for (const f of sortedGroup) {
+        const res = await designImpl(
+          {
+            ...args,
+            fixture: f,
+            neighbors: allPool.filter((n) => n.toothNumber !== f.toothNumber),
+            params: undefined,
+            explicitParams: undefined,
+          },
+          { probePeerPlan: true, groupAxisWorld },
+        );
+        if (res.kind === "peerPlan") probes.push(res.probe);
+      }
+      const planMap = new Map<string, PeerPlanAdjustment>();
+      if (probes.length < 2) return planMap;
+
+      // 공통 교합면 직교 기저 (occAvg, e1, e2): 오른손 법칙 e2 = occAvg × e1
+      let occSum: Vec3 = [0, 0, 0];
+      const occRef = probes[0]!.occWorld;
+      for (const p of probes) {
+        const o = dot3(p.occWorld, occRef) < 0 ? scale3(p.occWorld, -1) : p.occWorld;
+        occSum = add3(occSum, o);
+      }
+      const occAvg = norm3(occSum);
+      const refSeed: Vec3 = Math.abs(occAvg[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const e1 = norm3(sub3(refSeed, scale3(occAvg, dot3(refSeed, occAvg))));
+      const e2 = norm3(cross3(occAvg, e1));
+
+      const yawEntries: PeerYawEntry[] = probes.map((p) => {
+        const mProj = sub3(p.mesialWorld, scale3(occAvg, dot3(p.mesialWorld, occAvg)));
+        const mUnit = Math.hypot(...mProj) > 1e-5 ? norm3(mProj) : e1;
+        return {
+          toothNumber: p.toothNumber,
+          angleRad: Math.atan2(dot3(mUnit, e2), dot3(mUnit, e1)),
+          confidence: p.yawConfidence,
+          fdiPos: p.fdiPos,
+          anterior: p.anterior,
+          locked: p.yawLocked,
+        };
+      });
+      const yawDeltas = harmonizeAdjacentAbutmentYaws(yawEntries);
+
+      const sizeEntries: PeerSizeEntry[] = probes.map((p) => ({
+        toothNumber: p.toothNumber,
+        kind: p.kind,
+        fdiPos: p.fdiPos,
+        normScale: p.normScale,
+        minNormScale: p.minNormScale,
+        maxNormScale: p.maxNormScale,
+        locked: p.sizeLocked,
+      }));
+      const targetSizes = harmonizeAdjacentSameKindSizes(sizeEntries);
+
+      for (const p of probes) {
+        const rawDelta = yawDeltas.get(p.toothNumber) ?? 0;
+        // 각 치아의 occWorld가 occAvg와 반대 방향이면 부호를 맞춘다.
+        const occSign = dot3(p.occWorld, occAvg) >= 0 ? 1 : -1;
+        const targetNorm = targetSizes.get(p.toothNumber) ?? null;
+        planMap.set(p.toothNumber, {
+          yawDeltaRad: rawDelta * occSign,
+          targetNormScale:
+            targetNorm != null && Math.abs(targetNorm - p.normScale) > 0.004 ? targetNorm : null,
+        });
+      }
+      return planMap;
+    })();
+    byKey.set(cacheKey, job);
+  }
+  const resolved = await job;
+  const plan = resolved.get(args.fixture.toothNumber);
+  if (!plan) return null;
+  const exp = args.explicitParams ?? {};
+  const yawLocked =
+    (exp.postYawDeg != null && Number.isFinite(Number(exp.postYawDeg))) ||
+    (args.params?.postYawDeg != null && Math.abs(Number(args.params.postYawDeg)) > 1e-3);
+  const sizeLocked =
+    (exp.marginSizeScale != null && Number.isFinite(Number(exp.marginSizeScale))) ||
+    (exp.postWidthScale != null && Number.isFinite(Number(exp.postWidthScale)));
+  return {
+    yawDeltaRad: yawLocked ? 0 : plan.yawDeltaRad,
+    targetNormScale: sizeLocked ? null : plan.targetNormScale,
+  };
+}
+
 export async function designCustomAbutmentStl(args: DesignArgs): Promise<DesignedCustomAbutment> {
   const groupAxisWorld = await resolveGroupAxisWorld(args);
-  const res = await designImpl(args, { groupAxisWorld });
+  const peerPlan = await resolveGroupPeerPlan(args, groupAxisWorld);
+  const res = await designImpl(args, { groupAxisWorld, peerPlan });
   if (res.kind !== "design") throw new Error("커스텀어벗 디자인을 만들지 못했습니다.");
   return res.design;
 }
@@ -3860,7 +4160,8 @@ export async function designCustomAbutmentCandidates(
   args: DesignArgs,
 ): Promise<CustomAbutmentDesignCandidate[]> {
   const groupAxisWorld = await resolveGroupAxisWorld(args);
-  const primaryRes = await designImpl(args, { groupAxisWorld, variant: "space_fill" });
+  const peerPlan = await resolveGroupPeerPlan(args, groupAxisWorld);
+  const primaryRes = await designImpl(args, { groupAxisWorld, peerPlan, variant: "space_fill" });
   if (primaryRes.kind !== "design") {
     throw new Error("커스텀어벗 디자인을 만들지 못했습니다.");
   }
@@ -3886,6 +4187,7 @@ export async function designCustomAbutmentCandidates(
       : args;
     const altRes = await designImpl(altArgs, {
       groupAxisWorld: variant === "fixture_axis" ? null : groupAxisWorld,
+      peerPlan,
       variant,
       forbidSupragingivalRetry,
     });
@@ -4010,10 +4312,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const ownFdi = parseFdiTooth(fixture.toothNumber);
 
   // 포스트 수평 회전각(yaw) 정렬:
-  // 악궁 접선과 인접 치아 교두의 협설 장축을 함께 맞춰 돌린다.
-  // 대합 곡선은 회전을 돌리지 않고, 바로 위 대합치가 그 곡선에서 벗어났는지 보는 데만 쓴다.
+  // 큰 틀 → 세부: 악궁 아치 회전(같은 악 + 대합 악궁) → 인접 자연치 접촉벽 · 인접 어벗 연결선 순으로 맞춘다.
   let alignedLabialWorld: Vec3 = fixture.labialDir;
   let alignedMesialWorld: Vec3 = fixture.mesialDir;
+  let yawConfidence = 0.35;
   let jawArchOffsetU = 0;
   let archCenterReady = false;
   let oppArchOffsetU = 0;
@@ -4367,7 +4669,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const oppLocal = localArchTangent(oppCenterStations);
         const expectedOverjetU = fixture.jaw === "upper" ? 1.35 : -1.35;
         const jawLocal = localArchTangent(jawCenterStations, {
-          refSlope: oppLocal?.slope ?? null,
+          refSlope: oppLocal?.hasSlope ? oppLocal.slope : null,
           refOffsetU: oppLocal ? oppLocal.offsetU + expectedOverjetU : null,
         });
         const slopeStations =
@@ -4378,8 +4680,43 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           [slopeStations, jawBuccalStations, oppCenterStations],
           -0.0009,
         );
-        const archHint = jawLocal?.slope ?? solvedJoint?.slope ?? null;
+        // 바로 옆 인접 어벗(FDI 1칸, 같은 사분악) 중심을 잇는 선의 기울기(단독이면 null).
+        let adjacentAbutmentLineSlope: number | null = null;
+        if (ownFdi) {
+          let abW = 0;
+          let abS = 0;
+          for (const nb of neighbors) {
+            const nbFdi = parseFdiTooth(nb.toothNumber);
+            if (!nbFdi || nbFdi.digits[0] !== ownFdi.digits[0] || Math.abs(ownFdi.pos - nbFdi.pos) !== 1) {
+              continue;
+            }
+            const pv = dot3(nb.origin, vTargetOcc);
+            const pu = dot3(nb.origin, uTargetOcc);
+            const dPlan = Math.hypot(pv, pu);
+            if (dPlan < 4.0 || dPlan > 13.5 || Math.abs(pv) < 3.0) continue;
+            const rawLineSlope = pu / pv;
+            if (Math.abs(rawLineSlope) <= Math.tan(24 * DEG)) {
+              const w = 1 / Math.max(4.5, dPlan);
+              abS += clamp(rawLineSlope, -Math.tan(20 * DEG), Math.tan(20 * DEG)) * w;
+              abW += w;
+            }
+          }
+          if (abW > 0) adjacentAbutmentLineSlope = abS / abW;
+        }
+        const preliminaryArch = blendArchAndAdjacentYawSlope({
+          jawArch: jawLocal,
+          oppArch: oppLocal,
+          jointArchSlope: solvedJoint?.slope ?? null,
+        });
+        const archHint = preliminaryArch?.archSlope ?? (jawLocal?.hasSlope ? jawLocal.slope : null) ?? solvedJoint?.slope ?? null;
         const crownPose = neighborCrownBlPose(jawCrownPts, archHint, jawLocal?.offsetU ?? null);
+        const blendedYaw = blendArchAndAdjacentYawSlope({
+          jawArch: jawLocal,
+          oppArch: oppLocal,
+          jointArchSlope: solvedJoint?.slope ?? null,
+          adjacentWallSlope: crownPose?.wallSlope ?? null,
+          adjacentAbutmentLineSlope,
+        });
         const rotateBy = (slope: number) => {
           const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, slope)));
           const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
@@ -4387,6 +4724,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           uTargetOcc = nextU;
         };
         const commitArchOffset = () => {
+          if (blendedYaw) yawConfidence = blendedYaw.confidence;
           if (oppLocal) {
             oppArchOffsetU = oppLocal.offsetU;
             oppArchReady = true;
@@ -4418,9 +4756,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             archCenterReady = true;
           }
         };
-        if (crownPose && pass < 3 && Math.abs(crownPose.slope) >= Math.tan(0.8 * DEG)) {
+        const yawStepSlope = blendedYaw?.slope ?? crownPose?.slope ?? null;
+        if (yawStepSlope != null && pass < 3 && Math.abs(yawStepSlope) >= Math.tan(0.8 * DEG)) {
           const maxRot = pass === 0 ? Math.tan(20 * DEG) : pass === 1 ? Math.tan(12 * DEG) : Math.tan(8 * DEG);
-          const rawStep = clamp(crownPose.slope, -maxRot, maxRot);
+          const rawStep = clamp(yawStepSlope, -maxRot, maxRot);
           if (pass > 0 && prevRotSlope * rawStep < -1e-4) {
             // 직전 패스와 부호가 뒤집히면(진동) 절반만 되돌리고 수렴한다.
             rotateBy(rawStep * 0.45);
@@ -4434,7 +4773,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           archFitSucceeded = true;
           continue;
         }
-        if (!crownPose && pass < 2 && solvedJoint) {
+        if (yawStepSlope == null && pass < 2 && solvedJoint) {
           const maxRot = pass === 0 ? Math.tan(28 * DEG) : Math.tan(12 * DEG);
           const step = clamp(solvedJoint.slope, -maxRot, maxRot);
           rotateBy(step);
@@ -4570,6 +4909,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         vTargetOcc = nextV;
         uTargetOcc = nextU;
       }
+    }
+
+    // 인접 어벗(같은 사분악)끼리 수평 회전각이 크게 어긋나지 않게 부드럽게 맞춘다(수동 postYawDeg는 보호).
+    if (
+      !mode.probePeerPlan &&
+      mode.peerPlan &&
+      Math.abs(mode.peerPlan.yawDeltaRad) > 1e-4 &&
+      Math.abs(params.postYawDeg) <= 1e-3
+    ) {
+      vTargetOcc = norm3(rotateAroundAxis(vTargetOcc, wOccPlane, mode.peerPlan.yawDeltaRad));
+      uTargetOcc = norm3(rotateAroundAxis(uTargetOcc, wOccPlane, mode.peerPlan.yawDeltaRad));
+      uTargetOcc = norm3(sub3(uTargetOcc, scale3(vTargetOcc, dot3(uTargetOcc, vTargetOcc))));
     }
 
     alignedLabialWorld = norm3(fixtureLocalDirToWorld(uTargetOcc, fixture.fixturePose));
@@ -4907,7 +5258,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const medianTissueR = tissueAll.length > 0 ? tissueAll[Math.floor(tissueAll.length * 0.5)]! : Number.NaN;
   const c0: Vec3 = [0, 0, meanMarginZ];
 
-  // ── 2) 가상 치아(평균 크기 + 인접치 간격/순측선 + 반대측 동일치 거울상 + 대합치 중심) 구성
+  // ── 2) 가상 치아(평균 크기 + 인접치 간격/순측선 + 반대측 동일치 거울상 + 인접 자연치·대합치 크기 + 대합치 중심) 구성
   const contraMirror = measureContralateralMirrorCrown(
     jawGeometry,
     fixture,
@@ -4915,14 +5266,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     tpl,
     meanMarginZ,
   );
-  // 치종 평균 크기를 기본으로 하되, 반대측 동일 자연치 거울상이 있으면 환자 고유 크기로 섞는다(평균 무시 방지 ±15%).
-  const refNaturalMdMm = contraMirror
-    ? clamp(tpl.naturalMdMm * 0.45 + contraMirror.mdMm * 0.55, tpl.naturalMdMm * 0.85, tpl.naturalMdMm * 1.15)
-    : tpl.naturalMdMm;
-  const refNaturalBlMm = contraMirror
-    ? clamp(tpl.naturalBlMm * 0.45 + contraMirror.blMm * 0.55, tpl.naturalBlMm * 0.85, tpl.naturalBlMm * 1.15)
-    : tpl.naturalBlMm;
-
   const rawTiltRad = Math.acos(clamp(occInFix[2], -1, 1));
   const tiltCapRad = params.axisMaxDeg * DEG;
   const occLat = Math.hypot(occInFix[0], occInFix[1]);
@@ -4936,6 +5279,49 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         ])
       : [0, 0, 1];
   const frame0 = insertionFrame(wArch, labXY);
+
+  // 단독·복수 공통: 인접 자연치와 대합치의 실제 치관 협설 폭을 재서 환자 로컬 크기 스케일을 구한다.
+  const localCrownScale = (() => {
+    if (!posterior) return 1.0;
+    const occSizeFrame = insertionFrame(
+      occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix),
+      labXY,
+    );
+    const hasMesNbSb =
+      Boolean(mesialAdjDigits) && neighbors.some((nb) => nb.toothNumber === mesialAdjDigits);
+    const hasDisNbSb =
+      Boolean(distalAdjDigits) && neighbors.some((nb) => nb.toothNumber === distalAdjDigits);
+    const adjRatios = measureAdjacentNaturalToothScales(jawLocalPts, c0, occSizeFrame, mesXY, sbR, sbH, {
+      mesialAdjDigits,
+      distalAdjDigits,
+      skipMesial: hasMesNbSb || mesialAllowance.wallMm > 0,
+      skipDistal: hasDisNbSb || distalAllowance.wallMm > 0 || hasDistalRetromolarPad,
+    });
+    const oppRatio = measureOpposingToothScale(
+      opposingLocalPts,
+      c0,
+      occSizeFrame,
+      fixture.toothNumber,
+      tpl.naturalMdMm * 0.5,
+    );
+    return blendLocalCrownSizeScale({ adjacentNaturalRatios: adjRatios, opposingRatio: oppRatio });
+  })();
+
+  // 치종 평균 크기를 기본으로 하되, 반대측 거울상과 인접 자연치·대합치 로컬 스케일을 함께 반영한다(±15%).
+  const refNaturalMdMm = contraMirror
+    ? clamp(
+        (tpl.naturalMdMm * 0.45 + contraMirror.mdMm * 0.55) * (0.65 + 0.35 * localCrownScale),
+        tpl.naturalMdMm * 0.85,
+        tpl.naturalMdMm * 1.15,
+      )
+    : clamp(tpl.naturalMdMm * localCrownScale, tpl.naturalMdMm * 0.85, tpl.naturalMdMm * 1.15);
+  const refNaturalBlMm = contraMirror
+    ? clamp(
+        (tpl.naturalBlMm * 0.45 + contraMirror.blMm * 0.55) * (0.65 + 0.35 * localCrownScale),
+        tpl.naturalBlMm * 0.85,
+        tpl.naturalBlMm * 1.15,
+      )
+    : clamp(tpl.naturalBlMm * localCrownScale, tpl.naturalBlMm * 0.85, tpl.naturalBlMm * 1.15);
 
   // 인접 자연치 접촉 높이(마진 위 3.2~7.5mm)만 본다. 그 아래(h < 3.2mm)는 치간유두 잇몸이라 간격이 작게 잡힌다.
   const adjBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
@@ -4989,17 +5375,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const reachNeg = Number.isFinite(rawReachNeg)
     ? Math.max(1.85, rawReachNeg - negAllowance0.wallMm)
     : Number.NaN;
-  let mdScale = 1;
-  let sideShiftMm = 0;
-  if (Number.isFinite(reachPos) && Number.isFinite(reachNeg)) {
-    mdScale = clamp((reachPos + reachNeg) / refNaturalMdMm, 0.78, 1.12);
-    sideShiftMm = clamp((reachPos - reachNeg) / 2, -0.8, 0.8);
-  } else if (Number.isFinite(reachPos) || Number.isFinite(reachNeg)) {
-    const one = Number.isFinite(reachPos) ? reachPos : reachNeg;
-    mdScale = clamp((one * 2) / refNaturalMdMm, 0.82, 1.08);
-  } else if (contraMirror) {
-    mdScale = clamp(refNaturalMdMm / tpl.naturalMdMm, 0.88, 1.1);
-  }
   const sideHasTooth = (list: number[], rawReach: number) =>
     Number.isFinite(rawReach) && list.filter((r) => r <= rawReach + 3).length >= 12;
   const toothPos = sideHasTooth(tallSide[0], rawReachPos);
@@ -5019,6 +5394,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const effBoundNeg = toothNeg ? Math.min(reachNeg, nbBoundNeg) : nbBoundNeg;
   const hasPosBound = Number.isFinite(effBoundPos);
   const hasNegBound = Number.isFinite(effBoundNeg);
+  let mdScale = 1;
+  let sideShiftMm = 0;
+  if (hasPosBound && hasNegBound) {
+    mdScale = clamp((effBoundPos + effBoundNeg) / refNaturalMdMm, 0.78, 1.12);
+    sideShiftMm = clamp((effBoundPos - effBoundNeg) / 2, -0.8, 0.8);
+  } else if (Number.isFinite(reachPos) && Number.isFinite(reachNeg)) {
+    mdScale = clamp((reachPos + reachNeg) / refNaturalMdMm, 0.78, 1.12);
+    sideShiftMm = clamp((reachPos - reachNeg) / 2, -0.8, 0.8);
+  } else if (Number.isFinite(reachPos) || Number.isFinite(reachNeg)) {
+    const one = Number.isFinite(reachPos) ? reachPos : reachNeg;
+    mdScale = clamp((one * 2) / refNaturalMdMm, 0.84, 1.06);
+  } else if (contraMirror || Math.abs(localCrownScale - 1) > 1e-3) {
+    mdScale = clamp(refNaturalMdMm / tpl.naturalMdMm, 0.88, 1.1);
+  }
   // 가상 치아 근원심: 치종 평균(+거울상) 폭. 양옆 자연치·인접 픽스쳐 경계가 있으면 그 안에 맞추고,
   // 한쪽 인접치가 더 가까우면 여유 있는 반대쪽으로 중심을 자연스럽게 옮긴다.
   const natHalfMd = refNaturalMdMm / 2;
@@ -5052,11 +5441,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const ub = base[0] * labXY[0] + base[1] * labXY[1];
     return (labialLimit(base[2]) - ub) / dl;
   };
-  const blScale = contraMirror
-    ? clamp(refNaturalBlMm / tpl.naturalBlMm, 0.92, 1.12)
-    : posterior
-      ? 1 + (mdScale - 1) * 0.5
-      : 1 + Math.max(0, mdScale - 1) * 0.35;
+  const blScale =
+    contraMirror || Math.abs(localCrownScale - 1) > 1e-3
+      ? clamp(refNaturalBlMm / tpl.naturalBlMm, 0.9, 1.12)
+      : posterior
+        ? 1 + (mdScale - 1) * 0.5
+        : 1 + Math.max(0, mdScale - 1) * 0.35;
   const marginA = (tpl.marginBlMm / 2) * blScale * params.marginSizeScale;
   const marginB = (tpl.marginMdMm / 2) * mdScale * params.marginSizeScale;
 
@@ -5229,8 +5619,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   /** 악궁 연장선·대합 B로 포스트 위치를 잡았으면 직경이 10mm 근처에 머물 각도까지 허용한다. */
   let anatomicalAxis = false;
   let anatomicalFunctionalU: number | null = null;
-  /** 악궁·대합이 가리키는 협측 이동. 설측 벽 한도 안에서 이 값까지 삽입축을 맞춘다. */
-  let idealBuccalOffsetMm: number | null = null;
+  let anatomicalFunctionalV: number | null = null;
+  /** 악궁·대합이 가리키는 협설/근원심 이동. 벽 타협 한도 안에서 이 값까지 포스트 중심을 맞춘다. */
+  let idealOpposingOffsetU: number | null = null;
+  let idealOpposingOffsetV: number | null = null;
   let neighborLockRad: number | null = null;
   /** 자동 세 요소 축. 구치 상단을 픽스쳐 중심으로 되돌리는 비율을 느슨히 한다. */
   let occlusalAxisLed = false;
@@ -5259,7 +5651,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const vMesAxis: Vec3 = mesSignAxis > 0 ? frameOccAxis.vSide : scale3(frameOccAxis.vSide, -1);
     const labDirAxis = scale3(frameOccAxis.uLabial, labSignAxis);
     const mesSignOnFrame0 = dot3(frame0.vSide, mesXY) >= 0 ? 1 : -1;
-    const crownMesMm = clamp(crownCenterV * mesSignOnFrame0, -0.75, 0.75);
+    let crownMesMm = clamp(crownCenterV * mesSignOnFrame0, -0.75, 0.75);
     const c0OccShiftU = dot3(c0, frameOccAxis.uLabial) * labSignAxis;
     const jawArchRelC0 = archCenterReady ? jawArchOffsetU - c0OccShiftU : 0;
     const oppArchRelC0 = oppArchReady ? oppArchOffsetU - c0OccShiftU : 0;
@@ -5279,6 +5671,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (bContact) {
           contactU = bContact.u * labSignAxis;
           contactFossaU = bContact.fossaU * labSignAxis;
+          if (bContact.isNaturalTooth) {
+            const contactV = bContact.v * mesSignAxis;
+            if (Math.abs(contactV) <= crownHalfMd * 0.65) {
+              anatomicalFunctionalV = contactV;
+              crownMesMm = clamp(crownMesMm * 0.35 + contactV * 0.65, -1.1, 1.1);
+            }
+          }
         }
       }
       const fallbackOppSlopeOffset = fixture.jaw === "upper" ? 1.35 : -1.55;
@@ -5352,7 +5751,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const wCrown = axisTowardCrownCenter(wOcc, labDirAxis, vMesAxis, crownLabMm, crownMesMm, H);
     if (posterior) {
       const crownLabOff = (dot3(wCrown, labXY) / Math.max(wCrown[2], 0.25)) * H;
-      if (crownLabOff > 0.15) idealBuccalOffsetMm = crownLabOff;
+      if (Math.abs(crownLabOff) > 0.12) idealOpposingOffsetU = crownLabOff;
+      if (anatomicalFunctionalV != null) {
+        const crownMesOff = (dot3(wCrown, mesXY) / Math.max(wCrown[2], 0.25)) * H;
+        if (Math.abs(crownMesOff) > 0.12) idealOpposingOffsetV = crownMesOff;
+      }
     }
     const adjSamples =
       adjLabSlope != null && !(tpl.kind === "incisor" && incisorGuide)
@@ -5578,6 +5981,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (bContact) {
           contactU = bContact.u * labSignOcc;
           contactFossaU = bContact.fossaU * labSignOcc;
+          if (bContact.isNaturalTooth) {
+            const contactV = bContact.v * mesSignOcc;
+            if (Math.abs(contactV) <= crownHalfMd * 0.65) {
+              anatomicalFunctionalV = contactV;
+            }
+          }
         }
       }
       // 바로 위 대합치의 중심구(contactFossaU)가 대합 악궁 곡선(oppArchRelC0)에서 벗어나면
@@ -5609,7 +6018,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           ? targetLocalU
           : clampLateralForCompactDiameter(targetLocalU, 0, 2.15, 0.7).u;
         const buccalU = clamp(compactU, -maxLat, maxLat);
-        let keepV = nearV;
+        let keepV =
+          anatomicalFunctionalV != null
+            ? nearV * 0.45 + (occV + anatomicalFunctionalV) * 0.55
+            : nearV;
         const roomV = Math.sqrt(Math.max(0, maxLat * maxLat - buccalU * buccalU));
         if (Math.abs(keepV) > roomV) keepV = Math.sign(keepV) * roomV;
         wantU = buccalU;
@@ -5661,7 +6073,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     } else if (!placedOnArch && explicitSourceCode === 0) {
       axisSource = "arch";
     }
-    if (wantU > 0.15) idealBuccalOffsetMm = wantU;
+    if (Math.abs(wantU) > 0.12) idealOpposingOffsetU = wantU;
+    if (anatomicalFunctionalV != null && Math.abs(wantV) > 0.12) idealOpposingOffsetV = wantV;
 
     const wantLat = Math.hypot(wantU, wantV);
     const effDeadzone = anatomicalAxis ? 0 : axisSource === "opposing" ? deadzoneMm * 0.6 : deadzoneMm;
@@ -6028,7 +6441,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ? buildOpposingHeightField(opposingLocalPts, c0, frame, 11)
       : oppField;
   // 절치 높이 상한은 교합을 향한 면만 쓴다. 수직 벽 최하단은 대합거리 표시에만 남긴다.
-  const oppTrisAll = opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
+  const oppTrisAll = mode.probePeerPlan
+    ? new Float32Array(0)
+    : opposingTrianglesInFixtureFrame(opposingGeometry, fixture.fixturePose, 18);
   const incisorFaceTris =
     tpl.kind === "incisor" ? filterOcclusalFacingTriangles(oppTrisAll, frame.w, 0.45) : oppTrisAll;
   const oppTableField =
@@ -6782,20 +7197,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     : 0;
   const maxProximalExcessMm = Math.max(rawPosExcess, rawNegExcess);
   const hasWideProximalSpace = tpl.kind !== "premolar" && maxProximalExcessMm >= 0.85;
+  const ownFdiNum = Number(fixture.toothNumber);
+  const hasSameKindAdjacentAbutment =
+    Number.isFinite(ownFdiNum) &&
+    neighbors.some((nb) => {
+      const nbFdi = Number(nb.toothNumber);
+      return (
+        Number.isFinite(nbFdi) &&
+        Math.floor(nbFdi / 10) === Math.floor(ownFdiNum / 10) &&
+        Math.abs((nbFdi % 10) - (ownFdiNum % 10)) === 1 &&
+        abutmentTemplateForTooth(nb.toothNumber).kind === tpl.kind
+      );
+    });
 
   if (spaceFillFactor > 0 && hasWideProximalSpace) {
-    const extraHalfMd = Math.min(0.82, maxProximalExcessMm * 0.45) * spaceFillFactor;
+    // 같은 부위(예: #16·#17 대구치) 인접 어벗이 함께 있으면 자연치와 닿은 한쪽만 비대해지지 않도록 확장을 보수적으로 줄인다.
+    const sameKindDamp = hasSameKindAdjacentAbutment ? 0.35 : 1;
+    const extraHalfMd = Math.min(0.82, maxProximalExcessMm * 0.45) * spaceFillFactor * sameKindDamp;
     mHalfMd = clamp(
       mHalfMd + extraHalfMd,
       floorMarginMd,
-      Math.max(floorMarginMd, maxAnatHalfMd + 0.58 * spaceFillFactor),
+      Math.max(floorMarginMd, maxAnatHalfMd + 0.58 * spaceFillFactor * sameKindDamp),
     );
     if (posterior) {
       const extraHalfBl = Math.min(0.42, extraHalfMd * 0.55);
       mHalfBl = clamp(
         mHalfBl + extraHalfBl,
         floorMarginBl,
-        Math.max(floorMarginBl, maxAnatHalfBl + 0.36 * spaceFillFactor),
+        Math.max(floorMarginBl, maxAnatHalfBl + 0.36 * spaceFillFactor * sameKindDamp),
       );
     }
   }
@@ -6940,6 +7369,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
 
   // 4방위 유격(협·설·근·원심)을 먼저 재서 중심(mCu, mCv)을 여유 있는 쪽으로 옮기고 양쪽 반축을 대칭으로 맞춘다.
+  let marginCapPosU = Infinity;
+  let marginCapNegU = Infinity;
+  let marginCapPosV = Infinity;
+  let marginCapNegV = Infinity;
   {
     const minPhysicalHalf = Math.min(
       minMarginRadius,
@@ -6958,6 +7391,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const capNegU = dirCap(-1, 0);
     const capPosV = dirCap(0, 1);
     const capNegV = dirCap(0, -1);
+    marginCapPosU = capPosU;
+    marginCapNegU = capNegU;
+    marginCapPosV = capPosV;
+    marginCapNegV = capNegV;
     const estMarginAxCos = Math.max(frame.w[2], 0.25);
     const estMarginTopH = Math.max(2.2, refBasePostTopH - topRoundMm * 0.85);
     const estMarginSpan = Math.max(0.6, estMarginTopH - refBaseChamfer.height);
@@ -7022,97 +7459,165 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     // 대각선 등 모든 열에서 marginCap 안쪽에 완전히 들어오도록 사각형/타원 반축과 중심을 비례 조정한다(모서리 깎기 금지 → 볼록 곡선 유지).
-    for (let iter = 0; iter < 16; iter += 1) {
-      const innerFloor = Math.min(minMarginRadius * 0.94, Math.max(boreTopR + 0.34, Math.min(mHalfBl, mHalfMd) - 1.25));
-      const innerAllow = Math.max(0.12, Math.min(mHalfBl, mHalfMd) - innerFloor + 0.04);
-      const maxShift = Math.max(0.12, Math.min(Math.min(mHalfBl, mHalfMd) * 0.82, Math.max(innerAllow, 1.25)));
-      if (Math.hypot(mCu, mCv) > maxShift) {
-        const sc = maxShift / Math.hypot(mCu, mCv);
-        mCu *= sc;
-        mCv *= sc;
-      }
-      let worstExcess = 0;
-      let worstWBl = 0.5;
-      let worstDu = 0;
-      let worstDv = 0;
-      let worstCol = -1;
-      for (let col = 0; col < ANGULAR_COLS; col += 1) {
-        const cap = marginCap[col]!;
-        if (!Number.isFinite(cap)) continue;
-        const rRay = analyticSectionRay(
-          tpl.kind,
-          "margin",
-          mHalfBl,
-          mHalfBl,
-          mHalfMd,
-          mCu,
-          mCv,
-          colDuFix[col]!,
-          colDvFix[col]!,
-        );
-        if (Number.isFinite(rRay) && rRay > cap + 1e-4) {
-          const ex = (rRay - cap) / Math.max(rRay, 0.5);
-          if (ex > worstExcess) {
-            worstExcess = ex;
-            worstWBl = colDuFix[col]! * colDuFix[col]!;
-            worstDu = colDuFix[col]!;
-            worstDv = colDvFix[col]!;
-            worstCol = col;
+    const fitDiagonalMarginCaps = () => {
+      for (let iter = 0; iter < 16; iter += 1) {
+        const innerFloor = Math.min(minMarginRadius * 0.94, Math.max(boreTopR + 0.34, Math.min(mHalfBl, mHalfMd) - 1.25));
+        const innerAllow = Math.max(0.12, Math.min(mHalfBl, mHalfMd) - innerFloor + 0.04);
+        const maxShift = Math.max(0.12, Math.min(Math.min(mHalfBl, mHalfMd) * 0.82, Math.max(innerAllow, 1.25)));
+        if (Math.hypot(mCu, mCv) > maxShift) {
+          const sc = maxShift / Math.hypot(mCu, mCv);
+          mCu *= sc;
+          mCv *= sc;
+        }
+        let worstExcess = 0;
+        let worstWBl = 0.5;
+        let worstDu = 0;
+        let worstDv = 0;
+        let worstCol = -1;
+        for (let col = 0; col < ANGULAR_COLS; col += 1) {
+          const cap = marginCap[col]!;
+          if (!Number.isFinite(cap)) continue;
+          const rRay = analyticSectionRay(
+            tpl.kind,
+            "margin",
+            mHalfBl,
+            mHalfBl,
+            mHalfMd,
+            mCu,
+            mCv,
+            colDuFix[col]!,
+            colDvFix[col]!,
+          );
+          if (Number.isFinite(rRay) && rRay > cap + 1e-4) {
+            const ex = (rRay - cap) / Math.max(rRay, 0.5);
+            if (ex > worstExcess) {
+              worstExcess = ex;
+              worstWBl = colDuFix[col]! * colDuFix[col]!;
+              worstDu = colDuFix[col]!;
+              worstDv = colDvFix[col]!;
+              worstCol = col;
+            }
           }
         }
-      }
-      if (worstExcess <= 1e-4) break;
-      // 한쪽 인접 픽스쳐 경계에 걸리고 반대쪽에 여유가 남아 있으면 먼저 중심을 반대쪽으로 밀어 양쪽 합 유격(≥0.62mm)을 만든다.
-      if (worstCol >= 0) {
-        const oppCol = (worstCol + ANGULAR_COLS / 2) % ANGULAR_COLS;
-        const rOpp = analyticSectionRay(
-          tpl.kind,
-          "margin",
-          mHalfBl,
-          mHalfBl,
-          mHalfMd,
-          mCu,
-          mCv,
-          colDuFix[oppCol]!,
-          colDvFix[oppCol]!,
-        );
-        const oppSlack = Number.isFinite(rOpp)
-          ? Math.min(marginCap[oppCol]! - rOpp, rOpp - innerFloor)
-          : 0;
-        if (oppSlack > 0.02) {
-          const rawExMm = worstExcess * Math.max(mHalfBl, mHalfMd);
-          const shift = Math.min(oppSlack * 0.65, rawExMm * 0.65, 0.14);
-          const candCu = mCu - worstDu * shift;
-          const candCv = mCv - worstDv * shift;
-          const needScrewShift =
-            mHalfBl - rawExMm < Math.max(reqPosU - mCu, reqNegU + mCu) ||
-            mHalfMd - rawExMm < Math.max(reqPosV - mCv, reqNegV + mCv);
-          if (needScrewShift || Math.hypot(candCu, candCv) <= maxComfortShift + 0.04) {
-            mCu = candCu;
-            mCv = candCv;
+        if (worstExcess <= 1e-4) break;
+        // 한쪽 인접 픽스쳐 경계에 걸리고 반대쪽에 여유가 남아 있으면 먼저 중심을 반대쪽으로 밀어 양쪽 합 유격(≥0.62mm)을 만든다.
+        if (worstCol >= 0) {
+          const oppCol = (worstCol + ANGULAR_COLS / 2) % ANGULAR_COLS;
+          const rOpp = analyticSectionRay(
+            tpl.kind,
+            "margin",
+            mHalfBl,
+            mHalfBl,
+            mHalfMd,
+            mCu,
+            mCv,
+            colDuFix[oppCol]!,
+            colDvFix[oppCol]!,
+          );
+          const oppSlack = Number.isFinite(rOpp)
+            ? Math.min(marginCap[oppCol]! - rOpp, rOpp - innerFloor)
+            : 0;
+          if (oppSlack > 0.02) {
+            const rawExMm = worstExcess * Math.max(mHalfBl, mHalfMd);
+            const shift = Math.min(oppSlack * 0.65, rawExMm * 0.65, 0.14);
+            const candCu = mCu - worstDu * shift;
+            const candCv = mCv - worstDv * shift;
+            const needScrewShift =
+              mHalfBl - rawExMm < Math.max(reqPosU - mCu, reqNegU + mCu) ||
+              mHalfMd - rawExMm < Math.max(reqPosV - mCv, reqNegV + mCv);
+            if (needScrewShift || Math.hypot(candCu, candCv) <= maxComfortShift + 0.04) {
+              mCu = candCu;
+              mCv = candCv;
+            }
           }
         }
+        const hasTightPlane = Number.isFinite(Math.min(...marginPlaneCap)) && Math.min(...marginPlaneCap) < minMarginRadius + 0.45;
+        const baseCrossDrop =
+          tpl.kind === "premolar"
+            ? hasTightPlane
+              ? 0.1
+              : 0.2
+            : !posterior
+              ? 0.14
+              : hasTightPlane
+                ? 0.18
+                : 0.35;
+        const dropBl = worstExcess * (baseCrossDrop + (1 - baseCrossDrop) * worstWBl) + 0.004;
+        const dropMd = worstExcess * (baseCrossDrop + (1 - baseCrossDrop) * (1 - worstWBl)) + 0.004;
+        mHalfBl = Math.max(minPhysicalHalf, mHalfBl * (1 - dropBl));
+        mHalfMd = Math.max(minPhysicalHalf, mHalfMd * (1 - dropMd));
+        const minAspectRatio = !posterior ? 0.76 : hasTightPlane ? 0.68 : 0.82;
+        const minBlByRatio = mHalfMd * targetMarginAspect * minAspectRatio;
+        const minMdByRatio = (mHalfBl / Math.max(targetMarginAspect, 0.4)) * minAspectRatio;
+        if (mHalfBl < minBlByRatio) mHalfMd = Math.max(minPhysicalHalf, mHalfBl / (targetMarginAspect * minAspectRatio));
+        if (mHalfMd < minMdByRatio) mHalfBl = Math.max(minPhysicalHalf, (mHalfMd * targetMarginAspect) / minAspectRatio);
       }
-      const hasTightPlane = Number.isFinite(Math.min(...marginPlaneCap)) && Math.min(...marginPlaneCap) < minMarginRadius + 0.45;
-      const baseCrossDrop =
-        tpl.kind === "premolar"
-          ? hasTightPlane
-            ? 0.1
-            : 0.2
-          : !posterior
-            ? 0.14
-            : hasTightPlane
-              ? 0.18
-              : 0.35;
-      const dropBl = worstExcess * (baseCrossDrop + (1 - baseCrossDrop) * worstWBl) + 0.004;
-      const dropMd = worstExcess * (baseCrossDrop + (1 - baseCrossDrop) * (1 - worstWBl)) + 0.004;
-      mHalfBl = Math.max(minPhysicalHalf, mHalfBl * (1 - dropBl));
-      mHalfMd = Math.max(minPhysicalHalf, mHalfMd * (1 - dropMd));
-      const minAspectRatio = !posterior ? 0.76 : hasTightPlane ? 0.68 : 0.82;
-      const minBlByRatio = mHalfMd * targetMarginAspect * minAspectRatio;
-      const minMdByRatio = (mHalfBl / Math.max(targetMarginAspect, 0.4)) * minAspectRatio;
-      if (mHalfBl < minBlByRatio) mHalfMd = Math.max(minPhysicalHalf, mHalfBl / (targetMarginAspect * minAspectRatio));
-      if (mHalfMd < minMdByRatio) mHalfBl = Math.max(minPhysicalHalf, (mHalfMd * targetMarginAspect) / minAspectRatio);
+    };
+    fitDiagonalMarginCaps();
+
+    // 3순위 인접 어벗 조율: 같은 사분악 인접 어벗(예: #16·#17)과 회전·최대 직경을 조화시킨다.
+    const stdAvgHalf = Math.max(1e-4, (tpl.marginBlMm + tpl.marginMdMm) * 0.25);
+    const curAvgHalf = (mHalfBl + mHalfMd) * 0.5;
+    const curNormScale = curAvgHalf / stdAvgHalf;
+    const minHalfBl = Math.max(minPhysicalHalf, (reqPosU + reqNegU) * 0.5);
+    const minHalfMd = Math.max(minPhysicalHalf, (reqPosV + reqNegV) * 0.5);
+    const minNormScale = ((minHalfBl + minHalfMd) * 0.5) / stdAvgHalf;
+    const maxHalfBl = Math.max(minHalfBl, Math.min(maxAnatHalfBl + 0.35, (capPosU + capNegU) * 0.5));
+    const maxHalfMd = Math.max(minHalfMd, Math.min(maxAnatHalfMd + 0.35, (capPosV + capNegV) * 0.5));
+    const maxNormScale = Math.max(minNormScale, ((maxHalfBl + maxHalfMd) * 0.5) / stdAvgHalf);
+
+    if (mode.probePeerPlan) {
+      const fdiProbe = parseFdiTooth(fixture.toothNumber);
+      const occUnitLocal: Vec3 = occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix);
+      return {
+        kind: "peerPlan",
+        probe: {
+          toothNumber: fixture.toothNumber,
+          fdiPos: fdiProbe?.pos ?? 0,
+          quadrant: fdiProbe?.digits[0] ?? "",
+          kind: tpl.kind,
+          anterior: tpl.anterior,
+          occWorld: norm3(fixtureLocalDirToWorld(occUnitLocal, fixture.fixturePose)),
+          mesialWorld: norm3(fixtureLocalDirToWorld(mesXY, fixture.fixturePose)),
+          yawConfidence,
+          yawLocked: Math.abs(params.postYawDeg) > 0.01,
+          normScale: curNormScale,
+          minNormScale,
+          maxNormScale,
+          sizeLocked: Math.abs(params.marginSizeScale - 1) > 0.01,
+        },
+      };
+    }
+
+    if (
+      mode.peerPlan?.targetNormScale != null &&
+      Math.abs(params.marginSizeScale - 1) <= 0.01 &&
+      Number.isFinite(mode.peerPlan.targetNormScale)
+    ) {
+      const scaleRatio = clamp(mode.peerPlan.targetNormScale / Math.max(1e-4, curNormScale), 0.85, 1.18);
+      if (Math.abs(scaleRatio - 1) > 0.004) {
+        const adjU = fitAxis1D(
+          mCu,
+          clamp(mHalfBl * scaleRatio, minHalfBl, maxHalfBl),
+          capPosU,
+          capNegU,
+          reqPosU,
+          reqNegU,
+        );
+        const adjV = fitAxis1D(
+          mCv,
+          clamp(mHalfMd * scaleRatio, minHalfMd, maxHalfMd),
+          capPosV,
+          capNegV,
+          reqPosV,
+          reqNegV,
+        );
+        mCu = adjU.c;
+        mHalfBl = adjU.half;
+        mCv = adjV.c;
+        mHalfMd = adjV.half;
+        fitDiagonalMarginCaps();
+      }
     }
   }
 
@@ -8316,33 +8821,92 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 마진 해부 단면의 4방위(+u 협/순, -u 설/구개, +v, -v) 외경과 포스트 치종 단면 단위 계수.
     // 별다른 간섭(스크류 홀 벽 부족·한쪽 크라운 공간 협소)이 없으면 4방위 모두 동일한 마진 폭(targetShoulderW)을 유지하고,
     // 제약이 걸리는 방위만 필요한 만큼 조정해 반대쪽 마진 폭이 좁아지지 않게 한다.
-    // 악궁·대합이 임플란트보다 협측이면 포스트 중심을 그쪽으로 옮긴다.
-    // 적절 벽(포스트 1.0 / 크라운 기존 적절값)과 악궁은 반씩 양보하고, 최소 벽은 넘지 않는다.
+    // 1순위 대합치 중심(협설 u + 근원심 v): 삽입축(frame.w)이 다 메우지 못한 잔여 대합 중심 편차를
+    // 포스트 중심으로 양방향(+/-) 타협 이동한다. 적절 벽(포스트 1.0 / 크라운 기존 적절값)은 반씩 양보하고 최소 벽(0.5 / 크라운 최소)은 절대 넘지 않는다.
+    const hasManualAxisShift =
+      Math.abs(params.axisShiftLabialMm) > 0.01 || Math.abs(params.axisShiftMesialMm) > 0.01;
     let lingualScrewWallTargetMm = LINGUAL_SCREW_WALL_LIMIT_MM;
-    if (posterior && idealBuccalOffsetMm != null && idealBuccalOffsetMm > 0.15 && mHalfBl > 0) {
-      const postIdealLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
-      const postMinLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
-      const idealLimits = [postIdealLimit];
-      const minLimits = [postMinLimit];
-      if (labialLimit) {
-        const lim = labialLimitAt(frame.uLabial, Math.max(2.2, tpl.postHeightMm * 0.78), frame.w);
-        if (Number.isFinite(lim)) {
-          const postBucHalf = Math.max(0.8, mHalfBl - targetShoulderW);
-          idealLimits.push(lim - postBucHalf - crownBlIdealMm);
-          minLimits.push(lim - postBucHalf - crownBlMinMm);
+    let buccalScrewWallTargetMm = SCREW_WALL_MM;
+    if (posterior && !hasManualAxisShift && idealOpposingOffsetU != null && mHalfBl > 0) {
+      const wLabAtTop =
+        (dot3(frame.w, labXY) / Math.max(frame.w[2], 0.25)) * Math.min(tpl.postHeightMm, meanRoundStartSum);
+      const targetResidualU = idealOpposingOffsetU - wLabAtTop * 0.5;
+      if (Math.abs(targetResidualU) > 0.12) {
+        const postIdealLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
+        const postMinLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
+        const posIdealLimits = [postIdealLimit];
+        const posMinLimits = [postMinLimit];
+        const negIdealLimits = [postIdealLimit];
+        const negMinLimits = [postMinLimit];
+        if (labialLimit) {
+          const lim = labialLimitAt(frame.uLabial, Math.max(2.2, tpl.postHeightMm * 0.78), frame.w);
+          if (Number.isFinite(lim)) {
+            const postBucHalf = Math.max(0.8, mHalfBl - targetShoulderW);
+            posIdealLimits.push(lim - postBucHalf - crownBlIdealMm);
+            posMinLimits.push(lim - postBucHalf - crownBlMinMm);
+          }
+        }
+        const wantU = resolveSignedPlacementTradeoff({
+          targetOffsetMm: targetResidualU,
+          posIdealLimitsMm: posIdealLimits,
+          posMinLimitsMm: posMinLimits,
+          negIdealLimitsMm: negIdealLimits,
+          negMinLimitsMm: negMinLimits,
+        });
+        if (targetResidualU > 0 && wantU > mCu + 0.05) {
+          mCu = Math.min(1.6, wantU);
+        } else if (targetResidualU < 0 && wantU < mCu - 0.05) {
+          mCu = Math.max(-1.5, wantU);
+        }
+        if (mCu > 0.05) {
+          lingualScrewWallTargetMm = clamp(
+            mHalfBl - boreTopR - mCu,
+            POSTERIOR_POST_WALL_MIN_MM,
+            POSTERIOR_POST_WALL_IDEAL_MM,
+          );
+        } else if (mCu < -0.05) {
+          buccalScrewWallTargetMm = clamp(
+            mHalfBl - boreTopR + mCu,
+            POSTERIOR_POST_WALL_MIN_MM,
+            POSTERIOR_POST_WALL_IDEAL_MM,
+          );
         }
       }
-      const want = resolveAutoPlacementTradeoff({
-        archOffsetMm: idealBuccalOffsetMm,
-        idealLimitsMm: idealLimits,
-        minLimitsMm: minLimits,
-      });
-      if (want > mCu + 0.05) mCu = Math.min(1.6, want);
-      lingualScrewWallTargetMm = clamp(
-        mHalfBl - boreTopR - mCu,
-        POSTERIOR_POST_WALL_MIN_MM,
-        POSTERIOR_POST_WALL_IDEAL_MM,
-      );
+    }
+    if (posterior && !hasManualAxisShift && idealOpposingOffsetV != null && mHalfMd > 0) {
+      const wMesAtPostH =
+        (dot3(frame.w, mesXY) / Math.max(frame.w[2], 0.25)) * tpl.postHeightMm;
+      const residualV = (idealOpposingOffsetV - wMesAtPostH) * mesialSignOnV;
+      if (Math.abs(residualV) > 0.12) {
+        const postIdealLimitV = mHalfMd - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
+        const postMinLimitV = mHalfMd - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
+        const posIdealV = [postIdealLimitV];
+        const posMinV = [postMinLimitV];
+        const negIdealV = [postIdealLimitV];
+        const negMinV = [postMinLimitV];
+        if (Number.isFinite(marginCapPosV)) {
+          const capRoom = Math.max(0, marginCapPosV - mHalfMd);
+          posIdealV.push(capRoom);
+          posMinV.push(capRoom);
+        }
+        if (Number.isFinite(marginCapNegV)) {
+          const capRoom = Math.max(0, marginCapNegV - mHalfMd);
+          negIdealV.push(capRoom);
+          negMinV.push(capRoom);
+        }
+        const wantV = resolveSignedPlacementTradeoff({
+          targetOffsetMm: residualV,
+          posIdealLimitsMm: posIdealV,
+          posMinLimitsMm: posMinV,
+          negIdealLimitsMm: negIdealV,
+          negMinLimitsMm: negMinV,
+        });
+        if (residualV > 0 && wantV > mCv + 0.05) {
+          mCv = Math.min(1.2, wantV);
+        } else if (residualV < 0 && wantV < mCv - 0.05) {
+          mCv = Math.max(-1.2, wantV);
+        }
+      }
     }
     const mExtPosU = mCu + mHalfBl;
     const mExtNegU = -mCu + mHalfBl;
@@ -8573,11 +9137,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const minTaperDropMd = (minWallTaperSlope * hRefSpan) / Math.max(0.8, postUnitMd);
         const screwTightR = boreStrictTopR;
         const lingualWallR = Math.max(screwTightR, boreTopR + lingualScrewWallTargetMm);
+        const buccalWallR = Math.max(screwTightR, boreTopR + buccalScrewWallTargetMm);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const reqTopBl = Math.max(
           minPostR,
           Math.abs(uScrewTop - pSecCu) + screwTightR,
           -uScrewTop + lingualWallR + pSecCu,
+          uScrewTop + buccalWallR - pSecCu,
         );
         const reqTopMd = Math.max(minPostR, Math.abs(vScrewTop - pSecCv) + screwTightMd);
         // 스크류가 상단을 더 못 좁히면 상단을 베이스에 붙여 각도를 지우지 않는다.
@@ -8695,12 +9261,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const screwReqMd = effScrewReqR / Math.max(0.8, postUnitMd);
         const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const lingualWallR = Math.max(screwTightR, boreTopR + lingualScrewWallTargetMm);
+        const buccalWallR = Math.max(effScrewReqR, boreTopR + buccalScrewWallTargetMm);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const screwBaseTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const screwBaseTightMd = screwBaseTightR / Math.max(0.8, postUnitMd);
 
         const computeScrewMaxWidths = (tdBl: number, tdMd: number) => {
-          const minPosU = Math.max(minPostR + 0.15, uScrewBase + effScrewReqR, uScrewTop + effScrewReqR + tdBl);
+          const minPosU = Math.max(minPostR + 0.15, uScrewBase + buccalWallR, uScrewTop + buccalWallR + tdBl);
           const minNegU = Math.max(minPostR + 0.15, -uScrewBase + lingualWallR, -uScrewTop + lingualWallR + tdBl);
           const minPosV = Math.max(minPostR + 0.15, vScrewBase + screwReqMd, vScrewTop + screwReqMd + tdMd);
           const minNegV = Math.max(minPostR + 0.15, -vScrewBase + screwReqMd, -vScrewTop + screwReqMd + tdMd);

@@ -163,7 +163,7 @@ function parabolaSagitta(
 export function localArchTangent(
   stations: readonly ArchStation[],
   opts?: { refSlope?: number | null; refOffsetU?: number | null },
-): { slope: number; offsetU: number } | null {
+): { slope: number; offsetU: number; hasBothSides: boolean; toothCount: number; hasSlope: boolean } | null {
   const rows = stations.filter(
     (s) => s.w > 0 && Math.abs(s.v) >= 3.4 && Number.isFinite(s.u) && Number.isFinite(s.v),
   );
@@ -188,17 +188,37 @@ export function localArchTangent(
     const chordU = nearD.u + ((nearM.u - nearD.u) * (0 - nearD.v)) / dv;
     const half = Math.min(Math.abs(nearM.v), Math.abs(nearD.v));
     const sagitta = parabolaSagitta(cleanTeeth, nearM, nearD, chordU, slope, half);
-    return { slope, offsetU: clamp(chordU + sagitta, -3.4, 3.4) };
+    return {
+      slope,
+      offsetU: clamp(chordU + sagitta, -3.4, 3.4),
+      hasBothSides: true,
+      toothCount: cleanTeeth.length,
+      hasSlope: true,
+    };
   }
   const sideTeeth = nearM ? cleanMesial : cleanDistal;
   const side = sideTeeth[0] ?? null;
   if (!side) return null;
   const next = sideTeeth[1] ?? null;
-  if (!next || Math.abs(next.v - side.v) < 2.4) return { slope: 0, offsetU: clamp(side.u, -3.4, 3.4) };
+  if (!next || Math.abs(next.v - side.v) < 2.4) {
+    return {
+      slope: 0,
+      offsetU: clamp(side.u, -3.4, 3.4),
+      hasBothSides: false,
+      toothCount: cleanTeeth.length,
+      hasSlope: false,
+    };
+  }
   const slope = clamp((next.u - side.u) / (next.v - side.v), -TAN_20, TAN_20);
   // 편측 외삽 시 완만한 악궁 곡률(양 끝이 설측으로 휨)을 보정해 v=0 위치가 과도하게 직선 외삽되지 않게 한다.
   const extrapU = side.u + slope * (0 - side.v);
-  return { slope, offsetU: clamp(extrapU, -3.4, 3.4) };
+  return {
+    slope,
+    offsetU: clamp(extrapU, -3.4, 3.4),
+    hasBothSides: false,
+    toothCount: cleanTeeth.length,
+    hasSlope: true,
+  };
 }
 
 export type ArchCrownPoint = { v: number; u: number; h: number };
@@ -374,7 +394,7 @@ export function neighborCrownBlPose(
   points: readonly ArchCrownPoint[],
   archSlopeHint?: number | null,
   archOffsetUHint?: number | null,
-): { slope: number; offsetU: number; hasBothSides: boolean } | null {
+): { slope: number; offsetU: number; hasBothSides: boolean; wallSlope: number | null } | null {
   let archSlope: number | null =
     archSlopeHint != null && Number.isFinite(archSlopeHint)
       ? clamp(archSlopeHint, -TAN_20, TAN_20)
@@ -403,7 +423,7 @@ export function neighborCrownBlPose(
     const dv = mesial.v - distal.v;
     if (Math.abs(dv) >= 3.8) {
       const chordSlope = clamp((mesial.u - distal.u) / dv, -TAN_20, TAN_20);
-      archSlope = archSlope != null ? archSlope * 0.4 + chordSlope * 0.6 : chordSlope;
+      archSlope = archSlope != null ? archSlope * 0.45 + chordSlope * 0.55 : chordSlope;
       offsetU = clamp(distal.u + ((mesial.u - distal.u) * (0 - distal.v)) / dv, -3.4, 3.4);
     }
   } else if (mesial || distal) {
@@ -433,16 +453,211 @@ export function neighborCrownBlPose(
 
   if (offsetU == null && wallSlope == null && archSlope == null) return null;
 
+  // 큰 틀 → 세부: 악궁 아치 회전(archSlope)이 주축, 인접 자연치 접촉벽(wallSlope)은 세부 보정.
   let slope = 0;
   if (archSlope != null && wallSlope != null) {
-    slope = clamp(archSlope * 0.45 + wallSlope * 0.55, -TAN_20, TAN_20);
-  } else if (wallSlope != null) {
-    slope = clamp(wallSlope, -TAN_20, TAN_20);
+    slope = clamp(archSlope * 0.65 + wallSlope * 0.35, -TAN_20, TAN_20);
   } else if (archSlope != null) {
     slope = clamp(archSlope, -TAN_20, TAN_20);
+  } else if (wallSlope != null) {
+    slope = clamp(wallSlope, -TAN_20, TAN_20);
   }
 
-  return { slope, offsetU: offsetU ?? archOffsetRef ?? 0, hasBothSides };
+  return { slope, offsetU: offsetU ?? archOffsetRef ?? 0, hasBothSides, wallSlope };
+}
+
+export type ArchSlopeSignal = {
+  slope: number;
+  hasBothSides: boolean;
+  toothCount: number;
+  hasSlope?: boolean;
+};
+
+/**
+ * 단독·복수 공통 구치 수평 회전(yaw) 기울기 결합.
+ * 우선순위: (2순위) 악궁 아치 회전(같은 악 + 대합 악궁 + 공동 피팅) → (3순위) 인접 자연치 접촉벽 · 인접 어벗 연결선.
+ * 같은 악이 편측·말단(예: #17)이어도 대합 악궁과 인접 어벗 신호를 모두 참고해 안정적으로 아치를 따른다.
+ */
+export function blendArchAndAdjacentYawSlope(args: {
+  jawArch?: ArchSlopeSignal | null;
+  oppArch?: ArchSlopeSignal | null;
+  jointArchSlope?: number | null;
+  adjacentWallSlope?: number | null;
+  adjacentAbutmentLineSlope?: number | null;
+}): { slope: number; confidence: number; archSlope: number | null } | null {
+  const usable = (s?: ArchSlopeSignal | null): s is ArchSlopeSignal =>
+    Boolean(s && s.hasSlope !== false && Number.isFinite(s.slope));
+
+  const jaw = usable(args.jawArch) ? args.jawArch : null;
+  const opp = usable(args.oppArch) ? args.oppArch : null;
+  const joint =
+    args.jointArchSlope != null && Number.isFinite(args.jointArchSlope)
+      ? clamp(args.jointArchSlope, -TAN_20, TAN_20)
+      : null;
+
+  let archNum = 0;
+  let archDen = 0;
+  if (jaw) {
+    const wJaw = jaw.hasBothSides ? 1.25 : jaw.toothCount >= 2 ? 0.72 : 0.35;
+    archNum += clamp(jaw.slope, -TAN_20, TAN_20) * wJaw;
+    archDen += wJaw;
+  }
+  if (opp) {
+    const oppSlope = clamp(opp.slope, -TAN_20, TAN_20);
+    // 같은 악과 대합 악궁이 정상 교합(≤15°)이면 대합 아치로 연속성을 보강한다.
+    const agreed = !jaw || Math.abs(oppSlope - jaw.slope) <= Math.tan(15 * DEG);
+    if (agreed) {
+      const wOpp = opp.hasBothSides ? 1.05 : opp.toothCount >= 2 ? 0.68 : 0.3;
+      archNum += oppSlope * wOpp;
+      archDen += wOpp;
+    }
+  }
+  if (joint != null) {
+    const baseEst = archDen > 0 ? archNum / archDen : null;
+    if (baseEst == null || Math.abs(joint - baseEst) <= Math.tan(15 * DEG)) {
+      const wJoint = archDen >= 1.5 ? 0.35 : 0.65;
+      archNum += joint * wJoint;
+      archDen += wJoint;
+    }
+  }
+
+  const archSlope = archDen > 0 ? clamp(archNum / archDen, -TAN_20, TAN_20) : null;
+
+  // 3순위: 인접 자연치 접촉벽 + 인접 어벗 연결선(아치와 크게 어긋난 부정교합/경사는 배제)
+  const adjTerms: Array<{ slope: number; w: number }> = [];
+  const pushAdj = (raw: number | null | undefined, baseW: number) => {
+    if (raw == null || !Number.isFinite(raw)) return;
+    const s = clamp(raw, -TAN_20, TAN_20);
+    if (archSlope != null) {
+      const diff = Math.abs(s - archSlope);
+      const maxDiff = Math.tan(14 * DEG);
+      if (diff >= maxDiff) return;
+      const keep = 1 - (diff / maxDiff) ** 2;
+      adjTerms.push({ slope: s, w: baseW * keep });
+    } else {
+      adjTerms.push({ slope: s, w: baseW });
+    }
+  };
+  pushAdj(args.adjacentWallSlope, 0.52);
+  pushAdj(args.adjacentAbutmentLineSlope, 0.58);
+
+  let adjNum = 0;
+  let adjDen = 0;
+  for (const t of adjTerms) {
+    adjNum += t.slope * t.w;
+    adjDen += t.w;
+  }
+  const adjSlope = adjDen > 0 ? adjNum / adjDen : null;
+
+  if (archSlope == null && adjSlope == null) return null;
+
+  let slope: number;
+  if (archSlope != null && adjSlope != null) {
+    // 악궁 아치(큰 틀) 68% + 인접 자연치·어벗(세부) 32%
+    const adjShare = clamp(0.32 * Math.min(1, adjDen / 0.55), 0.14, 0.34);
+    slope = clamp(archSlope * (1 - adjShare) + adjSlope * adjShare, -TAN_20, TAN_20);
+  } else {
+    slope = clamp((archSlope ?? adjSlope)!, -TAN_20, TAN_20);
+  }
+
+  const confidence = clamp(
+    (jaw?.hasBothSides ? 0.45 : jaw ? 0.22 : 0) +
+      (opp?.hasBothSides ? 0.35 : opp ? 0.18 : 0) +
+      (adjDen > 0 ? Math.min(0.2, adjDen * 0.2) : 0),
+    0.15,
+    1.0,
+  );
+
+  return { slope, confidence, archSlope };
+}
+
+export type PeerYawEntry = {
+  toothNumber: string;
+  /** 공통 교합평면 위에서의 근심 방향각(rad). */
+  angleRad: number;
+  /** 개별 회전 추정의 신뢰도(0.1~1.0). */
+  confidence: number;
+  /** 사분악 내 FDI 위치 번호(1~8). */
+  fdiPos: number;
+  /** 전치 여부. */
+  anterior: boolean;
+  /** 사용자가 postYawDeg를 명시적으로 지정한 경우 true(자동 조율에서 보호). */
+  locked?: boolean;
+};
+
+function wrapAngleRad(a: number): number {
+  let r = (a + Math.PI) % (Math.PI * 2);
+  if (r < 0) r += Math.PI * 2;
+  return r - Math.PI;
+}
+
+/**
+ * 같은 사분악 인접 어벗끼리 수평 회전각(yaw)이 크게 어긋나지 않게 부드럽게 조율한다.
+ * - 구치 인접 어벗(#16-#17 등)은 자연 악궁 곡률(약 3~5°) 안에서 비슷하게 맞춘다.
+ * - 신뢰도가 높은 치아 쪽으로 약한 치아(편측/말단)가 더 많이 따라간다.
+ * - 수동 회전(locked=true)은 덮어쓰지 않는다.
+ */
+export function harmonizeAdjacentAbutmentYaws(
+  entries: readonly PeerYawEntry[],
+): Map<string, number> {
+  const deltas = new Map<string, number>();
+  for (const e of entries) deltas.set(e.toothNumber, 0);
+  if (entries.length < 2) return deltas;
+
+  const sorted = [...entries].sort((a, b) => a.fdiPos - b.fdiPos);
+  const cur = sorted.map((e) => e.angleRad);
+  const conf = sorted.map((e) => clamp(e.confidence, 0.15, 1.0));
+  const locked = sorted.map((e) => Boolean(e.locked));
+
+  // 인접 쌍(FDI 1~2칸 이내)만 반복 완화한다.
+  for (let pass = 0; pass < 6; pass += 1) {
+    const next = [...cur];
+    for (let i = 0; i < sorted.length - 1; i += 1) {
+      const a = sorted[i]!;
+      const b = sorted[i + 1]!;
+      const step = Math.abs(b.fdiPos - a.fdiPos);
+      if (step < 1 || step > 2) continue;
+      // 대구치끼리(6-7, 7-8)는 악궁 곡률이 매우 완만해 4° 이내, 소구치-대구치는 6°, 전치는 12°까지 자연 곡률 허용.
+      const naturalAllowanceDeg =
+        a.anterior || b.anterior
+          ? 12 * step
+          : a.fdiPos >= 6 && b.fdiPos >= 6
+            ? 3.5 * step
+            : 5.0 * step;
+      const maxGapRad = naturalAllowanceDeg * DEG;
+      const diff = wrapAngleRad(cur[i + 1]! - cur[i]!);
+      const absDiff = Math.abs(diff);
+      // 자연 곡률 이내여도 한쪽 신뢰도가 낮으면 살짝(35%) 맞춰 주고, 초과하면 강하게(82%) 수렴시킨다.
+      const excess = Math.max(0, absDiff - maxGapRad);
+      const softPull = Math.min(absDiff, maxGapRad) * (Math.min(conf[i]!, conf[i + 1]!) < 0.55 ? 0.35 : 0.18);
+      const totalFix = excess * 0.85 + softPull;
+      if (totalFix <= 1e-4) continue;
+      const fixSigned = Math.sign(diff) * totalFix;
+
+      if (locked[i] && locked[i + 1]) continue;
+      if (locked[i]) {
+        next[i + 1] = wrapAngleRad(next[i + 1]! - fixSigned);
+      } else if (locked[i + 1]) {
+        next[i] = wrapAngleRad(next[i]! + fixSigned);
+      } else {
+        // 신뢰도가 낮은 쪽이 더 많이 양보한다.
+        const invA = 1 / conf[i]!;
+        const invB = 1 / conf[i + 1]!;
+        const shareA = invA / (invA + invB);
+        const shareB = 1 - shareA;
+        next[i] = wrapAngleRad(next[i]! + fixSigned * shareA);
+        next[i + 1] = wrapAngleRad(next[i + 1]! - fixSigned * shareB);
+      }
+    }
+    for (let i = 0; i < sorted.length; i += 1) cur[i] = next[i]!;
+  }
+
+  for (let i = 0; i < sorted.length; i += 1) {
+    const e = sorted[i]!;
+    if (e.locked) continue;
+    deltas.set(e.toothNumber, clamp(wrapAngleRad(cur[i]! - e.angleRad), -16 * DEG, 16 * DEG));
+  }
+  return deltas;
 }
 
 /**
@@ -502,10 +717,9 @@ export function pickCompactFunctionalU(args: {
   if (args.contactIsFunctionalTarget) {
     let target: number;
     if (archU != null && contactU != null && Math.abs(contactU - archU) <= 2.8) {
-      // 대합 교두 경사면 목표(contactU)와 같은 악 인접치 중심구 악궁(archU)을 함께 반영한다.
-      // 상악은 더 협측, 하악은 더 설측인 방향(교합 관계 부합 방향)에 가중치를 더 준다.
+      // 1순위 대합치 중심(contactU) + 악궁 곡선(archU): 대합치 중심을 우선한다.
       const functionalSide = sign * (contactU - archU) >= 0;
-      const wContact = functionalSide ? 0.65 : 0.45;
+      const wContact = functionalSide ? 0.72 : 0.58;
       target = archU * (1 - wContact) + contactU * wContact;
     } else if (archU != null) {
       target = archU;
@@ -678,4 +892,151 @@ export function clampLateralForCompactDiameter(
   if (lat - preferMm > slackMm) return { u, v };
   const k = preferMm / lat;
   return { u: u * k, v: v * k };
+}
+
+/**
+ * 양방향(협측 + / 설측 -, 근심 + / 원심 -) 대합·악궁 중심 이동과 포스트·크라운 벽 타협.
+ * 최소 벽은 절대 위반하지 않고, 적절 벽 구간만 서로 양보한다.
+ */
+export function resolveSignedPlacementTradeoff(args: {
+  targetOffsetMm: number;
+  posIdealLimitsMm: readonly number[];
+  posMinLimitsMm: readonly number[];
+  negIdealLimitsMm: readonly number[];
+  negMinLimitsMm: readonly number[];
+  yieldRatio?: number;
+}): number {
+  const raw = args.targetOffsetMm;
+  if (!Number.isFinite(raw) || Math.abs(raw) <= 1e-6) return 0;
+  if (raw > 0) {
+    return resolveAutoPlacementTradeoff({
+      archOffsetMm: raw,
+      idealLimitsMm: args.posIdealLimitsMm,
+      minLimitsMm: args.posMinLimitsMm,
+      yieldRatio: args.yieldRatio,
+    });
+  }
+  return -resolveAutoPlacementTradeoff({
+    archOffsetMm: -raw,
+    idealLimitsMm: args.negIdealLimitsMm,
+    minLimitsMm: args.negMinLimitsMm,
+    yieldRatio: args.yieldRatio,
+  });
+}
+
+/**
+ * 단독·복수 공통 로컬 치관 크기 스케일.
+ * 치종 표준(1.0)을 앵커로 두고 인접 자연치 폭 비율과 대합치 폭 비율을 모두 참고해
+ * 환자 고유 치아 크기 스케일(0.85~1.15)을 산출한다.
+ */
+export function blendLocalCrownSizeScale(args: {
+  adjacentNaturalRatios?: readonly number[];
+  opposingRatio?: number | null;
+}): number {
+  let num = 1.0 * 0.55;
+  let den = 0.55;
+  const adjValid = (args.adjacentNaturalRatios ?? []).filter(
+    (r) => Number.isFinite(r) && r >= 0.72 && r <= 1.32,
+  );
+  if (adjValid.length > 0) {
+    const meanAdj = adjValid.reduce((s, v) => s + v, 0) / adjValid.length;
+    const wAdj = adjValid.length >= 2 ? 0.6 : 0.42;
+    num += clamp(meanAdj, 0.84, 1.16) * wAdj;
+    den += wAdj;
+  }
+  if (
+    args.opposingRatio != null &&
+    Number.isFinite(args.opposingRatio) &&
+    args.opposingRatio >= 0.72 &&
+    args.opposingRatio <= 1.32
+  ) {
+    const wOpp = 0.42;
+    num += clamp(args.opposingRatio, 0.84, 1.16) * wOpp;
+    den += wOpp;
+  }
+  return clamp(num / den, 0.85, 1.15);
+}
+
+export type PeerSizeEntry = {
+  toothNumber: string;
+  /** 같은 부위(예: "molar", "premolar")끼리만 크기를 맞춘다. */
+  kind: string;
+  /** 사분악 내 FDI 위치(1~8). */
+  fdiPos: number;
+  /** 현재 개별 산출된 정규화 크기 배율(실제 평균 마진 반폭 / 표준 마진 반폭). */
+  normScale: number;
+  /** 물리 제약(스크류 벽 최소·커프 최소)에 의한 하한 배율. */
+  minNormScale: number;
+  /** 물리 제약(인접 경계 marginCap·크라운 최소 벽)에 의한 상한 배율. */
+  maxNormScale: number;
+  /** 사용자가 marginSizeScale / postWidthScale을 직접 지정한 경우 true(보호). */
+  locked?: boolean;
+};
+
+/**
+ * 같은 사분악·같은 부위(대구치끼리 등) 인접 어벗의 크기가 확 갈리지 않게 목표 배율을 조율한다.
+ * - 물리 상·하한([minNormScale, maxNormScale])은 절대 위반하지 않는다.
+ * - 수동 편집(locked=true) 치아는 건드리지 않고, 이웃이 그 크기를 참고한다.
+ */
+export function harmonizeAdjacentSameKindSizes(
+  entries: readonly PeerSizeEntry[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const e of entries) out.set(e.toothNumber, e.normScale);
+  if (entries.length < 2) return out;
+
+  // 같은 kind(예: molar끼리)로 묶어서 인접(FDI 1~2칸) 그룹을 만든다.
+  const byKind = new Map<string, PeerSizeEntry[]>();
+  for (const e of entries) {
+    const list = byKind.get(e.kind) ?? [];
+    list.push(e);
+    byKind.set(e.kind, list);
+  }
+
+  for (const group of byKind.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => a.fdiPos - b.fdiPos);
+    const cur = sorted.map((e) => e.normScale);
+
+    // 같은 부위 인접 어벗 간 정규화 크기 차이를 3% 이내(예: 대구치 Ø6.8 vs Ø6.6 수준)로 부드럽게 수렴시킨다.
+    const maxRelGap = 0.03;
+    for (let pass = 0; pass < 6; pass += 1) {
+      const next = [...cur];
+      for (let i = 0; i < sorted.length - 1; i += 1) {
+        const a = sorted[i]!;
+        const b = sorted[i + 1]!;
+        if (Math.abs(b.fdiPos - a.fdiPos) > 2) continue;
+        const diff = cur[i + 1]! - cur[i]!;
+        const absDiff = Math.abs(diff);
+        if (absDiff <= maxRelGap) continue;
+        const excess = absDiff - maxRelGap;
+        const fix = Math.sign(diff) * excess * 0.8;
+
+        if (a.locked && b.locked) continue;
+        if (a.locked) {
+          next[i + 1] = clamp(next[i + 1]! - fix, b.minNormScale, b.maxNormScale);
+        } else if (b.locked) {
+          next[i] = clamp(next[i]! + fix, a.minNormScale, a.maxNormScale);
+        } else {
+          // 각 치아가 목표로 움직일 수 있는 여유(물리 한도까지)에 비례해 양보한다.
+          const roomA = fix > 0 ? Math.max(0, a.maxNormScale - cur[i]!) : Math.max(0, cur[i]! - a.minNormScale);
+          const roomB = fix > 0 ? Math.max(0, cur[i + 1]! - b.minNormScale) : Math.max(0, b.maxNormScale - cur[i + 1]!);
+          const totalRoom = roomA + roomB;
+          if (totalRoom <= 1e-4) continue;
+          const shareA = roomA / totalRoom;
+          const shareB = roomB / totalRoom;
+          next[i] = clamp(next[i]! + fix * shareA, a.minNormScale, a.maxNormScale);
+          next[i + 1] = clamp(next[i + 1]! - fix * shareB, b.minNormScale, b.maxNormScale);
+        }
+      }
+      for (let i = 0; i < sorted.length; i += 1) cur[i] = next[i]!;
+    }
+
+    for (let i = 0; i < sorted.length; i += 1) {
+      const e = sorted[i]!;
+      if (e.locked) continue;
+      out.set(e.toothNumber, clamp(cur[i]!, e.minNormScale, e.maxNormScale));
+    }
+  }
+  return out;
 }
