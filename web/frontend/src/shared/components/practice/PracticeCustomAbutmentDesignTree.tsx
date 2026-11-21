@@ -8,6 +8,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -60,6 +61,26 @@ import { cn } from "@/shared/ui/cn";
 
 const headerBtn =
   "flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground";
+
+/** 어벗 정보 패널 순서. FDI 시계방향 18→11, 21→28, 38→31, 41→48. */
+export function abutmentInfoPanelSortKey(toothNumber: string): number {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  if (tens === 1) return 9 - ones;
+  if (tens === 2) return 8 + ones;
+  if (tens === 3) return 16 + (9 - ones);
+  return 24 + ones;
+}
+
+function sortAbutmentInfoPanelItems<T extends { toothNumber: string }>(
+  items: readonly T[],
+): T[] {
+  return [...items].sort(
+    (a, b) => abutmentInfoPanelSortKey(a.toothNumber) - abutmentInfoPanelSortKey(b.toothNumber),
+  );
+}
 
 export type AbutmentAxisSource = CustomAbutmentDesignMetrics["axisSource"];
 
@@ -1478,11 +1499,12 @@ export function PracticeCustomAbutmentDesignTree({
   onExpandedChange: (next: Record<string, boolean>) => void;
   className?: string;
 }) {
+  const orderedItems = useMemo(() => sortAbutmentInfoPanelItems(items), [items]);
   const primaryTooth = selectedTeeth[selectedTeeth.length - 1] ?? null;
-  const allOpen = items.length > 0 && items.every((it) => expanded[it.toothNumber]);
-  const allVisible = items.every((it) => visibleTeeth[it.toothNumber] !== false);
-  const anyScanbody = items.some((it) => shownScanbodies[it.toothNumber]);
-  const anyPredictedCrown = items.some((it) => shownPredictedCrowns[it.toothNumber]);
+  const allOpen = orderedItems.length > 0 && orderedItems.every((it) => expanded[it.toothNumber]);
+  const allVisible = orderedItems.every((it) => visibleTeeth[it.toothNumber] !== false);
+  const anyScanbody = orderedItems.some((it) => shownScanbodies[it.toothNumber]);
+  const anyPredictedCrown = orderedItems.some((it) => shownPredictedCrowns[it.toothNumber]);
   const editable = Boolean(onEditField);
 
   return (
@@ -1530,7 +1552,7 @@ export function PracticeCustomAbutmentDesignTree({
                 const targets =
                   selectedTeeth.length > 0
                     ? selectedTeeth
-                    : items.map((it) => it.toothNumber);
+                    : orderedItems.map((it) => it.toothNumber);
                 onRepickScanbody(targets);
               }}
             >
@@ -1557,7 +1579,7 @@ export function PracticeCustomAbutmentDesignTree({
             aria-expanded={allOpen}
             onClick={() =>
               onExpandedChange(
-                Object.fromEntries(items.map((it) => [it.toothNumber, !allOpen])),
+                Object.fromEntries(orderedItems.map((it) => [it.toothNumber, !allOpen])),
               )
             }
           >
@@ -1577,7 +1599,7 @@ export function PracticeCustomAbutmentDesignTree({
         </p>
       ) : null}
       <ul className="space-y-1 px-1.5 py-1.5">
-        {items.map((item) => {
+        {orderedItems.map((item) => {
           const tooth = item.toothNumber;
           const open = Boolean(expanded[tooth]);
           const visible = visibleTeeth[tooth] !== false;
@@ -1603,7 +1625,7 @@ export function PracticeCustomAbutmentDesignTree({
                 <button
                   type="button"
                   className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-left font-semibold text-foreground"
-                  title="Shift로 여러 개"
+                  title="클릭하면 이 어벗을 가운데로 확대합니다. Shift로 여러 개."
                   onClick={(e) => onSelect(tooth, e.shiftKey)}
                 >
                   #{tooth}

@@ -384,6 +384,8 @@ type DesignContext = {
 
 const VIEWER_PLAIN_BG = 0xe6e9ec;
 const FIT_MARGIN = 1.06;
+/** 치아 번호로 한 어벗을 맞출 때. 어벗이 화면을 채우되 가장자리에 붙지 않게. */
+const ABUTMENT_FOCUS_MARGIN = 1.45;
 const MARGIN_LINE_COLOR = 0x0891b2;
 const MARGIN_LINE_PX = 3.5;
 const PIVOT_MARKER_COLOR = 0xf59e0b;
@@ -1796,7 +1798,12 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [pivotArmed, status]);
 
   const fitCameraToTargets = useCallback(
-    (targets: THREE.Object3D[], viewDir?: THREE.Vector3, upDir?: THREE.Vector3) => {
+    (
+      targets: THREE.Object3D[],
+      viewDir?: THREE.Vector3,
+      upDir?: THREE.Vector3,
+      fitMargin = FIT_MARGIN,
+    ) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       const host = hostRef.current;
@@ -1874,7 +1881,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const halfW = Math.max((max.x - min.x) / 2, 2);
       let halfH = Math.max((max.y - min.y) / 2, 2);
       if (halfW / halfH > aspect) halfH = halfW / aspect;
-      halfH *= FIT_MARGIN;
+      halfH *= fitMargin;
 
       const mid = new THREE.Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, 0)
         .applyQuaternion(camera.quaternion)
@@ -2019,6 +2026,24 @@ export function PracticeCustomAbutmentPreviewDialog({
   };
 
   badgeClickRef.current = selectAbutments;
+
+  /** 보는 방향은 유지하고, 그 어벗만 작업 영역 가운데로 확대한다. */
+  const focusAbutmentInView = useCallback(
+    (toothNumber: string) => {
+      const mesh = abutmentMeshesRef.current.get(toothNumber);
+      if (!mesh) return;
+      setVisibleTeeth((prev) =>
+        prev[toothNumber] === false ? { ...prev, [toothNumber]: true } : prev,
+      );
+      fitCameraToTargets(
+        [mesh],
+        undefined,
+        cameraRef.current?.up.clone(),
+        ABUTMENT_FOCUS_MARGIN,
+      );
+    },
+    [fitCameraToTargets],
+  );
 
   /** 선택 피봇일 때 형상·선택이 바뀌면 중심을 다시 맞춘다. */
   useEffect(() => {
@@ -6138,7 +6163,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                       };
                       setExpandedTeeth(next);
                     }}
-                    onSelect={selectAbutments}
+                    onSelect={(tooth, additive) => {
+                      selectAbutments(tooth, additive);
+                      if (!additive) focusAbutmentInView(tooth);
+                    }}
                     onRegenerate={canEditDesign ? () => void regenerateDesigns() : undefined}
                     onRegenerateTooth={
                       canEditDesign ? (tooth) => void regenerateDesigns([tooth]) : undefined
