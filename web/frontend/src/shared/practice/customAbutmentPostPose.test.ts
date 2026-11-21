@@ -53,9 +53,17 @@ test("2mm 간격으로 이어진 악궁도 접선과 협설 위치를 유지한�
   assert.ok(Math.abs(fit.offsetU - 1.1) < 0.25);
 });
 
-test("하악은 악궁보다 약간 설측이다", () => {
-  const u = pickCompactFunctionalU({ jaw: "lower", archU: -0.5, contactU: 0.6 });
-  assert.equal(u, -0.9);
+test("하악은 악궁과 대합 B보다 약간 설측이다", () => {
+  const same = pickCompactFunctionalU({ jaw: "lower", archU: -0.5, contactU: -0.5 });
+  assert.ok(same != null && same < -0.75 && same > -0.95);
+  const oppBuccal = pickCompactFunctionalU({ jaw: "lower", archU: -0.5, contactU: 0.6 });
+  assert.ok(oppBuccal != null && oppBuccal < -0.3 && oppBuccal > -0.6);
+});
+
+test("상악은 대합 B가 협측에 있으면 설측에 갇히지 않고 대합 쪽으로 따라간다", () => {
+  const u = pickCompactFunctionalU({ jaw: "upper", archU: -0.3, contactU: 1.5, biasMm: 0.65 });
+  assert.ok(u != null);
+  assert.ok(u >= 1.4 && u <= 1.7);
 });
 
 test("대합치가 악궁에서 벗어나면 그 치아를 무시한다", () => {
@@ -166,7 +174,7 @@ test("돌아간 인접치(부정교합)의 인접면은 악궁과 어긋나면 �
 test("하악 임플란트가 악궁보다 설측에 있어도 악궁선 밖 설측으로 밀어내지 않는다", () => {
   const u = pickCompactFunctionalU({ jaw: "lower", archU: 0.8, contactU: 1.0, biasMm: 0.35 });
   assert.ok(u != null);
-  assert.ok(Math.abs(u - 0.45) < 1e-9);
+  assert.ok(u >= 0.4 && u <= 0.65);
 });
 
 test("상악 대구치는 악궁보다 약간 협측으로 둔다", () => {

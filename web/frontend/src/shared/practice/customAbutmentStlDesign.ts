@@ -4085,6 +4085,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             : vDistalJawMin;
 
       let archFitSucceeded = false;
+      let prevRotSlope = 0;
 
       for (let pass = 0; pass < 4; pass += 1) {
         const binMm = 2.0;
@@ -4222,23 +4223,53 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             oppArchOffsetU = oppLocal.offsetU;
             oppArchReady = true;
           }
-          if (crownPose) {
-            jawArchOffsetU = crownPose.offsetU;
+          if (crownPose && jawLocal) {
+            if (!crownPose.hasBothSides) {
+              // 편측 외삽은 오차가 크므로 포물선 악궁 중심을 우선한다.
+              jawArchOffsetU = jawLocal.offsetU;
+            } else {
+              const diff = Math.abs(crownPose.offsetU - jawLocal.offsetU);
+              if (diff > 1.0 && oppLocal) {
+                // 두 추정이 크게 갈리면 대합 악궁과 더 일관된 쪽을 우선한다.
+                const dJaw = Math.abs(jawLocal.offsetU - oppLocal.offsetU);
+                const dCrown = Math.abs(crownPose.offsetU - oppLocal.offsetU);
+                const wJaw = dJaw <= dCrown ? 0.78 : 0.22;
+                jawArchOffsetU = jawLocal.offsetU * wJaw + crownPose.offsetU * (1 - wJaw);
+              } else {
+                const wJaw = diff > 1.0 ? 0.72 : 0.55;
+                jawArchOffsetU = jawLocal.offsetU * wJaw + crownPose.offsetU * (1 - wJaw);
+              }
+            }
             archCenterReady = true;
           } else if (jawLocal) {
             jawArchOffsetU = jawLocal.offsetU;
+            archCenterReady = true;
+          } else if (crownPose) {
+            jawArchOffsetU = crownPose.offsetU;
             archCenterReady = true;
           }
         };
         if (crownPose && pass < 3 && Math.abs(crownPose.slope) >= Math.tan(0.8 * DEG)) {
           const maxRot = pass === 0 ? Math.tan(20 * DEG) : pass === 1 ? Math.tan(12 * DEG) : Math.tan(8 * DEG);
-          rotateBy(clamp(crownPose.slope, -maxRot, maxRot));
+          const rawStep = clamp(crownPose.slope, -maxRot, maxRot);
+          if (pass > 0 && prevRotSlope * rawStep < -1e-4) {
+            // 직전 패스와 부호가 뒤집히면(진동) 절반만 되돌리고 수렴한다.
+            rotateBy(rawStep * 0.45);
+            archFitSucceeded = true;
+            commitArchOffset();
+            break;
+          }
+          const dampedStep = pass === 0 ? rawStep * 0.8 : rawStep * 0.7;
+          rotateBy(dampedStep);
+          prevRotSlope = dampedStep;
           archFitSucceeded = true;
           continue;
         }
         if (!crownPose && pass < 2 && solvedJoint) {
           const maxRot = pass === 0 ? Math.tan(28 * DEG) : Math.tan(12 * DEG);
-          rotateBy(clamp(solvedJoint.slope, -maxRot, maxRot));
+          const step = clamp(solvedJoint.slope, -maxRot, maxRot);
+          rotateBy(step);
+          prevRotSlope = step;
           archFitSucceeded = true;
           continue;
         }
@@ -5152,8 +5183,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               ? 0.65
               : 0.45
             : tpl.kind === "molar"
-              ? 0.45
-              : 0.35,
+              ? 0.35
+              : 0.25,
       });
       if (pickedU != null) {
         // 협설 목표는 각도 상한까지 유지한다. 근원심 기울기는 남은 각도만 쓴다.
@@ -10489,8 +10520,70 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       rawTopExt[col] = ext;
       rawTopRho[col] = rho;
     }
-    const smoothTopExt = posterior ? rawTopExt : lowPassCircular(rawTopExt, 12);
+    const smoothTopExt = posterior
+      ? lowPassCircular(rawTopExt, 4).map((v, col) => Math.max(0, Math.min(v, rawTopExt[col]!)))
+      : lowPassCircular(rawTopExt, 12);
     const smoothTopRho = posterior ? rawTopRho : lowPassCircular(rawTopRho, 12);
+
+    // 구치부 윗면 라운드는 스크류 홀 쪽만 반경이 급격히 줄어들면 근·원심 중앙에 오목한 홈(땅콩형)이 생긴다.
+    // 전 둘레에서 축벽 상단 반경 s1에 대한 안전한 최대 필레 비율(rFillet / s1)의 공통 하한을 구해
+    // 윗면 평면 경계가 축벽과 닮은꼴인 매끈한 볼록 계란형(타원)을 유지하게 한다.
+    const posteriorUniformFilletRatio = (() => {
+      if (!posterior) return null;
+      let minRatio = Infinity;
+      const minFilletR = boreTopR + 0.32;
+      const minInnerS = 0.08;
+      for (let col = 0; col < ANGULAR_COLS; col += 1) {
+        const hEnd = postH[col]![POST_LEVELS]!;
+        const spineV = spineVByCol[col]!;
+        const sEnd = colRealSEnd[col]!;
+        const topDirU = colTopDirU[col]!;
+        const topDirV = colTopDirV[col]!;
+        const t0 = colT0[col]!;
+        const sin0 = Math.sin(t0);
+        const cos0 = Math.cos(t0);
+        const tan0 = sin0 / Math.max(cos0, 1e-4);
+        const maxAllowSpan = Math.max(0.03, sEnd - minInnerS - 0.015);
+        const maxExt = tan0 > 1e-4 ? (maxAllowSpan * 0.55) / tan0 : 10;
+        const ext = clamp(smoothTopExt[col]!, 0, maxExt);
+        const h1 = hEnd + ext;
+        const s1 = Math.max(minInnerS + 0.02, sEnd - tan0 * ext);
+        const maxRadialByS1 = Math.max(0.02, (s1 - minInnerS - 0.01) / Math.max(cos0, 1e-4));
+        const rho = clamp(smoothTopRho[col]!, 0.04, maxRadialByS1);
+        let radialRho = meanTopSEnd > 0.3 ? rho * (s1 / meanTopSEnd) : rho;
+        radialRho = Math.min(radialRho, maxRadialByS1, Math.max(0.04, s1 * 0.85));
+        const closestR = (useRadial: number): number => {
+          let best = Infinity;
+          for (let step = 0; step <= TOP_ROUND_STEPS; step += 1) {
+            const t = t0 + ((Math.PI / 2 - t0) * step) / TOP_ROUND_STEPS;
+            const sPos = s1 - useRadial * (cos0 - Math.cos(t));
+            const pt = add3(
+              c0,
+              add3(
+                scale3(frame.w, h1),
+                add3(scale3(frame.uLabial, topFaceCu + topDirU * sPos), scale3(frame.vSide, spineV + topDirV * sPos)),
+              ),
+            );
+            best = Math.min(best, Math.hypot(pt[0], pt[1]));
+          }
+          return best;
+        };
+        if (closestR(radialRho) < minFilletR && closestR(0) >= minFilletR) {
+          let lo = 0;
+          let hi = radialRho;
+          for (let it = 0; it < 14; it += 1) {
+            const mid = (lo + hi) * 0.5;
+            if (closestR(mid) >= minFilletR) lo = mid;
+            else hi = mid;
+          }
+          radialRho = lo;
+        }
+        const safeR = Math.max(0.02, Math.min(radialRho, maxRadialByS1));
+        const ratio = (safeR * cos0) / Math.max(s1, 0.2);
+        if (ratio < minRatio) minRatio = ratio;
+      }
+      return Number.isFinite(minRatio) ? clamp(minRatio, 0.04, 0.45) : null;
+    })();
 
     for (let col = 0; col < ANGULAR_COLS; col += 1) {
       const c = cols[col]!;
@@ -10619,7 +10712,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           radialRho = lo;
         }
       }
-      const rFillet = Math.max(0.02, Math.min(radialRho, maxRadialByS1));
+      const rFillet =
+        posteriorUniformFilletRatio != null
+          ? clamp((posteriorUniformFilletRatio * s1) / Math.max(cos0, 0.25), 0.02, Math.min(radialRho, maxRadialByS1))
+          : Math.max(0.02, Math.min(radialRho, maxRadialByS1));
       // 전치 절단 능선(spineHalfV > 0)에서는 원호 끝 반경을 일정 폭(minInnerS)의 볼록 스타디움으로 수렴시켜
       // postApex 팬 삼각형이 어느 열에서도 역전(180° 접힘)되지 않고 완벽한 평면으로 닫히게 한다.
       const innerTargetS = spineHalfV > 1e-4 ? minInnerS : s1 - rFillet * cos0;

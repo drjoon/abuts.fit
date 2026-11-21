@@ -281,9 +281,10 @@ export function proximalWallSlope(
 export function neighborCrownBlPose(
   points: readonly ArchCrownPoint[],
   archSlopeHint?: number | null,
-): { slope: number; offsetU: number } | null {
+): { slope: number; offsetU: number; hasBothSides: boolean } | null {
   const mesial = sideTooth(points, 1);
   const distal = sideTooth(points, -1);
+  const hasBothSides = Boolean(mesial && distal);
 
   let archSlope: number | null = archSlopeHint != null && Number.isFinite(archSlopeHint)
     ? clamp(archSlopeHint, -TAN_20, TAN_20)
@@ -335,13 +336,14 @@ export function neighborCrownBlPose(
     slope = clamp(archSlope, -TAN_20, TAN_20);
   }
 
-  return { slope, offsetU: offsetU ?? 0 };
+  return { slope, offsetU: offsetU ?? 0, hasBothSides };
 }
 
 /**
  * 악궁 연장선 근처에서 상악은 협측, 하악은 설측으로 둔다.
  * 대합 B가 그 악궁에서 많이 벗어나면 그 대합치는 쓰지 않는다.
- * 10mm를 넘길 만큼 먼 이동만 줄인다. 악궁 위의 위치는 임플란트 쪽으로 당기지 않는다.
+ * 상악에서 대합 B가 같은 악 악궁보다 협측에 있으면 상악이 설측에 갇히지 않도록 대합 B 쪽으로 충분히 따라간다.
+ * 하악은 같은 악 악궁과 대합 B(보다 약간 설측)를 균형 있게 맞춰 과도한 설측·협측 치우침을 막는다.
  */
 export function pickCompactFunctionalU(args: {
   jaw: "upper" | "lower";
@@ -356,10 +358,22 @@ export function pickCompactFunctionalU(args: {
   if (archU == null && contactU == null) return null;
 
   let target: number;
-  if (archU != null && contactU != null && Math.abs(contactU - archU) <= 2.4) {
-    const functionalDelta = sign * (contactU - archU);
-    const follow = functionalDelta > 0 ? Math.min(functionalDelta, 0.55) : 0;
-    target = archU + sign * Math.max(slight, follow);
+  if (archU != null && contactU != null && Math.abs(contactU - archU) <= 2.6) {
+    const archTarget = archU + sign * slight;
+    if (args.jaw === "upper") {
+      if (contactU > archU) {
+        // 상악: 대합 하악 B 컨택보다 설측으로 들어가지 않고 약간 협측에 놓이도록 대합 쪽으로 충분히 이동한다.
+        const oppFollow = archU * 0.1 + (contactU + 0.25) * 0.9;
+        target = Math.max(archTarget, oppFollow);
+      } else {
+        // 대합이 더 설측이면 상악이 설측으로 끌려가지 않고 같은 악 악궁 기준을 유지한다.
+        target = archTarget;
+      }
+    } else {
+      // 하악: 같은 악 악궁과 대합 상악 B 컨택(보다 약간 설측)을 균형 있게 맞춘다.
+      const oppTarget = contactU - Math.min(0.3, slight);
+      target = archTarget * 0.6 + oppTarget * 0.4;
+    }
   } else if (archU != null) {
     target = archU + sign * slight;
   } else {
