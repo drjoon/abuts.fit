@@ -9096,13 +9096,24 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const availNegVWrap = Math.min(capAntNegVInit, Math.max(mExtNegV, maxAnatHalfMd * params.marginSizeScale));
       const needPosVWrap = Math.max(vScrewTop, vScrewBase) + screwSafeR + estAntDropMd + MIN_MARGIN_SHOULDER_MM;
       const needNegVWrap = Math.max(-vScrewTop, -vScrewBase) + screwSafeR + estAntDropMd + MIN_MARGIN_SHOULDER_MM;
+      // 편측 0.1°는 필요 마진을 약 0.02mm만 바꾼다. 그 경계에서 감싸기가 뒤집히면
+      // 최대 직경이 1mm 넘게 갈리고, 감싸면 설측 사면이 사라지며 놓치면 스크류 입구가 깃이 된다.
+      const wrapTaperSlackMm = 0.1;
       const canWrapBl =
-        reqWrapLabMargin <= maxAnatHalfBl * params.marginSizeScale + 0.35 &&
-        Math.max(uScrewTop, uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <= availPosUWrap + 0.22 &&
-        Math.max(-uScrewTop, -uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <= availNegUWrap + 0.22;
+        reqWrapLabMargin <= maxAnatHalfBl * params.marginSizeScale + 0.35 + wrapTaperSlackMm &&
+        Math.max(uScrewTop, uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <=
+          availPosUWrap + 0.22 + wrapTaperSlackMm &&
+        Math.max(-uScrewTop, -uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <=
+          availNegUWrap + 0.22 + wrapTaperSlackMm;
       const canWrapMd =
-        needPosVWrap <= availPosVWrap + (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04) &&
-        needNegVWrap <= availNegVWrap + (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04);
+        needPosVWrap <=
+          availPosVWrap +
+            wrapTaperSlackMm +
+            (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04) &&
+        needNegVWrap <=
+          availNegVWrap +
+            wrapTaperSlackMm +
+            (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04);
       const reqWrapMdMargin =
         Math.max(Math.abs(vScrewTop), Math.abs(vScrewBase)) +
         screwSafeR +
@@ -9902,10 +9913,19 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const uLabBase = pBaseCu + finalAntBaseBl;
         const uLabTop = pTopCu + tLab;
         const labWallSlope = (uLabBase - uLabTop) / Math.max(0.36, hIncisalTop - topRoundMm - hLabStart);
+        // 견치는 사면이 홀을 열어도 입구 벽을 남긴다. 필렛은 안쪽으로만 깎으므로 축벽이 이 한계 안으로 들어가면 깃이 된다.
+        // 절치는 딥바이트 설측 삭제가 이 한계보다 우선이라 여기서 막지 않는다.
+        const holdScrewMouth = tpl.kind === "canine";
+        const screwMouthWall = boreTopR + Math.max(ANTERIOR_SCREW_WALL_MM, MIN_FRACTURE_SAFE_POST_WALL_MM + 0.18);
+        const uLinMouth = uScrewTop - screwMouthWall;
+        const uLabMouth = uScrewTop + screwMouthWall;
+        // 견치 설측 축벽은 설정 테이퍼의 일부만 쓴다. 나머지는 사면이 입구 벽까지 더 가파르게 깎는다.
+        const linWallSlope = holdScrewMouth ? linCollarSlope * 0.42 : linCollarSlope;
         const linCollarAt = (hVal: number) => {
           const dhLin = Math.max(0, hVal - hLinStart);
           const cuAt = pBaseCu + cuSlopeU * dhLin;
-          return cuAt - Math.max(0.58, finalAntBaseBl - linCollarSlope * dhLin);
+          const tapered = cuAt - Math.max(0.58, finalAntBaseBl - linWallSlope * dhLin);
+          return holdScrewMouth ? Math.min(tapered, uLinMouth) : tapered;
         };
         const uBevelStart = linCollarAt(hBevelStart);
         const bevelRun = Math.max(0.25, hIncisalTop - hBevelStart);
@@ -9915,8 +9935,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const hCrownTop = hIncisalTop + Math.max(tpl.crownOcclusalMm, needIncisalMm);
         const crownLabU = (hVal: number) =>
           naturalCrownR(frame.uLabial, hVal, hLabMargin, labR0, hCrownTop);
-        const uLabWallAt = (hVal: number) =>
-          uLabBase - labWallSlope * Math.max(0, hVal - hLabStart);
+        const uLabWallAt = (hVal: number) => {
+          const tapered = uLabBase - labWallSlope * Math.max(0, hVal - hLabStart);
+          return holdScrewMouth ? Math.max(tapered, uLabMouth) : tapered;
+        };
 
         // 순측 사면(기공소 양면 경사 스타일): 명시값 0은 사면 없음, 자동(기본)은 절치·순측경사 전치에서 치경 유지칼라 위부터 순면 경사를 준다.
         const explicitLabialRaw = !lockBasePass ? args.explicitParams?.postLabialBevelMm : undefined;
@@ -9992,21 +10014,29 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         if (wrapAnteriorScrew360) {
           uLabBevelTop = Math.max(uLabBevelTop, uScrewTop + screwSafeR * 0.92);
         } else {
-          // 스크류 사면 개구 전치에서는 홀 외벽에 막히지 않고 설측 한계(딥바이트 설측 접촉 포함) 대비 최소 절단 폭만 보장한다.
+          // 스크류 사면 개구에서는 홀 외벽에 막히지 않고 최소 절단 폭만 보장한다.
+          // 견치는 설측 축벽이 아니라 입구 벽을 기준으로 해, 순측 사면이 설측 사면 예산을 가져가지 않게 한다.
           const deepBiteLinFloor =
             incisorDeepBite && incisorPalatalContactU > -1.8
               ? incisorPalatalContactU + 1.12
               : -Infinity;
+          const lingualRef = holdScrewMouth
+            ? uLinMouth
+            : Math.max(linCollarAt(hIncisalTop), hardLinCapU - 0.35, deepBiteLinFloor);
           const minAllowedLabTop =
-            Math.max(linCollarAt(hIncisalTop), hardLinCapU - 0.35, deepBiteLinFloor) + minIncisalBl;
+            (holdScrewMouth ? Math.max(lingualRef, hardLinCapU - 0.35, deepBiteLinFloor) : lingualRef) +
+            minIncisalBl;
           uLabBevelTop = Math.max(uLabBevelTop, minAllowedLabTop);
         }
+        if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
         uLabBevelTop = Math.min(uLabBevelTop, uLabWallAt(hIncisalTop) - 0.12);
+        if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
         if (labBevelActive && uLabBevelTop > uLabBevel0 - 0.12) {
           uLabBevelTop = Math.min(
             uLabBevelTop,
             uLabBevel0 - Math.max(0.2, labBevelRun * Math.tan(9.5 * DEG)),
           );
+          if (holdScrewMouth) uLabBevelTop = Math.max(uLabBevelTop, uLabMouth);
           if (wrapAnteriorScrew360) {
             uLabBevelTop = Math.max(uLabBevelTop, uScrewTop + screwSafeR * 0.85);
           }
@@ -10023,34 +10053,45 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
                 clamp(labWallFromMargin * 0.42, 0.9, Math.max(0.9, maxLabFromMargin)) * 10,
               ) / 10;
 
-        // 순측 사면이 깎인 실제 상단 순측 위치(effLabTop)를 기준으로 설측 사면 목표 두께를 맞춘다.
-        const effLabTop = labBevelActive ? uLabBevelTop : uLabTop;
-        const wantIncisalBl =
-          tpl.kind === "incisor"
-            ? clamp(1.48 * blScale * params.postWidthScale * incisorShovelScale, 1.24, 1.78)
-            : clamp(2.15 * blScale * params.postWidthScale, 1.65, 2.6);
-        let uTargetBevelTop = hasExplicitLingualBevel
-          ? Math.max(hardLinCapU, effLabTop - wantIncisalBl)
-          : Math.max(pTopCu - tLin, hardLinCapU, effLabTop - wantIncisalBl);
-        if (incisorDeepBite && incisorPalatalContactU > -1.8) {
-          uTargetBevelTop = Math.max(uTargetBevelTop, incisorPalatalContactU + 0.95);
+        const uCollarTop = linCollarAt(hIncisalTop);
+        let uBevelTop: number;
+        if (holdScrewMouth) {
+          // 설측 끝은 싱귤럼 각으로 정하고 스크류 입구 벽에서 멈춘다.
+          // 순측 사면이 안쪽으로 들어와도 이 끝을 같이 후퇴시키지 않는다.
+          const lingualAngleDeg = clamp(cingulumPlan.angleDeg, 18, 36);
+          let uTargetBevelTop = Math.max(
+            pTopCu - tLin,
+            hardLinCapU,
+            uBevelStart + Math.tan(lingualAngleDeg * DEG) * bevelRun,
+          );
+          const uLinStop = wrapAnteriorScrew360 ? Math.min(uLinMouth, uScrewTop - screwSafeR) : uLinMouth;
+          uTargetBevelTop = Math.min(uTargetBevelTop, uLinStop, uBevelStart + Math.tan(56 * DEG) * bevelRun);
+          uBevelTop = Math.max(Math.min(uTargetBevelTop, uLinStop), Math.min(uCollarTop, uLinStop));
+        } else {
+          // 절치는 순측 사면이 깎인 상단을 기준으로 설측 두께를 맞추고, 딥바이트는 설측 접촉 밖으로 뺀다.
+          const effLabTop = labBevelActive ? uLabBevelTop : uLabTop;
+          const wantIncisalBl =
+            tpl.kind === "incisor"
+              ? clamp(1.48 * blScale * params.postWidthScale * incisorShovelScale, 1.24, 1.78)
+              : clamp(2.15 * blScale * params.postWidthScale, 1.65, 2.6);
+          let uTargetBevelTop = hasExplicitLingualBevel
+            ? Math.max(hardLinCapU, effLabTop - wantIncisalBl)
+            : Math.max(pTopCu - tLin, hardLinCapU, effLabTop - wantIncisalBl);
+          if (incisorDeepBite && incisorPalatalContactU > -1.8) {
+            uTargetBevelTop = Math.max(uTargetBevelTop, incisorPalatalContactU + 0.95);
+          }
+          if (wrapAnteriorScrew360) {
+            uTargetBevelTop = Math.min(uTargetBevelTop, uScrewTop - screwSafeR);
+          }
+          const uMaxBevelTop = Math.min(
+            effLabTop - minIncisalBl,
+            uBevelStart + Math.tan(56 * DEG) * bevelRun,
+          );
+          uBevelTop = clamp(uTargetBevelTop, uCollarTop, Math.max(uCollarTop, uMaxBevelTop));
         }
-        if (wrapAnteriorScrew360) {
-          uTargetBevelTop = Math.min(uTargetBevelTop, uScrewTop - screwSafeR);
-        }
-        const uMinBevelTop = linCollarAt(hIncisalTop);
-        const uMaxBevelTop = Math.min(
-          effLabTop - minIncisalBl,
-          uBevelStart + Math.tan(56 * DEG) * bevelRun,
-        );
-        const uBevelTop = clamp(
-          uTargetBevelTop,
-          uMinBevelTop,
-          Math.max(uMinBevelTop, uMaxBevelTop),
-        );
         const bevelSlope = (uBevelTop - uBevelStart) / bevelRun;
 
-        const linSlopeJump = Math.max(0.05, Math.abs(bevelSlope - linCollarSlope));
+        const linSlopeJump = Math.max(0.05, Math.abs(bevelSlope - linWallSlope));
         const wKneeLin = clamp(
           0.32 * Math.min(Math.max(0, hBevelStart - hLinStart - 0.04), bevelRun * 0.45) * linSlopeJump,
           0.025,
