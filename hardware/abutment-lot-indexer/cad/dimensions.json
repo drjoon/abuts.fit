@@ -1,0 +1,53 @@
+{
+  "chainPitchMm": 6.35,
+  "linksPerBar": 24,
+  "barPitchMm": 152.39999999999998,
+  "barCount": 6,
+  "chainLengthMm": 914.3999999999999,
+  "sprocketTeeth": 16,
+  "pitchDiameterMm": 32.549,
+  "outsideDiameterMm": 35.734,
+  "centerDistanceMm": 406.072,
+  "outerSpanMm": 438.621,
+  "frameWidthMm": 500.0,
+  "shaftHeightMm": 70.0,
+  "hexAfMm": 2.5,
+  "pocketAfMm": 2.6,
+  "pocketDepthMm": 0.8,
+  "puckHeightMm": 8.0,
+  "scopeMm": [
+    106.0,
+    152.0,
+    106.0
+  ],
+  "workingDistanceMm": 40.0,
+  "stations": [
+    {
+      "name": "load",
+      "x": 437.04,
+      "pitchZ": 86.27,
+      "aimZ": 106.47
+    },
+    {
+      "name": "photo",
+      "x": 284.64,
+      "pitchZ": 86.27,
+      "aimZ": 106.47
+    },
+    {
+      "name": "unload",
+      "x": 132.24,
+      "pitchZ": 86.27,
+      "aimZ": 106.47
+    }
+  ],
+  "assemblyBboxMm": [
+    0.0,
+    -84.0,
+    0.0,
+    500.0,
+    193.3,
+    159.47
+  ],
+  "stlTriangles": 6536
+}
