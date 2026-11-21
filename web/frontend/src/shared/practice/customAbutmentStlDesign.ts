@@ -251,6 +251,8 @@ export type CustomAbutmentDesignMetrics = {
   supragingivalRaisedForStrength?: boolean;
   /** 스크류 홀 둘레 최소 포스트 벽 두께(mm). */
   minPostWallThicknessMm?: number;
+  /** 픽스쳐가 너무 가까워 인접 어벗 쪽 크라운 최소 두께를 다 못 띄운 양(mm). 없으면 생략. */
+  peerGapShortMm?: number;
   /** 크라운 두께 확보를 위해 필요한 인접치 인접면 미세 삭제(편측 ≤0.2mm) 목록. */
   adjacentEnameloplasty?: AdjacentEnameloplastyGuide[];
 };
@@ -600,6 +602,86 @@ function compressOuterRadius(
     positions[i] = positions[i]! * s;
     positions[i + 1] = positions[i + 1]! * s;
   }
+}
+
+/** dot(p, n) ≥ offset 쪽 반공간을 reachMm 범위까지 덮는 닫힌 직육면체(바깥 법선) 삼각형 수프. */
+function halfSpaceBoxSoup(n: Vec3, offset: number, reachMm: number): Float32Array {
+  const t1 = norm3(cross3(n, Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+  const t2 = cross3(n, t1);
+  const corner = (a: number, b: number, c: number): Vec3 =>
+    add3(add3(scale3(n, offset + a * reachMm * 2), scale3(t1, b * reachMm)), scale3(t2, c * reachMm));
+  const center = scale3(n, offset + reachMm);
+  const faces: Array<[Vec3, Vec3, Vec3, Vec3]> = [
+    [corner(0, -1, -1), corner(0, 1, -1), corner(0, 1, 1), corner(0, -1, 1)],
+    [corner(1, -1, -1), corner(1, 1, -1), corner(1, 1, 1), corner(1, -1, 1)],
+    [corner(0, -1, -1), corner(1, -1, -1), corner(1, -1, 1), corner(0, -1, 1)],
+    [corner(0, 1, -1), corner(1, 1, -1), corner(1, 1, 1), corner(0, 1, 1)],
+    [corner(0, -1, -1), corner(1, -1, -1), corner(1, 1, -1), corner(0, 1, -1)],
+    [corner(0, -1, 1), corner(1, -1, 1), corner(1, 1, 1), corner(0, 1, 1)],
+  ];
+  const out: number[] = [];
+  for (const [a, b, c, d] of faces) {
+    const faceNormal = cross3(sub3(b, a), sub3(c, a));
+    const faceCenter = scale3(add3(add3(a, b), add3(c, d)), 0.25);
+    const outward = dot3(faceNormal, sub3(faceCenter, center)) > 0;
+    const quad = outward ? [a, b, c, a, c, d] : [a, c, b, a, d, c];
+    for (const p of quad) out.push(p[0], p[1], p[2]);
+  }
+  return new Float32Array(out);
+}
+
+/**
+ * 같은 악 인접 어벗과 겹치지 않게 잘라낼 분리면(픽스쳐 로컬). 두 어벗이 같은 면을 쓴다.
+ * - 면: 두 픽스쳐 원점의 중점을 지나고, 평균 픽스쳐 축에 수직인 원점 연결 방향이 법선.
+ * - 각 어벗은 면에서 근원심 크라운 최소 두께만큼 물러나고, 수렴 픽스쳐는 체결 깊이만큼 더 띄운다.
+ * - 스크류 벽·커넥션 쪽으로는 크라운 두께를 양보하지만, 면을 넘어 겹치지는 않는다. 양보한 양은 shortMm.
+ */
+function resolvePeerSeparationPlanes(args: {
+  fixture: MatchedScanbodyFixture;
+  neighbors: readonly MatchedScanbodyFixture[];
+  crownMinMm: number;
+  zLo: number;
+  zHi: number;
+  connectionTopZ: number;
+  connectionKeepR: number;
+  boreRadiusAtZ: (z: number) => number;
+}): Array<{ toothNumber: string; normal: Vec3; offset: number; shortMm: number }> {
+  const pose = args.fixture.fixturePose;
+  const ownOrigin = pose.origin as Vec3;
+  const ownAxis = norm3(pose.axis as Vec3);
+  const engageMm = Math.max(2.5, args.fixture.connectionSpec.l2Mm ?? 2.75);
+  const planes: Array<{ toothNumber: string; normal: Vec3; offset: number; shortMm: number }> = [];
+  for (const nb of args.neighbors) {
+    if (nb.toothNumber === args.fixture.toothNumber || nb.jaw !== args.fixture.jaw) continue;
+    let nbAxis = norm3(nb.fixturePose.axis as Vec3);
+    if (dot3(nbAxis, ownAxis) < 0) nbAxis = scale3(nbAxis, -1);
+    const avgAxis = norm3(add3(ownAxis, nbAxis));
+    const rel = sub3(nb.fixturePose.origin as Vec3, ownOrigin);
+    const lateral = sub3(rel, scale3(avgAxis, dot3(rel, avgAxis)));
+    const spacing = Math.hypot(...lateral);
+    if (spacing < 1 || spacing > 16) continue;
+    const nWorld = scale3(lateral, 1 / spacing);
+    const insertShiftMm = Math.max(0, dot3(ownAxis, nWorld)) * engageMm;
+    let inset = Math.max(args.crownMinMm, insertShiftMm - args.crownMinMm);
+    const normal = norm3(worldDirToFixtureLocal(nWorld, pose));
+    const midOffset = dot3(worldPointToFixtureLocal(add3(ownOrigin, scale3(rel, 0.5)), pose), normal);
+    let shortMm = 0;
+    const steps = 32;
+    for (let s = 0; s <= steps; s += 1) {
+      const z = args.zLo + ((args.zHi - args.zLo) * s) / steps;
+      const needR =
+        z <= args.connectionTopZ ? args.connectionKeepR : args.boreRadiusAtZ(z) + MIN_POST_WALL_MM;
+      shortMm = Math.max(shortMm, needR - (midOffset - inset - z * normal[2]));
+    }
+    inset = Math.max(0, inset - shortMm);
+    planes.push({
+      toothNumber: nb.toothNumber,
+      normal,
+      offset: midOffset - inset,
+      shortMm: Math.max(0, args.crownMinMm - inset),
+    });
+  }
+  return planes;
 }
 
 /** 2D 점 집합의 엄밀 볼록 외측 포락선(반시계 방향 CCW, Andrew's Monotone Chain). */
@@ -12510,7 +12592,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     bodyColumns.push(pts);
   }
 
-  const bodySoup = stitchPolarColumns(
+  let bodySoup = stitchPolarColumns(
     bodyColumns,
     true,
     bodyColumns[0]!.length - 3,
@@ -12635,10 +12717,64 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   }
 
-  let zTopMax = -Infinity;
-  for (let i = 2; i < bodySoup.length; i += 3) zTopMax = Math.max(zTopMax, bodySoup[i]!);
   const mouthSurfaceZ = postApex[2];
   const finalBore = resolveScrewChannelProfile(conn, mouthSurfaceZ);
+
+  // 인접 어벗과 한 곳이라도 겹치면 픽스쳐에 끼울 수 없다. 위 단계의 인접 한계는 양보될 수 있어 마지막에 공통 분리면으로 잘라 낸다.
+  let peerGapShortMm = 0;
+  {
+    const planes = resolvePeerSeparationPlanes({
+      fixture,
+      neighbors: args.neighbors ?? [],
+      crownMinMm: crownMdMinMm,
+      zLo: zMinLocal,
+      zHi: zMaxLocal,
+      connectionTopZ: coneTopZ,
+      connectionKeepR,
+      boreRadiusAtZ: (z) => finalBore.radiusAtZ(z),
+    });
+    const crossing = planes.filter((pl) => {
+      for (let i = 0; i < bodySoup.length; i += 3) {
+        const d =
+          bodySoup[i]! * pl.normal[0] + bodySoup[i + 1]! * pl.normal[1] + bodySoup[i + 2]! * pl.normal[2];
+        if (d > pl.offset + 1e-3) return true;
+      }
+      return false;
+    });
+    if (crossing.length > 0) {
+      bodySoup = await subtractTriangleSoups(
+        bodySoup,
+        crossing.map((pl) => halfSpaceBoxSoup(pl.normal, pl.offset, 40)),
+        `#${fixture.toothNumber} 커스텀어벗 인접 분리`,
+      );
+      for (const pl of crossing) {
+        peerGapShortMm = Math.max(peerGapShortMm, pl.shortMm);
+        for (let i = 0; i < marginLoopLocal.length; i += 3) {
+          const over =
+            marginLoopLocal[i]! * pl.normal[0] +
+            marginLoopLocal[i + 1]! * pl.normal[1] +
+            marginLoopLocal[i + 2]! * pl.normal[2] -
+            pl.offset;
+          if (over <= 0) continue;
+          marginLoopLocal[i] = marginLoopLocal[i]! - pl.normal[0] * over;
+          marginLoopLocal[i + 1] = marginLoopLocal[i + 1]! - pl.normal[1] * over;
+          marginLoopLocal[i + 2] = marginLoopLocal[i + 2]! - pl.normal[2] * over;
+        }
+      }
+      maxOuterR = 0;
+      zMinLocal = Infinity;
+      zMaxLocal = -Infinity;
+      for (let i = 0; i < bodySoup.length; i += 3) {
+        const z = bodySoup[i + 2]!;
+        if (z < zMinLocal) zMinLocal = z;
+        if (z > zMaxLocal) zMaxLocal = z;
+        maxOuterR = Math.max(maxOuterR, Math.hypot(bodySoup[i]!, bodySoup[i + 1]!));
+      }
+    }
+  }
+
+  let zTopMax = -Infinity;
+  for (let i = 2; i < bodySoup.length; i += 3) zTopMax = Math.max(zTopMax, bodySoup[i]!);
   const cutter = screwChannelSoup(finalBore, zBot - 1, zTopMax + 3);
   const localPositions = await subtractTriangleSoups(
     bodySoup,
@@ -12930,6 +13066,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       crownOverPostMm: round2(meanCrownCuspH - dot3(sub3(postApex, c0), frame.w)),
       ...(supragingivalRaisedForStrength ? { supragingivalRaisedForStrength: true } : {}),
       ...(minPostWallThicknessMm != null ? { minPostWallThicknessMm } : {}),
+      ...(peerGapShortMm > 0.01 ? { peerGapShortMm: round2(peerGapShortMm) } : {}),
       ...(adjacentEnameloplasty.length > 0 ? { adjacentEnameloplasty } : {}),
     },
   });
