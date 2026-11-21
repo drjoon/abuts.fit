@@ -121,8 +121,10 @@ import {
   customAbutmentDesignCacheKey,
   preferFresherCustomAbutmentDesign,
   normalizeCustomAbutmentChat,
+  parseCustomAbutmentDesignSyncMeta,
   pickCustomAbutmentChat,
-  publishCustomAbutmentSnapshot,
+  classifyCustomAbutmentDesignPublish,
+  publishCustomAbutmentDesignMeta,
   readCustomAbutmentChat,
   readCustomAbutmentDesign,
   saveCustomAbutmentDesignPaintRemote,
@@ -131,6 +133,8 @@ import {
   writeCustomAbutmentDesign,
   type CachedAlignedScan,
   type CustomAbutmentChatTurn,
+  type CustomAbutmentDesignSyncMeta,
+  type CustomAbutmentDesignSyncTooth,
   type CustomAbutmentPaintRecord,
   type CustomAbutmentPaintView,
 } from "@/shared/practice/customAbutmentDesignCache";
@@ -157,7 +161,6 @@ import {
 import { getDesignControls, matchDesignKey } from "@/shared/practice/labDesignControls";
 import {
   detectAndMatchScanbodiesOnJaw,
-  locateNominalToothSlot,
   matchScanbodyNearPoint,
   splitScanByScanbodies,
   fixturePoseToMatrix4,
@@ -1104,6 +1107,14 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 치아를 처음 제안할 때 넘긴 조정값. 리셋은 여기로만 돌아간다. */
   const proposalInputRef = useRef<Record<string, Partial<CustomAbutmentDesignParams>>>({});
   const ignoreEditCommitRef = useRef(false);
+  /** 서버가 인정한 마지막 저장 시각. 이보다 오래된 쓰기는 거절된다. */
+  const designSavedAtRef = useRef(0);
+  const pendingRemoteMetaRef = useRef<CustomAbutmentDesignSyncMeta | null>(null);
+  const applyRemoteDesignMetaRef = useRef<(meta: CustomAbutmentDesignSyncMeta) => Promise<void>>(
+    async () => {},
+  );
+  const publishAgainRef = useRef(false);
+  const publishRunningRef = useRef(false);
   const viewerPrefsRef = useRef<CustomAbutmentViewerPrefs>({
     ...DEFAULT_CUSTOM_ABUTMENT_VIEWER_PREFS,
     expandedTeeth: {},
@@ -2050,94 +2061,155 @@ export function PracticeCustomAbutmentPreviewDialog({
     );
   }, []);
 
-  /** 지금 디자인·조정값·대화를 저장한다. 실패해도 화면은 그대로 둔다. */
-  const persistDesign = useCallback((chat?: readonly ChatTurn[]) => {
+  const syncToothFromDesign = (d: DesignedCustomAbutment): CustomAbutmentDesignSyncTooth => {
+    const gumballEdit =
+      directEditRef.current?.editOf(d.toothNumber) ??
+      savedGumballEditRef.current[d.toothNumber] ??
+      null;
+    const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
+    const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+    const proposalInput = proposalInputRef.current[d.toothNumber];
+    return {
+      toothNumber: d.toothNumber,
+      fileName: d.fileName,
+      fixture: d.fixture,
+      overrides: designContextRef.current?.overrides[d.toothNumber] ?? {},
+      params: d.params,
+      metrics: d.metrics,
+      ...(gumballEdit ? { gumballEdit } : {}),
+      ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
+      ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
+      ...(proposalInput ? { proposalInput } : {}),
+    };
+  };
+
+  const cacheCurrentDesign = async (savedAt: number) => {
+    if (isLabViewerRef.current || !(savedAt > 0)) return;
+    const ctx = designContextRef.current;
+    const list = designedListRef.current;
+    if (!ctx || list.length === 0) return;
+    const scope = chatScopeRef.current;
+    const turns = normalizeCustomAbutmentChat(chatTurnsRef.current.filter((t) => !t.pending));
+    const savedChat = turns.length > 0 ? turns : scope ? await readCustomAbutmentChat(scope) : [];
+    await writeCustomAbutmentDesign({
+      key: ctx.cacheKey,
+      version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+      fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+      savedAt,
+      alignedScans: ctx.alignedScans,
+      teeth: list.map((d) => {
+        const gumballEdit =
+          directEditRef.current?.editOf(d.toothNumber) ??
+          savedGumballEditRef.current[d.toothNumber] ??
+          null;
+        const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
+        const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+        return {
+          toothNumber: d.toothNumber,
+          fileName: d.fileName,
+          fixture: d.fixture,
+          overrides: ctx.overrides[d.toothNumber] ?? {},
+          params: d.params,
+          metrics: d.metrics,
+          baselineMetrics: baselineMetricsRef.current[d.toothNumber] ?? d.metrics,
+          baselineParams: baselineParamsRef.current[d.toothNumber] ?? d.params,
+          ...(gumballEdit ? { gumballEdit } : {}),
+          ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
+          ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
+          proposalInput: proposalInputRef.current[d.toothNumber] ?? {},
+          editedInfoFields: [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])],
+          localPositions: toArrayBuffer(d.localPositions),
+          ...(d.solidBodyLocalPositions?.length
+            ? { solidBodyLocalPositions: toArrayBuffer(d.solidBodyLocalPositions) }
+            : {}),
+          crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
+          marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
+          ...(d.enameloplastyLocalPositions?.length
+            ? { enameloplastyLocalPositions: toArrayBuffer(d.enameloplastyLocalPositions) }
+            : {}),
+        };
+      }),
+      chat: savedChat,
+    });
+  };
+
+  const scheduleDesignMetaPublish = () => {
+    publishAgainRef.current = true;
+    if (publishRunningRef.current) return;
+    publishRunningRef.current = true;
+    void (async () => {
+      let acceptedAt = 0;
+      let spins = 0;
+      try {
+        while (publishAgainRef.current && spins < 5) {
+          spins += 1;
+          publishAgainRef.current = false;
+          if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
+          const transferId = transferIdRef.current;
+          const list = designedListRef.current;
+          const token = String(authToken || "").trim();
+          if (!token || !transferId || list.length === 0) return;
+          const result = classifyCustomAbutmentDesignPublish(
+            await publishCustomAbutmentDesignMeta(token, transferId, {
+              version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+              baseSavedAt: designSavedAtRef.current,
+              teeth: list.map(syncToothFromDesign),
+            }),
+          );
+          if (result.kind === "stale") {
+            publishAgainRef.current = false;
+            acceptedAt = 0;
+            const design = result.design;
+            const next = designRunChainRef.current.then(
+              () => applyRemoteDesignMetaRef.current(design),
+              () => applyRemoteDesignMetaRef.current(design),
+            );
+            designRunChainRef.current = next.catch((err) => {
+              console.warn("[custom-abutment] remote design apply failed", err);
+            });
+            await next;
+            return;
+          }
+          if (result.kind !== "ok") {
+            acceptedAt = 0;
+            continue;
+          }
+          if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
+          acceptedAt = result.savedAt;
+        }
+        if (acceptedAt > 0) await cacheCurrentDesign(acceptedAt);
+      } catch (err) {
+        console.warn("[custom-abutment] design meta publish failed", err);
+      } finally {
+        publishRunningRef.current = false;
+        if (publishAgainRef.current) scheduleDesignMetaPublish();
+      }
+    })();
+  };
+
+  /** 지금 디자인·조정값을 서버에 올리고, 서버가 인정한 시각으로만 이 브라우저에 남긴다. */
+  const persistDesign = useCallback((
+    chat?: readonly ChatTurn[],
+    opts?: { publish?: boolean; savedAt?: number },
+  ) => {
     if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
     const turns = normalizeCustomAbutmentChat(
       (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
     );
     if (turns.length > 0) persistChat(turns);
-    const ctx = designContextRef.current;
-    if (!ctx) return;
-    const list = designedListRef.current;
-    const scope = chatScopeRef.current;
-    void (async () => {
-      const savedChat =
-        turns.length > 0 ? turns : scope ? await readCustomAbutmentChat(scope) : [];
-      await writeCustomAbutmentDesign({
-        key: ctx.cacheKey,
-        version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-        fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-        savedAt: Date.now(),
-        alignedScans: ctx.alignedScans,
-        teeth: list.map((d) => {
-          const gumballEdit =
-            directEditRef.current?.editOf(d.toothNumber) ??
-            savedGumballEditRef.current[d.toothNumber] ??
-            null;
-          const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
-          const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
-          return {
-            toothNumber: d.toothNumber,
-            fileName: d.fileName,
-            fixture: d.fixture,
-            overrides: ctx.overrides[d.toothNumber] ?? {},
-            params: d.params,
-            metrics: d.metrics,
-            baselineMetrics: baselineMetricsRef.current[d.toothNumber] ?? d.metrics,
-            baselineParams: baselineParamsRef.current[d.toothNumber] ?? d.params,
-            ...(gumballEdit ? { gumballEdit } : {}),
-            ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
-            ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
-            proposalInput: proposalInputRef.current[d.toothNumber] ?? {},
-            editedInfoFields: [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])],
-            localPositions: toArrayBuffer(d.localPositions),
-            ...(d.solidBodyLocalPositions?.length
-              ? { solidBodyLocalPositions: toArrayBuffer(d.solidBodyLocalPositions) }
-              : {}),
-            crownLocalPositions: toArrayBuffer(d.crownLocalPositions),
-            marginLoopLocal: toArrayBuffer(d.marginLoopLocal),
-            ...(d.enameloplastyLocalPositions?.length
-              ? { enameloplastyLocalPositions: toArrayBuffer(d.enameloplastyLocalPositions) }
-              : {}),
-          };
-        }),
-        chat: savedChat,
-      });
-      const transferId = transferIdRef.current;
-      if (transferId && list.length > 0) {
-        publishCustomAbutmentSnapshot(String(authToken || ""), transferId, {
-          version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-          fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-          teeth: list.map((d) => {
-            const gumballEdit =
-              directEditRef.current?.editOf(d.toothNumber) ??
-              savedGumballEditRef.current[d.toothNumber] ??
-              null;
-            const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
-            const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
-            return {
-              toothNumber: d.toothNumber,
-              fileName: d.fileName,
-              fixture: d.fixture,
-              overrides: ctx.overrides[d.toothNumber] ?? {},
-              params: d.params,
-              metrics: d.metrics,
-              ...(gumballEdit ? { gumballEdit } : {}),
-              ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
-              ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
-              stlBlob: d.stlBlob,
-              crownLocalPositions: d.crownLocalPositions,
-              marginLoopLocal: d.marginLoopLocal,
-              ...(d.enameloplastyLocalPositions?.length
-                ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
-                : {}),
-            };
-          }),
-          chat: savedChat,
-        });
+    if (!designContextRef.current || designedListRef.current.length === 0) return;
+    const publish = opts?.publish !== false;
+    if (!publish) {
+      const savedAt = opts?.savedAt && opts.savedAt > 0 ? opts.savedAt : designSavedAtRef.current;
+      if (savedAt > 0) {
+        void cacheCurrentDesign(savedAt).catch((err) =>
+          console.warn("[custom-abutment] design cache write failed", err),
+        );
       }
-    })().catch((err) => console.warn("[custom-abutment] design cache write failed", err));
+      return;
+    }
+    scheduleDesignMetaPublish();
   }, [authToken, persistChat]);
 
   const applyGumballMetrics = useCallback((summary: AbutmentEditSummary) => {
@@ -2170,6 +2242,167 @@ export function PracticeCustomAbutmentPreviewDialog({
     delete next.postYawDeg;
     return next;
   };
+
+  const applyRemoteDesignMeta = useCallback(
+    async (meta: CustomAbutmentDesignSyncMeta) => {
+      if (meta.savedAt > 0 && meta.savedAt <= designSavedAtRef.current) return;
+      const ctx = designContextRef.current;
+      if (!ctx || !sceneRef.current || meta.teeth.length === 0) {
+        const pending = pendingRemoteMetaRef.current;
+        if (!pending || meta.savedAt >= (pending.savedAt || 0)) pendingRemoteMetaRef.current = meta;
+        return;
+      }
+      if (meta.mode === "confirmed" || meta.mode === "manual") setRemoteMode(meta.mode);
+      if (meta.choice) {
+        setCancelDeadlineAt(
+          meta.choice.cancelDeadlineAt ? String(meta.choice.cancelDeadlineAt) : null,
+        );
+        setGracePromoteAt(meta.choice.gracePromoteAt ? String(meta.choice.gracePromoteAt) : null);
+        setLabCheckedAt(meta.choice.labCheckedAt ? String(meta.choice.labCheckedAt) : null);
+      }
+      ignoreEditCommitRef.current = true;
+      directEditRef.current?.cancelGesture();
+      const kept = new Set(meta.teeth.map((row) => row.toothNumber));
+      try {
+        const fixtures = meta.teeth.map((row) => row.fixture);
+        const pending: Array<{
+          next: DesignedCustomAbutment;
+          rowOverrides: Partial<CustomAbutmentDesignParams>;
+          restoredGumball: ReturnType<typeof normalizeAbutmentEdit>;
+          proposalInput?: Partial<CustomAbutmentDesignParams>;
+        }> = [];
+        for (const row of meta.teeth) {
+          const jaw = row.fixture.jaw;
+          const jawGeo = ctx.jawGeometry[jaw];
+          if (!jawGeo) continue;
+          let rowOverrides = stripDirectEditShiftOverrides(
+            parseCustomAbutmentParamOverrides(row.overrides),
+          );
+          if ((rowOverrides.postTaperLink ?? 1) >= 0.5) delete rowOverrides.postTaperDeg;
+          const restoredGumball = normalizeAbutmentEdit(row.gumballEdit);
+          if (restoredGumball && row.gumballBaseParams) {
+            rowOverrides = retainLiveGumballParams(
+              rowOverrides,
+              parseCustomAbutmentParamOverrides(row.gumballBaseParams),
+              restoredGumball,
+              {},
+            );
+          }
+          try {
+            const next = await designCustomAbutmentStl({
+              fixture: row.fixture,
+              jawGeometry: jawGeo,
+              opposingGeometry: jaw === "upper" ? ctx.jawGeometry.lower : ctx.jawGeometry.upper,
+              neighbors: fixtures.filter((fixture) => fixture.jaw === jaw),
+              toothWorks: ctx.allToothWorks,
+              params: {
+                ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                ...rowOverrides,
+              },
+              explicitParams: rowOverrides,
+              logicRules: logicRulesRef.current,
+              patientName: ctx.patientName,
+            });
+            pending.push({
+              next,
+              rowOverrides,
+              restoredGumball,
+              ...(row.proposalInput ? { proposalInput: row.proposalInput } : {}),
+            });
+          } catch (err) {
+            console.warn("[custom-abutment] remote design rebuild failed", row.toothNumber, err);
+          }
+        }
+        if (pending.length === 0) return;
+        const built = pending.map((row) => row.next);
+        const builtIds = new Set(built.map((row) => row.toothNumber));
+        directEditRef.current?.cancelGesture();
+        for (const row of pending) {
+          const toothNumber = row.next.toothNumber;
+          ctx.overrides[toothNumber] = row.rowOverrides;
+          if (row.proposalInput) proposalInputRef.current[toothNumber] = { ...row.proposalInput };
+          if (row.restoredGumball) {
+            gumballMetricBaseRef.current[toothNumber] = { ...row.next.metrics };
+            gumballParamBaseRef.current[toothNumber] = { ...row.next.params };
+            savedGumballEditRef.current[toothNumber] = row.restoredGumball;
+          } else {
+            delete gumballMetricBaseRef.current[toothNumber];
+            delete gumballParamBaseRef.current[toothNumber];
+            delete savedGumballEditRef.current[toothNumber];
+          }
+          delete labSourceStlRef.current[toothNumber];
+          const choice = candidateChoicesRef.current[toothNumber];
+          if (choice) {
+            delete candidateChoicesRef.current[toothNumber];
+            disposeOtherCandidateGeometries(choice, null);
+          }
+          removeDesignFromScene(toothNumber);
+          addDesignToScene(row.next);
+          if (row.restoredGumball) directEditRef.current?.setEdit(toothNumber, row.restoredGumball);
+          else directEditRef.current?.clear([toothNumber]);
+        }
+        for (const prev of [...designedListRef.current]) {
+          if (builtIds.has(prev.toothNumber) || kept.has(prev.toothNumber)) continue;
+          removeDesignFromScene(prev.toothNumber);
+          directEditRef.current?.clear([prev.toothNumber]);
+          delete ctx.overrides[prev.toothNumber];
+          delete proposalInputRef.current[prev.toothNumber];
+        }
+        const list = [
+          ...built,
+          ...designedListRef.current.filter(
+            (row) => kept.has(row.toothNumber) && !builtIds.has(row.toothNumber),
+          ),
+        ];
+        designedListRef.current = list;
+        ctx.fixtures = list.map((row) => row.fixture);
+        setDesignedList(list);
+        setVisibleTeeth((prev) => {
+          const next: Record<string, boolean> = {};
+          for (const row of list) next[row.toothNumber] = prev[row.toothNumber] !== false;
+          return next;
+        });
+        const still = new Set(list.map((row) => row.toothNumber));
+        if (selectedTeethRef.current.some((tooth) => !still.has(tooth))) {
+          const nextSel = selectedTeethRef.current.filter((tooth) => still.has(tooth));
+          selectedTeethRef.current = nextSel;
+          setSelectedTeeth(nextSel);
+        }
+        directEditRef.current?.sync({ quiet: true });
+        directEditRef.current?.tick();
+        labGeometryTouchedRef.current = true;
+        if (meta.savedAt > designSavedAtRef.current) designSavedAtRef.current = meta.savedAt;
+        const session = scanbodyPickRef.current;
+        if (session) {
+          const left = session.jobs.filter((job) => !kept.has(job.toothNumber));
+          if (left.length === 0) {
+            scanbodyPickRef.current = null;
+            setStatus((prev) => (prev.kind === "pick" ? { kind: "ready" } : prev));
+          } else {
+            session.jobs = left;
+            setStatus({ kind: "pick", toothNumber: left[0]!.toothNumber, phase: "aim" });
+          }
+        }
+      } finally {
+        ignoreEditCommitRef.current = false;
+      }
+    },
+    [addDesignToScene, disposeOtherCandidateGeometries, removeDesignFromScene],
+  );
+  applyRemoteDesignMetaRef.current = applyRemoteDesignMeta;
+
+  const enqueueRemoteDesignMeta = useCallback((raw: unknown) => {
+    const meta = parseCustomAbutmentDesignSyncMeta(raw);
+    if (!meta) return;
+    if (meta.updatedBy && meta.updatedBy === authUserIdRef.current) return;
+    if (meta.savedAt > 0 && meta.savedAt <= designSavedAtRef.current) return;
+    const run = () => applyRemoteDesignMetaRef.current(meta);
+    const next = designRunChainRef.current.then(run, run);
+    designRunChainRef.current = next.catch((err) => {
+      console.warn("[custom-abutment] remote design apply failed", err);
+    });
+  }, []);
+
   const rememberAbutmentEdit = useCallback(
     (summary: AbutmentEditSummary) => {
       const design = designedListRef.current.find((row) => row.toothNumber === summary.tooth);
@@ -3072,7 +3305,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [clearPivot, clearSceneObjects, hostEl, open, pickPivotAt]);
 
   useEffect(() => {
-    directEditRef.current?.sync();
+    directEditRef.current?.sync({ quiet: true });
   }, [designedList]);
 
   // 스캔 로드 → (저장본 복원 | 스캔바디 인식·정합 → 커스텀어벗 디자인) → 씬 배치
@@ -3346,6 +3579,21 @@ export function PracticeCustomAbutmentPreviewDialog({
         const cached = readOnly
           ? serverDesign
           : preferFresherCustomAbutmentDesign(localCached, serverDesign);
+        const serverAt = Number(serverDesign?.savedAt) || 0;
+        if (serverAt > designSavedAtRef.current) designSavedAtRef.current = serverAt;
+        const rebuildFromMeta = Boolean(
+          cached?.teeth.some(
+            (row) =>
+              row.regenFromMeta ||
+              (row.localPositions?.byteLength ?? 0) < 36 ||
+              Boolean(row.gumballEdit),
+          ),
+        );
+        const versionMismatch = Boolean(
+          remote?.design &&
+            (remote.design.version !== CUSTOM_ABUTMENT_DESIGN_VERSION ||
+              remote.design.fitVersion !== CUSTOM_ABUTMENT_FIT_VERSION),
+        );
         proposalInputRef.current = {};
         for (const row of cached?.teeth ?? []) {
           const saved = row.proposalInput;
@@ -3398,7 +3646,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           } else if (hasWorkScans) {
             // 작업 스캔은 이미 정렬된 월드 좌표이므로 alignedScans가 비어 있어도 정합을 재사용한다.
             restored = true;
-          } else if (cached.designFresh || isLabViewer) {
+          } else if (!rebuildFromMeta && (cached.designFresh || isLabViewer)) {
             meshRestore = true;
           }
         }
@@ -3421,6 +3669,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             };
           });
         }
+        if (rebuildFromMeta && jawScans.length > 0) restored = true;
 
         const frame = estimateDentalFrame(
           jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
@@ -3478,7 +3727,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         const [loadedRules] = await Promise.all([logicPromise, anatomyPromise]);
         logicRulesRef.current = loadedRules;
         if (cancelled) return;
-        if (restored && cached && !cached.designFresh) {
+        if (restored && cached && (!cached.designFresh || rebuildFromMeta)) {
           // 정합은 그대로 쓰고 형상만 새 규칙으로 다시 만든다.
           redesignedFromFit = true;
           const curPreference = await preferencePromise;
@@ -3550,6 +3799,23 @@ export function PracticeCustomAbutmentPreviewDialog({
               gumballParamBaseRef.current[row.toothNumber] = { ...freshBuilt.params };
               directEditRef.current?.setEdit(row.toothNumber, restoredGumball);
               builtAbutments.push(freshBuilt);
+            } else if (rebuildFromMeta && cached.designFresh) {
+              builtAbutments.push(
+                await designCustomAbutmentStl({
+                  fixture: row.fixture,
+                  jawGeometry: jawGeo,
+                  opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
+                  neighbors: fixtures.filter((f) => f.jaw === jaw),
+                  toothWorks: curAllToothWorks,
+                  params: {
+                    ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                    ...rowOverrides,
+                  },
+                  explicitParams: rowOverrides,
+                  logicRules: logicRulesRef.current,
+                  patientName: curPatientName,
+                }),
+              );
             } else {
               const freshCands = await designCustomAbutmentCandidates({
                 fixture: row.fixture,
@@ -3864,64 +4130,10 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
 
-        // 저장본에 없는 치아, 또는 옆 치아 슬롯에 붙어 있는 치아는 다시 찍게 한다.
-        // 그렇지 않으면 화면이 바로 확정되고 #36이 #35 자리에 남은 채로 안내가 사라진다.
-        if (!readOnly && (restored || meshRestore) && !cancelled && frame) {
-          const slotCenter = new Map<string, [number, number, number]>();
-          for (const tw of curToothWorks) {
-            const parsed = parseFdiTooth(tw.toothNumber);
-            const geo = parsed?.jaw === "upper" ? upperPrimary : parsed?.jaw === "lower" ? lowerPrimary : null;
-            if (!parsed || !geo) continue;
-            const slot = locateNominalToothSlot({
-              geometry: geo,
-              frame,
-              toothNumber: tw.toothNumber,
-              allowPartialArch: true,
-            });
-            if (slot) slotCenter.set(tw.toothNumber, slot.center);
-          }
-          const misplaced = new Set<string>();
-          for (const designed of builtAbutments) {
-            const own = slotCenter.get(designed.toothNumber);
-            if (!own) continue;
-            const top = designed.fixture.scanbodyTop;
-            const dist = (center: readonly [number, number, number]) =>
-              Math.hypot(top[0] - center[0], top[1] - center[1], top[2] - center[2]);
-            const ownD = dist(own);
-            for (const [other, center] of slotCenter) {
-              if (other === designed.toothNumber) continue;
-              const otherFdi = parseFdiTooth(other);
-              const ownFdi = parseFdiTooth(designed.toothNumber);
-              if (!otherFdi || !ownFdi || otherFdi.jaw !== ownFdi.jaw || otherFdi.digits[0] !== ownFdi.digits[0]) {
-                continue;
-              }
-              if (dist(center) + 2.5 < ownD) misplaced.add(designed.toothNumber);
-            }
-          }
-          if (misplaced.size > 0) {
-            const kept: DesignedCustomAbutment[] = [];
-            for (const designed of builtAbutments) {
-              if (!misplaced.has(designed.toothNumber)) {
-                kept.push(designed);
-                continue;
-              }
-              const staleChoice = candidateChoicesRef.current[designed.toothNumber];
-              if (staleChoice) {
-                delete candidateChoicesRef.current[designed.toothNumber];
-                for (const cand of staleChoice.candidates) {
-                  if (cand.design === designed) continue;
-                  cand.design.worldGeometry.dispose();
-                  cand.design.predictedCrownWorldGeometry.dispose();
-                  cand.design.enameloplastyWorldGeometry?.dispose();
-                }
-              }
-              designed.worldGeometry.dispose();
-              designed.predictedCrownWorldGeometry.dispose();
-              designed.enameloplastyWorldGeometry?.dispose();
-            }
-            builtAbutments.length = 0;
-            builtAbutments.push(...kept);
-          }
+        // 저장된 픽스처는 슬롯 휴리스틱으로 빼지 않는다.
+        // 확정된 치아까지 다시 찍게 되고, 모달을 닫으면 그 빠진 치아가 서버 디자인을 덮어 쓴다.
+        // 저장본에 없는 치아만 스캔바디를 다시 찍게 한다.
+        if (!readOnly && (restored || meshRestore) && !cancelled) {
           const builtTeeth = new Set(builtAbutments.map((d) => d.toothNumber));
           const missing = curToothWorks.filter((tw) => !builtTeeth.has(tw.toothNumber));
           if (missing.length > 0) {
@@ -4117,18 +4329,25 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
         } else {
           setStatus({ kind: "ready" });
-          const remoteNeedsPublish =
-            !remote?.hasStl ||
-            !remote?.design ||
-            remote.design.version !== CUSTOM_ABUTMENT_DESIGN_VERSION ||
-            remote.design.fitVersion !== CUSTOM_ABUTMENT_FIT_VERSION;
-          if (
+          const pendingRemote = pendingRemoteMetaRef.current;
+          const pendingNewer = Boolean(
+            pendingRemote && pendingRemote.savedAt > designSavedAtRef.current,
+          );
+          const shouldPublish =
+            !pendingNewer &&
             builtAbutments.length > 0 &&
             Object.keys(candidateChoicesRef.current).length === 0 &&
-            (remoteNeedsPublish || redesignedFromFit || (!restored && !serverMeshRestore))
-          ) {
+            (versionMismatch ||
+              (!rebuildFromMeta &&
+                (redesignedFromFit || (!restored && !serverMeshRestore))));
+          if (shouldPublish) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           }
+        }
+        const pendingRemote = pendingRemoteMetaRef.current;
+        if (pendingRemote && pendingRemote.savedAt > designSavedAtRef.current) {
+          pendingRemoteMetaRef.current = null;
+          enqueueRemoteDesignMeta(pendingRemote);
         }
 
         window.requestAnimationFrame(() => {
@@ -4542,6 +4761,17 @@ export function PracticeCustomAbutmentPreviewDialog({
     });
   }, [open, transferIdParam]);
 
+  // 상대가 조정값을 저장하면 메시 없이 받아, 이쪽 스캔 위에서 형상을 다시 만든다.
+  useEffect(() => {
+    if (!open || !transferIdParam) return;
+    return onAppEvent((evt) => {
+      if (evt.type !== "practice:custom-abutment-design") return;
+      const ev = evt.data as { transferId?: string } | null;
+      if (!ev || ev.transferId !== transferIdParam) return;
+      enqueueRemoteDesignMeta(ev);
+    });
+  }, [enqueueRemoteDesignMeta, open, transferIdParam]);
+
   useEffect(() => {
     return () => window.clearTimeout(paintSaveTimerRef.current);
   }, []);
@@ -4828,20 +5058,31 @@ export function PracticeCustomAbutmentPreviewDialog({
           patientName: patientName || ctx?.patientName || "",
           version: CUSTOM_ABUTMENT_DESIGN_VERSION,
           fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-          teeth: list.map((d) => ({
-            toothNumber: d.toothNumber,
-            fileName: d.fileName,
-            fixture: d.fixture,
-            overrides: ctx?.overrides[d.toothNumber] ?? {},
-            params: d.params,
-            metrics: d.metrics,
-            stlBlob: d.stlBlob,
-            crownLocalPositions: d.crownLocalPositions,
-            marginLoopLocal: d.marginLoopLocal,
-            ...(d.enameloplastyLocalPositions?.length
-              ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
-              : {}),
-          })),
+          teeth: list.map((d) => {
+            const gumballEdit =
+              directEditRef.current?.editOf(d.toothNumber) ??
+              savedGumballEditRef.current[d.toothNumber] ??
+              null;
+            const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
+            const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+            return {
+              toothNumber: d.toothNumber,
+              fileName: d.fileName,
+              fixture: d.fixture,
+              overrides: ctx?.overrides[d.toothNumber] ?? {},
+              params: d.params,
+              metrics: d.metrics,
+              ...(gumballEdit ? { gumballEdit } : {}),
+              ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
+              ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
+              stlBlob: d.stlBlob,
+              crownLocalPositions: d.crownLocalPositions,
+              marginLoopLocal: d.marginLoopLocal,
+              ...(d.enameloplastyLocalPositions?.length
+                ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+                : {}),
+            };
+          }),
         });
 
         if (!res.ok) {
@@ -4915,20 +5156,31 @@ export function PracticeCustomAbutmentPreviewDialog({
           version: CUSTOM_ABUTMENT_DESIGN_VERSION,
           fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
           ...(reuseExisting ? { existingS3: sources } : {}),
-          teeth: list.map((d) => ({
-            toothNumber: d.toothNumber,
-            fileName: d.fileName,
-            fixture: d.fixture,
-            overrides: ctx?.overrides[d.toothNumber] ?? {},
-            params: d.params,
-            metrics: d.metrics,
-            stlBlob: d.stlBlob,
-            crownLocalPositions: d.crownLocalPositions,
-            marginLoopLocal: d.marginLoopLocal,
-            ...(d.enameloplastyLocalPositions?.length
-              ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
-              : {}),
-          })),
+          teeth: list.map((d) => {
+            const gumballEdit =
+              directEditRef.current?.editOf(d.toothNumber) ??
+              savedGumballEditRef.current[d.toothNumber] ??
+              null;
+            const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
+            const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+            return {
+              toothNumber: d.toothNumber,
+              fileName: d.fileName,
+              fixture: d.fixture,
+              overrides: ctx?.overrides[d.toothNumber] ?? {},
+              params: d.params,
+              metrics: d.metrics,
+              ...(gumballEdit ? { gumballEdit } : {}),
+              ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
+              ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
+              stlBlob: d.stlBlob,
+              crownLocalPositions: d.crownLocalPositions,
+              marginLoopLocal: d.marginLoopLocal,
+              ...(d.enameloplastyLocalPositions?.length
+                ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+                : {}),
+            };
+          }),
         });
         if (!res.ok) {
           toast({

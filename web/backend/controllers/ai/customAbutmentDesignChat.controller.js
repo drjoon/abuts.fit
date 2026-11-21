@@ -37,6 +37,7 @@ import {
   syncRelatedRequestOwnershipToAcceptingLab,
 } from "../../services/practiceTransferProduction.service.js";
 import { emitAppEventToUser } from "../../socket.js";
+import { isStaleDesignWrite, toDesignSyncMeta } from "../../services/customAbutmentDesignSync.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
   DESIGN_ROUTE_PLATFORM,
@@ -251,6 +252,9 @@ function snapshotTeeth(raw, transferId) {
       ...(row?.gumballBaseMetrics && typeof row.gumballBaseMetrics === "object"
         ? { gumballBaseMetrics: row.gumballBaseMetrics }
         : {}),
+      ...(row?.proposalInput && typeof row.proposalInput === "object"
+        ? { proposalInput: row.proposalInput }
+        : {}),
     };
     const s3Key = String(row?.s3Key || "").trim();
     const crownS3Key = String(row?.crownS3Key || "").trim();
@@ -270,7 +274,11 @@ function snapshotTeeth(raw, transferId) {
     const crownLocalPositions = snapshotBuffer(row?.crownLocalPositions);
     const marginLoopLocal = snapshotBuffer(row?.marginLoopLocal);
     const enameloplastyLocal = snapshotMargin(row?.enameloplastyLocal);
-    if (!localPositions || !crownLocalPositions || !marginLoopLocal) continue;
+    // 실시간 동기화는 픽스처·조정값만 온다. 메시가 없어도 치아를 남긴다.
+    if (!localPositions || !crownLocalPositions || !marginLoopLocal) {
+      teeth.push(base);
+      continue;
+    }
     teeth.push({
       ...base,
       localPositions,
@@ -705,7 +713,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
 }
 
 /**
- * 의뢰자 프리뷰 저장. 치과 본인만 쓴다.
+ * 의뢰 프리뷰 저장. 치과·기공소가 조정값 메타를 공유한다. 메시는 확정 때 따로 올린다.
  * @route PUT /api/ai/custom-abutment-design-snapshot
  */
 export async function saveCustomAbutmentDesignSnapshot(req, res) {
@@ -734,12 +742,34 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
     );
     const teeth = validated.filter(Boolean);
     const transfer = await PracticeTransfer.findOne({ transferId })
-      .select({ "production.customAbutmentPreview": 1 })
+      .select({
+        transferId: 1,
+        practiceUserId: 1,
+        practiceBusinessAnchorId: 1,
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        "production.customAbutmentPreview": 1,
+      })
       .lean();
     const prev = transfer?.production?.customAbutmentPreview || {};
+    if (teeth.length > 0 && isStaleDesignWrite(prev.savedAt, req.body?.baseSavedAt)) {
+      const current = toDesignSyncMeta({
+        ...prev,
+        updatedBy: prev.updatedBy ? String(prev.updatedBy) : "",
+      });
+      return res.status(409).json({
+        success: false,
+        code: "stale",
+        message: "상대가 먼저 저장한 디자인이 있습니다.",
+        data: current,
+      });
+    }
+    const savedAt = Date.now();
+    const updatedBy = req.user?._id ? String(req.user._id) : "";
     const next = {
       ...prev,
-      savedAt: Date.now(),
+      savedAt,
+      updatedBy,
       chat: chat.length > 0 ? chat : snapshotChat(prev.chat),
     };
     if (req.body?.paint && typeof req.body.paint === "object") {
@@ -763,10 +793,57 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       { transferId },
       { $set: { "production.customAbutmentPreview": next } },
     );
-    return res.json({ success: true, data: { saved: true } });
+    res.json({ success: true, data: { saved: true, savedAt } });
+    if (teeth.length > 0 && transfer?._id) {
+      void emitCustomAbutmentDesignSync(transfer, {
+        savedAt,
+        updatedBy,
+        version: next.version,
+        fitVersion: next.fitVersion,
+        teeth: next.teeth,
+      }).catch((err) => console.warn("[AI] design sync emit failed", err));
+    }
+    return;
   } catch (error) {
     console.error("[AI] saveCustomAbutmentDesignSnapshot error", error);
     return res.status(500).json({ success: false, message: "디자인을 저장하지 못했습니다." });
+  }
+}
+
+async function transferPartyUserIds(transferDoc) {
+  const anchorIds = [
+    String(transferDoc?.practiceBusinessAnchorId || "").trim(),
+    String(transferDoc?.targetLabAnchorId || "").trim(),
+    String(transferDoc?.assigneeLabAnchorId || "").trim(),
+  ].filter((id) => Types.ObjectId.isValid(id));
+  const userIdSet = new Set();
+  if (transferDoc?.practiceUserId && Types.ObjectId.isValid(String(transferDoc.practiceUserId))) {
+    userIdSet.add(String(transferDoc.practiceUserId));
+  }
+  if (anchorIds.length > 0) {
+    const peers = await User.find({
+      businessAnchorId: { $in: anchorIds.map((id) => new Types.ObjectId(id)) },
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    for (const peer of peers) {
+      if (peer?._id) userIdSet.add(String(peer._id));
+    }
+  }
+  return [...userIdSet];
+}
+
+async function emitCustomAbutmentDesignSync(transferDoc, source) {
+  const meta = toDesignSyncMeta(source);
+  if (!transferDoc?._id || !meta) return;
+  const payload = {
+    transferId: String(transferDoc.transferId || "").trim(),
+    ...meta,
+  };
+  const userIds = await transferPartyUserIds(transferDoc);
+  for (const uid of userIds) {
+    emitAppEventToUser(uid, "practice:custom-abutment-design", payload);
   }
 }
 
@@ -1033,6 +1110,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
     const userOid = new Types.ObjectId(userId);
     const updatedRequests = [];
     let cancelDeadlineAt = null;
+    let confirmedDesignSync = null;
     let handoffReleased = false;
     let handoffClaimed = false;
     const shellIdsBeforeEnsure = new Set(
@@ -1194,6 +1272,7 @@ export async function confirmCustomAbutmentDesign(req, res) {
         version: Number(req.body?.version) || Number(prevPreview.version) || 0,
         fitVersion: Number(req.body?.fitVersion) || Number(prevPreview.fitVersion) || 0,
         savedAt: Date.now(),
+        updatedBy: userId,
         confirmedAt: now,
         confirmedBy: userOid,
         teeth: validTeeth,
@@ -1205,6 +1284,20 @@ export async function confirmCustomAbutmentDesign(req, res) {
       cancelDeadlineAt = labRevision
         ? transferDoc.production?.abutmentCancelDeadlineAt || null
         : abutmentDesignGraceDeadline(now);
+      const labCheckedAt = transferDoc.production?.labDesignConfirmedAt || null;
+      confirmedDesignSync = {
+        savedAt: nextPreview.savedAt,
+        updatedBy: userId,
+        version: nextPreview.version,
+        fitVersion: nextPreview.fitVersion,
+        teeth: validTeeth,
+        mode: "confirmed",
+        choice: {
+          cancelDeadlineAt,
+          gracePromoteAt: !labRevision ? cancelDeadlineAt : transferDoc.production?.abutmentGracePromoteAt || null,
+          labCheckedAt,
+        },
+      };
       const productionSet = {
         "production.customAbutmentPreview": nextPreview,
       };
@@ -1382,6 +1475,11 @@ export async function confirmCustomAbutmentDesign(req, res) {
         transferDoc,
         labRevision ? "abutment-design-lab-revised" : "abutment-design-confirmed",
       ).catch((err) => console.warn("[AI] confirm transfer emit failed", err));
+      if (confirmedDesignSync) {
+        void emitCustomAbutmentDesignSync(transferDoc, confirmedDesignSync).catch((err) =>
+          console.warn("[AI] confirm design sync emit failed", err),
+        );
+      }
     })();
   } catch (error) {
     console.error("[AI] confirmCustomAbutmentDesign error", error);

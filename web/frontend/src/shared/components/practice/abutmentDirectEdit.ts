@@ -2619,6 +2619,14 @@ export class AbutmentDirectEditSession {
     this.brush.visible = false;
   }
 
+  /** 상대 디자인이 들어오면 진행 중인 드래그를 확정하지 않고 놓는다. */
+  cancelGesture() {
+    this.drag = null;
+    this.dragGroup = [];
+    this.pendingPick = null;
+    this.brush.visible = false;
+  }
+
   dispose() {
     this.detach();
     for (const view of this.views.values()) this.disposeGumball(view.gumball);
@@ -2737,7 +2745,7 @@ export class AbutmentDirectEditSession {
     }
   }
 
-  sync() {
+  sync(opts?: { quiet?: boolean }) {
     if (this.drag) return;
     const scene = this.bridge.getScene();
     if (!scene) return;
@@ -2841,7 +2849,7 @@ export class AbutmentDirectEditSession {
       this.views.set(design.toothNumber, view);
       scene.add(view.gumball);
       if (preservedEdit && !editsEqual(preservedEdit, EMPTY_EDIT)) {
-        this.show(design.toothNumber, true);
+        this.show(design.toothNumber, true, false, Boolean(opts?.quiet));
       }
     }
     for (const [tooth, view] of this.views) {
@@ -3336,7 +3344,7 @@ export class AbutmentDirectEditSession {
     return null;
   }
 
-  private show(tooth: string, bake: boolean, silent = false) {
+  private show(tooth: string, bake: boolean, silent = false, quiet = false) {
     const view = this.views.get(tooth);
     const design = this.bridge.getDesigns().find((row) => row.toothNumber === tooth);
     const mesh = this.bridge.getAbutment(tooth);
@@ -3497,7 +3505,9 @@ export class AbutmentDirectEditSession {
     if (this.drag == null || bake) {
       const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
       this.publishShape(summary, bake);
-      if (bake && !silent) this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary);
+      if (bake && !silent) {
+        this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary, quiet);
+      }
     }
     this.moveBadge(mesh, this.resolveGumballCenter(view, edit, tooth), view.gumball.visible);
   }
@@ -3572,11 +3582,15 @@ export class AbutmentDirectEditSession {
     marginLocal: Float32Array | null,
     previewSrc: Float32Array,
     summary: AbutmentEditSummary,
+    quiet = false,
   ) {
+    const notifyCommit = () => {
+      if (!quiet) this.bridge.onCommit(summary);
+    };
     const epoch = ++view.bakeEpoch;
     const neutral = editsEqual(edit, EMPTY_EDIT);
     if (view.proposalSolid && editsEqual(edit, view.lastDrilledEdit)) {
-      this.bridge.onCommit(summary);
+      notifyCommit();
       return;
     }
     if (view.proposalSolid && !neutral) {
@@ -3624,7 +3638,7 @@ export class AbutmentDirectEditSession {
           }
           design.localPositions = drilled;
           design.stlBlob = encodeBinaryStl(solidOut, `abuts.fit custom abutment #${tooth}`);
-          this.bridge.onCommit(summary);
+          notifyCommit();
         })
         .catch(() => {
           if (view.bakeEpoch !== epoch) return;
@@ -3644,7 +3658,7 @@ export class AbutmentDirectEditSession {
           }
           design.localPositions = fallback;
           design.stlBlob = encodeBinaryStl(fallback, `abuts.fit custom abutment #${tooth}`);
-          this.bridge.onCommit(summary);
+          notifyCommit();
         });
       return;
     }
@@ -3661,7 +3675,7 @@ export class AbutmentDirectEditSession {
         ? design.solidBodyLocalPositions
         : design.localPositions;
     design.stlBlob = encodeBinaryStl(stlPositions, `abuts.fit custom abutment #${tooth}`);
-    this.bridge.onCommit(summary);
+    notifyCommit();
   }
 
   private take(slot: "local" | "world", length: number) {

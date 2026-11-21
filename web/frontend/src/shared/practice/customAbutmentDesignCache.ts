@@ -72,6 +72,8 @@ export type CachedCustomAbutmentTooth = {
   /** 서버 프리뷰 STL. 형상을 안 바꿨으면 확정 때 다시 올리지 않는다. */
   sourceS3Key?: string;
   sourceCrownS3Key?: string;
+  /** 서버에 정점이 없다. 픽스처·조정값으로 이 브라우저에서 다시 만든다. */
+  regenFromMeta?: boolean;
 };
 
 /** 바이트 정렬로 옮긴 스캔 정점. 다시 열 때 정렬을 건너뛴다. */
@@ -118,20 +120,10 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
-function toothHasSolidBody(tooth: unknown): boolean {
-  if (!tooth || typeof tooth !== "object") return false;
-  const buf = (tooth as { solidBodyLocalPositions?: ArrayBuffer }).solidBodyLocalPositions;
-  return (buf?.byteLength ?? 0) > 0;
-}
-
-function designHasSolidBody(design: { teeth?: readonly unknown[] } | null | undefined): boolean {
-  return (design?.teeth ?? []).some(toothHasSolidBody);
-}
-
 /**
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
- * 서버 STL은 솔리드(스크류홀·solidBody 없음)라, 로컬에 solidBody가 있으면
- * publish가 savedAt만 더 늦게 찍어도 로컬을 유지해 화면용 홀을 지킨다.
+ * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다.
+ * 같은 시각이면 이 브라우저 저장본을 유지한다.
  */
 export function preferFresherCustomAbutmentDesign<
   T extends { savedAt?: number; teeth?: readonly unknown[] },
@@ -140,10 +132,10 @@ export function preferFresherCustomAbutmentDesign<
   const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
   if (localCount === 0) return serverCount > 0 ? server : null;
   if (serverCount === 0 || !server) return local;
-  if (designHasSolidBody(local) && !designHasSolidBody(server)) return local;
   const localAt = Number(local?.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  return serverAt > localAt ? server : local;
+  if (serverAt > localAt) return server;
+  return local;
 }
 
 /** 대화 저장 키. 정합·형상 버전과 스캔 키가 바뀌어도 같은 의뢰면 그대로다. */
@@ -664,11 +656,7 @@ async function toothFromSnapshotRow(
   if (!crownLocalPositions) {
     crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
   }
-  if (!localPositions) return null;
-  if (!crownLocalPositions) crownLocalPositions = new ArrayBuffer(0);
-  return {
-    fromS3: Boolean(abutmentPositions),
-    tooth: {
+  const shared = {
     toothNumber: String(row.toothNumber || ""),
     fileName,
     fixture,
@@ -684,11 +672,34 @@ async function toothFromSnapshotRow(
     ...(row.gumballBaseMetrics && typeof row.gumballBaseMetrics === "object"
       ? { gumballBaseMetrics: row.gumballBaseMetrics as CustomAbutmentDesignMetrics }
       : {}),
-    localPositions,
-    crownLocalPositions,
-    marginLoopLocal,
-    ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
-    ...(s3Key ? { sourceS3Key: s3Key, sourceCrownS3Key: crownKey } : {}),
+    ...(row.proposalInput && typeof row.proposalInput === "object"
+      ? { proposalInput: row.proposalInput as Partial<CustomAbutmentDesignParams> }
+      : {}),
+  };
+  // 실시간 저장은 정점 없이 온다. 받는 쪽이 스캔 위에서 형상을 다시 만든다.
+  if (!localPositions || localPositions.byteLength < 36) {
+    if (!row.params || typeof row.params !== "object") return null;
+    return {
+      fromS3: false,
+      tooth: {
+        ...shared,
+        localPositions: new ArrayBuffer(0),
+        crownLocalPositions: new ArrayBuffer(0),
+        marginLoopLocal: new ArrayBuffer(0),
+        regenFromMeta: true,
+      },
+    };
+  }
+  if (!crownLocalPositions) crownLocalPositions = new ArrayBuffer(0);
+  return {
+    fromS3: Boolean(abutmentPositions),
+    tooth: {
+      ...shared,
+      localPositions,
+      crownLocalPositions,
+      marginLoopLocal,
+      ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
+      ...(s3Key ? { sourceS3Key: s3Key, sourceCrownS3Key: crownKey } : {}),
     },
   };
 }
@@ -872,6 +883,149 @@ export function publishCustomAbutmentSnapshot(
     });
     if (!saved.ok) throw new Error("디자인 메타데이터를 저장하지 못했습니다.");
   })().catch((err) => console.warn("[custom-abutment] snapshot upload failed", err));
+}
+
+export type CustomAbutmentDesignSyncTooth = {
+  toothNumber: string;
+  fileName: string;
+  fixture: MatchedScanbodyFixture;
+  overrides: Partial<CustomAbutmentDesignParams>;
+  params: CustomAbutmentDesignParams;
+  metrics: CustomAbutmentDesignMetrics;
+  gumballEdit?: AbutmentEdit;
+  gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
+  gumballBaseMetrics?: CustomAbutmentDesignMetrics;
+  proposalInput?: Partial<CustomAbutmentDesignParams>;
+};
+
+export type CustomAbutmentDesignSyncMeta = {
+  transferId?: string;
+  savedAt: number;
+  updatedBy?: string;
+  version: number;
+  fitVersion: number;
+  teeth: CustomAbutmentDesignSyncTooth[];
+  mode?: "confirmed" | "manual";
+  choice?: {
+    cancelDeadlineAt?: string | null;
+    gracePromoteAt?: string | null;
+    labCheckedAt?: string | null;
+  };
+};
+
+export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentDesignSyncMeta | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const teethIn = Array.isArray(row.teeth) ? row.teeth : [];
+  const teeth: CustomAbutmentDesignSyncTooth[] = [];
+  for (const item of teethIn) {
+    if (!item || typeof item !== "object") continue;
+    const tooth = item as Record<string, unknown>;
+    const toothNumber = String(tooth.toothNumber || "").trim();
+    const fixture = tooth.fixture;
+    if (!/^[1-4][1-8]$/.test(toothNumber) || !fixture || typeof fixture !== "object") continue;
+    const jaw = (fixture as { jaw?: unknown }).jaw;
+    if (jaw !== "upper" && jaw !== "lower") continue;
+    teeth.push({
+      toothNumber,
+      fileName: String(tooth.fileName || ""),
+      fixture: fixture as MatchedScanbodyFixture,
+      overrides: (tooth.overrides || {}) as Partial<CustomAbutmentDesignParams>,
+      params: (tooth.params || {}) as CustomAbutmentDesignParams,
+      metrics: (tooth.metrics || {}) as CustomAbutmentDesignMetrics,
+      ...(tooth.gumballEdit && typeof tooth.gumballEdit === "object"
+        ? { gumballEdit: tooth.gumballEdit as AbutmentEdit }
+        : {}),
+      ...(tooth.gumballBaseParams && typeof tooth.gumballBaseParams === "object"
+        ? { gumballBaseParams: tooth.gumballBaseParams as Partial<CustomAbutmentDesignParams> }
+        : {}),
+      ...(tooth.gumballBaseMetrics && typeof tooth.gumballBaseMetrics === "object"
+        ? { gumballBaseMetrics: tooth.gumballBaseMetrics as CustomAbutmentDesignMetrics }
+        : {}),
+      ...(tooth.proposalInput && typeof tooth.proposalInput === "object"
+        ? { proposalInput: tooth.proposalInput as Partial<CustomAbutmentDesignParams> }
+        : {}),
+    });
+  }
+  if (teeth.length === 0) return null;
+  const mode = row.mode === "confirmed" || row.mode === "manual" ? row.mode : undefined;
+  const choiceRaw = row.choice;
+  const choice =
+    choiceRaw && typeof choiceRaw === "object"
+      ? {
+          cancelDeadlineAt:
+            (choiceRaw as { cancelDeadlineAt?: string | null }).cancelDeadlineAt ?? null,
+          gracePromoteAt: (choiceRaw as { gracePromoteAt?: string | null }).gracePromoteAt ?? null,
+          labCheckedAt: (choiceRaw as { labCheckedAt?: string | null }).labCheckedAt ?? null,
+        }
+      : undefined;
+  return {
+    transferId: String(row.transferId || ""),
+    savedAt: Number(row.savedAt) || 0,
+    updatedBy: String(row.updatedBy || ""),
+    version: Number(row.version) || 0,
+    fitVersion: Number(row.fitVersion) || 0,
+    teeth,
+    ...(mode ? { mode } : {}),
+    ...(choice ? { choice } : {}),
+  };
+}
+
+/** 편집 동기화. STL을 올리지 않고 조정값만 저장한 뒤 상대 화면에 소켓으로 전달된다. */
+export async function publishCustomAbutmentDesignMeta(
+  token: string,
+  transferId: string,
+  record: {
+    version: number;
+    fitVersion: number;
+    baseSavedAt: number;
+    teeth: readonly CustomAbutmentDesignSyncTooth[];
+  },
+): Promise<
+  | { ok: true; savedAt: number }
+  | { ok: false; stale: true; design: CustomAbutmentDesignSyncMeta }
+  | { ok: false; stale: false }
+> {
+  const id = transferId.trim();
+  if (!token || !id || record.teeth.length === 0) return { ok: false, stale: false };
+  const res = await request<{
+    code?: string;
+    data?: { savedAt?: number } & Record<string, unknown>;
+  }>({
+    path: "/api/ai/custom-abutment-design-snapshot",
+    method: "PUT",
+    token,
+    jsonBody: {
+      transferId: id,
+      version: record.version,
+      fitVersion: record.fitVersion,
+      baseSavedAt: record.baseSavedAt,
+      teeth: record.teeth,
+    },
+  });
+  if (res.status === 409) {
+    const design = parseCustomAbutmentDesignSyncMeta(res.data?.data);
+    if (design) return { ok: false, stale: true, design };
+    return { ok: false, stale: false };
+  }
+  if (!res.ok) return { ok: false, stale: false };
+  return { ok: true, savedAt: Number(res.data?.data?.savedAt) || Date.now() };
+}
+
+export function classifyCustomAbutmentDesignPublish(
+  result: Awaited<ReturnType<typeof publishCustomAbutmentDesignMeta>>,
+):
+  | { kind: "ok"; savedAt: number }
+  | { kind: "stale"; design: CustomAbutmentDesignSyncMeta }
+  | { kind: "fail" } {
+  if (result.ok === true) return { kind: "ok", savedAt: result.savedAt };
+  // strictNullChecks가 꺼져 있어 ok:false 갈래가 좁혀지지 않는다.
+  const failed = result as {
+    stale?: boolean;
+    design?: CustomAbutmentDesignSyncMeta;
+  };
+  if (failed.stale && failed.design) return { kind: "stale", design: failed.design };
+  return { kind: "fail" };
 }
 
 export async function saveCustomAbutmentDesignPaintRemote(
