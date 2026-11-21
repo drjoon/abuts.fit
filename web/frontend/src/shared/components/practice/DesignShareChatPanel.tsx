@@ -1,6 +1,7 @@
 // 커스텀어벗 디자인 화면의 소통 패널. 치과·기공소가 같은 컴포넌트를 쓴다.
 // 뷰어 위에 떠 있고, 헤더로 옮기며, 가장자리로 크기를 바꾼다. 최소 가로는 260px.
 // 귀퉁이·다른 패널(큐브 등) 근처에서 놓으면 붙는다. 입력은 가로 전체, 전송·첨부는 아랫줄.
+// 펼치면 대화 높이까지 창을 키운다. 작업영역보다 길 때만 스크롤한다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
@@ -40,6 +41,14 @@ export const VIEWER_RESIZE_HANDLES: { edge: ViewerResizeEdge; className: string 
   { edge: "sw", className: "bottom-0 left-0 h-3 w-3 cursor-nesw-resize" },
   { edge: "se", className: "bottom-0 right-0 h-3 w-3 cursor-nwse-resize" },
 ];
+
+function chatNeededHeight(panel: HTMLElement, list: HTMLElement, inner: HTMLElement | null) {
+  const style = getComputedStyle(list);
+  const pad = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+  const chrome = panel.offsetHeight - list.offsetHeight;
+  const border = list.offsetHeight - list.clientHeight;
+  return chrome + border + pad + (inner?.offsetHeight ?? list.scrollHeight);
+}
 
 function cornerPoint(
   corner: Corner,
@@ -220,6 +229,10 @@ export function DesignShareChatPanel({
   const token = useAuthStore((state) => state.token);
   const uploads = useBackgroundTempUpload({ token });
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  /** 사용자가 내용보다 크게 늘린 높이. 없으면 내용에 맞춘다. */
+  const userHeightRef = useRef<number | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<null | { ox: number; oy: number; x: number; y: number; moved: boolean }>(null);
   const resizeRef = useRef<null | {
@@ -266,32 +279,63 @@ export function DesignShareChatPanel({
   }, [boundsRef, box?.corner, box?.w, collapsed]);
 
   useLayoutEffect(() => {
-    const bounds = boundsRef.current?.getBoundingClientRect();
-    const panel = frameRef.current;
-    if (!bounds || !panel) return;
-    if (collapsed) {
-      const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
-      dockBottomRef.current = top + panel.offsetHeight;
-      return;
-    }
-    const h = panel.offsetHeight;
-    if (h > 120) openHeightRef.current = boxRef.current?.h && boxRef.current.h > 120 ? boxRef.current.h : h;
-    const bottom = dockBottomRef.current;
-    dockBottomRef.current = null;
-    if (bottom == null) return;
-    const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
-    const maxH = Math.max(160, bounds.height - EDGE * 2);
-    const height = Math.min(Math.max(openHeightRef.current, 220), maxH);
-    const nearBottom = bounds.height - bottom <= top + 48;
-    let y = nearBottom ? bottom - height : top;
-    y = Math.max(EDGE, Math.min(y, bounds.height - height - EDGE));
-    setBox((prev) => {
+    const boundsEl = boundsRef.current;
+    if (!boundsEl) return;
+    let passes = 0;
+    const fit = () => {
+      if (passes >= 4) return;
+      const panel = frameRef.current;
+      if (!panel) return;
+      if (collapsed || resizeRef.current || dragRef.current) {
+        if (collapsed && !dragRef.current) {
+          const bounds = boundsEl.getBoundingClientRect();
+          const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+          dockBottomRef.current = top + panel.offsetHeight;
+        }
+        return;
+      }
+      const list = scrollRef.current;
+      const inner = messagesRef.current;
+      if (!list || !inner) return;
+      const bounds = boundsEl.getBoundingClientRect();
+      const needed = chatNeededHeight(panel, list, inner);
+      if (needed < 1) return;
+      const maxH = Math.max(MIN_H, bounds.height - EDGE * 2);
+      const fitted = Math.min(Math.max(needed, MIN_H), maxH);
+      const height = Math.min(maxH, Math.max(fitted, userHeightRef.current ?? 0));
+      const prev = boxRef.current;
+      let y = prev?.y ?? panel.getBoundingClientRect().top - bounds.top;
+      const dock = dockBottomRef.current;
+      if (dock != null) {
+        const nearBottom = bounds.height - dock <= y + 48;
+        if (nearBottom) y = dock - height;
+        dockBottomRef.current = null;
+      }
+      const maxY = Math.max(EDGE, bounds.height - height - EDGE);
+      y = Math.min(Math.max(y, EDGE), maxY);
       const w = prev?.w ?? panel.offsetWidth;
       const x = prev?.x ?? panel.getBoundingClientRect().left - bounds.left;
-      if (prev && prev.y === y && prev.h === height && prev.w === w) return prev;
-      return { x, y, w, h: height, corner: prev?.corner ?? null };
-    });
-  }, [boundsRef, collapsed]);
+      if (
+        prev &&
+        Math.abs(prev.h - height) < 1 &&
+        Math.abs(prev.y - y) < 1 &&
+        Math.abs(prev.w - w) < 1 &&
+        Math.abs(prev.x - x) < 1
+      ) {
+        return;
+      }
+      passes += 1;
+      openHeightRef.current = height;
+      setBox({ x, y, w, h: height, corner: prev?.corner ?? null });
+    };
+    fit();
+    if (collapsed) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(boundsEl);
+    if (messagesRef.current) observer.observe(messagesRef.current);
+    if (composerRef.current) observer.observe(composerRef.current);
+    return () => observer.disconnect();
+  }, [boundsRef, collapsed, messages, loading]);
 
   const readBox = () => {
     const bounds = boundsRef.current?.getBoundingClientRect();
@@ -452,6 +496,12 @@ export function DesignShareChatPanel({
     }
     width = Math.min(Math.max(width, Math.min(MIN_W, maxW)), maxW);
     height = Math.min(Math.max(height, Math.min(MIN_H, maxH)), maxH);
+    const list = scrollRef.current;
+    const panel = frameRef.current;
+    if (!collapsed && list && panel) {
+      const floor = Math.min(Math.max(chatNeededHeight(panel, list, messagesRef.current), MIN_H), maxH);
+      height = Math.min(Math.max(height, floor), maxH);
+    }
     if (growWest) left = drag.l + (drag.w - width);
     if (growNorth && !collapsed) top = drag.t + (drag.h - height);
     left = Math.min(Math.max(left, EDGE), Math.max(EDGE, bounds.width - width - EDGE));
@@ -488,7 +538,14 @@ export function DesignShareChatPanel({
       true,
       peers,
     );
-    if (!collapsed && drag.next.h > 120) openHeightRef.current = drag.next.h;
+    if (!collapsed && drag.next.h > 120) {
+      openHeightRef.current = drag.next.h;
+      const list = scrollRef.current;
+      const panelNow = frameRef.current;
+      const needed =
+        list && panelNow ? chatNeededHeight(panelNow, list, messagesRef.current) : 0;
+      if (drag.next.h > needed + 1) userHeightRef.current = drag.next.h;
+    }
     setBox((prev) =>
       prev
         ? { ...prev, ...placed, w: drag.next.w, h: collapsed ? prev.h : drag.next.h }
@@ -541,7 +598,7 @@ export function DesignShareChatPanel({
         "pointer-events-auto absolute z-30 flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
         !floated && "min-w-[260px]",
         !floated && "left-3 top-[11.5rem] w-[20rem] max-w-[calc(100%-1.5rem)]",
-        !floated && !collapsed && "h-[min(28rem,calc(100%-13rem))]",
+        !floated && !collapsed && "max-h-[calc(100%-13rem)]",
         floated && !moving && "transition-[left,top] duration-200 ease-out",
         floated && collapsed && "h-auto",
       )}
@@ -608,8 +665,9 @@ export function DesignShareChatPanel({
       {!collapsed ? (
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 space-y-1 overflow-y-auto px-1.5 py-1.5 text-xs"
+          className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5 text-xs"
         >
+          <div ref={messagesRef} className="space-y-1">
           {loading ? (
             <p className="flex items-center gap-1.5 px-1 py-1 text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -677,10 +735,12 @@ export function DesignShareChatPanel({
               );
             })
           )}
+          </div>
         </div>
       ) : null}
 
       {!collapsed ? (
+        <div ref={composerRef}>
         <ChatComposer
           draft={draft}
           onDraftChange={onDraft}
@@ -697,6 +757,7 @@ export function DesignShareChatPanel({
           compact
           className="space-y-1.5 px-2.5 pb-2 pt-2 sm:px-2.5 sm:pb-2 sm:pt-2"
         />
+        </div>
       ) : null}
       {!collapsed
         ? VIEWER_RESIZE_HANDLES.map((handle) => (

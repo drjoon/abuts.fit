@@ -1,5 +1,6 @@
 // 작업영역 위 패널. 헤더([data-snap-drag])로 옮기고, 가장자리로 크기를 바꾼다.
 // 놓으면 창 귀퉁이·다른 패널에 창 여백(VIEWER_PANEL_EDGE)을 두고 붙는다.
+// 펼치면 내용 높이까지 창을 키운다. 작업영역보다 길 때만 스크롤한다.
 import {
   useLayoutEffect,
   useRef,
@@ -66,6 +67,9 @@ export function ViewerFloatingFrame({
   const openHeightRef = useRef(0);
   /** 접힌 막대의 아래 변. */
   const dockBottomRef = useRef<number | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  /** 사용자가 내용보다 크게 늘린 높이. 없으면 내용에 맞춘다. */
+  const userHeightRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     const bounds = boundsRef.current;
@@ -98,31 +102,60 @@ export function ViewerFloatingFrame({
   }, [boundsRef, box?.corner, box?.w]);
 
   useLayoutEffect(() => {
-    const bounds = boundsRef.current?.getBoundingClientRect();
-    const panel = frameRef.current;
-    if (!bounds || !panel) return;
-    if (hugContent) {
-      const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
-      dockBottomRef.current = top + panel.offsetHeight;
-      return;
-    }
-    const measured = boxRef.current?.h || panel.offsetHeight;
-    if (measured > 80) openHeightRef.current = measured;
-    const bottom = dockBottomRef.current;
-    dockBottomRef.current = null;
-    if (bottom == null || openHeightRef.current <= 80) return;
-    const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
-    const maxH = Math.max(minH, bounds.height - VIEWER_PANEL_EDGE * 2);
-    const height = Math.min(openHeightRef.current, maxH);
-    const nearBottom = bounds.height - bottom <= top + 48;
-    let y = nearBottom ? bottom - height : top;
-    y = Math.max(VIEWER_PANEL_EDGE, Math.min(y, bounds.height - height - VIEWER_PANEL_EDGE));
-    setBox((prev) => {
+    const boundsEl = boundsRef.current;
+    const content = contentRef.current;
+    if (!boundsEl || !content) return;
+    let passes = 0;
+    const fit = () => {
+      if (passes >= 4) return;
+      const panel = frameRef.current;
+      if (!panel) return;
+      if (hugContent || resizeRef.current || dragRef.current) {
+        if (hugContent && !dragRef.current) {
+          const bounds = boundsEl.getBoundingClientRect();
+          const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
+          dockBottomRef.current = top + panel.offsetHeight;
+        }
+        return;
+      }
+      const bounds = boundsEl.getBoundingClientRect();
+      const contentH = content.offsetHeight;
+      if (contentH < 1) return;
+      const maxH = Math.max(minH, bounds.height - VIEWER_PANEL_EDGE * 2);
+      const fitted = Math.min(contentH, maxH);
+      const preferred = userHeightRef.current;
+      const height = Math.min(maxH, Math.max(fitted, preferred ?? 0));
+      const prev = boxRef.current;
+      let y = prev?.y ?? panel.getBoundingClientRect().top - bounds.top;
+      const dock = dockBottomRef.current;
+      if (dock != null) {
+        const nearBottom = bounds.height - dock <= y + 48;
+        if (nearBottom) y = dock - height;
+        dockBottomRef.current = null;
+      }
+      const maxY = Math.max(VIEWER_PANEL_EDGE, bounds.height - height - VIEWER_PANEL_EDGE);
+      y = Math.min(Math.max(y, VIEWER_PANEL_EDGE), maxY);
       const w = prev?.w ?? panel.offsetWidth;
       const x = prev?.x ?? panel.getBoundingClientRect().left - bounds.left;
-      if (prev && prev.y === y && prev.h === height) return prev;
-      return { x, y, w, h: height, corner: prev?.corner ?? null };
-    });
+      if (
+        prev &&
+        Math.abs(prev.h - height) < 1 &&
+        Math.abs(prev.y - y) < 1 &&
+        Math.abs(prev.w - w) < 1 &&
+        Math.abs(prev.x - x) < 1
+      ) {
+        return;
+      }
+      passes += 1;
+      openHeightRef.current = height;
+      setBox({ x, y, w, h: height, corner: prev?.corner ?? null });
+    };
+    fit();
+    if (hugContent) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(content);
+    observer.observe(boundsEl);
+    return () => observer.disconnect();
   }, [boundsRef, hugContent, minH]);
 
   const readBox = () => {
@@ -215,9 +248,6 @@ export function ViewerFloatingFrame({
       true,
       peers,
     );
-    const bottomGap = bounds.height - (placed.y + panel.offsetHeight);
-    pinBottomRef.current =
-      bottomGap <= VIEWER_PANEL_EDGE + 2 || placed.corner === "se" || placed.corner === "sw";
     setBox((prev) =>
       prev
         ? {
@@ -279,7 +309,9 @@ export function ViewerFloatingFrame({
       top = drag.t + dy;
     }
     width = Math.min(Math.max(width, Math.min(minW, maxW)), maxW);
-    height = Math.min(Math.max(height, Math.min(minH, maxH)), maxH);
+    const contentH = contentRef.current?.offsetHeight ?? 0;
+    const floor = contentH > 0 ? Math.min(contentH, maxH) : Math.min(minH, maxH);
+    height = Math.min(Math.max(height, floor), maxH);
     if (growWest) left = drag.l + (drag.w - width);
     if (growNorth) top = drag.t + (drag.h - height);
     left = Math.min(Math.max(left, VIEWER_PANEL_EDGE), Math.max(VIEWER_PANEL_EDGE, bounds.width - width - VIEWER_PANEL_EDGE));
@@ -310,7 +342,12 @@ export function ViewerFloatingFrame({
       true,
       peers,
     );
-    setBox({ ...placed, w: drag.next.w, h: drag.next.h });
+    const contentH = contentRef.current?.offsetHeight ?? 0;
+    const maxH = Math.max(minH, bounds.height - VIEWER_PANEL_EDGE * 2);
+    const floor = contentH > 0 ? Math.min(contentH, maxH) : minH;
+    const height = Math.min(Math.max(drag.next.h, floor), maxH);
+    if (height > contentH + 1) userHeightRef.current = height;
+    setBox({ ...placed, w: drag.next.w, h: height });
   };
 
   const floated = box != null;
@@ -321,7 +358,7 @@ export function ViewerFloatingFrame({
         if (panelRef) panelRef.current = node;
       }}
       className={cn(
-        "pointer-events-auto absolute z-20 flex min-h-0 flex-col overflow-y-auto",
+        "pointer-events-auto absolute z-20 flex min-h-0 flex-col overflow-x-hidden overflow-y-auto",
         !floated && anchorClassName,
         floated && !moving && "transition-[left,top] duration-200 ease-out",
         hugContent && "h-auto",
@@ -344,7 +381,9 @@ export function ViewerFloatingFrame({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      {children}
+      <div ref={contentRef} className="flex w-full shrink-0 flex-col">
+        {children}
+      </div>
       {VIEWER_RESIZE_HANDLES.map((handle) => (
         <div
           key={handle.edge}
