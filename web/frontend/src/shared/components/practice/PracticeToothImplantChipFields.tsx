@@ -10,6 +10,7 @@
 // - 2026-09-14: ChoiceChip 공통 모듈(PracticeToothChoiceChips) 사용.
 // - 2026-09-14: 스캔바디 2/2 칩 UI와 동일 — 제조사·브랜드·패밀리·타입. 비우기·편집(X·추가·드래그·라벨변경).
 import { useEffect, useMemo, useState } from "react";
+import { useOrderableImplantBrandKeys } from "@/shared/practice/useOrderableImplantBrands";
 import { Label } from "@/components/ui/label";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
@@ -95,14 +96,20 @@ export const PracticeToothImplantChipFields = ({
   const family = String(value.implantFamily || "").trim();
   const type = String(value.implantType || "").trim();
 
+  const orderableBrandKeys = useOrderableImplantBrandKeys();
   const options = useMemo(
     () =>
-      listImplantChipOptionsWithCatalog(favorites, connections, {
-        manufacturer,
-        brand,
-        family,
-      }),
-    [favorites, connections, manufacturer, brand, family],
+      listImplantChipOptionsWithCatalog(
+        favorites,
+        connections,
+        {
+          manufacturer,
+          brand,
+          family,
+        },
+        orderableBrandKeys,
+      ),
+    [favorites, connections, manufacturer, brand, family, orderableBrandKeys],
   );
 
   const persistFavorites = async (next: PracticeImplantFavorite[]) => {
@@ -285,11 +292,16 @@ export const PracticeToothImplantChipFields = ({
         : null;
     if (recalled) return recalled;
 
-    const opts = listImplantChipOptionsWithCatalog(favorites, connections, {
-      manufacturer: nextManufacturer,
-      brand: nextBrand,
-      family: nextFamily,
-    });
+    const opts = listImplantChipOptionsWithCatalog(
+      favorites,
+      connections,
+      {
+        manufacturer: nextManufacturer,
+        brand: nextBrand,
+        family: nextFamily,
+      },
+      orderableBrandKeys,
+    );
     const brandOut =
       nextBrand ||
       (opts.brands.length === 1 ? opts.brands[0]?.value || "" : "");
@@ -300,6 +312,7 @@ export const PracticeToothImplantChipFields = ({
         manufacturer: nextManufacturer,
         brand: brandOut,
       },
+      orderableBrandKeys,
     );
     const familyOut =
       nextFamily ||
@@ -314,6 +327,7 @@ export const PracticeToothImplantChipFields = ({
         brand: brandOut,
         family: familyOut,
       },
+      orderableBrandKeys,
     );
     const typeOut =
       familyOut && typeOpts.types.length === 1

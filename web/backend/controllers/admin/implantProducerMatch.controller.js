@@ -74,7 +74,8 @@ export async function getImplantProducerMatches(_req, res) {
       success: true,
       data: {
         brands: brands.map((brand) => {
-          const saved = byKey.get(brand.brandKey);
+          const spec = byKey.get(brand.brandKey);
+          const saved = spec || byKey.get(brand.legacyBrandKey);
           return {
             ...brand,
             defaultManufacturerAnchorId: saved?.defaultManufacturerAnchorId
@@ -142,6 +143,7 @@ export async function saveImplantProducerMatches(req, res) {
           $set: {
             implantManufacturer: brand.implantManufacturer,
             implantBrand: brand.implantBrand,
+            implantFamily: brand.implantFamily,
             defaultManufacturerAnchorId: defaultId,
             alternateManufacturerAnchorId: alternateId,
           },

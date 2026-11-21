@@ -697,11 +697,15 @@ export async function classifyImplantPreset(caseInfos) {
  * - 제출·핸드오프의 미제공 커넥션은 classifyImplantPreset(kind=unsupported)로 받는다.
  */
 export async function assertOrderableImplantPresetOrThrow(caseInfos) {
+  const { assertImplantProducerMatchedOrThrow } = await import(
+    "../../services/producerAssignment.service.js"
+  );
   const preset = await classifyImplantPreset(caseInfos);
-  if (preset.kind === "orderable") return preset.normalized;
   if (preset.kind === "incomplete") {
     throw new Error("임플란트 제조사/브랜드/패밀리/타입이 모두 필요합니다.");
   }
+  await assertImplantProducerMatchedOrThrow(caseInfos);
+  if (preset.kind === "orderable") return preset.normalized;
   throw new Error(
     `현재 주문이 비활성화된 임플란트 조합입니다: ${preset.label}`,
   );

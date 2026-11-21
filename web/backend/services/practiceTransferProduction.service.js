@@ -92,7 +92,10 @@ import {
 } from "../utils/oralScanRole.js";
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
-import { assignProducerFields } from "./producerAssignment.service.js";
+import {
+  assignProducerFields,
+  assertImplantProducerMatchedOrThrow,
+} from "./producerAssignment.service.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
@@ -1574,6 +1577,16 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       throw new Error(
         `치아 #${tooth} 임플란트 규격(Manufacturer/Brand/Family/Type)이 부족합니다.`,
       );
+    }
+    try {
+      await assertImplantProducerMatchedOrThrow({
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+        implantType,
+      });
+    } catch (matchError) {
+      throw new Error(`치아 #${tooth} ${matchError?.message || "의뢰할 수 없습니다."}`);
     }
 
     // Abuts-first: Request는 생산만(custom_abutment). 디자인은 수주 기공소·labFeeSchedule.

@@ -17,6 +17,11 @@ router.get(
   implantPresetController.getImplantPresets,
 );
 router.get(
+  "/orderable-brands",
+  authenticate,
+  implantPresetController.getOrderableImplantBrands,
+);
+router.get(
   "/find-by-diameter",
   implantPresetController.findImplantPresetByDiameter,
 );

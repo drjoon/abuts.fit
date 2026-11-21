@@ -2,6 +2,7 @@
 // - web/backend/scripts/db/data/connections.seed.js
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // change-log:
+// - 2026-11-22: 첨1 브랜드·패밀리는 관리자 매칭 목록과 같다. 오스템 TS Mini를 표에 둔다.
 // - 2026-11-03: 공개·미도입 환봉(US·ARi 등)은 CNC 카탈로그 병합에서 제외.
 // - 2026-09-14: 임플란트 칩 기본 프리셋 SSOT(6메이저). listImplantChipOptionsWithCatalog에서 병합.
 // - 2026-08-26: AnyOne Mini API/캐시 유입 차단·Regular 표기 SSOT.
@@ -81,6 +82,16 @@ const tokenKey = (value: string) =>
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, "");
+
+/** 생산 제조사 매칭 키. 서버 `implantSpecMatchKeys`와 같은 토큰이다. */
+export const implantBrandMatchToken = (manufacturer: string, brand: string) =>
+  `${tokenKey(manufacturer)}|${tokenKey(brand)}`;
+
+export const implantSpecMatchToken = (
+  manufacturer: string,
+  brand: string,
+  family: string,
+) => `${implantBrandMatchToken(manufacturer, brand)}|${tokenKey(family)}`;
 
 /** Megagen AnyOne(Internal) Mini — D3.5 포함 Regular만 허용. */
 export const isMegagenAnyOneMiniSpec = (

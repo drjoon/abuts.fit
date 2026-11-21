@@ -29,7 +29,11 @@ import {
 import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
 import { cn } from "@/shared/ui/cn";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
-import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import {
+  implantSpecMatchToken,
+  mergeCncImplantSpecs,
+} from "@/shared/practice/cncImplantCatalog";
+import { useOrderableImplantBrandKeys } from "@/shared/practice/useOrderableImplantBrands";
 
 type Option = { id: string; label: string };
 
@@ -205,19 +209,28 @@ export function NewRequestPatientImplantFields({
       ? caseInfos?.implantType || ""
       : implantType;
 
+  const orderableBrandKeys = useOrderableImplantBrandKeys();
+
   /** 「카탈로그에서 선택」= CNC 가공 가능 표만. 공개·미지원 환봉(US·ARi)은 넣지 않는다. */
   const connectionOptions = useMemo((): Connection[] => {
-    return mergeCncImplantSpecs(connections).map((row) => ({
-      manufacturer: row.manufacturer,
-      brand: row.brand,
-      family: row.family,
-      type: row.type,
-      displayManufacturer: row.displayManufacturer,
-      displayBrand: row.displayBrand,
-      displayFamily: row.displayFamily,
-      displayType: row.type,
-    }));
-  }, [connections]);
+    return mergeCncImplantSpecs(connections)
+      .filter((row) => {
+        if (!orderableBrandKeys) return true;
+        return orderableBrandKeys.has(
+          implantSpecMatchToken(row.manufacturer, row.brand, row.family),
+        );
+      })
+      .map((row) => ({
+        manufacturer: row.manufacturer,
+        brand: row.brand,
+        family: row.family,
+        type: row.type,
+        displayManufacturer: row.displayManufacturer,
+        displayBrand: row.displayBrand,
+        displayFamily: row.displayFamily,
+        displayType: row.type,
+      }));
+  }, [connections, orderableBrandKeys]);
 
   const currentTypeOptions = useMemo(() => {
     const fromProp = Array.isArray(typeOptions) ? typeOptions : [];
@@ -492,18 +505,34 @@ export function NewRequestPatientImplantFields({
       shouldWriteCase = true;
     }
 
-    if (shouldWriteCase) {
+    const familiesForBrand = [
+      ...new Set(
+        manufacturerConnections
+          .filter((row) => sameBrand(String(row.brand || ""), finalBrand))
+          .map((row) => String(row.family || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    const familyAllowed =
+      !familyFromCase ||
+      familiesForBrand.some((family) => sameFamily(family, familyFromCase));
+    const nextFamily = familyAllowed
+      ? familyFromCase
+      : pickPreferredFamily(familiesForBrand);
+
+    if (shouldWriteCase || nextFamily !== familyFromCase) {
       setCaseInfos({
         ...(finalManufacturer !== manufacturer
           ? { implantManufacturer: finalManufacturer }
           : {}),
-        implantBrand: finalBrand,
+        ...(finalBrand !== brandFromCase ? { implantBrand: finalBrand } : {}),
+        ...(nextFamily !== familyFromCase ? { implantFamily: nextFamily } : {}),
       });
     }
 
     setImplantManufacturer(finalManufacturer);
     setImplantBrand(finalBrand);
-    setImplantFamily(familyFromCase);
+    setImplantFamily(nextFamily);
     setImplantType(typeFromCase);
   }, [
     caseInfos?.implantInputMode,

@@ -39,7 +39,10 @@
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 스팬 전체가 임시치아. 커스텀 규격은 형태와 무관하게 유지.
 // - 2026-08-20: Pontic UI 제거. 레거시 Pontic은 브리지로 정규화(기공소가 지대치 없음을 추론).
 import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
-import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import {
+  implantSpecMatchToken,
+  mergeCncImplantSpecs,
+} from "@/shared/practice/cncImplantCatalog";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
@@ -994,6 +997,7 @@ export const listImplantChipOptionsWithCatalog = (
     | null
     | undefined,
   selected?: ImplantChipSelection | null,
+  orderableBrandKeys?: ReadonlySet<string> | null,
 ): ImplantChipOptionsDetailed => {
   const cnc = mergeCncImplantSpecs(Array.isArray(connections) ? [...connections] : []);
   const rows: ImplantChipSourceRow[] = [];
@@ -1064,6 +1068,16 @@ export const listImplantChipOptionsWithCatalog = (
     });
   }
 
+  const visibleRows = orderableBrandKeys
+    ? rows.filter((row) => {
+        const brandToken = implantChipKey(row.brand);
+        if (brandToken === "추가요청") return true;
+        return orderableBrandKeys.has(
+          implantSpecMatchToken(row.manufacturer, row.brand, row.family),
+        );
+      })
+    : rows;
+
   const pushUniqueItem = (
     out: ImplantChipOptionItem[],
     seenKeys: Set<string>,
@@ -1091,7 +1105,7 @@ export const listImplantChipOptionsWithCatalog = (
 
   const manufacturers: ImplantChipOptionItem[] = [];
   const mfrSeen = new Set<string>();
-  for (const row of rows) {
+  for (const row of visibleRows) {
     pushUniqueItem(
       manufacturers,
       mfrSeen,
@@ -1106,7 +1120,7 @@ export const listImplantChipOptionsWithCatalog = (
     return { manufacturers, brands: [], families: [], types: [] };
   }
 
-  const mfrRows = rows.filter((row) =>
+  const mfrRows = visibleRows.filter((row) =>
     implantChipRowMatches(row, "manufacturer", manufacturer),
   );
   const brands: ImplantChipOptionItem[] = [];

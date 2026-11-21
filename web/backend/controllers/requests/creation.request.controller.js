@@ -27,6 +27,7 @@ import {
   REQUEST_STAGE_ORDER,
   canAccessRequestAsRequestor,
   ensureLotNumberOnReadyEnter,
+  assertOrderableImplantPresetOrThrow,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import {
@@ -164,6 +165,8 @@ export async function createRequest(req, res) {
           "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
       });
     }
+
+    await assertOrderableImplantPresetOrThrow(normalizedCaseInfos);
 
     const shippingMode = await resolveSelectableShippingMode({
       defaultShippingMode: requestorDefaultShippingMode,
@@ -418,6 +421,11 @@ export async function createRequest(req, res) {
         success: false,
         message: "필수 입력 항목이 누락되었습니다.",
         errors,
+      });
+    } else if (error?.statusCode === 400) {
+      res.status(400).json({
+        success: false,
+        message: error.message,
       });
     } else {
       console.error("Error in createRequest:", error);
@@ -1043,6 +1051,7 @@ export async function createRequestsBulk(req, res) {
               "커스텀 어벗 의뢰의 경우 임플란트 Manufacturer/Brand/Family/Type은 모두 필수입니다.",
             );
           }
+          await assertOrderableImplantPresetOrThrow(normalizedCaseInfos);
 
           const tPrice0 = Date.now();
           const duplicateResolution = resolutionsByCaseId.get(String(i));

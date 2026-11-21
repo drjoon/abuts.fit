@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { IMPLANT_MANUFACTURER_CATALOG } from "./implantManufacturerCatalog.js";
+import { CNC_IMPLANT_CATALOG } from "./cncImplantCatalog.js";
 
 export function normalizeKeyToken(raw) {
   const s = String(raw || "").trim();
@@ -218,66 +219,72 @@ export function normalizeImplantFields(caseInfos) {
   };
 }
 
-const ESPRIT_CONNECTION_DIR = path.resolve(
-  __dirname,
-  "../../..",
-  "bg/pc1/esprit-addin/AcroDent/2_Connection",
-);
-
 function koreanManufacturerLabel(canonical) {
   const aliases = IMPLANT_MANUFACTURER_DEFS[canonical]?.aliases || [];
   const kor = aliases.find((alias) => /[가-힣]/.test(String(alias || "")));
   return kor || canonical;
 }
 
-/** 관리자 브랜드 매칭 행. PRC 파일은 읽기만 한다. */
+/** 관리자 매칭 행. 첨1 브랜드·패밀리 표와 같다. */
 export function listImplantBrandRows() {
-  const seen = new Set();
-  const rows = [];
-  const push = (manufacturerRaw, brandRaw) => {
-    const implantManufacturer = normalizeImplantManufacturer(manufacturerRaw);
-    const implantBrand = normalizeImplantBrand(brandRaw, implantManufacturer);
-    const brandKey = getCanonicalManufacturerBrandKey(
+  return CNC_IMPLANT_CATALOG.map((row) => {
+    const implantManufacturer = normalizeImplantManufacturer(row.manufacturer);
+    const implantBrand = normalizeImplantBrand(row.brand, implantManufacturer);
+    const implantFamily = normalizeImplantFamily(row.family);
+    const brandLabel = String(row.displayBrand || implantBrand).trim();
+    const familyLabel = String(row.displayFamily || implantFamily).trim();
+    return {
+      brandKey: getCanonicalImplantSpecKey(
+        implantManufacturer,
+        implantBrand,
+        implantFamily,
+      ),
+      legacyBrandKey: getCanonicalManufacturerBrandKey(
+        implantManufacturer,
+        implantBrand,
+      ),
       implantManufacturer,
       implantBrand,
-    );
-    if (!brandKey || seen.has(brandKey)) return;
-    seen.add(brandKey);
-    rows.push({
-      brandKey,
-      implantManufacturer,
-      implantBrand,
-      label: `${koreanManufacturerLabel(implantManufacturer)} ${implantBrand}`,
-    });
-  };
+      implantFamily,
+      label: `${koreanManufacturerLabel(implantManufacturer)} ${brandLabel} · ${familyLabel}`,
+    };
+  });
+}
 
-  try {
-    const entries = fs.readdirSync(ESPRIT_CONNECTION_DIR, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      const fileName = String(entry.name || "").trim();
-      const match = /^(.+?)_([^_]+?)_[A-Za-z0-9]{1,4}_Connection\.prc$/i.exec(
-        fileName,
-      );
-      if (!match) continue;
-      push(match[1], match[2]);
-    }
-  } catch {
-    // 카탈로그 폴더가 없으면 아래 별칭으로 채운다.
+function implantMatchToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+}
+
+/** 의뢰 화면이 제조사·브랜드 표기를 맞춰 볼 키. 별칭(오스템, TS)을 포함한다. */
+export function implantBrandMatchKeys(manufacturer, brand) {
+  const canonicalManufacturer = normalizeImplantManufacturer(manufacturer);
+  const canonicalBrand = normalizeImplantBrand(brand, canonicalManufacturer);
+  const manufacturers = new Set(
+    [canonicalManufacturer, ...(IMPLANT_MANUFACTURER_DEFS[canonicalManufacturer]?.aliases || [])]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean),
+  );
+  const brands = new Set(
+    [canonicalBrand, brand]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean),
+  );
+  const aliasMap = IMPLANT_BRAND_CANONICAL_ALIASES[canonicalManufacturer] || {};
+  for (const [alias, canonical] of Object.entries(aliasMap)) {
+    if (canonical === canonicalBrand) brands.add(alias);
   }
-
-  if (!rows.length) {
-    for (const [manufacturer, aliasMap] of Object.entries(
-      IMPLANT_BRAND_CANONICAL_ALIASES,
-    )) {
-      for (const brand of new Set(Object.values(aliasMap))) {
-        push(manufacturer, brand);
-      }
+  const keys = [];
+  for (const manufacturerToken of manufacturers) {
+    for (const brandToken of brands) {
+      const key = `${implantMatchToken(manufacturerToken)}|${implantMatchToken(brandToken)}`;
+      if (key === "|" || keys.includes(key)) continue;
+      keys.push(key);
     }
   }
-
-  rows.sort((a, b) => a.label.localeCompare(b.label, "ko"));
-  return rows;
+  return keys;
 }
 
 export function getCanonicalManufacturerBrandKey(manufacturer, brand) {
@@ -285,6 +292,20 @@ export function getCanonicalManufacturerBrandKey(manufacturer, brand) {
   const normalizedBrand = normalizeImplantBrand(brand, m);
   if (!m || !normalizedBrand) return "";
   return `${m}_${normalizedBrand}`;
+}
+
+export function getCanonicalImplantSpecKey(manufacturer, brand, family) {
+  const base = getCanonicalManufacturerBrandKey(manufacturer, brand);
+  const normalizedFamily = normalizeImplantFamily(family).replace(/\s+/g, "_");
+  if (!base || !normalizedFamily) return base;
+  return `${base}_${normalizedFamily}`;
+}
+
+export function implantSpecMatchKeys(manufacturer, brand, family) {
+  const familyToken = implantMatchToken(normalizeImplantFamily(family));
+  const brandKeys = implantBrandMatchKeys(manufacturer, brand);
+  if (!familyToken) return brandKeys;
+  return brandKeys.map((key) => `${key}|${familyToken}`);
 }
 
 export function getPrcManufacturerToken(manufacturer) {

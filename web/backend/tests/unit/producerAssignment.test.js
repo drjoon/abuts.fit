@@ -1,4 +1,23 @@
+import {
+  getCanonicalImplantSpecKey,
+  listImplantBrandRows,
+} from "../../utils/implantCanonical.js";
 import { chooseProducerAnchorId } from "../../services/producerAssignment.service.js";
+
+describe("첨1 브랜드·패밀리", () => {
+  test("관리자 목록에 오스템 TS3 Mini와 Regular가 있다", () => {
+    const rows = listImplantBrandRows();
+    expect(rows.map((row) => row.brandKey)).toEqual(
+      expect.arrayContaining(["OSSTEM_TS3_Regular", "OSSTEM_TS3_Mini"]),
+    );
+    expect(
+      rows.find((row) => row.brandKey === "OSSTEM_TS3_Mini")?.label,
+    ).toContain("Mini");
+    expect(getCanonicalImplantSpecKey("오스템", "TS", "Mini")).toBe(
+      "OSSTEM_TS3_Mini",
+    );
+  });
+});
 
 describe("chooseProducerAnchorId", () => {
   const running = (approved = true) => ({

@@ -29,6 +29,7 @@ import {
   grantFreeRequestCredit,
   grantPaidCredit,
   seedOrderableConnection,
+  seedOrderableProducerMatch,
   seedRequest,
   sleep,
   waitFor,
@@ -414,6 +415,7 @@ describe("의뢰(CA 생산의뢰) API", () => {
     });
 
     it("주문 불가 임플란트 조합으로는 고칠 수 없다(400)", async () => {
+      await seedOrderableProducerMatch();
       const mine = await seedRequest({
         requestor: labOwner.user,
         anchor: labAnchor,

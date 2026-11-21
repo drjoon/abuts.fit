@@ -14,6 +14,7 @@ const implantBrandProducerMatchSchema = new mongoose.Schema(
     },
     implantManufacturer: { type: String, default: "", trim: true },
     implantBrand: { type: String, default: "", trim: true },
+    implantFamily: { type: String, default: "", trim: true },
     defaultManufacturerAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

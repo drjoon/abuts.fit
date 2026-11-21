@@ -2628,6 +2628,13 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    if (error?.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Draft에서 의뢰 생성 중 오류가 발생했습니다.",

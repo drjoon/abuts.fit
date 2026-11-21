@@ -8,7 +8,10 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import ImplantBrandProducerMatch from "../models/implantBrandProducerMatch.model.js";
 import {
+  getCanonicalImplantSpecKey,
   getCanonicalManufacturerBrandKey,
+  implantSpecMatchKeys,
+  listImplantBrandRows,
   normalizeImplantFields,
 } from "../utils/implantCanonical.js";
 
@@ -43,6 +46,83 @@ export function chooseProducerAnchorId({
 
 export function isSelfProducerControl(value) {
   return String(value || "").trim() === "self";
+}
+
+function matchHasProducer(row) {
+  return Boolean(
+    row?.defaultManufacturerAnchorId || row?.alternateManufacturerAnchorId,
+  );
+}
+
+/** 패밀리 행이 있으면 그 매칭. 없으면 예전 브랜드 단위 매칭. */
+export function pickProducerMatch(storedByKey, manufacturer, brand, family) {
+  const specKey = getCanonicalImplantSpecKey(manufacturer, brand, family);
+  const legacyKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
+  if (specKey && storedByKey.has(specKey)) return storedByKey.get(specKey);
+  if (legacyKey && storedByKey.has(legacyKey)) return storedByKey.get(legacyKey);
+  return null;
+}
+
+export async function listOrderableImplantBrandKeys() {
+  const [catalog, stored] = await Promise.all([
+    Promise.resolve(listImplantBrandRows()),
+    ImplantBrandProducerMatch.find({})
+      .select({
+        brandKey: 1,
+        defaultManufacturerAnchorId: 1,
+        alternateManufacturerAnchorId: 1,
+      })
+      .lean(),
+  ]);
+  const byKey = new Map(stored.map((row) => [row.brandKey, row]));
+  const keys = new Set();
+  for (const row of catalog) {
+    const match = pickProducerMatch(
+      byKey,
+      row.implantManufacturer,
+      row.implantBrand,
+      row.implantFamily,
+    );
+    if (!matchHasProducer(match)) continue;
+    for (const key of implantSpecMatchKeys(
+      row.implantManufacturer,
+      row.implantBrand,
+      row.implantFamily,
+    )) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+}
+
+export async function findStoredProducerMatch(manufacturer, brand, family) {
+  const specKey = getCanonicalImplantSpecKey(manufacturer, brand, family);
+  const legacyKey = getCanonicalManufacturerBrandKey(manufacturer, brand);
+  const keys = [...new Set([specKey, legacyKey].filter(Boolean))];
+  if (!keys.length) return null;
+  const rows = await ImplantBrandProducerMatch.find({ brandKey: { $in: keys } })
+    .select({
+      brandKey: 1,
+      defaultManufacturerAnchorId: 1,
+      alternateManufacturerAnchorId: 1,
+    })
+    .lean();
+  const byKey = new Map(rows.map((row) => [row.brandKey, row]));
+  return pickProducerMatch(byKey, manufacturer, brand, family);
+}
+
+export async function assertImplantProducerMatchedOrThrow(caseInfos) {
+  const normalized = normalizeImplantFields(caseInfos || {});
+  const manufacturer = String(normalized.implantManufacturer || "").trim();
+  const brand = String(normalized.implantBrand || "").trim();
+  const family = String(normalized.implantFamily || "").trim();
+  if (!manufacturer || !brand || !family) return;
+  const match = await findStoredProducerMatch(manufacturer, brand, family);
+  if (!matchHasProducer(match)) {
+    const error = new Error("매칭된 제조사가 없는 임플란트는 의뢰할 수 없습니다.");
+    error.statusCode = 400;
+    throw error;
+  }
 }
 
 async function findPlatformAnchor() {
@@ -95,20 +175,13 @@ function pickOwnerUserId(users) {
  */
 export async function resolveProducerForCaseInfos(caseInfos) {
   const normalized = normalizeImplantFields(caseInfos || {});
-  const brandKey = getCanonicalManufacturerBrandKey(
-    normalized.implantManufacturer,
-    normalized.implantBrand,
-  );
   const platform = await findPlatformAnchor();
   const platformAnchorId = platform?._id ? String(platform._id) : null;
-  const match = brandKey
-    ? await ImplantBrandProducerMatch.findOne({ brandKey })
-        .select({
-          defaultManufacturerAnchorId: 1,
-          alternateManufacturerAnchorId: 1,
-        })
-        .lean()
-    : null;
+  const match = await findStoredProducerMatch(
+    normalized.implantManufacturer,
+    normalized.implantBrand,
+    normalized.implantFamily,
+  );
   const defaultAnchorId = match?.defaultManufacturerAnchorId
     ? String(match.defaultManufacturerAnchorId)
     : null;

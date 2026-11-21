@@ -9,6 +9,7 @@ import User from "../../../models/user.model";
 import BusinessAnchor from "../../../models/businessAnchor.model";
 import Request from "../../../models/request.model";
 import Connection from "../../../models/connection.model";
+import ImplantBrandProducerMatch from "../../../models/implantBrandProducerMatch.model";
 import { postGeneralLedgerJournal } from "../../../services/generalLedger.service";
 import { normalizeImplantFields } from "../../../utils/implantCanonical";
 import { generateToken } from "../../../utils/jwt.util";
@@ -188,9 +189,26 @@ export async function grantFreeRequestCredit(anchorId, amount) {
   });
 }
 
+/** 기본 제조사가 매칭된 테스트 브랜드. 매칭이 없으면 의뢰가 거절된다. */
+export const seedOrderableProducerMatch = () =>
+  ImplantBrandProducerMatch.findOneAndUpdate(
+    {
+      brandKey: `${TEST_IMPLANT.implantManufacturer}_${TEST_IMPLANT.implantBrand}`,
+    },
+    {
+      $set: {
+        implantManufacturer: TEST_IMPLANT.implantManufacturer,
+        implantBrand: TEST_IMPLANT.implantBrand,
+        defaultManufacturerAnchorId: new mongoose.Types.ObjectId(),
+      },
+    },
+    { upsert: true, new: true },
+  );
+
 /** 주문 가능(isActive) 임플란트 조합. 생성·수정 시 assertOrderableImplantPresetOrThrow가 본다. */
-export const seedOrderableConnection = () =>
-  Connection.create({
+export const seedOrderableConnection = async () => {
+  await seedOrderableProducerMatch();
+  return Connection.create({
     manufacturer: TEST_IMPLANT.implantManufacturer,
     brand: TEST_IMPLANT.implantBrand,
     family: TEST_IMPLANT.implantFamily,
@@ -199,6 +217,7 @@ export const seedOrderableConnection = () =>
     fileName: "test-connection.stl",
     isActive: true,
   });
+};
 
 export async function seedRequest({
   requestor,

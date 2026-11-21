@@ -26,6 +26,7 @@ import {
   getPrcTypeCodeByFamily,
 } from "../../utils/prcFilenameCatalog.js";
 import { sanitizeCncImplantConnections } from "../../utils/cncImplantCatalog.js";
+import { listOrderableImplantBrandKeys } from "../../services/producerAssignment.service.js";
 
 function normalizeTypeLabel(type) {
   if (typeof type !== "string") return "";
@@ -184,6 +185,19 @@ async function loadAdoptedRoundBarConnections(businessAnchorId) {
     }
   }
   return { rows: out, updatedAtMs: maxUpdatedAtMs(requests) };
+}
+
+export async function getOrderableImplantBrands(_req, res) {
+  try {
+    const keys = await listOrderableImplantBrandKeys();
+    return res.status(200).json({ success: true, data: { keys } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 가능한 임플란트 브랜드를 불러오지 못했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 export async function getImplantPresets(req, res) {
@@ -403,4 +417,9 @@ export async function findPreset(req, res) {
   }
 }
 
-export default { findPreset, getImplantPresets, findImplantPresetByDiameter };
+export default {
+  findPreset,
+  getImplantPresets,
+  getOrderableImplantBrands,
+  findImplantPresetByDiameter,
+};
