@@ -57,13 +57,13 @@ function makeArchStrip(zAt: (x: number, y: number) => number) {
   return geo;
 }
 
-function makeJawZ(leanMm: number) {
+function makeJawZ(leanMm: number, teeth: readonly number[] = TOOTH_I) {
   return (x: number, y: number) => {
     const px = x + originX;
     const py = y + originY;
     let bestD = 1e9;
     let bestI = 0;
-    for (const i of TOOTH_I) {
+    for (const i of teeth) {
       const [tx, ty] = archCenter(i);
       const d = (px - tx) ** 2 + (py - ty) ** 2;
       if (d < bestD) {
@@ -1368,6 +1368,131 @@ open11.predictedCrownWorldGeometry.dispose();
   buccal16.predictedCrownWorldGeometry.dispose();
   jawBuccal.dispose();
   oppBuccal.dispose();
+}
+
+// 정상 악궁·대합에서 복수 대구치(#16·#17)는 회전·최대 직경이 서로 비슷하고, 최소 벽과 수직 파라미터는 지킨다.
+{
+  const teeth1617 = TOOTH_I.filter((i) => i !== -2);
+  const jaw1617 = makeArchStrip(makeJawZ(0, teeth1617));
+  const [c17x, c17y] = archCenter(-2);
+  const o17: [number, number, number] = [c17x - originX, c17y - originY, 0];
+  const a17 = (-2 / 6) * ARCH_ANG;
+  const a16 = (IMPLANT_I / 6) * ARCH_ANG;
+  const fixture16 = {
+    ...fixture11,
+    toothNumber: "16",
+    labialDir: [Math.cos(a16), Math.sin(a16), 0] as [number, number, number],
+    mesialDir: [-Math.sin(a16), Math.cos(a16), 0] as [number, number, number],
+  };
+  const fixture17 = {
+    ...fixture11,
+    toothNumber: "17",
+    fixturePose: { ...fixture11.fixturePose, origin: o17 },
+    scanbodyTop: [o17[0], o17[1], -7] as [number, number, number],
+    labialDir: [Math.cos(a17), Math.sin(a17), 0] as [number, number, number],
+    mesialDir: [-Math.sin(a17), Math.cos(a17), 0] as [number, number, number],
+  };
+  const works1617 = [
+    { toothNumber: "16", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] as string[] },
+    { toothNumber: "17", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] as string[] },
+  ];
+  const [m16, m17, solo16] = await Promise.all([
+    designCustomAbutmentStl({
+      fixture: fixture16,
+      jawGeometry: jaw1617,
+      opposingGeometry: flatMid,
+      neighbors: [fixture17],
+      toothWorks: works1617,
+    }),
+    designCustomAbutmentStl({
+      fixture: fixture17,
+      jawGeometry: jaw1617,
+      opposingGeometry: flatMid,
+      neighbors: [fixture16],
+      toothWorks: works1617,
+    }),
+    designCustomAbutmentStl({
+      fixture: fixture16,
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: [works1617[0]!],
+    }),
+  ]);
+  // 합성 악궁은 전치부 타원이라 두 자리 악궁 곡률(≈13°)이 실제 대구치 구간(3~5°)보다 크다.
+  // 악궁 대비 편차(off16·off17)는 로그로만 남기고, 서로의 회전 차이를 단언한다.
+  const archBlDeg = (a: number) => ((Math.atan2(Math.sin(a), Math.cos(a)) / Math.PI) * 180 + 180) % 180;
+  // 피니시라인 XY 장축 방향(°, 0~180). 두 픽스쳐 로컬 기저가 같아 바로 비교한다.
+  const marginYawDeg = (loop: Float32Array) => {
+    let mx = 0;
+    let my = 0;
+    const n = loop.length / 3;
+    for (let i = 0; i < loop.length; i += 3) {
+      mx += loop[i]!;
+      my += loop[i + 1]!;
+    }
+    mx /= n;
+    my /= n;
+    let sxx = 0;
+    let syy = 0;
+    let sxy = 0;
+    for (let i = 0; i < loop.length; i += 3) {
+      const dx = loop[i]! - mx;
+      const dy = loop[i + 1]! - my;
+      sxx += dx * dx;
+      syy += dy * dy;
+      sxy += dx * dy;
+    }
+    const deg = ((0.5 * Math.atan2(2 * sxy, sxx - syy)) / Math.PI) * 180;
+    return (deg + 180) % 180;
+  };
+  const axisGap = (x: number, y: number) => Math.min(Math.abs(x - y), 180 - Math.abs(x - y));
+  const yaw16 = marginYawDeg(m16.marginLoopLocal);
+  const yaw17 = marginYawDeg(m17.marginLoopLocal);
+  const off16 = axisGap(yaw16, archBlDeg(a16));
+  const off17 = axisGap(yaw17, archBlDeg(a17));
+  const yawGap = axisGap(yaw16, yaw17);
+  console.log(
+    JSON.stringify({
+      molarPair: {
+        yaw16,
+        yaw17,
+        off16,
+        off17,
+        yawGap,
+        d16: m16.metrics.maxDiameterMm,
+        d17: m17.metrics.maxDiameterMm,
+        wall16: m16.metrics.minPostWallThicknessMm,
+        wall17: m17.metrics.minPostWallThicknessMm,
+        h16: m16.metrics.postHeightMm,
+        hSolo16: solo16.metrics.postHeightMm,
+      },
+    }),
+  );
+  assert.ok(yawGap <= 6, `#16·#17 수평 회전 차이 ≤ 6°(${yawGap.toFixed(2)}°)`);
+  const dRatio =
+    Math.max(m16.metrics.maxDiameterMm, m17.metrics.maxDiameterMm) /
+    Math.min(m16.metrics.maxDiameterMm, m17.metrics.maxDiameterMm);
+  assert.ok(
+    dRatio <= 1.12,
+    `#16(${m16.metrics.maxDiameterMm}mm)·#17(${m17.metrics.maxDiameterMm}mm) 최대 직경이 비슷하다`,
+  );
+  for (const d of [m16, m17]) {
+    assert.ok(
+      (d.metrics.minPostWallThicknessMm ?? 1) >= 0.5 - 1e-3,
+      `#${d.toothNumber} 포스트 최소 벽 0.5mm 유지(${d.metrics.minPostWallThicknessMm}mm)`,
+    );
+    assert.equal(d.metrics.marginSubgMinMm, solo16.metrics.marginSubgMinMm, "마진 깊이는 바꾸지 않는다");
+    assert.equal(d.metrics.marginFilletRadiusMm, solo16.metrics.marginFilletRadiusMm, "마진 필레는 바꾸지 않는다");
+  }
+  assert.ok(
+    Math.abs(m16.metrics.postHeightMm - solo16.metrics.postHeightMm) <= 0.6,
+    `인접 어벗 조율이 포스트 높이를 흔들지 않는다(${m16.metrics.postHeightMm} vs 단독 ${solo16.metrics.postHeightMm}mm)`,
+  );
+  for (const d of [m16, m17, solo16]) {
+    d.worldGeometry.dispose();
+    d.predictedCrownWorldGeometry.dispose();
+  }
+  jaw1617.dispose();
 }
 
 jaw.dispose();

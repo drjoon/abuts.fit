@@ -3298,10 +3298,14 @@ function measureOpposingToothScale(
   const maxH = hs[Math.floor(hs.length * 0.92)]!;
   if (!Number.isFinite(minH) || !Number.isFinite(maxH) || maxH - minH < 0.55) return null;
 
-  const band = slice.filter((c) => c.h <= minH + 4.0);
+  const band = slice.filter((c) => c.h <= minH + 2.5);
   if (band.length < 10) return null;
   const us = band.map((c) => c.u).sort((a, b) => a - b);
-  const width = us[Math.floor(us.length * 0.92)]! - us[Math.floor(us.length * 0.08)]!;
+  const uLo = us[Math.floor(us.length * 0.08)]!;
+  const uHi = us[Math.floor(us.length * 0.92)]!;
+  // 창 가장자리까지 이어지면 치관이 아니라 잇몸·연속면이다.
+  if (uLo <= -7.6 || uHi >= 7.6) return null;
+  const width = uHi - uLo;
   if (width < expectedBl * 0.72 || width > expectedBl * 1.32) return null;
   return clamp(width / expectedBl, 0.84, 1.16);
 }
@@ -3351,11 +3355,18 @@ function measureAdjacentNaturalToothScales(
       hs.push(h);
     }
     if (us.length < 24) return;
-    hs.sort((a, b) => a - b);
-    const hTop = hs[Math.floor(hs.length * 0.92)]!;
+    const hsSorted = [...hs].sort((a, b) => a - b);
+    const hTop = hsSorted[Math.floor(hsSorted.length * 0.92)]!;
     if (hTop < 4.5) return;
-    us.sort((a, b) => a - b);
-    const width = us[Math.floor(us.length * 0.92)]! - us[Math.floor(us.length * 0.08)]!;
+    const crownUs: number[] = [];
+    for (let k = 0; k < us.length; k += 1) if (hs[k]! >= hTop - 2.5) crownUs.push(us[k]!);
+    if (crownUs.length < 16) return;
+    crownUs.sort((a, b) => a - b);
+    const uLo = crownUs[Math.floor(crownUs.length * 0.08)]!;
+    const uHi = crownUs[Math.floor(crownUs.length * 0.92)]!;
+    // 창 가장자리까지 이어지면 치관이 아니라 잇몸·연속면이다.
+    if (uLo <= -7.6 || uHi >= 7.6) return;
+    const width = uHi - uLo;
     if (width < expectedBl * 0.72 || width > expectedBl * 1.32) return;
     out.push(clamp(width / expectedBl, 0.84, 1.16));
   };
@@ -3538,8 +3549,10 @@ type PeerPlanProbe = {
 };
 
 type PeerPlanAdjustment = {
-  /** 공통 교합축(occWorld) 기준 수평 회전 보정(rad). */
+  /** 공통 교합축(yawAxisWorld) 기준 오른손 수평 회전 보정(rad). */
   yawDeltaRad: number;
+  /** 회전 보정 축(월드). 픽스쳐 자세가 반사를 포함해도 월드에서 돌려야 방향이 맞는다. */
+  yawAxisWorld: Vec3;
   /** 같은 부위(대구치 등) 인접 어벗과 맞춘 목표 정규화 크기 배율. null이면 유지. */
   targetNormScale: number | null;
 };
@@ -4114,12 +4127,10 @@ async function resolveGroupPeerPlan(
       const targetSizes = harmonizeAdjacentSameKindSizes(sizeEntries);
 
       for (const p of probes) {
-        const rawDelta = yawDeltas.get(p.toothNumber) ?? 0;
-        // 각 치아의 occWorld가 occAvg와 반대 방향이면 부호를 맞춘다.
-        const occSign = dot3(p.occWorld, occAvg) >= 0 ? 1 : -1;
         const targetNorm = targetSizes.get(p.toothNumber) ?? null;
         planMap.set(p.toothNumber, {
-          yawDeltaRad: rawDelta * occSign,
+          yawDeltaRad: yawDeltas.get(p.toothNumber) ?? 0,
+          yawAxisWorld: occAvg,
           targetNormScale:
             targetNorm != null && Math.abs(targetNorm - p.normScale) > 0.004 ? targetNorm : null,
         });
@@ -4140,6 +4151,7 @@ async function resolveGroupPeerPlan(
     (exp.postWidthScale != null && Number.isFinite(Number(exp.postWidthScale)));
   return {
     yawDeltaRad: yawLocked ? 0 : plan.yawDeltaRad,
+    yawAxisWorld: plan.yawAxisWorld,
     targetNormScale: sizeLocked ? null : plan.targetNormScale,
   };
 }
@@ -4918,8 +4930,18 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       Math.abs(mode.peerPlan.yawDeltaRad) > 1e-4 &&
       Math.abs(params.postYawDeg) <= 1e-3
     ) {
-      vTargetOcc = norm3(rotateAroundAxis(vTargetOcc, wOccPlane, mode.peerPlan.yawDeltaRad));
-      uTargetOcc = norm3(rotateAroundAxis(uTargetOcc, wOccPlane, mode.peerPlan.yawDeltaRad));
+      const { yawAxisWorld, yawDeltaRad } = mode.peerPlan;
+      const rotLocal = (d: Vec3) =>
+        norm3(
+          worldDirToFixtureLocal(
+            rotateAroundAxis(fixtureLocalDirToWorld(d, fixture.fixturePose), yawAxisWorld, yawDeltaRad),
+            fixture.fixturePose,
+          ),
+        );
+      vTargetOcc = rotLocal(vTargetOcc);
+      uTargetOcc = rotLocal(uTargetOcc);
+      vTargetOcc = norm3(sub3(vTargetOcc, scale3(wOccPlane, dot3(vTargetOcc, wOccPlane))));
+      uTargetOcc = sub3(uTargetOcc, scale3(wOccPlane, dot3(uTargetOcc, wOccPlane)));
       uTargetOcc = norm3(sub3(uTargetOcc, scale3(vTargetOcc, dot3(uTargetOcc, vTargetOcc))));
     }
 
@@ -7369,8 +7391,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   }
 
   // 4방위 유격(협·설·근·원심)을 먼저 재서 중심(mCu, mCv)을 여유 있는 쪽으로 옮기고 양쪽 반축을 대칭으로 맞춘다.
-  let marginCapPosU = Infinity;
-  let marginCapNegU = Infinity;
   let marginCapPosV = Infinity;
   let marginCapNegV = Infinity;
   {
@@ -7391,8 +7411,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const capNegU = dirCap(-1, 0);
     const capPosV = dirCap(0, 1);
     const capNegV = dirCap(0, -1);
-    marginCapPosU = capPosU;
-    marginCapNegU = capNegU;
     marginCapPosV = capPosV;
     marginCapNegV = capNegV;
     const estMarginAxCos = Math.max(frame.w[2], 0.25);
@@ -8828,9 +8846,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     let lingualScrewWallTargetMm = LINGUAL_SCREW_WALL_LIMIT_MM;
     let buccalScrewWallTargetMm = SCREW_WALL_MM;
     if (posterior && !hasManualAxisShift && idealOpposingOffsetU != null && mHalfBl > 0) {
-      const wLabAtTop =
-        (dot3(frame.w, labXY) / Math.max(frame.w[2], 0.25)) * Math.min(tpl.postHeightMm, meanRoundStartSum);
-      const targetResidualU = idealOpposingOffsetU - wLabAtTop * 0.5;
+      const targetResidualU = idealOpposingOffsetU;
       if (Math.abs(targetResidualU) > 0.12) {
         const postIdealLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
         const postMinLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;

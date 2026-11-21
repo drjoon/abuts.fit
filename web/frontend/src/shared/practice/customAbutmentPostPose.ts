@@ -627,9 +627,12 @@ export function harmonizeAdjacentAbutmentYaws(
       const maxGapRad = naturalAllowanceDeg * DEG;
       const diff = wrapAngleRad(cur[i + 1]! - cur[i]!);
       const absDiff = Math.abs(diff);
-      // 자연 곡률 이내여도 한쪽 신뢰도가 낮으면 살짝(35%) 맞춰 주고, 초과하면 강하게(82%) 수렴시킨다.
+      // 자연 곡률을 넘는 차이는 강하게(85%) 줄인다. 곡률 이내 차이는 첫 회에만 살짝 맞춰 자연 곡률을 접지 않는다.
       const excess = Math.max(0, absDiff - maxGapRad);
-      const softPull = Math.min(absDiff, maxGapRad) * (Math.min(conf[i]!, conf[i + 1]!) < 0.55 ? 0.35 : 0.18);
+      const softPull =
+        pass === 0
+          ? Math.min(absDiff, maxGapRad) * (Math.min(conf[i]!, conf[i + 1]!) < 0.55 ? 0.35 : 0.18)
+          : 0;
       const totalFix = excess * 0.85 + softPull;
       if (totalFix <= 1e-4) continue;
       const fixSigned = Math.sign(diff) * totalFix;

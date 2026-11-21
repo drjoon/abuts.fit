@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  blendArchAndAdjacentYawSlope,
+  blendLocalCrownSizeScale,
+  harmonizeAdjacentAbutmentYaws,
+  harmonizeAdjacentSameKindSizes,
+  resolveSignedPlacementTradeoff,
   clampBuccalOffsetForLingualScrewWall,
   clampLateralForCompactDiameter,
   compromiseArchAgainstWall,
@@ -350,4 +355,101 @@ test("contactIsFunctionalTarget 모드에서 상악·하악이 교두 경사면�
     contactIsFunctionalTarget: true,
   });
   assert.ok(lower != null && lower < -1.45 && lower > -1.85, `expected ~-1.59, got ${lower}`);
+});
+
+const DEG = Math.PI / 180;
+
+test("편측 말단(#17)도 대합 악궁과 인접 어벗 연결선으로 아치 회전을 따른다", () => {
+  const archTan = Math.tan(8 * DEG);
+  const res = blendArchAndAdjacentYawSlope({
+    jawArch: { slope: 0, hasBothSides: false, toothCount: 1, hasSlope: false },
+    oppArch: { slope: archTan, hasBothSides: true, toothCount: 3 },
+    adjacentAbutmentLineSlope: Math.tan(7 * DEG),
+  });
+  assert.ok(res);
+  const deg = Math.atan(res.slope) / DEG;
+  assert.ok(deg > 6.5 && deg < 8.5, `대합 악궁 8°·어벗 연결선 7°를 따라야 한다(${deg.toFixed(2)}°)`);
+});
+
+test("악궁 아치가 인접 접촉벽보다 우선하고, 14° 넘게 어긋난 인접벽은 뺀다", () => {
+  const arch = { slope: Math.tan(5 * DEG), hasBothSides: true, toothCount: 4 };
+  const near = blendArchAndAdjacentYawSlope({ jawArch: arch, adjacentWallSlope: Math.tan(9 * DEG) });
+  assert.ok(near);
+  const nearDeg = Math.atan(near.slope) / DEG;
+  assert.ok(nearDeg > 5 && nearDeg < 7, `아치 쪽에 더 가깝다(${nearDeg.toFixed(2)}°)`);
+
+  const twisted = blendArchAndAdjacentYawSlope({ jawArch: arch, adjacentWallSlope: Math.tan(-15 * DEG) });
+  assert.ok(twisted);
+  assert.ok(Math.abs(Math.atan(twisted.slope) / DEG - 5) < 0.01, "부정교합 인접벽은 무시한다");
+});
+
+test("#16·#17 인접 어벗 회전각은 대구치 악궁 곡률 안으로 모이고 신뢰도 낮은 쪽이 더 양보한다", () => {
+  const deltas = harmonizeAdjacentAbutmentYaws([
+    { toothNumber: "16", angleRad: 0, confidence: 0.9, fdiPos: 6, anterior: false },
+    { toothNumber: "17", angleRad: 14 * DEG, confidence: 0.3, fdiPos: 7, anterior: false },
+  ]);
+  const a16 = deltas.get("16")!;
+  const a17 = 14 * DEG + deltas.get("17")!;
+  const gapDeg = Math.abs(a17 - a16) / DEG;
+  assert.ok(gapDeg <= 6, `회전각 차이 ≤ 6°(${gapDeg.toFixed(2)}°)`);
+  assert.ok(Math.abs(deltas.get("17")!) > Math.abs(a16), "신뢰도 낮은 #17이 더 많이 돈다");
+});
+
+test("수동 회전한 어벗은 조율에서 그대로 둔다", () => {
+  const deltas = harmonizeAdjacentAbutmentYaws([
+    { toothNumber: "16", angleRad: 0, confidence: 0.9, fdiPos: 6, anterior: false, locked: true },
+    { toothNumber: "17", angleRad: 14 * DEG, confidence: 0.9, fdiPos: 7, anterior: false },
+  ]);
+  assert.equal(deltas.get("16"), 0);
+  assert.ok(deltas.get("17")! < -5 * DEG);
+});
+
+test("대합·악궁 중심은 협측(+)과 설측(-) 모두 최소 벽 안에서 따라간다", () => {
+  const buccal = resolveSignedPlacementTradeoff({
+    targetOffsetMm: 1.2,
+    posIdealLimitsMm: [0.6],
+    posMinLimitsMm: [1.1],
+    negIdealLimitsMm: [0.6],
+    negMinLimitsMm: [1.1],
+  });
+  assert.ok(buccal > 0.6 && buccal <= 1.1, `협측은 적절 벽과 양보하고 최소 벽은 지킨다(${buccal})`);
+
+  const lingual = resolveSignedPlacementTradeoff({
+    targetOffsetMm: -0.4,
+    posIdealLimitsMm: [0.6],
+    posMinLimitsMm: [1.1],
+    negIdealLimitsMm: [0.6],
+    negMinLimitsMm: [1.1],
+  });
+  assert.equal(lingual, -0.4);
+
+  const overMin = resolveSignedPlacementTradeoff({
+    targetOffsetMm: -3,
+    posIdealLimitsMm: [0.6],
+    posMinLimitsMm: [1.1],
+    negIdealLimitsMm: [0.3],
+    negMinLimitsMm: [0.8],
+  });
+  assert.ok(overMin >= -0.8 - 1e-9, `설측도 최소 벽을 넘지 않는다(${overMin})`);
+});
+
+test("로컬 치관 크기는 표준을 앵커로 인접 자연치·대합치를 섞고 0.85~1.15로 묶는다", () => {
+  assert.equal(blendLocalCrownSizeScale({}), 1);
+  const big = blendLocalCrownSizeScale({ adjacentNaturalRatios: [1.12, 1.1], opposingRatio: 1.1 });
+  assert.ok(big > 1.05 && big <= 1.15, `큰 환자 치아면 커진다(${big})`);
+  const outlier = blendLocalCrownSizeScale({ adjacentNaturalRatios: [1.6], opposingRatio: 0.5 });
+  assert.equal(outlier, 1, "비정상 폭 측정은 버린다");
+});
+
+test("같은 부위 인접 어벗 크기는 3% 안으로 모이고 물리 한도는 넘지 않는다", () => {
+  const out = harmonizeAdjacentSameKindSizes([
+    { toothNumber: "16", kind: "molar", fdiPos: 6, normScale: 1.12, minNormScale: 0.8, maxNormScale: 1.2 },
+    { toothNumber: "17", kind: "molar", fdiPos: 7, normScale: 0.96, minNormScale: 0.8, maxNormScale: 1.0 },
+    { toothNumber: "15", kind: "premolar", fdiPos: 5, normScale: 0.9, minNormScale: 0.8, maxNormScale: 1.2 },
+  ]);
+  const s16 = out.get("16")!;
+  const s17 = out.get("17")!;
+  assert.ok(s17 <= 1.0 + 1e-9, "#17 상한 유지");
+  assert.ok(Math.abs(s16 - s17) <= 0.05, `대구치끼리 크기 차이가 줄어든다(${s16.toFixed(3)} vs ${s17.toFixed(3)})`);
+  assert.equal(out.get("15"), 0.9, "다른 부위는 건드리지 않는다");
 });
