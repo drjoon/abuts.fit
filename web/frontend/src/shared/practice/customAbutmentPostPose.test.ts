@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   clampBuccalOffsetForLingualScrewWall,
   clampLateralForCompactDiameter,
+  compromiseArchAgainstWall,
+  compromiseWallShiftFromArch,
   lingualHalfAtScrewExitMm,
   localArchTangent,
   maxBuccalOffsetForLingualScrewWall,
@@ -11,6 +13,9 @@ import {
   opposingSlopeTargetU,
   pickCompactFunctionalU,
   proximalWallSlope,
+  resolveAutoPlacementTradeoff,
+  POSTERIOR_POST_WALL_IDEAL_MM,
+  POSTERIOR_POST_WALL_MIN_MM,
   type ArchCrownPoint,
   type ArchStation,
 } from "./customAbutmentPostPose";
@@ -252,6 +257,36 @@ test("하악 구치 중심은 대합 상악의 설측 교두 설측 경사면에
   assert.ok(Math.abs(res.fossaU) < 0.05);
   // 상악 설측 교두정(-2.1)보다 약간 설측인 설측 교두 설측 경사면(uLo 안쪽)
   assert.ok(res.u < -2.1 && res.u > -3.6, `expected lower target on lingual cusp lingual slope, got ${res.u}`);
+});
+
+test("악궁이 적절 벽 안에 있으면 벽을 깎지 않고 악궁을 따른다", () => {
+  const placed = compromiseArchAgainstWall({ archMm: 0.4, idealLimitMm: 0.9, minLimitMm: 1.4 });
+  assert.equal(placed, 0.4);
+});
+
+test("악궁과 적절 두께가 겹치면 최소 벽 앞에서 반씩 양보한다", () => {
+  const ideal = 0.735;
+  const minLim = ideal + (POSTERIOR_POST_WALL_IDEAL_MM - POSTERIOR_POST_WALL_MIN_MM);
+  const placed = compromiseArchAgainstWall({ archMm: 2.2, idealLimitMm: ideal, minLimitMm: minLim });
+  assert.ok(Math.abs(placed - (ideal + 0.25)) < 1e-9, `expected halfway, got ${placed}`);
+  const wall = POSTERIOR_POST_WALL_IDEAL_MM - (placed - ideal);
+  assert.ok(wall > POSTERIOR_POST_WALL_MIN_MM && wall < POSTERIOR_POST_WALL_IDEAL_MM);
+});
+
+test("최소 벽 밖으로는 악궁을 따라가지 않는다", () => {
+  const placed = resolveAutoPlacementTradeoff({
+    archOffsetMm: 3,
+    idealLimitsMm: [0.4],
+    minLimitsMm: [0.9],
+  });
+  assert.ok(Math.abs(placed - 0.65) < 1e-9);
+});
+
+test("크라운 최소를 맞추는 이동은 전부 하고 적절 두께만 양보한다", () => {
+  const shift = compromiseWallShiftFromArch({ mustShiftMm: 0.7, idealShiftMm: 1.2 });
+  assert.ok(Math.abs(shift - 0.95) < 1e-9);
+  const already = compromiseWallShiftFromArch({ mustShiftMm: -0.2, idealShiftMm: -0.1 });
+  assert.equal(already, 0);
 });
 
 test("악궁·대합 협측 위치가 스크류 설측 벽을 뚫으면 벽이 1mm 남는 곳까지만 옮긴다", () => {

@@ -1295,7 +1295,7 @@ open11.predictedCrownWorldGeometry.dispose();
   slenderCanine.predictedCrownWorldGeometry.dispose();
 }
 
-// 구치: 악궁·대합이 협측이어도 스크류 설측 벽이 1mm보다 얇아지면 그 앞에서 멈춘다.
+// 구치: 악궁이 협측이면 적절 벽(1mm)과 양보해 따라가고, 최소 벽(0.5mm)은 넘지 않는다.
 {
   const screwR = 2.45 / 2;
   const works16 = [{ toothNumber: "16", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }];
@@ -1348,19 +1348,19 @@ open11.predictedCrownWorldGeometry.dispose();
   const buccalWall = -buccalTop.minX - screwR;
   assert.ok(
     centeredWall >= 0.9,
-    `구치 스크류 설측 벽은 1mm를 유지한다(${centeredWall.toFixed(2)}mm)`,
+    `충돌이 없으면 구치 스크류 설측 벽은 적절 두께에 머문다(${centeredWall.toFixed(2)}mm)`,
   );
   assert.ok(
     buccalTop.meanX > centeredTop.meanX + 0.12,
     `협측 악궁이면 포스트 상단이 따라간다(중심 ${centeredTop.meanX.toFixed(2)}mm → 협측 ${buccalTop.meanX.toFixed(2)}mm)`,
   );
   assert.ok(
-    buccalWall >= 0.9,
-    `협측으로 따라간 뒤에도 스크류 설측 벽은 1mm를 유지한다(${buccalWall.toFixed(2)}mm)`,
+    buccalWall >= 0.5 - 1e-3,
+    `협측으로 따라가도 설측 벽 최소 0.5mm는 남긴다(${buccalWall.toFixed(2)}mm)`,
   );
   assert.ok(
-    buccalTop.meanX < 1.7,
-    `악궁이 2.2mm 협측이어도 설측 벽 한도에서 멈춘다(상단 중심 ${buccalTop.meanX.toFixed(2)}mm)`,
+    buccalWall < centeredWall - 0.04 || buccalTop.meanX > centeredTop.meanX + 0.2,
+    `악궁을 따르려면 적절 벽과 서로 양보한다(벽 ${buccalWall.toFixed(2)}mm, 이동 ${(buccalTop.meanX - centeredTop.meanX).toFixed(2)}mm)`,
   );
   centered16.worldGeometry.dispose();
   centered16.predictedCrownWorldGeometry.dispose();

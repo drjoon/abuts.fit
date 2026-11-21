@@ -61,13 +61,17 @@ import {
   type AbutmentGenerationRule,
 } from "@/shared/practice/abutmentDesignLogic";
 import {
+  ANTERIOR_MARGIN_POST_WALL_MIN_MM,
   clampLateralForCompactDiameter,
+  compromiseWallShiftFromArch,
   LINGUAL_SCREW_WALL_LIMIT_MM,
-  maxBuccalOffsetForLingualScrewWall,
   localArchTangent,
   neighborCrownBlPose,
+  POSTERIOR_POST_WALL_IDEAL_MM,
+  POSTERIOR_POST_WALL_MIN_MM,
   opposingSlopeTargetU,
   pickCompactFunctionalU,
+  resolveAutoPlacementTradeoff,
 } from "@/shared/practice/customAbutmentPostPose";
 import {
   axisFromFixtureSlopes,
@@ -287,6 +291,27 @@ const norm3 = (a: Vec3): Vec3 => {
   return [a[0] / l, a[1] / l, a[2] / l];
 };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** 악궁에 둔 축을 크라운 벽 쪽으로 옮길 때, 최소는 다 맞추고 적절 두께까지만 양보한 거리. */
+function archCrownShiftBudgetMm(args: {
+  limMm: number;
+  postOuterMm: number;
+  crownMinMm: number;
+  crownIdealMm: number;
+  maxShiftMm: number;
+}): number {
+  if (!Number.isFinite(args.limMm)) return 0;
+  return Math.min(
+    args.maxShiftMm,
+    Math.max(
+      0,
+      compromiseWallShiftFromArch({
+        mustShiftMm: args.postOuterMm + args.crownMinMm - args.limMm,
+        idealShiftMm: args.postOuterMm + args.crownIdealMm - args.limMm,
+      }),
+    ),
+  );
+}
 const wrapAngle = (a: number) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 
 function worldDirToFixtureLocal(dir: Vec3, pose: FixtureWorldPose): Vec3 {
@@ -5348,13 +5373,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (!posterior && tpl.kind !== "incisor" && labialLimit) {
       const hRef = H * 0.78;
       const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.25;
-      let moved = 0;
       const maxLabShiftMm = 2.6;
-      for (let iter = 0; iter < 4 && moved < maxLabShiftMm; iter += 1) {
+      const crownStdShift = getCrownWallThicknessStandard(fixture.toothNumber);
+      const fr0 = insertionFrame(w, labXY);
+      const budget = archCrownShiftBudgetMm({
+        limMm: labialLimitAt(fr0.uLabial, hRef, fr0.w),
+        postOuterMm: postLab,
+        crownMinMm: crownStdShift.buccolingualMinMm,
+        crownIdealMm: crownStdShift.buccolingualIdealMm,
+        maxShiftMm: maxLabShiftMm,
+      });
+      let moved = 0;
+      for (let iter = 0; iter < 4 && moved < budget - 0.04; iter += 1) {
         const fr = insertionFrame(w, labXY);
         const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
         if (!Number.isFinite(lim)) break;
-        const need = Math.min(postLab + params.minCrownThicknessMm - lim, maxLabShiftMm - moved);
+        const need = Math.min(
+          Math.max(0, postLab + crownStdShift.buccolingualIdealMm - lim),
+          budget - moved,
+        );
         if (need <= 0.04) break;
         w = capTilt(
           norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
@@ -5379,13 +5416,28 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const hRef = H * 0.78;
         const postBuc = tpl.topLabialHalfMm * blScale * params.postWidthScale;
         const crownStdAxis = getCrownWallThicknessStandard(fixture.toothNumber);
-        let moved = 0;
         const maxBucShiftMm = 2.4;
-        for (let iter = 0; iter < 4 && moved < maxBucShiftMm; iter += 1) {
+        const fr0 = insertionFrame(w, labXY);
+        const lim0 = labialLimitAt(fr0.uLabial, hRef, fr0.w);
+        const budget =
+          Number.isFinite(lim0) && lim0 - Math.min(0, jawArchRelC0) >= 3.2
+            ? archCrownShiftBudgetMm({
+                limMm: lim0,
+                postOuterMm: postBuc,
+                crownMinMm: crownStdAxis.buccolingualMinMm,
+                crownIdealMm: crownStdAxis.buccolingualIdealMm,
+                maxShiftMm: maxBucShiftMm,
+              })
+            : 0;
+        let moved = 0;
+        for (let iter = 0; iter < 4 && moved < budget - 0.04; iter += 1) {
           const fr = insertionFrame(w, labXY);
           const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
           if (!Number.isFinite(lim) || lim - Math.min(0, jawArchRelC0) < 3.2) break;
-          const need = Math.min(postBuc + crownStdAxis.buccolingualIdealMm - lim, maxBucShiftMm - moved);
+          const need = Math.min(
+            Math.max(0, postBuc + crownStdAxis.buccolingualIdealMm - lim),
+            budget - moved,
+          );
           if (need <= 0.05) break;
           w = capTilt(
             norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
@@ -5443,16 +5495,29 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     axisSource = "arch";
 
     // 인접치 순측 아치 라인(labialLimit) 안쪽으로 포스트 순측 벽 + 크라운 두께가 들어오도록 삽입축을 설측으로 추가 보정한다.
+    // 최소 두께는 맞추고, 적절 두께까지는 악궁과 반만 옮긴다.
     if (labialLimit) {
       const hRef = H * 0.78;
       const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.25;
-      let moved = 0;
       const maxLabShiftMm = 2.6;
-      for (let iter = 0; iter < 4 && moved < maxLabShiftMm; iter += 1) {
+      const crownStdShift = getCrownWallThicknessStandard(fixture.toothNumber);
+      const fr0 = insertionFrame(w, labXY);
+      const budget = archCrownShiftBudgetMm({
+        limMm: labialLimitAt(fr0.uLabial, hRef, fr0.w),
+        postOuterMm: postLab,
+        crownMinMm: crownStdShift.buccolingualMinMm,
+        crownIdealMm: crownStdShift.buccolingualIdealMm,
+        maxShiftMm: maxLabShiftMm,
+      });
+      let moved = 0;
+      for (let iter = 0; iter < 4 && moved < budget - 0.04; iter += 1) {
         const fr = insertionFrame(w, labXY);
         const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
         if (!Number.isFinite(lim)) break;
-        const need = Math.min(postLab + params.minCrownThicknessMm - lim, maxLabShiftMm - moved);
+        const need = Math.min(
+          Math.max(0, postLab + crownStdShift.buccolingualIdealMm - lim),
+          budget - moved,
+        );
         if (need <= 0.04) break;
         w = capTilt(
           norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
@@ -5622,22 +5687,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         1,
       ]);
     }
-    // 픽스쳐가 협측 식립·경사된 구치(#24·#25 등)는 인접치 협측 아치 라인(labialLimit) 안쪽으로
-    // 포스트 협측 벽 + 구치 협측 적정 크라운 두께(1.5mm)가 들어오도록 삽입축을 설측으로 추가 보정한다.
+    // 픽스쳐가 협측 식립·경사된 구치는 협측 아치 안쪽의 최소 크라운 두께를 맞춘다.
+    // 적절 두께(기존 협설 값)까지는 악궁 위치와 반만 양보한다.
     const hasBuccalDisplacement =
       jawArchRelC0 < -0.3 || occU < -0.35 || (oppArchReady && oppArchRelC0 < -0.35);
     if (labialLimit && hasBuccalDisplacement) {
       const hRef = H * 0.78;
       const postBuc = tpl.topLabialHalfMm * blScale * params.postWidthScale;
-      let moved = 0;
       const maxBucShiftMm = 2.4;
-      for (let iter = 0; iter < 4 && moved < maxBucShiftMm; iter += 1) {
+      const fr0 = insertionFrame(w, labXY);
+      const lim0 = labialLimitAt(fr0.uLabial, hRef, fr0.w);
+      const budget =
+        Number.isFinite(lim0) && lim0 - Math.min(0, jawArchRelC0) >= 3.2
+          ? archCrownShiftBudgetMm({
+              limMm: lim0,
+              postOuterMm: postBuc,
+              crownMinMm: crownStdAxis.buccolingualMinMm,
+              crownIdealMm: crownStdAxis.buccolingualIdealMm,
+              maxShiftMm: maxBucShiftMm,
+            })
+          : 0;
+      let moved = 0;
+      for (let iter = 0; iter < 4 && moved < budget - 0.04; iter += 1) {
         const fr = insertionFrame(w, labXY);
         const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
         if (!Number.isFinite(lim) || lim - Math.min(0, jawArchRelC0) < 3.2) break;
         const need = Math.min(
-          postBuc + crownStdAxis.buccolingualIdealMm - lim,
-          maxBucShiftMm - moved,
+          Math.max(0, postBuc + crownStdAxis.buccolingualIdealMm - lim),
+          budget - moved,
         );
         if (need <= 0.05) break;
         w = capTilt(
@@ -8101,7 +8178,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const boreAtColH = colBoreProfile.radiusAtZ(zAtColH);
         const uScH = (h / axCosCol) * frame.uLabial[2];
         const vScH = (h / axCosCol) * frame.vSide[2];
-        const screwSafeWall = posterior ? SCREW_WALL_MM : MIN_FRACTURE_SAFE_POST_WALL_MM + 0.03;
+        // 전치 절단측(포스트 길이의 위 1/2)은 스크류 벽 개방을 허용한다. 마진측 1/2만 최소 두께를 강제한다.
+        const anteriorIncisalOpen = !posterior && k > POST_LEVELS * 0.5;
+        const screwSafeWall = posterior
+          ? SCREW_WALL_MM
+          : anteriorIncisalOpen
+            ? 0
+            : ANTERIOR_MARGIN_POST_WALL_MIN_MM;
         const exactScrewR = rayCircleRadius(
           uScH,
           vScH,
@@ -8110,17 +8193,23 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           cDv,
         );
         const enforceColScrew =
-          posterior || angulationDeg <= 15.5 || Math.abs(cDv) >= 0.38 || k <= Math.round(POST_LEVELS * 0.35);
+          !anteriorIncisalOpen &&
+          (posterior ||
+            angulationDeg <= 15.5 ||
+            Math.abs(cDv) >= 0.38 ||
+            k <= Math.round(POST_LEVELS * 0.5));
         const screwFloor = enforceColScrew
           ? Math.max(posterior ? minPostR : 0.78, exactScrewR)
           : 0.75;
-        const tightScrewSafeR = rayCircleRadius(
-          uScH,
-          vScH,
-          boreAtColH + MIN_FRACTURE_SAFE_POST_WALL_MM + 0.02,
-          cDu,
-          cDv,
-        );
+        const tightWallMm = anteriorIncisalOpen
+          ? 0
+          : posterior
+            ? POSTERIOR_POST_WALL_MIN_MM
+            : ANTERIOR_MARGIN_POST_WALL_MIN_MM;
+        const tightScrewSafeR =
+          tightWallMm <= 0
+            ? 0
+            : rayCircleRadius(uScH, vScH, boreAtColH + tightWallMm, cDu, cDv);
         let cap = Infinity;
         let hardCap = Infinity;
         if (h >= c.h0 + hPostBase + 0.25) {
@@ -8228,14 +8317,32 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 별다른 간섭(스크류 홀 벽 부족·한쪽 크라운 공간 협소)이 없으면 4방위 모두 동일한 마진 폭(targetShoulderW)을 유지하고,
     // 제약이 걸리는 방위만 필요한 만큼 조정해 반대쪽 마진 폭이 좁아지지 않게 한다.
     // 악궁·대합이 임플란트보다 협측이면 포스트 중심을 그쪽으로 옮긴다.
-    // 마진 설측 벽이 1mm보다 얇아지는 지점에서는 멈춘다. 상단 홀은 아래에서 같은 두께로 다시 막는다.
+    // 적절 벽(포스트 1.0 / 크라운 기존 적절값)과 악궁은 반씩 양보하고, 최소 벽은 넘지 않는다.
+    let lingualScrewWallTargetMm = LINGUAL_SCREW_WALL_LIMIT_MM;
     if (posterior && idealBuccalOffsetMm != null && idealBuccalOffsetMm > 0.15 && mHalfBl > 0) {
-      const room = maxBuccalOffsetForLingualScrewWall({
-        lingualHalfMm: mHalfBl,
-        screwRadiusMm: boreTopR,
+      const postIdealLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
+      const postMinLimit = mHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
+      const idealLimits = [postIdealLimit];
+      const minLimits = [postMinLimit];
+      if (labialLimit) {
+        const lim = labialLimitAt(frame.uLabial, Math.max(2.2, tpl.postHeightMm * 0.78), frame.w);
+        if (Number.isFinite(lim)) {
+          const postBucHalf = Math.max(0.8, mHalfBl - targetShoulderW);
+          idealLimits.push(lim - postBucHalf - crownBlIdealMm);
+          minLimits.push(lim - postBucHalf - crownBlMinMm);
+        }
+      }
+      const want = resolveAutoPlacementTradeoff({
+        archOffsetMm: idealBuccalOffsetMm,
+        idealLimitsMm: idealLimits,
+        minLimitsMm: minLimits,
       });
-      const want = Math.min(idealBuccalOffsetMm, room);
       if (want > mCu + 0.05) mCu = Math.min(1.6, want);
+      lingualScrewWallTargetMm = clamp(
+        mHalfBl - boreTopR - mCu,
+        POSTERIOR_POST_WALL_MIN_MM,
+        POSTERIOR_POST_WALL_IDEAL_MM,
+      );
     }
     const mExtPosU = mCu + mHalfBl;
     const mExtNegU = -mCu + mHalfBl;
@@ -8292,7 +8399,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
       const estSurfaceTopZPosterior = meanMarginZ + top.heightAt(mCu, mCv) / axialCos;
       const postBoreProfile = resolveScrewChannelProfile(conn, estSurfaceTopZPosterior);
-      const strictPostWallMm = MIN_POST_WALL_MM + 0.032;
+      const strictPostWallMm = POSTERIOR_POST_WALL_MIN_MM;
       const strictTopCornerMm = 0.042;
       const boreStrictTopR =
         postBoreProfile.radiusAtZ(estSurfaceTopZPosterior + topRoundMm * 0.65) +
@@ -8465,7 +8572,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const minTaperDropBl = minWallTaperSlope * hRefSpan * Math.max(1, postUnitLab, postUnitLin);
         const minTaperDropMd = (minWallTaperSlope * hRefSpan) / Math.max(0.8, postUnitMd);
         const screwTightR = boreStrictTopR;
-        const lingualWallR = Math.max(screwTightR, boreTopR + LINGUAL_SCREW_WALL_LIMIT_MM);
+        const lingualWallR = Math.max(screwTightR, boreTopR + lingualScrewWallTargetMm);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const reqTopBl = Math.max(
           minPostR,
@@ -8587,7 +8694,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const effScrewReqR = screwReqR;
         const screwReqMd = effScrewReqR / Math.max(0.8, postUnitMd);
         const screwTightR = boreTopR + SCREW_WALL_TIGHT_MM;
-        const lingualWallR = Math.max(screwTightR, boreTopR + LINGUAL_SCREW_WALL_LIMIT_MM);
+        const lingualWallR = Math.max(screwTightR, boreTopR + lingualScrewWallTargetMm);
         const screwTightMd = screwTightR / Math.max(0.8, postUnitMd);
         const screwBaseTightR = boreTopR + SCREW_WALL_TIGHT_MM;
         const screwBaseTightMd = screwBaseTightR / Math.max(0.8, postUnitMd);
@@ -10680,13 +10787,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       mCv = pBaseCv;
     }
 
-    // 최후 스크류 홀 벽 두께(≥0.3mm) 안전망:
-    // 구치부는 이미 둥근 사각형 단면 해석 해법(exactIt·topFix)에서 3D 스크류 홀 벽 두께를 맞췄으므로
-    // 볼록포 원호 합집합(compute2DConvexHull)으로 한쪽 변이 각지거나 배불뚝이가 되는 변형을 금지한다.
+    // 전치 마진측 1/2만 스크류 벽 최소(0.3mm)를 맞춘다. 절단측 1/2는 개방을 허용한다.
+    // 구치부는 단면 해법에서 최소 0.5mm를 이미 맞춘다.
     if (!posterior && wrapAnteriorScrew360) {
       const estSurfaceTopZ = meanMarginZ + top.heightAt(0, 0) / Math.max(frame.w[2], 0.2);
       const boreProfile = resolveScrewChannelProfile(conn, estSurfaceTopZ);
-      const reqWallMm = (posterior ? MIN_POST_WALL_MM : MIN_FRACTURE_SAFE_POST_WALL_MM) + 0.025;
+      const reqWallMm = ANTERIOR_MARGIN_POST_WALL_MIN_MM;
+      const marginHalfLevel = Math.round(POST_LEVELS * 0.5);
       const minUndercutSlope = Math.tan(RETENTION_SINGLE_MIN_TAPER_DEG * DEG);
       const CIRCLE_SEGS = 72;
       const circleCos = 1 / Math.cos(Math.PI / CIRCLE_SEGS);
@@ -10700,12 +10807,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let needsScrewPush = false;
       for (let col = 0; col < ANGULAR_COLS && !needsScrewPush; col += 1) {
         const wallPts = postWallPtsByCol[col]!;
-        for (let k = 0; k <= POST_LEVELS; k += 1) {
+        for (let k = 0; k <= marginHalfLevel; k += 1) {
           const pt = wallPts[k]!;
-          const req =
-            k === POST_LEVELS
-              ? boreProfile.radiusAtZ(pt[2] + topRoundMm * 0.65) + reqWallMm + topCornerExtra
-              : boreProfile.radiusAtZ(pt[2]) + reqWallMm;
+          const req = boreProfile.radiusAtZ(pt[2]) + reqWallMm;
           if (Math.hypot(pt[0], pt[1]) < req - 1e-3) {
             needsScrewPush = true;
             break;
@@ -10713,7 +10817,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         }
       }
 
-      for (let k = POST_LEVELS; needsScrewPush && k >= 0; k -= 1) {
+      for (let k = marginHalfLevel; needsScrewPush && k >= 0; k -= 1) {
         const candPts: Vec3[] = [];
         const unionPts: Array<[number, number]> = [];
         let maxReqR = 0;
@@ -11085,8 +11189,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const availRise = Math.max(0.06, edgeHeight(Math.max(minInnerS, sEnd - rhoMax * cos0)) - hEnd);
       const rho = Math.min(rhoMax, Math.max(0.12, availRise / rise));
       let ext = Math.max(0, edgeHeight(Math.max(minInnerS, sEnd - rho * cos0)) - hEnd - rho * rise);
-      if (ext > 1e-4 && (posterior || wrapAnteriorScrew360)) {
-        const minTopRoundWall = posterior ? MIN_POST_WALL_MM : MIN_FRACTURE_SAFE_POST_WALL_MM + 0.015;
+      if (ext > 1e-4 && posterior) {
+        const minTopRoundWall = POSTERIOR_POST_WALL_MIN_MM;
         const atCandidate = (candExt: number): number => {
           const candH = hEnd + candExt;
           const candS = Math.min(sEnd, Math.max(rho * cos0 + 0.14, sEnd - Math.tan(t0) * candExt));

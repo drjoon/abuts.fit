@@ -554,11 +554,76 @@ export function pickCompactFunctionalU(args: {
 }
 
 /**
- * 스크류 홀 설측 벽의 배치 한계.
- * 구치 협설 최소 두께(1.0mm)보다 얇으면 홀이 설측으로 뚫린 것으로 본다.
- * 파절 바닥(0.4mm)까지 붙인 뒤 벽을 덧대는 것과 다르다.
+ * 스크류 홀 주변 포스트 벽.
+ * 최소는 자동 배치에서 양보하지 않는다. 적절 두께는 악궁 정렬과 서로 양보한다.
+ * 전치 절단측(포스트 길이의 위 1/2)은 개방을 허용하므로 여기 하한을 두지 않는다.
  */
-export const LINGUAL_SCREW_WALL_LIMIT_MM = 1;
+export const POSTERIOR_POST_WALL_MIN_MM = 0.5;
+export const POSTERIOR_POST_WALL_IDEAL_MM = 1;
+export const ANTERIOR_MARGIN_POST_WALL_MIN_MM = 0.3;
+export const ANTERIOR_MARGIN_POST_WALL_IDEAL_MM = 0.5;
+/** 적절 두께와 악궁이 겹치는 구간을 나누는 비율. 0.5면 남는 여유를 반씩 가진다. */
+export const ARCH_WALL_YIELD = 0.5;
+
+/**
+ * 스크류 홀 설측 벽의 적절 두께.
+ * 이 값보다 얇아도 최소(0.5mm)까지는 악궁을 향해 양보할 수 있다.
+ */
+export const LINGUAL_SCREW_WALL_LIMIT_MM = POSTERIOR_POST_WALL_IDEAL_MM;
+
+/**
+ * 악궁이 원하는 이동이 적절 벽 한도 안이면 그대로 둔다.
+ * 한도를 넘으면 최소 벽 한도까지 중 겹치는 구간만 yieldRatio만큼 악궁 쪽으로 간다.
+ */
+export function compromiseArchAgainstWall(args: {
+  archMm: number;
+  idealLimitMm: number;
+  minLimitMm: number;
+  yieldRatio?: number;
+}): number {
+  const y = clamp(args.yieldRatio ?? ARCH_WALL_YIELD, 0, 1);
+  const ideal = args.idealLimitMm;
+  const minLim = Math.max(ideal, args.minLimitMm);
+  if (!(args.archMm > ideal)) return args.archMm;
+  const capped = Math.min(args.archMm, minLim);
+  return ideal + (capped - ideal) * y;
+}
+
+/**
+ * 이미 악궁에 놓인 축을, 벽 두께를 맞추려고 얼마나 옮길지.
+ * 최소 두께에 모자란 거리는 전부 옮기고, 적절 두께까지 남은 거리만 양보한다.
+ */
+export function compromiseWallShiftFromArch(args: {
+  mustShiftMm: number;
+  idealShiftMm: number;
+  yieldRatio?: number;
+}): number {
+  const y = clamp(args.yieldRatio ?? ARCH_WALL_YIELD, 0, 1);
+  const must = Math.max(0, args.mustShiftMm);
+  const ideal = Math.max(must, args.idealShiftMm);
+  if (ideal <= 0) return 0;
+  return must + (ideal - must) * y;
+}
+
+/** 여러 벽의 적절·최소 한도 중 가장 빡센 값으로 악궁 이동을 고른다. */
+export function resolveAutoPlacementTradeoff(args: {
+  archOffsetMm: number;
+  idealLimitsMm: readonly number[];
+  minLimitsMm: readonly number[];
+  yieldRatio?: number;
+}): number {
+  let ideal = Infinity;
+  let minLim = Infinity;
+  for (const v of args.idealLimitsMm) if (Number.isFinite(v)) ideal = Math.min(ideal, v);
+  for (const v of args.minLimitsMm) if (Number.isFinite(v)) minLim = Math.min(minLim, v);
+  if (!Number.isFinite(ideal) || !Number.isFinite(minLim)) return args.archOffsetMm;
+  return compromiseArchAgainstWall({
+    archMm: args.archOffsetMm,
+    idealLimitMm: ideal,
+    minLimitMm: minLim,
+    yieldRatio: args.yieldRatio,
+  });
+}
 
 /**
  * 스크류가 빠지는 교합면 쪽 설측 반폭.
