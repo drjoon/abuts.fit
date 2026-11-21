@@ -1,14 +1,16 @@
 // 매칭된 픽스쳐 자세와 구강스캔(잇몸·인접치·대합치)으로 커스텀어벗 STL을 설계한다.
 // 치종별 형상은 추적관리 커스텀어벗 실측(266건) 중앙값 템플릿에서 출발해 스캔에 맞춘다.
 // 1) 피니시라인 = 둘레 치은 연하(얕은 끝~깊은 끝)의 완만한 스캘럽. 깊이를 옮겨도 2차 조화만 남긴다. 마진 단면 = 치종 템플릿.
-// 2) 삽입축 = 인접 자연치·인접 어벗 장축과 같은 각도(브리지는 더 정확히). 없으면 대합·악궁 방향.
+// 2) 자동 삽입축 = 교합면 수직 · 크라운 중심 · 인접 어벗 정렬을 비슷한 비중으로 섞는다.
+//    픽스쳐가 기울면 픽스쳐·인접 추종을 줄이고 교합·크라운을 올린다. 인접만 부정교합이면 인접만 줄인다.
+//    브리지 지대주는 그 자동축을 평균해 하나의 평행 축으로 맞춘다.
 //    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
-//    삽입축의 순측·근원심 기울기도 그 인접치 장축을 따른다. 설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
+//    설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
 // 6) 포스트 축벽은 솔리드로 두고, 화면용 메시만 임플란트 축 원통으로 스크류 홀을 뚫는다.
@@ -19,6 +21,7 @@
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignCache.ts
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
+// - web/frontend/src/shared/practice/insertionAxisBlend.ts
 // - web/frontend/src/shared/practice/incisorShovelDesign.test.ts
 // - web/frontend/src/shared/practice/meshUnion.ts
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -64,6 +67,13 @@ import {
   opposingSlopeTargetU,
   pickCompactFunctionalU,
 } from "@/shared/practice/customAbutmentPostPose";
+import {
+  axisFromFixtureSlopes,
+  axisTowardCrownCenter,
+  blendAutoInsertionAxis,
+  maxPairAngleDeg,
+  meanUpAxis,
+} from "@/shared/practice/insertionAxisBlend";
 import { cuffProfile } from "@/shared/practice/cuffProfile";
 import { subtractTriangleSoups } from "@/shared/practice/meshUnion";
 import {
@@ -5024,12 +5034,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const marginB = (tpl.marginMdMm / 2) * mdScale * params.marginSizeScale;
 
   // ── 3) 삽입축:
-  // - 구치부: 임플란트 수직축(+Z)을 기본으로 지키고 대합치 중앙에서 많이 벗어난 만큼만 완만히 반영한다.
-  // - 전치부(1·2·3번, 우리·알토란기공소 남정헌 #13·#23, 정성윤 #22·#23, 이춘식 #33 등 실측):
-  //   임플란트가 순측(전방)으로 경사지게 식립된 경우 순측 치축 기울기를 따라 설측으로 세우고,
-  //   근·원심 역시 전체 악궁 평균 법선(곡률·스피만곡 오차 포함) 대신 양옆 인접치 치축·인접면 통로(proxCorridor)를 따라 세운다.
-  // - 또한 전·구치 모두 포스트 상단이 한쪽 인접치에 치우쳐 지르코니아 크라운 두께(목표 ≥1.0mm)가 부족하고 반대쪽에 여유가 있으면
-  //   열린 인접 공간 쪽으로 삽입축을 추가 보정한다.
+  // 자동(axisSourceCode -1): 교합면 수직 · 크라운 중심 · 인접 어벗 정렬을 비슷한 비중으로 섞는다.
+  // 픽스쳐가 교합면에서 기울면 인접 비중을 낮추고 교합·크라운을 올린다. 인접만 부정교합이면 인접만 낮춘다.
+  // 명시 0=교합 방향, 1=대합 중심, 2=인접 평행은 아래 기존 분기를 유지한다.
+  // 크라운 두께가 부족할 때만 열린 인접 공간·순측 아치 안쪽으로 조금 더 보정한다.
   const proxCorridor = adjacentProximalCorridor(jawLocalPts, {
     c0,
     wOccRef: norm3(occInFix),
@@ -5064,7 +5072,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     return new Float32Array(out);
   })();
 
-  const steerAxisForProximalClearance = (wInit: Vec3, capRad: number): Vec3 => {
+  const steerAxisForProximalClearance = (
+    wInit: Vec3,
+    capRad: number,
+    maxProxShiftMm = posterior ? 1.1 : 2.2,
+  ): Vec3 => {
     let wCur = wInit;
     const H = steerH;
     const hLo = steerHLo;
@@ -5080,7 +5092,6 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const wantThick = posterior
       ? Math.max(1.0, params.minCrownThicknessMm)
       : Math.max(1.06, params.minCrownThicknessMm + 0.06);
-    const maxProxShiftMm = posterior ? 1.1 : 2.2;
     let movedAbs = 0;
 
     for (let iter = 0; iter < 4 && movedAbs < maxProxShiftMm; iter += 1) {
@@ -5192,9 +5203,191 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   let anatomicalAxis = false;
   let anatomicalFunctionalU: number | null = null;
   let neighborLockRad: number | null = null;
+  /** 자동 세 요소 축. 구치 상단을 픽스쳐 중심으로 되돌리는 비율을 느슨히 한다. */
+  let occlusalAxisLed = false;
   const deadzoneMm = posterior ? AXIS_VERTICAL_DEADZONE_POSTERIOR_MM : AXIS_VERTICAL_DEADZONE_ANTERIOR_MM;
+  const explicitSource = Math.round(Number(params.axisSourceCode));
+  const autoInsertionAxis = explicitSource !== 0 && explicitSource !== 1 && explicitSource !== 2;
 
-  if (!posterior) {
+  let adjLabSlope: number | null = null;
+  if (!posterior && labialLimit) {
+    const zLo = meanMarginZ + 1.5;
+    const zHi = meanMarginZ + 5.5;
+    const uLo = labialLimit(zLo);
+    const uHi = labialLimit(zHi);
+    if (Number.isFinite(uLo) && Number.isFinite(uHi)) {
+      adjLabSlope = clamp((uHi - uLo) / (zHi - zLo), -Math.tan(26 * DEG), Math.tan(10 * DEG));
+      anteriorNeighborSideDeg = Math.atan(adjLabSlope) / DEG;
+    }
+  }
+
+  if (autoInsertionAxis) {
+    const H = tpl.postHeightMm;
+    const wOcc: Vec3 = occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix);
+    const frameOccAxis = insertionFrame(wOcc, labXY);
+    const labSignAxis = dot3(frameOccAxis.uLabial, labXY) >= 0 ? 1 : -1;
+    const mesSignAxis = dot3(frameOccAxis.vSide, mesXY) >= 0 ? 1 : -1;
+    const vMesAxis: Vec3 = mesSignAxis > 0 ? frameOccAxis.vSide : scale3(frameOccAxis.vSide, -1);
+    const labDirAxis = scale3(frameOccAxis.uLabial, labSignAxis);
+    const mesSignOnFrame0 = dot3(frame0.vSide, mesXY) >= 0 ? 1 : -1;
+    const crownMesMm = clamp(crownCenterV * mesSignOnFrame0, -0.75, 0.75);
+    const c0OccShiftU = dot3(c0, frameOccAxis.uLabial) * labSignAxis;
+    const jawArchRelC0 = archCenterReady ? jawArchOffsetU - c0OccShiftU : 0;
+    const oppArchRelC0 = oppArchReady ? oppArchOffsetU - c0OccShiftU : 0;
+
+    let crownLabMm = clamp(archCenterReady ? jawArchRelC0 : 0, -2.4, 2.4);
+    if (posterior && params.axisToOpposing > 0) {
+      let contactU: number | null = null;
+      let contactFossaU: number | null = null;
+      if (opposingLocalPts.length > 0) {
+        const bContact = opposingBContactPoint(opposingLocalPts, c0, frameOccAxis, {
+          vCrownMm: crownMesMm * mesSignAxis,
+          halfMdMm: crownHalfMd,
+          constrainMesiodistal: Number.isFinite(reachPos) || Number.isFinite(reachNeg),
+          jaw: fixture.jaw,
+          labSign: labSignAxis,
+        });
+        if (bContact) {
+          contactU = bContact.u * labSignAxis;
+          contactFossaU = bContact.fossaU * labSignAxis;
+        }
+      }
+      const fallbackOppSlopeOffset = fixture.jaw === "upper" ? 1.35 : -1.55;
+      if (
+        oppArchReady &&
+        (contactU == null || contactFossaU == null || Math.abs(contactFossaU - oppArchRelC0) > 1.7)
+      ) {
+        contactU = oppArchRelC0 + fallbackOppSlopeOffset;
+      }
+      const pickedU = pickCompactFunctionalU({
+        jaw: fixture.jaw,
+        archU: archCenterReady ? jawArchRelC0 : null,
+        contactU,
+        contactIsFunctionalTarget: true,
+      });
+      if (pickedU != null) {
+        crownLabMm = clamp(pickedU, -2.4, 2.4);
+        anatomicalFunctionalU = pickedU;
+      }
+    }
+
+    const alignSamples: Vec3[] = [];
+    const neighborAxesAuto = estimateAdjacentLongAxes(jawLocalPts, {
+      wOcc: occInFix,
+      labXY,
+      mesXY,
+      ownRadius: sbR,
+      ownHeight: sbH,
+      skipDistal: hasDistalRetromolarPad,
+      mesialBridgedAbutment: mesialAllowance.bridged,
+      distalBridgedAbutment: distalAllowance.bridged,
+    });
+    for (const row of neighborAxesAuto) alignSamples.push(row.axis);
+
+    let bestMesNb: { d: number; axis: Vec3 } | null = null;
+    let bestDisNb: { d: number; axis: Vec3 } | null = null;
+    for (const nb of neighbors) {
+      const along = nb.origin[0] * mesXY[0] + nb.origin[1] * mesXY[1];
+      const d = Math.hypot(nb.origin[0], nb.origin[1]);
+      if (d < 2.5 || d > 14 || Math.abs(along) < d * 0.4) continue;
+      const axis = nb.axis[2] < 0 ? scale3(nb.axis, -1) : norm3(nb.axis);
+      if (along > 0) {
+        if (!bestMesNb || d < bestMesNb.d) bestMesNb = { d, axis };
+      } else if (!bestDisNb || d < bestDisNb.d) bestDisNb = { d, axis };
+    }
+    if (bestMesNb) alignSamples.push(bestMesNb.axis);
+    if (bestDisNb) alignSamples.push(bestDisNb.axis);
+
+    if (tpl.kind === "incisor" && incisorGuide) {
+      const labCap = Math.tan(22 * DEG);
+      const mesCap = Math.tan(16 * DEG);
+      const labS = clamp(incisorGuide.labialSlope, -labCap, labCap);
+      const mesS = clamp(incisorGuide.mesialSlope, -mesCap, mesCap);
+      const archFr = insertionFrame(wOcc, alignedLabInFix);
+      const vMesArch =
+        dot3(archFr.vSide, alignedMesInFix) >= 0 ? archFr.vSide : scale3(archFr.vSide, -1);
+      const wInc = norm3(add3(archFr.w, add3(scale3(archFr.uLabial, labS), scale3(vMesArch, mesS))));
+      if (wInc[2] > 0.15) alignSamples.push(wInc);
+    }
+
+    const spreadDeg = maxPairAngleDeg(alignSamples);
+    // 전치 크라운 중심의 순측 기울기만 인접 경사에서 가져온다. 근원심은 크라운 간격 중심에 두고,
+    // 양옆이 서로 벌어지면(부정교합) 그 경사를 크라운 중심으로 복사하지 않는다.
+    if (!posterior && spreadDeg < 14) {
+      const labSlope = tpl.kind === "incisor" && incisorGuide ? incisorGuide.labialSlope : adjLabSlope;
+      if (labSlope != null && Number.isFinite(labSlope)) {
+        const anatomicalLabMm = clamp(labSlope, -Math.tan(22 * DEG), Math.tan(18 * DEG)) * H * 0.85;
+        crownLabMm = clamp(crownLabMm * 0.25 + anatomicalLabMm * 0.75, -2.4, 2.4);
+      }
+    }
+    const wCrown = axisTowardCrownCenter(wOcc, labDirAxis, vMesAxis, crownLabMm, crownMesMm, H);
+    const adjSamples =
+      adjLabSlope != null && !(tpl.kind === "incisor" && incisorGuide)
+        ? [...alignSamples, axisFromFixtureSlopes(labXY, mesXY, adjLabSlope, 0)]
+        : alignSamples;
+    const blended = blendAutoInsertionAxis({
+      occlusalVertical: wOcc,
+      crownCenter: wCrown,
+      adjacent: meanUpAxis(adjSamples, wOcc),
+      adjacentSpreadDeg: spreadDeg,
+      fixtureAxis: [0, 0, 1],
+    });
+    w = capTilt(blended.axis, tiltCapRad);
+    axisSource = "arch";
+    anatomicalAxis = true;
+    occlusalAxisLed = true;
+
+    if (!posterior && tpl.kind !== "incisor" && labialLimit) {
+      const hRef = H * 0.78;
+      const postLab = tpl.topLabialHalfMm * blScale * params.postWidthScale + 0.25;
+      let moved = 0;
+      const maxLabShiftMm = 2.6;
+      for (let iter = 0; iter < 4 && moved < maxLabShiftMm; iter += 1) {
+        const fr = insertionFrame(w, labXY);
+        const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
+        if (!Number.isFinite(lim)) break;
+        const need = Math.min(postLab + params.minCrownThicknessMm - lim, maxLabShiftMm - moved);
+        if (need <= 0.04) break;
+        w = capTilt(
+          norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
+          tiltCapRad,
+        );
+        moved += need;
+      }
+    }
+
+    const steerCap = posterior ? Math.min(tiltCapRad, 12.5 * DEG) : tiltCapRad;
+    w = steerAxisForProximalClearance(
+      w,
+      steerCap,
+      blended.mode === "fixture-tilt" ? (posterior ? 0.35 : 0.45) : undefined,
+    );
+
+    if (posterior && labialLimit) {
+      const occU = (dot3(wOcc, labXY) / Math.max(wOcc[2], 0.25)) * H;
+      const hasBuccalDisplacement =
+        jawArchRelC0 < -0.3 || occU < -0.35 || (oppArchReady && oppArchRelC0 < -0.35);
+      if (hasBuccalDisplacement) {
+        const hRef = H * 0.78;
+        const postBuc = tpl.topLabialHalfMm * blScale * params.postWidthScale;
+        const crownStdAxis = getCrownWallThicknessStandard(fixture.toothNumber);
+        let moved = 0;
+        const maxBucShiftMm = 2.4;
+        for (let iter = 0; iter < 4 && moved < maxBucShiftMm; iter += 1) {
+          const fr = insertionFrame(w, labXY);
+          const lim = labialLimitAt(fr.uLabial, hRef, fr.w);
+          if (!Number.isFinite(lim) || lim - Math.min(0, jawArchRelC0) < 3.2) break;
+          const need = Math.min(postBuc + crownStdAxis.buccolingualIdealMm - lim, maxBucShiftMm - moved);
+          if (need <= 0.05) break;
+          w = capTilt(
+            norm3(add3(scale3(w, H / Math.max(w[2], 0.2)), scale3(labXY, (-need * H) / hRef))),
+            steerCap,
+          );
+          moved += need;
+        }
+      }
+    }
+  } else if (!posterior) {
     const H = tpl.postHeightMm;
     // 인접 자연치 순측면(labialLimit) 기울기와 인접치 근원심 통로(proxCorridor) 기울기를 함께 반영한다.
     let wAntTarget = norm3(occInFix);
@@ -5446,7 +5639,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
   }
-  const explicitSource = Math.round(params.axisSourceCode);
+  // 명시 기준(0 교합 · 1 대합 · 2 인접 평행)만 인접 장축 잠금·절치 가이드를 다시 적용한다.
+  if (!autoInsertionAxis) {
   const neighborAxes =
     explicitSource === 0 || explicitSource === 1
       ? []
@@ -5528,6 +5722,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       w = steerAxisForProximalClearance(w, tiltCapRad);
     }
   }
+  }
   const logicBias = generationAxisBias(fixture.toothNumber, args.logicRules);
   if (mode.probeAxis) {
     w = applyGenerationAxisBias(w, labXY, mesXY, logicBias, tpl.postHeightMm, tiltCapRad);
@@ -5557,7 +5752,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     w = capTilt(w, hasManualAxisShift ? tiltCapRad : (neighborLockRad ?? effectiveTiltCapRad));
     if (posterior && neighborLockRad == null) {
       const H = tpl.postHeightMm;
-      const allowRatio = 0.42;
+      const allowRatio = occlusalAxisLed ? 0.78 : 0.42;
       const offX = (w[0] / w[2]) * H;
       const offY = (w[1] / w[2]) * H;
       const off = Math.hypot(offX, offY);

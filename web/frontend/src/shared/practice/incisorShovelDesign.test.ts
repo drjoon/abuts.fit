@@ -283,12 +283,12 @@ assert.ok(
   `#22 상단도 순설(${midShape.bl.toFixed(2)}mm)이 근원심(${midShape.md.toFixed(2)}mm)보다 좁다`,
 );
 assert.ok(
-  open11.metrics.postHeightMm > 5.8 && open11.metrics.postHeightMm < 11,
+  open11.metrics.postHeightMm > 5.6 && open11.metrics.postHeightMm < 11,
   `대합이 없고 인접 절단연이 순측으로 빠져도 포스트(${open11.metrics.postHeightMm}mm)는 인접치 길이를 따른다`,
 );
 assert.ok(
   openShape.labialRise > 0.55,
-  `순측으로 기운 인접치의 각도를 포스트가 따른다(상단-치경 순측 이동 ${openShape.labialRise.toFixed(2)}mm)`,
+  `순측으로 기운 인접치 쪽으로 포스트가 움직인다(상단-치경 순측 이동 ${openShape.labialRise.toFixed(2)}mm)`,
 );
 
 // 삽입축 옆의 수직 대합 벽은 교합면이 아니다. 그 최하단으로 포스트를 2mm대로 내리지 않는다.
