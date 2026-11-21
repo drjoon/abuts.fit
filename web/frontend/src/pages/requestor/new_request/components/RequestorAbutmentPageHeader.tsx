@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-22: 진행·완료 버튼은 기간 필터 바로 오른쪽. 준비~세척.패킹은 진행에 둔다.
 // - 2026-09-14: 진행중 모달 — 모바일 채팅형 전체화면 시트(inProgressMobileSheet).
 // - 2026-09-30: policyInProgress — 2xl 미만 아이콘+건수만(기공의뢰수신 좁은 헤더).
 // - 2026-09-14: 진행중/어벗츠 생산중 버튼에 Factory 아이콘. iconOnly·좁은 폭은 건수 배지.
@@ -78,6 +79,12 @@ const isPrepCancelableRequest = (request: unknown) =>
 const isFinishedStage = (stage: unknown) => {
   const text = String(stage || "").trim();
   return text === "추적관리" || text === "완료" || text === "tracking";
+};
+
+/** 출고예정으로 완료에 합치는 단계는 포장.발송만. 준비~세척.패킹은 진행. */
+const isShipWaitingItem = (item: any) => {
+  const stage = String(item?.stageLabel || item?.stage || "").trim();
+  return stage === "포장.발송" || stage === "shipping";
 };
 
 const shipItemToFinishedRow = (item: any) => ({
@@ -361,7 +368,7 @@ export const RequestorAbutmentPageHeader = ({
         return stage !== "취소" && stage.toLowerCase() !== "cancel";
       })
       .map(unmachItemToFinishedRow);
-    const shipRows = shipItems.map(shipItemToFinishedRow);
+    const shipRows = shipItems.filter(isShipWaitingItem).map(shipItemToFinishedRow);
     const seen = new Set<string>();
     const out: any[] = [];
     for (const row of [...unmachRows, ...shipRows]) {
@@ -773,54 +780,58 @@ export const RequestorAbutmentPageHeader = ({
           setCustomStartDate("");
           setCustomEndDate("");
         }}
-        childrenClassName="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2"
+        childrenClassName="flex min-w-0 flex-1 flex-nowrap items-center gap-2"
       >
-        {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-3 text-xs"
-          onClick={() => setInProgressOpen(true)}
-        >
-          진행 {progressDisplay.toLocaleString()}건
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={
-            unmachinableCount > 0
-              ? "h-8 border-accent-muted bg-accent-soft px-3 text-xs font-semibold text-accent-strong hover:bg-accent-muted/50"
-              : "h-8 px-3 text-xs"
-          }
-          onClick={() => setPastOpen(true)}
-        >
-          완료 {doneCount.toLocaleString()}건
-        </Button>
-        <DashboardImportantNoticesRail />
-        <RequestorBulkShippingBannerCard
-          variant="headerButton"
-          hideTrigger
-          onShippingItems={setShipItems}
-          bulkData={bulkData}
-          period={period}
-          customStartDate={customStartDate}
-          customEndDate={customEndDate}
-          onRefresh={() => {
-            void refetchBulk();
-          }}
-          onOpenBulkModal={() => {}}
-        />
-        <RequestorUnmachinableHost
-          hideTrigger
-          openSignal={unmachOpenSignal}
-          focusId={unmachFocusId}
-          period={period}
-          customStartDate={customStartDate}
-          customEndDate={customEndDate}
-          count={unmachinableCount}
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 px-3 text-xs"
+            onClick={() => setInProgressOpen(true)}
+          >
+            진행 {progressDisplay.toLocaleString()}건
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={
+              unmachinableCount > 0
+                ? "h-8 border-accent-muted bg-accent-soft px-3 text-xs font-semibold text-accent-strong hover:bg-accent-muted/50"
+                : "h-8 px-3 text-xs"
+            }
+            onClick={() => setPastOpen(true)}
+          >
+            완료 {doneCount.toLocaleString()}건
+          </Button>
+        </div>
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
+          <DashboardImportantNoticesRail />
+          <RequestorBulkShippingBannerCard
+            variant="headerButton"
+            hideTrigger
+            onShippingItems={setShipItems}
+            bulkData={bulkData}
+            period={period}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            onRefresh={() => {
+              void refetchBulk();
+            }}
+            onOpenBulkModal={() => {}}
+          />
+          <RequestorUnmachinableHost
+            hideTrigger
+            openSignal={unmachOpenSignal}
+            focusId={unmachFocusId}
+            period={period}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            count={unmachinableCount}
+          />
+        </div>
       </RequestorWorkspaceHeader>
 
       <PastRequestsModal
