@@ -11496,6 +11496,16 @@ export function RequestorPracticeReceivePage({
               authToken={token}
               toothWorks={selectedTransferToothWorks}
               files={[]}
+              className={
+                isPtxAbutmentDesignAwaitingDentist(
+                  labAbutmentInput(selectedTransfer),
+                ) ||
+                isPtxAbutmentDesignReviewForLab(
+                  labAbutmentInput(selectedTransfer),
+                )
+                  ? PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS
+                  : undefined
+              }
               onOpen={() => {
                 const id = String(selectedTransfer.transferId || "").trim();
                 const idx = labDesignReviewTransfers.findIndex(

@@ -20,6 +20,7 @@
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-11-21: 치과 채팅 — 어벗츠생산 줄·공정 모달. 의뢰 수정·취소를 「의뢰변경」팝오버로. 디자인은 오른쪽 끝.
 // - 2026-11-20: 치과 디자인 미확정 — 「디자인」버튼에 확정 대기 깜빡임.
 // - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」을 다시 연다. 수작업 중에는 비활성.
 // - 2026-11-19: 치과 헤더 — 디자인 모달 진입을 「디자인」+Sparkles로(작업 스캔 라벨 교체).
@@ -356,6 +357,7 @@ import {
   oralScanRoleLabel,
   resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
+import { abutmentProductionStageId } from "@/shared/components/practice/AbutmentProductionStageDialog";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_CHAT_HINT,
@@ -700,6 +702,10 @@ type PracticeTransferDetailChatDialogProps = {
   practiceDesignEntryDisabled?: boolean;
   /** 치과가 디자인 확정·수작업 의뢰를 아직 고르지 않음. 「디자인」을 깜빡인다. */
   practiceDesignEntryAttention?: boolean;
+  /** 치과 채팅 어벗츠생산 줄. 제조 공정이 없으면 대기로 본다. */
+  abutmentToothStages?: { tooth: string; stage: string }[] | null;
+  /** 디자인 STL 개수. 제조 공정 전이면 업로드된 치아로 본다. */
+  abutmentDesignFileCount?: number;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -947,6 +953,40 @@ type PracticeTransferDetailChatDialogProps = {
   preferredDockNonce?: number;
 };
 
+/** 제조 공정이 없으면 카드는 「어벗츠생산 - 17, 16」, 모달은 대기. */
+function practiceAbutmentGuideInput(
+  stages: { tooth: string; stage: string }[] | null | undefined,
+  designFileCount: number,
+  toothWorks: ToothWorkSelection[] | undefined,
+) {
+  const map = new Map<string, string>();
+  const uploaded = new Set<string>();
+  const pastReady = new Set<string>();
+  for (const row of stages || []) {
+    const tooth = String(row.tooth || "").trim();
+    const stage = String(row.stage || "").trim();
+    if (!tooth || !stage) continue;
+    map.set(tooth, stage);
+    const id = abutmentProductionStageId(stage);
+    if (id !== "대기") uploaded.add(tooth);
+    if (id !== "대기" && id !== "준비") pastReady.add(tooth);
+  }
+  const hasManufacturer = [...map.values()].some(
+    (stage) => abutmentProductionStageId(stage) !== "대기",
+  );
+  if (!hasManufacturer && designFileCount > 0 && Array.isArray(toothWorks)) {
+    for (const row of toothWorks) {
+      const tooth = String(row.toothNumber || "").trim();
+      if (tooth && row.customAbutment) uploaded.add(tooth);
+    }
+  }
+  return {
+    toothStages: hasManufacturer ? map : null,
+    uploaded,
+    pastReady,
+  };
+}
+
 export function PracticeTransferDetailChatDialog({
   open,
   onOpenChange,
@@ -1000,6 +1040,8 @@ export function PracticeTransferDetailChatDialog({
   onWorkScanTileClick,
   practiceDesignEntryDisabled = false,
   practiceDesignEntryAttention = false,
+  abutmentToothStages = null,
+  abutmentDesignFileCount = 0,
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -1142,6 +1184,7 @@ export function PracticeTransferDetailChatDialog({
       ? initialPanelTab
       : null;
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
+  const [requestChangeOpen, setRequestChangeOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(
     undefined,
   );
@@ -2538,6 +2581,15 @@ export function PracticeTransferDetailChatDialog({
         !isPendingRoundBarAbutment(work),
     ),
   );
+  const practiceAbutmentGuide = useMemo(
+    () =>
+      practiceAbutmentGuideInput(
+        abutmentToothStages,
+        abutmentDesignFileCount,
+        toothWorks,
+      ),
+    [abutmentDesignFileCount, abutmentToothStages, toothWorks],
+  );
   /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
   const showAcceptBar =
     operateLabWork &&
@@ -2992,6 +3044,7 @@ export function PracticeTransferDetailChatDialog({
       (Array.isArray(workScanFiles) && workScanFiles.length > 0) ||
       (Array.isArray(files) &&
         files.some((file) => isAbutsWorkScanFileName(file.fileName)));
+    let designButtonNode: ReactNode = null;
     if (showWorkScanButton) {
       const opensDesign = Boolean(onWorkScanTileClick);
       const designLocked = opensDesign && practiceDesignEntryDisabled;
@@ -3030,49 +3083,75 @@ export function PracticeTransferDetailChatDialog({
           )}
         </Button>
       );
-      buttons.push(
-        designLocked ? (
-          <Tooltip key="work-scan">
-            <TooltipTrigger asChild>{designButton}</TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-xs text-xs">
-              수작업 의뢰 중입니다.
-              <br />
-              기공소가 디자인합니다.
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          designButton
-        ),
+      designButtonNode = designLocked ? (
+        <Tooltip key="work-scan">
+          <TooltipTrigger asChild>{designButton}</TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs text-xs">
+            수작업 의뢰 중입니다.
+            <br />
+            기공소가 디자인합니다.
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        designButton
       );
     }
-    if (onEditRequest) {
+    if (onEditRequest || onCancelRequest) {
+      const editDisabled = !onEditRequest || editRequestDisabled;
+      const cancelDisabled = !onCancelRequest || cancelRequestDisabled;
       buttons.push(
-        <Button
-          key="edit-request"
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
-          disabled={editRequestDisabled}
-          onClick={() => onEditRequest()}
+        <Popover
+          key="request-change"
+          open={requestChangeOpen}
+          onOpenChange={setRequestChangeOpen}
         >
-          의뢰 수정
-        </Button>,
-      );
-    }
-    if (onCancelRequest) {
-      buttons.push(
-        <Button
-          key="cancel-request"
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 border-destructive/55 bg-background px-3 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-          disabled={cancelRequestDisabled}
-          onClick={() => onCancelRequest()}
-        >
-          의뢰 취소
-        </Button>,
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+              disabled={editDisabled && cancelDisabled}
+            >
+              의뢰변경
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="z-[400] w-36 p-1.5">
+            <div className="flex flex-col gap-0.5">
+              {onEditRequest ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 justify-start px-2"
+                  disabled={editRequestDisabled}
+                  onClick={() => {
+                    setRequestChangeOpen(false);
+                    onEditRequest();
+                  }}
+                >
+                  수정
+                </Button>
+              ) : null}
+              {onCancelRequest ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 justify-start px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={cancelRequestDisabled}
+                  onClick={() => {
+                    setRequestChangeOpen(false);
+                    onCancelRequest();
+                  }}
+                >
+                  취소
+                </Button>
+              ) : null}
+            </div>
+          </PopoverContent>
+        </Popover>,
       );
     }
     if (prosthesisFollowUpPending && onModifyProsthesisFollowUp) {
@@ -3132,6 +3211,7 @@ export function PracticeTransferDetailChatDialog({
       );
     }
     if (abutmentGraceControl) buttons.unshift(abutmentGraceControl);
+    if (designButtonNode) buttons.push(designButtonNode);
     if (buttons.length === 0) return null;
     return (
       <div
@@ -3920,6 +4000,19 @@ export function PracticeTransferDetailChatDialog({
 
                   {renderHeaderActionRow()}
 
+                  {feeViewer === "practice" &&
+                  (hasPendingLabCustomAbutment || hasAbutsCustomAbutment) ? (
+                    <div className="shrink-0 border-b bg-amber-50 px-5 py-2 dark:bg-amber-950/30">
+                      <LabPendingAbutmentGuide
+                        toothWorks={toothWorks}
+                        mixedWithAbuts={hasAbutsCustomAbutment}
+                        abutmentToothStages={practiceAbutmentGuide.toothStages}
+                        uploadedAbutmentTeeth={practiceAbutmentGuide.uploaded}
+                        pastReadyAbutmentTeeth={practiceAbutmentGuide.pastReady}
+                      />
+                    </div>
+                  ) : null}
+
                   {nextStageSegments.length > 0 ? (
                     <div className="border-b bg-muted/25">
                       <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
@@ -3959,7 +4052,7 @@ export function PracticeTransferDetailChatDialog({
                   hasAbutsCustomAbutment ||
                   oralScanAttachMode === "practice_required" ||
                   acceptBarHint) ? (
-                  <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
+                  <div className="shrink-0 border-b bg-amber-50 px-5 py-2 dark:bg-amber-950/30">
                     <div className="min-w-0 space-y-1">
                       {acceptBarHint ? (
                         <div className="text-xs leading-relaxed text-muted-foreground">

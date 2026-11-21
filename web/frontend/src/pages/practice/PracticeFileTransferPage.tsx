@@ -11737,6 +11737,11 @@ export const PracticeFileTransferPage = ({
                 </Badge>
               ) : null}
             </DialogTitle>
+            {editingSentTransfer ? (
+              <p className="min-w-0 truncate text-sm font-normal text-muted-foreground">
+                작업시작 전 의뢰를 수정합니다.
+              </p>
+            ) : null}
             {isMobile && formSyncStatusLabel ? (
               <p
                 title={formSyncStatusLabel}
@@ -11771,15 +11776,6 @@ export const PracticeFileTransferPage = ({
             >
               <div className="flex min-w-0 w-full flex-col gap-3">
                 <Card className="min-w-0 border-0 bg-transparent shadow-none hover:shadow-none">
-            {editingSentTransfer ? (
-              <div className="mb-1 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-sm text-primary-strong">
-                작업시작 전 의뢰를 수정 중입니다.
-                <br />
-                저장하면 이 의뢰가 바뀝니다.
-                <br />
-                새로 작성하면 수정이 취소됩니다.
-              </div>
-            ) : null}
             <CardContent className="min-w-0 px-0 pt-0">
               {isMobile ? (
                 <div
@@ -13009,6 +13005,11 @@ export const PracticeFileTransferPage = ({
             status: selectedTransfer?.status,
           })}
           practiceDesignEntryAttention={practiceDesignEntryAttention}
+          abutmentToothStages={selectedTransfer?.abutmentToothStages || null}
+          abutmentDesignFileCount={
+            Number(selectedTransfer?.designFiles?.length || 0) ||
+            Number(selectedTransfer?.designFileCount || 0)
+          }
           abutmentGracePromoteAt={
             selectedTransfer?.abutmentGracePromoteAt &&
             !selectedTransfer.labDesignConfirmedAt
@@ -13018,49 +13019,37 @@ export const PracticeFileTransferPage = ({
           abutmentGraceCancelBusy={abutmentProcessCancelBusy}
           onCancelAbutmentGrace={() => void handleCancelCustomAbutmentProcess()}
           headerActionLeading={
-            selectedTransferDetailModel?.abutmentStageLabel ||
             practiceAbutmentCancelOpen ? (
               <div className="flex min-w-0 items-center gap-2" data-no-drag>
-                {selectedTransferDetailModel?.abutmentStageLabel ? (
-                  <p className="min-w-0 truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
-                    <span className="font-medium">커스텀어벗 공정</span>
-                    {" — "}
-                    <span className="font-medium">
-                      {selectedTransferDetailModel.abutmentStageLabel}
-                    </span>
-                  </p>
-                ) : null}
-                {practiceAbutmentCancelOpen ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={abutmentProcessCancelBusy}
-                        className="h-7 shrink-0 gap-1 px-2.5 text-xs"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleCancelCustomAbutmentProcess();
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        {abutmentProcessCancelBusy ? "처리 중..." : "어벗 취소"}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      {selectedTransfer?.abutmentFeeRoute === "platform" ? (
-                        <>
-                          기공소가 확인하기 전까지 취소할 수 있습니다.
-                          <br />
-                          확인은 확정 후 1영업일 안입니다.
-                        </>
-                      ) : (
-                        <>제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.</>
-                      )}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : null}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={abutmentProcessCancelBusy}
+                      className="h-7 shrink-0 gap-1 px-2.5 text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleCancelCustomAbutmentProcess();
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      {abutmentProcessCancelBusy ? "처리 중..." : "어벗 취소"}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs text-xs">
+                    {selectedTransfer?.abutmentFeeRoute === "platform" ? (
+                      <>
+                        기공소가 확인하기 전까지 취소할 수 있습니다.
+                        <br />
+                        확인은 확정 후 1영업일 안입니다.
+                      </>
+                    ) : (
+                      <>제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.</>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             ) : null
           }
