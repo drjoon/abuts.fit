@@ -14,6 +14,7 @@
 // - 2026-11-19: 기공소가 제조 주문을 취소한 뒤 치과 「취소 가능」은 확정을 해제하고 다시 확정한다.
 // - 2026-11-19: 기공소 디자인 확정 — 제조 의뢰 응답을 부모에 넘겨 목록 상태를 바로 갱신한다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
+// - 2026-11-21: 소통 패널은 기본 접힘. 상대 메시지가 오면 펼치고, 접히면 왼쪽 맨아래.
 // - 2026-11-20: 소통 패널은 뷰어 위 플로팅. 최소 가로 260px, 이동·크기 조절, 귀퉁이·다른 패널 스냅.
 // - 2026-11-20: 소통 패널은 DesignShareChatPanel. 치과·기공소 공통.
 // - 2026-11-19: 소통 패널은 뷰 큐브 아래 플로팅(기공소: 치과 소통, 치과: 기공소 소통).
@@ -1114,12 +1115,17 @@ export function PracticeCustomAbutmentPreviewDialog({
   const editedInfoFieldsRef = useRef<Record<string, Set<AbutmentInfoFieldKey>>>({});
 
   const [manualChatOpen, setManualChatOpen] = useState(!readOnly && Boolean(transferIdParam));
-  const [manualChatCollapsed, setManualChatCollapsed] = useState(false);
+  const [manualChatCollapsed, setManualChatCollapsed] = useState(true);
   const [ptxRoomId, setPtxRoomId] = useState<string | null>(null);
   const [ptxRoomLoading, setPtxRoomLoading] = useState(false);
   const [sharedChatDraft, setSharedChatDraft] = useState("");
   const [sharedChatSending, setSharedChatSending] = useState(false);
   const sharedChatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  /** 이번 열기에서 이미 본 소통 메시지. 이후 상대 메시지만 패널을 펼친다. */
+  const seenSharedChatIdsRef = useRef<Set<string> | null>(null);
+  const seenSharedChatRoomRef = useRef<string | null>(null);
+  /** 방의 첫 조회가 끝나기 전 빈 목록은 기준선으로 잡지 않는다. */
+  const seenSharedChatLoadedRef = useRef(false);
   const [actionBusy, setActionBusy] = useState<
     "confirm" | "manual" | "check" | "cancel" | null
   >(null);
@@ -3352,19 +3358,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         setLabCheckedAt(remote?.choice?.labCheckedAt ?? null);
         setCancelDeadlineAt(remote?.choice?.cancelDeadlineAt ?? null);
         setGracePromoteAt(remote?.choice?.gracePromoteAt ?? null);
-        if (!viewerTouchRef.current.has("chat")) {
-          if (viewerPrefsRef.current.chatOpen === false) {
-            setManualChatOpen(true);
-            setManualChatCollapsed(true);
-          } else if (
-            viewerPrefsRef.current.chatOpen === true ||
-            remote?.mode === "manual" ||
-            (!readOnly && transferIdParam)
-          ) {
-            setManualChatOpen(true);
-            setManualChatCollapsed(false);
-          }
-        }
         const savedChat = pickCustomAbutmentChat(localChat, remote?.chat ?? [], cached?.chat ?? []);
         const loadedScans = rawLoadedScans.filter(
           (row): row is LoadedJawScan => row != null,
@@ -5171,6 +5164,53 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   useEffect(() => {
     if (!open) {
+      seenSharedChatIdsRef.current = null;
+      seenSharedChatRoomRef.current = null;
+      seenSharedChatLoadedRef.current = false;
+      setManualChatCollapsed(true);
+      return;
+    }
+    const roomId = ptxRoomId || "";
+    if (seenSharedChatRoomRef.current !== roomId) {
+      seenSharedChatRoomRef.current = roomId;
+      seenSharedChatIdsRef.current = null;
+      seenSharedChatLoadedRef.current = false;
+    }
+    if (!roomId) return;
+    if (ptxMessagesLoading) {
+      seenSharedChatLoadedRef.current = true;
+      return;
+    }
+    const roomMessages = ptxMessages.filter((msg) => {
+      const messageRoomId = String(msg.roomId || "");
+      return !messageRoomId || messageRoomId === roomId;
+    });
+    if (!seenSharedChatIdsRef.current) {
+      if (!seenSharedChatLoadedRef.current && roomMessages.length === 0) return;
+      seenSharedChatIdsRef.current = new Set(
+        roomMessages.map((msg) => String(msg._id || "")),
+      );
+      return;
+    }
+    const seen = seenSharedChatIdsRef.current;
+    let fromPeer = false;
+    for (const msg of roomMessages) {
+      const id = String(msg._id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      if (id.startsWith("optimistic:")) continue;
+      if (msg.messageKind === "system" || msg.systemEvent) continue;
+      const senderId = String(msg.sender?._id || "").trim();
+      if (!senderId || (authUserId && senderId === authUserId)) continue;
+      fromPeer = true;
+    }
+    if (!fromPeer) return;
+    setManualChatCollapsed(false);
+    window.requestAnimationFrame(() => sharedChatInputRef.current?.focus());
+  }, [authUserId, open, ptxMessages, ptxMessagesLoading, ptxRoomId]);
+
+  useEffect(() => {
+    if (!open) {
       viewerTouchRef.current = new Set();
       viewerSavedRef.current = "";
       setViewerHydrated(false);
@@ -5193,10 +5233,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!touch.has("margin")) setShowFinishLine(prefs.showFinishLine);
         if (!touch.has("fixture")) setShowFixtureAnalog(prefs.showFixtureAnalog);
         if (!touch.has("gumball")) setGumballOn(prefs.gumballOn);
-        if (!touch.has("chat") && prefs.chatOpen != null) {
-          setManualChatOpen(true);
-          setManualChatCollapsed(prefs.chatOpen === false);
-        }
         if (!touch.has("jaws")) {
           setVisibleJaws({ upper: prefs.showUpper, lower: prefs.showLower });
         }

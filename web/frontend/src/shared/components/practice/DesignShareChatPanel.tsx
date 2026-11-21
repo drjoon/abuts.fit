@@ -2,6 +2,7 @@
 // 뷰어 위에 떠 있고, 헤더로 옮기며, 가장자리로 크기를 바꾼다. 최소 가로는 260px.
 // 귀퉁이·다른 패널(큐브 등) 근처에서 놓으면 붙는다. 입력은 가로 전체, 전송·첨부는 아랫줄.
 // 펼치면 대화 높이까지 창을 키운다. 작업영역보다 길 때만 스크롤한다.
+// 접히면 왼쪽 맨아래(남서 귀퉁이)로 붙고, 다시 펼치면 접기 전 자리로 돌아간다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/features/chat/components/ChatComposer.tsx
@@ -254,13 +255,59 @@ export function DesignShareChatPanel({
   boxRef.current = box;
   /** 펼친 높이. 접힌 막대를 끌어도 이 값은 유지한다. */
   const openHeightRef = useRef(448);
-  /** 접힌 막대의 아래 변. 펼칠 때 이 변을 기준으로 위로 키운다. */
+  /** 접힌 막대의 아래 변. 끌어 둔 막대를 펼칠 때만 위로 키운다. */
   const dockBottomRef = useRef<number | null>(null);
+  /** 접기 직전의 펼친 자리. 다시 펼치면 여기로 돌아간다. */
+  const openFrameRef = useRef<FrameBox | null>(null);
+  const collapsedLatchRef = useRef(false);
+  /** 접기·펼치기 직후 한 프레임은 귀퉁이·높이 맞춤이 그 위치를 덮지 않는다. */
+  const layoutIntentRef = useRef<"pin" | "restore" | null>(null);
+
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current;
+    const panel = frameRef.current;
+    const prevCollapsed = collapsedLatchRef.current;
+    if (!bounds || !panel || collapsed === prevCollapsed) return;
+    collapsedLatchRef.current = collapsed;
+    if (collapsed) {
+      const current = boxRef.current;
+      const area = bounds.getBoundingClientRect();
+      if (current) {
+        openFrameRef.current = { ...current };
+      } else {
+        const rect = panel.getBoundingClientRect();
+        openFrameRef.current = {
+          x: rect.left - area.left,
+          y: rect.top - area.top,
+          w: rect.width,
+          h: openHeightRef.current,
+          corner: null,
+        };
+      }
+      const width = current?.w ?? panel.offsetWidth;
+      const point = cornerPoint("sw", area.width, area.height, width, panel.offsetHeight);
+      dockBottomRef.current = null;
+      layoutIntentRef.current = "pin";
+      setBox({
+        x: point.x,
+        y: point.y,
+        w: Math.max(width, MIN_W),
+        h: current && current.h > 120 ? current.h : openHeightRef.current,
+        corner: "sw",
+      });
+      return;
+    }
+    layoutIntentRef.current = "restore";
+    dockBottomRef.current = null;
+    const saved = openFrameRef.current;
+    if (saved) setBox({ ...saved });
+  }, [boundsRef, collapsed]);
 
   useLayoutEffect(() => {
     const bounds = boundsRef.current;
     if (!bounds) return;
     const apply = () => {
+      if (layoutIntentRef.current) return;
       const current = boxRef.current;
       if (!current?.corner) return;
       const area = bounds.getBoundingClientRect();
@@ -283,17 +330,16 @@ export function DesignShareChatPanel({
     if (!boundsEl) return;
     let passes = 0;
     const fit = () => {
+      const intent = layoutIntentRef.current;
+      if (intent === "pin") {
+        layoutIntentRef.current = null;
+        return;
+      }
+      if (intent === "restore") layoutIntentRef.current = null;
       if (passes >= 4) return;
       const panel = frameRef.current;
       if (!panel) return;
-      if (collapsed || resizeRef.current || dragRef.current) {
-        if (collapsed && !dragRef.current) {
-          const bounds = boundsEl.getBoundingClientRect();
-          const top = boxRef.current?.y ?? panel.getBoundingClientRect().top - bounds.top;
-          dockBottomRef.current = top + panel.offsetHeight;
-        }
-        return;
-      }
+      if (collapsed || resizeRef.current || dragRef.current) return;
       const list = scrollRef.current;
       const inner = messagesRef.current;
       if (!list || !inner) return;
@@ -303,7 +349,7 @@ export function DesignShareChatPanel({
       const maxH = Math.max(MIN_H, bounds.height - EDGE * 2);
       const fitted = Math.min(Math.max(needed, MIN_H), maxH);
       const height = Math.min(maxH, Math.max(fitted, userHeightRef.current ?? 0));
-      const prev = boxRef.current;
+      const prev = (intent === "restore" ? openFrameRef.current : null) ?? boxRef.current;
       let y = prev?.y ?? panel.getBoundingClientRect().top - bounds.top;
       const dock = dockBottomRef.current;
       if (dock != null) {
