@@ -441,6 +441,7 @@ export type CustomAbutmentSharedView = {
   right: number;
   savedAt: number;
   updatedBy?: string;
+  originSocketId?: string;
 };
 
 function finiteViewNum(raw: unknown, min: number, max: number): number | null {
@@ -487,6 +488,7 @@ export function parseCustomAbutmentSharedView(raw: unknown): CustomAbutmentShare
     right,
     savedAt: Number(row.savedAt) || 0,
     updatedBy: String(row.updatedBy || ""),
+    originSocketId: String(row.originSocketId || ""),
   };
 }
 
@@ -1038,6 +1040,10 @@ export type CustomAbutmentDesignSyncTooth = {
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
   proposalInput?: Partial<CustomAbutmentDesignParams>;
+  variantId?: string;
+  picker?: boolean;
+  candidates?: Array<{ id: string; label: string }>;
+  candidateIndex?: number;
 };
 
 export type CustomAbutmentDesignSyncMeta = {
@@ -1086,6 +1092,25 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
         : {}),
       ...(tooth.proposalInput && typeof tooth.proposalInput === "object"
         ? { proposalInput: tooth.proposalInput as Partial<CustomAbutmentDesignParams> }
+        : {}),
+      ...(typeof tooth.variantId === "string" && tooth.variantId
+        ? { variantId: tooth.variantId }
+        : {}),
+      ...(tooth.picker === true ? { picker: true } : {}),
+      ...(Array.isArray(tooth.candidates)
+        ? {
+            candidates: tooth.candidates
+              .filter((item) => item && typeof item === "object")
+              .slice(0, 3)
+              .map((item) => ({
+                id: String((item as { id?: unknown }).id || ""),
+                label: String((item as { label?: unknown }).label || ""),
+              }))
+              .filter((item) => item.id),
+          }
+        : {}),
+      ...(Number.isInteger(tooth.candidateIndex)
+        ? { candidateIndex: Number(tooth.candidateIndex) }
         : {}),
     });
   }

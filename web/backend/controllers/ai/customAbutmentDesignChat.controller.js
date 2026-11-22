@@ -41,6 +41,7 @@ import {
   isStaleDesignWrite,
   sanitizeSharedDesignView,
   sharedDesignViewForApi,
+  sanitizeAbutmentChoice,
   toDesignSyncMeta,
 } from "../../services/customAbutmentDesignSync.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
@@ -260,6 +261,7 @@ function snapshotTeeth(raw, transferId) {
       ...(row?.proposalInput && typeof row.proposalInput === "object"
         ? { proposalInput: row.proposalInput }
         : {}),
+      ...sanitizeAbutmentChoice(row),
     };
     const s3Key = String(row?.s3Key || "").trim();
     const crownS3Key = String(row?.crownS3Key || "").trim();

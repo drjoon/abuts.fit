@@ -28,6 +28,14 @@ describe("custom abutment design sync meta", () => {
           overrides: { marginFilletRadiusMm: 0.6 },
           metrics: { postHeightMm: 7.5 },
           gumballEdit: { heightMm: 0.2, shiftLabialMm: 0.1 },
+          variantId: "buccal_top_open",
+          picker: true,
+          candidateIndex: 1,
+          candidates: [
+            { id: "buccal_top_open", label: "협측 상단" },
+            { id: "space_fill", label: "기본" },
+            { id: "nope", label: "버림" },
+          ],
           s3Key: "practice-transfers/t/custom-abutment-preview/16-abutment.stl",
           localPositions: "AAAA",
           crownLocalPositions: "BBBB",
@@ -41,6 +49,10 @@ describe("custom abutment design sync meta", () => {
     expect(meta.teeth[0].fixture.scanbodyTop).toEqual([1, 2, 3]);
     expect(meta.teeth[0].params).toEqual({ postHeightOffsetMm: 0.4 });
     expect(meta.teeth[0].gumballEdit.heightMm).toBe(0.2);
+    expect(meta.teeth[0].variantId).toBe("buccal_top_open");
+    expect(meta.teeth[0].picker).toBe(true);
+    expect(meta.teeth[0].candidateIndex).toBe(1);
+    expect(meta.teeth[0].candidates.map((row) => row.id)).toEqual(["buccal_top_open", "space_fill"]);
     expect(meta.teeth[0].s3Key).toBeUndefined();
     expect(meta.teeth[0].localPositions).toBeUndefined();
     expect(meta.teeth[0].marginLoopLocal).toBeUndefined();

@@ -1,10 +1,60 @@
-// 커스텀어벗 디자인 실시간 동기화. 소켓에는 픽스처·조정값·검볼만 싣고 메시는 싣지 않는다.
+// 커스텀어벗 디자인 실시간 동기화.
+// 조정값 메타에는 정점 버퍼를 싣지 않는다. 재생성 메시는 custom-abutment:live kind=mesh 로 따로 보낸다.
 // related files:
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
 // - web/frontend/src/shared/practice/customAbutmentDesignCache.ts
 
 const TOOTH_RE = /^[1-4][1-8]$/;
 const FIXTURE_JSON_MAX = 80_000;
+
+export const ABUTMENT_VARIANT_IDS = [
+  "space_fill",
+  "strict_subg",
+  "space_moderate",
+  "keep_subg_no_supra",
+  "fixture_axis",
+  "buccal_top_open",
+  "buccal_shift",
+];
+
+const ABUTMENT_VARIANT_SET = new Set(ABUTMENT_VARIANT_IDS);
+
+/** 재생성 후보 id·피커 상태. 메시 버퍼는 넣지 않는다. */
+export function sanitizeAbutmentChoice(row) {
+  if (!row || typeof row !== "object") return {};
+  const variantId = ABUTMENT_VARIANT_SET.has(String(row.variantId || ""))
+    ? String(row.variantId)
+    : "";
+  const candidates = [];
+  if (Array.isArray(row.candidates)) {
+    for (const item of row.candidates) {
+      if (candidates.length >= 3 || !item || typeof item !== "object") continue;
+      const id = ABUTMENT_VARIANT_SET.has(String(item.id || "")) ? String(item.id) : "";
+      if (!id) continue;
+      candidates.push({ id, label: String(item.label || "").trim().slice(0, 80) });
+    }
+  }
+  const picker = row.picker === true && candidates.length >= 2;
+  let candidateIndex = null;
+  if (
+    picker &&
+    Number.isInteger(row.candidateIndex) &&
+    row.candidateIndex >= 0 &&
+    row.candidateIndex < candidates.length
+  ) {
+    candidateIndex = row.candidateIndex;
+  }
+  return {
+    ...(variantId ? { variantId } : {}),
+    ...(picker
+      ? {
+          picker: true,
+          candidates,
+          ...(candidateIndex != null ? { candidateIndex } : {}),
+        }
+      : {}),
+  };
+}
 
 /** 서버에 더 나중 저장이 있으면, base 로 올린 쓰기는 덮어쓰지 않는다. */
 export function isStaleDesignWrite(prevSavedAt, baseSavedAt) {
@@ -62,6 +112,7 @@ export function toDesignSyncMeta(source) {
     if (Object.keys(gumballBaseMetrics).length > 0) tooth.gumballBaseMetrics = gumballBaseMetrics;
     const proposalInput = numberMap(row?.proposalInput);
     if (Object.keys(proposalInput).length > 0) tooth.proposalInput = proposalInput;
+    Object.assign(tooth, sanitizeAbutmentChoice(row));
     teeth.push(tooth);
   }
   if (teeth.length === 0) return null;

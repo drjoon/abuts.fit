@@ -30,6 +30,8 @@ export function initializeSocket(server) {
       methods: ["GET", "POST"],
       credentials: true,
     },
+    // 재생성 메시(양자화 정점)가 기본 1MB를 넘을 수 있다.
+    maxHttpBufferSize: 12 * 1024 * 1024,
   });
 
   // Socket.io 인증 미들웨어

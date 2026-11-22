@@ -8,6 +8,7 @@
 // IndexedDB 기반 바이너리 파일 Blob 캐시 유틸리티
 // key: fileId 또는 s3Key
 // change-log:
+// - 2026-11-22: 상한 아래에서는 Blob 전체 getAll을 하지 않는다. 구강 스캔 읽기가 밀린다.
 // - 2026-09-13: 용량 상한 ~10GB + updatedAt LRU(오래된 것부터 삭제). 조회 시 touch. QuotaExceeded 재시도.
 // - 2026-09-13: 용량 상한 2GB→10GB.
 // - 2026-08-29: NC만 바뀔 때 stl:{id}:* 폴백을 지우지 않음 — camS3Key 있을 때만 filled STL 폴백 무효화.
@@ -107,6 +108,18 @@ async function cleanupByByteBudget(
   const headroom = Math.max(0, Number(opts?.headroomBytes || 0));
   const budget = await resolveCacheByteBudget();
   const target = Math.max(0, budget - headroom);
+
+  // getAll은 스캔 메시 Blob까지 읽어 다른 탭의 구강 스캔 조회를 막는다.
+  // 오리진 사용량이 상한 아래면 정리하지 않는다.
+  try {
+    if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
+      const est = await navigator.storage.estimate();
+      const usage = Number(est?.usage || 0);
+      if (usage > 0 && usage <= target) return;
+    }
+  } catch {
+    // estimate 실패 시 아래 전체 조회로 넘긴다.
+  }
 
   return new Promise<void>((resolve: () => void) => {
     try {

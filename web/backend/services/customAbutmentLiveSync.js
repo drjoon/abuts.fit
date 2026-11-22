@@ -3,7 +3,15 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import User from "../models/user.model.js";
-import { sanitizeSharedDesignView, toDesignSyncMeta } from "./customAbutmentDesignSync.js";
+import {
+  sanitizeAbutmentChoice,
+  sanitizeSharedDesignView,
+  toDesignSyncMeta,
+  ABUTMENT_VARIANT_IDS,
+} from "./customAbutmentDesignSync.js";
+
+const VARIANT_SET = new Set(ABUTMENT_VARIANT_IDS);
+const MESH_BYTE_BUDGET = 6_000_000;
 
 const PARTY_TTL_MS = 45_000;
 const MAX_PARTY = 200;
@@ -108,6 +116,120 @@ function sanitizeEdit(raw) {
   };
 }
 
+function asBytes(raw) {
+  if (Buffer.isBuffer(raw)) return raw;
+  if (raw instanceof Uint8Array) return Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
+  return null;
+}
+
+function finiteExact(raw, min, max) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) return null;
+  return value;
+}
+
+function vec3(raw) {
+  if (!Array.isArray(raw) || raw.length < 3) return null;
+  const out = [];
+  for (let i = 0; i < 3; i += 1) {
+    const value = finiteExact(raw[i], -1e5, 1e5);
+    if (value == null) return null;
+    out.push(value);
+  }
+  return out;
+}
+
+function numberMapLimited(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (Object.keys(out).length >= 48) break;
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function meshPart(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const origin = vec3(raw.origin);
+  const scale = finiteExact(raw.scale, 1e-8, 100);
+  const count = Number(raw.count);
+  const bytes = asBytes(raw.bytes);
+  if (!origin || scale == null) return null;
+  if (!Number.isInteger(count) || count < 1 || count > 400_000) return null;
+  if (!bytes || bytes.length !== count * 6) return null;
+  return { origin, scale, count, bytes };
+}
+
+/** 재생성된 어벗 메시. 조정값 JSON 한도와 따로 검사한다. */
+export function sanitizeLiveMesh(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const tooth = toothKey(raw.tooth);
+  if (!tooth || !Array.isArray(raw.items) || raw.items.length === 0) return null;
+  const items = [];
+  let total = 0;
+  for (const item of raw.items) {
+    if (items.length >= 3 || !item || typeof item !== "object") continue;
+    const id = VARIANT_SET.has(String(item.id || "")) ? String(item.id) : "";
+    const abutment = meshPart(item.abutment);
+    const crown = meshPart(item.crown);
+    const margin = meshPart(item.margin);
+    if (!id || !abutment || !crown || !margin) continue;
+    const solid = meshPart(item.solid);
+    const enamel = meshPart(item.enamel);
+    const bytes =
+      abutment.bytes.length +
+      crown.bytes.length +
+      margin.bytes.length +
+      (solid ? solid.bytes.length : 0) +
+      (enamel ? enamel.bytes.length : 0);
+    if (total + bytes > MESH_BYTE_BUDGET) break;
+    total += bytes;
+    items.push({
+      id,
+      label: String(item.label || "").trim().slice(0, 80),
+      params: numberMapLimited(item.params),
+      metrics: numberMapLimited(item.metrics),
+      abutment,
+      crown,
+      margin,
+      ...(solid ? { solid } : {}),
+      ...(enamel ? { enamel } : {}),
+    });
+  }
+  if (items.length === 0) return null;
+  const choice = sanitizeAbutmentChoice({
+    variantId: raw.variantId,
+    picker: raw.picker,
+    candidates: items.map((item) => ({ id: item.id, label: item.label })),
+    candidateIndex: raw.candidateIndex,
+  });
+  return {
+    tooth,
+    complete: raw.complete === true && items.length === raw.items.length,
+    items,
+    ...choice,
+  };
+}
+
+function sanitizeAction(raw) {
+  const op = raw?.op === "regen" || raw?.op === "candidate" || raw?.op === "confirm" ? raw.op : "";
+  if (!op) return null;
+  const tooth = toothKey(raw.tooth);
+  const teeth = Array.isArray(raw.teeth)
+    ? raw.teeth.map((row) => toothKey(row)).filter(Boolean).slice(0, 16)
+    : [];
+  if (op === "regen" && teeth.length === 0) return null;
+  if (op !== "regen" && !tooth) return null;
+  let index = null;
+  if (op === "candidate") {
+    if (!Number.isInteger(raw.index) || raw.index < 0 || raw.index > 2) return null;
+    index = raw.index;
+  }
+  return { op, tooth, teeth, ...(index != null ? { index } : {}) };
+}
+
 export function forgetCustomAbutmentLive(socketId) {
   rateBySocket.delete(socketId);
 }
@@ -183,16 +305,18 @@ async function peersFor(userId, role, transferId) {
  */
 export async function relayCustomAbutmentLive(socket, raw, emit) {
   if (!raw || typeof raw !== "object" || typeof emit !== "function") return;
-  let bytes = 0;
-  try {
-    bytes = JSON.stringify(raw).length;
-  } catch {
-    return;
+  const kind = String(raw.kind || "");
+  if (kind !== "mesh") {
+    let bytes = 0;
+    try {
+      bytes = JSON.stringify(raw).length;
+    } catch {
+      return;
+    }
+    if (bytes > MAX_BYTES) return;
   }
-  if (bytes > MAX_BYTES) return;
   const transferId = String(raw.transferId || "").trim();
   if (!transferId || transferId.length > 80) return;
-  const kind = String(raw.kind || "");
   const peers = await peersFor(socket.userId, socket.userRole, transferId);
   if (!peers) return;
   if (kind === "hello") return;
@@ -244,11 +368,21 @@ export async function relayCustomAbutmentLive(socket, raw, emit) {
     if (!meta || !Array.isArray(meta.teeth) || meta.teeth.length === 0) return;
     event = "practice:custom-abutment-design";
     data = { transferId, ...meta };
+  } else if (kind === "mesh") {
+    const mesh = sanitizeLiveMesh(raw);
+    if (!mesh) return;
+    event = "practice:custom-abutment-mesh";
+    data = { transferId, savedAt, updatedBy, ...mesh };
+  } else if (kind === "action") {
+    const action = sanitizeAction(raw);
+    if (!action) return;
+    event = "practice:custom-abutment-action";
+    data = { transferId, savedAt, updatedBy, ...action };
   } else {
     return;
   }
+  data.originSocketId = String(socket.id || "");
   for (const uid of peers) {
-    if (uid === updatedBy) continue;
     emit(uid, event, data);
   }
 }

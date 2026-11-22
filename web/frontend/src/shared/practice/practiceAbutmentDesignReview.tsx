@@ -35,12 +35,12 @@ export function PracticeAbutmentDesignReviewRail({
 
   return (
     <div
-      className="flex min-w-0 max-w-[min(100%,36rem)] shrink items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-950"
+      className="flex min-w-0 max-w-[min(100%,36rem)] shrink items-center gap-1.5 overflow-hidden rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-sm text-amber-950"
       role="group"
       aria-label={`검토 대기 ${items.length}건`}
     >
       <span
-        className="inline-flex min-w-0 items-center rounded-md border border-amber-300 bg-white px-2 py-1 text-left text-sm font-medium leading-snug text-amber-950"
+        className="flex min-w-0 shrink items-center overflow-hidden rounded-md border border-amber-300 bg-white px-2 py-1 text-left text-sm font-medium leading-snug text-amber-950"
         title={current.label}
       >
         <span className="min-w-0 truncate">{current.label}</span>

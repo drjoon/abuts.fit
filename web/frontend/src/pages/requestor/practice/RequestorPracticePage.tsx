@@ -917,6 +917,19 @@ function LabAbutmentDesignReviewDialog({
       workScanFiles={toFiles(entry.production?.labWorkScanFiles)}
       transferId={String(entry.transferId || entry._id || "")}
       filesPending={filesPending}
+      scanDownloadLocked={isPtxAbutmentDesignAwaitingDentist({
+        status: entry.status,
+        workCanceledAt: entry.workCanceledAt,
+        labRejected: entry.labRejected,
+        hasCustomAbutment:
+          Boolean(entry.hasCustomAbutment) ||
+          practiceTransferHasCustomAbutment(entry, catalog),
+        abutmentFeeRoute: entry.production?.abutmentFeeRoute,
+        practiceDesignConfirmedAt: entry.production?.practiceDesignConfirmedAt,
+        designReadyAt: entry.production?.designReadyAt,
+        designFileCount: entry.production?.designFileCount,
+        manualRequested: Boolean(entry.production?.customAbutmentManualDesign?.at),
+      })}
       reviewItems={
         rail
           ? items.map((item) => ({
