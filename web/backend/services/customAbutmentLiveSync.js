@@ -319,14 +319,17 @@ export async function relayCustomAbutmentLive(socket, raw, emit) {
   if (!transferId || transferId.length > 80) return;
   const peers = await peersFor(socket.userId, socket.userRole, transferId);
   if (!peers) return;
-  if (kind === "hello") return;
   let savedAt = Number(raw.savedAt);
   if (!Number.isFinite(savedAt)) savedAt = Date.now();
   savedAt = Math.min(Math.max(savedAt, 0), Date.now() + 2000);
   const updatedBy = String(socket.userId || "");
   let event = "";
   let data = null;
-  if (kind === "view") {
+  // 상대가 모달을 열면 hello를 보낸다. 이미 열린 쪽이 최신 디자인을 다시 밀어 준다.
+  if (kind === "hello") {
+    event = "practice:custom-abutment-hello";
+    data = { transferId, updatedBy };
+  } else if (kind === "view") {
     const view = sanitizeSharedDesignView(raw.view);
     if (!view) return;
     event = "practice:custom-abutment-view";

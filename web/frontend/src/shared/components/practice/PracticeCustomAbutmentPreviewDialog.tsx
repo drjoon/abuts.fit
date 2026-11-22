@@ -4143,7 +4143,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             : null;
         const cached = readOnly
           ? serverDesign
-          : preferFresherCustomAbutmentDesign(localCached, serverDesign);
+          : preferFresherCustomAbutmentDesign(localCached, serverDesign, {
+              // 의뢰 공유 모달은 다시 열 때 서버 스냅샷을 우선한다(동점 포함).
+              preferServerOnTie: Boolean(transferIdParam),
+            });
         const serverAt = Number(serverDesign?.savedAt) || 0;
         if (serverAt > designSavedAtRef.current) designSavedAtRef.current = serverAt;
         // 정점이 없을 때만 다시 만든다. 검볼만 있으면 저장 메시 위에 얹는다.
@@ -4934,6 +4937,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (pendingRemote && pendingRemote.savedAt > designSavedAtRef.current) {
           pendingRemoteMetaRef.current = null;
           enqueueRemoteDesignMeta(pendingRemote);
+        }
+        // GET이 끝난 뒤 한 번 더 hello. 열려 있는 상대가 메모리상 최신을 밀어 준다.
+        if (transferIdParam) {
+          emitCustomAbutmentLive({ kind: "hello", transferId: transferIdParam });
         }
 
         window.requestAnimationFrame(() => {
@@ -5747,9 +5754,46 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [open, transferIdParam]);
 
   // 상대가 저장하면 채팅처럼 바로 수치를 바꾸고, 같은 후보·메시로 형상을 맞춘다.
+  // 상대가 모달을 다시 열면 hello → 이 쪽이 메모리 최신 디자인을 다시 보낸다.
   useEffect(() => {
     if (!open || !transferIdParam) return;
     return onAppEvent((evt) => {
+      if (evt.type === "practice:custom-abutment-hello") {
+        if (ownLiveEcho(evt.data)) return;
+        const data = evt.data as { transferId?: string } | null;
+        if (!data || data.transferId !== transferIdParam) return;
+        if (readOnlyRef.current) return;
+        const list = designedListRef.current;
+        if (list.length === 0) return;
+        const savedAtHint = Math.max(Number(designSavedAtRef.current) || 0, Date.now());
+        const teeth = list.map(syncToothFromDesign);
+        emitCustomAbutmentLive({
+          kind: "design",
+          transferId: transferIdParam,
+          savedAt: savedAtHint,
+          design: {
+            transferId: transferIdParam,
+            savedAt: savedAtHint,
+            updatedBy: authUserIdRef.current,
+            version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+            fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+            teeth,
+          },
+        });
+        lastLocalChromeAtRef.current = performance.now();
+        lastChromeAtRef.current = Math.max(lastChromeAtRef.current, savedAtHint);
+        emitCustomAbutmentLive({
+          kind: "chrome",
+          transferId: transferIdParam,
+          savedAt: savedAtHint,
+          chrome: chromeStateRef.current,
+        });
+        // 서버에도 맞춰 두어, 다음에도 닫혀 있던 쪽이 GET만으로 최신을 받게 한다.
+        if (!(isLabViewerRef.current && !labCanReviseRef.current)) {
+          persistDesign();
+        }
+        return;
+      }
       if (evt.type === "practice:custom-abutment-action") {
         if (ownLiveEcho(evt.data)) return;
         const data = evt.data as {
@@ -5814,7 +5858,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!ev || ev.transferId !== transferIdParam) return;
       enqueueRemoteDesignMeta(ev);
     });
-  }, [enqueueRemoteDesignMeta, open, transferIdParam]);
+  }, [enqueueRemoteDesignMeta, open, persistDesign, transferIdParam]);
 
   useEffect(() => {
     return () => window.clearTimeout(paintSaveTimerRef.current);

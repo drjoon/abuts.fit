@@ -1,5 +1,6 @@
 // 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값)을
-// 이 브라우저 IndexedDB에 두고, 모달을 다시 열면 스캔만 읽어 그대로 보여 준다.
+// 이 브라우저 IndexedDB에 둔다. 의뢰 공유 모달을 다시 열 때는 서버 스냅샷을 우선하고,
+// 스캔은 캐시에서 읽어 맞춘다.
 // 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
 // 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
 // 스냅샷 JSON과 STL은 나눈다. 같은 의뢰의 동시 조회는 한 번만 받고, 어벗·크라운 STL은 같이 받는다.
@@ -10,7 +11,7 @@
 
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
-import { request } from "@/shared/api/apiClient";
+import { invalidateApiGetCache, request } from "@/shared/api/apiClient";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
@@ -189,7 +190,7 @@ export function mergeServerMetaOntoLocalMeshes<
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
  * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다.
  * 서버가 메타만 있으면 이 브라우저 메시를 유지한다.
- * 같은 시각이면 이 브라우저 저장본을 유지한다.
+ * 같은 시각이면 기본은 이 브라우저 저장본. 협업 의뢰(`preferServerOnTie`)는 서버를 쓴다.
  */
 export function preferFresherCustomAbutmentDesign<
   T extends {
@@ -200,14 +201,20 @@ export function preferFresherCustomAbutmentDesign<
     alignedScans?: CachedAlignedScan[];
     chat?: CustomAbutmentChatTurn[];
   },
->(local: T | null, server: T | null): T | null {
+>(
+  local: T | null,
+  server: T | null,
+  opts?: { preferServerOnTie?: boolean },
+): T | null {
   const localCount = Array.isArray(local?.teeth) ? local.teeth.length : 0;
   const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
   if (localCount === 0) return serverCount > 0 ? server : null;
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  if (serverAt > localAt) {
+  const takeServer =
+    serverAt > localAt || (Boolean(opts?.preferServerOnTie) && serverAt === localAt);
+  if (takeServer) {
     if (!designHasMeshes(server) && designHasMeshes(local)) {
       return mergeServerMetaOntoLocalMeshes(local, server);
     }
@@ -707,6 +714,8 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
         method: "GET",
         token,
+        // 모달을 다시 열 때는 상대가 방금 PUT한 스냅샷이 필요하다. 1초 GET 캐시를 쓰지 않는다.
+        skipCache: true,
       });
       if (!res.ok || !res.data?.data) return null;
       const chat = normalizeCustomAbutmentChat(res.data.data.chat);
@@ -1029,6 +1038,9 @@ export function publishCustomAbutmentSnapshot(
       },
     });
     if (!saved.ok) throw new Error("디자인 메타데이터를 저장하지 못했습니다.");
+    invalidateApiGetCache("custom-abutment-design-snapshot");
+    snapshotShellInflight.delete(id);
+    snapshotFullInflight.delete(id);
   })().catch((err) => console.warn("[custom-abutment] snapshot upload failed", err));
 }
 
@@ -1185,6 +1197,9 @@ export async function publishCustomAbutmentDesignMeta(
     return { ok: false, stale: false };
   }
   if (!res.ok) return { ok: false, stale: false };
+  invalidateApiGetCache("custom-abutment-design-snapshot");
+  snapshotShellInflight.delete(id);
+  snapshotFullInflight.delete(id);
   return { ok: true, savedAt: Number(res.data?.data?.savedAt) || Date.now() };
 }
 
