@@ -2792,6 +2792,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     mateCommits.every((c) => c.receivedBridgeSync === true),
     "#26 커밋은 모두 receivedBridgeSync=true로 기록되어 다시 브리지 emit을 일으키지 않는다",
   );
+  // 스크류 홀 silent-bake 회귀는 abutmentBridgeScrewHole.regression.test.ts
 
   bridgeSession.dispose();
   mesh26.geometry.dispose();

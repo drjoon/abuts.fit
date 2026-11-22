@@ -3625,7 +3625,9 @@ export class AbutmentDirectEditSession {
       if (seen.has(mate.tooth)) continue;
       seen.add(mate.tooth);
       this.edits.set(mate.tooth, mate.start);
-      this.show(mate.tooth, true, true, true, mate.tooth !== this.pathLeadTooth);
+      // 드래그 중 솔리드 프리뷰를 썼으면 마지막 뚫린 메시로 되돌린다. receivedBridgeSync는
+      // preserve 플래그만 바꿔 캐시를 깨지 않도록 넣지 않는다(edit은 start와 동일).
+      this.show(mate.tooth, true, true, true, false);
     }
   }
 
@@ -3641,8 +3643,9 @@ export class AbutmentDirectEditSession {
       seen.add(mate.tooth);
       const edit = this.edits.get(mate.tooth);
       if (!edit || editsEqual(edit, mate.start)) {
+        // 드래그 중 프리뷰만 있었다면 마지막 뚫린 메시로 되돌린다. 형제 received 플래그는 넣지 않는다.
         this.edits.set(mate.tooth, mate.start);
-        this.show(mate.tooth, true, true, true, mate.tooth !== lead);
+        this.show(mate.tooth, true, true, true, false);
         continue;
       }
       steps.push({
@@ -3661,8 +3664,8 @@ export class AbutmentDirectEditSession {
       }
       const edit = this.edits.get(rx.tooth);
       if (!edit || editsEqual(edit, rx.start)) {
+        // 각도 전달이 없으면 메시·edit을 건드리지 않는다. silent bake로 솔리드만 그리면 스크류 홀이 빠진다.
         this.edits.set(rx.tooth, rx.start);
-        this.show(rx.tooth, true, true, true, true);
         continue;
       }
       steps.push({
@@ -3788,10 +3791,11 @@ export class AbutmentDirectEditSession {
 
     // 드래그 중(bake=false)에는 스크류 홀이 없는 솔리드 외형(proposalSolid)을 곧바로 변형해 그리고,
     // 드래그가 끝나 확정(bake=true)될 때 임플란트 축 원통으로 스크류 홀을 뚫는다.
+    // sameDrilled는 edit만 본다. preservePostLength는 자동 높이만 바꾸고 이미 뚫린 메시를 무효화하지 않는다.
+    // (브리지 형제가 silent bake로 올 때 플래그만 바뀌며 솔리드만 그리고 홀을 다시 안 뚫던 회귀 방지)
     let previewSrc = view.proposal;
     let previewZone = view.zone;
-    const sameDrilled =
-      editsEqual(edit, view.lastDrilledEdit) && view.lastPreserveLengthOnTilt === preservePostLength;
+    const sameDrilled = editsEqual(edit, view.lastDrilledEdit);
     if (view.proposalSolid) {
       if (bake && editsEqual(edit, EMPTY_EDIT)) {
         previewSrc = view.proposal;
@@ -4063,11 +4067,8 @@ export class AbutmentDirectEditSession {
     };
     const epoch = ++view.bakeEpoch;
     const neutral = editsEqual(edit, EMPTY_EDIT);
-    if (
-      view.proposalSolid &&
-      editsEqual(edit, view.lastDrilledEdit) &&
-      view.lastPreserveLengthOnTilt === preservePostLength
-    ) {
+    if (view.proposalSolid && editsEqual(edit, view.lastDrilledEdit)) {
+      view.lastPreserveLengthOnTilt = preservePostLength;
       notifyCommit();
       return;
     }
