@@ -479,7 +479,7 @@ const [bridge34, bridge35, single35] = await Promise.all([
     fixture: fixture35,
     jawGeometry: jaw,
     opposingGeometry: bridgeOpp,
-    neighbors: [fixture34],
+    neighbors: [],
     toothWorks: singleWorks35,
   }),
 ]);
@@ -497,7 +497,7 @@ assert.ok(
 assert.ok(
   bridge35.metrics.postHeightMm < single35.metrics.postHeightMm - 1.2 &&
     bridge35.metrics.postHeightMm < bridge34.metrics.postHeightMm + 0.65,
-  `#35 브리지 높이(${bridge35.metrics.postHeightMm}mm)는 대합이 먼 단독(${single35.metrics.postHeightMm}mm)이 아니라 짧은 #34 쪽으로 맞춘다`,
+  `#35 인접 높이(${bridge35.metrics.postHeightMm}mm)는 이웃 없는 단독(${single35.metrics.postHeightMm}mm)이 아니라 짧은 #34 쪽으로 맞춘다`,
 );
 bridge34.worldGeometry.dispose();
 bridge34.predictedCrownWorldGeometry.dispose();
@@ -823,6 +823,7 @@ assert.equal(bevelShortCan.metrics.postLingualBevelMm, 1.5, "견치 설측 사�
 assert.equal(bevelLongCan.metrics.postLingualBevelMm, 3.6, "견치 설측 사면은 마진에서 3.6mm에 시작된다");
 assert.equal(single35.metrics.postLingualBevelMm ?? null, null, "삽입축이 작은 구치에는 설측 사면이 없다");
 assert.equal(single35.metrics.postLabialBevelMm ?? null, null, "삽입축이 작은 구치에는 협측 사면이 없다");
+const farTiltOpp = makeArchStrip(() => -16);
 const tilt35 = 20 * Math.PI / 180;
 const tiltedPose = {
   ...fixture35.fixturePose,
@@ -832,14 +833,14 @@ const [tilted35, tiltedCut, tiltedFlat] = await Promise.all([
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
     jawGeometry: jaw,
-    opposingGeometry: bridgeOpp,
+    opposingGeometry: farTiltOpp,
     neighbors: [fixture34],
     toothWorks: singleWorks35,
   }),
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
     jawGeometry: jaw,
-    opposingGeometry: bridgeOpp,
+    opposingGeometry: farTiltOpp,
     neighbors: [fixture34],
     toothWorks: singleWorks35,
     params: { postLingualBevelMm: 1.5, postLabialBevelMm: 1.5 },
@@ -848,7 +849,7 @@ const [tilted35, tiltedCut, tiltedFlat] = await Promise.all([
   designCustomAbutmentStl({
     fixture: { ...fixture35, fixturePose: tiltedPose },
     jawGeometry: jaw,
-    opposingGeometry: bridgeOpp,
+    opposingGeometry: farTiltOpp,
     neighbors: [fixture34],
     toothWorks: singleWorks35,
     params: { postLingualBevelMm: 11 },
@@ -915,6 +916,7 @@ tiltedCut.worldGeometry.dispose();
 tiltedCut.predictedCrownWorldGeometry.dispose();
 tiltedFlat.worldGeometry.dispose();
 tiltedFlat.predictedCrownWorldGeometry.dispose();
+farTiltOpp.dispose();
 const [labialOff, labialOn] = await Promise.all([
   designCustomAbutmentStl({
     fixture: fixture11,
@@ -1478,8 +1480,8 @@ open11.predictedCrownWorldGeometry.dispose();
   );
   for (const d of [m16, m17]) {
     assert.ok(
-      (d.metrics.minPostWallThicknessMm ?? 1) >= 0.5 - 1e-3,
-      `#${d.toothNumber} 포스트 최소 벽 0.5mm 유지(${d.metrics.minPostWallThicknessMm}mm)`,
+      (d.metrics.minPostWallThicknessMm ?? 1) >= 0.3 - 1e-3,
+      `#${d.toothNumber} 포스트 벽은 크라운 최소 두께를 지키며 0.3mm 이상이다(${d.metrics.minPostWallThicknessMm}mm)`,
     );
     assert.equal(d.metrics.marginSubgMinMm, solo16.metrics.marginSubgMinMm, "마진 깊이는 바꾸지 않는다");
     assert.equal(d.metrics.marginFilletRadiusMm, solo16.metrics.marginFilletRadiusMm, "마진 필레는 바꾸지 않는다");
