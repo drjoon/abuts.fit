@@ -57,6 +57,7 @@ import {
 import {
   abutmentLogicSignature,
   applyAbutmentGenerationLogic,
+  applyStoredDesignParams,
   generationAxisBias,
   type AbutmentGenerationRule,
 } from "@/shared/practice/abutmentDesignLogic";
@@ -4559,6 +4560,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const bridgeRetentionEarly = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
   const params = resolveCustomAbutmentParams(fixture.toothNumber, args.params, bridgeRetentionEarly);
   applyAbutmentGenerationLogic(params, fixture.toothNumber, args.logicRules);
+  applyStoredDesignParams(params, fixture.toothNumber, args.logicRules);
   const conn = fixture.connectionSpec;
   const tpl = abutmentTemplateForTooth(fixture.toothNumber);
   const R = params.marginFilletRadiusMm;

@@ -81,7 +81,7 @@ import {
   reviewAdminAiDesignGap,
 } from "../../controllers/admin/admin.aiDesignGap.controller.js";
 import {
-  approveAdminAbutmentDesignLogic,
+  applyAdminAbutmentDesignLogic,
   dismissAdminAbutmentDesignLogic,
   getAdminAbutmentDesignLogicPreview,
   listAdminAbutmentDesignLogic,
@@ -449,7 +449,7 @@ router.get("/ai-design-gaps/:id/preview", getAdminAiDesignGapPreview);
 router.post("/ai-design-gaps/:id/review", reviewAdminAiDesignGap);
 router.get("/abutment-design-logic", listAdminAbutmentDesignLogic);
 router.get("/abutment-design-logic/preview", getAdminAbutmentDesignLogicPreview);
-router.post("/abutment-design-logic/:id/approve", approveAdminAbutmentDesignLogic);
+router.post("/abutment-design-logic/:id/apply", applyAdminAbutmentDesignLogic);
 router.post("/abutment-design-logic/:id/dismiss", dismissAdminAbutmentDesignLogic);
 router.get("/low-finish-line-watch", getAdminLowFinishLineWatch);
 router.post(

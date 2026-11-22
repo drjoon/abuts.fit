@@ -1,4 +1,4 @@
-// 승인된 생성 보정을 읽고, 확정·수작업 의뢰의 치종 편집을 쌓는다.
+// 승인된 생성 보정을 읽고, 확정 디자인의 원점 대비 차이를 쌓는다.
 // related files:
 // - web/backend/services/abutmentDesignLogic.service.js
 // - web/backend/modules/ai/ai.routes.js
@@ -29,16 +29,17 @@ async function editableTransfer(req, rawTransferId) {
   const practiceId = String(transfer.practiceBusinessAnchorId);
   const own = String(req.user?.businessAnchorId || "").trim();
   const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
-  if (!privileged && own !== practiceId) return null;
+  const labs = [transfer.targetLabAnchorId, transfer.assigneeLabAnchorId].map((id) => String(id || ""));
+  if (!privileged && own !== practiceId && !labs.includes(own)) return null;
   return {
     anchorId: practiceId,
     transferId: String(transfer.transferId || transferId),
   };
 }
 
-export async function getCustomAbutmentGenerationLogic(_req, res) {
+export async function getCustomAbutmentGenerationLogic(req, res) {
   try {
-    const rules = await listActiveGenerationRules();
+    const rules = await listActiveGenerationRules(req.user?._id);
     return res.status(200).json({ success: true, data: { rules } });
   } catch (error) {
     console.error("[AI] getCustomAbutmentGenerationLogic error", error);
@@ -50,12 +51,13 @@ export async function recordCustomAbutmentGenerationEdits(req, res) {
   try {
     const editable = await editableTransfer(req, req.body?.transferId);
     if (!editable) {
-      return res.status(403).json({ success: false, message: "의뢰 치과만 편집을 남길 수 있습니다." });
+      return res.status(403).json({ success: false, message: "이 의뢰의 편집을 남길 수 없습니다." });
     }
     const data = await recordGenerationEdits({
       transferId: editable.transferId,
       practiceBusinessAnchorId: editable.anchorId,
       userId: req.user?._id,
+      editorName: req.user?.name,
       action: req.body?.action,
       patientName: req.body?.patientName,
       teeth: req.body?.teeth,

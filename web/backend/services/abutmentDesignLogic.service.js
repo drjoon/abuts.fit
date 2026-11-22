@@ -1,139 +1,147 @@
-// 확정·수작업 의뢰의 치종 편집을 모으고, 반복 패턴은 관리자 승인 뒤에만 생성 보정이 된다.
+// 확정 디자인의 원점 대비 차이를 남기고, 관리자 확인 뒤에만 생성 보정으로 쓴다.
 // related files:
 // - web/backend/services/abutmentDesignLogic.core.js
 // - web/backend/models/abutmentDesignLogic.model.js
 // - web/backend/controllers/ai/abutmentDesignLogic.controller.js
 // - web/backend/controllers/admin/admin.abutmentDesignLogic.controller.js
+import { gzipSync } from "zlib";
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import {
-  AbutmentDesignEdit,
-  AbutmentDesignLogicProposal,
+  AbutmentDesignChange,
+  AbutmentDesignGenerationRule,
   AbutmentDesignLogicRule,
 } from "../models/abutmentDesignLogic.model.js";
-import {
-  buildLogicProposals,
-  clampRuleDelta,
-  sanitizeGenerationDelta,
-  toothKindOf,
-} from "./abutmentDesignLogic.core.js";
+import { combineToothPatches, mergeRulePatch, summarizeChanges } from "./abutmentDesignLogic.core.js";
+import { deleteFileFromS3, getObjectBufferFromS3, putObjectToS3 } from "../utils/s3.utils.js";
 
-const OPEN_DISPOSITIONS = [null, "pending"];
+const INLINE_MAX = 32 * 1024;
 
 function clean(value, max) {
   return String(value || "").trim().slice(0, max);
 }
 
-function viewProposal(row) {
+function viewChange(row) {
   return {
     id: String(row._id),
-    toothKind: row.toothKind,
-    axis: row.axis,
-    delta: row.delta,
-    changeLabel: String(row.changeLabel || ""),
-    summary: String(row.summary || ""),
-    detail: String(row.detail || ""),
-    applyText: String(row.applyText || ""),
-    beforeText: String(row.beforeText || ""),
-    afterText: String(row.afterText || ""),
-    samples: (row.samples || []).map((sample) => ({
-      transferId: String(sample.transferId || ""),
-      patientName: String(sample.patientName || ""),
-      practiceName: String(sample.practiceName || ""),
-      toothNumber: String(sample.toothNumber || ""),
-      changeText: String(sample.changeText || ""),
-    })),
+    transferId: String(row.transferId || ""),
+    patientName: String(row.patientName || ""),
+    practiceName: String(row.practiceName || ""),
+    editorName: String(row.editorName || ""),
+    lines: Array.isArray(row.lines) ? row.lines.map((line) => String(line || "")).filter(Boolean) : [],
+    toothNumbers: Array.isArray(row.toothNumbers) ? row.toothNumbers.map((tooth) => String(tooth || "")) : [],
+    updatedAt: row.updatedAt || null,
   };
 }
 
-export async function listActiveGenerationRules() {
-  const rows = await AbutmentDesignLogicRule.find().select({ toothKind: 1, axis: 1, delta: 1 }).lean();
-  return rows
-    .filter((row) => Number.isFinite(Number(row.delta)) && row.delta !== 0)
+function storedParams(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === 0) continue;
+    out[key] = n;
+  }
+  return out;
+}
+
+function storedPose(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const key of ["tiltLabialDeg", "tiltMesialDeg"]) {
+    const n = Number(raw[key]);
+    if (!Number.isFinite(n) || n === 0) continue;
+    out[key] = n;
+  }
+  return out;
+}
+
+export async function listActiveGenerationRules(userId) {
+  const uid = Types.ObjectId.isValid(String(userId || "")) ? String(userId) : "";
+  const [legacy, modern] = await Promise.all([
+    AbutmentDesignLogicRule.find().select({ toothKind: 1, axis: 1, delta: 1 }).lean(),
+    AbutmentDesignGenerationRule.find(
+      uid
+        ? { $or: [{ scope: "global" }, { scope: "user", userId: uid }] }
+        : { scope: "global" },
+    )
+      .select({ toothKind: 1, scope: 1, params: 1, pose: 1 })
+      .lean(),
+  ]);
+  const rules = legacy
+    .filter((row) => Number.isFinite(Number(row.delta)) && row.delta !== 0 && row.axis)
     .map((row) => ({
       toothKind: row.toothKind,
       axis: row.axis,
       delta: row.delta,
     }));
+  for (const row of modern) {
+    const params = storedParams(row.params);
+    const pose = storedPose(row.pose);
+    if (Object.keys(params).length === 0 && Object.keys(pose).length === 0) continue;
+    rules.push({
+      toothKind: row.toothKind,
+      scope: row.scope,
+      ...(Object.keys(params).length > 0 ? { params } : {}),
+      ...(Object.keys(pose).length > 0 ? { pose } : {}),
+    });
+  }
+  return rules;
 }
 
-export async function listPendingLogicProposals() {
-  const rows = await AbutmentDesignLogicProposal.find({ status: "pending" })
-    .sort({ createdAt: 1 })
-    .limit(20)
+export async function listPendingDesignChanges() {
+  const rows = await AbutmentDesignChange.find({ status: "pending" })
+    .sort({ updatedAt: -1 })
+    .limit(40)
     .lean();
-  const items = rows.map(viewProposal);
+  const items = rows.map(viewChange);
   return { count: items.length, items };
 }
 
-async function refreshLogicProposals() {
-  const rows = await AbutmentDesignEdit.find({ disposition: { $in: OPEN_DISPOSITIONS } })
-    .sort({ updatedAt: -1 })
-    .limit(500)
-    .lean();
-  const drafts = buildLogicProposals(rows);
-  const draftKeys = new Set(drafts.map((draft) => `${draft.toothKind}:${draft.axis}`));
-  for (const draft of drafts) {
-    const fields = {
-      toothKind: draft.toothKind,
-      axis: draft.axis,
-      delta: draft.delta,
-      changeLabel: draft.changeLabel,
-      summary: draft.summary,
-      detail: draft.detail,
-      applyText: draft.applyText,
-      beforeText: draft.beforeText,
-      afterText: draft.afterText,
-      samples: draft.samples,
-      observationIds: draft.observationIds
-        .filter((id) => Types.ObjectId.isValid(id))
-        .map((id) => new Types.ObjectId(id)),
-      status: "pending",
-    };
-    let doc = await AbutmentDesignLogicProposal.findOne({
-      toothKind: draft.toothKind,
-      axis: draft.axis,
-      status: "pending",
+function payloadDocument(summary) {
+  return {
+    teeth: summary.teeth.map((row) => ({
+      toothNumber: row.toothNumber,
+      toothKind: row.toothKind,
+      baselineParams: row.baselineParams,
+      finalParams: row.finalParams,
+      ...(row.gumball ? { gumball: row.gumball } : {}),
+      lines: row.lines,
+      patch: row.patch,
+    })),
+  };
+}
+
+async function writePayload(transferId, summary, previousKey) {
+  const body = payloadDocument(summary);
+  const json = JSON.stringify(body);
+  const bytes = Buffer.byteLength(json);
+  if (bytes <= INLINE_MAX) {
+    if (previousKey) void deleteFileFromS3(previousKey).catch(() => {});
+    return { payload: body, s3Key: "", bytes };
+  }
+  const key = `ai/abutment-design-changes/${transferId}.json.gz`;
+  try {
+    await putObjectToS3(key, gzipSync(Buffer.from(json)), {
+      contentType: "application/json",
+      contentEncoding: "gzip",
     });
-    if (!doc) {
-      try {
-        doc = await AbutmentDesignLogicProposal.create(fields);
-      } catch (error) {
-        if (error?.code !== 11000) throw error;
-        doc = await AbutmentDesignLogicProposal.findOne({
-          toothKind: draft.toothKind,
-          axis: draft.axis,
-          status: "pending",
-        });
-      }
-    }
-    if (!doc) continue;
-    doc.set(fields);
-    await doc.save();
-    const ids = fields.observationIds;
-    if (ids.length > 0) {
-      await AbutmentDesignEdit.updateMany(
-        { _id: { $in: ids }, disposition: { $in: OPEN_DISPOSITIONS } },
-        { $set: { disposition: "pending", proposalId: doc._id } },
-      );
-    }
-    await AbutmentDesignEdit.updateMany(
-      { proposalId: doc._id, disposition: "pending", _id: { $nin: ids } },
-      { $set: { disposition: null, proposalId: null } },
-    );
+    return { payload: null, s3Key: key, bytes };
+  } catch (error) {
+    console.warn("[abutment-design-logic] s3 payload failed", error?.message || error);
+    if (bytes > 1_500_000) throw error;
+    return { payload: body, s3Key: "", bytes };
   }
-  const pending = await AbutmentDesignLogicProposal.find({ status: "pending" })
-    .select({ toothKind: 1, axis: 1 })
-    .lean();
-  for (const row of pending) {
-    if (draftKeys.has(`${row.toothKind}:${row.axis}`)) continue;
-    await AbutmentDesignEdit.updateMany(
-      { proposalId: row._id, disposition: "pending" },
-      { $set: { disposition: null, proposalId: null } },
-    );
-    await AbutmentDesignLogicProposal.deleteOne({ _id: row._id, status: "pending" });
-  }
+}
+
+async function readPayload(doc) {
+  if (doc?.payload && typeof doc.payload === "object") return doc.payload;
+  const key = String(doc?.s3Key || "").trim();
+  if (!key) return { teeth: [] };
+  const buf = await getObjectBufferFromS3(key);
+  const parsed = JSON.parse(Buffer.from(buf).toString("utf8"));
+  return parsed && typeof parsed === "object" ? parsed : { teeth: [] };
 }
 
 export async function recordGenerationEdits(input) {
@@ -141,8 +149,15 @@ export async function recordGenerationEdits(input) {
   const anchorRaw = clean(input?.practiceBusinessAnchorId, 40);
   const anchorId = Types.ObjectId.isValid(anchorRaw) ? anchorRaw : null;
   if (!transferId || !anchorId) return { recorded: 0 };
-  const action = input?.action === "manual" ? "manual" : "confirm";
-  const patientName = clean(input?.patientName, 40);
+  const summary = summarizeChanges(input?.teeth);
+  const pending = await AbutmentDesignChange.findOne({ transferId, status: "pending" });
+  if (summary.teeth.length === 0) {
+    if (pending) {
+      if (pending.s3Key) void deleteFileFromS3(pending.s3Key).catch(() => {});
+      await pending.deleteOne();
+    }
+    return { recorded: 0 };
+  }
   const userRaw = clean(input?.userId, 40);
   const userId = Types.ObjectId.isValid(userRaw) ? userRaw : null;
   let practiceName = clean(input?.practiceName, 80);
@@ -150,102 +165,77 @@ export async function recordGenerationEdits(input) {
     const anchor = await BusinessAnchor.findById(anchorId).select({ name: 1 }).lean();
     practiceName = clean(anchor?.name, 80);
   }
-  const teeth = Array.isArray(input?.teeth) ? input.teeth.slice(0, 16) : [];
-  let changed = 0;
-  for (const tooth of teeth) {
-    const toothNumber = clean(tooth?.toothNumber, 8);
-    const toothKind = toothKindOf(toothNumber);
-    if (!toothKind) continue;
-    const deltas = Array.isArray(tooth?.deltas) ? tooth.deltas.slice(0, 8) : [];
-    const seen = new Set();
-    for (const raw of deltas) {
-      const sanitized = sanitizeGenerationDelta(raw?.axis, raw?.before, raw?.after);
-      if (!sanitized || seen.has(sanitized.axis)) continue;
-      seen.add(sanitized.axis);
-      const existing = await AbutmentDesignEdit.findOne({
-        transferId,
-        toothNumber,
-        axis: sanitized.axis,
-      })
-        .select({ disposition: 1 })
-        .lean();
-      if (existing?.disposition === "approved" || existing?.disposition === "dismissed") {
-        seen.add(sanitized.axis);
-        continue;
-      }
-      await AbutmentDesignEdit.updateOne(
-        { transferId, toothNumber, axis: sanitized.axis },
-        {
-          $set: {
-            toothKind,
-            before: sanitized.before,
-            after: sanitized.after,
-            delta: sanitized.delta,
-            action,
-            patientName,
-            practiceName,
-            practiceBusinessAnchorId: anchorId,
-            userId,
-            disposition: null,
-            proposalId: null,
-          },
-        },
-        { upsert: true },
-      );
-      changed += 1;
-    }
-    const removed = await AbutmentDesignEdit.deleteMany({
-      transferId,
-      toothNumber,
-      disposition: { $in: OPEN_DISPOSITIONS },
-      axis: { $nin: [...seen] },
-    });
-    changed += removed.deletedCount || 0;
+  const stored = await writePayload(transferId, summary, pending?.s3Key || "");
+  const fields = {
+    transferId,
+    userId,
+    practiceBusinessAnchorId: anchorId,
+    practiceName,
+    editorName: clean(input?.editorName, 40),
+    patientName: clean(input?.patientName, 40),
+    action: input?.action === "manual" ? "manual" : "confirm",
+    status: "pending",
+    lines: summary.lines,
+    toothNumbers: summary.teeth.map((row) => row.toothNumber),
+    payload: stored.payload,
+    s3Key: stored.s3Key,
+    bytes: stored.bytes,
+    decidedAt: null,
+    decidedBy: null,
+  };
+  if (pending) {
+    pending.set(fields);
+    await pending.save();
+  } else {
+    await AbutmentDesignChange.create(fields);
   }
-  if (changed > 0) {
-    void refreshLogicProposals().catch((err) =>
-      console.warn("[abutment-design-logic] proposal refresh failed", err?.message || err),
-    );
-  }
-  return { recorded: changed };
+  return { recorded: summary.teeth.length };
 }
 
-async function decideProposal(proposalId, status, userId) {
-  if (!Types.ObjectId.isValid(String(proposalId || ""))) return listPendingLogicProposals();
-  const proposal = await AbutmentDesignLogicProposal.findOne({ _id: proposalId, status: "pending" });
-  if (!proposal) return listPendingLogicProposals();
-  const now = new Date();
-  if (status === "approved") {
-    const current = await AbutmentDesignLogicRule.findOne({
-      toothKind: proposal.toothKind,
-      axis: proposal.axis,
-    })
-      .select({ delta: 1 })
-      .lean();
-    const delta = clampRuleDelta(proposal.axis, current?.delta, proposal.delta);
-    await AbutmentDesignLogicRule.updateOne(
-      { toothKind: proposal.toothKind, axis: proposal.axis },
-      { $set: { delta, proposalId: proposal._id } },
-      { upsert: true },
-    );
-  }
-  proposal.status = status;
-  proposal.decidedAt = now;
-  proposal.decidedBy = Types.ObjectId.isValid(String(userId || "")) ? userId : null;
-  await proposal.save();
-  await AbutmentDesignEdit.updateMany(
-    { proposalId: proposal._id, disposition: "pending" },
-    { $set: { disposition: status } },
+async function mergeOneRule(scope, userId, patch) {
+  const owner = scope === "user" ? userId : null;
+  const query = { scope, toothKind: patch.toothKind, userId: owner };
+  const current = await AbutmentDesignGenerationRule.findOne(query).select({ params: 1, pose: 1 }).lean();
+  const merged = mergeRulePatch(current, patch);
+  if (Object.keys(merged.params).length === 0 && Object.keys(merged.pose).length === 0) return;
+  await AbutmentDesignGenerationRule.updateOne(
+    query,
+    { $set: { params: merged.params, pose: merged.pose, userId: owner } },
+    { upsert: true },
   );
-  return listPendingLogicProposals();
 }
 
-export function approveLogicProposal(proposalId, userId) {
-  return decideProposal(proposalId, "approved", userId);
+export async function applyDesignChange(changeId, scope, actorId) {
+  if (!Types.ObjectId.isValid(String(changeId || ""))) return { list: await listPendingDesignChanges() };
+  if (scope !== "user" && scope !== "global") {
+    return { error: "적용 대상을 고르세요.", list: await listPendingDesignChanges() };
+  }
+  const doc = await AbutmentDesignChange.findOne({ _id: changeId, status: "pending" });
+  if (!doc) return { list: await listPendingDesignChanges() };
+  if (scope === "user" && !doc.userId) {
+    return { error: "편집한 사용자를 알 수 없습니다.", list: await listPendingDesignChanges() };
+  }
+  const payload = await readPayload(doc);
+  const teeth = Array.isArray(payload?.teeth) ? payload.teeth : [];
+  for (const patch of combineToothPatches(teeth)) {
+    await mergeOneRule(scope, doc.userId, patch);
+  }
+  doc.status = scope;
+  doc.decidedAt = new Date();
+  doc.decidedBy = Types.ObjectId.isValid(String(actorId || "")) ? actorId : null;
+  await doc.save();
+  return { list: await listPendingDesignChanges() };
 }
 
-export function dismissLogicProposal(proposalId, userId) {
-  return decideProposal(proposalId, "dismissed", userId);
+export async function dismissDesignChange(changeId, actorId) {
+  if (!Types.ObjectId.isValid(String(changeId || ""))) return listPendingDesignChanges();
+  const doc = await AbutmentDesignChange.findOne({ _id: changeId, status: "pending" });
+  if (!doc) return listPendingDesignChanges();
+  doc.status = "dismissed";
+  doc.decidedAt = new Date();
+  doc.decidedBy = Types.ObjectId.isValid(String(actorId || "")) ? actorId : null;
+  await doc.save();
+  return listPendingDesignChanges();
 }
 
 function mapStoredFiles(rows) {
@@ -267,7 +257,7 @@ function mapStoredFiles(rows) {
     .filter(Boolean);
 }
 
-export async function loadGenerationLogicPreview(transferId, patientName) {
+export async function loadGenerationLogicPreview(transferId, patientName, changeId) {
   const id = clean(transferId, 80);
   if (!id) return null;
   const transfer = await PracticeTransfer.findOne({ transferId: id })
@@ -279,11 +269,33 @@ export async function loadGenerationLogicPreview(transferId, patientName) {
     })
     .lean();
   if (!transfer) return null;
+  let change = null;
+  if (Types.ObjectId.isValid(String(changeId || ""))) {
+    change = await AbutmentDesignChange.findOne({ _id: changeId, transferId: id, status: "pending" });
+  }
+  if (!change) {
+    change = await AbutmentDesignChange.findOne({ transferId: id, status: "pending" }).sort({ updatedAt: -1 });
+  }
+  let originTeeth = [];
+  let lines = [];
+  if (change) {
+    const payload = await readPayload(change);
+    originTeeth = (Array.isArray(payload?.teeth) ? payload.teeth : [])
+      .map((tooth) => ({
+        toothNumber: String(tooth?.toothNumber || ""),
+        baselineParams: tooth?.baselineParams && typeof tooth.baselineParams === "object" ? tooth.baselineParams : {},
+      }))
+      .filter((tooth) => tooth.toothNumber);
+    lines = Array.isArray(change.lines) ? change.lines : [];
+  }
   return {
     transferId: String(transfer.transferId || id),
     patientName: clean(patientName, 40),
     toothWorks: Array.isArray(transfer.toothWorks) ? transfer.toothWorks : [],
     files: mapStoredFiles(transfer.files),
     workScanFiles: mapStoredFiles(transfer.production?.labWorkScanFiles),
+    changeId: change ? String(change._id) : "",
+    lines,
+    originTeeth,
   };
 }

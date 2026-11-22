@@ -5,8 +5,8 @@
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
 // 한 번 만든 디자인은 이 브라우저에 저장해 다시 열 때 그대로 보여 준다.
-// 커프·대합 거리 같은 취향은 확정 때 다음 케이스 적용을 묻는다.
-// 기울기·이동·회전이 여러 케이스에서 반복되면 관리자 승인 뒤에만 생성에 더한다.
+// 커프·대합 거리·검볼 변경은 확정 때 묻지 않고, 관리자가 확인한 뒤 다음 생성에 반영한다.
+// 기울기·이동·회전·크기·부분 변형을 포함해 자동 생성과 다른 값은 모두 기록한다.
 // 이미 쌓인 AI 대화는 의뢰별로 저장만 하고, 이 화면에서는 패널을 열지 않는다.
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
@@ -69,7 +69,6 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -162,10 +161,8 @@ import {
   resolveAbutmentBridgeRetentionSpec,
   type CustomAbutmentDesignParams,
   type CustomAbutmentDesignPreference,
-  type CustomAbutmentPreferenceScope,
 } from "@/shared/practice/customAbutmentDesignParams";
 import {
-  collectGenerationEditRows,
   parseAbutmentGenerationRules,
   type AbutmentGenerationRule,
 } from "@/shared/practice/abutmentDesignLogic";
@@ -224,9 +221,7 @@ import {
   type AbutmentEditSummary,
 } from "@/shared/components/practice/abutmentDirectEdit";
 import {
-  ABUTMENT_INFO_FIELD_LABELS,
   computeParamsFromInfoFieldEdit,
-  formatAbutmentInfoFieldValue,
   PracticeCustomAbutmentDesignTree,
   type AbutmentAxisSource,
   type AbutmentInfoFieldKey,
@@ -317,8 +312,13 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
   workScanFiles?: readonly PracticeDesignPreviewFileItem[];
   /** 기공의뢰 id. 의뢰 치과의 디자인 취향을 읽고 저장할 때 쓴다. */
   transferId?: string;
-  /** 관리자 확인. 저장된 형상·대화만 보여주고 새로 만들지 않는다. */
+  /** 관리자 확인. 저장된 형상만 보여주고 편집하지 않는다. */
   readOnly?: boolean;
+  /** 관리자가 변경 전을 다시 만들 때 쓰는 자동 생성 파라미터. */
+  originTeeth?: readonly { toothNumber: string; baselineParams: Partial<CustomAbutmentDesignParams> }[];
+  /** 관리자가 이 사용자만·모든 사용자·건너뛰기를 고른다. */
+  onReviewDecide?: (scope: "user" | "global" | "skip") => void;
+  reviewDecideBusy?: boolean;
   /** 치과(발신) 또는 기공소(수신) 역할 구분 */
   viewerRole?: "practice" | "lab";
   /** 디자인 완료, 수작업 의뢰, 확정 취소, 기공소 확인 후 콜백 */
@@ -344,16 +344,6 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
    * 프록시 403을 기다리지 않고 안내만 보여 준다.
    */
   scanDownloadLocked?: boolean;
-};
-
-type PendingInfoChange = {
-  id: string;
-  toothNumber: string;
-  field: AbutmentInfoFieldKey;
-  label: string;
-  beforeText: string;
-  afterText: string;
-  params: Partial<CustomAbutmentDesignParams>;
 };
 
 type CenterGuideMode = "off" | "center" | "grid";
@@ -908,26 +898,6 @@ function sameAbutmentMetrics(a: CustomAbutmentDesignMetrics, b: CustomAbutmentDe
   );
 }
 
-function writeUserEditPreference(
-  userId: string,
-  scope: CustomAbutmentPreferenceScope,
-  params: Partial<CustomAbutmentDesignParams>,
-  note: string,
-) {
-  if (!userId) return null;
-  const next = mergeEditPreference(readUserEditPreference(userId), {
-    scopes: { [scope]: params },
-    notes: note ? [note] : [],
-    updatedAt: new Date().toISOString(),
-  });
-  try {
-    localStorage.setItem(USER_EDIT_PREF_PREFIX + userId, JSON.stringify(next));
-  } catch {
-    // 저장 공간이 없으면 이번 케이스 형상만 남긴다.
-  }
-  return next;
-}
-
 function formatCancelLeft(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const days = Math.floor(total / 86400);
@@ -1034,6 +1004,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   workScanFiles = [],
   transferId,
   readOnly = false,
+  originTeeth = [],
+  onReviewDecide,
+  reviewDecideBusy = false,
   viewerRole = "practice",
   onActionComplete,
   reviewItems = [],
@@ -1251,9 +1224,24 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [actionBusy, setActionBusy] = useState<
     "confirm" | "manual" | "check" | "cancel" | null
   >(null);
-  const [confirmPrefDialogOpen, setConfirmPrefDialogOpen] = useState(false);
-  const [confirmPrefChanges, setConfirmPrefChanges] = useState<PendingInfoChange[]>([]);
-  const [checkedChangeIds, setCheckedChangeIds] = useState<Set<string>>(new Set());
+  const [compareSide, setCompareSide] = useState<"before" | "after">("after");
+  const [originBusy, setOriginBusy] = useState(false);
+  const originSwapRef = useRef<
+    {
+      toothNumber: string;
+      afterAbut: THREE.BufferGeometry;
+      afterCrown: THREE.BufferGeometry | null;
+      afterMargin: THREE.BufferGeometry | null;
+      originAbut: THREE.BufferGeometry;
+      originCrown: THREE.BufferGeometry | null;
+      originMargin: THREE.BufferGeometry | null;
+    }[]
+  >([]);
+  const compareSideRef = useRef<"before" | "after">("after");
+  compareSideRef.current = compareSide;
+  const originBuildLockRef = useRef(false);
+  const compareEpochRef = useRef(0);
+  const releaseOriginSwapRef = useRef<() => void>(() => {});
   const [remoteMode, setRemoteMode] = useState<"confirmed" | "manual" | null>(null);
   const [labCheckedAt, setLabCheckedAt] = useState<string | null>(null);
   const [cancelDeadlineAt, setCancelDeadlineAt] = useState<string | null>(null);
@@ -1415,6 +1403,22 @@ export function PracticeCustomAbutmentPreviewDialog({
   const predictedCrownMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const fixtureMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const marginLinesRef = useRef(new Map<string, Line2>());
+  releaseOriginSwapRef.current = () => {
+    for (const row of originSwapRef.current) {
+      const abut = abutmentMeshesRef.current.get(row.toothNumber);
+      if (abut?.geometry === row.originAbut) abut.geometry = row.afterAbut;
+      const crown = predictedCrownMeshesRef.current.get(row.toothNumber);
+      if (crown && row.afterCrown && crown.geometry === row.originCrown) crown.geometry = row.afterCrown;
+      const margin = marginLinesRef.current.get(row.toothNumber);
+      if (margin && row.afterMargin && margin.geometry === row.originMargin) {
+        margin.geometry = row.afterMargin as typeof margin.geometry;
+      }
+      row.originAbut.dispose();
+      row.originCrown?.dispose();
+      row.originMargin?.dispose();
+    }
+    originSwapRef.current = [];
+  };
   type ToothCandidateChoice = {
     candidates: CustomAbutmentDesignCandidate[];
     selectedIndex: number | null;
@@ -4093,8 +4097,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         savedGumballEditRef.current = {};
         pickEpochRef.current += 1;
         scanbodyPickRef.current = null;
+        compareEpochRef.current += 1;
+        releaseOriginSwapRef.current();
         clearSceneObjects();
         setDesignedList([]);
+        setCompareSide("after");
         setAvailableJaws({ upper: false, lower: false });
         selectedTeethRef.current = [];
         setSelectedTeeth([]);
@@ -4411,7 +4418,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               sharedAbutmentSyncParams(row.params, row.overrides),
             );
             // 저장된 테이퍼는 연결 여부와 상관없이 다시 열 때 그대로 쓴다.
-            const restoredGumball = !readOnly ? normalizeAbutmentEdit(row.gumballEdit) : null;
+            // 정점이 없어 다시 만드는 경우에는 읽기 전용에서도 검볼을 얹는다.
+            const restoredGumball = normalizeAbutmentEdit(row.gumballEdit);
             if (restoredGumball && row.gumballBaseParams) {
               rowOverrides = retainLiveGumballParams(
                 rowOverrides,
@@ -5113,6 +5121,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       cancelled = true;
       window.clearTimeout(timer);
       abort.abort();
+      compareEpochRef.current += 1;
+      releaseOriginSwapRef.current();
       pickEpochRef.current += 1;
       scanbodyPickRef.current = null;
     };
@@ -6111,108 +6121,26 @@ export function PracticeCustomAbutmentPreviewDialog({
     [applyDesignChanges, canEditDesign, persistDesign],
   );
 
-  const collectPendingInfoChanges = useCallback((): PendingInfoChange[] => {
-    const out: PendingInfoChange[] = [];
-    for (const d of designedListRef.current) {
-      const fields = editedInfoFieldsRef.current[d.toothNumber];
-      const baseM = baselineMetricsRef.current[d.toothNumber];
-      if (!fields || fields.size === 0 || !baseM) continue;
-      const p = d.params;
-      const linked = (p.postTaperLink ?? 1) >= 0.5;
-      for (const field of fields) {
-        if (field === "postTaperLink") continue;
-        if (field === "postTaperDeg" && linked) continue;
-        if (!(field in ABUTMENT_INFO_FIELD_LABELS)) continue;
-        const beforeText = formatAbutmentInfoFieldValue(baseM, field);
-        const afterText = formatAbutmentInfoFieldValue(d.metrics, field);
-        if (beforeText === afterText) continue;
-        // 사면 해제는 이번 케이스만 — 다음 케이스 기본값 모달에는 넣지 않는다.
-        if (field === "postLingualBevelMm" || field === "postLabialBevelMm") {
-          const afterMm =
-            field === "postLingualBevelMm"
-              ? d.metrics.postLingualBevelMm
-              : d.metrics.postLabialBevelMm;
-          if (afterMm == null || afterMm <= 0) continue;
-        }
-        let params: Partial<CustomAbutmentDesignParams> = {};
-        switch (field) {
-          case "marginSubgMm":
-            params = {
-              marginSubgMinMm: p.marginSubgMinMm,
-              marginSubgMaxMm: p.marginSubgMaxMm,
-              marginDepthMm: p.marginSubgMinMm,
-            };
-            break;
-          case "maxDiameterMm":
-            params = { marginSizeScale: p.marginSizeScale };
-            break;
-          case "postHeightMm":
-            params = { postHeightOffsetMm: p.postHeightOffsetMm };
-            break;
-          case "postTaperDeg":
-            params = { postTaperDeg: p.postTaperDeg };
-            break;
-          case "postLingualBevelMm":
-            params = { postLingualBevelMm: p.postLingualBevelMm };
-            break;
-          case "postLabialBevelMm":
-            params = { postLabialBevelMm: p.postLabialBevelMm };
-            break;
-          case "axisSource":
-            params = { axisSourceCode: p.axisSourceCode, axisToOpposing: p.axisToOpposing };
-            break;
-          case "occlusalClearanceMm":
-            params = { occlusalClearanceMm: p.occlusalClearanceMm, postHeightOffsetMm: 0 };
-            break;
-          case "marginFilletRadiusMm":
-            params = { marginFilletRadiusMm: p.marginFilletRadiusMm };
-            break;
-          default:
-            continue;
-        }
-        out.push({
-          id: `${d.toothNumber}:${field}`,
-          toothNumber: d.toothNumber,
-          field,
-          label: ABUTMENT_INFO_FIELD_LABELS[field],
-          beforeText,
-          afterText,
-          params,
-        });
-      }
-    }
-    return out;
-  }, []);
-
-  const snapshotGenerationEdits = useCallback(() => {
-    const rows = collectGenerationEditRows({
-      teeth: designedListRef.current.map((row) => ({
+  const snapshotDesignChanges = useCallback(() => {
+    return designedListRef.current.map((row) => {
+      const gumball =
+        directEditRef.current?.editOf(row.toothNumber) ??
+        savedGumballEditRef.current[row.toothNumber] ??
+        null;
+      return {
         toothNumber: row.toothNumber,
-        params: row.params,
-      })),
-      baselineParams: baselineParamsRef.current,
-      gumball: (directEditRef.current?.listEdits() ?? []).map((row) => ({
-        tooth: row.tooth,
-        edit: {
-          tiltLabialDeg: row.edit.tiltLabialDeg,
-          tiltMesialDeg: row.edit.tiltMesialDeg,
-          shiftLabialMm: row.edit.shiftLabialMm,
-          shiftMesialMm: row.edit.shiftMesialMm,
-          yawDeg: row.edit.yawDeg,
-        },
-      })),
+        baselineParams: baselineParamsRef.current[row.toothNumber] ?? row.params,
+        finalParams: row.params,
+        ...(gumball ? { gumball } : {}),
+      };
     });
-    const byTooth = new Map(rows.map((row) => [row.toothNumber, row.deltas]));
-    return designedListRef.current.map((row) => ({
-      toothNumber: row.toothNumber,
-      deltas: byTooth.get(row.toothNumber) ?? [],
-    }));
   }, []);
 
   const reportGenerationEdits = useCallback(
-    (action: "confirm" | "manual", teeth: ReturnType<typeof collectGenerationEditRows>) => {
+    (action: "confirm" | "manual") => {
       const token = String(authToken || "").trim();
       const tid = transferIdRef.current;
+      const teeth = snapshotDesignChanges();
       if (!token || !tid || teeth.length === 0) return;
       void apiFetch({
         path: "/api/ai/custom-abutment-design-edits",
@@ -6226,11 +6154,136 @@ export function PracticeCustomAbutmentPreviewDialog({
         },
       }).catch((err) => console.warn("[custom-abutment] generation edit record failed", err));
     },
-    [authToken, patientName],
+    [authToken, patientName, snapshotDesignChanges],
+  );
+
+  const applyCompareGeometries = useCallback((side: "before" | "after") => {
+    const center = new THREE.Vector3();
+    for (const row of originSwapRef.current) {
+      const abut = abutmentMeshesRef.current.get(row.toothNumber);
+      const crown = predictedCrownMeshesRef.current.get(row.toothNumber);
+      const margin = marginLinesRef.current.get(row.toothNumber);
+      if (abut) {
+        abut.geometry = side === "before" ? row.originAbut : row.afterAbut;
+        if (!abut.geometry.boundingBox) abut.geometry.computeBoundingBox();
+        const badge = abut.children.find((child) => child instanceof CSS2DObject);
+        if (badge && abut.geometry.boundingBox) {
+          badge.position.copy(abut.geometry.boundingBox.getCenter(center));
+        }
+        syncBackFaceShell(abut);
+      }
+      const nextCrown = side === "before" ? row.originCrown : row.afterCrown;
+      if (crown && nextCrown) crown.geometry = nextCrown;
+      const nextMargin = side === "before" ? row.originMargin : row.afterMargin;
+      if (margin && nextMargin) {
+        margin.geometry = nextMargin as typeof margin.geometry;
+        margin.computeLineDistances();
+      }
+    }
+  }, []);
+
+  const showCompareSide = useCallback(
+    async (side: "before" | "after") => {
+      if (side === compareSideRef.current && (side === "after" || originSwapRef.current.length > 0)) return;
+      if (side === "after") {
+        applyCompareGeometries("after");
+        setCompareSide("after");
+        return;
+      }
+      if (originBuildLockRef.current) return;
+      if (originSwapRef.current.length === 0) {
+        const ctx = designContextRef.current;
+        const specs = originTeeth.filter((row) => Object.keys(row.baselineParams || {}).length > 0);
+        if (!ctx || specs.length === 0) {
+          toast({ title: "변경 전 형상을 만들지 못했습니다.", variant: "destructive" });
+          return;
+        }
+        const epoch = compareEpochRef.current;
+        originBuildLockRef.current = true;
+        setOriginBusy(true);
+        const swaps: typeof originSwapRef.current = [];
+        const dropSwap = (rows: typeof swaps) => {
+          for (const row of rows) {
+            row.originAbut.dispose();
+            row.originCrown?.dispose();
+            row.originMargin?.dispose();
+          }
+        };
+        try {
+          for (const spec of specs) {
+            const after = designedListRef.current.find((row) => row.toothNumber === spec.toothNumber);
+            const abut = abutmentMeshesRef.current.get(spec.toothNumber);
+            if (!after || !abut) continue;
+            const jaw = after.fixture.jaw;
+            const jawGeo = ctx.jawGeometry[jaw];
+            if (!jawGeo) continue;
+            const origin = await designCustomAbutmentStl({
+              fixture: after.fixture,
+              jawGeometry: jawGeo,
+              opposingGeometry: ctx.jawGeometry[jaw === "upper" ? "lower" : "upper"],
+              neighbors: designedListRef.current.map((row) => row.fixture),
+              toothWorks: ctx.allToothWorks,
+              params: spec.baselineParams,
+              explicitParams: spec.baselineParams,
+              logicRules: [],
+              patientName: ctx.patientName,
+            });
+            origin.enameloplastyWorldGeometry?.dispose();
+            if (epoch !== compareEpochRef.current) {
+              origin.worldGeometry.dispose();
+              origin.predictedCrownWorldGeometry.dispose();
+              dropSwap(swaps);
+              return;
+            }
+            let originMargin: THREE.BufferGeometry | null = null;
+            const loop = Array.from(origin.marginLoopWorld);
+            if (loop.length >= 3) {
+              loop.push(loop[0]!, loop[1]!, loop[2]!);
+              const geo = new LineGeometry();
+              geo.setPositions(loop);
+              originMargin = geo;
+            }
+            swaps.push({
+              toothNumber: spec.toothNumber,
+              afterAbut: abut.geometry,
+              afterCrown: predictedCrownMeshesRef.current.get(spec.toothNumber)?.geometry ?? null,
+              afterMargin: marginLinesRef.current.get(spec.toothNumber)?.geometry ?? null,
+              originAbut: origin.worldGeometry,
+              originCrown: origin.predictedCrownWorldGeometry,
+              originMargin,
+            });
+          }
+          if (epoch !== compareEpochRef.current) {
+            dropSwap(swaps);
+            return;
+          }
+          if (swaps.length === 0) {
+            toast({ title: "변경 전 형상을 만들지 못했습니다.", variant: "destructive" });
+            return;
+          }
+          originSwapRef.current = swaps;
+        } catch (err) {
+          dropSwap(swaps);
+          if (epoch !== compareEpochRef.current) return;
+          toast({
+            title: "변경 전 형상을 만들지 못했습니다.",
+            description: err instanceof Error ? err.message : undefined,
+            variant: "destructive",
+          });
+          return;
+        } finally {
+          originBuildLockRef.current = false;
+          setOriginBusy(false);
+        }
+      }
+      applyCompareGeometries("before");
+      setCompareSide("before");
+    },
+    [applyCompareGeometries, originTeeth, toast],
   );
 
   const executeConfirmAndOrder = useCallback(
-    async (selectedPrefChanges: readonly PendingInfoChange[]) => {
+    async () => {
       for (const tooth of Object.keys(candidateChoicesRef.current)) {
         confirmCandidateForTooth(tooth, false);
       }
@@ -6239,41 +6292,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       const list = designedListRef.current;
       const ctx = designContextRef.current;
       if (!token || !tid || list.length === 0) return;
-      const generationEdits = snapshotGenerationEdits();
-
       setActionBusy("confirm");
       skipSnapshotFlushRef.current = true;
       try {
-        if (selectedPrefChanges.length > 0) {
-          const mergedParams: Partial<CustomAbutmentDesignParams> = {};
-          const notes: string[] = [];
-          for (const ch of selectedPrefChanges) {
-            Object.assign(mergedParams, ch.params);
-            notes.push(`${ch.label} ${ch.beforeText}→${ch.afterText}`);
-          }
-          const noteText = notes.join(", ").slice(0, 110);
-          const localSaved = writeUserEditPreference(
-            authUserIdRef.current,
-            "all",
-            mergedParams,
-            noteText,
-          );
-          if (localSaved) {
-            preferenceRef.current = mergeEditPreference(preferenceRef.current, localSaved);
-          }
-          void apiFetch({
-            path: "/api/ai/custom-abutment-design-preference",
-            method: "PUT",
-            token,
-            jsonBody: {
-              transferId: tid,
-              scope: "all",
-              params: mergedParams,
-              note: noteText,
-            },
-          }).catch((err) => console.warn("[custom-abutment] preference save failed", err));
-        }
-
         const res = await confirmCustomAbutmentDesignRemote(token, tid, {
           patientName: patientName || ctx?.patientName || "",
           version: CUSTOM_ABUTMENT_DESIGN_VERSION,
@@ -6315,12 +6336,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           return;
         }
 
-        setConfirmPrefDialogOpen(false);
         const graceAt = res.gracePromoteAt || res.cancelDeadlineAt || null;
         if (res.cancelDeadlineAt) setCancelDeadlineAt(res.cancelDeadlineAt);
         setGracePromoteAt(graceAt);
         setRemoteMode("confirmed");
-        reportGenerationEdits("confirm", generationEdits);
+        reportGenerationEdits("confirm");
         toast({
           title: "디자인을 확정했습니다",
           description: "5분 후 제조사 준비에 들어갑니다.",
@@ -6346,7 +6366,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       onActionComplete,
       patientName,
       reportGenerationEdits,
-      snapshotGenerationEdits,
       toast,
     ],
   );
@@ -6366,7 +6385,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         confirmCandidateForTooth(tooth, false);
       }
       if (list.length > 0) {
-        const generationEdits = snapshotGenerationEdits();
         const sources = labSourceStlRef.current;
         const reuseExisting =
           !labGeometryTouchedRef.current &&
@@ -6414,7 +6432,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         skipSnapshotFlushRef.current = true;
         if (res.cancelDeadlineAt) setCancelDeadlineAt(res.cancelDeadlineAt);
         setRemoteMode("confirmed");
-        reportGenerationEdits("confirm", generationEdits);
+        reportGenerationEdits("confirm");
       }
 
       const checkRes = await apiFetch<{ success?: boolean; message?: string }>({
@@ -6463,7 +6481,6 @@ export function PracticeCustomAbutmentPreviewDialog({
     onActionComplete,
     patientName,
     reportGenerationEdits,
-    snapshotGenerationEdits,
     toast,
     transferIdParam,
   ]);
@@ -6554,20 +6571,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     for (const tooth of Object.keys(candidateChoicesRef.current)) {
       confirmCandidateForTooth(tooth, false);
     }
-    const changes = collectPendingInfoChanges();
-    if (changes.length > 0) {
-      setConfirmPrefChanges(changes);
-      setCheckedChangeIds(new Set(changes.map((c) => c.id)));
-      setConfirmPrefDialogOpen(true);
-      return;
-    }
-    void executeConfirmAndOrder([]);
-  }, [
-    actionBusy,
-    collectPendingInfoChanges,
-    confirmCandidateForTooth,
-    executeConfirmAndOrder,
-  ]);
+    void executeConfirmAndOrder();
+  }, [actionBusy, confirmCandidateForTooth, executeConfirmAndOrder]);
 
   const sendTextToSharedChat = useCallback(
     async (
@@ -7000,7 +7005,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [authToken, patientName, scanSources.companions, scanSources.meshes, toast, workScanFiles]);
 
   return (
-    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
@@ -7733,6 +7737,63 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
+            {readOnly && (originTeeth.length > 0 || onReviewDecide) && viewerLive ? (
+              <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 flex-col items-center gap-2">
+                {originTeeth.length > 0 ? (
+                  <div className="flex gap-1 rounded-full border bg-background/95 p-1 shadow-sm">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={compareSide === "before" ? "default" : "outline"}
+                      disabled={originBusy}
+                      onClick={() => void showCompareSide("before")}
+                    >
+                      {originBusy ? "만드는 중…" : "변경 전"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={compareSide === "after" ? "default" : "outline"}
+                      disabled={originBusy}
+                      onClick={() => void showCompareSide("after")}
+                    >
+                      변경 후
+                    </Button>
+                  </div>
+                ) : null}
+                {onReviewDecide ? (
+                  <div className="flex gap-1 rounded-full border bg-background/95 p-1 shadow-sm">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={reviewDecideBusy}
+                      onClick={() => onReviewDecide("skip")}
+                    >
+                      건너뛰기
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={reviewDecideBusy}
+                      onClick={() => onReviewDecide("user")}
+                    >
+                      이 사용자만
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={reviewDecideBusy}
+                      onClick={() => onReviewDecide("global")}
+                    >
+                      모든 사용자
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className={cn(VIEW_GESTURE_HINT_LAYER_CLASS, "z-[30]")}>
               <ViewGestureHint storageKey="abuts.viewGestureHint.practiceCaPreview.v1.dismissed" />
             </div>
@@ -7742,85 +7803,5 @@ export function PracticeCustomAbutmentPreviewDialog({
       </DialogContent>
     </Dialog>
 
-    <Dialog open={confirmPrefDialogOpen} onOpenChange={setConfirmPrefDialogOpen}>
-        <DialogContent
-          className="z-[540] max-w-md space-y-3 p-5"
-          overlayClassName="z-[535]"
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <DialogHeader className="space-y-1 text-left">
-            <DialogTitle className="text-base font-semibold">
-              다음 케이스에도 적용할까요?
-            </DialogTitle>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              선택한 변경 사항을 다음 케이스 기본값으로 저장합니다.
-              <br />
-              체크하지 않은 항목은 이번 의뢰에만 반영됩니다.
-            </p>
-          </DialogHeader>
-
-          <ul className="max-h-64 space-y-1.5 overflow-y-auto px-1.5 py-1.5">
-            {confirmPrefChanges.map((change) => {
-              const checked = checkedChangeIds.has(change.id);
-              return (
-                <li key={change.id}>
-                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2 text-sm shadow-sm transition-colors hover:bg-muted/40">
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(val) => {
-                          setCheckedChangeIds((prev) => {
-                            const next = new Set(prev);
-                            if (val === true) next.add(change.id);
-                            else next.delete(change.id);
-                            return next;
-                          });
-                        }}
-                      />
-                      <span className="truncate font-medium text-foreground">
-                        {designedList.length > 1 ? `#${change.toothNumber} ` : ""}
-                        {change.label}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums">
-                      <span className="text-muted-foreground">{change.beforeText}</span>
-                      <span className="mx-1.5 text-muted-foreground">→</span>
-                      <span className="font-semibold text-primary">{change.afterText}</span>
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-
-          <DialogFooter className="flex-row justify-end gap-2 sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={actionBusy !== null}
-              onClick={() => void executeConfirmAndOrder([])}
-            >
-              이번만 적용하고 의뢰
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={actionBusy !== null}
-              onClick={() =>
-                void executeConfirmAndOrder(
-                  confirmPrefChanges.filter((c) => checkedChangeIds.has(c.id)),
-                )
-              }
-            >
-              {actionBusy === "confirm" ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : null}
-              선택 항목 저장 후 의뢰
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   );
 }

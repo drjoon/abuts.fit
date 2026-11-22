@@ -1,5 +1,5 @@
-// 치종별 생성 편향 편집, 관리자 승인 전 제안, 승인된 생성 보정.
-// 의뢰자 취향(커프·대합 거리)은 BusinessAnchor.customAbutmentDesignPreference 에 남긴다.
+// 확정 디자인의 원점·최종 차이, 관리자가 반영한 치종 생성 보정.
+// 큰 본문은 S3, 몽고에는 요약과 포인터만 둔다.
 // related files:
 // - web/backend/services/abutmentDesignLogic.service.js
 // - web/backend/services/abutmentDesignLogic.core.js
@@ -106,3 +106,60 @@ export const AbutmentDesignLogicProposal =
 export const AbutmentDesignLogicRule =
   mongoose.models.AbutmentDesignLogicRule ||
   mongoose.model("AbutmentDesignLogicRule", ruleSchema);
+
+const changeSchema = new mongoose.Schema(
+  {
+    transferId: { type: String, required: true, trim: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    practiceBusinessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      default: null,
+    },
+    practiceName: { type: String, default: "", trim: true },
+    editorName: { type: String, default: "", trim: true },
+    patientName: { type: String, default: "", trim: true },
+    action: { type: String, enum: ["confirm", "manual"], default: "confirm" },
+    /** pending 은 관리자 확인 전. user·global 은 반영됨. dismissed 는 건너뜀. */
+    status: {
+      type: String,
+      enum: ["pending", "user", "global", "dismissed"],
+      default: "pending",
+    },
+    lines: { type: [String], default: [] },
+    toothNumbers: { type: [String], default: [] },
+    /** 32KB 이하 본문. 더 크면 s3Key. */
+    payload: { type: mongoose.Schema.Types.Mixed, default: null },
+    s3Key: { type: String, default: "", trim: true },
+    bytes: { type: Number, default: 0 },
+    decidedAt: { type: Date, default: null },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { timestamps: true },
+);
+
+changeSchema.index({ transferId: 1, status: 1 });
+changeSchema.index({ status: 1, updatedAt: -1 });
+
+const generationRuleSchema = new mongoose.Schema(
+  {
+    scope: { type: String, enum: ["global", "user"], required: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    toothKind: {
+      type: String,
+      enum: ["incisor", "canine", "premolar", "molar"],
+      required: true,
+    },
+    params: { type: mongoose.Schema.Types.Mixed, default: {} },
+    pose: { type: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true },
+);
+
+generationRuleSchema.index({ scope: 1, toothKind: 1, userId: 1 }, { unique: true });
+
+export const AbutmentDesignChange =
+  mongoose.models.AbutmentDesignChange || mongoose.model("AbutmentDesignChange", changeSchema);
+export const AbutmentDesignGenerationRule =
+  mongoose.models.AbutmentDesignGenerationRule ||
+  mongoose.model("AbutmentDesignGenerationRule", generationRuleSchema);
