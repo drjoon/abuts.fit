@@ -3216,11 +3216,11 @@ export const PRACTICE_ABUTMENT_AWAITING_WORK_MESSAGE =
   "치과에서 어벗 생성 방식·디자인을 확정한 뒤 작업할 수 있습니다.";
 
 /**
- * 치과가 어벗 생성 방식·디자인을 정하기 전에는 기공소가 의뢰 스캔을 받지 않는다.
- * 확정·수작업 의뢰·이미 올라간 디자인 뒤에는 연다.
+ * 치과·기공소는 의뢰 스캔·디자인 화면을 같이 열고 수정한다.
+ * 작업시작·보철 업로드·작업 완료 API만 치과 확정 전 게이트를 쓴다.
  */
-export function shouldLockLabOralScanDownload(transferDoc) {
-  return isPracticeAbutmentDesignAwaitingDentist(transferDoc);
+export function shouldLockLabOralScanDownload(_transferDoc) {
+  return false;
 }
 
 export function canStartAbutmentProduction(transferDoc) {

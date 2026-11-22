@@ -50,7 +50,7 @@ export const needsOralScanForAccept = (_params?: {
 export const canLabAttachOralScanOnAccept = (matchingMode?: string | null) =>
   String(matchingMode || "").trim() !== "auto";
 
-/** @deprecated 잠금은 isLabWorkBlockedUntilPracticeAbutmentDecision / shouldLockLabOralScanDownload */
+/** @deprecated 의뢰 스캔은 치과·기공소가 같이 연다. 항상 해제. */
 export const isLabOralScanDownloadLocked = (_params?: {
   hasCustomAbutment?: boolean;
   designReadyAt?: string | Date | null;

@@ -18,7 +18,8 @@
 // - 2026-11-20: 기공소 미확정 검토도 육각형·디자인 버튼이 같은 깜빡임을 쓴다.
 // - 2026-11-20: 수가 경로만으로는 결정을 끝내지 않는다. 작업취소·거부 뒤에도 확정·수작업 전이면 디자인 강조·작업시작 잠금.
 // - 2026-11-20: 작업취소·거부 뒤 치과 「디자인」잠금을 푼다.
-// - 2026-11-20: 치과 결정 전 기공소 업로드·의뢰 파일 잠금 문구.
+// - 2026-11-22: 의뢰 파일·디자인 화면은 치과·기공소가 같이 연다. 업로드·작업시작만 확정 전 잠금.
+// - 2026-11-20: 치과 결정 전 기공소 업로드·의뢰 파일 잠금 문구(파일 잠금은 11-22에 해제).
 
 /** 디자인 확정 대기 — 헤더 뱃지·육각형 깜빡임 (index.css) */
 export const PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS =
@@ -54,10 +55,10 @@ export const LAB_WORK_START_UPLOAD_NOTICE_CA_ABUTS_ONLY =
 /** 기공소가 플랫폼 디자인을 확정하기 전 업로드 */
 export const LAB_UPLOAD_LOCKED_PLATFORM_REVIEW_HINT =
   "디자인 확정 후 업로드할 수 있습니다.";
-/** 치과가 어벗 방식·디자인을 정하기 전 업로드 */
+/** 치과가 어벗 방식·디자인을 정하기 전 업로드·작업시작 */
 export const LAB_UPLOAD_LOCKED_AWAITING_PRACTICE_HINT =
   "치과에서 어벗 생성 방식·디자인을 확정한 뒤 업로드할 수 있습니다.";
-/** 같은 구간. 의뢰 파일 열기·다운로드 */
+/** @deprecated 의뢰 파일·디자인은 같이 연다. 레거시 403 매핑용 */
 export const LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT =
   "치과에서 어벗 생성 방식·디자인을 확정한 뒤 의뢰 파일을 열 수 있습니다.";
 
@@ -158,7 +159,8 @@ export function isPtxAbutmentDesignAwaitingDentist(
 }
 
 /**
- * 기공소 업로드·의뢰 파일.
+ * 기공소 업로드·작업시작.
+ * 의뢰 파일·디자인 화면은 잠그지 않는다.
  * 디자인 파일이 없는데 확정·수작업도 없으면, 취소 직후 남은 designReadyAt은 결정으로 보지 않는다.
  */
 export function isLabWorkBlockedUntilPracticeAbutmentDecision(

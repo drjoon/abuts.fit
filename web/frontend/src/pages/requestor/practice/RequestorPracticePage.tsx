@@ -448,10 +448,8 @@ import { isPracticeTransferSameDayPartialAbutmentUpload } from "@/shared/practic
 import {
   ABUTMENT_HEADER_BADGE_TOOLTIP,
   ABUTMENT_REVIEW_BADGE_KEY,
-  isLabWorkBlockedUntilPracticeAbutmentDecision,
   isPtxAbutmentDesignAwaitingDentist,
   isPtxAbutmentDesignReviewForLab,
-  LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT,
   labUploadLockedNotice,
   LAB_WORK_START_UPLOAD_NOTICE_PROSTHESIS_REQUIRED,
   labWorkStartUploadNoticeCaLine,
@@ -917,19 +915,6 @@ function LabAbutmentDesignReviewDialog({
       workScanFiles={toFiles(entry.production?.labWorkScanFiles)}
       transferId={String(entry.transferId || entry._id || "")}
       filesPending={filesPending}
-      scanDownloadLocked={isPtxAbutmentDesignAwaitingDentist({
-        status: entry.status,
-        workCanceledAt: entry.workCanceledAt,
-        labRejected: entry.labRejected,
-        hasCustomAbutment:
-          Boolean(entry.hasCustomAbutment) ||
-          practiceTransferHasCustomAbutment(entry, catalog),
-        abutmentFeeRoute: entry.production?.abutmentFeeRoute,
-        practiceDesignConfirmedAt: entry.production?.practiceDesignConfirmedAt,
-        designReadyAt: entry.production?.designReadyAt,
-        designFileCount: entry.production?.designFileCount,
-        manualRequested: Boolean(entry.production?.customAbutmentManualDesign?.at),
-      })}
       reviewItems={
         rail
           ? items.map((item) => ({
@@ -9665,16 +9650,6 @@ export function RequestorPracticeReceivePage({
     return labWorkStartUploadNoticeCaLine(labAbutmentInput(selectedTransfer));
   }, [labAbutmentInput, selectedTransfer]);
 
-  const selectedTransferAbutmentDesignAwaiting = useMemo(() => {
-    if (!selectedTransfer) return false;
-    const designFiles = selectedTransfer.production?.designFiles;
-    return isLabWorkBlockedUntilPracticeAbutmentDecision({
-      ...labAbutmentInput(selectedTransfer),
-      designFilesKnownEmpty:
-        Array.isArray(designFiles) && designFiles.length === 0,
-    });
-  }, [labAbutmentInput, selectedTransfer]);
-
   const labDesignReviewTransfers = useMemo(() => {
     return baseFilteredTransfers.filter((transfer) => {
       if (isGuideTourDemoTransfer(transfer)) return false;
@@ -11523,10 +11498,6 @@ export function RequestorPracticeReceivePage({
           })) satisfies PracticeTransferDialogFileItem[]
         }
         oralScanAttachMode={null}
-        requestFilesDownloadLocked={selectedTransferAbutmentDesignAwaiting}
-        requestFilesDownloadLockedReason={
-          LAB_REQUEST_FILES_LOCKED_AWAITING_PRACTICE_HINT
-        }
         designFiles={
           (selectedTransfer?.production?.designFiles || []).map((file) => ({
             id: file.id,

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-11-22: 의뢰 스캔·디자인은 같이 연다. uploadLocked만 확정 전 유지.
 // - 2026-11-20: 플랫폼 디자인 기공소 검토 중에는 uploadLocked. 버튼은 두고 업로드는 막는다.
 // - 2026-11-20: 치과가 어벗 방식·디자인을 정하기 전에는 업로드를 막는다.
 // - 2026-10-24: practice 납품 주소·전화 — 기공소 택배 라벨.
