@@ -151,7 +151,7 @@ function finiteIn(raw, min, max) {
   return Math.round(value * 1e4) / 1e4;
 }
 
-function unitVec(raw) {
+export function unitVec(raw) {
   const row = vec(raw, 3, -2, 2);
   if (!row) return null;
   const len = Math.hypot(row[0], row[1], row[2]);

@@ -830,6 +830,9 @@ async function toothFromSnapshotRow(
     ...(row.proposalInput && typeof row.proposalInput === "object"
       ? { proposalInput: row.proposalInput as Partial<CustomAbutmentDesignParams> }
       : {}),
+    ...(normalizeInsertionAxis(row.insertionAxisWorld)
+      ? { insertionAxisWorld: normalizeInsertionAxis(row.insertionAxisWorld)! }
+      : {}),
   };
   // 실시간 저장은 정점 없이 온다. 받는 쪽이 스캔 위에서 형상을 다시 만든다.
   if (!localPositions || localPositions.byteLength < 36) {

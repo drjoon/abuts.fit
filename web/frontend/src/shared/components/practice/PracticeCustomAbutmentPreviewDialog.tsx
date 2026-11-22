@@ -2510,7 +2510,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           const jawGeo = ctx.jawGeometry[jaw];
           if (!jawGeo) continue;
           let rowOverrides = sharedAbutmentSyncParams(row.params, row.overrides);
-          if ((rowOverrides.postTaperLink ?? 1) >= 0.5) delete rowOverrides.postTaperDeg;
           const restoredGumball = normalizeAbutmentEdit(row.gumballEdit);
           if (restoredGumball && row.gumballBaseParams) {
             rowOverrides = retainLiveGumballParams(
@@ -4328,9 +4327,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             let rowOverrides = stripDirectEditShiftOverrides(
               sharedAbutmentSyncParams(row.params, row.overrides),
             );
-            if ((rowOverrides.postTaperLink ?? 1) >= 0.5) {
-              delete rowOverrides.postTaperDeg;
-            }
+            // 저장된 테이퍼는 연결 여부와 상관없이 다시 열 때 그대로 쓴다.
             const restoredGumball = !readOnly ? normalizeAbutmentEdit(row.gumballEdit) : null;
             if (restoredGumball && row.gumballBaseParams) {
               rowOverrides = retainLiveGumballParams(
@@ -5788,10 +5785,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           savedAt: savedAtHint,
           chrome: chromeStateRef.current,
         });
-        // 서버에도 맞춰 두어, 다음에도 닫혀 있던 쪽이 GET만으로 최신을 받게 한다.
-        if (!(isLabViewerRef.current && !labCanReviseRef.current)) {
-          persistDesign();
-        }
         return;
       }
       if (evt.type === "practice:custom-abutment-action") {
@@ -5858,7 +5851,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!ev || ev.transferId !== transferIdParam) return;
       enqueueRemoteDesignMeta(ev);
     });
-  }, [enqueueRemoteDesignMeta, open, persistDesign, transferIdParam]);
+  }, [enqueueRemoteDesignMeta, open, transferIdParam]);
 
   useEffect(() => {
     return () => window.clearTimeout(paintSaveTimerRef.current);

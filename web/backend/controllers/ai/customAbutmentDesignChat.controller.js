@@ -43,6 +43,7 @@ import {
   sharedDesignViewForApi,
   sanitizeAbutmentChoice,
   toDesignSyncMeta,
+  unitVec,
 } from "../../services/customAbutmentDesignSync.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
@@ -263,6 +264,8 @@ function snapshotTeeth(raw, transferId) {
         : {}),
       ...sanitizeAbutmentChoice(row),
     };
+    const insertionAxisWorld = unitVec(row?.insertionAxisWorld);
+    if (insertionAxisWorld) base.insertionAxisWorld = insertionAxisWorld;
     const s3Key = String(row?.s3Key || "").trim();
     const crownS3Key = String(row?.crownS3Key || "").trim();
     if (s3Key === previewStlKey(transferId, toothNumber, "abutment")) {

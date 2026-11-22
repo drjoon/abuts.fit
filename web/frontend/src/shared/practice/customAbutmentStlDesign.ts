@@ -7104,6 +7104,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const bridgeRetention = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
   const taperSpec = resolveAbutmentBridgeRetentionSpec(bridgeRetention);
   const isTaperLinked = (params.postTaperLink ?? 1) >= 0.5;
+  const explicitTaperDeg = Number(args.explicitParams?.postTaperDeg);
   const templateWallRadiusMm = Math.max(
     1.1,
     (((tpl.topLabialHalfMm + tpl.topLingualHalfMm) / 2 + tpl.topMdMm / 2) / 2) *
@@ -7111,9 +7112,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   );
   let axialWallRadiusMm = templateWallRadiusMm;
   let effectiveTaperDeg = clamp(
-    isTaperLinked
-      ? computeOptimalPostTaperDeg(postTopH, bridgeRetention, { radiusMm: axialWallRadiusMm })
-      : params.postTaperDeg,
+    Number.isFinite(explicitTaperDeg)
+      ? explicitTaperDeg
+      : isTaperLinked
+        ? computeOptimalPostTaperDeg(postTopH, bridgeRetention, { radiusMm: axialWallRadiusMm })
+        : params.postTaperDeg,
     isTaperLinked ? taperSpec.minTaperDeg : RETENTION_SINGLE_MIN_TAPER_DEG,
     taperSpec.maxTaperDeg,
   );
