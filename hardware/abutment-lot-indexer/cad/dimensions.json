@@ -1,20 +1,22 @@
 {
   "chainPitchMm": 6.35,
-  "linksPerBar": 24,
-  "barPitchMm": 152.39999999999998,
+  "linksPerBar": 16,
+  "barPitchMm": 101.6,
   "barCount": 6,
-  "chainLengthMm": 914.3999999999999,
+  "chainLengthMm": 609.6,
   "sprocketTeeth": 16,
   "pitchDiameterMm": 32.549,
   "outsideDiameterMm": 35.734,
-  "centerDistanceMm": 406.072,
-  "outerSpanMm": 438.621,
-  "frameWidthMm": 500.0,
-  "shaftHeightMm": 70.0,
+  "centerDistanceMm": 253.672,
+  "frameWidthMm": 400.0,
+  "shaftHeightMm": 84.0,
+  "pedestalMm": 49.0,
+  "indexTurns": 1,
   "hexAfMm": 2.5,
   "pocketAfMm": 2.6,
-  "pocketDepthMm": 0.8,
-  "puckHeightMm": 8.0,
+  "pocketDepthMm": 0.7,
+  "slotWidthMm": 12.0,
+  "bagMouthMm": 70.0,
   "scopeMm": [
     106.0,
     152.0,
@@ -24,30 +26,31 @@
   "stations": [
     {
       "name": "load",
-      "x": 437.04,
-      "pitchZ": 86.27,
-      "aimZ": 106.47
+      "x": 302.84,
+      "pitchZ": 100.27,
+      "puckTopZ": 116.67,
+      "aimZ": 117.67
     },
     {
       "name": "photo",
-      "x": 284.64,
-      "pitchZ": 86.27,
-      "aimZ": 106.47
+      "x": 201.24,
+      "pitchZ": 100.27,
+      "puckTopZ": 116.67,
+      "aimZ": 117.67
     },
     {
       "name": "unload",
-      "x": 132.24,
-      "pitchZ": 86.27,
-      "aimZ": 106.47
+      "x": 99.64,
+      "pitchZ": 100.27,
+      "puckTopZ": 116.67,
+      "aimZ": 117.67
     }
   ],
-  "assemblyBboxMm": [
-    0.0,
-    -84.0,
-    0.0,
-    500.0,
-    193.3,
-    159.47
-  ],
-  "stlTriangles": 6536
+  "idlerX": 73.16,
+  "driveX": 326.84,
+  "checks": {
+    "reachMm": 203.2,
+    "wrapClearanceMm": 11.33,
+    "cameraGapMm3": 0
+  }
 }
