@@ -39,7 +39,9 @@ import {
 import { emitAppEventToUser } from "../../socket.js";
 import {
   isStaleDesignWrite,
+  sanitizeSharedChrome,
   sanitizeSharedDesignView,
+  sharedChromeForApi,
   sharedDesignViewForApi,
   sanitizeAbutmentChoice,
   toDesignSyncMeta,
@@ -723,6 +725,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
         feeGuide,
         choice,
         sharedView: sharedDesignViewForApi(stored?.sharedView),
+        chrome: sharedChromeForApi(stored?.chrome),
       },
     });
   } catch (error) {
@@ -829,6 +832,15 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       previewSet["production.customAbutmentPreview.version"] = next.version;
       previewSet["production.customAbutmentPreview.fitVersion"] = next.fitVersion;
       previewSet["production.customAbutmentPreview.teeth"] = next.teeth;
+    }
+    const incomingChrome = sanitizeSharedChrome(req.body?.chrome);
+    const prevChromeAt = Number(prev?.chrome?.savedAt) || 0;
+    if (incomingChrome && !(prevChromeAt > savedAt)) {
+      previewSet["production.customAbutmentPreview.chrome"] = {
+        ...incomingChrome,
+        savedAt,
+        updatedBy,
+      };
     }
     if (teeth.length > 0 && transfer?._id) {
       void emitCustomAbutmentDesignSync(transfer, {

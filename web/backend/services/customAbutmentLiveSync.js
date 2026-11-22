@@ -5,6 +5,7 @@ import PracticeTransfer from "../models/practiceTransfer.model.js";
 import User from "../models/user.model.js";
 import {
   sanitizeAbutmentChoice,
+  sanitizeSharedChrome,
   sanitizeSharedDesignView,
   toDesignSyncMeta,
   ABUTMENT_VARIANT_IDS,
@@ -30,40 +31,6 @@ function finite(raw, min, max) {
 function toothKey(raw) {
   const tooth = String(raw || "").trim();
   return /^[1-4][1-8]$/.test(tooth) ? tooth : "";
-}
-
-function toothMap(raw) {
-  const out = {};
-  if (!raw || typeof raw !== "object") return out;
-  for (const [key, value] of Object.entries(raw)) {
-    if (!toothKey(key) || Object.keys(out).length >= 32) continue;
-    if (value === true || value === false) out[key] = value;
-  }
-  return out;
-}
-
-function sanitizeChrome(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const transparency = finite(raw.scanTransparency, 0, 90);
-  const guide = raw.centerGuide === "center" || raw.centerGuide === "grid" ? raw.centerGuide : "off";
-  const selected = Array.isArray(raw.selectedTeeth)
-    ? raw.selectedTeeth.map(toothKey).filter(Boolean).slice(0, 16)
-    : [];
-  return {
-    showUpper: raw.showUpper !== false,
-    showLower: raw.showLower !== false,
-    scanTransparency: transparency == null ? 0 : transparency,
-    showFinishLine: raw.showFinishLine !== false,
-    showFixtureAnalog: raw.showFixtureAnalog !== false,
-    gumballOn: raw.gumballOn !== false,
-    colorMapping: raw.colorMapping !== false,
-    centerGuide: guide,
-    selectedTeeth: selected,
-    visibleTeeth: toothMap(raw.visibleTeeth),
-    shownScanbodies: toothMap(raw.shownScanbodies),
-    shownPredictedCrowns: toothMap(raw.shownPredictedCrowns),
-    expandedTeeth: toothMap(raw.expandedTeeth),
-  };
 }
 
 function sanitizeEdit(raw) {
@@ -351,10 +318,27 @@ export async function relayCustomAbutmentLive(socket, raw, emit) {
       ).catch((err) => console.warn("[custom-abutment] view persist failed", err?.message || err));
     }
   } else if (kind === "chrome") {
-    const chrome = sanitizeChrome(raw.chrome);
+    const chrome = sanitizeSharedChrome(raw.chrome);
     if (!chrome) return;
     event = "practice:custom-abutment-chrome";
     data = { transferId, savedAt, updatedBy, ...chrome };
+    // 모달을 닫았다 열 때도 마지막 상악·선택·투명도를 따른다. 카메라와 같이 더 나중 시각만 남긴다.
+    if (raw.persist === true) {
+      void PracticeTransfer.updateOne(
+        {
+          transferId,
+          $or: [
+            { "production.customAbutmentPreview.chrome.savedAt": { $exists: false } },
+            { "production.customAbutmentPreview.chrome.savedAt": { $lte: savedAt } },
+          ],
+        },
+        {
+          $set: {
+            "production.customAbutmentPreview.chrome": { ...chrome, savedAt, updatedBy },
+          },
+        },
+      ).catch((err) => console.warn("[custom-abutment] chrome persist failed", err?.message || err));
+    }
   } else if (kind === "gumball") {
     const tooth = toothKey(raw.tooth);
     if (!tooth) return;

@@ -1,5 +1,6 @@
 import {
   isStaleDesignWrite,
+  sanitizeSharedChrome,
   sanitizeSharedDesignView,
   toDesignSyncMeta,
 } from "../../services/customAbutmentDesignSync.js";
@@ -92,5 +93,23 @@ describe("custom abutment design sync meta", () => {
     expect(view.zoom).toBe(1.5);
     expect(view.target).toEqual([1, 2, 3]);
     expect(sanitizeSharedDesignView({ pos: [0, 0, 1], target: [0, 0, 1] })).toBeNull();
+  });
+
+  test("shared chrome keeps jaw visibility and the selected tooth", () => {
+    const chrome = sanitizeSharedChrome({
+      showUpper: false,
+      showLower: true,
+      scanTransparency: 40,
+      centerGuide: "grid",
+      selectedTeeth: ["43", "99"],
+      expandedTeeth: { "43": true, "35": false, bad: true },
+    });
+    expect(chrome.showUpper).toBe(false);
+    expect(chrome.showLower).toBe(true);
+    expect(chrome.scanTransparency).toBe(40);
+    expect(chrome.centerGuide).toBe("grid");
+    expect(chrome.selectedTeeth).toEqual(["43"]);
+    expect(chrome.expandedTeeth).toEqual({ 43: true, 35: false });
+    expect(sanitizeSharedChrome(null)).toBeNull();
   });
 });

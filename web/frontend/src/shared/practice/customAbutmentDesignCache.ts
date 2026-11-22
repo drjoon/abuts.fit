@@ -187,9 +187,27 @@ export function mergeServerMetaOntoLocalMeshes<
 }
 
 /**
+ * 서버 조정값이 더 나중이면 이 브라우저의 옛 정점을 쓰지 않는다.
+ * 모달을 다시 열 때도 소켓과 같이 조정값으로 형상을 다시 만든다.
+ */
+function teethForRemoteRebuild<T extends CachedCustomAbutmentTooth>(teeth: readonly T[]): T[] {
+  return teeth.map((row) => ({
+    ...row,
+    localPositions: new ArrayBuffer(0),
+    crownLocalPositions: new ArrayBuffer(0),
+    marginLoopLocal: new ArrayBuffer(0),
+    regenFromMeta: true,
+    solidBodyLocalPositions: undefined,
+    enameloplastyLocalPositions: undefined,
+    sourceS3Key: undefined,
+    sourceCrownS3Key: undefined,
+  }));
+}
+
+/**
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
- * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다.
- * 서버가 메타만 있으면 이 브라우저 메시를 유지한다.
+ * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다. 정점이 없으면 조정값으로 다시 만든다.
+ * 같은 시각이고 서버가 메타만이면 이 브라우저 메시를 유지한다.
  * 같은 시각이면 기본은 이 브라우저 저장본. 협업 의뢰(`preferServerOnTie`)는 서버를 쓴다.
  */
 export function preferFresherCustomAbutmentDesign<
@@ -216,7 +234,11 @@ export function preferFresherCustomAbutmentDesign<
     serverAt > localAt || (Boolean(opts?.preferServerOnTie) && serverAt === localAt);
   if (takeServer) {
     if (!designHasMeshes(server) && designHasMeshes(local)) {
-      return mergeServerMetaOntoLocalMeshes(local, server);
+      const merged = mergeServerMetaOntoLocalMeshes(local, server);
+      if (serverAt > localAt && Array.isArray(merged.teeth)) {
+        return { ...merged, teeth: teethForRemoteRebuild(merged.teeth) };
+      }
+      return merged;
     }
     return server;
   }
@@ -502,6 +524,63 @@ export function parseCustomAbutmentSharedView(raw: unknown): CustomAbutmentShare
   };
 }
 
+export type CustomAbutmentSharedChrome = {
+  showUpper: boolean;
+  showLower: boolean;
+  scanTransparency: number;
+  showFinishLine: boolean;
+  showFixtureAnalog: boolean;
+  gumballOn: boolean;
+  colorMapping: boolean;
+  centerGuide: "off" | "center" | "grid";
+  selectedTeeth: string[];
+  visibleTeeth: Record<string, boolean>;
+  shownScanbodies: Record<string, boolean>;
+  shownPredictedCrowns: Record<string, boolean>;
+  expandedTeeth: Record<string, boolean>;
+  savedAt: number;
+  updatedBy: string;
+};
+
+function chromeToothMap(raw: unknown): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[1-4][1-8]$/.test(key) || Object.keys(out).length >= 32) continue;
+    if (value === true || value === false) out[key] = value;
+  }
+  return out;
+}
+
+/** 스냅샷·소켓의 상악 표시·선택·투명도. 저장된 시각이 없으면 없는 것으로 본다. */
+export function parseCustomAbutmentSharedChrome(raw: unknown): CustomAbutmentSharedChrome | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const savedAt = Number(row.savedAt) || 0;
+  if (!(savedAt > 0)) return null;
+  const transparency = Number(row.scanTransparency);
+  const selected = Array.isArray(row.selectedTeeth)
+    ? row.selectedTeeth.map(String).filter((tooth) => /^[1-4][1-8]$/.test(tooth)).slice(0, 16)
+    : [];
+  return {
+    showUpper: row.showUpper !== false,
+    showLower: row.showLower !== false,
+    scanTransparency: Number.isFinite(transparency) ? Math.min(90, Math.max(0, transparency)) : 0,
+    showFinishLine: row.showFinishLine !== false,
+    showFixtureAnalog: row.showFixtureAnalog !== false,
+    gumballOn: row.gumballOn !== false,
+    colorMapping: row.colorMapping !== false,
+    centerGuide: row.centerGuide === "center" || row.centerGuide === "grid" ? row.centerGuide : "off",
+    selectedTeeth: selected,
+    visibleTeeth: chromeToothMap(row.visibleTeeth),
+    shownScanbodies: chromeToothMap(row.shownScanbodies),
+    shownPredictedCrowns: chromeToothMap(row.shownPredictedCrowns),
+    expandedTeeth: chromeToothMap(row.expandedTeeth),
+    savedAt,
+    updatedBy: String(row.updatedBy || ""),
+  };
+}
+
 export type CustomAbutmentPaintView = {
   position: [number, number, number];
   target: [number, number, number];
@@ -538,6 +617,7 @@ export type RemoteCustomAbutmentSnapshot = {
   feeGuide: CustomAbutmentRouteFeeGuide | null;
   choice: CustomAbutmentChoice;
   sharedView: CustomAbutmentSharedView | null;
+  chrome: CustomAbutmentSharedChrome | null;
 };
 
 export type CustomAbutmentSnapshotUploadTooth = {
@@ -634,6 +714,7 @@ type SnapshotShell = {
   feeGuide: CustomAbutmentRouteFeeGuide | null;
   choice: CustomAbutmentChoice;
   sharedView: CustomAbutmentSharedView | null;
+  chrome: CustomAbutmentSharedChrome | null;
   design: {
     version: number;
     fitVersion: number;
@@ -662,7 +743,7 @@ function rememberInflight<T>(
 function emptySnapshot(
   shell: Pick<
     SnapshotShell,
-    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView"
+    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView" | "chrome"
   >,
 ): RemoteCustomAbutmentSnapshot {
   return {
@@ -675,6 +756,7 @@ function emptySnapshot(
     feeGuide: shell.feeGuide,
     choice: shell.choice,
     sharedView: shell.sharedView,
+    chrome: shell.chrome,
   };
 }
 
@@ -709,6 +791,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             gracePromoteAt?: string | null;
           } | null;
           sharedView?: unknown;
+          chrome?: unknown;
         };
       }>({
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -766,6 +849,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             : null,
         },
         sharedView: parseCustomAbutmentSharedView(res.data.data.sharedView),
+        chrome: parseCustomAbutmentSharedChrome(res.data.data.chrome),
         design:
           raw && teeth.length > 0
             ? {
@@ -885,6 +969,7 @@ async function hydrateSnapshotShell(
     feeGuide: shell.feeGuide,
     choice: shell.choice,
     sharedView: shell.sharedView,
+    chrome: shell.chrome,
     design: {
       key: shell.id,
       version,
@@ -1170,6 +1255,7 @@ export async function publishCustomAbutmentDesignMeta(
     baseSavedAt: number;
     savedAt?: number;
     teeth: readonly CustomAbutmentDesignSyncTooth[];
+    chrome?: Record<string, unknown> | null;
   },
 ): Promise<
   | { ok: true; savedAt: number }
@@ -1192,6 +1278,7 @@ export async function publishCustomAbutmentDesignMeta(
       baseSavedAt: record.baseSavedAt,
       ...(record.savedAt ? { savedAt: record.savedAt } : {}),
       teeth: record.teeth,
+      ...(record.chrome ? { chrome: record.chrome } : {}),
     },
   });
   if (res.status === 409) {

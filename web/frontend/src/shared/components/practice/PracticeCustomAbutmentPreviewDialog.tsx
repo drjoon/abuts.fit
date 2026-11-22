@@ -27,6 +27,7 @@
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
+// - 2026-11-23: 모달을 다시 열면 마지막 저장의 디자인·상악·카메라·선택을 따른다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -130,6 +131,7 @@ import {
   classifyCustomAbutmentDesignPublish,
   publishCustomAbutmentDesignMeta,
   publishCustomAbutmentSharedView,
+  parseCustomAbutmentSharedChrome,
   parseCustomAbutmentSharedView,
   readCustomAbutmentChat,
   readCustomAbutmentDesign,
@@ -143,6 +145,7 @@ import {
   type CustomAbutmentDesignSyncTooth,
   type CustomAbutmentPaintRecord,
   type CustomAbutmentPaintView,
+  type CustomAbutmentSharedChrome,
   type CustomAbutmentSharedView,
 } from "@/shared/practice/customAbutmentDesignCache";
 import { AbutmentDesignGraceControl } from "@/shared/practice/AbutmentDesignGraceControl";
@@ -1184,6 +1187,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const ignoreEditCommitRef = useRef(false);
   /** 서버가 인정한 마지막 저장 시각. 이보다 오래된 쓰기는 거절된다. */
   const designSavedAtRef = useRef(0);
+  /** 소켓으로 보낸 디자인 시각. hello가 더 오래된 화면을 지금 시각으로 덮지 않게 한다. */
+  const lastEmittedDesignAtRef = useRef(0);
   const pendingRemoteMetaRef = useRef<CustomAbutmentDesignSyncMeta | null>(null);
   const applyRemoteDesignMetaRef = useRef<
     (meta: CustomAbutmentDesignSyncMeta, epoch?: number) => Promise<void>
@@ -1196,6 +1201,12 @@ export function PracticeCustomAbutmentPreviewDialog({
   });
   const viewerTouchRef = useRef(new Set<string>());
   const applyingChromeRef = useRef(false);
+  /** 의뢰에 저장된 화면을 적용한 뒤다. 계정 설정이 상악·선택을 덮지 않는다. */
+  const chromeOwnedRef = useRef(false);
+  const pendingChromeRef = useRef<CustomAbutmentSharedChrome | null>(null);
+  const applyIncomingChromeRef = useRef<
+    (raw: unknown, opts?: { allowOwn?: boolean; force?: boolean }) => void
+  >(() => {});
   const chromeRevRef = useRef(0);
   const sentChromeRevRef = useRef(0);
   const lastChromeAtRef = useRef(0);
@@ -1296,6 +1307,64 @@ export function PracticeCustomAbutmentPreviewDialog({
   authUserIdRef.current = authUserId;
   const ownLiveEcho = (raw: unknown) =>
     isOwnAbutmentLiveEcho(raw, getSocket()?.id || "", authUserIdRef.current);
+
+  const applyIncomingChrome = useCallback((raw: unknown, opts?: { allowOwn?: boolean; force?: boolean }) => {
+    const chrome = parseCustomAbutmentSharedChrome(raw);
+    if (!chrome) return;
+    if (!opts?.force && !opts?.allowOwn && ownLiveEcho(raw)) return;
+    if (!opts?.force && !opts?.allowOwn && performance.now() - lastLocalChromeAtRef.current < 180) return;
+    if (!opts?.force && chrome.savedAt > 0 && chrome.savedAt <= lastChromeAtRef.current) return;
+    if (chrome.savedAt > lastChromeAtRef.current) lastChromeAtRef.current = chrome.savedAt;
+    pendingChromeRef.current = chrome;
+    chromeOwnedRef.current = true;
+    applyingChromeRef.current = true;
+    suppressPivotSyncRef.current = true;
+    chromeRevRef.current += 1;
+    sentChromeRevRef.current = chromeRevRef.current;
+    for (const key of [
+      "color",
+      "guide",
+      "transparency",
+      "margin",
+      "fixture",
+      "gumball",
+      "jaws",
+      "scanbodies",
+      "crown",
+      "expanded",
+    ]) {
+      viewerTouchRef.current.add(key);
+    }
+    chromeStateRef.current = {
+      showUpper: chrome.showUpper,
+      showLower: chrome.showLower,
+      scanTransparency: chrome.scanTransparency,
+      showFinishLine: chrome.showFinishLine,
+      showFixtureAnalog: chrome.showFixtureAnalog,
+      gumballOn: chrome.gumballOn,
+      colorMapping: chrome.colorMapping,
+      centerGuide: chrome.centerGuide,
+      selectedTeeth: [...chrome.selectedTeeth],
+      visibleTeeth: { ...chrome.visibleTeeth },
+      shownScanbodies: { ...chrome.shownScanbodies },
+      shownPredictedCrowns: { ...chrome.shownPredictedCrowns },
+      expandedTeeth: { ...chrome.expandedTeeth },
+    };
+    setVisibleJaws({ upper: chrome.showUpper, lower: chrome.showLower });
+    setScanTransparency(chrome.scanTransparency);
+    setShowFinishLine(chrome.showFinishLine);
+    setShowFixtureAnalog(chrome.showFixtureAnalog);
+    setGumballOn(chrome.gumballOn);
+    setColorMapping(chrome.colorMapping);
+    setCenterGuide(chrome.centerGuide);
+    selectedTeethRef.current = [...chrome.selectedTeeth];
+    setSelectedTeeth(chrome.selectedTeeth);
+    setVisibleTeeth(chrome.visibleTeeth);
+    setShownScanbodies(chrome.shownScanbodies);
+    setShownPredictedCrowns(chrome.shownPredictedCrowns);
+    setExpandedTeeth(chrome.expandedTeeth);
+  }, []);
+  applyIncomingChromeRef.current = applyIncomingChrome;
   const editCommitTimerRef = useRef(0);
   const editBridgeRef = useRef<AbutmentEditBridge | null>(null);
   /** 브리지에서 사용자가 맞춘 공통 삽입축. 치아 번호 → 월드 방향. */
@@ -2294,6 +2363,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           pendingMetaStampRef.current = 0;
           const savedAtHint = stamped > 0 ? stamped : Date.now();
           const teeth = list.map(syncToothFromDesign);
+          lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, savedAtHint);
           emitCustomAbutmentLive({
             kind: "design",
             transferId,
@@ -2313,6 +2383,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             kind: "chrome",
             transferId,
             savedAt: savedAtHint,
+            persist: true,
             chrome: chromeStateRef.current,
           });
           const result = classifyCustomAbutmentDesignPublish(
@@ -2322,6 +2393,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               baseSavedAt: designSavedAtRef.current,
               savedAt: savedAtHint,
               teeth,
+              chrome: chromeStateRef.current,
             }),
           );
           if (result.kind === "stale") {
@@ -4167,7 +4239,18 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
         pendingRemotePaintRef.current = remote?.paint ?? null;
-        pendingSharedViewRef.current = remote?.sharedView ?? pendingSharedViewRef.current;
+        const snapView = remote?.sharedView ?? null;
+        const heldView = pendingSharedViewRef.current;
+        pendingSharedViewRef.current =
+          snapView && (!heldView || snapView.savedAt >= heldView.savedAt) ? snapView : heldView;
+        const snapChrome = remote?.chrome ?? null;
+        const heldChrome = pendingChromeRef.current;
+        const nextChrome =
+          snapChrome && (!heldChrome || snapChrome.savedAt >= heldChrome.savedAt)
+            ? snapChrome
+            : heldChrome;
+        pendingChromeRef.current = nextChrome;
+        if (nextChrome) applyIncomingChromeRef.current(nextChrome, { allowOwn: true });
         setRemoteMode(remote?.mode ?? null);
         setLabCheckedAt(remote?.choice?.labCheckedAt ?? null);
         setCancelDeadlineAt(remote?.choice?.cancelDeadlineAt ?? null);
@@ -4856,6 +4939,10 @@ export function PracticeCustomAbutmentPreviewDialog({
 
         setVisibleTeeth(nextVisibleTeeth);
         setAvailableJaws({ upper: upperScans.length > 0, lower: lowerScans.length > 0 });
+        if (pendingChromeRef.current && !viewerTouchRef.current.has("user")) {
+          // 로딩이 치아 표시를 모두 켠 뒤에, 소켓과 같이 마지막 화면을 다시 얹는다.
+          applyIncomingChromeRef.current(pendingChromeRef.current, { allowOwn: true, force: true });
+        }
         if (!viewerTouchRef.current.has("scanbodies")) {
           setShownScanbodies(
             viewerPrefsRef.current.showScanbodies
@@ -5644,6 +5731,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         kind: "chrome",
         transferId: transferIdParam,
         savedAt,
+        persist: true,
         chrome: chromeStateRef.current,
       });
     }, 120);
@@ -5709,44 +5797,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (evt.type !== "practice:custom-abutment-chrome") return;
       const data = evt.data as Record<string, unknown> | null;
       if (!data || String(data.transferId || "") !== transferIdParam) return;
-      if (ownLiveEcho(data)) return;
-      const savedAt = Number(data.savedAt) || 0;
-      if (savedAt > 0 && savedAt <= lastChromeAtRef.current) return;
-      if (performance.now() - lastLocalChromeAtRef.current < 180) return;
-      if (savedAt > lastChromeAtRef.current) lastChromeAtRef.current = savedAt;
-      applyingChromeRef.current = true;
-      suppressPivotSyncRef.current = true;
-      chromeRevRef.current += 1;
-      sentChromeRevRef.current = chromeRevRef.current;
-      setVisibleJaws((prev) => ({
-        upper: data.showUpper === false ? false : data.showUpper === true ? true : prev.upper,
-        lower: data.showLower === false ? false : data.showLower === true ? true : prev.lower,
-      }));
-      if (typeof data.scanTransparency === "number") setScanTransparency(data.scanTransparency);
-      if (typeof data.showFinishLine === "boolean") setShowFinishLine(data.showFinishLine);
-      if (typeof data.showFixtureAnalog === "boolean") setShowFixtureAnalog(data.showFixtureAnalog);
-      if (typeof data.gumballOn === "boolean") setGumballOn(data.gumballOn);
-      if (typeof data.colorMapping === "boolean") setColorMapping(data.colorMapping);
-      if (data.centerGuide === "off" || data.centerGuide === "center" || data.centerGuide === "grid") {
-        setCenterGuide(data.centerGuide);
-      }
-      if (Array.isArray(data.selectedTeeth)) {
-        const teeth = data.selectedTeeth.map(String).filter((tooth) => /^[1-4][1-8]$/.test(tooth));
-        selectedTeethRef.current = teeth;
-        setSelectedTeeth(teeth);
-      }
-      if (data.visibleTeeth && typeof data.visibleTeeth === "object") {
-        setVisibleTeeth(data.visibleTeeth as Record<string, boolean>);
-      }
-      if (data.shownScanbodies && typeof data.shownScanbodies === "object") {
-        setShownScanbodies(data.shownScanbodies as Record<string, boolean>);
-      }
-      if (data.shownPredictedCrowns && typeof data.shownPredictedCrowns === "object") {
-        setShownPredictedCrowns(data.shownPredictedCrowns as Record<string, boolean>);
-      }
-      if (data.expandedTeeth && typeof data.expandedTeeth === "object") {
-        setExpandedTeeth(data.expandedTeeth as Record<string, boolean>);
-      }
+      applyIncomingChromeRef.current(data);
     });
   }, [open, transferIdParam]);
 
@@ -5762,7 +5813,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (readOnlyRef.current) return;
         const list = designedListRef.current;
         if (list.length === 0) return;
-        const savedAtHint = Math.max(Number(designSavedAtRef.current) || 0, Date.now());
+        const designAt = Math.max(
+          Number(designSavedAtRef.current) || 0,
+          lastEmittedDesignAtRef.current,
+        );
+        const savedAtHint = designAt > 0 ? designAt : Date.now();
         const teeth = list.map(syncToothFromDesign);
         emitCustomAbutmentLive({
           kind: "design",
@@ -5777,14 +5832,36 @@ export function PracticeCustomAbutmentPreviewDialog({
             teeth,
           },
         });
-        lastLocalChromeAtRef.current = performance.now();
-        lastChromeAtRef.current = Math.max(lastChromeAtRef.current, savedAtHint);
-        emitCustomAbutmentLive({
-          kind: "chrome",
-          transferId: transferIdParam,
-          savedAt: savedAtHint,
-          chrome: chromeStateRef.current,
-        });
+        const chromeAt = lastChromeAtRef.current || designAt;
+        if (chromeAt > 0) {
+          emitCustomAbutmentLive({
+            kind: "chrome",
+            transferId: transferIdParam,
+            savedAt: chromeAt,
+            chrome: chromeStateRef.current,
+          });
+        }
+        const viewAt = lastSharedViewAtRef.current;
+        const cam = cameraRef.current;
+        const controls = controlsRef.current;
+        if (viewAt > 0 && cam && controls) {
+          emitCustomAbutmentLive({
+            kind: "view",
+            transferId: transferIdParam,
+            savedAt: viewAt,
+            view: {
+              pos: cam.position.toArray(),
+              quat: cam.quaternion.toArray(),
+              up: cam.up.toArray(),
+              target: controls.target.toArray(),
+              zoom: cam.zoom,
+              top: cam.top,
+              bottom: cam.bottom,
+              left: cam.left,
+              right: cam.right,
+            },
+          });
+        }
         return;
       }
       if (evt.type === "practice:custom-abutment-action") {
@@ -6554,7 +6631,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   );
 
   const touchViewer = (key: string) => {
+    viewerTouchRef.current.add("user");
     viewerTouchRef.current.add(key);
+    chromeOwnedRef.current = false;
     chromeRevRef.current += 1;
   };
 
@@ -6609,6 +6688,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!open) {
       viewerTouchRef.current = new Set();
       viewerSavedRef.current = "";
+      chromeOwnedRef.current = false;
+      pendingChromeRef.current = null;
       setViewerHydrated(false);
       return;
     }
@@ -6622,6 +6703,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       .then((prefs) => {
         if (cancel) return;
         viewerPrefsRef.current = prefs;
+        if (chromeOwnedRef.current) {
+          setViewerHydrated(true);
+          return;
+        }
         const touch = viewerTouchRef.current;
         if (!touch.has("color")) setColorMapping(prefs.colorMapping);
         if (!touch.has("guide")) setCenterGuide(prefs.centerGuide);
@@ -6706,6 +6791,11 @@ export function PracticeCustomAbutmentPreviewDialog({
       expandedTeeth: { ...viewerPrefsRef.current.expandedTeeth, ...expandedTeeth },
     };
     const key = JSON.stringify(prefs);
+    if (chromeOwnedRef.current && !viewerTouchRef.current.has("user")) {
+      viewerPrefsRef.current = prefs;
+      viewerSavedRef.current = key;
+      return;
+    }
     if (key === viewerSavedRef.current) {
       viewerPrefsRef.current = prefs;
       return;

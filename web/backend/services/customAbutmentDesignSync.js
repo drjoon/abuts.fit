@@ -215,3 +215,53 @@ export function sharedDesignViewForApi(stored) {
     updatedBy: String(stored?.updatedBy || "").trim(),
   };
 }
+
+function chromeTooth(raw) {
+  const tooth = String(raw || "").trim();
+  return /^[1-4][1-8]$/.test(tooth) ? tooth : "";
+}
+
+function chromeToothMap(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (!chromeTooth(key) || Object.keys(out).length >= 32) continue;
+    if (value === true || value === false) out[key] = value;
+  }
+  return out;
+}
+
+/** 상악 표시·선택·투명도처럼 치과·기공소가 같이 보는 화면. 카메라는 shared view. */
+export function sanitizeSharedChrome(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const transparency = finiteIn(raw.scanTransparency, 0, 90);
+  const guide = raw.centerGuide === "center" || raw.centerGuide === "grid" ? raw.centerGuide : "off";
+  const selected = Array.isArray(raw.selectedTeeth)
+    ? raw.selectedTeeth.map(chromeTooth).filter(Boolean).slice(0, 16)
+    : [];
+  return {
+    showUpper: raw.showUpper !== false,
+    showLower: raw.showLower !== false,
+    scanTransparency: transparency == null ? 0 : transparency,
+    showFinishLine: raw.showFinishLine !== false,
+    showFixtureAnalog: raw.showFixtureAnalog !== false,
+    gumballOn: raw.gumballOn !== false,
+    colorMapping: raw.colorMapping !== false,
+    centerGuide: guide,
+    selectedTeeth: selected,
+    visibleTeeth: chromeToothMap(raw.visibleTeeth),
+    shownScanbodies: chromeToothMap(raw.shownScanbodies),
+    shownPredictedCrowns: chromeToothMap(raw.shownPredictedCrowns),
+    expandedTeeth: chromeToothMap(raw.expandedTeeth),
+  };
+}
+
+export function sharedChromeForApi(stored) {
+  const chrome = sanitizeSharedChrome(stored);
+  if (!chrome) return null;
+  return {
+    ...chrome,
+    savedAt: Number(stored?.savedAt) || 0,
+    updatedBy: String(stored?.updatedBy || "").trim(),
+  };
+}
