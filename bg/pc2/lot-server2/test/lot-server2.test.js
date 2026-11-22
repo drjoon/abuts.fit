@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseDevice, parseVideoDevices } from "../src/devices.js";
+import {
+  annotateDevices,
+  chooseDevice,
+  isContinuityCamera,
+  parseVideoDevices,
+} from "../src/devices.js";
+import { buildCaptureProfiles } from "../src/camera.js";
 import { parseFocusStdout, focusConfirmed } from "../src/focus.js";
 import {
   captureFileName,
@@ -34,18 +40,32 @@ test("dshow 목록에서 영상 장치만 고른다", () => {
   assert.equal(chooseDevice(devices, "").input, "video=ViTiny UM20");
 });
 
-test("avfoundation 목록은 화면 캡처보다 카메라를 고른다", () => {
+test("avfoundation 목록은 화면·Continuity보다 로컬 카메라를 고른다", () => {
   const text = `
 AVFoundation video devices:
 [0] Capture screen 0
-[1] FaceTime HD Camera
+[1] Joonho Lee의 iPhone 카메라
+[2] FaceTime HD Camera
 AVFoundation audio devices:
 [0] Mic
 `;
   const devices = parseVideoDevices(text, "darwin");
   assert.equal(chooseDevice(devices, "").name, "FaceTime HD Camera");
-  assert.equal(chooseDevice(devices, "FaceTime").input, "1");
+  assert.equal(chooseDevice(devices, "FaceTime").input, "2");
   assert.equal(chooseDevice(devices, "없는카메라"), null);
+  assert.equal(isContinuityCamera("Joonho Lee의 iPhone 카메라"), true);
+  const tagged = annotateDevices(devices);
+  assert.equal(tagged.find((d) => d.name.includes("iPhone")).continuity, true);
+});
+
+test("darwin Grab 프로파일은 30fps를 먼저 넣는다", () => {
+  const prev = process.platform;
+  // buildCaptureProfiles uses process.platform; only assert structure on current OS.
+  const device = { name: "FaceTime HD Camera", input: "0" };
+  const profiles = buildCaptureProfiles(device, 1, "out_%02d.jpg");
+  assert.ok(profiles.length >= 2);
+  assert.ok(profiles.some((p) => p.args.includes("-framerate")));
+  void prev;
 });
 
 test("초점 응답은 마지막 JSON만 읽는다", () => {

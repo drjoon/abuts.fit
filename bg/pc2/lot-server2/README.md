@@ -6,6 +6,8 @@
 
 UMViewer를 끄고, 현미경은 PC CAM 모드로 둡니다. Windows에서는 제어 DLL이 AF를 시도한 뒤 OCR합니다. AF가 안 되면 선명도만으로 고른 장으로 OCR합니다.
 
+카메라 연동은 `src/camera.js`입니다. 장치 목록·선택·fps/해상도 프로파일(Grab)을 담당합니다. Mac에서 Continuity(iPhone)는 자동 선택에서 뒤로 밀리고, 화면에서 직접 고를 수 있습니다.
+
 ## 실행
 
 ```bash
@@ -33,6 +35,8 @@ node src/index.js
 | --- | --- |
 | `GET /watch` | 감시 상태·최근 로트 |
 | `GET /live` | 감시 중 최신 JPEG(라이브 뷰) |
+| `GET /devices` | 카메라 목록(태그 포함) |
+| `POST /devices` | `{ "device": "이름" }` 선택 |
 | `POST /watch/start` | 감시 시작 |
 | `POST /watch/stop` | 감시 중지 |
 | `POST /recognize` | 지금 한 번 인식 |

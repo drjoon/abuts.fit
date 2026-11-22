@@ -10,6 +10,7 @@
 import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { getSelectedDeviceName } from "./camera.js";
 import { analyzeFrame, grabFrames, scoreFile } from "./capture.js";
 import { focusConfirmed, tryFocus } from "./focus.js";
 import { lotFileName } from "./names.js";
@@ -37,6 +38,9 @@ export function createWatcher({
   log = () => {},
   onRecognize = () => {},
 } = {}) {
+  let deviceNameOverride = String(deviceName || "").trim();
+  const currentDeviceName = () =>
+    deviceNameOverride || getSelectedDeviceName() || "";
   const motionThreshold = numEnv("LOT_MOTION_THRESHOLD", 6);
   const sharpThreshold = numEnv("LOT_SHARP_THRESHOLD", 8);
   const stableNeeded = Math.max(2, Math.floor(numEnv("LOT_STABLE_FRAMES", 3)));
@@ -83,7 +87,7 @@ export function createWatcher({
   async function grabOne() {
     const { names, tempDir, device } = await grabFrames({
       captureDir,
-      deviceName,
+      deviceName: currentDeviceName(),
       count: 1,
     });
     deviceLabel = device.name;
@@ -105,7 +109,7 @@ export function createWatcher({
     phase = PHASE.FOCUSING;
     const { names, tempDir, device } = await grabFrames({
       captureDir,
-      deviceName,
+      deviceName: currentDeviceName(),
       count: burstFrames,
     });
     deviceLabel = device.name;
@@ -277,6 +281,10 @@ export function createWatcher({
       return snapshot();
     },
     status: snapshot,
+    setDeviceName(name) {
+      deviceNameOverride = String(name || "").trim();
+      return deviceNameOverride;
+    },
     /** @returns {Buffer | null} */
     getLiveFrame() {
       return liveFrame;

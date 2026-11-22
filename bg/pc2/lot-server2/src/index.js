@@ -1,9 +1,10 @@
 // change-log:
-// - 2026-11-23: GET /live 로 감시 중 최신 프레임을 보여 준다.
+// - 2026-11-23: 카메라 연동(장치 선택·Grab 프로파일)과 /live.
 // - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
 // - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
 // related files:
 // - bg/pc2/lot-server2/rules.md
+// - bg/pc2/lot-server2/src/camera.js
 // - bg/pc2/lot-server2/src/watch.js
 // - bg/pc2/lot-server2/src/ocr/index.js
 // - bg/pc2/lot-server2/public/index.html
@@ -14,8 +15,13 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { captureAndSave, listCameras, resolveFfmpeg } from "./capture.js";
-import { chooseDevice } from "./devices.js";
+import {
+  getSelectedDeviceName,
+  resolveDevice,
+  resolveFfmpeg,
+  setSelectedDeviceName,
+} from "./camera.js";
+import { captureAndSave } from "./capture.js";
 import { DLL_DIR } from "./focus.js";
 import { IMAGE_NAME } from "./names.js";
 import { disposeOcrWorker } from "./ocr/index.js";
@@ -102,9 +108,13 @@ function readBody(req) {
 
 let busy = false;
 
+if (process.env.MICROSCOPE_DEVICE) {
+  setSelectedDeviceName(process.env.MICROSCOPE_DEVICE);
+}
+
 const watcher = createWatcher({
   captureDir: CAPTURE_DIR,
-  deviceName: process.env.MICROSCOPE_DEVICE || "",
+  deviceName: getSelectedDeviceName(),
   log,
 });
 
@@ -118,7 +128,7 @@ async function shoot(deviceName) {
   try {
     return await captureAndSave({
       captureDir: CAPTURE_DIR,
-      deviceName: deviceName || process.env.MICROSCOPE_DEVICE || "",
+      deviceName: deviceName || getSelectedDeviceName(),
     });
   } finally {
     busy = false;
@@ -132,11 +142,15 @@ function statusFor(err) {
 }
 
 async function devicePayload() {
-  const cameras = await listCameras();
-  const selected = chooseDevice(cameras, process.env.MICROSCOPE_DEVICE || "");
+  const { cameras, device } = await resolveDevice(getSelectedDeviceName());
   return {
-    devices: cameras.map((device) => device.name),
-    selected: selected?.name || "",
+    devices: cameras.map((cam) => ({
+      name: cam.name,
+      preferred: Boolean(cam.preferred),
+      continuity: Boolean(cam.continuity),
+      screen: Boolean(cam.screen),
+    })),
+    selected: device?.name || "",
   };
 }
 
@@ -171,6 +185,28 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/devices") {
       json(res, 200, await devicePayload());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/devices") {
+      const body = await readBody(req);
+      const name = String(body.device || body.name || "").trim();
+      const { cameras, device } = await resolveDevice(name);
+      if (name && !device) {
+        json(res, 404, {
+          success: false,
+          message: "설정한 카메라를 찾지 못했습니다.",
+          devices: cameras.map((cam) => cam.name),
+        });
+        return;
+      }
+      const selected = setSelectedDeviceName(device?.name || name);
+      watcher.setDeviceName(selected);
+      log(`device selected ${selected || "(auto)"}`);
+      json(res, 200, {
+        success: true,
+        selected,
+        ...(await devicePayload()),
+      });
       return;
     }
     if (req.method === "GET" && url.pathname === "/watch") {
@@ -266,6 +302,8 @@ const server = http.createServer(async (req, res) => {
     json(res, statusFor(err), {
       success: false,
       message: err?.message || "요청에 실패했습니다.",
+      detail: err?.detail || "",
+      code: err?.code || "",
     });
   }
 });

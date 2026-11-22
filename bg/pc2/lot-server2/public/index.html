@@ -9,12 +9,14 @@
         font-family: sans-serif;
         margin: 1.5rem;
       }
-      button {
-        font-size: 1.1rem;
-        padding: 0.5rem 1.1rem;
+      button,
+      select {
+        font-size: 1.05rem;
+        padding: 0.45rem 0.9rem;
         margin-right: 0.5rem;
       }
-      button:disabled {
+      button:disabled,
+      select:disabled {
         opacity: 0.6;
       }
       p {
@@ -24,6 +26,13 @@
         font-size: 2rem;
         font-weight: 700;
         letter-spacing: 0.12em;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0.6rem 0;
       }
       .views {
         display: flex;
@@ -56,12 +65,18 @@
       영상을 보다가 움직임이 멈추고 초점이 맞으면 로컬 OCR로 영문 3글자를 읽습니다.
       <br />
       페달은 쓰지 않습니다. UMViewer는 끄고 PC CAM 모드로 둡니다.
+      Mac 개발 시 Continuity(iPhone)보다 FaceTime/USB 카메라를 고르세요.
     </p>
-    <p>
+    <div class="row">
+      <label for="device">카메라</label>
+      <select id="device"></select>
+      <button id="refreshDevices" type="button">목록 새로고침</button>
+    </div>
+    <div class="row">
       <button id="start" type="button">감시 시작</button>
       <button id="stop" type="button">감시 중지</button>
       <button id="force" type="button">지금 인식</button>
-    </p>
+    </div>
     <p id="camera"></p>
     <p id="phase"></p>
     <p id="lot"></p>
@@ -80,6 +95,8 @@
       const startBtn = document.querySelector("#start");
       const stopBtn = document.querySelector("#stop");
       const forceBtn = document.querySelector("#force");
+      const deviceSel = document.querySelector("#device");
+      const refreshDevices = document.querySelector("#refreshDevices");
       const camera = document.querySelector("#camera");
       const phaseEl = document.querySelector("#phase");
       const lotEl = document.querySelector("#lot");
@@ -98,6 +115,7 @@
       };
 
       let lastShownLotFile = "";
+      let fillingDevices = false;
 
       function showLines(text) {
         status.replaceChildren();
@@ -135,7 +153,36 @@
             "&t=" +
             Date.now();
         }
-        if (data.device) camera.textContent = "카메라: " + data.device;
+        if (data.device) camera.textContent = "사용 중: " + data.device;
+      }
+
+      function fillDevices(data) {
+        fillingDevices = true;
+        deviceSel.replaceChildren();
+        const list = Array.isArray(data.devices) ? data.devices : [];
+        if (!list.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "카메라 없음";
+          deviceSel.appendChild(opt);
+        } else {
+          list.forEach((item) => {
+            const name = typeof item === "string" ? item : item.name;
+            const opt = document.createElement("option");
+            opt.value = name;
+            let label = name;
+            if (item && item.preferred) label += " · 현미경";
+            if (item && item.continuity) label += " · Continuity";
+            if (item && item.screen) label += " · 화면";
+            opt.textContent = label;
+            deviceSel.appendChild(opt);
+          });
+        }
+        if (data.selected) deviceSel.value = data.selected;
+        camera.textContent = data.selected
+          ? "선택: " + data.selected
+          : "카메라를 찾지 못했습니다.";
+        fillingDevices = false;
       }
 
       function refreshLive() {
@@ -157,9 +204,22 @@
           showLines(data.message || "카메라를 찾지 못했습니다.");
           return;
         }
-        camera.textContent = data.selected
-          ? "카메라: " + data.selected
-          : "카메라를 찾지 못했습니다.";
+        fillDevices(data);
+      }
+
+      async function selectDevice(name) {
+        const res = await fetch("/devices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device: name }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showLines(data.message || "카메라 선택에 실패했습니다.");
+          return;
+        }
+        fillDevices(data);
+        showLines("카메라: " + (data.selected || name));
       }
 
       async function refresh() {
@@ -172,10 +232,24 @@
         const res = await fetch(path, { method: "POST", body: "{}" });
         const data = await res.json();
         applyWatch(data);
-        if (!res.ok) showLines(data.message || "요청에 실패했습니다.");
+        if (!res.ok) {
+          showLines(
+            (data.message || "요청에 실패했습니다.") +
+              (data.detail ? "\n" + String(data.detail).slice(0, 240) : ""),
+          );
+        }
         return data;
       }
 
+      deviceSel.addEventListener("change", () => {
+        if (fillingDevices) return;
+        selectDevice(deviceSel.value).catch(() => {
+          showLines("카메라 선택에 실패했습니다.");
+        });
+      });
+      refreshDevices.addEventListener("click", () => {
+        loadDevices().catch(() => showLines("카메라를 찾지 못했습니다."));
+      });
       startBtn.addEventListener("click", () => post("/watch/start"));
       stopBtn.addEventListener("click", () => post("/watch/stop"));
       forceBtn.addEventListener("click", async () => {
@@ -198,7 +272,10 @@
                 "/image?name=" + encodeURIComponent(data.fileName);
             }
           } else {
-            showLines(data.message || "로트를 읽지 못했습니다.");
+            showLines(
+              (data.message || "로트를 읽지 못했습니다.") +
+                (data.detail ? "\n" + String(data.detail).slice(0, 240) : ""),
+            );
           }
           await refresh();
         } catch {
