@@ -2,9 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chooseDevice, parseVideoDevices } from "../src/devices.js";
 import { parseFocusStdout, focusConfirmed } from "../src/focus.js";
-import { captureFileName, CAPTURE_NAME } from "../src/names.js";
-import { scoreGray, selectBest } from "../src/sharpness.js";
+import {
+  captureFileName,
+  lotFileName,
+  CAPTURE_NAME,
+  LOT_FILE_NAME,
+  IMAGE_NAME,
+} from "../src/names.js";
+import { meanAbsDiff, scoreGray, selectBest } from "../src/sharpness.js";
 import { successMessage } from "../src/capture.js";
+import {
+  extractLotSuffix3,
+  isValidLot,
+  pickLotFromOcrText,
+} from "../src/ocr/extract.js";
 
 test("dshow 목록에서 영상 장치만 고른다", () => {
   const text = `
@@ -44,14 +55,15 @@ test("초점 응답은 마지막 JSON만 읽는다", () => {
   assert.equal(focusConfirmed({ ok: false, af: "none" }), false);
 });
 
-test("파일명은 KST와 초점 표시를 담는다", () => {
+test("파일명은 KST와 로트 3글자를 담는다", () => {
   const name = captureFileName(new Date("2026-11-20T16:00:00.007Z"), true);
   assert.equal(name, "capture-20261121-010000-007-af.jpg");
   assert.equal(CAPTURE_NAME.test(name), true);
-  assert.equal(
-    CAPTURE_NAME.test(captureFileName(new Date("2026-11-20T16:00:00.007Z"), false)),
-    true,
-  );
+  const lot = lotFileName(new Date("2026-11-20T16:00:00.007Z"), "acz");
+  assert.equal(lot, "lot-20261121-010000-007-ACZ.jpg");
+  assert.equal(LOT_FILE_NAME.test(lot), true);
+  assert.equal(IMAGE_NAME.test(lot), true);
+  assert.equal(IMAGE_NAME.test(name), true);
 });
 
 test("단색보다 변화가 큰 프레임을 고른다", () => {
@@ -67,10 +79,21 @@ test("단색보다 변화가 큰 프레임을 고른다", () => {
     { index: 2, score: 5 },
   ]);
   assert.equal(best.index, 2);
+  assert.ok(meanAbsDiff(solid, edges) > 0);
 });
 
 test("저장 문구는 초점 결과에 따라 갈린다", () => {
   assert.match(successMessage("focus", { af: "done" }), /포커스/);
   assert.match(successMessage("capture", { af: "timeout" }), /초점 확인/);
   assert.match(successMessage("capture", { af: "none" }), /영상만/);
+});
+
+test("OCR 원문에서 영문 3글자 로트만 고른다", () => {
+  assert.equal(extractLotSuffix3("prefix-ACZ"), "ACZ");
+  assert.equal(pickLotFromOcrText("ACZ"), "ACZ");
+  assert.equal(pickLotFromOcrText("xx\nBDF\n"), "BDF");
+  assert.equal(pickLotFromOcrText("a c z"), "ACZ");
+  assert.equal(isValidLot("ACZ"), true);
+  assert.equal(isValidLot("CAP"), false);
+  assert.equal(isValidLot("AB"), false);
 });

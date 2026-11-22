@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-11-23: 감시 루프용 프레임 Grab을 분리한다.
 // - 2026-11-21: 초점 제어 뒤 한 장을 저장한다. 제어가 안 되면 짧은 연속 촬영에서 선명한 장을 고른다.
 // related files:
 // - bg/pc2/lot-server2/src/index.js
 // - bg/pc2/lot-server2/src/focus.js
+// - bg/pc2/lot-server2/src/watch.js
 
 import { execFile } from "child_process";
 import { createRequire } from "module";
@@ -12,7 +14,9 @@ import sharp from "sharp";
 import { chooseDevice, parseVideoDevices } from "./devices.js";
 import { focusConfirmed, tryFocus } from "./focus.js";
 import { captureFileName } from "./names.js";
-import { scoreGray, selectBest } from "./sharpness.js";
+import { meanAbsDiff, scoreGray, selectBest } from "./sharpness.js";
+
+export { meanAbsDiff };
 
 const require = createRequire(import.meta.url);
 const FRAMES_AFTER_FOCUS = 4;
@@ -84,7 +88,7 @@ function captureArgs(device, count, pattern, withRate) {
   return args;
 }
 
-async function scoreFile(filePath) {
+export async function scoreFile(filePath) {
   const { data, info } = await sharp(filePath)
     .greyscale()
     .resize({ width: 160, height: 160, fit: "inside" })
@@ -93,24 +97,17 @@ async function scoreFile(filePath) {
   return scoreGray(data, info.width, info.height);
 }
 
-export function successMessage(mode, focus) {
-  if (mode === "focus") {
-    return "저장했습니다.\n포커스를 맞춘 뒤 촬영했습니다.";
-  }
-  if (focus && focus.af === "timeout") {
-    return "저장했습니다.\n초점 확인이 끝나기 전에 촬영했습니다.";
-  }
-  return "저장했습니다.\n영상만 저장했습니다.";
-}
-
-export async function captureAndSave({
+/**
+ * 카메라에서 count장을 찍어 임시 폴더에 둔다.
+ * @returns {Promise<{ names: string[], tempDir: string, device: { name: string, input: string } }>}
+ */
+export async function grabFrames({
   captureDir,
   deviceName = process.env.MICROSCOPE_DEVICE || "",
+  count = 1,
   ffmpeg = resolveFfmpeg(),
 } = {}) {
   await fs.mkdir(captureDir, { recursive: true });
-  const focus = await tryFocus();
-  const focused = focusConfirmed(focus);
   const cameras = await listCameras(ffmpeg);
   const device = chooseDevice(cameras, deviceName);
   if (!device) {
@@ -127,31 +124,71 @@ export async function captureAndSave({
     `.tmp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
   );
   await fs.mkdir(tempDir, { recursive: true });
-  try {
-    const count = focused ? FRAMES_AFTER_FOCUS : FRAMES_CAPTURE_ONLY;
-    const pattern = path.join(tempDir, "frame_%02d.jpg");
-    const listFrames = async () =>
-      (await fs.readdir(tempDir))
-        .filter((name) => /^frame_\d+\.jpg$/i.test(name))
-        .sort();
-    let run = await runFfmpeg(ffmpeg, captureArgs(device, count, pattern, true));
-    let names = await listFrames();
-    if (!names.length) {
-      run = await runFfmpeg(ffmpeg, captureArgs(device, count, pattern, false));
-      names = await listFrames();
-    }
-    if (!names.length) {
-      const detail = `${run.stderr || run.err?.message || ""}`.trim().slice(0, 500);
-      const busy = /busy|in use/i.test(detail);
-      throw new CaptureError(
-        busy
-          ? "카메라가 사용 중입니다. UMViewer를 종료한 뒤 다시 촬영합니다."
-          : "촬영에 실패했습니다.",
-        "capture-failed",
-        detail,
-      );
-    }
+  const pattern = path.join(tempDir, "frame_%02d.jpg");
+  const listFrames = async () =>
+    (await fs.readdir(tempDir))
+      .filter((name) => /^frame_\d+\.jpg$/i.test(name))
+      .sort();
 
+  let run = await runFfmpeg(ffmpeg, captureArgs(device, count, pattern, true));
+  let names = await listFrames();
+  if (!names.length) {
+    run = await runFfmpeg(ffmpeg, captureArgs(device, count, pattern, false));
+    names = await listFrames();
+  }
+  if (!names.length) {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    const detail = `${run.stderr || run.err?.message || ""}`.trim().slice(0, 500);
+    const busy = /busy|in use/i.test(detail);
+    throw new CaptureError(
+      busy
+        ? "카메라가 사용 중입니다. UMViewer를 종료한 뒤 다시 시도합니다."
+        : "촬영에 실패했습니다.",
+      "capture-failed",
+      detail,
+    );
+  }
+  return { names, tempDir, device };
+}
+
+/** 한 장의 선명도와 축소 그레이 버퍼(움직임 비교용). */
+export async function analyzeFrame(filePath) {
+  const { data, info } = await sharp(filePath)
+    .greyscale()
+    .resize({ width: 96, height: 96, fit: "inside" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const score = scoreGray(data, info.width, info.height);
+  return { score, gray: data, width: info.width, height: info.height };
+}
+
+
+export function successMessage(mode, focus) {
+  if (mode === "focus") {
+    return "저장했습니다.\n포커스를 맞춘 뒤 촬영했습니다.";
+  }
+  if (focus && focus.af === "timeout") {
+    return "저장했습니다.\n초점 확인이 끝나기 전에 촬영했습니다.";
+  }
+  return "저장했습니다.\n영상만 저장했습니다.";
+}
+
+export async function captureAndSave({
+  captureDir,
+  deviceName = process.env.MICROSCOPE_DEVICE || "",
+  ffmpeg = resolveFfmpeg(),
+} = {}) {
+  const focus = await tryFocus();
+  const focused = focusConfirmed(focus);
+  const count = focused ? FRAMES_AFTER_FOCUS : FRAMES_CAPTURE_ONLY;
+  const grabbed = await grabFrames({
+    captureDir,
+    deviceName,
+    count,
+    ffmpeg,
+  });
+  const { names, tempDir, device } = grabbed;
+  try {
     const scored = [];
     for (let index = 0; index < names.length; index += 1) {
       const filePath = path.join(tempDir, names[index]);

@@ -3,15 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>로트 촬영</title>
+    <title>로트 인식</title>
     <style>
       body {
         font-family: sans-serif;
         margin: 1.5rem;
       }
       button {
-        font-size: 1.25rem;
-        padding: 0.6rem 1.4rem;
+        font-size: 1.1rem;
+        padding: 0.5rem 1.1rem;
+        margin-right: 0.5rem;
       }
       button:disabled {
         opacity: 0.6;
@@ -19,28 +20,84 @@
       p {
         line-height: 1.5;
       }
-      img {
-        display: block;
+      #lot {
+        font-size: 2rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+      }
+      .views {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
         margin-top: 0.75rem;
-        max-width: min(100%, 48rem);
+        align-items: flex-start;
+      }
+      .views figure {
+        margin: 0;
+      }
+      .views figcaption {
+        font-size: 0.9rem;
+        color: #444;
+        margin-bottom: 0.35rem;
+      }
+      .views img {
+        display: block;
+        max-width: min(100%, 28rem);
+        background: #111;
+        min-height: 12rem;
+      }
+      #live.dim {
+        opacity: 0.45;
       }
     </style>
   </head>
   <body>
-    <button id="shot" type="button">촬영</button>
     <p id="help">
-      촬영을 누르면 초점을 맞춘 뒤 저장합니다.
+      영상을 보다가 움직임이 멈추고 초점이 맞으면 로컬 OCR로 영문 3글자를 읽습니다.
       <br />
-      현미경 제어가 안 되면 영상만 저장합니다.
+      페달은 쓰지 않습니다. UMViewer는 끄고 PC CAM 모드로 둡니다.
+    </p>
+    <p>
+      <button id="start" type="button">감시 시작</button>
+      <button id="stop" type="button">감시 중지</button>
+      <button id="force" type="button">지금 인식</button>
     </p>
     <p id="camera"></p>
+    <p id="phase"></p>
+    <p id="lot"></p>
     <p id="status"></p>
-    <img id="preview" alt="" />
+    <div class="views">
+      <figure>
+        <figcaption>라이브</figcaption>
+        <img id="live" alt="라이브 뷰" class="dim" />
+      </figure>
+      <figure>
+        <figcaption>최근 인식</figcaption>
+        <img id="preview" alt="" />
+      </figure>
+    </div>
     <script>
-      const shot = document.querySelector("#shot");
+      const startBtn = document.querySelector("#start");
+      const stopBtn = document.querySelector("#stop");
+      const forceBtn = document.querySelector("#force");
       const camera = document.querySelector("#camera");
+      const phaseEl = document.querySelector("#phase");
+      const lotEl = document.querySelector("#lot");
       const status = document.querySelector("#status");
+      const live = document.querySelector("#live");
       const preview = document.querySelector("#preview");
+
+      const PHASE_KO = {
+        idle: "대기",
+        moving: "움직임",
+        stable: "정지·초점 확인",
+        focusing: "초점",
+        ocr: "OCR",
+        hold: "인식 유지",
+        error: "오류",
+      };
+
+      let lastShownLotFile = "";
 
       function showLines(text) {
         status.replaceChildren();
@@ -50,6 +107,47 @@
             if (index) status.appendChild(document.createElement("br"));
             status.appendChild(document.createTextNode(line));
           });
+      }
+
+      function applyWatch(data) {
+        phaseEl.textContent =
+          "상태: " +
+          (PHASE_KO[data.phase] || data.phase || "-") +
+          (data.running ? " · 감시 중" : " · 중지");
+        live.classList.toggle("dim", !data.running && !data.live);
+        if (data.lastLot) lotEl.textContent = data.lastLot;
+        if (data.lastError) showLines(data.lastError);
+        else if (data.latest?.lot) {
+          showLines(
+            "로트 " +
+              data.latest.lot +
+              (data.latest.confidence
+                ? " · 신뢰도 " + Number(data.latest.confidence).toFixed(0)
+                : ""),
+          );
+        }
+        if (data.latest?.fileName && data.latest.fileName !== lastShownLotFile) {
+          lastShownLotFile = data.latest.fileName;
+          preview.alt = data.latest.fileName;
+          preview.src =
+            "/image?name=" +
+            encodeURIComponent(data.latest.fileName) +
+            "&t=" +
+            Date.now();
+        }
+        if (data.device) camera.textContent = "카메라: " + data.device;
+      }
+
+      function refreshLive() {
+        const img = new Image();
+        img.onload = () => {
+          live.src = img.src;
+          live.classList.remove("dim");
+        };
+        img.onerror = () => {
+          live.classList.add("dim");
+        };
+        img.src = "/live?t=" + Date.now();
       }
 
       async function loadDevices() {
@@ -64,31 +162,61 @@
           : "카메라를 찾지 못했습니다.";
       }
 
-      shot.addEventListener("click", async () => {
-        shot.disabled = true;
-        showLines("촬영 중");
+      async function refresh() {
+        const res = await fetch("/watch");
+        const data = await res.json();
+        if (res.ok) applyWatch(data);
+      }
+
+      async function post(path) {
+        const res = await fetch(path, { method: "POST", body: "{}" });
+        const data = await res.json();
+        applyWatch(data);
+        if (!res.ok) showLines(data.message || "요청에 실패했습니다.");
+        return data;
+      }
+
+      startBtn.addEventListener("click", () => post("/watch/start"));
+      stopBtn.addEventListener("click", () => post("/watch/stop"));
+      forceBtn.addEventListener("click", async () => {
+        forceBtn.disabled = true;
+        showLines("인식 중");
         try {
-          const res = await fetch("/capture", {
+          const res = await fetch("/recognize", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: "{}",
           });
           const data = await res.json();
-          showLines(data.message || "촬영에 실패했습니다.");
-          if (res.ok && data.fileName) {
-            preview.alt = data.fileName;
-            preview.src = "/image?name=" + encodeURIComponent(data.fileName);
+          if (res.ok && data.lot) {
+            lotEl.textContent = data.lot;
+            showLines("로트 " + data.lot);
+            if (data.fileName) {
+              lastShownLotFile = data.fileName;
+              preview.alt = data.fileName;
+              preview.src =
+                "/image?name=" + encodeURIComponent(data.fileName);
+            }
+          } else {
+            showLines(data.message || "로트를 읽지 못했습니다.");
           }
+          await refresh();
         } catch {
-          showLines("촬영에 실패했습니다.");
+          showLines("인식에 실패했습니다.");
         } finally {
-          shot.disabled = false;
+          forceBtn.disabled = false;
         }
       });
 
       loadDevices().catch(() => {
         showLines("카메라를 찾지 못했습니다.");
       });
+      refresh().catch(() => {});
+      refreshLive();
+      setInterval(() => {
+        refresh().catch(() => {});
+      }, 800);
+      setInterval(refreshLive, 350);
     </script>
   </body>
 </html>

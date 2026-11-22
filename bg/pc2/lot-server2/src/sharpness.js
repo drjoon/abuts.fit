@@ -1,7 +1,9 @@
 // change-log:
+// - 2026-11-23: 움직임 비교용 meanAbsDiff 추가.
 // - 2026-11-21: 연속 프레임에서 선명한 한 장을 고른다.
 // related files:
 // - bg/pc2/lot-server2/src/capture.js
+// - bg/pc2/lot-server2/src/watch.js
 
 export function scoreGray(gray, width, height) {
   if (!width || !height || gray.length < width * height) return 0;
@@ -32,4 +34,11 @@ export function selectBest(items) {
     if (item.score > best.score) best = item;
   }
   return best;
+}
+
+export function meanAbsDiff(a, b) {
+  if (!a || !b || a.length !== b.length || !a.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length;
 }

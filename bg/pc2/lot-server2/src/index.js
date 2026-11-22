@@ -1,8 +1,11 @@
 // change-log:
+// - 2026-11-23: GET /live 로 감시 중 최신 프레임을 보여 준다.
+// - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
 // - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
 // related files:
 // - bg/pc2/lot-server2/rules.md
-// - bg/pc2/lot-server2/src/capture.js
+// - bg/pc2/lot-server2/src/watch.js
+// - bg/pc2/lot-server2/src/ocr/index.js
 // - bg/pc2/lot-server2/public/index.html
 
 process.env.TZ = "Asia/Seoul";
@@ -14,7 +17,9 @@ import { fileURLToPath } from "url";
 import { captureAndSave, listCameras, resolveFfmpeg } from "./capture.js";
 import { chooseDevice } from "./devices.js";
 import { DLL_DIR } from "./focus.js";
-import { CAPTURE_NAME } from "./names.js";
+import { IMAGE_NAME } from "./names.js";
+import { disposeOcrWorker } from "./ocr/index.js";
+import { createWatcher } from "./watch.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -44,6 +49,7 @@ const CAPTURE_DIR =
   (process.platform === "win32"
     ? "D:\\bg\\lot-server2\\images"
     : path.join(ROOT, "captures"));
+const AUTO_WATCH = String(process.env.LOT_AUTO_WATCH || "1") !== "0";
 
 const LOGS_DIR = path.join(ROOT, "logs");
 const LOG_FILE = path.join(LOGS_DIR, "latest.txt");
@@ -96,9 +102,15 @@ function readBody(req) {
 
 let busy = false;
 
+const watcher = createWatcher({
+  captureDir: CAPTURE_DIR,
+  deviceName: process.env.MICROSCOPE_DEVICE || "",
+  log,
+});
+
 async function shoot(deviceName) {
   if (busy) {
-    const err = new Error("다른 촬영이 진행 중입니다.");
+    const err = new Error("다른 작업이 진행 중입니다.");
     err.code = "busy";
     throw err;
   }
@@ -153,6 +165,7 @@ const server = http.createServer(async (req, res) => {
         ffmpeg: resolveFfmpeg(),
         dll: fs.existsSync(path.join(DLL_DIR, "mltcCom.dll")),
         platform: process.platform,
+        watch: watcher.status(),
       });
       return;
     }
@@ -160,9 +173,41 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, await devicePayload());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/watch") {
+      json(res, 200, { success: true, ...watcher.status() });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/latest") {
+      const status = watcher.status();
+      json(res, 200, {
+        success: true,
+        latest: status.latest,
+        phase: status.phase,
+        lastLot: status.lastLot,
+        lastError: status.lastError,
+      });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/live") {
+      const frame = watcher.getLiveFrame();
+      if (!frame) {
+        json(res, 404, {
+          success: false,
+          message: "아직 라이브 프레임이 없습니다. 감시를 시작하세요.",
+        });
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Content-Length": frame.length,
+      });
+      res.end(frame);
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/image") {
       const name = path.basename(url.searchParams.get("name") || "");
-      if (!CAPTURE_NAME.test(name)) {
+      if (!IMAGE_NAME.test(name)) {
         json(res, 400, { success: false, message: "파일 이름이 올바르지 않습니다." });
         return;
       }
@@ -182,6 +227,28 @@ const server = http.createServer(async (req, res) => {
       fs.createReadStream(full).pipe(res);
       return;
     }
+    if (req.method === "POST" && url.pathname === "/watch/start") {
+      json(res, 200, { success: true, ...watcher.start() });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/watch/stop") {
+      json(res, 200, { success: true, ...(await watcher.stop()) });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/recognize") {
+      const result = await watcher.forceRecognize();
+      if (!result) {
+        const status = watcher.status();
+        json(res, 422, {
+          success: false,
+          message: status.lastError || "로트를 읽지 못했습니다.",
+          ...status,
+        });
+        return;
+      }
+      json(res, 200, result);
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/capture") {
       const body = await readBody(req);
       const saved = await shoot(body.device);
@@ -198,7 +265,7 @@ const server = http.createServer(async (req, res) => {
     );
     json(res, statusFor(err), {
       success: false,
-      message: err?.message || "촬영에 실패했습니다.",
+      message: err?.message || "요청에 실패했습니다.",
     });
   }
 });
@@ -207,13 +274,18 @@ async function main() {
   fs.mkdirSync(CAPTURE_DIR, { recursive: true });
   if (process.argv.includes("--once")) {
     try {
-      const saved = await shoot("");
-      log(`saved ${saved.fileName} mode=${saved.mode}`);
-      console.log(JSON.stringify(saved));
+      const result = await watcher.forceRecognize();
+      if (!result) {
+        const status = watcher.status();
+        throw new Error(status.lastError || "로트를 읽지 못했습니다.");
+      }
+      console.log(JSON.stringify(result));
+      await disposeOcrWorker();
       process.exit(0);
     } catch (err) {
       log(`error ${err?.message || err}`);
       console.error(err?.message || err);
+      await disposeOcrWorker();
       process.exit(1);
     }
   }
@@ -224,6 +296,7 @@ async function main() {
   });
   server.listen(PORT, HOST, () => {
     log(`listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`);
+    if (AUTO_WATCH) watcher.start();
   });
 }
 
