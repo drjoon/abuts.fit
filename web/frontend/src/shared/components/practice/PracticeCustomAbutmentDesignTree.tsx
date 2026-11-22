@@ -1,6 +1,6 @@
 // 커스텀어벗 디자인 뷰어 오른쪽 위 「어벗 정보」 패널.
 // 치아마다 표시·치식을 두고, 펼치면 세부 항목을 드래그·스피너(▲/▼)·직접 입력으로 바꿀 수 있다.
-// 같은 브리지인 치아는 행 사이에 연결선과 링크 아이콘을 둔다.
+// 치아 왼쪽 레일: 싱글도 짧은 수직·수평선, 브리지는 수직+수평(├/└)과 행 사이 링크 아이콘.
 // 커스텀어벗 단독 파일은 받지 않는다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -1472,18 +1472,32 @@ function BridgeLinkMark({ fromTooth, toTooth }: { fromTooth: string; toTooth: st
   );
 }
 
+/** 치아 행 왼쪽 레일. 싱글·브리지 모두 같은 들여쓰기에 수직+수평(가지)선을 그린다. */
 function BridgeRail({ linkedToPrev, linkedToNext }: { linkedToPrev: boolean; linkedToNext: boolean }) {
-  if (!linkedToPrev && !linkedToNext) return null;
+  const inBridge = linkedToPrev || linkedToNext;
   return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute left-2.5 w-px -translate-x-1/2 bg-primary/70"
-      style={{
-        top: linkedToPrev ? 0 : "0.875rem",
-        bottom: linkedToNext ? 0 : undefined,
-        height: linkedToNext ? undefined : "0.875rem",
-      }}
-    />
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-2.5 w-px -translate-x-1/2 bg-primary/70"
+        style={
+          inBridge
+            ? {
+                top: linkedToPrev ? 0 : "0.875rem",
+                bottom: linkedToNext ? 0 : undefined,
+                height: linkedToNext ? undefined : "0.875rem",
+              }
+            : {
+                top: "0.5rem",
+                height: "0.75rem",
+              }
+        }
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-2.5 top-[0.875rem] h-px w-3.5 bg-primary/70"
+      />
+    </>
   );
 }
 
@@ -1643,7 +1657,6 @@ export function PracticeCustomAbutmentDesignTree({
           const nextTooth = orderedItems[index + 1]?.toothNumber ?? "";
           const linkedToPrev = Boolean(prevTooth) && teethShareBridgeSpan(prevTooth, tooth, toothWorks);
           const linkedToNext = Boolean(nextTooth) && teethShareBridgeSpan(tooth, nextTooth, toothWorks);
-          const inBridge = linkedToPrev || linkedToNext;
           const open = Boolean(expanded[tooth]);
           const visible = visibleTeeth[tooth] !== false;
           const selected = selectedTeeth.includes(tooth);
@@ -1658,7 +1671,7 @@ export function PracticeCustomAbutmentDesignTree({
               {linkedToPrev ? <BridgeLinkMark fromTooth={prevTooth} toTooth={tooth} /> : null}
               <div className="relative">
               <BridgeRail linkedToPrev={linkedToPrev} linkedToNext={linkedToNext} />
-              <div className={cn("min-w-0", inBridge && "pl-6")}>
+              <div className="min-w-0 pl-6">
               <div
                 className={cn(
                   "flex items-center gap-0.5 rounded-md py-0.5 pl-0.5 pr-0.5 text-[0.8125rem]",
