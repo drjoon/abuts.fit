@@ -9631,11 +9631,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             fromMargin: Math.round(Math.max(0, hStart - hMargin) * 10) / 10,
           };
         };
-        // 단면 각(footPsi)은 그대로 두고, 설·협 평면만 바꾼다. 각을 바꾸면 포스트가 소켓 밖으로 나간다.
-        const linPlane = lingualOn
-          ? planeOf(0, hBucMargin, params.postLingualBevelMm, 1)
+        // 단면 각(footPsi)은 그대로 둔다. 사면은 큐브 협측(alignedLabial)과 그 반대인 설측을 깎는다.
+        const cubeLab = worldDirToFixtureLocal(alignedLabialWorld, fixture.fixturePose);
+        const buccalOnPosU = dot3(frame.uLabial, cubeLab) >= 0;
+        const bucSign: 1 | -1 = buccalOnPosU ? 1 : -1;
+        const linSign: 1 | -1 = buccalOnPosU ? -1 : 1;
+        const bucPlane = buccalOn
+          ? planeOf(buccalOnPosU ? 0 : Math.PI, buccalOnPosU ? hBucMargin : hLinMargin, bucParamMm, bucSign)
           : null;
-        const bucPlane = buccalOn ? planeOf(Math.PI, hLinMargin, bucParamMm, -1) : null;
+        const linPlane = lingualOn
+          ? planeOf(
+              buccalOnPosU ? Math.PI : 0,
+              buccalOnPosU ? hLinMargin : hBucMargin,
+              params.postLingualBevelMm,
+              linSign,
+            )
+          : null;
         appliedLingualBevelMm = linPlane?.active ? linPlane.fromMargin : null;
         appliedLabialBevelMm = bucPlane?.active ? bucPlane.fromMargin : null;
 
@@ -9675,8 +9686,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
               const sCap = (uPlane - cuSec - latU) / cp;
               if (sCap > 0.2) s = smoothMin(s, sCap, 0.04);
             };
-            if (linPlane?.active) clipU(linPlane, 1);
-            if (bucPlane?.active) clipU(bucPlane, -1);
+            if (bucPlane?.active) clipU(bucPlane, bucSign);
+            if (linPlane?.active) clipU(linPlane, linSign);
             const u = cuSec + s * cp + latU;
             const v = cvSec + s * sp + dvLat * (1 - uSpan);
             postR[col]![k] = Math.hypot(u, v);

@@ -910,6 +910,84 @@ assert.ok(
   bevelBl < flatBl - 0.15,
   `같은 기울기에서 협·설 사면(${bevelBl.toFixed(2)}mm)은 사면 없는 상단(${flatBl.toFixed(2)}mm)보다 좁다`,
 );
+const [bucOnly35, linOnly35] = await Promise.all([
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+    params: { postLabialBevelMm: 3.2, postLingualBevelMm: 0 },
+    explicitParams: { postLabialBevelMm: 3.2, postLingualBevelMm: 0 },
+  }),
+  designCustomAbutmentStl({
+    fixture: { ...fixture35, fixturePose: tiltedPose },
+    jawGeometry: jaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fixture34],
+    toothWorks: singleWorks35,
+    params: { postLabialBevelMm: 0, postLingualBevelMm: 3.2 },
+    explicitParams: { postLabialBevelMm: 0, postLingualBevelMm: 3.2 },
+  }),
+]);
+/** 큐브가 쓰는 협측(반환 labialDir)으로 윗면 직전의 협·설 도달 거리. */
+const reachAlongCube = (
+  positions: Float32Array,
+  labialDir: readonly number[],
+  pose: { hexX: readonly number[]; hexY: readonly number[] },
+) => {
+  const lx = labialDir[0]! * pose.hexX[0]! + labialDir[1]! * pose.hexX[1]! + labialDir[2]! * pose.hexX[2]!;
+  const ly = labialDir[0]! * pose.hexY[0]! + labialDir[1]! * pose.hexY[1]! + labialDir[2]! * pose.hexY[2]!;
+  const len = Math.hypot(lx, ly) || 1;
+  const ux = lx / len;
+  const uy = ly / len;
+  let zTop = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) zTop = Math.max(zTop, positions[i]!);
+  const z0 = zTop - 0.85;
+  let buc = -Infinity;
+  let lin = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    if (Math.abs(positions[i + 2]! - z0) > 0.22) continue;
+    const x = positions[i]!;
+    const y = positions[i + 1]!;
+    if (Math.abs(-uy * x + ux * y) > 0.4) continue;
+    const u = ux * x + uy * y;
+    if (u > buc) buc = u;
+    if (-u > lin) lin = -u;
+  }
+  return { buc, lin };
+};
+const baseReach = reachAlongCube(
+  tilted35.solidBodyLocalPositions!,
+  tilted35.fixture.labialDir,
+  tilted35.fixture.fixturePose,
+);
+const bucReach = reachAlongCube(
+  bucOnly35.solidBodyLocalPositions!,
+  bucOnly35.fixture.labialDir,
+  bucOnly35.fixture.fixturePose,
+);
+const linReach = reachAlongCube(
+  linOnly35.solidBodyLocalPositions!,
+  linOnly35.fixture.labialDir,
+  linOnly35.fixture.fixturePose,
+);
+const bucCut = baseReach.buc - bucReach.buc;
+const bucSpill = baseReach.lin - bucReach.lin;
+const linCut = baseReach.lin - linReach.lin;
+const linSpill = baseReach.buc - linReach.buc;
+assert.ok(
+  bucCut > 0.12 && bucCut > bucSpill + 0.08,
+  `협측 사면은 큐브 협측을 깎는다(협 ${bucCut.toFixed(2)}mm, 설 ${bucSpill.toFixed(2)}mm)`,
+);
+assert.ok(
+  linCut > 0.12 && linCut > linSpill + 0.08,
+  `설측 사면은 큐브 설측을 깎는다(설 ${linCut.toFixed(2)}mm, 협 ${linSpill.toFixed(2)}mm)`,
+);
+bucOnly35.worldGeometry.dispose();
+bucOnly35.predictedCrownWorldGeometry.dispose();
+linOnly35.worldGeometry.dispose();
+linOnly35.predictedCrownWorldGeometry.dispose();
 tilted35.worldGeometry.dispose();
 tilted35.predictedCrownWorldGeometry.dispose();
 tiltedCut.worldGeometry.dispose();
