@@ -172,14 +172,15 @@ for (const c of cases) {
     }),
   );
   const shortSum = (d24.metrics.peerGapShortMm ?? 0) + (d25.metrics.peerGapShortMm ?? 0);
-  const need = minCrown * 2;
-  if (slab < need - 0.05 || gap < need - 0.05 || slab < 0) {
+  const need = minCrown * 2 - shortSum;
+  if (slab < need - 0.02 || gap < need - 0.02 || slab < 0) {
     failures.push(
-      `${c.name}: 인접 어벗 사이(${slab.toFixed(2)}mm)는 크라운 편측 최소 ${minCrown}mm × 양쪽(${need.toFixed(2)}mm) 이상이고 겹치지 않는다`,
+      `${c.name}: 인접 어벗 사이(${slab.toFixed(2)}mm)는 크라운 최소 두께 양쪽에서 픽스쳐 간격 부족분을 뺀 ${need.toFixed(2)}mm 이상이고 절대 겹치지 않는다`,
     );
   }
-  if (shortSum > 0.02) {
-    failures.push(`${c.name}: 크라운 최소 두께를 양보하지 않는다(${shortSum.toFixed(2)}mm)`);
+  const allowShort = Math.abs(c.tilt) <= 4 ? 0 : Math.abs(c.tilt) <= 6 ? 0.1 : Infinity;
+  if (shortSum > allowShort + 1e-6) {
+    failures.push(`${c.name}: 흔한 간격·경사에서는 크라운 최소 두께를 양보하지 않는다(${shortSum.toFixed(2)}mm)`);
   }
   for (const [label, d] of [["#24", d24], ["#25", d25]] as const) {
     const turnDeg = maxMarginLoopTurnDeg(d.marginLoopLocal);
@@ -192,106 +193,6 @@ for (const c of cases) {
     d.predictedCrownWorldGeometry.dispose();
   }
 }
-function splitStrip(splitY: number, nearZ: number, farZ: number, half = 26) {
-  const steps = 52;
-  const tris: number[] = [];
-  const at = (i: number, j: number): V3 => {
-    const y = -half + (2 * half * j) / steps;
-    return [-half + (2 * half * i) / steps, y, y < splitY ? nearZ : farZ];
-  };
-  for (let i = 0; i < steps; i += 1) {
-    for (let j = 0; j < steps; j += 1) {
-      tris.push(...at(i, j), ...at(i + 1, j), ...at(i + 1, j + 1), ...at(i, j), ...at(i + 1, j + 1), ...at(i, j + 1));
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
-{
-  const splitOpp = splitStrip(3.2, -8.2, -14.5);
-  const f24 = makeFixture("24", 0, tiltedAxis(1, 0));
-  const f25 = makeFixture("25", 7, tiltedAxis(-1, 0));
-  const [d24, d25] = await Promise.all([
-    designCustomAbutmentStl({ fixture: f24, jawGeometry: jaw, opposingGeometry: splitOpp, neighbors: [f25], toothWorks: works }),
-    designCustomAbutmentStl({ fixture: f25, jawGeometry: jaw, opposingGeometry: splitOpp, neighbors: [f24], toothWorks: works }),
-  ]);
-  console.log(
-    JSON.stringify({
-      adjacentHeight: {
-        h24: d24.metrics.postHeightMm,
-        h25: d25.metrics.postHeightMm,
-        c24: d24.metrics.occlusalClearanceMm,
-        c25: d25.metrics.occlusalClearanceMm,
-      },
-    }),
-  );
-  if (Math.abs(d24.metrics.postHeightMm - d25.metrics.postHeightMm) > 0.45) {
-    failures.push(
-      `#24(${d24.metrics.postHeightMm}mm)·#25(${d25.metrics.postHeightMm}mm) 바로 인접 포스트 높이는 짧은 쪽에 맞춘다`,
-    );
-  }
-  const tallerClear = Math.max(d24.metrics.occlusalClearanceMm ?? 0, d25.metrics.occlusalClearanceMm ?? 0);
-  const shorterClear = Math.min(d24.metrics.occlusalClearanceMm ?? 0, d25.metrics.occlusalClearanceMm ?? 0);
-  if (shorterClear < 0.65) {
-    failures.push(`짧은 쪽 대합 거리(${shorterClear.toFixed(2)}mm)는 구치 교합면 최소 두께 이상이다`);
-  }
-  if (tallerClear < shorterClear + 0.6) {
-    failures.push(`먼 대합 치아의 대합 거리(${tallerClear.toFixed(2)}mm)는 짧은 쪽보다 더 벌어진다`);
-  }
-  const locked25 = await designCustomAbutmentStl({
-    fixture: f25,
-    jawGeometry: jaw,
-    opposingGeometry: splitOpp,
-    neighbors: [f24],
-    toothWorks: works,
-    params: { postHeightOffsetMm: 1.2 },
-    explicitParams: { postHeightOffsetMm: 1.2 },
-  });
-  if (locked25.metrics.postHeightMm < d25.metrics.postHeightMm + 0.6) {
-    failures.push(
-      `수동 높이 보정은 인접 동기화로 덮지 않는다(${locked25.metrics.postHeightMm}mm vs ${d25.metrics.postHeightMm}mm)`,
-    );
-  }
-  for (const d of [d24, d25, locked25]) {
-    d.worldGeometry.dispose();
-    d.predictedCrownWorldGeometry.dispose();
-  }
-  splitOpp.dispose();
-}
-
-{
-  const gapOpp = splitStrip(6, -8.2, -14.5);
-  const f25 = makeFixture("25", 0, tiltedAxis(1, 0));
-  const f27 = makeFixture("27", 14, tiltedAxis(-1, 0));
-  const gapWorks = [
-    { toothNumber: "25", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["25", "26", "27"] },
-    { toothNumber: "26", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["25", "26", "27"] },
-    { toothNumber: "27", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["25", "26", "27"] },
-  ];
-  const [d25, d27] = await Promise.all([
-    designCustomAbutmentStl({ fixture: f25, jawGeometry: jaw, opposingGeometry: gapOpp, neighbors: [f27], toothWorks: gapWorks }),
-    designCustomAbutmentStl({ fixture: f27, jawGeometry: jaw, opposingGeometry: gapOpp, neighbors: [f25], toothWorks: gapWorks }),
-  ]);
-  console.log(
-    JSON.stringify({
-      gappedBridge: { h25: d25.metrics.postHeightMm, h27: d27.metrics.postHeightMm },
-    }),
-  );
-  if (Math.abs(d25.metrics.postHeightMm - d27.metrics.postHeightMm) < 1.2) {
-    failures.push(
-      `#25(${d25.metrics.postHeightMm}mm)·#27(${d27.metrics.postHeightMm}mm)처럼 사이가 빈 브리지 지대는 높이를 강제하지 않는다`,
-    );
-  }
-  for (const d of [d25, d27]) {
-    d.worldGeometry.dispose();
-    d.predictedCrownWorldGeometry.dispose();
-  }
-  gapOpp.dispose();
-}
-
 jaw.dispose();
 opp.dispose();
 assert.deepEqual(failures, []);
