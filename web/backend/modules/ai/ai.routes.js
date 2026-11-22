@@ -17,6 +17,7 @@ import {
   saveCustomAbutmentDesignPaint,
   saveCustomAbutmentDesignPreference,
   saveCustomAbutmentDesignSnapshot,
+  saveCustomAbutmentDesignView,
 } from "../../controllers/ai/customAbutmentDesignChat.controller.js";
 import {
   getCustomAbutmentGenerationLogic,
@@ -73,6 +74,11 @@ router.put(
   "/custom-abutment-design-snapshot",
   authenticate,
   saveCustomAbutmentDesignSnapshot
+);
+router.put(
+  "/custom-abutment-design-view",
+  authenticate,
+  saveCustomAbutmentDesignView
 );
 router.put(
   "/custom-abutment-design-paint",

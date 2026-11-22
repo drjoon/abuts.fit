@@ -642,8 +642,7 @@ export function DesignShareChatPanel({
       }}
       className={cn(
         "pointer-events-auto absolute z-30 flex min-h-0 flex-col overflow-hidden rounded-xl border bg-background/95 shadow-lg backdrop-blur",
-        !floated && "min-w-[260px]",
-        !floated && "left-3 top-[11.5rem] w-[20rem] max-w-[calc(100%-1.5rem)]",
+        !floated && "left-3 top-[min(11.5rem,calc(100%-4.5rem))] w-[min(20rem,calc(100%-1.5rem))] max-w-[calc(100%-1.5rem)]",
         !floated && !collapsed && "max-h-[calc(100%-13rem)]",
         floated && !moving && "transition-[left,top] duration-200 ease-out",
         floated && collapsed && "h-auto",

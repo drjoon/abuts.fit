@@ -354,6 +354,67 @@ function base64ToBuffer(raw: string): ArrayBuffer | null {
   }
 }
 
+export type CustomAbutmentSharedView = {
+  pos: [number, number, number];
+  quat: [number, number, number, number];
+  up: [number, number, number];
+  target: [number, number, number];
+  zoom: number;
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  savedAt: number;
+  updatedBy?: string;
+};
+
+function finiteViewNum(raw: unknown, min: number, max: number): number | null {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) return null;
+  return value;
+}
+
+function viewVec(raw: unknown, count: number, min: number, max: number): number[] | null {
+  if (!Array.isArray(raw) || raw.length < count) return null;
+  const out: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const value = finiteViewNum(raw[i], min, max);
+    if (value == null) return null;
+    out.push(value);
+  }
+  return out;
+}
+
+export function parseCustomAbutmentSharedView(raw: unknown): CustomAbutmentSharedView | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const pos = viewVec(row.pos, 3, -1e5, 1e5);
+  const quat = viewVec(row.quat, 4, -2, 2);
+  const up = viewVec(row.up, 3, -2, 2);
+  const target = viewVec(row.target, 3, -1e5, 1e5);
+  const zoom = finiteViewNum(row.zoom, 0.05, 40);
+  const top = finiteViewNum(row.top, -1e6, 1e6);
+  const bottom = finiteViewNum(row.bottom, -1e6, 1e6);
+  const left = finiteViewNum(row.left, -1e6, 1e6);
+  const right = finiteViewNum(row.right, -1e6, 1e6);
+  if (!pos || !quat || !up || !target) return null;
+  if (zoom == null || top == null || bottom == null || left == null || right == null) return null;
+  if (!(top > bottom) || !(right > left)) return null;
+  return {
+    pos: pos as CustomAbutmentSharedView["pos"],
+    quat: quat as CustomAbutmentSharedView["quat"],
+    up: up as CustomAbutmentSharedView["up"],
+    target: target as CustomAbutmentSharedView["target"],
+    zoom,
+    top,
+    bottom,
+    left,
+    right,
+    savedAt: Number(row.savedAt) || 0,
+    updatedBy: String(row.updatedBy || ""),
+  };
+}
+
 export type CustomAbutmentPaintView = {
   position: [number, number, number];
   target: [number, number, number];
@@ -389,6 +450,7 @@ export type RemoteCustomAbutmentSnapshot = {
   manualDesign: { at?: string; message?: string; hasPaint?: boolean } | null;
   feeGuide: CustomAbutmentRouteFeeGuide | null;
   choice: CustomAbutmentChoice;
+  sharedView: CustomAbutmentSharedView | null;
 };
 
 export type CustomAbutmentSnapshotUploadTooth = {
@@ -484,6 +546,7 @@ type SnapshotShell = {
   manualDesign: RemoteCustomAbutmentSnapshot["manualDesign"];
   feeGuide: CustomAbutmentRouteFeeGuide | null;
   choice: CustomAbutmentChoice;
+  sharedView: CustomAbutmentSharedView | null;
   design: {
     version: number;
     fitVersion: number;
@@ -512,7 +575,7 @@ function rememberInflight<T>(
 function emptySnapshot(
   shell: Pick<
     SnapshotShell,
-    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice"
+    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView"
   >,
 ): RemoteCustomAbutmentSnapshot {
   return {
@@ -524,6 +587,7 @@ function emptySnapshot(
     manualDesign: shell.manualDesign,
     feeGuide: shell.feeGuide,
     choice: shell.choice,
+    sharedView: shell.sharedView,
   };
 }
 
@@ -557,6 +621,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             labCheckedAt?: string | null;
             gracePromoteAt?: string | null;
           } | null;
+          sharedView?: unknown;
         };
       }>({
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -611,6 +676,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             ? String(rawChoice.gracePromoteAt)
             : null,
         },
+        sharedView: parseCustomAbutmentSharedView(res.data.data.sharedView),
         design:
           raw && teeth.length > 0
             ? {
@@ -726,6 +792,7 @@ async function hydrateSnapshotShell(
     manualDesign: shell.manualDesign,
     feeGuide: shell.feeGuide,
     choice: shell.choice,
+    sharedView: shell.sharedView,
     design: {
       key: shell.id,
       version,
@@ -979,6 +1046,7 @@ export async function publishCustomAbutmentDesignMeta(
     version: number;
     fitVersion: number;
     baseSavedAt: number;
+    savedAt?: number;
     teeth: readonly CustomAbutmentDesignSyncTooth[];
   },
 ): Promise<
@@ -1000,6 +1068,7 @@ export async function publishCustomAbutmentDesignMeta(
       version: record.version,
       fitVersion: record.fitVersion,
       baseSavedAt: record.baseSavedAt,
+      ...(record.savedAt ? { savedAt: record.savedAt } : {}),
       teeth: record.teeth,
     },
   });
@@ -1026,6 +1095,30 @@ export function classifyCustomAbutmentDesignPublish(
   };
   if (failed.stale && failed.design) return { kind: "stale", design: failed.design };
   return { kind: "fail" };
+}
+
+export async function publishCustomAbutmentSharedView(
+  token: string,
+  transferId: string,
+  savedAt: number,
+  view: Omit<CustomAbutmentSharedView, "savedAt" | "updatedBy">,
+): Promise<{ saved: boolean; savedAt: number; view: CustomAbutmentSharedView | null }> {
+  const id = transferId.trim();
+  if (!token || !id) return { saved: false, savedAt: 0, view: null };
+  const res = await request<{
+    data?: { saved?: boolean; savedAt?: number; view?: unknown };
+  }>({
+    path: "/api/ai/custom-abutment-design-view",
+    method: "PUT",
+    token,
+    jsonBody: { transferId: id, savedAt, view },
+  });
+  const data = res.data?.data;
+  return {
+    saved: Boolean(res.ok && data?.saved),
+    savedAt: Number(data?.savedAt) || 0,
+    view: parseCustomAbutmentSharedView(data?.view),
+  };
 }
 
 export async function saveCustomAbutmentDesignPaintRemote(

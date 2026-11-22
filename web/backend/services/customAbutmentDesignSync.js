@@ -91,3 +91,66 @@ export function toDesignSyncMeta(source) {
     ...(choice ? { choice } : {}),
   };
 }
+
+function finiteIn(raw, min, max) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) return null;
+  return Math.round(value * 1e4) / 1e4;
+}
+
+function vec(raw, count, min, max) {
+  if (!Array.isArray(raw) || raw.length < count) return null;
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const value = finiteIn(raw[i], min, max);
+    if (value == null) return null;
+    out.push(value);
+  }
+  return out;
+}
+
+/** 치과·기공소가 공유하는 직교 카메라. 창 비율과 무관한 자세만 남긴다. */
+export function sanitizeSharedDesignView(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const pos = vec(raw.pos, 3, -1e5, 1e5);
+  const quat = vec(raw.quat, 4, -2, 2);
+  const up = vec(raw.up, 3, -2, 2);
+  const target = vec(raw.target, 3, -1e5, 1e5);
+  const zoom = finiteIn(raw.zoom, 0.05, 40);
+  const top = finiteIn(raw.top, -1e6, 1e6);
+  const bottom = finiteIn(raw.bottom, -1e6, 1e6);
+  const left = finiteIn(raw.left, -1e6, 1e6);
+  const right = finiteIn(raw.right, -1e6, 1e6);
+  if (!pos || !quat || !up || !target) return null;
+  if (zoom == null || top == null || bottom == null || left == null || right == null) return null;
+  if (!(top > bottom) || !(right > left)) return null;
+  const qlen = Math.hypot(quat[0], quat[1], quat[2], quat[3]);
+  if (qlen < 0.5 || qlen > 1.5) return null;
+  const dx = pos[0] - target[0];
+  const dy = pos[1] - target[1];
+  const dz = pos[2] - target[2];
+  if (dx * dx + dy * dy + dz * dz < 1e-6) return null;
+  const upLen = Math.hypot(up[0], up[1], up[2]);
+  if (upLen < 1e-4) return null;
+  return {
+    pos,
+    quat: quat.map((n) => Math.round((n / qlen) * 1e4) / 1e4),
+    up: up.map((n) => Math.round((n / upLen) * 1e4) / 1e4),
+    target,
+    zoom,
+    top,
+    bottom,
+    left,
+    right,
+  };
+}
+
+export function sharedDesignViewForApi(stored) {
+  const view = sanitizeSharedDesignView(stored);
+  if (!view) return null;
+  return {
+    ...view,
+    savedAt: Number(stored?.savedAt) || 0,
+    updatedBy: String(stored?.updatedBy || "").trim(),
+  };
+}

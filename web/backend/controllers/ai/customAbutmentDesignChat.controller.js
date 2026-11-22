@@ -37,7 +37,12 @@ import {
   syncRelatedRequestOwnershipToAcceptingLab,
 } from "../../services/practiceTransferProduction.service.js";
 import { emitAppEventToUser } from "../../socket.js";
-import { isStaleDesignWrite, toDesignSyncMeta } from "../../services/customAbutmentDesignSync.js";
+import {
+  isStaleDesignWrite,
+  sanitizeSharedDesignView,
+  sharedDesignViewForApi,
+  toDesignSyncMeta,
+} from "../../services/customAbutmentDesignSync.js";
 import { copyObjectInS3, getPresignedPutUrl, headObjectSizeInS3 } from "../../utils/s3.utils.js";
 import {
   DESIGN_ROUTE_PLATFORM,
@@ -704,7 +709,16 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     }
     return res.json({
       success: true,
-      data: { design, chat, paint, mode, manualDesign, feeGuide, choice },
+      data: {
+        design,
+        chat,
+        paint,
+        mode,
+        manualDesign,
+        feeGuide,
+        choice,
+        sharedView: sharedDesignViewForApi(stored?.sharedView),
+      },
     });
   } catch (error) {
     console.error("[AI] getCustomAbutmentDesignSnapshot error", error);
@@ -757,6 +771,13 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         ...prev,
         updatedBy: prev.updatedBy ? String(prev.updatedBy) : "",
       });
+      if (transfer?._id) {
+        void emitCustomAbutmentDesignSync(
+          transfer,
+          { ...prev, updatedBy: prev.updatedBy ? String(prev.updatedBy) : "" },
+          { force: true },
+        ).catch((err) => console.warn("[AI] design sync emit failed", err));
+      }
       return res.status(409).json({
         success: false,
         code: "stale",
@@ -764,7 +785,9 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         data: current,
       });
     }
-    const savedAt = Date.now();
+    let savedAt = Number(req.body?.savedAt);
+    if (!Number.isFinite(savedAt)) savedAt = Date.now();
+    savedAt = Math.min(Math.max(savedAt, 0), Date.now() + 2000);
     const updatedBy = req.user?._id ? String(req.user._id) : "";
     const next = {
       ...prev,
@@ -789,11 +812,19 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       next.fitVersion = Number(req.body?.fitVersion) || 0;
       next.teeth = teeth;
     }
-    await PracticeTransfer.updateOne(
-      { transferId },
-      { $set: { "production.customAbutmentPreview": next } },
-    );
-    res.json({ success: true, data: { saved: true, savedAt } });
+    const previewSet = {
+      "production.customAbutmentPreview.savedAt": next.savedAt,
+      "production.customAbutmentPreview.updatedBy": next.updatedBy,
+      "production.customAbutmentPreview.chat": next.chat,
+    };
+    if (req.body?.paint && typeof req.body.paint === "object") {
+      previewSet["production.customAbutmentPreview.paint"] = next.paint;
+    }
+    if (teeth.length > 0) {
+      previewSet["production.customAbutmentPreview.version"] = next.version;
+      previewSet["production.customAbutmentPreview.fitVersion"] = next.fitVersion;
+      previewSet["production.customAbutmentPreview.teeth"] = next.teeth;
+    }
     if (teeth.length > 0 && transfer?._id) {
       void emitCustomAbutmentDesignSync(transfer, {
         savedAt,
@@ -803,6 +834,8 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         teeth: next.teeth,
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
+    await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });
+    res.json({ success: true, data: { saved: true, savedAt } });
     return;
   } catch (error) {
     console.error("[AI] saveCustomAbutmentDesignSnapshot error", error);
@@ -834,12 +867,87 @@ async function transferPartyUserIds(transferDoc) {
   return [...userIdSet];
 }
 
-async function emitCustomAbutmentDesignSync(transferDoc, source) {
+async function emitCustomAbutmentViewSync(transferDoc, view) {
+  if (!transferDoc?._id || !view) return;
+  const payload = {
+    transferId: String(transferDoc.transferId || "").trim(),
+    ...view,
+  };
+  const userIds = await transferPartyUserIds(transferDoc);
+  for (const uid of userIds) {
+    emitAppEventToUser(uid, "practice:custom-abutment-view", payload);
+  }
+}
+
+/**
+ * 커스텀어벗 디자인 카메라. 치과·기공소가 같은 방향·확대·이동을 본다.
+ * @route PUT /api/ai/custom-abutment-design-view
+ * body: { transferId, savedAt, view }
+ */
+export async function saveCustomAbutmentDesignView(req, res) {
+  try {
+    const { anchorId, canSave, canEditShared, transferId } = await resolvePreferenceAnchor(
+      req,
+      req.body?.transferId,
+    );
+    const privileged = req.user?.role === "admin" || req.user?.role === "internalLab";
+    if (!transferId || (!anchorId && !privileged) || (!canSave && !canEditShared && !privileged)) {
+      return res.status(403).json({ success: false, message: "이 화면을 공유할 수 없습니다." });
+    }
+    const view = sanitizeSharedDesignView(req.body?.view);
+    if (!view) {
+      return res.status(400).json({ success: false, message: "화면 정보를 확인해 주세요." });
+    }
+    let savedAt = Number(req.body?.savedAt);
+    if (!Number.isFinite(savedAt)) savedAt = Date.now();
+    savedAt = Math.min(Math.max(savedAt, 0), Date.now() + 2000);
+    const updatedBy = req.user?._id ? String(req.user._id) : "";
+    const sharedView = { ...view, savedAt, updatedBy };
+    const existing = await PracticeTransfer.findOne({ transferId })
+      .select({
+        transferId: 1,
+        practiceUserId: 1,
+        practiceBusinessAnchorId: 1,
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        "production.customAbutmentPreview.sharedView": 1,
+      })
+      .lean();
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾지 못했습니다." });
+    }
+    const prevAt = Number(existing.production?.customAbutmentPreview?.sharedView?.savedAt);
+    if (Number.isFinite(prevAt) && prevAt > savedAt) {
+      return res.json({
+        success: true,
+        data: {
+          saved: false,
+          view: sharedDesignViewForApi(existing.production?.customAbutmentPreview?.sharedView),
+        },
+      });
+    }
+    void emitCustomAbutmentViewSync(existing, sharedView).catch((err) =>
+      console.warn("[AI] view sync emit failed", err),
+    );
+    await PracticeTransfer.updateOne(
+      { transferId },
+      { $set: { "production.customAbutmentPreview.sharedView": sharedView } },
+    );
+    res.json({ success: true, data: { saved: true, savedAt } });
+    return;
+  } catch (error) {
+    console.error("[AI] saveCustomAbutmentDesignView error", error);
+    return res.status(500).json({ success: false, message: "화면을 공유하지 못했습니다." });
+  }
+}
+
+async function emitCustomAbutmentDesignSync(transferDoc, source, opts) {
   const meta = toDesignSyncMeta(source);
   if (!transferDoc?._id || !meta) return;
   const payload = {
     transferId: String(transferDoc.transferId || "").trim(),
     ...meta,
+    ...(opts?.force ? { force: true } : {}),
   };
   const userIds = await transferPartyUserIds(transferDoc);
   for (const uid of userIds) {

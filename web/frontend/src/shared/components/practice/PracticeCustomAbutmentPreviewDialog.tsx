@@ -125,6 +125,8 @@ import {
   pickCustomAbutmentChat,
   classifyCustomAbutmentDesignPublish,
   publishCustomAbutmentDesignMeta,
+  publishCustomAbutmentSharedView,
+  parseCustomAbutmentSharedView,
   readCustomAbutmentChat,
   readCustomAbutmentDesign,
   saveCustomAbutmentDesignPaintRemote,
@@ -137,6 +139,7 @@ import {
   type CustomAbutmentDesignSyncTooth,
   type CustomAbutmentPaintRecord,
   type CustomAbutmentPaintView,
+  type CustomAbutmentSharedView,
 } from "@/shared/practice/customAbutmentDesignCache";
 import { AbutmentDesignGraceControl } from "@/shared/practice/AbutmentDesignGraceControl";
 import {
@@ -148,6 +151,7 @@ import {
   parseCustomAbutmentParamOverrides,
   parseCustomAbutmentPreference,
   preferenceOverridesForTooth,
+  sharedAbutmentSyncParams,
   resolveAbutmentBridgeRetentionSpec,
   type CustomAbutmentDesignParams,
   type CustomAbutmentDesignPreference,
@@ -225,7 +229,11 @@ import type { ChatMessageAttachment } from "@/shared/hooks/useBackgroundTempUplo
 import { DesignShareChatPanel } from "@/shared/components/practice/DesignShareChatPanel";
 import { ViewerFloatingFrame } from "@/shared/components/practice/ViewerFloatingFrame";
 import { useToast } from "@/shared/hooks/use-toast";
-import { onAppEvent } from "@/shared/realtime/socket";
+import {
+  customAbutmentLiveConnected,
+  emitCustomAbutmentLive,
+  onAppEvent,
+} from "@/shared/realtime/socket";
 import {
   PracticeCustomAbutmentViewCube,
   toothViewCube,
@@ -263,11 +271,7 @@ import {
   resizeWebglToHost,
 } from "@/shared/three/squarePixelViewport";
 import { cn } from "@/shared/ui/cn";
-import {
-  CONTENT_MEASURED_CHROME_CLASS,
-  WIDE_CLUSTER_ROW_CLASS,
-  WIDE_CLUSTER_SEPARATOR_CLASS,
-} from "@/shared/ui/contentMeasuredChrome";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 
 export type PracticeDesignPreviewFileItem = {
   fileName: string;
@@ -462,17 +466,17 @@ function applySavedView(
   camera: THREE.OrthographicCamera,
   controls: ScreenSpaceOrbitControls,
   saved: SavedCaView,
+  aspect: number,
 ) {
   camera.position.fromArray(saved.pos);
   camera.quaternion.fromArray(saved.quat);
   camera.up.fromArray(saved.up);
   controls.target.fromArray(saved.target);
   camera.zoom = THREE.MathUtils.clamp(saved.zoom, 0.2, VIEW_MAX_ZOOM);
-  camera.top = saved.top;
-  camera.bottom = saved.bottom;
-  camera.left = saved.left;
-  camera.right = saved.right;
-  camera.updateProjectionMatrix();
+  // 저장 당시 가로 프러스텀을 그대로 쓰면 창이 좁아질 때 모델이 가로로 눌린다.
+  // 세로 크기는 유지하고, 지금 칸 비율로 가로만 다시 잡아 창 밖은 잘리게 한다.
+  const halfH = Math.max(Math.abs(saved.top - saved.bottom) / 2, 1e-4);
+  applyOrthoHeight(camera, halfH, Math.max(aspect, 1e-4));
   camera.updateMatrixWorld();
   controls.syncFromCamera();
 }
@@ -1090,6 +1094,18 @@ export function PracticeCustomAbutmentPreviewDialog({
   transferIdRef.current = transferIdParam;
   /** 디자인 배치 후 맞춤·복원이 끝난 뒤에만 카메라 뷰를 저장한다. */
   const viewReadyRef = useRef(false);
+  const applyingSharedViewRef = useRef(false);
+  const orbitingViewRef = useRef(false);
+  const lastLocalViewAtRef = useRef(0);
+  const viewSyncTimerRef = useRef(0);
+  const viewPersistTimerRef = useRef(0);
+  const viewSyncSentAtRef = useRef(0);
+  const viewSyncInflightRef = useRef(false);
+  const viewSyncDirtyRef = useRef(false);
+  const lastSharedViewAtRef = useRef(0);
+  const lastSentPoseKeyRef = useRef("");
+  const pendingSharedViewRef = useRef<CustomAbutmentSharedView | null>(null);
+  const publishSharedViewRef = useRef<(flush: boolean) => void>(() => {});
   const paint = useViewPaint({ open, resetKey: transferIdParam, initiallyOn: false });
   const paintStateRef = useRef(paint);
   paintStateRef.current = paint;
@@ -1103,6 +1119,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   const savedGumballEditRef = useRef<Record<string, AbutmentEdit>>({});
   const baselineParamsRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
   const designRunChainRef = useRef<Promise<void>>(Promise.resolve());
+  /** 상대 저장이 오면 올린다. 진행 중인 로컬 재생성·저장이 그 결과를 덮지 않게 한다. */
+  const designEpochRef = useRef(0);
+  /** 같은 저장 시각의 소켓 이벤트를 두 번 다시 만들지 않는다. */
+  const lastRemoteSavedAtRef = useRef(0);
   const activeRedesignCountRef = useRef(0);
   /** 치아를 처음 제안할 때 넘긴 조정값. 리셋은 여기로만 돌아간다. */
   const proposalInputRef = useRef<Record<string, Partial<CustomAbutmentDesignParams>>>({});
@@ -1110,9 +1130,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 서버가 인정한 마지막 저장 시각. 이보다 오래된 쓰기는 거절된다. */
   const designSavedAtRef = useRef(0);
   const pendingRemoteMetaRef = useRef<CustomAbutmentDesignSyncMeta | null>(null);
-  const applyRemoteDesignMetaRef = useRef<(meta: CustomAbutmentDesignSyncMeta) => Promise<void>>(
-    async () => {},
-  );
+  const applyRemoteDesignMetaRef = useRef<
+    (meta: CustomAbutmentDesignSyncMeta, epoch?: number) => Promise<void>
+  >(async () => {});
   const publishAgainRef = useRef(false);
   const publishRunningRef = useRef(false);
   const viewerPrefsRef = useRef<CustomAbutmentViewerPrefs>({
@@ -1120,6 +1140,12 @@ export function PracticeCustomAbutmentPreviewDialog({
     expandedTeeth: {},
   });
   const viewerTouchRef = useRef(new Set<string>());
+  const applyingChromeRef = useRef(false);
+  const chromeRevRef = useRef(0);
+  const sentChromeRevRef = useRef(0);
+  const lastLocalGumballAtRef = useRef(0);
+  const applyingGumballRef = useRef(false);
+  const suppressPivotSyncRef = useRef(false);
   const viewerSavedRef = useRef("");
   const [viewerHydrated, setViewerHydrated] = useState(false);
   const [expandedTeeth, setExpandedTeeth] = useState<Record<string, boolean>>({});
@@ -1997,7 +2023,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 
-  const selectAbutments = (toothNumber: string, additive = false) => {
+    const selectAbutments = (toothNumber: string, additive = false) => {
+    chromeRevRef.current += 1;
     const nextTeeth = nextAbutmentSelection(selectedTeethRef.current, toothNumber, additive);
     selectedTeethRef.current = nextTeeth;
     setSelectedTeeth(nextTeeth);
@@ -2040,6 +2067,10 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 선택 피봇일 때 형상·선택이 바뀌면 중심을 다시 맞춘다. */
   useEffect(() => {
+    if (suppressPivotSyncRef.current) {
+      suppressPivotSyncRef.current = false;
+      return;
+    }
     if (pivotSourceRef.current !== "selection") return;
     if (selectedTeeth.length === 0) {
       clearPivot();
@@ -2137,6 +2168,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     publishAgainRef.current = true;
     if (publishRunningRef.current) return;
     publishRunningRef.current = true;
+    const epoch = designEpochRef.current;
     void (async () => {
       let acceptedAt = 0;
       let spins = 0;
@@ -2144,33 +2176,47 @@ export function PracticeCustomAbutmentPreviewDialog({
         while (publishAgainRef.current && spins < 5) {
           spins += 1;
           publishAgainRef.current = false;
+          if (designEpochRef.current !== epoch) return;
           if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
           const transferId = transferIdRef.current;
           const list = designedListRef.current;
           const token = String(authToken || "").trim();
           if (!token || !transferId || list.length === 0) return;
+          const savedAtHint = Date.now();
+          const teeth = list.map(syncToothFromDesign);
+          emitCustomAbutmentLive({
+            kind: "design",
+            transferId,
+            savedAt: savedAtHint,
+            design: {
+              transferId,
+              savedAt: savedAtHint,
+              updatedBy: authUserIdRef.current,
+              version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+              teeth,
+            },
+          });
           const result = classifyCustomAbutmentDesignPublish(
             await publishCustomAbutmentDesignMeta(token, transferId, {
               version: CUSTOM_ABUTMENT_DESIGN_VERSION,
               fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
               baseSavedAt: designSavedAtRef.current,
-              teeth: list.map(syncToothFromDesign),
+              savedAt: savedAtHint,
+              teeth,
             }),
           );
           if (result.kind === "stale") {
             publishAgainRef.current = false;
             acceptedAt = 0;
-            const design = result.design;
-            const next = designRunChainRef.current.then(
-              () => applyRemoteDesignMetaRef.current(design),
-              () => applyRemoteDesignMetaRef.current(design),
-            );
-            designRunChainRef.current = next.catch((err) => {
+            designEpochRef.current += 1;
+            const remoteEpoch = designEpochRef.current;
+            void applyRemoteDesignMetaRef.current(result.design, remoteEpoch).catch((err) => {
               console.warn("[custom-abutment] remote design apply failed", err);
             });
-            await next;
             return;
           }
+          if (designEpochRef.current !== epoch) return;
           if (result.kind !== "ok") {
             acceptedAt = 0;
             continue;
@@ -2178,12 +2224,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
           acceptedAt = result.savedAt;
         }
-        if (acceptedAt > 0) await cacheCurrentDesign(acceptedAt);
+        if (acceptedAt > 0 && designEpochRef.current === epoch) await cacheCurrentDesign(acceptedAt);
       } catch (err) {
         console.warn("[custom-abutment] design meta publish failed", err);
       } finally {
         publishRunningRef.current = false;
-        if (publishAgainRef.current) scheduleDesignMetaPublish();
+        if (publishAgainRef.current && designEpochRef.current === epoch) scheduleDesignMetaPublish();
       }
     })();
   };
@@ -2244,8 +2290,11 @@ export function PracticeCustomAbutmentPreviewDialog({
   };
 
   const applyRemoteDesignMeta = useCallback(
-    async (meta: CustomAbutmentDesignSyncMeta) => {
-      if (meta.savedAt > 0 && meta.savedAt <= designSavedAtRef.current) return;
+    async (meta: CustomAbutmentDesignSyncMeta, epochArg?: number) => {
+      const epoch = epochArg ?? (designEpochRef.current += 1);
+      if (epoch !== designEpochRef.current) return;
+      if (meta.savedAt > 0 && meta.savedAt < designSavedAtRef.current) return;
+      if (meta.savedAt > 0 && meta.savedAt === lastRemoteSavedAtRef.current) return;
       const ctx = designContextRef.current;
       if (!ctx || !sceneRef.current || meta.teeth.length === 0) {
         const pending = pendingRemoteMetaRef.current;
@@ -2262,7 +2311,27 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       ignoreEditCommitRef.current = true;
       directEditRef.current?.cancelGesture();
+      window.clearTimeout(editCommitTimerRef.current);
+      if (meta.savedAt > 0) lastRemoteSavedAtRef.current = meta.savedAt;
       const kept = new Set(meta.teeth.map((row) => row.toothNumber));
+      const incomingByTooth = new Map(meta.teeth.map((row) => [row.toothNumber, row]));
+      const painted = designedListRef.current.map((row) => {
+        const src = incomingByTooth.get(row.toothNumber);
+        if (!src) return row;
+        const metrics = { ...row.metrics };
+        for (const [key, value] of Object.entries(src.metrics || {})) {
+          if (typeof value === "number" && Number.isFinite(value)) {
+            (metrics as Record<string, number>)[key] = value;
+          }
+        }
+        return {
+          ...row,
+          params: { ...row.params, ...parseCustomAbutmentParamOverrides(src.params) },
+          metrics,
+        };
+      });
+      designedListRef.current = painted;
+      setDesignedList(painted);
       try {
         const fixtures = meta.teeth.map((row) => row.fixture);
         const pending: Array<{
@@ -2275,9 +2344,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           const jaw = row.fixture.jaw;
           const jawGeo = ctx.jawGeometry[jaw];
           if (!jawGeo) continue;
-          let rowOverrides = stripDirectEditShiftOverrides(
-            parseCustomAbutmentParamOverrides(row.overrides),
-          );
+          let rowOverrides = sharedAbutmentSyncParams(row.params, row.overrides);
           if ((rowOverrides.postTaperLink ?? 1) >= 0.5) delete rowOverrides.postTaperDeg;
           const restoredGumball = normalizeAbutmentEdit(row.gumballEdit);
           if (restoredGumball && row.gumballBaseParams) {
@@ -2303,6 +2370,17 @@ export function PracticeCustomAbutmentPreviewDialog({
               logicRules: logicRulesRef.current,
               patientName: ctx.patientName,
             });
+            if (epoch !== designEpochRef.current) {
+              next.worldGeometry.dispose();
+              next.predictedCrownWorldGeometry.dispose();
+              next.enameloplastyWorldGeometry?.dispose();
+              for (const prev of pending) {
+                prev.next.worldGeometry.dispose();
+                prev.next.predictedCrownWorldGeometry.dispose();
+                prev.next.enameloplastyWorldGeometry?.dispose();
+              }
+              return;
+            }
             pending.push({
               next,
               rowOverrides,
@@ -2312,6 +2390,14 @@ export function PracticeCustomAbutmentPreviewDialog({
           } catch (err) {
             console.warn("[custom-abutment] remote design rebuild failed", row.toothNumber, err);
           }
+        }
+        if (epoch !== designEpochRef.current) {
+          for (const prev of pending) {
+            prev.next.worldGeometry.dispose();
+            prev.next.predictedCrownWorldGeometry.dispose();
+            prev.next.enameloplastyWorldGeometry?.dispose();
+          }
+          return;
         }
         if (pending.length === 0) return;
         const built = pending.map((row) => row.next);
@@ -2394,11 +2480,19 @@ export function PracticeCustomAbutmentPreviewDialog({
   const enqueueRemoteDesignMeta = useCallback((raw: unknown) => {
     const meta = parseCustomAbutmentDesignSyncMeta(raw);
     if (!meta) return;
+    const force =
+      raw != null && typeof raw === "object" && (raw as { force?: boolean }).force === true;
     if (meta.updatedBy && meta.updatedBy === authUserIdRef.current) return;
-    if (meta.savedAt > 0 && meta.savedAt <= designSavedAtRef.current) return;
-    const run = () => applyRemoteDesignMetaRef.current(meta);
-    const next = designRunChainRef.current.then(run, run);
-    designRunChainRef.current = next.catch((err) => {
+    if (!force && meta.savedAt > 0 && meta.savedAt < designSavedAtRef.current) return;
+    if (!force && meta.savedAt > 0 && meta.savedAt === lastRemoteSavedAtRef.current) return;
+    if (force && meta.savedAt > 0) {
+      designSavedAtRef.current = meta.savedAt;
+      lastRemoteSavedAtRef.current = 0;
+    }
+    window.clearTimeout(editCommitTimerRef.current);
+    designEpochRef.current += 1;
+    const epoch = designEpochRef.current;
+    void applyRemoteDesignMetaRef.current(meta, epoch).catch((err) => {
       console.warn("[custom-abutment] remote design apply failed", err);
     });
   }, []);
@@ -2510,8 +2604,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       syncCandidateSceneForTooth(toothNumber);
       directEditRef.current?.sync();
       directEditRef.current?.tick();
+      persistDesign();
     },
-    [addDesignToScene, applySelectionPivot, removeDesignFromScene, syncCandidateSceneForTooth],
+    [addDesignToScene, applySelectionPivot, persistDesign, removeDesignFromScene, syncCandidateSceneForTooth],
   );
 
   selectCandidateRef.current = selectCandidateForTooth;
@@ -2527,6 +2622,19 @@ export function PracticeCustomAbutmentPreviewDialog({
     bridge.ui.visible = visibleTeeth;
     bridge.ui.expanded = expandedTeeth;
     bridge.onHistory = () => setEditRev((rev) => rev + 1);
+    bridge.onLive = (tooth, edit) => {
+      if (applyingGumballRef.current) return;
+      const transferId = transferIdRef.current;
+      if (!transferId) return;
+      lastLocalGumballAtRef.current = performance.now();
+      emitCustomAbutmentLive({
+        kind: "gumball",
+        transferId,
+        savedAt: Date.now(),
+        tooth,
+        edit,
+      });
+    };
     bridge.onShape = (summary) => {
       if (
         readOnlyRef.current ||
@@ -2555,7 +2663,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       applyGumballMetrics(summary);
       rememberAbutmentEdit(summary);
       window.clearTimeout(editCommitTimerRef.current);
-      editCommitTimerRef.current = window.setTimeout(() => persistDesign(), 400);
+      editCommitTimerRef.current = 0;
+      persistDesign();
     };
   }
 
@@ -3082,6 +3191,144 @@ export function PracticeCustomAbutmentPreviewDialog({
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
+  const sharedPoseKey = (pose: {
+    pos: number[];
+    quat: number[];
+    target: number[];
+    zoom: number;
+    top: number;
+    bottom: number;
+  }) =>
+    [...pose.pos, ...pose.quat, ...pose.target, pose.zoom, pose.top, pose.bottom]
+      .map((n) => n.toFixed(2))
+      .join(",");
+
+  const applyIncomingSharedView = useCallback((view: CustomAbutmentSharedView) => {
+    const cam = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!cam || !controls || !viewReadyRef.current) {
+      const pending = pendingSharedViewRef.current;
+      if (!pending || view.savedAt >= pending.savedAt) pendingSharedViewRef.current = view;
+      return;
+    }
+    const driving =
+      orbitingViewRef.current || performance.now() - lastLocalViewAtRef.current < 160;
+    if (driving) return;
+    if (view.updatedBy && view.updatedBy === authUserIdRef.current) return;
+    if (view.savedAt > 0 && view.savedAt <= lastSharedViewAtRef.current) return;
+    const host = hostRef.current;
+    applyingSharedViewRef.current = true;
+    viewAnimRef.current = null;
+    try {
+      applySavedView(
+        cam,
+        controls,
+        { ...view, transferId: transferIdRef.current },
+        host ? readHostSize(host).aspect : 1,
+      );
+      writeSavedView(transferIdRef.current, cam, controls.target);
+      if (view.savedAt > lastSharedViewAtRef.current) lastSharedViewAtRef.current = view.savedAt;
+      lastSentPoseKeyRef.current = sharedPoseKey(view);
+    } finally {
+      applyingSharedViewRef.current = false;
+    }
+  }, []);
+
+  const flushSharedView = useCallback(async (persist: boolean) => {
+    if (!viewSyncDirtyRef.current && !persist) return;
+    const cam = cameraRef.current;
+    const controls = controlsRef.current;
+    const token = String(authToken || "").trim();
+    const transferId = transferIdRef.current;
+    if (!cam || !controls || !transferId) {
+      viewSyncDirtyRef.current = false;
+      return;
+    }
+    const pose = {
+      pos: cam.position.toArray() as CustomAbutmentSharedView["pos"],
+      quat: cam.quaternion.toArray() as CustomAbutmentSharedView["quat"],
+      up: cam.up.toArray() as CustomAbutmentSharedView["up"],
+      target: controls.target.toArray() as CustomAbutmentSharedView["target"],
+      zoom: cam.zoom,
+      top: cam.top,
+      bottom: cam.bottom,
+      left: cam.left,
+      right: cam.right,
+    };
+    const key = sharedPoseKey(pose);
+    if (!persist && key === lastSentPoseKeyRef.current) {
+      viewSyncDirtyRef.current = false;
+      return;
+    }
+    viewSyncDirtyRef.current = false;
+    const savedAt = Date.now();
+    lastSentPoseKeyRef.current = key;
+    if (savedAt > lastSharedViewAtRef.current) lastSharedViewAtRef.current = savedAt;
+    if (persist) {
+      window.clearTimeout(viewPersistTimerRef.current);
+      viewPersistTimerRef.current = 0;
+    }
+    const sent = emitCustomAbutmentLive({
+      kind: "view",
+      transferId,
+      savedAt,
+      persist,
+      view: pose,
+    });
+    if (sent && !persist) {
+      window.clearTimeout(viewPersistTimerRef.current);
+      viewPersistTimerRef.current = window.setTimeout(() => {
+        viewPersistTimerRef.current = 0;
+        viewSyncDirtyRef.current = true;
+        void flushSharedView(true);
+      }, 180);
+    }
+    if (sent || !token) return;
+    if (viewSyncInflightRef.current) {
+      if (persist) viewSyncDirtyRef.current = true;
+      return;
+    }
+    viewSyncInflightRef.current = true;
+    try {
+      const result = await publishCustomAbutmentSharedView(token, transferId, savedAt, pose);
+      if (result.saved && result.savedAt > lastSharedViewAtRef.current) {
+        lastSharedViewAtRef.current = result.savedAt;
+      } else if (
+        result.view &&
+        !orbitingViewRef.current &&
+        performance.now() - lastLocalViewAtRef.current >= 160
+      ) {
+        applyIncomingSharedView(result.view);
+      }
+    } catch (err) {
+      console.warn("[custom-abutment] view sync failed", err);
+    } finally {
+      viewSyncInflightRef.current = false;
+      if (viewSyncDirtyRef.current) publishSharedViewRef.current(false);
+    }
+  }, [applyIncomingSharedView, authToken]);
+
+  publishSharedViewRef.current = (flush: boolean) => {
+    if (!viewReadyRef.current || applyingSharedViewRef.current) return;
+    lastLocalViewAtRef.current = performance.now();
+    viewSyncDirtyRef.current = true;
+    const gap = customAbutmentLiveConnected() ? 50 : 320;
+    const elapsed = performance.now() - viewSyncSentAtRef.current;
+    if (flush || elapsed >= gap) {
+      window.clearTimeout(viewSyncTimerRef.current);
+      viewSyncTimerRef.current = 0;
+      viewSyncSentAtRef.current = performance.now();
+      void flushSharedView(flush);
+      return;
+    }
+    if (viewSyncTimerRef.current) return;
+    viewSyncTimerRef.current = window.setTimeout(() => {
+      viewSyncTimerRef.current = 0;
+      viewSyncSentAtRef.current = performance.now();
+      void flushSharedView(false);
+    }, gap - elapsed);
+  };
+
   // WebGL 씬 초기화 (Radix DialogPortal이 마운트된 뒤 hostEl 콜백 ref로 실행)
   useEffect(() => {
     if (!open || !hostEl) return;
@@ -3131,11 +3378,22 @@ export function PracticeCustomAbutmentPreviewDialog({
     });
     controlsRef.current = controls;
     const persistView = () => {
-      if (!viewReadyRef.current) return;
+      if (!viewReadyRef.current || applyingSharedViewRef.current) return;
       writeSavedView(transferIdRef.current, camera, controls.target);
+      publishSharedViewRef.current(false);
+    };
+    const publishSettledView = () => {
+      if (!viewReadyRef.current || applyingSharedViewRef.current) return;
+      writeSavedView(transferIdRef.current, camera, controls.target);
+      publishSharedViewRef.current(true);
     };
     controls.addEventListener("start", () => {
       viewAnimRef.current = null;
+      orbitingViewRef.current = true;
+    });
+    controls.addEventListener("end", () => {
+      orbitingViewRef.current = false;
+      publishSettledView();
     });
     controls.addEventListener("change", persistView);
     const blockBrowserZoom = (event: WheelEvent) => {
@@ -3202,6 +3460,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (t >= 1) {
           viewAnimRef.current = null;
           controls.syncFromCamera();
+          if (viewReadyRef.current && !applyingSharedViewRef.current) {
+            writeSavedView(transferIdRef.current, camera, controls.target);
+            publishSharedViewRef.current(true);
+          }
+        } else if (viewReadyRef.current && !applyingSharedViewRef.current) {
+          publishSharedViewRef.current(false);
         }
       }
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
@@ -3274,7 +3538,15 @@ export function PracticeCustomAbutmentPreviewDialog({
     ro.observe(host);
 
     return () => {
-      persistView();
+      window.clearTimeout(viewSyncTimerRef.current);
+      viewSyncTimerRef.current = 0;
+      window.clearTimeout(viewPersistTimerRef.current);
+      viewPersistTimerRef.current = 0;
+      if (viewReadyRef.current && !applyingSharedViewRef.current) {
+        writeSavedView(transferIdRef.current, camera, controls.target);
+        viewSyncDirtyRef.current = true;
+        void flushSharedView(true);
+      }
       window.cancelAnimationFrame(raf);
       host.removeEventListener("wheel", blockBrowserZoom, { capture: true });
       host.removeEventListener("gesturestart", blockGesture, { capture: true });
@@ -3602,6 +3874,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
         pendingRemotePaintRef.current = remote?.paint ?? null;
+        pendingSharedViewRef.current = remote?.sharedView ?? pendingSharedViewRef.current;
         setRemoteMode(remote?.mode ?? null);
         setLabCheckedAt(remote?.choice?.labCheckedAt ?? null);
         setCancelDeadlineAt(remote?.choice?.cancelDeadlineAt ?? null);
@@ -3758,7 +4031,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
             if (!jawGeo) continue;
             let rowOverrides = stripDirectEditShiftOverrides(
-              parseCustomAbutmentParamOverrides(row.overrides),
+              sharedAbutmentSyncParams(row.params, row.overrides),
             );
             if ((rowOverrides.postTaperLink ?? 1) >= 0.5) {
               delete rowOverrides.postTaperDeg;
@@ -4351,12 +4624,27 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
 
         window.requestAnimationFrame(() => {
+          viewReadyRef.current = true;
           const saved = readSavedView(transferIdParam);
           const cam = cameraRef.current;
           const controls = controlsRef.current;
           const remotePaintView = pendingRemotePaintRef.current?.view ?? null;
-          if (saved && cam && controls) {
-            applySavedView(cam, controls, saved);
+          const shared = pendingSharedViewRef.current;
+          if (shared && cam && controls) {
+            applyingSharedViewRef.current = true;
+            applySavedView(
+              cam,
+              controls,
+              { ...shared, transferId: transferIdParam },
+              hostRef.current ? readHostSize(hostRef.current).aspect : 1,
+            );
+            if (shared.savedAt > lastSharedViewAtRef.current) {
+              lastSharedViewAtRef.current = shared.savedAt;
+            }
+            applyingSharedViewRef.current = false;
+          } else if (saved && cam && controls) {
+            const aspect = hostRef.current ? readHostSize(hostRef.current).aspect : 1;
+            applySavedView(cam, controls, saved, aspect);
           } else if (
             remotePaintView &&
             (pendingRemotePaintRef.current?.shapes?.length ?? 0) > 0 &&
@@ -4386,7 +4674,14 @@ export function PracticeCustomAbutmentPreviewDialog({
             paintStateRef.current.paintRef.current.replaceShapes(shapes, { silent: true });
             paintStateRef.current.setCount(shapes.length);
           }
-          viewReadyRef.current = true;
+          const arrived = pendingSharedViewRef.current;
+          if (
+            arrived &&
+            arrived !== shared &&
+            arrived.savedAt > lastSharedViewAtRef.current
+          ) {
+            applyIncomingSharedView(arrived);
+          }
         });
       } catch (err) {
         if (cancelled || (err as { name?: string } | null)?.name === "AbortError") return;
@@ -4530,15 +4825,24 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 치아별 조정값을 바꿔 다시 디자인하고 씬·목록·저장본을 바꾼다. */
   const applyDesignChanges = useCallback(
     async (changes: readonly DesignChange[], mode: "merge" | "replace" | "proposal" = "merge") => {
-      if (changes.length === 0) return;
+      if (changes.length === 0) return true;
+      const epoch = designEpochRef.current;
+      let committed = true;
       const run = async () => {
         const ctx = designContextRef.current;
-        if (!ctx) return;
+        if (!ctx || designEpochRef.current !== epoch) {
+          committed = false;
+          return;
+        }
         const teeth = [...new Set(changes.map((c) => c.toothNumber))];
         activeRedesignCountRef.current += 1;
         setRedesigning((prev) => [...new Set([...prev, ...teeth])]);
         try {
           for (const tooth of teeth) {
+            if (designEpochRef.current !== epoch) {
+              committed = false;
+              return;
+            }
             if (mode === "merge" && candidateChoicesRef.current[tooth]) {
               confirmCandidateForTooth(tooth, false);
             } else if (candidateChoicesRef.current[tooth]) {
@@ -4579,9 +4883,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ? { ...(proposal ?? preferenceOverridesForTooth(tooth, preferenceRef.current)) }
                 : { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged };
             await new Promise<void>((r) => window.setTimeout(r, 16));
+            if (designEpochRef.current !== epoch) {
+              committed = false;
+              return;
+            }
             let next: DesignedCustomAbutment;
+            let nextCands: Awaited<ReturnType<typeof designCustomAbutmentCandidates>> | null = null;
             if (mode === "replace" || mode === "proposal") {
-              const nextCands = await designCustomAbutmentCandidates({
+              nextCands = await designCustomAbutmentCandidates({
                 fixture: prev.fixture,
                 jawGeometry: jawGeo,
                 opposingGeometry: ctx.jawGeometry[prev.jaw === "upper" ? "lower" : "upper"],
@@ -4593,12 +4902,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                 patientName: ctx.patientName,
               });
               next = nextCands[0]!.design;
-              if (nextCands.length >= 2) {
-                candidateChoicesRef.current[tooth] = {
-                  candidates: nextCands,
-                  selectedIndex: null,
-                };
-              }
             } else {
               next = await designCustomAbutmentStl({
                 fixture: prev.fixture,
@@ -4611,6 +4914,23 @@ export function PracticeCustomAbutmentPreviewDialog({
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
               });
+            }
+            if (designEpochRef.current !== epoch) {
+              committed = false;
+              const drop = (design: DesignedCustomAbutment) => {
+                design.worldGeometry.dispose();
+                design.predictedCrownWorldGeometry.dispose();
+                design.enameloplastyWorldGeometry?.dispose();
+              };
+              if (nextCands) for (const cand of nextCands) drop(cand.design);
+              else drop(next);
+              return;
+            }
+            if (nextCands && nextCands.length >= 2) {
+              candidateChoicesRef.current[tooth] = {
+                candidates: nextCands,
+                selectedIndex: null,
+              };
             }
             ctx.overrides[tooth] = mode === "proposal" ? {} : merged;
             if (mode === "replace" || mode === "proposal") {
@@ -4650,6 +4970,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       const nextChain = designRunChainRef.current.then(run, run);
       designRunChainRef.current = nextChain;
       await nextChain;
+      return committed;
     },
     [
       addDesignToScene,
@@ -4671,7 +4992,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       );
       if (!ctx || targets.length === 0) return;
       labGeometryTouchedRef.current = true;
-      await applyDesignChanges(
+      const epoch = designEpochRef.current;
+      const applied = await applyDesignChanges(
         targets.map((toothNumber) => {
           const clean = stripDirectEditShiftOverrides(ctx.overrides[toothNumber] ?? {});
           delete clean.postHeightOffsetMm;
@@ -4687,7 +5009,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         }),
         "replace",
       );
-      if (Object.keys(candidateChoicesRef.current).length === 0) {
+      if (applied && designEpochRef.current === epoch) {
         persistDesign();
       }
     },
@@ -4761,7 +5083,134 @@ export function PracticeCustomAbutmentPreviewDialog({
     });
   }, [open, transferIdParam]);
 
-  // 상대가 조정값을 저장하면 메시 없이 받아, 이쪽 스캔 위에서 형상을 다시 만든다.
+  // 표시·선택·검볼이 바뀌면 상대 화면도 같이 맞춘다.
+  useEffect(() => {
+    if (!open || !transferIdParam) return;
+    if (applyingChromeRef.current) {
+      applyingChromeRef.current = false;
+      sentChromeRevRef.current = chromeRevRef.current;
+      return;
+    }
+    if (chromeRevRef.current === 0 || chromeRevRef.current === sentChromeRevRef.current) return;
+    sentChromeRevRef.current = chromeRevRef.current;
+    emitCustomAbutmentLive({
+      kind: "chrome",
+      transferId: transferIdParam,
+      savedAt: Date.now(),
+      chrome: {
+        showUpper: visibleJaws.upper,
+        showLower: visibleJaws.lower,
+        scanTransparency,
+        showFinishLine,
+        showFixtureAnalog,
+        gumballOn,
+        colorMapping,
+        centerGuide,
+        selectedTeeth,
+        visibleTeeth,
+        shownScanbodies,
+        shownPredictedCrowns,
+        expandedTeeth,
+      },
+    });
+  }, [
+    centerGuide,
+    colorMapping,
+    expandedTeeth,
+    gumballOn,
+    open,
+    scanTransparency,
+    selectedTeeth,
+    showFinishLine,
+    showFixtureAnalog,
+    shownPredictedCrowns,
+    shownScanbodies,
+    transferIdParam,
+    visibleJaws,
+    visibleTeeth,
+  ]);
+
+  useEffect(() => {
+    if (!open || !transferIdParam) return;
+    emitCustomAbutmentLive({ kind: "hello", transferId: transferIdParam });
+  }, [open, transferIdParam]);
+
+  // 상대가 화면을 돌리거나 옮기면 같은 방향으로 맞춘다. 내가 조작 중이면 받지 않는다.
+  useEffect(() => {
+    if (!open || !transferIdParam) return;
+    return onAppEvent((evt) => {
+      if (evt.type !== "practice:custom-abutment-view") return;
+      const view = parseCustomAbutmentSharedView(evt.data);
+      if (!view) return;
+      const transferId = String((evt.data as { transferId?: string } | null)?.transferId || "");
+      if (transferId !== transferIdParam) return;
+      applyIncomingSharedView(view);
+    });
+  }, [applyIncomingSharedView, open, transferIdParam]);
+
+  useEffect(() => {
+    if (!open || !transferIdParam) return;
+    return onAppEvent((evt) => {
+      if (evt.type === "practice:custom-abutment-gumball") {
+        const data = evt.data as {
+          transferId?: string;
+          updatedBy?: string;
+          tooth?: string;
+          edit?: AbutmentEdit | null;
+        } | null;
+        if (!data || data.transferId !== transferIdParam) return;
+        if (data.updatedBy && data.updatedBy === authUserIdRef.current) return;
+        if (performance.now() - lastLocalGumballAtRef.current < 160) return;
+        const tooth = String(data.tooth || "");
+        if (!/^[1-4][1-8]$/.test(tooth)) return;
+        applyingGumballRef.current = true;
+        try {
+          directEditRef.current?.previewRemote(tooth, normalizeAbutmentEdit(data.edit));
+        } finally {
+          applyingGumballRef.current = false;
+        }
+        return;
+      }
+      if (evt.type !== "practice:custom-abutment-chrome") return;
+      const data = evt.data as Record<string, unknown> | null;
+      if (!data || String(data.transferId || "") !== transferIdParam) return;
+      if (data.updatedBy && String(data.updatedBy) === authUserIdRef.current) return;
+      if (chromeRevRef.current !== sentChromeRevRef.current) return;
+      applyingChromeRef.current = true;
+      suppressPivotSyncRef.current = true;
+      setVisibleJaws((prev) => ({
+        upper: data.showUpper === false ? false : data.showUpper === true ? true : prev.upper,
+        lower: data.showLower === false ? false : data.showLower === true ? true : prev.lower,
+      }));
+      if (typeof data.scanTransparency === "number") setScanTransparency(data.scanTransparency);
+      if (typeof data.showFinishLine === "boolean") setShowFinishLine(data.showFinishLine);
+      if (typeof data.showFixtureAnalog === "boolean") setShowFixtureAnalog(data.showFixtureAnalog);
+      if (typeof data.gumballOn === "boolean") setGumballOn(data.gumballOn);
+      if (typeof data.colorMapping === "boolean") setColorMapping(data.colorMapping);
+      if (data.centerGuide === "off" || data.centerGuide === "center" || data.centerGuide === "grid") {
+        setCenterGuide(data.centerGuide);
+      }
+      if (Array.isArray(data.selectedTeeth)) {
+        const teeth = data.selectedTeeth.map(String).filter((tooth) => /^[1-4][1-8]$/.test(tooth));
+        selectedTeethRef.current = teeth;
+        setSelectedTeeth(teeth);
+      }
+      if (data.visibleTeeth && typeof data.visibleTeeth === "object") {
+        setVisibleTeeth(data.visibleTeeth as Record<string, boolean>);
+      }
+      if (data.shownScanbodies && typeof data.shownScanbodies === "object") {
+        setShownScanbodies(data.shownScanbodies as Record<string, boolean>);
+      }
+      if (data.shownPredictedCrowns && typeof data.shownPredictedCrowns === "object") {
+        setShownPredictedCrowns(data.shownPredictedCrowns as Record<string, boolean>);
+      }
+      if (data.expandedTeeth && typeof data.expandedTeeth === "object") {
+        setExpandedTeeth(data.expandedTeeth as Record<string, boolean>);
+      }
+    });
+  }, [open, transferIdParam]);
+
+  // 상대가 저장하면 채팅처럼 바로 수치를 바꾸고, 같은 조정값으로 형상을 다시 만든다.
   useEffect(() => {
     if (!open || !transferIdParam) return;
     return onAppEvent((evt) => {
@@ -4884,7 +5333,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (field === "axisSource") {
         directEditRef.current?.clear(changes.map((change) => change.toothNumber));
       }
-      void applyDesignChanges(changes).then(() => {
+      void applyDesignChanges(changes).then((applied) => {
+        if (!applied) return;
         persistDesign();
       });
     },
@@ -5412,6 +5862,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   const touchViewer = (key: string) => {
     viewerTouchRef.current.add(key);
+    chromeRevRef.current += 1;
   };
 
   useEffect(() => {
@@ -5650,7 +6101,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       targets.map((toothNumber) => ({ toothNumber, params: {} })),
       "proposal",
     )
-      .then(() => {
+      .then((applied) => {
+        if (!applied) return;
         for (const t of targets) editedInfoFieldsRef.current[t]?.clear();
         persistDesign();
       })
@@ -5772,15 +6224,16 @@ export function PracticeCustomAbutmentPreviewDialog({
         hideClose
         onContextMenu={(e) => e.preventDefault()}
       >
-        <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2.5 pl-4 pr-14 text-left">
-          <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+        <DialogHeader className="shrink-0 flex-row items-start gap-2 space-y-0 border-b bg-white/95 py-2 pl-3 pr-2 text-left">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex min-w-[min(100%,14rem)] flex-1 flex-wrap items-center gap-x-2 gap-y-1">
             <AbutsLogo
               variant="light"
               className="pointer-events-none shrink-0"
               iconClassName="h-7 w-7"
               wordmarkClassName="text-base"
             />
-            <DialogTitle className="shrink-0 text-base sm:text-lg">
+            <DialogTitle className="shrink-0 text-base">
               커스텀어벗 디자인
             </DialogTitle>
             {reviewItems.length > 0 ? (
@@ -5794,12 +6247,12 @@ export function PracticeCustomAbutmentPreviewDialog({
                 onIndexChange={(next) => onReviewIndexChange?.(next)}
               />
             ) : caseTitle ? (
-              <span className="truncate text-sm font-medium text-foreground">
+              <span className="min-w-0 max-w-full flex-1 basis-32 truncate text-sm font-medium text-foreground">
                 {caseTitle}
               </span>
             ) : null}
             {caseDatesLabel ? (
-              <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:inline">
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                 {caseDatesLabel}
               </span>
             ) : null}
@@ -5819,7 +6272,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex max-w-full flex-wrap items-center gap-1">
             {ready && canEditDesign ? (
               <>
                 <HeaderIconButton
@@ -5987,9 +6440,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             </Popover>
           ) : null}
           </div>
+          </div>
 
           <DialogClose
-            className="absolute right-2 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            className="relative z-20 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             aria-label="닫기"
           >
             <X className="h-7 w-7" />
@@ -6029,14 +6483,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {viewerLive ? (
-              <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex flex-col items-center gap-2 px-3">
-                <div
-                  className={cn(
-                    "pointer-events-auto max-w-full rounded-lg border bg-background/95 p-1 shadow-sm",
-                    WIDE_CLUSTER_ROW_CLASS,
-                  )}
-                >
-                  <div className="flex shrink-0 items-center gap-1.5">
+              <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center pl-[7.25rem] pr-[min(46%,19rem)]">
+                <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-1.5 rounded-lg border bg-background/95 p-1 shadow-sm">
+                  <div className="flex items-center gap-1.5">
                     {availableJaws.upper ? (
                       <ToolbarToggle
                         active={visibleJaws.upper}
@@ -6087,7 +6536,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       </div>
                     ) : null}
                   </div>
-                  <div className={cn("flex shrink-0 items-center gap-1.5", WIDE_CLUSTER_SEPARATOR_CLASS)}>
+                  <div className="flex items-center gap-1.5">
                     <ToolbarToggle
                       active={showFinishLine}
                       label="피니시라인"
@@ -6205,13 +6654,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 boundsRef={viewerFrameRef}
                 panelRef={designTreeStackRef}
                 peerRefs={[viewCubeStackRef, chatPanelRef, viewerBottomChromeRef]}
-                minW={220}
+                minW={200}
                 minH={160}
                 hugContent={
                   designedList.length > 0 &&
                   designedList.every((row) => expandedTeeth[row.toothNumber] === false)
                 }
-                anchorClassName="right-3 top-3 w-[17.5rem] max-h-[calc(100%-1.5rem)]"
+                anchorClassName="right-3 top-3 w-[min(17.5rem,calc(100%-0.75rem))] max-h-[calc(100%-4.5rem)]"
               >
                 <PracticeCustomAbutmentDesignTree
                     className="min-h-0 w-full"
@@ -6219,17 +6668,19 @@ export function PracticeCustomAbutmentPreviewDialog({
                     visibleTeeth={visibleTeeth}
                     selectedTeeth={selectedTeeth}
                     redesigning={redesigning}
-                    onToggleVisible={(toothNumber) =>
+                    onToggleVisible={(toothNumber) => {
+                      chromeRevRef.current += 1;
                       setVisibleTeeth((prev) => ({
                         ...prev,
                         [toothNumber]: prev[toothNumber] === false,
-                      }))
-                    }
-                    onSetAllVisible={(visible) =>
+                      }));
+                    }}
+                    onSetAllVisible={(visible) => {
+                      chromeRevRef.current += 1;
                       setVisibleTeeth(
                         Object.fromEntries(designedList.map((d) => [d.toothNumber, visible])),
-                      )
-                    }
+                      );
+                    }}
                     shownScanbodies={shownScanbodies}
                     onToggleScanbody={(toothNumber) => {
                       touchViewer("scanbodies");
@@ -6316,8 +6767,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                 {gracePending ||
                 (remoteMode !== "confirmed" && remoteMode !== "manual") ||
                 (remoteMode === "confirmed" && !labCheckedAt) ? (
-                  <div className="pointer-events-auto">
-                    <div className="flex items-center gap-2.5 rounded-xl border bg-background/95 p-1.5 shadow-lg backdrop-blur">
+                  <div className="pointer-events-auto max-w-full">
+                    <div className="flex max-w-full flex-wrap items-center justify-center gap-2.5 rounded-xl border bg-background/95 p-1.5 shadow-lg backdrop-blur">
                     {gracePending ? (
                       <AbutmentDesignGraceControl
                         deadlineAt={gracePromoteAt}

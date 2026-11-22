@@ -606,6 +606,24 @@ export function parseCustomAbutmentParamOverrides(
   return out;
 }
 
+/**
+ * 상대가 저장한 디자인. 전체 조정값 위에 이번 수정만 덮는다.
+ * 검볼 이동(축 이동·요)은 메시에 따로 얹으므로 여기서 빼 인접 크기 맞춤이 다시 키우지 않게 한다.
+ */
+export function sharedAbutmentSyncParams(
+  params: unknown,
+  overrides: unknown,
+): Partial<CustomAbutmentDesignParams> {
+  const merged: Partial<CustomAbutmentDesignParams> = {
+    ...parseCustomAbutmentParamOverrides(params),
+    ...parseCustomAbutmentParamOverrides(overrides),
+  };
+  delete merged.axisShiftLabialMm;
+  delete merged.axisShiftMesialMm;
+  delete merged.postYawDeg;
+  return merged;
+}
+
 export function parseCustomAbutmentPreference(value: unknown): CustomAbutmentDesignPreference {
   if (!value || typeof value !== "object") return EMPTY_CUSTOM_ABUTMENT_PREFERENCE;
   const raw = value as { scopes?: Record<string, unknown>; notes?: unknown; updatedAt?: unknown };

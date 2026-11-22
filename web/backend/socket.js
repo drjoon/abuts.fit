@@ -15,6 +15,11 @@ import {
   labHelperAlarmFromAppEvent,
 } from "./services/labHelperAlarm.service.js";
 import { applyAdminDepartmentWorkspace } from "./utils/adminDepartmentWorkspace.js";
+import {
+  allowCustomAbutmentLive,
+  forgetCustomAbutmentLive,
+  relayCustomAbutmentLive,
+} from "./services/customAbutmentLiveSync.js";
 
 let io;
 
@@ -392,8 +397,17 @@ export function initializeSocket(server) {
       }
     });
 
+    // 커스텀어벗 화면. 저장 전에 상대 창으로 넘긴다.
+    socket.on("custom-abutment:live", (data) => {
+      if (!allowCustomAbutmentLive(socket.id)) return;
+      void relayCustomAbutmentLive(socket, data, emitAppEventToUser).catch((err) =>
+        console.warn("[custom-abutment] live relay failed", err?.message || err),
+      );
+    });
+
     // 연결 해제
     socket.on("disconnect", () => {
+      forgetCustomAbutmentLive(socket.id);
       console.log(`사용자 연결 해제: ${socket.userName} (${socket.userId})`);
     });
   });

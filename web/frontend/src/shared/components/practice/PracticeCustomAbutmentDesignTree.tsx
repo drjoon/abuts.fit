@@ -707,7 +707,7 @@ function EditableNumberRow({
     <div
       className={cn(
         "flex h-7 items-center overflow-hidden rounded-md border bg-background pl-1.5 pr-0.5 transition-colors focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
-        leading ? "min-w-0 flex-1 shrink" : "ml-auto w-[8.75rem] shrink-0",
+        leading ? "min-w-0 flex-1 truncate" : "ml-auto w-[7.25rem] shrink-0",
         inactive && "border-dashed",
         warning &&
           "border-amber-400/90 bg-amber-500/10 focus-within:border-amber-500 focus-within:ring-amber-500/40",
@@ -821,7 +821,7 @@ function EditableNumberRow({
   const labelNode = (
     <span
       className={cn(
-        "shrink-0 select-none text-muted-foreground",
+        "min-w-0 shrink truncate select-none text-muted-foreground",
         !disabled && "cursor-ew-resize hover:text-foreground",
         hint && "cursor-help",
       )}
@@ -853,7 +853,7 @@ function EditableNumberRow({
         labelNode
       )}
       {leading ? (
-        <div className="ml-auto flex w-[8.75rem] shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex w-[7.25rem] shrink-0 items-center gap-1.5">
           {leading}
           {inputBox}
         </div>
@@ -1021,7 +1021,7 @@ function EditableAxisSourceRow({
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
-          "shrink-0 select-none text-muted-foreground",
+          "min-w-0 shrink truncate select-none text-muted-foreground",
           !disabled && "cursor-ew-resize hover:text-foreground",
         )}
         title={disabled ? undefined : "좌우로 드래그해 기준 변경"}
@@ -1078,7 +1078,7 @@ function EditableAxisSourceRow({
       </span>
       <div
         className={cn(
-          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "ml-auto flex h-7 w-[7.25rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           disabled && "opacity-60",
         )}
       >
@@ -1322,7 +1322,7 @@ function EditableRangeRow({
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
       <span
         className={cn(
-          "shrink-0 select-none text-muted-foreground",
+          "min-w-0 shrink truncate select-none text-muted-foreground",
           !disabled && "cursor-ew-resize hover:text-foreground",
         )}
         title={
@@ -1341,7 +1341,7 @@ function EditableRangeRow({
       </span>
       <div
         className={cn(
-          "ml-auto flex h-7 w-[8.75rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          "ml-auto flex h-7 w-[7.25rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
           warning &&
             "border-amber-400/90 bg-amber-500/10 focus-within:border-amber-500 focus-within:ring-amber-500/40",
           scrub &&

@@ -334,6 +334,8 @@ export type AbutmentEditBridge = {
   onCommit: (summary: AbutmentEditSummary) => void;
   /** 드래그 중과 확정 직후. 어벗 정보 패널만 고치고 저장은 onCommit이 한다. */
   onShape?: (summary: AbutmentEditSummary) => void;
+  /** 드래그 중인 검볼. 상대 화면이 같은 변형을 바로 그린다. */
+  onLive?: (tooth: string, edit: AbutmentEdit | null) => void;
   onHistory: () => void;
 };
 
@@ -2726,6 +2728,18 @@ export class AbutmentDirectEditSession {
     }
   }
 
+  /** 상대가 검볼로 움직이는 중이다. 이 화면의 드래그는 건드리지 않는다. */
+  previewRemote(tooth: string, edit: AbutmentEdit | null) {
+    if (this.drag) return;
+    if (!edit || editsEqual(edit, EMPTY_EDIT)) this.edits.delete(tooth);
+    else this.edits.set(tooth, cloneAbutmentEdit(edit));
+    if (!this.views.has(tooth)) this.sync({ quiet: true });
+    if (!this.views.has(tooth)) return;
+    this.shapeBatch = true;
+    this.show(tooth, false, true, true);
+    this.tick();
+  }
+
   /**
    * 대합 거리·포스트 높이로 세로만 다시 만든 뒤, 그 세로 스케일을 검볼에서 뺀다.
    * 순측·근심 굵기 스케일은 남겨 다른 항목을 고쳐도 키운 크기가 유지된다.
@@ -2949,6 +2963,7 @@ export class AbutmentDirectEditSession {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const drag = this.drag;
     this.drag = null;
+    this.emitLive(drag.tooth, true);
     try {
       this.dom?.releasePointerCapture(event.pointerId);
     } catch {
@@ -3116,6 +3131,7 @@ export class AbutmentDirectEditSession {
       this.previewSculpt(drag, event, view, edit);
       this.edits.set(drag.tooth, edit);
       this.show(drag.tooth, false);
+      this.emitLive(drag.tooth);
       return;
     }
     const gesture = this.gestureFromDrag(drag, event, view);
@@ -3134,6 +3150,17 @@ export class AbutmentDirectEditSession {
       this.show(mate.tooth, false);
     }
     this.shapeBatch = true;
+    this.emitLive(drag.tooth);
+  }
+
+  private liveAt = 0;
+
+  private emitLive(tooth: string, force = false) {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (!force && now - this.liveAt < 50) return;
+    this.liveAt = now;
+    const edit = this.edits.get(tooth);
+    this.bridge.onLive?.(tooth, edit ? cloneAbutmentEdit(edit) : null);
   }
 
   private gestureFromDrag(

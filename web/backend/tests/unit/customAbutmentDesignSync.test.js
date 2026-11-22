@@ -1,4 +1,8 @@
-import { isStaleDesignWrite, toDesignSyncMeta } from "../../services/customAbutmentDesignSync.js";
+import {
+  isStaleDesignWrite,
+  sanitizeSharedDesignView,
+  toDesignSyncMeta,
+} from "../../services/customAbutmentDesignSync.js";
 
 describe("custom abutment design sync meta", () => {
   test("a save based on an older server time is stale", () => {
@@ -57,5 +61,22 @@ describe("custom abutment design sync meta", () => {
     expect(meta.choice.cancelDeadlineAt).toBe("2026-11-21T09:05:00.000Z");
     expect(meta.choice.gracePromoteAt).toBeNull();
     expect(meta.teeth.map((row) => row.toothNumber)).toEqual(["16"]);
+  });
+
+  test("shared view keeps a camera pose and drops a broken one", () => {
+    const view = sanitizeSharedDesignView({
+      pos: [0, 0, 80],
+      quat: [0, 0, 0, 1],
+      up: [0, 1, 0],
+      target: [1, 2, 3],
+      zoom: 1.5,
+      top: 20,
+      bottom: -20,
+      left: -30,
+      right: 30,
+    });
+    expect(view.zoom).toBe(1.5);
+    expect(view.target).toEqual([1, 2, 3]);
+    expect(sanitizeSharedDesignView({ pos: [0, 0, 1], target: [0, 0, 1] })).toBeNull();
   });
 });

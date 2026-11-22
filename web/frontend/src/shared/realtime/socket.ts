@@ -252,6 +252,17 @@ export function emitTyping(roomId: string, isTyping: boolean) {
   socket?.emit("typing", { roomId, isTyping });
 }
 
+/** 커스텀어벗 화면을 저장보다 먼저 상대에게 보낸다. 소켓이 없으면 false. */
+export function emitCustomAbutmentLive(payload: unknown): boolean {
+  if (!socket?.connected) return false;
+  socket.emit("custom-abutment:live", payload);
+  return true;
+}
+
+export function customAbutmentLiveConnected(): boolean {
+  return Boolean(socket?.connected);
+}
+
 export function markMessagesAsRead(roomId: string, messageIds: string[]) {
   socket?.emit("mark-as-read", { roomId, messageIds });
 }
