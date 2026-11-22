@@ -26,7 +26,7 @@
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
-// - 2026-11-22: 좁은 화면 헤더는 제목·도구 / 의뢰 정보 2줄. 1280px 이상은 한 줄.
+// - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -6701,227 +6701,241 @@ export function PracticeCustomAbutmentPreviewDialog({
         hideClose
         onContextMenu={(e) => e.preventDefault()}
       >
-        <DialogHeader className="shrink-0 flex-row items-start gap-2 space-y-0 border-b bg-white/95 py-2 pl-3 pr-2 text-left min-[1280px]:items-center">
-          {/* 1280px 미만: 1줄 제목·도구, 2줄 의뢰. 이상은 한 줄. 줄바꿈으로 3줄이 되지 않게 고정한다. */}
-          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 min-[1280px]:flex min-[1280px]:flex-nowrap min-[1280px]:gap-x-3">
-          <div className="flex min-w-0 items-center gap-2 min-[1280px]:shrink-0">
-            <AbutsLogo
-              variant="light"
-              className="pointer-events-none shrink-0"
-              iconClassName="h-7 w-7"
-              wordmarkClassName="text-base"
-            />
-            <DialogTitle className="min-w-0 truncate whitespace-nowrap text-base">
-              커스텀어벗 디자인
-            </DialogTitle>
-          </div>
+        <DialogHeader className="shrink-0 flex-row items-center gap-2 space-y-0 border-b bg-white/95 py-2 pl-3 pr-2 text-left">
+          {/* 미디어쿼리 없이 한 줄. 의뢰 문구만 줄어든다. */}
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-3">
+            <div className="flex shrink-0 items-center gap-2">
+              <AbutsLogo
+                variant="light"
+                className="pointer-events-none shrink-0"
+                iconClassName="h-7 w-7"
+                wordmarkClassName="text-base"
+              />
+              <DialogTitle className="shrink-0 whitespace-nowrap text-base">
+                커스텀어벗 디자인
+              </DialogTitle>
+            </div>
 
-          <div className="flex shrink-0 items-center gap-1 min-[1280px]:order-3">
-            {ready && canEditDesign ? (
-              <>
+            {reviewItems.length > 0 ||
+            caseTitle ||
+            caseDatesLabel ||
+            (ready && restoredFromCache) ||
+            remoteMode === "confirmed" ||
+            remoteMode === "manual" ? (
+              <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-2 overflow-hidden">
+                {reviewItems.length > 0 ? (
+                  <PracticeAbutmentDesignReviewRail
+                    items={reviewItems.map((item, index) =>
+                      index === reviewIndex && caseTitle
+                        ? { ...item, label: caseTitle }
+                        : item,
+                    )}
+                    index={reviewIndex}
+                    onIndexChange={(next) => onReviewIndexChange?.(next)}
+                  />
+                ) : caseTitle ? (
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                    {caseTitle}
+                  </span>
+                ) : null}
+                {caseDatesLabel ? (
+                  <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                    {caseDatesLabel}
+                  </span>
+                ) : null}
+                {ready && restoredFromCache ? (
+                  <span className="hidden shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground sm:inline-flex">
+                    저장된 디자인
+                  </span>
+                ) : null}
+                {remoteMode === "confirmed" ? (
+                  <span className="hidden shrink-0 whitespace-nowrap rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary sm:inline-flex">
+                    확정됨
+                  </span>
+                ) : remoteMode === "manual" ? (
+                  <span className="hidden shrink-0 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900 sm:inline-flex">
+                    수작업 의뢰
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="min-w-0 flex-1" />
+            )}
+
+            <div className="flex shrink-0 items-center gap-1">
+              {ready && canEditDesign ? (
+                <>
+                  <HeaderIconButton
+                    label="검볼"
+                    active={gumballOn && !paint.paintOn}
+                    tip={
+                      <>
+                        화살표는 이동, 우상 점은 축·평면 크기입니다.
+                        <br />
+                        좌하 파란 호는 회전입니다.
+                        <br />
+                        커넥션과 2° 테이퍼는 고정이고, 커프부터 바뀝니다.
+                      </>
+                    }
+                    onClick={() => {
+                      touchViewer("gumball");
+                      if (paint.paintOn) paint.setPaintOn(false);
+                      setGumballOn((on) => {
+                        viewerPrefsRef.current = { ...viewerPrefsRef.current, gumballOn: !on };
+                        return !on;
+                      });
+                    }}
+                  >
+                    <Axis3d className="h-4 w-4" />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    label="되돌리기"
+                    tip={
+                      <>
+                        직전 변형을 되돌립니다.
+                        <br />
+                        Ctrl+Z 단축키와 같습니다.
+                      </>
+                    }
+                    disabled={!canUndoEdit}
+                    onClick={() => directEditRef.current?.undo()}
+                  >
+                    <Undo2 className="h-4 w-4" />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    label="다시실행"
+                    tip={
+                      <>
+                        되돌린 변형을 다시 적용합니다.
+                        <br />
+                        Ctrl+Y 단축키와 같습니다.
+                      </>
+                    }
+                    disabled={!canRedoEdit}
+                    onClick={() => directEditRef.current?.redo()}
+                  >
+                    <Redo2 className="h-4 w-4" />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    label="초기값"
+                    tip={
+                      <>
+                        선택한 어벗을 처음 계산한 형상으로 되돌립니다.
+                        <br />
+                        선택된 치아가 없으면 바꾼 어벗을 모두 되돌립니다.
+                      </>
+                    }
+                    disabled={!canResetAny || redesigning.length > 0}
+                    onClick={handleResetToInitial}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </HeaderIconButton>
+                </>
+              ) : null}
+              {viewerLive && !readOnly ? (
                 <HeaderIconButton
-                  label="검볼"
-                  active={gumballOn && !paint.paintOn}
+                  label="페인트"
+                  active={paint.paintOn}
                   tip={
                     <>
-                      화살표는 이동, 우상 점은 축·평면 크기입니다.
+                      3D 모델 위에 표시를 남기고 기공소와 공유합니다.
                       <br />
-                      좌하 파란 호는 회전입니다.
-                      <br />
-                      커넥션과 2° 테이퍼는 고정이고, 커프부터 바뀝니다.
+                      왼쪽 드래그는 그리기, 오른쪽 드래그는 화면 회전입니다.
                     </>
                   }
-                  onClick={() => {
-                    touchViewer("gumball");
-                    if (paint.paintOn) paint.setPaintOn(false);
-                    setGumballOn((on) => {
-                      viewerPrefsRef.current = { ...viewerPrefsRef.current, gumballOn: !on };
-                      return !on;
-                    });
-                  }}
+                  onClick={() => paint.setPaintOn((on) => !on)}
                 >
-                  <Axis3d className="h-4 w-4" />
+                  <div className="relative flex items-center justify-center">
+                    <Paintbrush className="h-4 w-4" />
+                    {!paint.paintOn && paint.count > 0 ? (
+                      <span className="absolute -right-2 -top-2 rounded-full bg-primary px-1 text-[0.625rem] font-semibold leading-3.5 text-primary-foreground">
+                        {paint.count}
+                      </span>
+                    ) : null}
+                  </div>
                 </HeaderIconButton>
-                <HeaderIconButton
-                  label="되돌리기"
-                  tip={
-                    <>
-                      직전 변형을 되돌립니다.
-                      <br />
-                      Ctrl+Z 단축키와 같습니다.
-                    </>
-                  }
-                  disabled={!canUndoEdit}
-                  onClick={() => directEditRef.current?.undo()}
-                >
-                  <Undo2 className="h-4 w-4" />
-                </HeaderIconButton>
-                <HeaderIconButton
-                  label="다시실행"
-                  tip={
-                    <>
-                      되돌린 변형을 다시 적용합니다.
-                      <br />
-                      Ctrl+Y 단축키와 같습니다.
-                    </>
-                  }
-                  disabled={!canRedoEdit}
-                  onClick={() => directEditRef.current?.redo()}
-                >
-                  <Redo2 className="h-4 w-4" />
-                </HeaderIconButton>
-                <HeaderIconButton
-                  label="초기값"
-                  tip={
-                    <>
-                      선택한 어벗을 처음 계산한 형상으로 되돌립니다.
-                      <br />
-                      선택된 치아가 없으면 바꾼 어벗을 모두 되돌립니다.
-                    </>
-                  }
-                  disabled={!canResetAny || redesigning.length > 0}
-                  onClick={handleResetToInitial}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                </HeaderIconButton>
-              </>
-            ) : null}
-            {viewerLive && !readOnly ? (
+              ) : null}
               <HeaderIconButton
-                label="페인트"
-                active={paint.paintOn}
+                label="크라운 스캔"
+                disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
                 tip={
                   <>
-                    3D 모델 위에 표시를 남기고 기공소와 공유합니다.
+                    PLY로 저장합니다.
                     <br />
-                    왼쪽 드래그는 그리기, 오른쪽 드래그는 화면 회전입니다.
+                    칼라가 보입니다.
                   </>
                 }
-                onClick={() => paint.setPaintOn((on) => !on)}
+                onClick={() => void downloadCrownWorkScans()}
               >
-                <div className="relative flex items-center justify-center">
-                  <Paintbrush className="h-4 w-4" />
-                  {!paint.paintOn && paint.count > 0 ? (
-                    <span className="absolute -right-2 -top-2 rounded-full bg-primary px-1 text-[0.625rem] font-semibold leading-3.5 text-primary-foreground">
-                      {paint.count}
-                    </span>
-                  ) : null}
-                </div>
+                {crownDownloadBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
               </HeaderIconButton>
-            ) : null}
-            <HeaderIconButton
-              label="크라운 스캔"
-              disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
-              tip={
-                <>
-                  PLY로 저장합니다.
-                  <br />
-                  칼라가 보입니다.
-                </>
-              }
-              onClick={() => void downloadCrownWorkScans()}
-            >
-              {crownDownloadBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-            </HeaderIconButton>
-          {ready ? (
-            <Popover>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 w-8 shrink-0 px-0"
-                      aria-label="설정"
-                    >
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                  </PopoverTrigger>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="z-[520]">
-                  설정
-                </TooltipContent>
-              </Tooltip>
-              <PopoverContent align="end" className="z-[520] w-60 space-y-3 p-3 text-xs">
-                <label className="flex items-center justify-between gap-3">
-                  <span className="font-medium">스캔색</span>
-                  <Switch
-                    checked={colorMapping}
-                    onCheckedChange={(checked) => {
-                      touchViewer("color");
-                      viewerPrefsRef.current = { ...viewerPrefsRef.current, colorMapping: checked };
-                      setColorMapping(checked);
-                    }}
-                  />
-                </label>
-                <div className="space-y-1.5">
-                  <span className="font-medium">가이드</span>
-                  <div className="grid grid-cols-3 gap-1">
-                    {CENTER_GUIDE_OPTIONS.map((opt) => (
-                      <Button
-                        key={opt.value}
-                        type="button"
-                        size="sm"
-                        variant={centerGuide === opt.value ? "default" : "outline"}
-                        className="h-7 px-2 text-xs"
-                        onClick={() => {
-                          touchViewer("guide");
-                          viewerPrefsRef.current = { ...viewerPrefsRef.current, centerGuide: opt.value };
-                          setCenterGuide(opt.value);
+              {ready ? (
+                <Popover>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 w-8 shrink-0 px-0"
+                          aria-label="설정"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="z-[520]">
+                      설정
+                    </TooltipContent>
+                  </Tooltip>
+                  <PopoverContent align="end" className="z-[520] w-60 space-y-3 p-3 text-xs">
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="font-medium">스캔색</span>
+                      <Switch
+                        checked={colorMapping}
+                        onCheckedChange={(checked) => {
+                          touchViewer("color");
+                          viewerPrefsRef.current = {
+                            ...viewerPrefsRef.current,
+                            colorMapping: checked,
+                          };
+                          setColorMapping(checked);
                         }}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-          ) : null}
-          </div>
-          {reviewItems.length > 0 || caseTitle || caseDatesLabel || (ready && restoredFromCache) || remoteMode === "confirmed" || remoteMode === "manual" ? (
-            <div className="col-span-2 flex min-w-0 flex-nowrap items-center gap-x-2 min-[1280px]:order-2 min-[1280px]:flex-1">
-              {reviewItems.length > 0 ? (
-                <PracticeAbutmentDesignReviewRail
-                  items={reviewItems.map((item, index) =>
-                    index === reviewIndex && caseTitle
-                      ? { ...item, label: caseTitle }
-                      : item,
-                  )}
-                  index={reviewIndex}
-                  onIndexChange={(next) => onReviewIndexChange?.(next)}
-                />
-              ) : caseTitle ? (
-                <span className="min-w-0 shrink truncate text-sm font-medium text-foreground">
-                  {caseTitle}
-                </span>
-              ) : null}
-              {caseDatesLabel ? (
-                <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                  {caseDatesLabel}
-                </span>
-              ) : null}
-              {ready && restoredFromCache ? (
-                <span className="hidden shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground sm:inline-flex">
-                  저장된 디자인
-                </span>
-              ) : null}
-              {remoteMode === "confirmed" ? (
-                <span className="hidden shrink-0 whitespace-nowrap rounded bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] font-medium text-primary sm:inline-flex">
-                  확정됨
-                </span>
-              ) : remoteMode === "manual" ? (
-                <span className="hidden shrink-0 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[0.6875rem] font-medium text-amber-900 sm:inline-flex">
-                  수작업 의뢰
-                </span>
+                      />
+                    </label>
+                    <div className="space-y-1.5">
+                      <span className="font-medium">가이드</span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {CENTER_GUIDE_OPTIONS.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            type="button"
+                            size="sm"
+                            variant={centerGuide === opt.value ? "default" : "outline"}
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              touchViewer("guide");
+                              viewerPrefsRef.current = {
+                                ...viewerPrefsRef.current,
+                                centerGuide: opt.value,
+                              };
+                              setCenterGuide(opt.value);
+                            }}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               ) : null}
             </div>
-          ) : null}
           </div>
 
           <DialogClose
