@@ -106,6 +106,8 @@ export function toDesignSyncMeta(source) {
       metrics: numberMap(row?.metrics),
     };
     if (gumballEdit) tooth.gumballEdit = gumballEdit;
+    const insertionAxisWorld = unitVec(row?.insertionAxisWorld);
+    if (insertionAxisWorld) tooth.insertionAxisWorld = insertionAxisWorld;
     const gumballBaseParams = numberMap(row?.gumballBaseParams);
     if (Object.keys(gumballBaseParams).length > 0) tooth.gumballBaseParams = gumballBaseParams;
     const gumballBaseMetrics = numberMap(row?.gumballBaseMetrics);
@@ -147,6 +149,14 @@ function finiteIn(raw, min, max) {
   const value = Number(raw);
   if (!Number.isFinite(value) || value < min || value > max) return null;
   return Math.round(value * 1e4) / 1e4;
+}
+
+function unitVec(raw) {
+  const row = vec(raw, 3, -2, 2);
+  if (!row) return null;
+  const len = Math.hypot(row[0], row[1], row[2]);
+  if (len < 1e-6) return null;
+  return row.map((value) => Math.round((value / len) * 1e4) / 1e4);
 }
 
 function vec(raw, count, min, max) {

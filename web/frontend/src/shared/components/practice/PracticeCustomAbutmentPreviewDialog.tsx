@@ -11,6 +11,7 @@
 // 번호 뱃지·어벗을 누르면 카메라 뷰는 그대로 두고 그 치아만 고른다.
 // 어벗 정보에서는 그 치아만 펼치고, 검볼도 펼친 어벗만 보여 준다.
 // 화살표는 이동, 우상 점은 크기·평면 스케일, 좌하 호는 회전이다. 커넥션과 2° 테이퍼는 고정이다.
+// 브리지 지대치는 삽입 패스 각도만 같이 다시 만든다. 포스트 길이는 그 치아만 바뀐다.
 // - 2026-11-19: 기공소가 제조 주문을 취소한 뒤 치과 「취소 가능」은 확정을 해제하고 다시 확정한다.
 // - 2026-11-19: 기공소 디자인 확정 — 제조 의뢰 응답을 부모에 넘겨 목록 상태를 바로 갱신한다.
 // - 2026-11-19: 기공소 확정 — 형상을 안 바꿨으면 프리뷰 STL을 다시 올리지 않는다.
@@ -196,6 +197,12 @@ import {
   type AbutmentVariantId,
 } from "@/shared/practice/customAbutmentLiveMesh";
 import { abutmentEditTargets, nextAbutmentSelection } from "@/shared/practice/customAbutmentSelection";
+import {
+  bridgeInsertionMates,
+  normalizeInsertionAxis,
+  readBridgeInsertionAxis,
+  writeBridgeInsertionAxis,
+} from "@/shared/practice/bridgeInsertionPath";
 import { hydrateToothAnatomyCatalog } from "@/shared/practice/toothAnatomy";
 import {
   loadCustomAbutmentViewerPrefs,
@@ -205,6 +212,7 @@ import {
 } from "@/shared/practice/customAbutmentViewerPrefs";
 import {
   AbutmentDirectEditSession,
+  gumballInsertionChange,
   gumballPatchSetsPostHeight,
   normalizeAbutmentEdit,
   retainLiveGumballParams,
@@ -992,6 +1000,21 @@ function CancelWindowTimer({
   );
 }
 
+function sharedInsertionAxisOf(
+  locked: ReadonlyMap<string, readonly [number, number, number]>,
+  toothNumber: string,
+): [number, number, number] | undefined {
+  return readBridgeInsertionAxis(locked, toothNumber);
+}
+
+function adoptStoredInsertionAxis(
+  locked: Map<string, [number, number, number]>,
+  toothNumber: string,
+  raw: unknown,
+) {
+  writeBridgeInsertionAxis(locked, [toothNumber], normalizeInsertionAxis(raw));
+}
+
 export function PracticeCustomAbutmentPreviewDialog({
   open,
   onOpenChange,
@@ -1271,6 +1294,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     isOwnAbutmentLiveEcho(raw, getSocket()?.id || "", authUserIdRef.current);
   const editCommitTimerRef = useRef(0);
   const editBridgeRef = useRef<AbutmentEditBridge | null>(null);
+  /** 브리지에서 사용자가 맞춘 공통 삽입축. 치아 번호 → 월드 방향. */
+  const lockedBridgeAxisRef = useRef(new Map<string, [number, number, number]>());
+  const bridgePathTokenRef = useRef(0);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewerFrameRef = useRef<HTMLDivElement | null>(null);
@@ -2160,6 +2186,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       (choice ? choice.candidates[choice.selectedIndex ?? 0]?.id : "") ||
       activeVariantRef.current[d.toothNumber] ||
       "";
+    const insertionAxisWorld = readBridgeInsertionAxis(lockedBridgeAxisRef.current, d.toothNumber);
     return {
       toothNumber: d.toothNumber,
       fileName: d.fileName,
@@ -2167,6 +2194,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       overrides: designContextRef.current?.overrides[d.toothNumber] ?? {},
       params: d.params,
       metrics: d.metrics,
+      ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
       ...(gumballEdit ? { gumballEdit } : {}),
       ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
       ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
@@ -2203,6 +2231,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           null;
         const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
         const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+        const insertionAxisWorld = readBridgeInsertionAxis(lockedBridgeAxisRef.current, d.toothNumber);
         return {
           toothNumber: d.toothNumber,
           fileName: d.fileName,
@@ -2212,6 +2241,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           metrics: d.metrics,
           baselineMetrics: baselineMetricsRef.current[d.toothNumber] ?? d.metrics,
           baselineParams: baselineParamsRef.current[d.toothNumber] ?? d.params,
+          ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
           ...(gumballEdit ? { gumballEdit } : {}),
           ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
           ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
@@ -2470,12 +2500,14 @@ export function PracticeCustomAbutmentPreviewDialog({
               {},
             );
           }
+          adoptStoredInsertionAxis(lockedBridgeAxisRef.current, row.toothNumber, row.insertionAxisWorld);
           const designArgs = {
             fixture: row.fixture,
             jawGeometry: jawGeo,
             opposingGeometry: jaw === "upper" ? ctx.jawGeometry.lower : ctx.jawGeometry.upper,
             neighbors: fixtures.filter((fixture) => fixture.jaw === jaw),
             toothWorks: ctx.allToothWorks,
+            sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, row.toothNumber),
             params: {
               ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
               ...rowOverrides,
@@ -2879,12 +2911,63 @@ export function PracticeCustomAbutmentPreviewDialog({
         confirmCandidateForTooth(summary.tooth, false);
       }
       if (!summary.neutral) labGeometryTouchedRef.current = true;
+      const lead = summary.gestureLead;
+      if (lead && lead !== summary.tooth) {
+        const mates = bridgeInsertionMates(
+          lead,
+          designContextRef.current?.allToothWorks,
+          designedListRef.current.map((row) => row.toothNumber),
+        );
+        const leadEdit = directEditRef.current?.editOf(lead);
+        if (mates.includes(summary.tooth) && leadEdit && gumballInsertionChange(leadEdit).direction) {
+          return;
+        }
+      }
       applyGumballMetrics(summary);
+      const synced = syncBridgeInsertionFromGumball(summary);
+      if (synced) return;
       rememberAbutmentEdit(summary);
       window.clearTimeout(editCommitTimerRef.current);
       editCommitTimerRef.current = 0;
       persistDesign();
     };
+  }
+
+  function syncBridgeInsertionFromGumball(summary: AbutmentEditSummary): boolean {
+    const ctx = designContextRef.current;
+    const edit = directEditRef.current?.editOf(summary.tooth);
+    if (!ctx || !edit) return false;
+    const abutmentTeeth = designedListRef.current.map((row) => row.toothNumber);
+    const mates = bridgeInsertionMates(summary.tooth, ctx.allToothWorks, abutmentTeeth);
+    if (mates.length === 0) return false;
+    const change = gumballInsertionChange(edit);
+    if (!change.direction) return false;
+    const axis = normalizeInsertionAxis(summary.insertionAxisWorld);
+    if (!axis) return false;
+    writeBridgeInsertionAxis(lockedBridgeAxisRef.current, [summary.tooth, ...mates], axis);
+    rememberAbutmentEdit(summary);
+    const span = [summary.tooth, ...mates];
+    for (const tooth of span) delete savedGumballEditRef.current[tooth];
+    directEditRef.current?.releaseBakedEdits(span);
+    const token = (bridgePathTokenRef.current += 1);
+    queueMicrotask(() => {
+      if (bridgePathTokenRef.current !== token) return;
+      const changes: DesignChange[] = span
+        .filter((tooth) => designedListRef.current.some((item) => item.toothNumber === tooth))
+        .map((tooth) => ({
+          toothNumber: tooth,
+          params: {
+            axisSourceCode: 2,
+            axisShiftLabialMm: 0,
+            axisShiftMesialMm: 0,
+            axisTargetDeg: -1,
+          },
+        }));
+      void applyDesignChanges(changes).then((applied) => {
+        if (applied && bridgePathTokenRef.current === token) persistDesign();
+      });
+    });
+    return true;
   }
 
   const jawsForJobs = useCallback((jobs: readonly { jaw: "upper" | "lower" }[]) => {
@@ -3082,6 +3165,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...fxOverrides,
             },
             explicitParams: fxOverrides,
+            sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, fx.toothNumber),
             logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
           });
@@ -4253,6 +4337,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             const jaw = row.fixture.jaw;
             const jawGeo = jaw === "upper" ? upperPrimary : lowerPrimary;
             if (!jawGeo) continue;
+            adoptStoredInsertionAxis(lockedBridgeAxisRef.current, row.toothNumber, row.insertionAxisWorld);
             let rowOverrides = stripDirectEditShiftOverrides(
               sharedAbutmentSyncParams(row.params, row.overrides),
             );
@@ -4288,6 +4373,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ...rowOverrides,
                 },
                 explicitParams: rowOverrides,
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                  lockedBridgeAxisRef.current,
+                  row.toothNumber,
+                ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               });
@@ -4308,6 +4397,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                     ...rowOverrides,
                   },
                   explicitParams: rowOverrides,
+                  sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                    lockedBridgeAxisRef.current,
+                    row.toothNumber,
+                  ),
                   logicRules: logicRulesRef.current,
                   patientName: curPatientName,
                 }),
@@ -4324,6 +4417,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ...rowOverrides,
                 },
                 explicitParams: rowOverrides,
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                  lockedBridgeAxisRef.current,
+                  row.toothNumber,
+                ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               });
@@ -4350,6 +4447,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             cachedFixtures.filter((f) => f.jaw === "lower"),
           );
           for (const row of cached.teeth) {
+            adoptStoredInsertionAxis(lockedBridgeAxisRef.current, row.toothNumber, row.insertionAxisWorld);
             const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
             overrides[row.toothNumber] = rowOverrides;
             const restoredGumball = !readOnly ? normalizeAbutmentEdit(row.gumballEdit) : null;
@@ -4406,6 +4504,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   toothWorks: curAllToothWorks,
                   params: row.params,
                   explicitParams: rowOverrides,
+                  sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                    lockedBridgeAxisRef.current,
+                    row.toothNumber,
+                  ),
                   logicRules: logicRulesRef.current,
                   patientName: curPatientName,
                 });
@@ -4604,6 +4706,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                 toothWorks: curAllToothWorks,
                 params: preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
                 explicitParams: {},
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                  lockedBridgeAxisRef.current,
+                  matched.toothNumber,
+                ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
               });
@@ -5127,6 +5233,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 toothWorks: ctx.allToothWorks,
                 params,
                 explicitParams: mode === "proposal" ? {} : merged,
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, tooth),
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
               });
@@ -5140,6 +5247,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 toothWorks: ctx.allToothWorks,
                 params,
                 explicitParams: merged,
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, tooth),
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
               });
@@ -5748,7 +5856,22 @@ export function PracticeCustomAbutmentPreviewDialog({
       nextValue: number | AbutmentAxisSource | { min: number; max: number },
     ) => {
       if (!canEditDesign) return;
-      const targetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
+      let targetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
+      if (field === "axisSource") {
+        const abutments = designedListRef.current.map((row) => row.toothNumber);
+        const span = new Set(targetNumbers);
+        for (const tooth of targetNumbers) {
+          for (const mate of bridgeInsertionMates(
+            tooth,
+            designContextRef.current?.allToothWorks,
+            abutments,
+          )) {
+            span.add(mate);
+          }
+        }
+        targetNumbers = [...span];
+        writeBridgeInsertionAxis(lockedBridgeAxisRef.current, targetNumbers, null);
+      }
       const targets = designedListRef.current.filter((row) => targetNumbers.includes(row.toothNumber));
       if (targets.length === 0) return;
       const changes: DesignChange[] = [];

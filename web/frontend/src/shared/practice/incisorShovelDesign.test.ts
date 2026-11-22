@@ -11,6 +11,7 @@ import {
   identityAbutmentEdit,
   refitLocalPositions,
 } from "../components/practice/abutmentDirectEdit";
+import { localDirToWorld, measureLocalPostAxis } from "./bridgeInsertionPath";
 import { designCustomAbutmentStl } from "./customAbutmentStlDesign";
 
 const ARCH_ANG = 1.35;
@@ -1265,6 +1266,131 @@ open11.predictedCrownWorldGeometry.dispose();
   d43.predictedCrownWorldGeometry.dispose();
   d33.worldGeometry.dispose();
   d33.predictedCrownWorldGeometry.dispose();
+}
+
+// 박광훈 33-43 브리지. 사용자가 맞춘 월드 삽입축은 #43과 #33에 같이 들어가고, 34-35는 따라가지 않는다.
+{
+  const tiltAxis = (degY: number): [number, number, number] => {
+    const rad = (degY * Math.PI) / 180;
+    return [0, Math.sin(rad), -Math.cos(rad)];
+  };
+  const parkWorks = [
+    { toothNumber: "43", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["42"] },
+    { toothNumber: "42", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["43", "41"] },
+    { toothNumber: "41", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["42", "31"] },
+    { toothNumber: "31", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["41", "32"] },
+    { toothNumber: "32", prosthesisType: "브리지", customAbutment: false, bridgeLinkedTeeth: ["31", "33"] },
+    { toothNumber: "33", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["32"] },
+    { toothNumber: "34", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["35"] },
+    { toothNumber: "35", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["34"] },
+  ];
+  const frameFor = (axis: [number, number, number]) => {
+    const len = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+    const z: [number, number, number] = [axis[0] / len, axis[1] / len, axis[2] / len];
+    const helper: [number, number, number] = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const cx = helper[1] * z[2] - helper[2] * z[1];
+    const cy = helper[2] * z[0] - helper[0] * z[2];
+    const cz = helper[0] * z[1] - helper[1] * z[0];
+    const cl = Math.hypot(cx, cy, cz) || 1;
+    const x: [number, number, number] = [cx / cl, cy / cl, cz / cl];
+    const y: [number, number, number] = [
+      z[1] * x[2] - z[2] * x[1],
+      z[2] * x[0] - z[0] * x[2],
+      z[0] * x[1] - z[1] * x[0],
+    ];
+    return { hexX: x, hexY: y, axis: z };
+  };
+  const mk = (toothNumber: string, yMm: number, tiltDegY: number) => ({
+    ...fixture11,
+    toothNumber,
+    jaw: "lower" as const,
+    fixturePose: {
+      ...fixture11.fixturePose,
+      origin: [0, yMm, 0] as [number, number, number],
+      ...frameFor(tiltAxis(tiltDegY)),
+    },
+  });
+  const f43 = mk("43", -12, -4);
+  const f33 = mk("33", 12, 14);
+  const f34 = mk("34", 19, 14);
+  const requested = tiltAxis(40);
+  const lock = {
+    axisSourceCode: 2,
+    axisShiftLabialMm: 0,
+    axisShiftMesialMm: 0,
+    axisTargetDeg: -1,
+  };
+  const worldPost = (design: Awaited<ReturnType<typeof designCustomAbutmentStl>>) => {
+    let z = 0;
+    let n = 0;
+    for (let i = 2; i < design.marginLoopLocal.length; i += 3) {
+      z += design.marginLoopLocal[i]!;
+      n += 1;
+    }
+    const local = design.solidBodyLocalPositions ?? design.localPositions;
+    const axis = measureLocalPostAxis(local, n > 0 ? z / n : 0);
+    assert.ok(axis, `#${design.toothNumber} 포스트 축을 잰다`);
+    const world = localDirToWorld(axis!, design.fixture.fixturePose);
+    assert.ok(world, `#${design.toothNumber} 월드 축`);
+    return world!;
+  };
+  const dot = (a: readonly number[], b: readonly number[]) =>
+    Math.abs(a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!);
+  const angleDeg = (a: readonly number[], b: readonly number[]) =>
+    (Math.acos(Math.min(1, dot(a, b))) * 180) / Math.PI;
+  const [locked43, locked33, free34] = await Promise.all([
+    designCustomAbutmentStl({
+      fixture: f43,
+      neighbors: [f33, f34],
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: parkWorks,
+      params: lock,
+      explicitParams: lock,
+      sharedInsertionAxisWorld: requested,
+    }),
+    designCustomAbutmentStl({
+      fixture: f33,
+      neighbors: [f43, f34],
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: parkWorks,
+      params: lock,
+      explicitParams: lock,
+      sharedInsertionAxisWorld: requested,
+    }),
+    designCustomAbutmentStl({
+      fixture: f34,
+      neighbors: [f43, f33],
+      jawGeometry: jaw,
+      opposingGeometry: flatMid,
+      toothWorks: parkWorks,
+    }),
+  ]);
+  const a43 = worldPost(locked43);
+  const a33 = worldPost(locked33);
+  const a34 = worldPost(free34);
+  const expect43 = angleDeg(f43.fixturePose.axis, requested);
+  const expect33 = angleDeg(f33.fixturePose.axis, requested);
+  assert.ok(
+    Math.abs(locked43.metrics.angulationDeg - expect43) < 1.5,
+    `#43 각도가 지정 삽입축이다(${locked43.metrics.angulationDeg}° / ${expect43.toFixed(1)}°)`,
+  );
+  assert.ok(
+    Math.abs(locked33.metrics.angulationDeg - expect33) < 1.5,
+    `#33 각도가 지정 삽입축이다(${locked33.metrics.angulationDeg}° / ${expect33.toFixed(1)}°)`,
+  );
+  assert.ok(dot(a43, requested) > 0.98, `#43 삽입축이 지정 방향과 맞다(${dot(a43, requested).toFixed(3)})`);
+  assert.ok(dot(a33, requested) > 0.98, `#33 삽입축이 #43과 같은 방향이다(${dot(a33, requested).toFixed(3)})`);
+  assert.ok(dot(a43, a33) > 0.98, "#43과 #33 포스트가 같은 삽입 패스다");
+  assert.ok(
+    dot(a34, requested) < 0.94,
+    `#34는 다른 브리지라 지정 축을 따르지 않는다(${dot(a34, requested).toFixed(3)})`,
+  );
+  for (const design of [locked43, locked33, free34]) {
+    design.worldGeometry.dispose();
+    design.predictedCrownWorldGeometry.dispose();
+  }
 }
 
 // 2) 설측 두께가 얇은 견치(#43)에서도 설측 사면이 입구 벽(uLinMouth)에 막히지 않고 사면 형식으로 깎인다.

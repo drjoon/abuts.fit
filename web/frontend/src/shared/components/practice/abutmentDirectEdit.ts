@@ -36,6 +36,7 @@ import {
   RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
+import { localDirToWorld, measureLocalPostAxis } from "../../practice/bridgeInsertionPath";
 import { gumballGroupTeeth } from "../../practice/customAbutmentSelection";
 import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
@@ -142,6 +143,10 @@ export type AbutmentEditSummary = {
   neutral: boolean;
   measured: EditedAbutmentMetrics | null;
   baselineMeasured: EditedAbutmentMetrics | null;
+  /** 그룹 드래그의 기준 치아. 없으면 이 커밋이 기준이다. */
+  gestureLead?: string | null;
+  /** 확정된 포스트 삽입축(월드). 브리지 형제는 이 방향으로 다시 만든다. */
+  insertionAxisWorld?: [number, number, number] | null;
 };
 
 export type AbutmentPreferenceUpdate = {
@@ -424,6 +429,18 @@ export function retainLiveGumballParams(
 
 export function gumballPatchSetsPostHeight(patch: Partial<CustomAbutmentDesignParams>): boolean {
   return hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
+}
+
+/** 검볼이 삽입 방향(기울기·윗면 위치) 또는 포스트 길이를 바꿨는지. */
+export function gumballInsertionChange(edit: AbutmentEdit): { direction: boolean; length: boolean } {
+  return {
+    direction:
+      Math.abs(edit.tiltLabialDeg) > 0.2 ||
+      Math.abs(edit.tiltMesialDeg) > 0.2 ||
+      Math.abs(edit.shiftLabialMm) > 0.05 ||
+      Math.abs(edit.shiftMesialMm) > 0.05,
+    length: Math.abs(edit.heightMm) > 0.02 || Math.abs(edit.scale[2] - 1) > 0.01,
+  };
 }
 
 export function normalizeAbutmentEdit(raw: unknown): AbutmentEdit | null {
@@ -2565,6 +2582,8 @@ export class AbutmentDirectEditSession {
   private readonly stale = new Set<string>();
   private drag: Drag | null = null;
   private dragGroup: Array<{ tooth: string; start: AbutmentEdit }> = [];
+  /** 손을 떼는 동안 그룹 커밋의 기준 치아. */
+  private pathLeadTooth: string | null = null;
   /** 드래그 한 프레임에서 선택 치아 패널을 같이 갱신한다. */
   private shapeBatch = true;
   private pendingPick: { tooth: string; x: number; y: number; pointerId: number } | null = null;
@@ -2700,6 +2719,23 @@ export class AbutmentDirectEditSession {
       this.pushHistoryBatch(steps);
       this.bridge.onHistory();
     }
+  }
+
+  /**
+   * 삽입축을 생성에 구운 뒤 검볼 변형만 뗀다.
+   * 그 치아의 이전 실행 취소는 남긴다. 방금 확정한 묶음만 뺀다.
+   */
+  releaseBakedEdits(teeth: readonly string[]) {
+    const drop = new Set(teeth);
+    for (const tooth of teeth) {
+      this.edits.delete(tooth);
+      this.stale.add(tooth);
+    }
+    const last = this.history[this.history.length - 1];
+    if (last && last.length > 0 && last.every((step) => drop.has(step.tooth))) {
+      this.history.pop();
+    }
+    this.bridge.onHistory();
   }
 
   clear(teeth: readonly string[]) {
@@ -2991,7 +3027,12 @@ export class AbutmentDirectEditSession {
       this.bridge.onHistory();
       return;
     }
-    this.commitDragGroup();
+    this.pathLeadTooth = drag.tooth;
+    try {
+      this.commitDragGroup();
+    } finally {
+      this.pathLeadTooth = null;
+    }
   };
 
   private beginHandle(event: PointerEvent, handle: HandleHit, pickWorld?: THREE.Vector3) {
@@ -3587,6 +3628,11 @@ export class AbutmentDirectEditSession {
         measured.occlusalClearanceMm = view.oppProbe.measureSurfaceClearance(surface, marginLocal);
       }
     }
+    const marginZ = view.zone.meanMarginZ ?? view.zone.marginZ;
+    const localAxis = measureLocalPostAxis(local, marginZ);
+    const insertionAxisWorld = localAxis
+      ? localDirToWorld(localAxis, design.fixture.fixturePose)
+      : null;
     return {
       tooth: design.toothNumber,
       widthRatio: fit.widthRatio,
@@ -3597,6 +3643,8 @@ export class AbutmentDirectEditSession {
       neutral,
       measured,
       baselineMeasured,
+      gestureLead: this.pathLeadTooth,
+      insertionAxisWorld,
     };
   }
 

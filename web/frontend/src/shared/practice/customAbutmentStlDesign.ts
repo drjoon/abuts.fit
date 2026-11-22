@@ -3715,6 +3715,11 @@ type DesignArgs = {
   /** 관리자가 승인한 치종 보정. 취향 기본값과 따로 더한다. */
   logicRules?: readonly AbutmentGenerationRule[] | null;
   patientName?: string;
+  /**
+   * 브리지에서 사용자가 맞춘 공통 삽입축(월드).
+   * 있으면 자동 평균 축 대신 이 방향으로 기존 메시 생성을 돌린다.
+   */
+  sharedInsertionAxisWorld?: readonly [number, number, number] | null;
 };
 
 export type CustomAbutmentConflictVariant =
@@ -3775,6 +3780,8 @@ type DesignMode = {
   /** 인접 어벗 회전·크기 조율용 경량 프로브. 형제 프로브는 다시 프로브하지 않는다. */
   probePeerPlan?: boolean;
   groupAxisWorld?: Vec3 | null;
+  /** 사용자가 지정한 브리지 삽입축. 치아별 상한·이동으로 다시 꺾지 않는다. */
+  lockGroupAxis?: boolean;
   peerPlan?: PeerPlanAdjustment | null;
   /** 포스트 파절 방지 치은 연상 자동 승격 1회 실행 여부(재귀 루프 원천 차단). */
   supragingivalRetried?: boolean;
@@ -4368,10 +4375,27 @@ async function resolveGroupPeerPlan(
   };
 }
 
+function unitInsertionAxis(raw: readonly number[] | null | undefined): Vec3 | null {
+  if (!raw || raw.length < 3) return null;
+  const x = Number(raw[0]);
+  const y = Number(raw[1]);
+  const z = Number(raw[2]);
+  if (![x, y, z].every((value) => Number.isFinite(value))) return null;
+  const len = Math.hypot(x, y, z);
+  if (len < 1e-6) return null;
+  return [x / len, y / len, z / len];
+}
+
+async function groupAxisForDesign(args: DesignArgs): Promise<{ axis: Vec3 | null; locked: boolean }> {
+  const locked = unitInsertionAxis(args.sharedInsertionAxisWorld);
+  if (locked) return { axis: locked, locked: true };
+  return { axis: await resolveGroupAxisWorld(args), locked: false };
+}
+
 export async function designCustomAbutmentStl(args: DesignArgs): Promise<DesignedCustomAbutment> {
-  const groupAxisWorld = await resolveGroupAxisWorld(args);
+  const { axis: groupAxisWorld, locked } = await groupAxisForDesign(args);
   const peerPlan = await resolveGroupPeerPlan(args, groupAxisWorld);
-  const res = await designImpl(args, { groupAxisWorld, peerPlan });
+  const res = await designImpl(args, { groupAxisWorld, peerPlan, lockGroupAxis: locked });
   if (res.kind !== "design") throw new Error("커스텀어벗 디자인을 만들지 못했습니다.");
   return res.design;
 }
@@ -4385,9 +4409,14 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
 export async function designCustomAbutmentCandidates(
   args: DesignArgs,
 ): Promise<CustomAbutmentDesignCandidate[]> {
-  const groupAxisWorld = await resolveGroupAxisWorld(args);
+  const { axis: groupAxisWorld, locked } = await groupAxisForDesign(args);
   const peerPlan = await resolveGroupPeerPlan(args, groupAxisWorld);
-  const primaryRes = await designImpl(args, { groupAxisWorld, peerPlan, variant: "space_fill" });
+  const primaryRes = await designImpl(args, {
+    groupAxisWorld,
+    peerPlan,
+    variant: "space_fill",
+    lockGroupAxis: locked,
+  });
   if (primaryRes.kind !== "design") {
     throw new Error("커스텀어벗 디자인을 만들지 못했습니다.");
   }
@@ -4417,6 +4446,7 @@ export async function designCustomAbutmentCandidates(
       peerPlan,
       variant,
       forbidSupragingivalRetry,
+      lockGroupAxis: locked && variant !== "fixture_axis",
     });
     if (altRes.kind !== "design") return;
     if (out.every((prev) => areCandidatesDistinct(prev.design, altRes.design))) {
@@ -6508,13 +6538,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     return { kind: "axis", axisWorld: fixtureLocalDirToWorld(w, fixture.fixturePose) };
   }
   const hasManualAxisShift = params.axisShiftLabialMm !== 0 || params.axisShiftMesialMm !== 0;
-  if (mode.groupAxisWorld && explicitSource !== 0 && explicitSource !== 1) {
+  if (mode.groupAxisWorld && (mode.lockGroupAxis || (explicitSource !== 0 && explicitSource !== 1))) {
     w = worldDirToFixtureLocal(mode.groupAxisWorld, fixture.fixturePose);
+    if (mode.lockGroupAxis && w[2] < 0) w = scale3(w, -1);
     axisSource = "parallel";
   } else if (explicitSource === 2) {
     axisSource = "parallel";
   }
-  if (hasManualAxisShift) {
+  if (hasManualAxisShift && !mode.lockGroupAxis) {
     const H = tpl.postHeightMm;
     const top = add3(
       scale3(w, H / Math.max(w[2], 0.2)),
@@ -6530,7 +6561,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     : tiltCapRad;
   // 브리지·인접 평행 그룹(groupAxisWorld)은 이미 그룹 전체 각도 상한 안에서 공통 월드 축으로 맞췄으므로,
   // 치아마다 따로 capTilt·allowRatio로 꺾지 않아 모든 지대주 포스트가 완전히 같은 각도로 평행해진다.
-  if (!mode.groupAxisWorld || hasManualAxisShift || explicitSource === 0 || explicitSource === 1) {
+  // 사용자가 맞춘 브리지 축(lockGroupAxis)도 여기서 다시 꺾지 않는다.
+  if (
+    !mode.lockGroupAxis &&
+    (!mode.groupAxisWorld || hasManualAxisShift || explicitSource === 0 || explicitSource === 1)
+  ) {
     w = capTilt(w, hasManualAxisShift ? tiltCapRad : (neighborLockRad ?? effectiveTiltCapRad));
     if (posterior && neighborLockRad == null) {
       const H = tpl.postHeightMm;
@@ -6548,10 +6583,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
   }
-  if (!mode.groupAxisWorld) {
+  if (!mode.groupAxisWorld && !mode.lockGroupAxis) {
     w = applyGenerationAxisBias(w, labXY, mesXY, logicBias, tpl.postHeightMm, tiltCapRad);
   }
   if (
+    !mode.lockGroupAxis &&
     args.params?.axisTargetDeg != null &&
     Number.isFinite(Number(args.params.axisTargetDeg)) &&
     params.axisTargetDeg >= 0

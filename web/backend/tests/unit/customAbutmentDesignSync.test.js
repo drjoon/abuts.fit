@@ -28,6 +28,7 @@ describe("custom abutment design sync meta", () => {
           overrides: { marginFilletRadiusMm: 0.6 },
           metrics: { postHeightMm: 7.5 },
           gumballEdit: { heightMm: 0.2, shiftLabialMm: 0.1 },
+          insertionAxisWorld: [0, 0, -2],
           variantId: "buccal_top_open",
           picker: true,
           candidateIndex: 1,
@@ -49,6 +50,7 @@ describe("custom abutment design sync meta", () => {
     expect(meta.teeth[0].fixture.scanbodyTop).toEqual([1, 2, 3]);
     expect(meta.teeth[0].params).toEqual({ postHeightOffsetMm: 0.4 });
     expect(meta.teeth[0].gumballEdit.heightMm).toBe(0.2);
+    expect(meta.teeth[0].insertionAxisWorld).toEqual([0, 0, -1]);
     expect(meta.teeth[0].variantId).toBe("buccal_top_open");
     expect(meta.teeth[0].picker).toBe(true);
     expect(meta.teeth[0].candidateIndex).toBe(1);

@@ -14,6 +14,7 @@ import { request } from "@/shared/api/apiClient";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
+import { normalizeInsertionAxis } from "@/shared/practice/bridgeInsertionPath";
 import type { MatchedScanbodyFixture } from "@/shared/practice/customAbutmentScanbodyMatch";
 import type { CustomAbutmentDesignParams } from "@/shared/practice/customAbutmentDesignParams";
 import type { CustomAbutmentDesignMetrics } from "@/shared/practice/customAbutmentStlDesign";
@@ -64,6 +65,8 @@ export type CachedCustomAbutmentTooth = {
   /** 처음 제안할 때 넣은 조정값. 리셋은 이 입력으로만 돌아간다. */
   proposalInput?: Partial<CustomAbutmentDesignParams>;
   editedInfoFields?: string[];
+  /** 브리지에서 맞춘 공통 삽입축(월드). 다시 열 때 같은 패스로 만든다. */
+  insertionAxisWorld?: [number, number, number];
   localPositions: ArrayBuffer;
   solidBodyLocalPositions?: ArrayBuffer;
   crownLocalPositions: ArrayBuffer;
@@ -1044,6 +1047,8 @@ export type CustomAbutmentDesignSyncTooth = {
   picker?: boolean;
   candidates?: Array<{ id: string; label: string }>;
   candidateIndex?: number;
+  /** 브리지에서 맞춘 공통 삽입축(월드). */
+  insertionAxisWorld?: [number, number, number];
 };
 
 export type CustomAbutmentDesignSyncMeta = {
@@ -1074,6 +1079,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
     if (!/^[1-4][1-8]$/.test(toothNumber) || !fixture || typeof fixture !== "object") continue;
     const jaw = (fixture as { jaw?: unknown }).jaw;
     if (jaw !== "upper" && jaw !== "lower") continue;
+    const insertionAxisWorld = normalizeInsertionAxis(tooth.insertionAxisWorld);
     teeth.push({
       toothNumber,
       fileName: String(tooth.fileName || ""),
@@ -1081,6 +1087,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
       overrides: (tooth.overrides || {}) as Partial<CustomAbutmentDesignParams>,
       params: (tooth.params || {}) as CustomAbutmentDesignParams,
       metrics: (tooth.metrics || {}) as CustomAbutmentDesignMetrics,
+      ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
       ...(tooth.gumballEdit && typeof tooth.gumballEdit === "object"
         ? { gumballEdit: tooth.gumballEdit as AbutmentEdit }
         : {}),
