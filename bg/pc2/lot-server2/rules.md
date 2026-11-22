@@ -11,9 +11,10 @@
 ## 1) 역할/흐름
 
 - Windows에서 ViTiny UM12/UM06 SDK(`vendor/vitiny`, 32비트)로 AF를 시도합니다.
-- 카메라 연동: `src/camera.js`(목록·선택·Grab 프로파일). Continuity/화면캡처는 자동 선택에서 뒤로 민다.
-- ffmpeg로 프레임을 폴링합니다. 움직임이 줄고 선명도가 임계 이상이면 `src/ocr`로 인식합니다.
-- 폴링한 최신 JPEG는 `GET /live`로 화면 라이브 뷰에 씁니다(카메라를 두 번 열지 않음).
+- 카메라 연동: `src/camera.js`(목록·선택·Grab 프로파일·상주 스트림). Continuity/화면캡처는 자동 선택에서 뒤로 민다.
+- 감시 중 ffmpeg는 **상주 1개**만 돌리고 JPEG를 덮어씁니다. 프레임마다 프로세스를 만들지 않습니다.
+- 움직임이 줄고 선명도가 임계 이상이면 `src/ocr`로 인식합니다. 라이브는 `GET /live`.
+- 기본 `LOT_AUTO_WATCH=0`. Continuity+자동감시는 IDE/머신 부하가 커서 수동 시작을 권장합니다.
 - OCR은 tesseract.js를 `src/ocr`에 감싼 내부 모듈입니다. 화이트리스트 A–Z, 결과는 3글자만 확정합니다.
 - 저장 폴더는 lot-server 감시 폴더와 분리합니다. 기본값 `D:\bg\lot-server2\images`. 성공 파일 `lot-…-ABC.jpg`.
 - 패킹 라벨 출력·백엔드 AI 인식 API는 호출하지 않습니다(이후 연동 시 별도).

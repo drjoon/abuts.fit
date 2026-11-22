@@ -108,7 +108,12 @@ export async function grabFrames({
 
 /** 한 장의 선명도와 축소 그레이 버퍼(움직임 비교용). */
 export async function analyzeFrame(filePath) {
-  const { data, info } = await sharp(filePath)
+  return analyzeImage(filePath);
+}
+
+/** @param {Buffer | string} input */
+export async function analyzeImage(input) {
+  const { data, info } = await sharp(input)
     .greyscale()
     .resize({ width: 96, height: 96, fit: "inside" })
     .raw()

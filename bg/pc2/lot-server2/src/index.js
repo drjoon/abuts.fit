@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-23: 기본 자동 감시 off. 상주 스트림으로 부하 완화.
 // - 2026-11-23: 카메라 연동(장치 선택·Grab 프로파일)과 /live.
 // - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
 // - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
@@ -55,7 +56,8 @@ const CAPTURE_DIR =
   (process.platform === "win32"
     ? "D:\\bg\\lot-server2\\images"
     : path.join(ROOT, "captures"));
-const AUTO_WATCH = String(process.env.LOT_AUTO_WATCH || "1") !== "0";
+// 기본은 수동 시작. 자동 감시+Continuity면 Cursor/머신이 버거울 수 있다.
+const AUTO_WATCH = String(process.env.LOT_AUTO_WATCH || "0") === "1";
 
 const LOGS_DIR = path.join(ROOT, "logs");
 const LOG_FILE = path.join(LOGS_DIR, "latest.txt");

@@ -58,14 +58,21 @@ AVFoundation audio devices:
   assert.equal(tagged.find((d) => d.name.includes("iPhone")).continuity, true);
 });
 
-test("darwin Grab 프로파일은 30fps를 먼저 넣는다", () => {
-  const prev = process.platform;
-  // buildCaptureProfiles uses process.platform; only assert structure on current OS.
+test("darwin Grab 프로파일은 후보가 적고 30fps를 포함한다", () => {
   const device = { name: "FaceTime HD Camera", input: "0" };
   const profiles = buildCaptureProfiles(device, 1, "out_%02d.jpg");
   assert.ok(profiles.length >= 2);
+  assert.ok(profiles.length <= 5);
   assert.ok(profiles.some((p) => p.args.includes("-framerate")));
-  void prev;
+  const continuity = buildCaptureProfiles(
+    { name: "Joonho Lee의 iPhone 카메라", input: "0" },
+    1,
+    "out_%02d.jpg",
+  );
+  if (process.platform === "darwin") {
+    assert.equal(continuity[0].label, "30fps 640x480");
+    assert.ok(continuity.length <= 3);
+  }
 });
 
 test("초점 응답은 마지막 JSON만 읽는다", () => {

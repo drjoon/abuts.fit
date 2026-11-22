@@ -1,12 +1,18 @@
 // change-log:
+// - 2026-11-23: 상주 ffmpeg 스트림·프로파일 캐시로 Grab 부하를 줄인다.
 // - 2026-11-23: 카메라 연동 모듈. 장치 목록·선택·Grab 프로파일(avfoundation/dshow).
 // related files:
 // - bg/pc2/lot-server2/src/capture.js
 // - bg/pc2/lot-server2/src/devices.js
 // - bg/pc2/lot-server2/src/index.js
+// - bg/pc2/lot-server2/src/watch.js
 
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { createRequire } from "module";
+import fs from "fs";
+import fsp from "fs/promises";
+import os from "os";
+import path from "path";
 import {
   annotateDevices,
   chooseDevice,
@@ -15,7 +21,8 @@ import {
 } from "./devices.js";
 
 const require = createRequire(import.meta.url);
-const FFMPEG_TIMEOUT_MS = 15000;
+const FFMPEG_TIMEOUT_MS = 8000;
+const LIST_CACHE_MS = 5000;
 
 export class CameraError extends Error {
   constructor(message, code, detail = "") {
@@ -36,12 +43,12 @@ export function resolveFfmpeg() {
   return "ffmpeg";
 }
 
-function runFfmpeg(ffmpeg, args) {
+function runFfmpeg(ffmpeg, args, timeoutMs = FFMPEG_TIMEOUT_MS) {
   return new Promise((resolve) => {
     execFile(
       ffmpeg,
       args,
-      { timeout: FFMPEG_TIMEOUT_MS, windowsHide: true, maxBuffer: 2_000_000 },
+      { timeout: timeoutMs, windowsHide: true, maxBuffer: 2_000_000 },
       (err, stdout, stderr) => {
         resolve({
           err,
@@ -56,6 +63,12 @@ function runFfmpeg(ffmpeg, args) {
 /** @type {string} */
 let selectedName = String(process.env.MICROSCOPE_DEVICE || "").trim();
 
+/** @type {{ at: number, cameras: object[] } | null} */
+let listCache = null;
+
+/** deviceKey -> profile label */
+const profileCache = new Map();
+
 export function getSelectedDeviceName() {
   return selectedName;
 }
@@ -65,18 +78,33 @@ export function setSelectedDeviceName(name) {
   return selectedName;
 }
 
+export function clearCameraCaches() {
+  listCache = null;
+  profileCache.clear();
+}
+
+function deviceKey(device) {
+  return `${process.platform}|${device?.name || ""}|${device?.input || ""}`;
+}
+
 export async function listCameras(ffmpeg = resolveFfmpeg()) {
+  const now = Date.now();
+  if (listCache && now - listCache.at < LIST_CACHE_MS) {
+    return listCache.cameras;
+  }
   const platform = process.platform;
   const args =
     platform === "darwin"
       ? ["-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""]
       : ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"];
-  const run = await runFfmpeg(ffmpeg, args);
+  const run = await runFfmpeg(ffmpeg, args, 10000);
   const text = `${run.stdout}\n${run.stderr}`;
   if (run.err && /ENOENT/.test(run.err.message || "")) {
     throw new CameraError("ffmpeg가 없습니다.", "no-ffmpeg");
   }
-  return annotateDevices(parseVideoDevices(text, platform));
+  const cameras = annotateDevices(parseVideoDevices(text, platform));
+  listCache = { at: now, cameras };
+  return cameras;
 }
 
 export async function resolveDevice(preferred = selectedName, ffmpeg = resolveFfmpeg()) {
@@ -86,7 +114,7 @@ export async function resolveDevice(preferred = selectedName, ffmpeg = resolveFf
 }
 
 /**
- * 플랫폼별 Grab 인자 후보.
+ * 플랫폼별 Grab 인자 후보. 후보 수를 적게 유지한다.
  * Continuity/iPhone 은 기본 29.97fps를 거부하므로 30fps·640x480을 먼저 시도한다.
  */
 export function buildCaptureProfiles(device, count, pattern) {
@@ -98,25 +126,47 @@ export function buildCaptureProfiles(device, count, pattern) {
 
   if (platform === "darwin") {
     const continuity = isContinuityCamera(device?.name);
-    const sizes = continuity
-      ? ["640x480", "1280x720"]
-      : ["1280x720", "1920x1080", "640x480"];
-    for (const size of sizes) {
-      for (const fps of ["30", "60", "15"]) {
-        profiles.push({
-          label: `${fps}fps ${size}`,
-          args: [...base, "-framerate", fps, "-video_size", size, "-i", device.input, ...out],
-        });
-      }
+    if (continuity) {
+      profiles.push({
+        label: "30fps 640x480",
+        args: [
+          ...base,
+          "-framerate",
+          "30",
+          "-video_size",
+          "640x480",
+          "-i",
+          device.input,
+          ...out,
+        ],
+      });
+      profiles.push({
+        label: "30fps",
+        args: [...base, "-framerate", "30", "-i", device.input, ...out],
+      });
+    } else {
+      profiles.push({
+        label: "30fps 1280x720",
+        args: [
+          ...base,
+          "-framerate",
+          "30",
+          "-video_size",
+          "1280x720",
+          "-i",
+          device.input,
+          ...out,
+        ],
+      });
+      profiles.push({
+        label: "30fps",
+        args: [...base, "-framerate", "30", "-i", device.input, ...out],
+      });
+      profiles.push({
+        label: "15fps",
+        args: [...base, "-framerate", "15", "-i", device.input, ...out],
+      });
     }
-    profiles.push({
-      label: "30fps",
-      args: [...base, "-framerate", "30", "-i", device.input, ...out],
-    });
-    profiles.push({
-      label: "default",
-      args: [...base, "-i", device.input, ...out],
-    });
   } else {
     profiles.push({
       label: "15fps",
@@ -134,6 +184,14 @@ export function buildCaptureProfiles(device, count, pattern) {
   return profiles;
 }
 
+function orderProfiles(device, profiles) {
+  const cached = profileCache.get(deviceKey(device));
+  if (!cached) return profiles;
+  const hit = profiles.find((p) => p.label === cached);
+  if (!hit) return profiles;
+  return [hit, ...profiles.filter((p) => p.label !== cached)];
+}
+
 export async function runCaptureProfiles({
   device,
   count,
@@ -141,12 +199,13 @@ export async function runCaptureProfiles({
   listFrames,
   ffmpeg = resolveFfmpeg(),
 }) {
-  const profiles = buildCaptureProfiles(device, count, pattern);
+  const profiles = orderProfiles(device, buildCaptureProfiles(device, count, pattern));
   let last = { stderr: "", err: null, label: "" };
   for (const profile of profiles) {
     const run = await runFfmpeg(ffmpeg, profile.args);
     const names = await listFrames();
     if (names.length) {
+      profileCache.set(deviceKey(device), profile.label);
       return { names, profile: profile.label, stderr: run.stderr };
     }
     last = { stderr: run.stderr, err: run.err, label: profile.label };
@@ -165,6 +224,109 @@ export async function runCaptureProfiles({
       "Continuity(iPhone) 카메라 촬영에 실패했습니다. Mac에 FaceTime/USB 카메라가 있으면 그걸 고르세요.";
   }
   throw new CameraError(message, "capture-failed", detail || last.label);
+}
+
+function streamArgs(device, outFile, fps = 2) {
+  const platform = process.platform;
+  const inputFormat = platform === "darwin" ? "avfoundation" : "dshow";
+  const args = ["-hide_banner", "-loglevel", "error", "-y", "-f", inputFormat];
+  if (platform === "darwin") {
+    if (isContinuityCamera(device.name)) {
+      args.push("-framerate", "30", "-video_size", "640x480");
+    } else {
+      args.push("-framerate", "30");
+    }
+  } else {
+    args.push("-framerate", "15");
+  }
+  args.push(
+    "-i",
+    device.input,
+    "-vf",
+    `fps=${fps}`,
+    "-q:v",
+    "5",
+    "-update",
+    "1",
+    outFile,
+  );
+  return args;
+}
+
+/**
+ * 상주 ffmpeg가 outFile을 주기적으로 덮어쓴다.
+ * 프레임마다 프로세스를 새로 띄우지 않는다.
+ */
+export function createFrameStream({
+  device,
+  outFile,
+  fps = 2,
+  ffmpeg = resolveFfmpeg(),
+  log = () => {},
+} = {}) {
+  let child = null;
+  let stopping = false;
+
+  function start() {
+    if (child) return;
+    stopping = false;
+    const args = streamArgs(device, outFile, fps);
+    child = spawn(ffmpeg, args, {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    child.stderr?.on("data", () => {});
+    child.on("exit", (code, signal) => {
+      child = null;
+      if (!stopping) {
+        log(`camera stream exit code=${code} signal=${signal || ""}`);
+      }
+    });
+    log(`camera stream start device=${device.name} fps=${fps}`);
+  }
+
+  async function stop() {
+    stopping = true;
+    if (!child) return;
+    const proc = child;
+    child = null;
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    try {
+      if (!proc.killed) proc.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+  }
+
+  async function readFrame(minAgeMs = 0) {
+    try {
+      const st = await fsp.stat(outFile);
+      if (minAgeMs && Date.now() - st.mtimeMs > 10000) return null;
+      if (st.size < 100) return null;
+      return await fsp.readFile(outFile);
+    } catch {
+      return null;
+    }
+  }
+
+  return {
+    start,
+    stop,
+    readFrame,
+    get running() {
+      return Boolean(child);
+    },
+    outFile,
+  };
+}
+
+export function defaultStreamPath() {
+  return path.join(os.tmpdir(), `lot-server2-live-${process.pid}.jpg`);
 }
 
 export { runFfmpeg };

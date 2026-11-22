@@ -16,7 +16,9 @@ npm install
 node src/index.js
 ```
 
-브라우저에서 `http://127.0.0.1:8012/` 를 엽니다. 기본으로 감시를 시작합니다(`LOT_AUTO_WATCH=0`이면 수동).
+브라우저에서 `http://127.0.0.1:8012/` 를 엽니다. 기본은 **감시 수동 시작**입니다(`LOT_AUTO_WATCH=1`이면 자동).
+
+감시 중에는 ffmpeg **한 프로세스**가 라이브 JPEG를 덮어씁니다. 예전처럼 프레임마다 ffmpeg를 새로 띄우지 않습니다(Cursor/머신 부하 원인).
 
 한 번만 인식하려면 `npm run capture`(내부적으로 `/recognize`와 같음).
 
@@ -24,7 +26,7 @@ node src/index.js
 
 ## 동작
 
-1. ffmpeg로 프레임을 주기적으로 가져온다.
+1. 감시 시작 시 ffmpeg 상주 1개가 라이브 JPEG를 덮어쓴다.
 2. 이전 프레임과 비교해 움직임이 작아지고, 선명도가 임계 이상인 상태가 연속이면 OCR한다.
 3. OCR은 `src/ocr`(tesseract.js, 문자 화이트리스트 A–Z)로 영문 3글자만 확정한다.
 4. 같은 로트가 연속으로 나오면 한 번만 저장하고, 다시 움직임이 있을 때까지 유지한다.
@@ -51,5 +53,7 @@ node src/index.js
 - `LOT_MOTION_THRESHOLD` 움직임(그레이 MAD). 기본 6
 - `LOT_SHARP_THRESHOLD` 선명도. 기본 8
 - `LOT_STABLE_FRAMES` 연속 정지 프레임 수. 기본 3
-- `LOT_WATCH_POLL_MS` 폴링 간격. 기본 450
+- `LOT_WATCH_POLL_MS` 폴링 간격. 기본 1200
+- `LOT_STREAM_FPS` 상주 스트림 fps. 기본 2
 - `LOT_HOLD_MS` 인식 후 유지 시간. 기본 2500
+- `LOT_AUTO_WATCH` 기동 시 자동 감시. 기본 0
