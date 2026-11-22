@@ -26,7 +26,7 @@
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
-// - 2026-11-22: 좁은 화면 헤더는 제목·도구 / 의뢰 정보 2줄. 85rem 이상은 한 줄.
+// - 2026-11-22: 좁은 화면 헤더는 제목·도구 / 의뢰 정보 2줄. 1280px 이상은 한 줄.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
 // - web/frontend/src/shared/practice/customAbutmentStlDesign.ts
@@ -6701,10 +6701,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         hideClose
         onContextMenu={(e) => e.preventDefault()}
       >
-        <DialogHeader className="shrink-0 flex-row items-start gap-2 space-y-0 border-b bg-white/95 py-2 pl-3 pr-2 text-left min-[85rem]:items-center">
-          {/* 85rem 미만: 1줄 제목·도구, 2줄 의뢰. 이상은 한 줄. 줄바꿈으로 3줄이 되지 않게 고정한다. */}
-          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 min-[85rem]:flex min-[85rem]:flex-nowrap min-[85rem]:gap-x-3">
-          <div className="flex min-w-0 items-center gap-2 min-[85rem]:shrink-0">
+        <DialogHeader className="shrink-0 flex-row items-start gap-2 space-y-0 border-b bg-white/95 py-2 pl-3 pr-2 text-left min-[1280px]:items-center">
+          {/* 1280px 미만: 1줄 제목·도구, 2줄 의뢰. 이상은 한 줄. 줄바꿈으로 3줄이 되지 않게 고정한다. */}
+          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 min-[1280px]:flex min-[1280px]:flex-nowrap min-[1280px]:gap-x-3">
+          <div className="flex min-w-0 items-center gap-2 min-[1280px]:shrink-0">
             <AbutsLogo
               variant="light"
               className="pointer-events-none shrink-0"
@@ -6716,7 +6716,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             </DialogTitle>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1 min-[85rem]:order-3">
+          <div className="flex shrink-0 items-center gap-1 min-[1280px]:order-3">
             {ready && canEditDesign ? (
               <>
                 <HeaderIconButton
@@ -6885,7 +6885,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           ) : null}
           </div>
           {reviewItems.length > 0 || caseTitle || caseDatesLabel || (ready && restoredFromCache) || remoteMode === "confirmed" || remoteMode === "manual" ? (
-            <div className="col-span-2 flex min-w-0 flex-nowrap items-center gap-x-2 min-[85rem]:order-2 min-[85rem]:flex-1">
+            <div className="col-span-2 flex min-w-0 flex-nowrap items-center gap-x-2 min-[1280px]:order-2 min-[1280px]:flex-1">
               {reviewItems.length > 0 ? (
                 <PracticeAbutmentDesignReviewRail
                   items={reviewItems.map((item, index) =>
