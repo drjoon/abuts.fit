@@ -3157,7 +3157,7 @@ export class AbutmentDirectEditSession {
 
   private emitLive(tooth: string, force = false) {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (!force && now - this.liveAt < 50) return;
+    if (!force && now - this.liveAt < 80) return;
     this.liveAt = now;
     const edit = this.edits.get(tooth);
     this.bridge.onLive?.(tooth, edit ? cloneAbutmentEdit(edit) : null);

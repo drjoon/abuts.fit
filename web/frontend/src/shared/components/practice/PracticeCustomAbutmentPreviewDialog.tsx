@@ -1143,9 +1143,28 @@ export function PracticeCustomAbutmentPreviewDialog({
   const applyingChromeRef = useRef(false);
   const chromeRevRef = useRef(0);
   const sentChromeRevRef = useRef(0);
+  const lastChromeAtRef = useRef(0);
+  const lastLocalChromeAtRef = useRef(0);
+  const chromeSyncTimerRef = useRef(0);
   const lastLocalGumballAtRef = useRef(0);
   const applyingGumballRef = useRef(false);
+  const applyingRemoteSavedAtRef = useRef(0);
   const suppressPivotSyncRef = useRef(false);
+  const chromeStateRef = useRef({
+    showUpper: true,
+    showLower: true,
+    scanTransparency: 0,
+    showFinishLine: true,
+    showFixtureAnalog: true,
+    gumballOn: true,
+    colorMapping: true,
+    centerGuide: "off" as CenterGuideMode,
+    selectedTeeth: [] as string[],
+    visibleTeeth: {} as Record<string, boolean>,
+    shownScanbodies: {} as Record<string, boolean>,
+    shownPredictedCrowns: {} as Record<string, boolean>,
+    expandedTeeth: {} as Record<string, boolean>,
+  });
   const viewerSavedRef = useRef("");
   const [viewerHydrated, setViewerHydrated] = useState(false);
   const [expandedTeeth, setExpandedTeeth] = useState<Record<string, boolean>>({});
@@ -2115,7 +2134,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   };
 
   const cacheCurrentDesign = async (savedAt: number) => {
-    if (isLabViewerRef.current || !(savedAt > 0)) return;
+    if (!(savedAt > 0)) return;
     const ctx = designContextRef.current;
     const list = designedListRef.current;
     if (!ctx || list.length === 0) return;
@@ -2196,6 +2215,14 @@ export function PracticeCustomAbutmentPreviewDialog({
               fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
               teeth,
             },
+          });
+          lastLocalChromeAtRef.current = performance.now();
+          lastChromeAtRef.current = Math.max(lastChromeAtRef.current, savedAtHint);
+          emitCustomAbutmentLive({
+            kind: "chrome",
+            transferId,
+            savedAt: savedAtHint,
+            chrome: chromeStateRef.current,
           });
           const result = classifyCustomAbutmentDesignPublish(
             await publishCustomAbutmentDesignMeta(token, transferId, {
@@ -2312,7 +2339,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       ignoreEditCommitRef.current = true;
       directEditRef.current?.cancelGesture();
       window.clearTimeout(editCommitTimerRef.current);
-      if (meta.savedAt > 0) lastRemoteSavedAtRef.current = meta.savedAt;
       const kept = new Set(meta.teeth.map((row) => row.toothNumber));
       const incomingByTooth = new Map(meta.teeth.map((row) => [row.toothNumber, row]));
       const painted = designedListRef.current.map((row) => {
@@ -2399,7 +2425,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
           return;
         }
-        if (pending.length === 0) return;
+        if (pending.length === 0) {
+          // 형상을 못 붙였으면 같은 시각의 저장 이벤트가 다시 시도할 수 있게 둔다.
+          return;
+        }
+        if (meta.savedAt > 0) lastRemoteSavedAtRef.current = meta.savedAt;
         const built = pending.map((row) => row.next);
         const builtIds = new Set(built.map((row) => row.toothNumber));
         directEditRef.current?.cancelGesture();
@@ -2458,6 +2488,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         directEditRef.current?.tick();
         labGeometryTouchedRef.current = true;
         if (meta.savedAt > designSavedAtRef.current) designSavedAtRef.current = meta.savedAt;
+        if (meta.savedAt > 0) {
+          void cacheCurrentDesign(meta.savedAt).catch((err) =>
+            console.warn("[custom-abutment] remote design cache failed", err),
+          );
+        }
         const session = scanbodyPickRef.current;
         if (session) {
           const left = session.jobs.filter((job) => !kept.has(job.toothNumber));
@@ -2485,16 +2520,25 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (meta.updatedBy && meta.updatedBy === authUserIdRef.current) return;
     if (!force && meta.savedAt > 0 && meta.savedAt < designSavedAtRef.current) return;
     if (!force && meta.savedAt > 0 && meta.savedAt === lastRemoteSavedAtRef.current) return;
+    if (!force && meta.savedAt > 0 && meta.savedAt === applyingRemoteSavedAtRef.current) return;
     if (force && meta.savedAt > 0) {
       designSavedAtRef.current = meta.savedAt;
       lastRemoteSavedAtRef.current = 0;
+      applyingRemoteSavedAtRef.current = 0;
     }
     window.clearTimeout(editCommitTimerRef.current);
     designEpochRef.current += 1;
     const epoch = designEpochRef.current;
-    void applyRemoteDesignMetaRef.current(meta, epoch).catch((err) => {
-      console.warn("[custom-abutment] remote design apply failed", err);
-    });
+    if (meta.savedAt > 0) applyingRemoteSavedAtRef.current = meta.savedAt;
+    void applyRemoteDesignMetaRef.current(meta, epoch)
+      .catch((err) => {
+        console.warn("[custom-abutment] remote design apply failed", err);
+      })
+      .finally(() => {
+        if (applyingRemoteSavedAtRef.current === meta.savedAt) {
+          applyingRemoteSavedAtRef.current = 0;
+        }
+      });
   }, []);
 
   const rememberAbutmentEdit = useCallback(
@@ -3200,7 +3244,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     bottom: number;
   }) =>
     [...pose.pos, ...pose.quat, ...pose.target, pose.zoom, pose.top, pose.bottom]
-      .map((n) => n.toFixed(2))
+      .map((n) => n.toFixed(1))
       .join(",");
 
   const applyIncomingSharedView = useCallback((view: CustomAbutmentSharedView) => {
@@ -3281,7 +3325,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         viewPersistTimerRef.current = 0;
         viewSyncDirtyRef.current = true;
         void flushSharedView(true);
-      }, 180);
+      }, 480);
     }
     if (sent || !token) return;
     if (viewSyncInflightRef.current) {
@@ -3312,7 +3356,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!viewReadyRef.current || applyingSharedViewRef.current) return;
     lastLocalViewAtRef.current = performance.now();
     viewSyncDirtyRef.current = true;
-    const gap = customAbutmentLiveConnected() ? 50 : 320;
+    const gap = customAbutmentLiveConnected() ? 120 : 360;
     const elapsed = performance.now() - viewSyncSentAtRef.current;
     if (flush || elapsed >= gap) {
       window.clearTimeout(viewSyncTimerRef.current);
@@ -3464,8 +3508,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             writeSavedView(transferIdRef.current, camera, controls.target);
             publishSharedViewRef.current(true);
           }
-        } else if (viewReadyRef.current && !applyingSharedViewRef.current) {
-          publishSharedViewRef.current(false);
         }
       }
       const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
@@ -3853,12 +3895,10 @@ export function PracticeCustomAbutmentPreviewDialog({
           : preferFresherCustomAbutmentDesign(localCached, serverDesign);
         const serverAt = Number(serverDesign?.savedAt) || 0;
         if (serverAt > designSavedAtRef.current) designSavedAtRef.current = serverAt;
+        // 정점이 없을 때만 다시 만든다. 검볼만 있으면 저장 메시 위에 얹는다.
         const rebuildFromMeta = Boolean(
           cached?.teeth.some(
-            (row) =>
-              row.regenFromMeta ||
-              (row.localPositions?.byteLength ?? 0) < 36 ||
-              Boolean(row.gumballEdit),
+            (row) => row.regenFromMeta || (row.localPositions?.byteLength ?? 0) < 36,
           ),
         );
         const versionMismatch = Boolean(
@@ -4984,7 +5024,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 저장본이 아니라 지금 조정값으로 형상을 다시 만든다. 대합거리(기본 1.5mm)를 1순위로 잡아 포스트 높이·테이퍼를 새로 결정한다. */
   const regenerateDesigns = useCallback(
-    async (teeth?: readonly string[]) => {
+    async (teeth?: readonly string[], opts?: { persist?: boolean }) => {
       const ctx = designContextRef.current;
       const list = designedListRef.current;
       const targets = (teeth && teeth.length > 0 ? teeth : list.map((d) => d.toothNumber)).filter((tooth) =>
@@ -5009,31 +5049,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         }),
         "replace",
       );
-      if (applied && designEpochRef.current === epoch) {
+      if (applied && designEpochRef.current === epoch && opts?.persist !== false) {
         persistDesign();
       }
     },
     [applyDesignChanges, persistDesign],
   );
-
-  // 단면 각이 어긋나 스캔바디 밖으로 나간 저장 형상을, 이 브라우저에서 한 번 정합 위치로 다시 만든다.
-  const scanbodyRealignRef = useRef(false);
-  useEffect(() => {
-    if (scanbodyRealignRef.current || !open || !canEditDesign) return;
-    if (designedList.length === 0 || redesigning.length > 0) return;
-    const key = "abuts.customAbutment.realignScanbody.v65";
-    try {
-      if (window.localStorage.getItem(key)) {
-        scanbodyRealignRef.current = true;
-        return;
-      }
-      window.localStorage.setItem(key, "1");
-    } catch {
-      return;
-    }
-    scanbodyRealignRef.current = true;
-    void regenerateDesigns();
-  }, [open, canEditDesign, designedList.length, redesigning.length, regenerateDesigns]);
 
   // PTX 공유 채팅방 조회 (치과↔기공소 동일 대화 공유)
   useEffect(() => {
@@ -5085,6 +5106,21 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   // 표시·선택·검볼이 바뀌면 상대 화면도 같이 맞춘다.
   useEffect(() => {
+    chromeStateRef.current = {
+      showUpper: visibleJaws.upper,
+      showLower: visibleJaws.lower,
+      scanTransparency,
+      showFinishLine,
+      showFixtureAnalog,
+      gumballOn,
+      colorMapping,
+      centerGuide,
+      selectedTeeth: [...selectedTeeth],
+      visibleTeeth: { ...visibleTeeth },
+      shownScanbodies: { ...shownScanbodies },
+      shownPredictedCrowns: { ...shownPredictedCrowns },
+      expandedTeeth: { ...expandedTeeth },
+    };
     if (!open || !transferIdParam) return;
     if (applyingChromeRef.current) {
       applyingChromeRef.current = false;
@@ -5092,27 +5128,22 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     if (chromeRevRef.current === 0 || chromeRevRef.current === sentChromeRevRef.current) return;
-    sentChromeRevRef.current = chromeRevRef.current;
-    emitCustomAbutmentLive({
-      kind: "chrome",
-      transferId: transferIdParam,
-      savedAt: Date.now(),
-      chrome: {
-        showUpper: visibleJaws.upper,
-        showLower: visibleJaws.lower,
-        scanTransparency,
-        showFinishLine,
-        showFixtureAnalog,
-        gumballOn,
-        colorMapping,
-        centerGuide,
-        selectedTeeth,
-        visibleTeeth,
-        shownScanbodies,
-        shownPredictedCrowns,
-        expandedTeeth,
-      },
-    });
+    window.clearTimeout(chromeSyncTimerRef.current);
+    chromeSyncTimerRef.current = window.setTimeout(() => {
+      chromeSyncTimerRef.current = 0;
+      if (chromeRevRef.current === sentChromeRevRef.current) return;
+      sentChromeRevRef.current = chromeRevRef.current;
+      const savedAt = Date.now();
+      lastLocalChromeAtRef.current = performance.now();
+      lastChromeAtRef.current = Math.max(lastChromeAtRef.current, savedAt);
+      emitCustomAbutmentLive({
+        kind: "chrome",
+        transferId: transferIdParam,
+        savedAt,
+        chrome: chromeStateRef.current,
+      });
+    }, 120);
+    return () => window.clearTimeout(chromeSyncTimerRef.current);
   }, [
     centerGuide,
     colorMapping,
@@ -5175,9 +5206,14 @@ export function PracticeCustomAbutmentPreviewDialog({
       const data = evt.data as Record<string, unknown> | null;
       if (!data || String(data.transferId || "") !== transferIdParam) return;
       if (data.updatedBy && String(data.updatedBy) === authUserIdRef.current) return;
-      if (chromeRevRef.current !== sentChromeRevRef.current) return;
+      const savedAt = Number(data.savedAt) || 0;
+      if (savedAt > 0 && savedAt <= lastChromeAtRef.current) return;
+      if (performance.now() - lastLocalChromeAtRef.current < 180) return;
+      if (savedAt > lastChromeAtRef.current) lastChromeAtRef.current = savedAt;
       applyingChromeRef.current = true;
       suppressPivotSyncRef.current = true;
+      chromeRevRef.current += 1;
+      sentChromeRevRef.current = chromeRevRef.current;
       setVisibleJaws((prev) => ({
         upper: data.showUpper === false ? false : data.showUpper === true ? true : prev.upper,
         lower: data.showLower === false ? false : data.showLower === true ? true : prev.lower,

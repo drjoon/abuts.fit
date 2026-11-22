@@ -397,9 +397,10 @@ export function initializeSocket(server) {
       }
     });
 
-    // 커스텀어벗 화면. 저장 전에 상대 창으로 넘긴다.
+    // 커스텀어벗 화면. 저장 전에 상대 창으로 넘긴다. 뷰와 재생성·검볼 한도를 나눈다.
     socket.on("custom-abutment:live", (data) => {
-      if (!allowCustomAbutmentLive(socket.id)) return;
+      const kind = data && typeof data === "object" ? String(data.kind || "") : "";
+      if (!allowCustomAbutmentLive(socket.id, kind)) return;
       void relayCustomAbutmentLive(socket, data, emitAppEventToUser).catch((err) =>
         console.warn("[custom-abutment] live relay failed", err?.message || err),
       );

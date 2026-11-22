@@ -120,21 +120,96 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
+function toothHasMesh(row: unknown): boolean {
+  if (!row || typeof row !== "object") return false;
+  const tooth = row as CachedCustomAbutmentTooth;
+  if (tooth.regenFromMeta) return false;
+  return (tooth.localPositions?.byteLength ?? 0) >= 36;
+}
+
+function designHasMeshes(row: { teeth?: readonly unknown[] } | null | undefined): boolean {
+  const teeth = Array.isArray(row?.teeth) ? row.teeth : [];
+  return teeth.length > 0 && teeth.every(toothHasMesh);
+}
+
+/**
+ * 서버가 메타만 주고 이 브라우저에 메시가 있으면, 메시는 두고 서버 조정값만 얹는다.
+ * 리프레시마다 같은 형상을 다시 만들지 않기 위함이다.
+ */
+export function mergeServerMetaOntoLocalMeshes<
+  T extends {
+    savedAt?: number;
+    version?: number;
+    fitVersion?: number;
+    teeth?: readonly CachedCustomAbutmentTooth[];
+    alignedScans?: CachedAlignedScan[];
+    chat?: CustomAbutmentChatTurn[];
+  },
+>(local: T, server: T): T {
+  const localTeeth = Array.isArray(local.teeth) ? local.teeth : [];
+  const serverTeeth = Array.isArray(server.teeth) ? server.teeth : [];
+  const localByTooth = new Map(localTeeth.map((row) => [String(row.toothNumber), row]));
+  const teeth = serverTeeth.map((src) => {
+    const prev = localByTooth.get(String(src.toothNumber));
+    if (!prev || !toothHasMesh(prev)) return src;
+    return {
+      ...prev,
+      ...src,
+      localPositions: prev.localPositions,
+      crownLocalPositions: prev.crownLocalPositions,
+      marginLoopLocal:
+        (src.marginLoopLocal?.byteLength ?? 0) >= 9 ? src.marginLoopLocal : prev.marginLoopLocal,
+      ...(prev.solidBodyLocalPositions
+        ? { solidBodyLocalPositions: prev.solidBodyLocalPositions }
+        : {}),
+      ...(prev.enameloplastyLocalPositions
+        ? { enameloplastyLocalPositions: prev.enameloplastyLocalPositions }
+        : {}),
+      ...(prev.sourceS3Key ? { sourceS3Key: prev.sourceS3Key } : {}),
+      ...(prev.sourceCrownS3Key ? { sourceCrownS3Key: prev.sourceCrownS3Key } : {}),
+      regenFromMeta: false,
+    };
+  });
+  return {
+    ...local,
+    ...server,
+    teeth,
+    alignedScans:
+      Array.isArray(server.alignedScans) && server.alignedScans.length > 0
+        ? server.alignedScans
+        : local.alignedScans,
+    chat: Array.isArray(server.chat) && server.chat.length > 0 ? server.chat : local.chat,
+  };
+}
+
 /**
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
  * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다.
+ * 서버가 메타만 있으면 이 브라우저 메시를 유지한다.
  * 같은 시각이면 이 브라우저 저장본을 유지한다.
  */
 export function preferFresherCustomAbutmentDesign<
-  T extends { savedAt?: number; teeth?: readonly unknown[] },
+  T extends {
+    savedAt?: number;
+    version?: number;
+    fitVersion?: number;
+    teeth?: readonly CachedCustomAbutmentTooth[];
+    alignedScans?: CachedAlignedScan[];
+    chat?: CustomAbutmentChatTurn[];
+  },
 >(local: T | null, server: T | null): T | null {
   const localCount = Array.isArray(local?.teeth) ? local.teeth.length : 0;
   const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
   if (localCount === 0) return serverCount > 0 ? server : null;
-  if (serverCount === 0 || !server) return local;
-  const localAt = Number(local?.savedAt) || 0;
+  if (serverCount === 0 || !server || !local) return local;
+  const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  if (serverAt > localAt) return server;
+  if (serverAt > localAt) {
+    if (!designHasMeshes(server) && designHasMeshes(local)) {
+      return mergeServerMetaOntoLocalMeshes(local, server);
+    }
+    return server;
+  }
   return local;
 }
 

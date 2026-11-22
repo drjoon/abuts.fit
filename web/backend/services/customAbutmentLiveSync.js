@@ -3,11 +3,12 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import User from "../models/user.model.js";
-import { sanitizeSharedDesignView } from "./customAbutmentDesignSync.js";
+import { sanitizeSharedDesignView, toDesignSyncMeta } from "./customAbutmentDesignSync.js";
 
 const PARTY_TTL_MS = 45_000;
 const MAX_PARTY = 200;
-const MAX_PER_SEC = 48;
+const MAX_VIEW_PER_SEC = 12;
+const MAX_CTRL_PER_SEC = 20;
 const MAX_BYTES = 120_000;
 const partyCache = new Map();
 const rateBySocket = new Map();
@@ -111,15 +112,20 @@ export function forgetCustomAbutmentLive(socketId) {
   rateBySocket.delete(socketId);
 }
 
-export function allowCustomAbutmentLive(socketId) {
+/** 뷰는 초당 12회로 낮춘다. 재생성·검볼·표시는 따로 센다. */
+export function allowCustomAbutmentLive(socketId, kind) {
   const now = Date.now();
   let row = rateBySocket.get(socketId);
   if (!row || now - row.at >= 1000) {
-    row = { at: now, count: 0 };
+    row = { at: now, view: 0, ctrl: 0 };
     rateBySocket.set(socketId, row);
   }
-  row.count += 1;
-  return row.count <= MAX_PER_SEC;
+  if (kind === "view") {
+    row.view += 1;
+    return row.view <= MAX_VIEW_PER_SEC;
+  }
+  row.ctrl += 1;
+  return row.ctrl <= MAX_CTRL_PER_SEC;
 }
 
 async function partyUserIds(transfer) {
@@ -230,12 +236,14 @@ export async function relayCustomAbutmentLive(socket, raw, emit) {
     event = "practice:custom-abutment-gumball";
     data = { transferId, savedAt, updatedBy, tooth, edit };
   } else if (kind === "design") {
-    const design = raw.design;
-    if (!design || typeof design !== "object" || !Array.isArray(design.teeth) || design.teeth.length === 0) {
-      return;
-    }
+    const meta = toDesignSyncMeta({
+      ...(raw.design && typeof raw.design === "object" ? raw.design : {}),
+      savedAt,
+      updatedBy,
+    });
+    if (!meta || !Array.isArray(meta.teeth) || meta.teeth.length === 0) return;
     event = "practice:custom-abutment-design";
-    data = { ...design, transferId, savedAt, updatedBy };
+    data = { transferId, ...meta };
   } else {
     return;
   }
