@@ -1,5 +1,6 @@
 // 커스텀어벗 디자인 뷰어 오른쪽 위 「어벗 정보」 패널.
 // 치아마다 표시·치식을 두고, 펼치면 세부 항목을 드래그·스피너(▲/▼)·직접 입력으로 바꿀 수 있다.
+// 같은 브리지인 치아는 행 사이에 연결선과 링크 아이콘을 둔다.
 // 커스텀어벗 단독 파일은 받지 않는다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
@@ -51,8 +52,10 @@ import {
   minOcclusalClearanceMmForTooth,
   postRetentionSurface,
   snapMaxDiameterMm,
+  teethShareBridgeSpan,
   type CustomAbutmentDesignParams,
   type CustomAbutmentParamKey,
+  type ToothBridgeMetaItem,
 } from "@/shared/practice/customAbutmentDesignParams";
 import type {
   CustomAbutmentDesignMetrics,
@@ -1453,8 +1456,40 @@ function EditableRangeRow({
   );
 }
 
+function BridgeLinkMark({ fromTooth, toTooth }: { fromTooth: string; toTooth: string }) {
+  return (
+    <div className="relative h-4">
+      <span aria-hidden className="absolute bottom-0 left-2.5 top-0 w-px -translate-x-1/2 bg-primary/70" />
+      <span
+        role="img"
+        aria-label={`#${fromTooth}와 #${toTooth} 브리지 연결`}
+        title="브리지 연결"
+        className="absolute left-2.5 top-1/2 flex h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-background text-primary"
+      >
+        <Link2 className="h-3 w-3" />
+      </span>
+    </div>
+  );
+}
+
+function BridgeRail({ linkedToPrev, linkedToNext }: { linkedToPrev: boolean; linkedToNext: boolean }) {
+  if (!linkedToPrev && !linkedToNext) return null;
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-2.5 w-px -translate-x-1/2 bg-primary/70"
+      style={{
+        top: linkedToPrev ? 0 : "0.875rem",
+        bottom: linkedToNext ? 0 : undefined,
+        height: linkedToNext ? undefined : "0.875rem",
+      }}
+    />
+  );
+}
+
 export function PracticeCustomAbutmentDesignTree({
   items,
+  toothWorks,
   visibleTeeth,
   selectedTeeth,
   redesigning,
@@ -1482,6 +1517,7 @@ export function PracticeCustomAbutmentDesignTree({
   onTogglePredictedCrown: (toothNumber: string) => void;
   onSetAllPredictedCrowns: (shown: boolean) => void;
   items: readonly DesignedCustomAbutment[];
+  toothWorks?: readonly ToothBridgeMetaItem[] | null;
   visibleTeeth: Record<string, boolean>;
   selectedTeeth: readonly string[];
   redesigning: readonly string[];
@@ -1600,9 +1636,14 @@ export function PracticeCustomAbutmentDesignTree({
           수치와 검볼은 같이 바뀝니다.
         </p>
       ) : null}
-      <ul className="space-y-1 px-1.5 py-1.5">
-        {orderedItems.map((item) => {
+      <ul className="px-1.5 py-1.5">
+        {orderedItems.map((item, index) => {
           const tooth = item.toothNumber;
+          const prevTooth = index > 0 ? orderedItems[index - 1]!.toothNumber : "";
+          const nextTooth = orderedItems[index + 1]?.toothNumber ?? "";
+          const linkedToPrev = Boolean(prevTooth) && teethShareBridgeSpan(prevTooth, tooth, toothWorks);
+          const linkedToNext = Boolean(nextTooth) && teethShareBridgeSpan(tooth, nextTooth, toothWorks);
+          const inBridge = linkedToPrev || linkedToNext;
           const open = Boolean(expanded[tooth]);
           const visible = visibleTeeth[tooth] !== false;
           const selected = selectedTeeth.includes(tooth);
@@ -1613,7 +1654,11 @@ export function PracticeCustomAbutmentDesignTree({
           const rowDisabled = busy || !editable;
 
           return (
-            <li key={tooth}>
+            <li key={tooth} className={cn("relative", !linkedToPrev && index > 0 && "mt-1")}>
+              {linkedToPrev ? <BridgeLinkMark fromTooth={prevTooth} toTooth={tooth} /> : null}
+              <div className="relative">
+              <BridgeRail linkedToPrev={linkedToPrev} linkedToNext={linkedToNext} />
+              <div className={cn("min-w-0", inBridge && "pl-6")}>
               <div
                 className={cn(
                   "flex items-center gap-0.5 rounded-md py-0.5 pl-0.5 pr-0.5 text-[0.8125rem]",
@@ -1944,6 +1989,8 @@ export function PracticeCustomAbutmentDesignTree({
                   </div>
                 </div>
               ) : null}
+              </div>
+              </div>
             </li>
           );
         })}

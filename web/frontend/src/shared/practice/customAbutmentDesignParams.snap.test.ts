@@ -10,6 +10,7 @@ import {
   resolveCustomAbutmentParams,
   resolveToothBridgeRetentionContext,
   snapMaxDiameterMm,
+  teethShareBridgeSpan,
 } from "./customAbutmentDesignParams";
 
 test("최대 직경은 정수에서 0.1mm 이내이면 0.01mm 아래로 내린다", () => {
@@ -128,4 +129,23 @@ test("전치부 설측 사면(마진에서 시작 높이)은 기본 자동(-1), 
   assert.equal(resolveCustomAbutmentParams("11", { postLabialBevelMm: -1 }).postLabialBevelMm, 0);
   assert.equal(resolveCustomAbutmentParams("13", { postLabialBevelMm: 2.24 }).postLabialBevelMm, 2.2);
   assert.equal(resolveCustomAbutmentParams("21", { postLabialBevelMm: 20 }).postLabialBevelMm, 11.5);
+});
+
+test("브리지 연결은 링크를 따라가고 다른 브리지는 섞지 않는다", () => {
+  const works = [
+    { toothNumber: "17", prosthesisType: "브리지", bridgeLinkedTeeth: ["16"] },
+    { toothNumber: "16", prosthesisType: "브리지", bridgeLinkedTeeth: ["17"] },
+    { toothNumber: "12", prosthesisType: "브리지", bridgeLinkedTeeth: ["11"] },
+    { toothNumber: "11", prosthesisType: "브리지", bridgeLinkedTeeth: ["12"] },
+    { toothNumber: "21", prosthesisType: "결손", bridgeLinkedTeeth: ["22"] },
+    { toothNumber: "22", prosthesisType: "브리지", bridgeLinkedTeeth: ["21"] },
+    { toothNumber: "35", prosthesisType: "브리지", bridgeLinkedTeeth: ["36"] },
+    { toothNumber: "36", prosthesisType: "결손", bridgeLinkedTeeth: ["35", "37"] },
+    { toothNumber: "37", prosthesisType: "브리지", bridgeLinkedTeeth: ["36"] },
+  ];
+  assert.equal(teethShareBridgeSpan("17", "16", works), true);
+  assert.equal(teethShareBridgeSpan("12", "11", works), true);
+  assert.equal(teethShareBridgeSpan("11", "22", works), false, "링크가 없으면 다른 브리지");
+  assert.equal(teethShareBridgeSpan("35", "37", works), true, "폰틱을 건너 같은 스팬");
+  assert.equal(teethShareBridgeSpan("16", "12", works), false);
 });

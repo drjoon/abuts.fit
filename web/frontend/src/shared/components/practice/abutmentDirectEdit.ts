@@ -2,7 +2,7 @@
 // 검볼 UI 원점은 포스트 중심이다. 클릭·드래그 종류와 관계없이 검볼 위치는 거기에 고정된다.
 // 파란 회전의 형상 힌지는 피니시라인 중앙이다. 호를 끄는 각도는 검볼(호) 중심에서 잰다.
 // 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
-// 빨간 축은 화면 오른쪽, 초록 축은 화면 위, 파란 축은 화면 밖이다.
+// 파란 축은 화면 밖이다. 빨간·초록은 화면 오른쪽·위인데, 포스트가 화면 아래로 길어지면 검볼을 180° 돌려 초록 점이 그 쪽을 가리킨다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 화살표는 그 방향으로 포스트를 옮긴다. 축 상자는 그 방향 크기, 노란 면은 평면 2D 스케일이다.
 // 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
@@ -2347,6 +2347,31 @@ function tagHandle(
 const gumballBasis = new THREE.Matrix4();
 
 /**
+ * 초록 스케일(+Y)이 포스트가 길어지는 쪽을 가리키게 화면 축을 고른다.
+ * 포스트 +축이 화면 아래를 보면 오른쪽·위를 함께 뒤집어 검볼을 180° 돌린다.
+ * 핸들을 그 방향으로 끌면 스케일이 커지고 포스트가 길어진다. 화면 밖 축은 그대로라 고리는 화면에 평행하다.
+ */
+export function orientGumballScreenAxes(
+  right: THREE.Vector3,
+  up: THREE.Vector3,
+  outOfScreen: THREE.Vector3,
+  postAxis: THREE.Vector3 | null,
+  outRight: THREE.Vector3,
+  outUp: THREE.Vector3,
+  outForward: THREE.Vector3,
+) {
+  outRight.copy(right);
+  outUp.copy(up);
+  outForward.copy(outOfScreen);
+  const flip = Boolean(postAxis && postAxis.dot(up) < -0.2);
+  if (flip) {
+    outRight.negate();
+    outUp.negate();
+  }
+  return flip;
+}
+
+/**
  * 화면 오른쪽·위·화면 밖(+Z). 오른손 좌표계라 흰 고리가 화면에 평행하고 파란 축이 화면에 수직이다.
  * 화면 안쪽(-Z)을 세 번째 축으로 쓰면 행렬식이 -1이 되어 고리가 기울어진다.
  */
@@ -2597,6 +2622,9 @@ export class AbutmentDirectEditSession {
   private readonly camRight = new THREE.Vector3();
   private readonly camUp = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
+  private readonly gbRight = new THREE.Vector3();
+  private readonly gbUp = new THREE.Vector3();
+  private readonly gbForward = new THREE.Vector3();
   private readonly viewQuat = new THREE.Quaternion();
 
   constructor(private readonly bridge: AbutmentEditBridge) {
@@ -2916,7 +2944,6 @@ export class AbutmentDirectEditSession {
     const viewH = (camera.top - camera.bottom) / Math.max(camera.zoom, 1e-4);
     const worldPerPx = viewH / Math.max(host.clientHeight, 1);
     const show = this.bridge.ui.gumballOn && !this.bridge.ui.readOnly;
-    const gumballQuat = this.viewQuaternion();
     const picked = this.bridge.ui.selectedTeeth ?? [];
     const multi = picked.length > 1;
     const primary = picked[picked.length - 1] ?? this.bridge.ui.selected;
@@ -2927,7 +2954,7 @@ export class AbutmentDirectEditSession {
       const expanded = this.bridge.ui.expanded[tooth] === true;
       const leadGumball = !multi || tooth === primary;
       view.gumball.visible = show && visible && expanded && leadGumball;
-      view.gumball.quaternion.copy(gumballQuat);
+      view.gumball.quaternion.copy(this.viewQuaternion(view));
       view.gumball.position.copy(this.gumballPosition(view, edit));
       view.gumball.scale.setScalar(worldPerPx * (expanded ? GUMBALL_SIZE_PX : 50));
       if (mesh) this.moveBadge(mesh, view.gumball.position, show && visible && expanded);
@@ -3060,7 +3087,7 @@ export class AbutmentDirectEditSession {
     // 호는 검볼(포스트) 중심에 그려진다. 각도를 피니시라인에서 재면 좌하 호가 힌지 근처라 회전이 튀거나 안 된다.
     const center = this.resolveGumballCenter(view, start, handle.tooth);
     if (handle.op === "move" || handle.op === "scale") {
-      const axis = this.cameraAxis(handle.axis, vC).clone();
+      const axis = this.cameraAxis(handle.axis, vC, view).clone();
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return false;
@@ -3078,7 +3105,7 @@ export class AbutmentDirectEditSession {
       return true;
     }
     if (handle.op === "rot") {
-      const axis = this.cameraAxis(handle.axis, vC).clone();
+      const axis = this.cameraAxis(handle.axis, vC, view).clone();
       plane.setFromNormalAndCoplanarPoint(axis, center);
       const seed = pickWorld ?? this.rayOnPlane(event);
       if (!seed) return false;
@@ -3117,7 +3144,7 @@ export class AbutmentDirectEditSession {
     const hit = this.rayOnPlane(event) ?? raycaster.ray.closestPointToPoint(center, vA).clone();
     const radial = hit.sub(center);
     const radialLen = Math.max(radial.length(), 0.2);
-    const radialDir = radial.lengthSq() > 1e-8 ? radial.clone().normalize() : this.cameraAxis(0, vC).clone();
+    const radialDir = radial.lengthSq() > 1e-8 ? radial.clone().normalize() : this.cameraAxis(0, vC, view).clone();
     this.drag = {
       kind: handle.op,
       tooth: handle.tooth,
@@ -3246,8 +3273,8 @@ export class AbutmentDirectEditSession {
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
       const raw = hit.sub(drag.startHit);
-      const a = this.cameraAxis(drag.axis, vA).clone();
-      const b = this.cameraAxis(drag.axis2, vB).clone();
+      const a = this.cameraAxis(drag.axis, vA, view).clone();
+      const b = this.cameraAxis(drag.axis2, vB, view).clone();
       return {
         kind: "translate",
         delta: a.multiplyScalar(raw.dot(a)).add(b.multiplyScalar(raw.dot(b))),
@@ -3261,8 +3288,8 @@ export class AbutmentDirectEditSession {
       const proj = hit.sub(center).dot(drag.startRadialDir);
       const factor = clamp(proj / Math.max(drag.startRadialLen, 0.2), 0.4, 2.2);
       if (drag.kind === "scale3") return { kind: "scaleUniform", factor };
-      const a = this.cameraAxis(drag.axis, vB).clone();
-      const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC).clone() : null;
+      const a = this.cameraAxis(drag.axis, vB, view).clone();
+      const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC, view).clone() : null;
       return { kind: "scaleAxes", axes: b ? [a, b] : [a], factor };
     }
     return null;
@@ -3863,17 +3890,30 @@ export class AbutmentDirectEditSession {
     return true;
   }
 
-  /** 화면 오른쪽, 위, 화면 밖. 검볼은 이 축으로 화면에 수직이다. */
-  private cameraAxis(axis: number, out: THREE.Vector3) {
+  /** 초록 점이 포스트가 길어지는 쪽을 보도록 맞춘 화면 축. */
+  private gumballAxes(view?: ToothView | null) {
     this.cameraBasis();
-    if (axis === 0) return out.copy(this.camRight);
-    if (axis === 1) return out.copy(this.camUp);
-    return out.copy(this.camForward);
+    orientGumballScreenAxes(
+      this.camRight,
+      this.camUp,
+      this.camForward,
+      view?.axes[2] ?? null,
+      this.gbRight,
+      this.gbUp,
+      this.gbForward,
+    );
   }
 
-  private viewQuaternion() {
-    this.cameraBasis();
-    return screenGumballQuaternion(this.camRight, this.camUp, this.camForward, this.viewQuat);
+  private cameraAxis(axis: number, out: THREE.Vector3, view?: ToothView | null) {
+    this.gumballAxes(view);
+    if (axis === 0) return out.copy(this.gbRight);
+    if (axis === 1) return out.copy(this.gbUp);
+    return out.copy(this.gbForward);
+  }
+
+  private viewQuaternion(view?: ToothView | null) {
+    this.gumballAxes(view);
+    return screenGumballQuaternion(this.gbRight, this.gbUp, this.gbForward, this.viewQuat);
   }
 
   /** 화살표 방향으로 키우거나 줄인다. 그 방향에 놓인 순측·근심·삽입축 비율만 바꾼다. */

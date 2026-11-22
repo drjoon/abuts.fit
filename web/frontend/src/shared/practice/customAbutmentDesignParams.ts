@@ -305,6 +305,43 @@ export function resolveToothBridgeRetentionContext(
   };
 }
 
+/**
+ * 두 치아가 같은 브리지인지. `bridgeLinkedTeeth`를 양쪽·중간에 있는 폰틱까지 따라간다.
+ * 같은 악이라고 다른 브리지를 한 줄로 잇지 않는다.
+ */
+export function teethShareBridgeSpan(
+  toothA: string,
+  toothB: string,
+  toothWorks?: readonly ToothBridgeMetaItem[] | null,
+): boolean {
+  const start = fdiDigitsOf(toothA);
+  const goal = fdiDigitsOf(toothB);
+  if (!start || !goal || start === goal || !toothWorks || toothWorks.length === 0) return false;
+  const byDigits = new Map<string, ToothBridgeMetaItem>();
+  for (const row of toothWorks) {
+    const d = fdiDigitsOf(row?.toothNumber);
+    if (d && !byDigits.has(d)) byDigits.set(d, row);
+  }
+  const visited = new Set<string>();
+  const queue = [start];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    if (cur === goal) return true;
+    const row = byDigits.get(cur);
+    for (const linked of row?.bridgeLinkedTeeth ?? []) {
+      const d = fdiDigitsOf(linked);
+      if (d && !visited.has(d)) queue.push(d);
+    }
+    for (const [other, otherRow] of byDigits) {
+      if (visited.has(other)) continue;
+      if ((otherRow.bridgeLinkedTeeth ?? []).some((t) => fdiDigitsOf(t) === cur)) queue.push(other);
+    }
+  }
+  return false;
+}
+
 export function resolveAbutmentBridgeRetentionSpec(
   bridge?: { isBridge?: boolean; retainerCount?: number } | boolean | null,
 ): AbutmentBridgeRetentionSpec {

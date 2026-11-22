@@ -7284,6 +7284,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 <PracticeCustomAbutmentDesignTree
                     className="min-h-0 w-full"
                     items={designedList}
+                    toothWorks={toothWorks}
                     visibleTeeth={visibleTeeth}
                     selectedTeeth={selectedTeeth}
                     redesigning={redesigning}

@@ -30,6 +30,7 @@ import {
   measureEditedAbutment,
   refitLocalPositions,
   regenerateCuffToMargin,
+  orientGumballScreenAxes,
   screenGumballQuaternion,
   sculptFalloff,
   writeAttribute,
@@ -217,6 +218,32 @@ const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
 assert.ok(localX.distanceTo(right) < 1e-6, "빨간 축은 화면 오른쪽");
 assert.ok(localY.distanceTo(up) < 1e-6, "초록 축은 화면 위");
 assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고리는 화면에 평행");
+
+{
+  const oR = new THREE.Vector3();
+  const oU = new THREE.Vector3();
+  const oF = new THREE.Vector3();
+  const postDown = new THREE.Vector3(0, 0, -1);
+  assert.equal(
+    orientGumballScreenAxes(right, up, outOfScreen, postDown, oR, oU, oF),
+    true,
+    "포스트가 화면 아래로 길어지면 검볼을 180° 돌린다",
+  );
+  screenGumballQuaternion(oR, oU, oF, q);
+  const downY = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+  const stillZ = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  assert.ok(downY.distanceTo(up.clone().negate()) < 1e-6, "초록 점은 포스트가 길어지는 화면 아래");
+  assert.ok(stillZ.distanceTo(outOfScreen) < 1e-6, "180° 뒤에도 파란 축은 화면 밖");
+  const postUp = new THREE.Vector3(0, 0, 1);
+  assert.equal(orientGumballScreenAxes(right, up, outOfScreen, postUp, oR, oU, oF), false);
+  assert.ok(oU.distanceTo(up) < 1e-6, "포스트가 화면 위면 초록 점은 위에 둔다");
+  const almostLevel = new THREE.Vector3(0, 0.98, -0.1).normalize();
+  assert.equal(
+    orientGumballScreenAxes(right, up, outOfScreen, almostLevel, oR, oU, oF),
+    false,
+    "화면과 거의 나란한 포스트는 뒤집지 않는다",
+  );
+}
 
 // 회전(yaw)이 이미 적용된 상태에서도 화살표 이동과 축 회전 기울기 부호가 화면 드래그 방향과 정확히 일치하는지 검증
 {
