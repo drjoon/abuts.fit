@@ -2341,4 +2341,183 @@ export function splitScanByScanbodies(
   return { rest: withIndex(rest), scanbodies };
 }
 
+/**
+ * 크라운 작업 스캔 다운로드본(`meshesToLabMeshData`)이 다시 의뢰 구강스캔으로 올라온 경우,
+ * 악궁 메시 뒤에 붙어 있는 이전 커스텀어벗 삼각형(단색 금색 `0xd4c59e` 비색인 수프·분리 셸)을 제거한다.
+ * 인덱스에서 빠진 원본 스캔바디 미참조 정점(`parent[v] === -1`)은 스캔바디 정합에 쓰이므로 그대로 남긴다.
+ */
+export function stripBakedAbutmentTrianglesFromJawGeometry(
+  geometry: THREE.BufferGeometry,
+): boolean {
+  const pos = geometry.getAttribute("position");
+  const index = geometry.getIndex();
+  if (!pos || !index || pos.count < 500 || index.count < 1500) return false;
+  const vCount = pos.count;
+  const triCount = Math.floor(index.count / 3);
+  if (triCount < 500) return false;
+
+  const parent = new Int32Array(vCount).fill(-1);
+  const find = (start: number): number => {
+    let x = start;
+    while (parent[x]! !== x) {
+      const next = parent[x]!;
+      parent[x] = parent[next]!;
+      x = next;
+    }
+    return x;
+  };
+  const unite = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  for (let t = 0; t < triCount; t += 1) {
+    const base = t * 3;
+    const a = index.getX(base);
+    const b = index.getX(base + 1);
+    const c = index.getX(base + 2);
+    if (a < 0 || b < 0 || c < 0 || a >= vCount || b >= vCount || c >= vCount) continue;
+    if (parent[a]! < 0) parent[a] = a;
+    if (parent[b]! < 0) parent[b] = b;
+    if (parent[c]! < 0) parent[c] = c;
+    unite(a, b);
+    unite(b, c);
+  }
+
+  const compVertCount = new Int32Array(vCount);
+  let maxCompVerts = 0;
+  for (let v = 0; v < vCount; v += 1) {
+    if (parent[v]! < 0) continue;
+    const r = find(v);
+    const next = (compVertCount[r] ?? 0) + 1;
+    compVertCount[r] = next;
+    if (next > maxCompVerts) maxCompVerts = next;
+  }
+  if (maxCompVerts < 500) return false;
+
+  const color = geometry.getAttribute("color");
+  const hasColor = Boolean(color && color.itemSize >= 3 && color.count >= vCount);
+  const dropComp = new Uint8Array(vCount);
+
+  if (hasColor && color) {
+    const compGoldCount = new Int32Array(vCount);
+    const isGold = (r: number, g: number, b: number): boolean => {
+      const linMatch =
+        Math.abs(r - 0.6584) <= 0.045 &&
+        Math.abs(g - 0.5605) <= 0.045 &&
+        Math.abs(b - 0.3419) <= 0.045;
+      if (linMatch) return true;
+      return (
+        Math.abs(r - 0.8314) <= 0.045 &&
+        Math.abs(g - 0.7725) <= 0.045 &&
+        Math.abs(b - 0.6196) <= 0.045
+      );
+    };
+    const scale =
+      !color.normalized &&
+      (color.array instanceof Uint8Array ||
+        color.array instanceof Uint16Array ||
+        color.array instanceof Uint32Array)
+        ? 1 / 255
+        : 1;
+    for (let v = 0; v < vCount; v += 1) {
+      if (parent[v]! < 0) continue;
+      const r = color.getX(v) * scale;
+      const g = color.getY(v) * scale;
+      const b = color.getZ(v) * scale;
+      if (isGold(r, g, b)) {
+        compGoldCount[find(v)]! += 1;
+      }
+    }
+    const maxRemovable = Math.floor(maxCompVerts * 0.45);
+    for (let r = 0; r < vCount; r += 1) {
+      const count = compVertCount[r]!;
+      if (count >= 3 && count <= maxRemovable && compGoldCount[r] === count) {
+        dropComp[r] = 1;
+      }
+    }
+  } else if (maxCompVerts >= 2000) {
+    let isolatedTriCount = 0;
+    for (let t = 0; t < triCount; t += 1) {
+      const a = index.getX(t * 3);
+      if (a >= 0 && a < vCount && parent[a]! >= 0 && compVertCount[find(a)] === 3) {
+        isolatedTriCount += 1;
+      }
+    }
+    if (isolatedTriCount >= 500) {
+      for (let r = 0; r < vCount; r += 1) {
+        if (compVertCount[r] === 3) dropComp[r] = 1;
+      }
+    }
+  }
+
+  let keptTriCount = 0;
+  let droppedTriCount = 0;
+  for (let t = 0; t < triCount; t += 1) {
+    const a = index.getX(t * 3);
+    if (a >= 0 && a < vCount && parent[a]! >= 0 && dropComp[find(a)] === 1) {
+      droppedTriCount += 1;
+    } else {
+      keptTriCount += 1;
+    }
+  }
+  if (droppedTriCount === 0 || keptTriCount < 100) return false;
+
+  const remap = new Int32Array(vCount).fill(-1);
+  let nextVertCount = 0;
+  for (let v = 0; v < vCount; v += 1) {
+    if (parent[v]! >= 0 && dropComp[find(v)] === 1) continue;
+    remap[v] = nextVertCount;
+    nextVertCount += 1;
+  }
+
+  for (const [name, attr] of Object.entries(geometry.attributes)) {
+    if (!(attr instanceof THREE.BufferAttribute) || attr.isInterleavedBufferAttribute) continue;
+    if (attr.count !== vCount) continue;
+    const itemSize = attr.itemSize;
+    const Ctor = attr.array.constructor as { new (length: number): THREE.TypedArray };
+    const nextArr = new Ctor(nextVertCount * itemSize);
+    const srcArr = attr.array;
+    for (let v = 0; v < vCount; v += 1) {
+      const dst = remap[v]!;
+      if (dst < 0) continue;
+      const srcOff = v * itemSize;
+      const dstOff = dst * itemSize;
+      for (let k = 0; k < itemSize; k += 1) {
+        nextArr[dstOff + k] = srcArr[srcOff + k]!;
+      }
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(nextArr, itemSize, attr.normalized));
+  }
+
+  const nextIndices =
+    nextVertCount > 65535 ? new Uint32Array(keptTriCount * 3) : new Uint16Array(keptTriCount * 3);
+  let writeAt = 0;
+  for (let t = 0; t < triCount; t += 1) {
+    const base = t * 3;
+    const a = index.getX(base);
+    const b = index.getX(base + 1);
+    const c = index.getX(base + 2);
+    if (a >= 0 && a < vCount && parent[a]! >= 0 && dropComp[find(a)] === 1) continue;
+    const na = a >= 0 && a < vCount ? remap[a]! : -1;
+    const nb = b >= 0 && b < vCount ? remap[b]! : -1;
+    const nc = c >= 0 && c < vCount ? remap[c]! : -1;
+    if (na < 0 || nb < 0 || nc < 0) continue;
+    nextIndices[writeAt] = na;
+    nextIndices[writeAt + 1] = nb;
+    nextIndices[writeAt + 2] = nc;
+    writeAt += 3;
+  }
+  geometry.setIndex(
+    new THREE.BufferAttribute(
+      writeAt === nextIndices.length ? nextIndices : nextIndices.subarray(0, writeAt),
+      1,
+    ),
+  );
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return true;
+}
+
 export { basisRotation, type Mat3 };

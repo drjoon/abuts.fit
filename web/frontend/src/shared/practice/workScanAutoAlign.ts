@@ -13,6 +13,7 @@ import {
   abutsWorkScanFileName,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
+import { stripBakedAbutmentTrianglesFromJawGeometry } from "@/shared/practice/customAbutmentScanbodyMatch";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
 import {
   estimateDentalFrame,
@@ -77,6 +78,9 @@ export async function alignWorkScansToBite(
       new File([input.bytes], input.fileName, { type: "application/octet-stream" }),
     );
     const geometry = parsed.geometry;
+    if (input.role === "upper" || input.role === "lower") {
+      stripBakedAbutmentTrianglesFromJawGeometry(geometry);
+    }
     geometry.computeBoundingBox();
     if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
     entries.push({ role: input.role, geometry });

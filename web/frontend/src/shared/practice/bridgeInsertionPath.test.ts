@@ -5,6 +5,7 @@ import {
   localDirToWorld,
   measureLocalPostAxis,
   normalizeInsertionAxis,
+  worldDirToLocal,
 } from "./bridgeInsertionPath";
 
 // 박광훈 2026-11-21. 33-43 브리지와 34-35 브리지는 연결이 없다.
@@ -46,6 +47,12 @@ const world = localDirToWorld([0, 0, 1], {
 });
 assert.ok(world);
 assert.ok(Math.abs(world![2] + 1) < 1e-6, "픽스처 축이 -Z이면 월드 삽입축도 -Z");
+const roundTripLocal = worldDirToLocal(world!, {
+  hexX: [1, 0, 0],
+  hexY: [0, 1, 0],
+  axis: [0, 0, -1],
+});
+assert.ok(roundTripLocal && Math.abs(roundTripLocal[2] - 1) < 1e-6, "worldDirToLocal은 localDirToWorld의 역변환이다");
 assert.deepEqual(normalizeInsertionAxis([0, 3, 0]), [0, 1, 0]);
 assert.equal(normalizeInsertionAxis([1]), null);
 

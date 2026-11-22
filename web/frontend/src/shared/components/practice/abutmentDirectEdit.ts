@@ -36,7 +36,11 @@ import {
   RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
-import { localDirToWorld, measureLocalPostAxis } from "../../practice/bridgeInsertionPath";
+import {
+  localDirToWorld,
+  measureLocalPostAxis,
+  worldDirToLocal,
+} from "../../practice/bridgeInsertionPath";
 import { gumballGroupTeeth } from "../../practice/customAbutmentSelection";
 import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
@@ -86,6 +90,8 @@ export type DirectEditDesign = {
   marginLoopLocal: Float32Array;
   stlBlob: Blob;
   params?: Partial<CustomAbutmentDesignParams>;
+  insertionAxisLocal?: readonly [number, number, number];
+  insertionAxisWorld?: readonly [number, number, number];
   metrics?: {
     occlusalClearanceMm?: number | null;
     postTaperDeg?: number;
@@ -147,6 +153,8 @@ export type AbutmentEditSummary = {
   gestureLead?: string | null;
   /** 확정된 포스트 삽입축(월드). 브리지 형제는 이 방향으로 다시 만든다. */
   insertionAxisWorld?: [number, number, number] | null;
+  /** 연결된 브리지 형제에서 전달받아 각도만 맞춘 수동 비발신 커밋인지 여부. */
+  receivedBridgeSync?: boolean;
 };
 
 export type AbutmentPreferenceUpdate = {
@@ -220,6 +228,7 @@ type ToothView = {
   lastDrilledLocal: Float32Array;
   lastDrilledEdit: AbutmentEdit;
   lastAutoLiftMm: number;
+  lastPreserveLengthOnTilt: boolean;
   lastMarginZCorr: Float32Array | null;
   zone: Zone;
   gingivaProbe: JawGingivaMarginProbe | null;
@@ -237,6 +246,7 @@ type ToothView = {
   gumball: THREE.Group;
   bakeEpoch: number;
   baselineMeasure: EditedAbutmentMetrics | null;
+  basePostAxisLocal: [number, number, number];
 };
 
 type HandleHit = {
@@ -323,6 +333,8 @@ export type AbutmentEditBridge = {
   getMargin: (tooth: string) => MarginLine | undefined;
   getJawGeometry?: (jaw: "upper" | "lower") => THREE.BufferGeometry | null;
   getOpposingGeometry?: (jaw: "upper" | "lower") => THREE.BufferGeometry | null;
+  /** 같은 브리지로 연결된 다른 커스텀어벗 치아 번호 목록(자기 자신 제외). */
+  getBridgeMates?: (tooth: string) => readonly string[];
   ui: {
     gumballOn: boolean;
     sculptOn: boolean;
@@ -431,14 +443,12 @@ export function gumballPatchSetsPostHeight(patch: Partial<CustomAbutmentDesignPa
   return hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
 }
 
-/** 검볼이 삽입 방향(기울기·윗면 위치) 또는 포스트 길이를 바꿨는지. */
+/** 검볼이 삽입 각도(기울기) 또는 포스트 길이를 바꿨는지. 포스트 이동·스케일·수평 회전은 각도 변경이 아니다. */
 export function gumballInsertionChange(edit: AbutmentEdit): { direction: boolean; length: boolean } {
   return {
     direction:
       Math.abs(edit.tiltLabialDeg) > 0.2 ||
-      Math.abs(edit.tiltMesialDeg) > 0.2 ||
-      Math.abs(edit.shiftLabialMm) > 0.05 ||
-      Math.abs(edit.shiftMesialMm) > 0.05,
+      Math.abs(edit.tiltMesialDeg) > 0.2,
     length: Math.abs(edit.heightMm) > 0.02 || Math.abs(edit.scale[2] - 1) > 0.01,
   };
 }
@@ -691,6 +701,130 @@ function applySwing(
     l: pivotL + x * swing.cosA + cx * swing.sinA + swing.kL * dot * oneC,
     m: pivotM + y * swing.cosA + cy * swing.sinA + swing.kM * dot * oneC,
     z: pivotZ + zz * swing.cosA + cz * swing.sinA + swing.kZ * dot * oneC,
+  };
+}
+
+function resolveDesignBasePostAxisLocal(
+  design: DirectEditDesign,
+  proposalSurface: Float32Array,
+  marginZ: number,
+): [number, number, number] {
+  const fromLocal = design.insertionAxisLocal;
+  if (fromLocal && fromLocal.length >= 3) {
+    const lx = Number(fromLocal[0]);
+    const ly = Number(fromLocal[1]);
+    const lz = Number(fromLocal[2]);
+    if (Number.isFinite(lx) && Number.isFinite(ly) && Number.isFinite(lz)) {
+      const len = Math.hypot(lx, ly, lz);
+      if (len > 1e-6) {
+        const sign = lz < 0 ? -1 : 1;
+        return [(lx * sign) / len, (ly * sign) / len, (lz * sign) / len];
+      }
+    }
+  }
+  if (design.insertionAxisWorld && design.insertionAxisWorld.length >= 3) {
+    const converted = worldDirToLocal(
+      [
+        Number(design.insertionAxisWorld[0]),
+        Number(design.insertionAxisWorld[1]),
+        Number(design.insertionAxisWorld[2]),
+      ],
+      design.fixture.fixturePose,
+    );
+    if (converted) {
+      const sign = converted[2] < 0 ? -1 : 1;
+      return [converted[0] * sign, converted[1] * sign, converted[2] * sign];
+    }
+  }
+  const measured = measureLocalPostAxis(proposalSurface, marginZ);
+  if (measured) {
+    const sign = measured[2] < 0 ? -1 : 1;
+    const mx = measured[0] * sign;
+    const my = measured[1] * sign;
+    const mz = Math.max(measured[2] * sign, 0.2);
+    const maxTan = Math.tan((TILT_DEG * Math.PI) / 180);
+    const tanLen = Math.hypot(mx / mz, my / mz);
+    if (tanLen > maxTan) {
+      const k = maxTan / tanLen;
+      const nx = (mx / mz) * k;
+      const ny = (my / mz) * k;
+      const len = Math.hypot(nx, ny, 1);
+      return [nx / len, ny / len, 1 / len];
+    }
+    return [mx, my, mz];
+  }
+  return [0, 0, 1];
+}
+
+function computeEditedInsertionAxisLocal(
+  view: ToothView,
+  edit: AbutmentEdit,
+): [number, number, number] {
+  const base = view.basePostAxisLocal;
+  const hasTilt = Math.abs(edit.tiltLabialDeg) > 1e-4 || Math.abs(edit.tiltMesialDeg) > 1e-4;
+  if (!hasTilt) return [base[0], base[1], base[2]];
+  const zone = view.zone;
+  const safePropTop =
+    zone.propTop != null && Number.isFinite(zone.propTop) ? zone.propTop : view.topZ;
+  const postCenterL = zone.centerL ?? 0;
+  const postCenterM = zone.centerM ?? 0;
+  const basePivotZ = zone.marginCenterZ ?? zone.meanMarginZ ?? zone.marginZ;
+  const postSpanPivot = Math.max(safePropTop - basePivotZ, 0.8);
+  const { topLeanL, topLeanM } = computeSafePostTopLean(
+    edit,
+    zone,
+    safePropTop,
+    postCenterL,
+    postCenterM,
+  );
+  const swing = swingTilt(Math.atan2(topLeanL, postSpanPivot), Math.atan2(topLeanM, postSpanPivot));
+  if (!swing) return [base[0], base[1], base[2]];
+  const bL = base[0] * zone.labial[0] + base[1] * zone.labial[1];
+  const bM = base[0] * zone.mesial[0] + base[1] * zone.mesial[1];
+  const bZ = base[2];
+  const rotated = applySwing(bL, bM, bZ, 0, 0, 0, swing);
+  const lx = rotated.l * zone.labial[0] + rotated.m * zone.mesial[0];
+  const ly = rotated.l * zone.labial[1] + rotated.m * zone.mesial[1];
+  const lz = rotated.z;
+  const len = Math.hypot(lx, ly, lz);
+  if (len < 1e-6) return [base[0], base[1], base[2]];
+  return [lx / len, ly / len, lz / len];
+}
+
+function solveTiltForTargetWorldAxis(
+  view: ToothView,
+  design: DirectEditDesign,
+  baseEdit: AbutmentEdit,
+  targetAxisWorld: readonly [number, number, number],
+): { tiltLabialDeg: number; tiltMesialDeg: number } | null {
+  const targetLocal = worldDirToLocal(targetAxisWorld, design.fixture.fixturePose);
+  if (!targetLocal) return null;
+  const sign = targetLocal[2] < 0 ? -1 : 1;
+  const tx = targetLocal[0] * sign;
+  const ty = targetLocal[1] * sign;
+  const tz = Math.max(targetLocal[2] * sign, 0.25);
+  const { labial, mesial } = view.zone;
+  const wantAlphaL = Math.atan2(tx * labial[0] + ty * labial[1], tz);
+  const wantAlphaM = Math.atan2(tx * mesial[0] + ty * mesial[1], tz);
+
+  const cand = cloneAbutmentEdit(baseEdit);
+  cand.tiltLabialDeg = 0;
+  cand.tiltMesialDeg = 0;
+  for (let iter = 0; iter < 6; iter += 1) {
+    const cur = computeEditedInsertionAxisLocal(view, cand);
+    const cL = cur[0] * labial[0] + cur[1] * labial[1];
+    const cM = cur[0] * mesial[0] + cur[1] * mesial[1];
+    const cZ = Math.max(cur[2], 0.25);
+    const errL = wantAlphaL - Math.atan2(cL, cZ);
+    const errM = wantAlphaM - Math.atan2(cM, cZ);
+    if (Math.hypot(errL, errM) < 1e-5) break;
+    cand.tiltLabialDeg += (errL * 180) / Math.PI;
+    cand.tiltMesialDeg += (errM * 180) / Math.PI;
+    clampAbutmentEdit(cand, view.zone.span);
+  }
+  return {
+    tiltLabialDeg: cand.tiltLabialDeg,
+    tiltMesialDeg: cand.tiltMesialDeg,
   };
 }
 
@@ -2591,7 +2725,12 @@ function pickGumballHit(groups: THREE.Object3D[]) {
 
 const EMPTY_EDIT = identityAbutmentEdit();
 
-type AbutmentEditStep = { tooth: string; before: AbutmentEdit; after: AbutmentEdit };
+type AbutmentEditStep = {
+  tooth: string;
+  before: AbutmentEdit;
+  after: AbutmentEdit;
+  receivedBridgeSync?: boolean;
+};
 
 type DragGesture =
   | { kind: "translate"; delta: THREE.Vector3 }
@@ -2607,6 +2746,8 @@ export class AbutmentDirectEditSession {
   private readonly stale = new Set<string>();
   private drag: Drag | null = null;
   private dragGroup: Array<{ tooth: string; start: AbutmentEdit }> = [];
+  private bridgeReceiveGroup: Array<{ tooth: string; start: AbutmentEdit }> = [];
+  private readonly preserveLengthOnTilt = new Set<string>();
   /** 손을 떼는 동안 그룹 커밋의 기준 치아. */
   private pathLeadTooth: string | null = null;
   /** 드래그 한 프레임에서 선택 치아 패널을 같이 갱신한다. */
@@ -2672,6 +2813,7 @@ export class AbutmentDirectEditSession {
   cancelGesture() {
     this.drag = null;
     this.dragGroup = [];
+    this.bridgeReceiveGroup = [];
     this.pendingPick = null;
     this.brush.visible = false;
   }
@@ -2708,8 +2850,10 @@ export class AbutmentDirectEditSession {
     if (!batch) return;
     this.future.push(batch);
     for (const step of batch) {
-      this.edits.set(step.tooth, cloneAbutmentEdit(step.before));
-      this.show(step.tooth, true);
+      const nextEdit = cloneAbutmentEdit(step.before);
+      this.edits.set(step.tooth, nextEdit);
+      if (step.receivedBridgeSync) this.preserveLengthOnTilt.add(step.tooth);
+      this.show(step.tooth, true, false, false, Boolean(step.receivedBridgeSync));
     }
     this.bridge.onHistory();
   }
@@ -2719,8 +2863,10 @@ export class AbutmentDirectEditSession {
     if (!batch) return;
     this.history.push(batch);
     for (const step of batch) {
-      this.edits.set(step.tooth, cloneAbutmentEdit(step.after));
-      this.show(step.tooth, true);
+      const nextEdit = cloneAbutmentEdit(step.after);
+      this.edits.set(step.tooth, nextEdit);
+      if (step.receivedBridgeSync) this.preserveLengthOnTilt.add(step.tooth);
+      this.show(step.tooth, true, false, false, Boolean(step.receivedBridgeSync));
     }
     this.bridge.onHistory();
   }
@@ -2740,6 +2886,7 @@ export class AbutmentDirectEditSession {
         before: cloneAbutmentEdit(before),
         after: cloneAbutmentEdit(after),
       });
+      this.preserveLengthOnTilt.delete(key);
       this.edits.set(key, after);
       this.show(key, true);
     }
@@ -2757,6 +2904,7 @@ export class AbutmentDirectEditSession {
     const drop = new Set(teeth);
     for (const tooth of teeth) {
       this.edits.delete(tooth);
+      this.preserveLengthOnTilt.delete(tooth);
       this.stale.add(tooth);
     }
     const last = this.history[this.history.length - 1];
@@ -2768,7 +2916,10 @@ export class AbutmentDirectEditSession {
 
   clear(teeth: readonly string[]) {
     const drop = new Set(teeth);
-    for (const tooth of teeth) this.edits.delete(tooth);
+    for (const tooth of teeth) {
+      this.edits.delete(tooth);
+      this.preserveLengthOnTilt.delete(tooth);
+    }
     const keep = (batches: AbutmentEditStep[][]) =>
       batches
         .map((batch) => batch.filter((step) => !drop.has(step.tooth)))
@@ -2792,15 +2943,50 @@ export class AbutmentDirectEditSession {
     }
   }
 
-  /** 상대가 검볼로 움직이는 중이다. 이 화면의 드래그는 건드리지 않는다. */
+  /** 상대가 검볼로 움직이는 중이다. 이 화면의 드래그는 건드리지 않으며, 수신한 치아는 다시 emit하지 않는다. */
   previewRemote(tooth: string, edit: AbutmentEdit | null) {
     if (this.drag) return;
-    if (!edit || editsEqual(edit, EMPTY_EDIT)) this.edits.delete(tooth);
-    else this.edits.set(tooth, cloneAbutmentEdit(edit));
+    const prev = this.edits.get(tooth) ?? EMPTY_EDIT;
+    const next = edit && !editsEqual(edit, EMPTY_EDIT) ? cloneAbutmentEdit(edit) : EMPTY_EDIT;
+    const tiltChanged =
+      Math.abs(next.tiltLabialDeg - prev.tiltLabialDeg) > 0.05 ||
+      Math.abs(next.tiltMesialDeg - prev.tiltMesialDeg) > 0.05;
+    if (editsEqual(next, EMPTY_EDIT)) this.edits.delete(tooth);
+    else this.edits.set(tooth, next);
     if (!this.views.has(tooth)) this.sync({ quiet: true });
     if (!this.views.has(tooth)) return;
     this.shapeBatch = true;
     this.show(tooth, false, true, true);
+    if (tiltChanged) {
+      const leadView = this.views.get(tooth);
+      const designs = this.bridge.getDesigns();
+      const leadDesign = designs.find((row) => row.toothNumber === tooth);
+      const leadAxisLocal = leadView ? computeEditedInsertionAxisLocal(leadView, next) : null;
+      const targetAxisWorld =
+        leadAxisLocal && leadDesign
+          ? localDirToWorld(leadAxisLocal, leadDesign.fixture.fixturePose)
+          : null;
+      if (targetAxisWorld) {
+        const mates = (this.bridge.getBridgeMates?.(tooth) ?? []).filter(
+          (mate) => mate !== tooth && this.views.has(mate),
+        );
+        for (const mate of mates) {
+          const mateView = this.views.get(mate);
+          const mateDesign = designs.find((row) => row.toothNumber === mate);
+          if (!mateView || !mateDesign) continue;
+          const mateBase = cloneAbutmentEdit(this.ensureEdit(mate));
+          const solved = solveTiltForTargetWorldAxis(mateView, mateDesign, mateBase, targetAxisWorld);
+          if (!solved) continue;
+          mateBase.tiltLabialDeg = solved.tiltLabialDeg;
+          mateBase.tiltMesialDeg = solved.tiltMesialDeg;
+          clampAbutmentEdit(mateBase, mateView.zone.span);
+          this.preserveLengthOnTilt.add(mate);
+          if (editsEqual(mateBase, EMPTY_EDIT)) this.edits.delete(mate);
+          else this.edits.set(mate, mateBase);
+          this.show(mate, false, true, true, true);
+        }
+      }
+    }
     this.tick();
   }
 
@@ -2821,6 +3007,66 @@ export class AbutmentDirectEditSession {
       if (editsEqual(next, EMPTY_EDIT)) this.edits.delete(tooth);
       else this.edits.set(tooth, next);
     }
+  }
+
+  /**
+   * 어벗 정보 패널에서 삽입축 기준을 다시 고른 경우 검볼 기울기만 빼고,
+   * 검볼로 조절한 포스트 크기·길이·수평 이동·수평 회전은 그대로 남긴다.
+   */
+  clearBakedTilt(teeth: readonly string[]) {
+    for (const tooth of teeth) {
+      this.preserveLengthOnTilt.delete(tooth);
+      const cur = this.edits.get(tooth);
+      if (!cur) continue;
+      if (
+        Math.abs(cur.tiltLabialDeg) <= LIVE_GUMBALL_EPS &&
+        Math.abs(cur.tiltMesialDeg) <= LIVE_GUMBALL_EPS
+      ) {
+        continue;
+      }
+      const next = cloneAbutmentEdit(cur);
+      next.tiltLabialDeg = 0;
+      next.tiltMesialDeg = 0;
+      if (editsEqual(next, EMPTY_EDIT)) this.edits.delete(tooth);
+      else this.edits.set(tooth, next);
+    }
+  }
+
+  /**
+   * 수동으로 각도를 바꾼 기준 치아(sourceTooth)의 월드 삽입축을 연결된 브리지 형제들에만 단방향 전달한다.
+   * 형제 어벗은 포스트 크기·길이·위치·수평 회전을 유지한 채 기울기(각도)만 맞추며, 다시 emit하지 않는다.
+   */
+  syncBridgeTiltFrom(sourceTooth: string, opts?: { bake?: boolean; quiet?: boolean }): string[] {
+    const leadView = this.views.get(sourceTooth);
+    const designs = this.bridge.getDesigns();
+    const leadDesign = designs.find((row) => row.toothNumber === sourceTooth);
+    if (!leadView || !leadDesign) return [];
+    const leadEdit = this.edits.get(sourceTooth) ?? EMPTY_EDIT;
+    const leadAxisLocal = computeEditedInsertionAxisLocal(leadView, leadEdit);
+    const targetAxisWorld = localDirToWorld(leadAxisLocal, leadDesign.fixture.fixturePose);
+    if (!targetAxisWorld) return [];
+    const mates = (this.bridge.getBridgeMates?.(sourceTooth) ?? []).filter(
+      (mate) => mate !== sourceTooth && this.views.has(mate),
+    );
+    const updated: string[] = [];
+    for (const mate of mates) {
+      const mateView = this.views.get(mate);
+      const mateDesign = designs.find((row) => row.toothNumber === mate);
+      if (!mateView || !mateDesign) continue;
+      const prevEdit = cloneAbutmentEdit(this.ensureEdit(mate));
+      const solved = solveTiltForTargetWorldAxis(mateView, mateDesign, prevEdit, targetAxisWorld);
+      if (!solved) continue;
+      const nextEdit = cloneAbutmentEdit(prevEdit);
+      nextEdit.tiltLabialDeg = solved.tiltLabialDeg;
+      nextEdit.tiltMesialDeg = solved.tiltMesialDeg;
+      clampAbutmentEdit(nextEdit, mateView.zone.span);
+      if (editsEqual(nextEdit, prevEdit)) continue;
+      this.preserveLengthOnTilt.add(mate);
+      this.edits.set(mate, nextEdit);
+      this.show(mate, Boolean(opts?.bake), false, Boolean(opts?.quiet), true);
+      updated.push(mate);
+    }
+    return updated;
   }
 
   sync(opts?: { quiet?: boolean }) {
@@ -2905,6 +3151,7 @@ export class AbutmentDirectEditSession {
         lastDrilledLocal: new Float32Array(proposal),
         lastDrilledEdit: identityAbutmentEdit(),
         lastAutoLiftMm: 0,
+        lastPreserveLengthOnTilt: false,
         lastMarginZCorr: null,
         zone,
         gingivaProbe,
@@ -2922,6 +3169,11 @@ export class AbutmentDirectEditSession {
         gumball: makeGumball(design.toothNumber),
         bakeEpoch: 0,
         baselineMeasure: null,
+        basePostAxisLocal: resolveDesignBasePostAxisLocal(
+          design,
+          proposalSolid ?? proposal,
+          zone.meanMarginZ ?? zone.marginZ,
+        ),
       };
       this.placeAnchor(view, design);
       this.views.set(design.toothNumber, view);
@@ -3207,15 +3459,51 @@ export class AbutmentDirectEditSession {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     this.shapeBatch = now - this.shapeAt >= 90;
     if (this.shapeBatch) this.shapeAt = now;
+    const bridgeMateSet = new Set(this.bridgeReceiveGroup.map((m) => m.tooth));
     const mates = this.dragGroup.length > 0 ? this.dragGroup : [{ tooth: drag.tooth, start: drag.start }];
     for (const mate of mates) {
+      if (gesture.kind === "rotate" && mate.tooth !== drag.tooth && bridgeMateSet.has(mate.tooth)) {
+        // 연결된 브리지 형제는 카메라 축 회전 대신 기준 치아(drag.tooth)의 월드 삽입축 각도만 단방향 수신한다.
+        continue;
+      }
       const mateView = this.views.get(mate.tooth);
       if (!mateView) continue;
       const edit = cloneAbutmentEdit(mate.start);
       this.applyGesture(edit, mate.start, mateView, gesture);
       clampAbutmentEdit(edit, mateView.zone.span);
+      if (mate.tooth === drag.tooth) this.preserveLengthOnTilt.delete(mate.tooth);
       this.edits.set(mate.tooth, edit);
-      this.show(mate.tooth, false);
+      this.show(mate.tooth, false, false, false, mate.tooth !== drag.tooth);
+    }
+    if (gesture.kind === "rotate" && this.bridgeReceiveGroup.length > 0) {
+      const leadEdit = this.edits.get(drag.tooth) ?? drag.start;
+      const tiltChanged =
+        Math.abs(leadEdit.tiltLabialDeg - drag.start.tiltLabialDeg) > 0.05 ||
+        Math.abs(leadEdit.tiltMesialDeg - drag.start.tiltMesialDeg) > 0.05;
+      const designs = this.bridge.getDesigns();
+      const leadDesign = designs.find((row) => row.toothNumber === drag.tooth);
+      const leadAxisLocal = tiltChanged ? computeEditedInsertionAxisLocal(view, leadEdit) : null;
+      const targetAxisWorld =
+        leadAxisLocal && leadDesign
+          ? localDirToWorld(leadAxisLocal, leadDesign.fixture.fixturePose)
+          : null;
+      for (const rx of this.bridgeReceiveGroup) {
+        const rxView = this.views.get(rx.tooth);
+        const rxDesign = designs.find((row) => row.toothNumber === rx.tooth);
+        if (!rxView || !rxDesign) continue;
+        const nextEdit = cloneAbutmentEdit(rx.start);
+        if (targetAxisWorld) {
+          const solved = solveTiltForTargetWorldAxis(rxView, rxDesign, rx.start, targetAxisWorld);
+          if (solved) {
+            nextEdit.tiltLabialDeg = solved.tiltLabialDeg;
+            nextEdit.tiltMesialDeg = solved.tiltMesialDeg;
+            clampAbutmentEdit(nextEdit, rxView.zone.span);
+          }
+          this.preserveLengthOnTilt.add(rx.tooth);
+        }
+        this.edits.set(rx.tooth, nextEdit);
+        this.show(rx.tooth, false, false, true, true);
+      }
     }
     this.shapeBatch = true;
     this.emitLive(drag.tooth);
@@ -3318,32 +3606,76 @@ export class AbutmentDirectEditSession {
     this.dragGroup = gumballGroupTeeth(selected, lead)
       .filter((tooth) => this.views.has(tooth))
       .map((tooth) => ({ tooth, start: cloneAbutmentEdit(this.ensureEdit(tooth)) }));
+    const bridgeMates = (this.bridge.getBridgeMates?.(lead) ?? []).filter(
+      (tooth) => tooth !== lead && this.views.has(tooth),
+    );
+    this.bridgeReceiveGroup = bridgeMates.map((tooth) => ({
+      tooth,
+      start: cloneAbutmentEdit(this.ensureEdit(tooth)),
+    }));
   }
 
   private restoreDragGroup() {
     const mates = this.dragGroup;
+    const received = this.bridgeReceiveGroup;
     this.dragGroup = [];
-    for (const mate of mates) {
+    this.bridgeReceiveGroup = [];
+    const seen = new Set<string>();
+    for (const mate of [...mates, ...received]) {
+      if (seen.has(mate.tooth)) continue;
+      seen.add(mate.tooth);
       this.edits.set(mate.tooth, mate.start);
-      this.show(mate.tooth, true, true);
+      this.show(mate.tooth, true, true, true, mate.tooth !== this.pathLeadTooth);
     }
   }
 
   private commitDragGroup() {
+    const lead = this.pathLeadTooth;
     const mates = this.dragGroup;
+    const received = this.bridgeReceiveGroup;
     this.dragGroup = [];
+    this.bridgeReceiveGroup = [];
     const steps: AbutmentEditStep[] = [];
+    const seen = new Set<string>();
     for (const mate of mates) {
+      seen.add(mate.tooth);
       const edit = this.edits.get(mate.tooth);
       if (!edit || editsEqual(edit, mate.start)) {
         this.edits.set(mate.tooth, mate.start);
-        this.show(mate.tooth, true, true);
+        this.show(mate.tooth, true, true, true, mate.tooth !== lead);
         continue;
       }
-      steps.push({ tooth: mate.tooth, before: mate.start, after: cloneAbutmentEdit(edit) });
+      steps.push({
+        tooth: mate.tooth,
+        before: mate.start,
+        after: cloneAbutmentEdit(edit),
+        receivedBridgeSync: Boolean(lead && mate.tooth !== lead),
+      });
+    }
+    for (const rx of received) {
+      if (seen.has(rx.tooth)) {
+        // 다중 선택에 이미 들어 있던 브리지 형제도 각도 변경만 일어났다면 receivedBridgeSync로 표시한다.
+        const hit = steps.find((s) => s.tooth === rx.tooth);
+        if (hit) hit.receivedBridgeSync = true;
+        continue;
+      }
+      const edit = this.edits.get(rx.tooth);
+      if (!edit || editsEqual(edit, rx.start)) {
+        this.edits.set(rx.tooth, rx.start);
+        this.show(rx.tooth, true, true, true, true);
+        continue;
+      }
+      steps.push({
+        tooth: rx.tooth,
+        before: rx.start,
+        after: cloneAbutmentEdit(edit),
+        receivedBridgeSync: true,
+      });
     }
     if (steps.length === 0) return;
-    for (const step of steps) this.show(step.tooth, true);
+    for (const step of steps) {
+      this.show(step.tooth, true, false, false, Boolean(step.receivedBridgeSync));
+    }
     this.pushHistoryBatch(steps);
     this.bridge.onHistory();
   }
@@ -3439,23 +3771,32 @@ export class AbutmentDirectEditSession {
     return null;
   }
 
-  private show(tooth: string, bake: boolean, silent = false, quiet = false) {
+  private show(
+    tooth: string,
+    bake: boolean,
+    silent = false,
+    quiet = false,
+    receivedBridgeSync = false,
+  ) {
     const view = this.views.get(tooth);
     const design = this.bridge.getDesigns().find((row) => row.toothNumber === tooth);
     const mesh = this.bridge.getAbutment(tooth);
     if (!view || !design || !mesh) return;
     view.zone.taperLink = taperLinkOfDesign(design);
     const edit = this.edits.get(tooth) ?? EMPTY_EDIT;
+    const preservePostLength = receivedBridgeSync || this.preserveLengthOnTilt.has(tooth);
 
     // 드래그 중(bake=false)에는 스크류 홀이 없는 솔리드 외형(proposalSolid)을 곧바로 변형해 그리고,
     // 드래그가 끝나 확정(bake=true)될 때 임플란트 축 원통으로 스크류 홀을 뚫는다.
     let previewSrc = view.proposal;
     let previewZone = view.zone;
+    const sameDrilled =
+      editsEqual(edit, view.lastDrilledEdit) && view.lastPreserveLengthOnTilt === preservePostLength;
     if (view.proposalSolid) {
       if (bake && editsEqual(edit, EMPTY_EDIT)) {
         previewSrc = view.proposal;
         previewZone = view.zone;
-      } else if (bake && editsEqual(edit, view.lastDrilledEdit)) {
+      } else if (bake && sameDrilled) {
         previewSrc = view.lastDrilledLocal;
         previewZone = { ...view.zone, screwR: 0 };
       } else {
@@ -3464,7 +3805,7 @@ export class AbutmentDirectEditSession {
       }
     }
 
-    const cached = Boolean(bake && view.proposalSolid && editsEqual(edit, view.lastDrilledEdit));
+    const cached = Boolean(bake && view.proposalSolid && sameDrilled);
     const local = cached ? new Float32Array(view.lastDrilledLocal) : this.take("local", previewSrc.length);
     let marginLocal: Float32Array | null = null;
     let marginZCorr: Float32Array | null = cached ? view.lastMarginZCorr : null;
@@ -3531,7 +3872,9 @@ export class AbutmentDirectEditSession {
         Math.abs(edit.tiltLabialDeg) > 1e-3 ||
         Math.abs(edit.tiltMesialDeg) > 1e-3 ||
         Math.abs(edit.yawDeg) > 1e-3;
+      // 연결된 브리지 형제가 각도만 전달받아 기울어질 때는 포스트 길이를 자동으로 늘이거나 줄이지 않는다.
       if (
+        !preservePostLength &&
         hasRotation &&
         view.oppProbe &&
         view.targetClearanceMm != null &&
@@ -3598,10 +3941,31 @@ export class AbutmentDirectEditSession {
 
     // 숫자 측정은 드래그가 끝난 뒤에만 한다. 이동 프레임에서는 정점 워프만 그린다.
     if (this.drag == null || bake) {
-      const summary = this.shapeSummary(view, design, edit, measured, local, marginLocal, crownLocal, cached);
+      const summary = this.shapeSummary(
+        view,
+        design,
+        edit,
+        measured,
+        local,
+        marginLocal,
+        crownLocal,
+        cached,
+        receivedBridgeSync,
+      );
       this.publishShape(summary, bake);
       if (bake && !silent) {
-        this.commitShape(tooth, view, design, edit, local, marginLocal, previewSrc, summary, quiet);
+        this.commitShape(
+          tooth,
+          view,
+          design,
+          edit,
+          local,
+          marginLocal,
+          previewSrc,
+          summary,
+          quiet,
+          preservePostLength,
+        );
       }
     }
     this.moveBadge(mesh, this.resolveGumballCenter(view, edit, tooth), view.gumball.visible);
@@ -3625,18 +3989,25 @@ export class AbutmentDirectEditSession {
     marginLocal: Float32Array | null,
     crownLocal: Float32Array | null,
     cached: boolean,
+    receivedBridgeSync = false,
   ): AbutmentEditSummary {
     const neutral = editsEqual(edit, EMPTY_EDIT);
     const hinge = Math.max(
       view.topZ - (view.zone.marginCenterZ ?? view.zone.meanMarginZ ?? view.zone.marginZ),
       0.8,
     );
+    const localAxis = computeEditedInsertionAxisLocal(view, edit);
+    const baseAngDeg = (Math.acos(clamp(view.basePostAxisLocal[2], -1, 1)) * 180) / Math.PI;
+    const curAngDeg = (Math.acos(clamp(localAxis[2], -1, 1)) * 180) / Math.PI;
     let measured: EditedAbutmentMetrics | null = null;
     let baselineMeasured = view.baselineMeasure;
     if (marginLocal && view.proposalMargin) {
       const proposalSurface = view.proposalSolid ?? view.proposal;
       if (!baselineMeasured) {
         baselineMeasured = measureEditedAbutment(proposalSurface, view.proposalMargin, view.proposalCrown);
+        if (baselineMeasured) {
+          baselineMeasured.angulationDeg = baseAngDeg;
+        }
         if (baselineMeasured && view.oppProbe) {
           baselineMeasured.hasOpposingProbe = true;
           baselineMeasured.occlusalClearanceMm = view.oppProbe.measureSurfaceClearance(
@@ -3650,16 +4021,15 @@ export class AbutmentDirectEditSession {
       const surface =
         cached && savedSolid && savedSolid.length >= 9 ? savedSolid : local;
       measured = measureEditedAbutment(surface, marginLocal, crownLocal ?? view.proposalCrown);
+      if (measured) {
+        measured.angulationDeg = curAngDeg;
+      }
       if (measured && view.oppProbe) {
         measured.hasOpposingProbe = true;
         measured.occlusalClearanceMm = view.oppProbe.measureSurfaceClearance(surface, marginLocal);
       }
     }
-    const marginZ = view.zone.meanMarginZ ?? view.zone.marginZ;
-    const localAxis = measureLocalPostAxis(local, marginZ);
-    const insertionAxisWorld = localAxis
-      ? localDirToWorld(localAxis, design.fixture.fixturePose)
-      : null;
+    const insertionAxisWorld = localDirToWorld(localAxis, design.fixture.fixturePose);
     return {
       tooth: design.toothNumber,
       widthRatio: fit.widthRatio,
@@ -3672,6 +4042,7 @@ export class AbutmentDirectEditSession {
       baselineMeasured,
       gestureLead: this.pathLeadTooth,
       insertionAxisWorld,
+      ...(receivedBridgeSync ? { receivedBridgeSync: true } : {}),
     };
   }
 
@@ -3685,13 +4056,18 @@ export class AbutmentDirectEditSession {
     previewSrc: Float32Array,
     summary: AbutmentEditSummary,
     quiet = false,
+    preservePostLength = false,
   ) {
     const notifyCommit = () => {
       if (!quiet) this.bridge.onCommit(summary);
     };
     const epoch = ++view.bakeEpoch;
     const neutral = editsEqual(edit, EMPTY_EDIT);
-    if (view.proposalSolid && editsEqual(edit, view.lastDrilledEdit)) {
+    if (
+      view.proposalSolid &&
+      editsEqual(edit, view.lastDrilledEdit) &&
+      view.lastPreserveLengthOnTilt === preservePostLength
+    ) {
       notifyCommit();
       return;
     }
@@ -3731,6 +4107,7 @@ export class AbutmentDirectEditSession {
           if (view.bakeEpoch !== epoch) return;
           view.lastDrilledLocal = drilled;
           view.lastDrilledEdit = cloneAbutmentEdit(edit);
+          view.lastPreserveLengthOnTilt = preservePostLength;
           const curMesh = this.bridge.getAbutment(tooth);
           if (curMesh) {
             writeAttribute(
@@ -3751,6 +4128,7 @@ export class AbutmentDirectEditSession {
           }
           view.lastDrilledLocal = fallback;
           view.lastDrilledEdit = cloneAbutmentEdit(edit);
+          view.lastPreserveLengthOnTilt = preservePostLength;
           const curMesh = this.bridge.getAbutment(tooth);
           if (curMesh) {
             writeAttribute(

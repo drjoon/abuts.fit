@@ -283,6 +283,10 @@ export type DesignedCustomAbutment = {
   fixture: MatchedScanbodyFixture;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  /** 생성된 포스트의 픽스처 로컬 단위 삽입축. */
+  insertionAxisLocal?: [number, number, number];
+  /** 생성된 포스트의 월드 단위 삽입축. */
+  insertionAxisWorld?: [number, number, number];
 };
 
 const dot3 = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -3631,6 +3635,8 @@ export function buildDesignedCustomAbutment(input: {
   enameloplastyLocalPositions?: Float32Array;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  insertionAxisLocal?: [number, number, number];
+  insertionAxisWorld?: [number, number, number];
 }): DesignedCustomAbutment {
   const { fixture } = input;
   const stlPositions =
@@ -3699,6 +3705,8 @@ export function buildDesignedCustomAbutment(input: {
     fixture,
     params: input.params,
     metrics: input.metrics,
+    ...(input.insertionAxisLocal ? { insertionAxisLocal: input.insertionAxisLocal } : {}),
+    ...(input.insertionAxisWorld ? { insertionAxisWorld: input.insertionAxisWorld } : {}),
   };
 }
 
@@ -3720,6 +3728,8 @@ type DesignArgs = {
    * 있으면 자동 평균 축 대신 이 방향으로 기존 메시 생성을 돌린다.
    */
   sharedInsertionAxisWorld?: readonly [number, number, number] | null;
+  /** 브리지 형제 각도 동기화 재생성 시 기존 포스트 높이를 유지할 목표 높이(mm). */
+  preservePostHeightMm?: number | null;
 };
 
 export type CustomAbutmentConflictVariant =
@@ -4386,9 +4396,70 @@ function unitInsertionAxis(raw: readonly number[] | null | undefined): Vec3 | nu
   return [x / len, y / len, z / len];
 }
 
+function clampSharedBridgeAxisWorld(rawLocked: Vec3, args: DesignArgs): Vec3 {
+  const group = parallelGroupOf(args.fixture, args.neighbors ?? [], args.toothWorks);
+  const fixtures = group.length > 0 ? group : [args.fixture];
+  let axisSum: Vec3 = [0, 0, 0];
+  for (const f of fixtures) {
+    axisSum = add3(axisSum, norm3(f.fixturePose.axis));
+  }
+  const meanAxis = norm3(axisSum);
+  let shared: Vec3 = dot3(rawLocked, meanAxis) < 0 ? scale3(rawLocked, -1) : rawLocked;
+  const anyAnterior = fixtures.some((f) => abutmentTemplateForTooth(f.toothNumber).anterior);
+  const maxGroupTilt = (anyAnterior ? 30 : 24) * DEG;
+  const minTaperSlopeGroup = Math.tan(RETENTION_SINGLE_MIN_TAPER_DEG * DEG);
+  for (let iter = 0; iter < 12; iter += 1) {
+    let sumNext: Vec3 = [0, 0, 0];
+    let movedCount = 0;
+    for (const f of fixtures) {
+      let cand = shared;
+      let fMoved = false;
+      const fAxis = norm3(f.fixturePose.axis);
+      const ang = Math.acos(clamp(dot3(cand, fAxis), -1, 1));
+      if (ang > maxGroupTilt + 1e-4) {
+        cand = slerpDir(cand, fAxis, (ang - maxGroupTilt) / ang);
+        fMoved = true;
+      }
+      const fTpl = abutmentTemplateForTooth(f.toothNumber);
+      const wLocal = worldDirToFixtureLocal(cand, f.fixturePose);
+      if (!fTpl.anterior && wLocal[2] > 0.25) {
+        const fConn = f.connectionSpec;
+        const fBoreTopR = fConn.screwUpperDiameterMm / 2;
+        const fOriginR = fConn.originDiameterMm / 2;
+        const fConeTopZ = fConn.prcConeTopMm;
+        const fConeTopR = fOriginR + TAPER_11_SLOPE * fConeTopZ;
+        const maxFlare = Math.tan(45 * DEG);
+        const estAnatMaxR = Math.min(
+          fConeTopR + 2.4 * maxFlare,
+          Math.max(fTpl.maxMarginBlMm * 0.55, fTpl.naturalBlMm * 0.42),
+        );
+        const estWallH = Math.max(3.0, fTpl.postHeightMm - 0.45);
+        const freeAllowShift = Math.max(
+          0.35,
+          estAnatMaxR - 0.22 - estWallH * minTaperSlopeGroup - (fBoreTopR + MIN_POST_WALL_MM + 0.05),
+        );
+        const maxFreeTan = freeAllowShift / estWallH;
+        const tx = wLocal[0] / wLocal[2];
+        const ty = wLocal[1] / wLocal[2];
+        const curTanLen = Math.hypot(tx, ty);
+        if (curTanLen > maxFreeTan + 1e-4) {
+          const k = maxFreeTan / curTanLen;
+          cand = norm3(fixtureLocalDirToWorld(norm3([tx * k, ty * k, 1]), f.fixturePose));
+          fMoved = true;
+        }
+      }
+      sumNext = add3(sumNext, cand);
+      if (fMoved) movedCount += 1;
+    }
+    if (movedCount === 0) break;
+    shared = norm3(sumNext);
+  }
+  return shared;
+}
+
 async function groupAxisForDesign(args: DesignArgs): Promise<{ axis: Vec3 | null; locked: boolean }> {
   const locked = unitInsertionAxis(args.sharedInsertionAxisWorld);
-  if (locked) return { axis: locked, locked: true };
+  if (locked) return { axis: clampSharedBridgeAxisWorld(locked, args), locked: true };
   return { axis: await resolveGroupAxisWorld(args), locked: false };
 }
 
@@ -7017,6 +7088,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         bridgeMatchedTopH = applied;
       }
     }
+  }
+  if (
+    args.preservePostHeightMm != null &&
+    Number.isFinite(args.preservePostHeightMm) &&
+    args.preservePostHeightMm > 0
+  ) {
+    const preserved = Math.min(safeTopH, Math.max(minSafePostHeightMm, args.preservePostHeightMm));
+    postTopH = preserved;
+    postTopMax = preserved;
+    bridgeMatchedTopH = preserved;
   }
   // 높이·테이퍼 연결(postTaperLink=1)이면 포스트 높이·축벽 둘레와 싱글/브리지에 맞춰 접착 지수가 같은 테이퍼를 쓴다.
   // 연결이 끊어져 있으면(postTaperLink=0) 설정된 테이퍼(최소 2°)를 그대로 쓴다.
@@ -13790,6 +13871,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     marginLoopLocal,
     ...(enameloplastyLocalPositions ? { enameloplastyLocalPositions } : {}),
     params,
+    insertionAxisLocal: [frame.w[0], frame.w[1], frame.w[2]],
+    insertionAxisWorld: norm3(fixtureLocalDirToWorld(frame.w, fixture.fixturePose)),
     metrics: {
       connectionDiameterMm: conn.originDiameterMm,
       maxDiameterMm: round2(maxOuterR * 2),

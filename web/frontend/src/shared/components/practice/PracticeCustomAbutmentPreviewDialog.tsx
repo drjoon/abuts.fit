@@ -174,6 +174,7 @@ import {
   fixturePoseToMatrix4,
   loadCandidateScanbodyModels,
   parseFdiTooth,
+  stripBakedAbutmentTrianglesFromJawGeometry,
   type LoadedScanbodyModel,
   type MatchedScanbodyFixture,
 } from "@/shared/practice/customAbutmentScanbodyMatch";
@@ -212,7 +213,6 @@ import {
 } from "@/shared/practice/customAbutmentViewerPrefs";
 import {
   AbutmentDirectEditSession,
-  gumballInsertionChange,
   gumballPatchSetsPostHeight,
   normalizeAbutmentEdit,
   retainLiveGumballParams,
@@ -384,7 +384,11 @@ type ScanbodyPickSession = {
 
 type ChatTurn = CustomAbutmentChatTurn & { pending?: boolean };
 
-type DesignChange = { toothNumber: string; params: Partial<CustomAbutmentDesignParams> };
+type DesignChange = {
+  toothNumber: string;
+  params: Partial<CustomAbutmentDesignParams>;
+  preservePostHeightMm?: number;
+};
 
 /** 재디자인·저장에 쓰는 현재 디자인 입력. 렌더와 무관해서 ref로 둔다. */
 type DesignContext = {
@@ -1381,6 +1385,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           null
         );
       },
+      getBridgeMates: (tooth) =>
+        bridgeInsertionMates(
+          tooth,
+          designContextRef.current?.allToothWorks,
+          designedListRef.current.map((row) => row.toothNumber),
+        ),
       ui: {
         gumballOn: true,
         sculptOn: false,
@@ -2380,7 +2390,17 @@ export function PracticeCustomAbutmentPreviewDialog({
     }
     const base = gumballMetricBaseRef.current[summary.tooth]!;
     const taperLinked = (design.params.postTaperLink ?? 1) >= 0.5;
-    const nextMetrics = metricsFromGumball(base, summary, taperLinked);
+    const rawNextMetrics = metricsFromGumball(base, summary, taperLinked);
+    const nextMetrics = summary.receivedBridgeSync
+      ? {
+          ...rawNextMetrics,
+          maxDiameterMm: design.metrics.maxDiameterMm,
+          postHeightMm: design.metrics.postHeightMm,
+          postWallRadiusMm: design.metrics.postWallRadiusMm,
+          postTaperDeg: design.metrics.postTaperDeg,
+          totalLengthMm: design.metrics.totalLengthMm,
+        }
+      : rawNextMetrics;
     if (sameAbutmentMetrics(design.metrics, nextMetrics)) return;
     design.metrics = nextMetrics;
     const list = designedListRef.current.map((row) => (row.toothNumber === summary.tooth ? design : row));
@@ -2795,7 +2815,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         baselineParamsRef.current[toothNumber] = { ...chosen.params };
       }
       syncCandidateSceneForTooth(toothNumber);
-      directEditRef.current?.sync();
+      directEditRef.current?.sync({ quiet: true });
       directEditRef.current?.tick();
       if (shouldPersist && !suppressLiveEmitRef.current) persistDesign();
     },
@@ -2853,7 +2873,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       applySelectionPivot([toothNumber]);
       setExpandedTeeth((prev) => (prev[toothNumber] ? prev : { ...prev, [toothNumber]: true }));
       syncCandidateSceneForTooth(toothNumber);
-      directEditRef.current?.sync();
+      directEditRef.current?.sync({ quiet: true });
       directEditRef.current?.tick();
       if (!suppressLiveEmitRef.current) persistDesign();
     },
@@ -2911,63 +2931,18 @@ export function PracticeCustomAbutmentPreviewDialog({
         confirmCandidateForTooth(summary.tooth, false);
       }
       if (!summary.neutral) labGeometryTouchedRef.current = true;
-      const lead = summary.gestureLead;
-      if (lead && lead !== summary.tooth) {
-        const mates = bridgeInsertionMates(
-          lead,
-          designContextRef.current?.allToothWorks,
-          designedListRef.current.map((row) => row.toothNumber),
-        );
-        const leadEdit = directEditRef.current?.editOf(lead);
-        if (mates.includes(summary.tooth) && leadEdit && gumballInsertionChange(leadEdit).direction) {
-          return;
-        }
-      }
       applyGumballMetrics(summary);
-      const synced = syncBridgeInsertionFromGumball(summary);
-      if (synced) return;
-      rememberAbutmentEdit(summary);
+      // 연결된 브리지 형제가 각도를 receive한 커밋은 크기·길이 오버라이드를 건드리지 않고 다시 emit하지 않는다.
+      if (!summary.receivedBridgeSync) {
+        rememberAbutmentEdit(summary);
+      }
       window.clearTimeout(editCommitTimerRef.current);
-      editCommitTimerRef.current = 0;
-      persistDesign();
+      editCommitTimerRef.current = window.setTimeout(() => {
+        editCommitTimerRef.current = 0;
+        if (ignoreEditCommitRef.current || suppressLiveEmitRef.current) return;
+        persistDesign();
+      }, 30);
     };
-  }
-
-  function syncBridgeInsertionFromGumball(summary: AbutmentEditSummary): boolean {
-    const ctx = designContextRef.current;
-    const edit = directEditRef.current?.editOf(summary.tooth);
-    if (!ctx || !edit) return false;
-    const abutmentTeeth = designedListRef.current.map((row) => row.toothNumber);
-    const mates = bridgeInsertionMates(summary.tooth, ctx.allToothWorks, abutmentTeeth);
-    if (mates.length === 0) return false;
-    const change = gumballInsertionChange(edit);
-    if (!change.direction) return false;
-    const axis = normalizeInsertionAxis(summary.insertionAxisWorld);
-    if (!axis) return false;
-    writeBridgeInsertionAxis(lockedBridgeAxisRef.current, [summary.tooth, ...mates], axis);
-    rememberAbutmentEdit(summary);
-    const span = [summary.tooth, ...mates];
-    for (const tooth of span) delete savedGumballEditRef.current[tooth];
-    directEditRef.current?.releaseBakedEdits(span);
-    const token = (bridgePathTokenRef.current += 1);
-    queueMicrotask(() => {
-      if (bridgePathTokenRef.current !== token) return;
-      const changes: DesignChange[] = span
-        .filter((tooth) => designedListRef.current.some((item) => item.toothNumber === tooth))
-        .map((tooth) => ({
-          toothNumber: tooth,
-          params: {
-            axisSourceCode: 2,
-            axisShiftLabialMm: 0,
-            axisShiftMesialMm: 0,
-            axisTargetDeg: -1,
-          },
-        }));
-      void applyDesignChanges(changes).then((applied) => {
-        if (applied && bridgePathTokenRef.current === token) persistDesign();
-      });
-    });
-    return true;
   }
 
   const jawsForJobs = useCallback((jobs: readonly { jaw: "upper" | "lower" }[]) => {
@@ -3966,6 +3941,12 @@ export function PracticeCustomAbutmentPreviewDialog({
 
       const cachedGeometry = await readCachedScanGeometry(s3Key);
       if (cachedGeometry) {
+        if (
+          (role === "upper" || role === "lower") &&
+          stripBakedAbutmentTrianglesFromJawGeometry(cachedGeometry)
+        ) {
+          storeScanGeometry(s3Key, cachedGeometry);
+        }
         onProgress(100);
         let texture: THREE.Texture | null = null;
         if (cachedGeometry.getAttribute("uv")) {
@@ -4018,6 +3999,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
       }
       const parsed = await parseModelPreview(modelFile, { companionFiles });
+      if (role === "upper" || role === "lower") {
+        stripBakedAbutmentTrianglesFromJawGeometry(parsed.geometry);
+      }
       storeScanGeometry(s3Key, parsed.geometry);
       return {
         role,
@@ -5194,9 +5178,17 @@ export function PracticeCustomAbutmentPreviewDialog({
             const merged: Partial<CustomAbutmentDesignParams> =
               mode === "merge" ? { ...(ctx.overrides[tooth] ?? {}) } : {};
             const patch: Partial<CustomAbutmentDesignParams> = {};
+            let preservePostHeightMm: number | undefined;
             if (mode !== "proposal") {
               for (const change of changes) {
-                if (change.toothNumber === tooth) Object.assign(patch, change.params);
+                if (change.toothNumber !== tooth) continue;
+                Object.assign(patch, change.params);
+                if (
+                  change.preservePostHeightMm != null &&
+                  Number.isFinite(change.preservePostHeightMm)
+                ) {
+                  preservePostHeightMm = change.preservePostHeightMm;
+                }
               }
               Object.assign(merged, patch);
             }
@@ -5248,6 +5240,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 params,
                 explicitParams: merged,
                 sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, tooth),
+                ...(preservePostHeightMm != null ? { preservePostHeightMm } : {}),
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
               });
@@ -5301,7 +5294,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             designedListRef.current = list;
             setDesignedList(list);
           }
-          directEditRef.current?.sync();
+          directEditRef.current?.sync({ quiet: true });
         } finally {
           activeRedesignCountRef.current = Math.max(0, activeRedesignCountRef.current - 1);
           if (activeRedesignCountRef.current === 0) {
@@ -5337,6 +5330,17 @@ export function PracticeCustomAbutmentPreviewDialog({
       );
       if (!ctx || targets.length === 0) return;
       labGeometryTouchedRef.current = true;
+      bridgePathTokenRef.current += 1;
+      window.clearTimeout(editCommitTimerRef.current);
+      editCommitTimerRef.current = 0;
+      directEditRef.current?.cancelGesture();
+      directEditRef.current?.clear(targets);
+      writeBridgeInsertionAxis(lockedBridgeAxisRef.current, targets, null);
+      for (const toothNumber of targets) {
+        delete savedGumballEditRef.current[toothNumber];
+        delete gumballMetricBaseRef.current[toothNumber];
+        delete gumballParamBaseRef.current[toothNumber];
+      }
       if (!suppressLiveEmitRef.current) {
         const transferId = transferIdRef.current;
         if (transferId) {
@@ -5355,10 +5359,16 @@ export function PracticeCustomAbutmentPreviewDialog({
           const clean = stripDirectEditShiftOverrides(ctx.overrides[toothNumber] ?? {});
           delete clean.postHeightOffsetMm;
           delete clean.postWidthScale;
+          delete clean.axisTargetDeg;
+          const editedSet = editedInfoFieldsRef.current[toothNumber];
+          if (!editedSet?.has("axisSource")) {
+            delete clean.axisSourceCode;
+            delete clean.axisToOpposing;
+          }
           if ((clean.postTaperLink ?? 1) >= 0.5) {
             delete clean.postTaperDeg;
           }
-          editedInfoFieldsRef.current[toothNumber]?.delete("postHeightMm");
+          editedSet?.delete("postHeightMm");
           return {
             toothNumber,
             params: clean,
@@ -5856,23 +5866,31 @@ export function PracticeCustomAbutmentPreviewDialog({
       nextValue: number | AbutmentAxisSource | { min: number; max: number },
     ) => {
       if (!canEditDesign) return;
-      let targetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
+      const explicitTargetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
+      const receivedMateNumbers: string[] = [];
       if (field === "axisSource") {
         const abutments = designedListRef.current.map((row) => row.toothNumber);
-        const span = new Set(targetNumbers);
-        for (const tooth of targetNumbers) {
+        const explicitSet = new Set(explicitTargetNumbers);
+        const mateSet = new Set<string>();
+        for (const tooth of explicitTargetNumbers) {
           for (const mate of bridgeInsertionMates(
             tooth,
             designContextRef.current?.allToothWorks,
             abutments,
           )) {
-            span.add(mate);
+            if (!explicitSet.has(mate)) mateSet.add(mate);
           }
         }
-        targetNumbers = [...span];
-        writeBridgeInsertionAxis(lockedBridgeAxisRef.current, targetNumbers, null);
+        receivedMateNumbers.push(...mateSet);
+        writeBridgeInsertionAxis(
+          lockedBridgeAxisRef.current,
+          [...explicitTargetNumbers, ...receivedMateNumbers],
+          null,
+        );
       }
-      const targets = designedListRef.current.filter((row) => targetNumbers.includes(row.toothNumber));
+      const targets = designedListRef.current.filter((row) =>
+        explicitTargetNumbers.includes(row.toothNumber),
+      );
       if (targets.length === 0) return;
       const changes: DesignChange[] = [];
       let taperLinkLocal = field === "postTaperLink";
@@ -5906,7 +5924,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         });
         designedListRef.current = list;
         setDesignedList(list);
-        directEditRef.current?.sync();
+        directEditRef.current?.sync({ quiet: true });
         persistDesign();
         return;
       }
@@ -5930,13 +5948,51 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         set.add(field);
       }
+      const token = (bridgePathTokenRef.current += 1);
       if (field === "axisSource") {
-        directEditRef.current?.clear(changes.map((change) => change.toothNumber));
+        // 검볼로 조절한 포스트 크기·길이·수평 이동은 유지하고 기울기만 초기화한다.
+        directEditRef.current?.clearBakedTilt([
+          ...changes.map((change) => change.toothNumber),
+          ...receivedMateNumbers,
+        ]);
       }
-      void applyDesignChanges(changes).then((applied) => {
-        if (!applied) return;
+      void (async () => {
+        const applied = await applyDesignChanges(changes);
+        if (!applied || bridgePathTokenRef.current !== token) return;
+        if (field === "axisSource" && receivedMateNumbers.length > 0) {
+          const leadNext =
+            designedListRef.current.find((row) => row.toothNumber === item.toothNumber) ??
+            designedListRef.current.find((row) => explicitTargetNumbers.includes(row.toothNumber));
+          const emittedAxis = normalizeInsertionAxis(leadNext?.insertionAxisWorld);
+          writeBridgeInsertionAxis(
+            lockedBridgeAxisRef.current,
+            [...explicitTargetNumbers, ...receivedMateNumbers],
+            nextValue === "parallel" ? null : emittedAxis,
+          );
+          const mateChanges: DesignChange[] = [];
+          for (const mateTooth of receivedMateNumbers) {
+            const prevMate = designedListRef.current.find((row) => row.toothNumber === mateTooth);
+            if (!prevMate) continue;
+            mateChanges.push({
+              toothNumber: mateTooth,
+              params: {
+                axisSourceCode: 2,
+                axisShiftLabialMm: 0,
+                axisShiftMesialMm: 0,
+                axisTargetDeg: -1,
+                postWidthScale: prevMate.params.postWidthScale,
+                marginSizeScale: prevMate.params.marginSizeScale,
+              },
+              preservePostHeightMm: prevMate.metrics.postHeightMm,
+            });
+          }
+          if (mateChanges.length > 0) {
+            const matesApplied = await applyDesignChanges(mateChanges);
+            if (!matesApplied || bridgePathTokenRef.current !== token) return;
+          }
+        }
         persistDesign();
-      });
+      })();
     },
     [applyDesignChanges, canEditDesign, persistDesign],
   );
@@ -6689,6 +6745,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         : designedListRef.current.map((d) => d.toothNumber);
     ignoreEditCommitRef.current = true;
     labGeometryTouchedRef.current = true;
+    bridgePathTokenRef.current += 1;
+    window.clearTimeout(editCommitTimerRef.current);
+    editCommitTimerRef.current = 0;
+    directEditRef.current?.cancelGesture();
+    writeBridgeInsertionAxis(lockedBridgeAxisRef.current, targets, null);
     const previousList = designedListRef.current;
     const list = previousList.map((d) => {
       if (!targets.includes(d.toothNumber)) return d;

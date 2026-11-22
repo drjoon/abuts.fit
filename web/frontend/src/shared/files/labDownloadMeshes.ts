@@ -192,8 +192,57 @@ function meshWorldPiece(
   const index = mesh.geometry.getIndex();
   const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
   if (triCount < 1) return null;
-  const positions = new Float32Array(pos.count * 3);
+  const fullColors = meshColors(mesh, pos.count, cache);
   const v = new THREE.Vector3();
+  if (index) {
+    const remap = new Int32Array(pos.count).fill(-1);
+    const usedVerts: number[] = [];
+    const indices = new Uint32Array(triCount * 3);
+    let validTriCount = 0;
+    for (let t = 0; t < triCount; t += 1) {
+      const base = t * 3;
+      const a = index.getX(base);
+      const b = index.getX(base + 1);
+      const c = index.getX(base + 2);
+      if (a < 0 || b < 0 || c < 0 || a >= pos.count || b >= pos.count || c >= pos.count) continue;
+      if (remap[a]! < 0) {
+        remap[a] = usedVerts.length;
+        usedVerts.push(a);
+      }
+      if (remap[b]! < 0) {
+        remap[b] = usedVerts.length;
+        usedVerts.push(b);
+      }
+      if (remap[c]! < 0) {
+        remap[c] = usedVerts.length;
+        usedVerts.push(c);
+      }
+      const outBase = validTriCount * 3;
+      indices[outBase] = remap[a]!;
+      indices[outBase + 1] = remap[b]!;
+      indices[outBase + 2] = remap[c]!;
+      validTriCount += 1;
+    }
+    if (validTriCount < 1 || usedVerts.length < 3) return null;
+    const positions = new Float32Array(usedVerts.length * 3);
+    const colors = new Uint8Array(usedVerts.length * 3);
+    for (let outIdx = 0; outIdx < usedVerts.length; outIdx += 1) {
+      const srcIdx = usedVerts[outIdx]!;
+      v.fromBufferAttribute(pos as THREE.BufferAttribute, srcIdx).applyMatrix4(mesh.matrixWorld);
+      positions[outIdx * 3] = v.x;
+      positions[outIdx * 3 + 1] = v.y;
+      positions[outIdx * 3 + 2] = v.z;
+      colors[outIdx * 3] = fullColors[srcIdx * 3]!;
+      colors[outIdx * 3 + 1] = fullColors[srcIdx * 3 + 1]!;
+      colors[outIdx * 3 + 2] = fullColors[srcIdx * 3 + 2]!;
+    }
+    return {
+      positions,
+      indices: validTriCount === triCount ? indices : indices.slice(0, validTriCount * 3),
+      colors,
+    };
+  }
+  const positions = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i += 1) {
     v.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(mesh.matrixWorld);
     positions[i * 3] = v.x;
@@ -203,14 +252,14 @@ function meshWorldPiece(
   const indices = new Uint32Array(triCount * 3);
   for (let t = 0; t < triCount; t += 1) {
     const base = t * 3;
-    indices[base] = index ? index.getX(base) : base;
-    indices[base + 1] = index ? index.getX(base + 1) : base + 1;
-    indices[base + 2] = index ? index.getX(base + 2) : base + 2;
+    indices[base] = base;
+    indices[base + 1] = base + 1;
+    indices[base + 2] = base + 2;
   }
   return {
     positions,
     indices,
-    colors: meshColors(mesh, pos.count, cache),
+    colors: fullColors,
   };
 }
 

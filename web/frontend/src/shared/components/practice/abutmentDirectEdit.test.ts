@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 
 import { cuffProfile } from "../../practice/cuffProfile";
-import { resolveCustomAbutmentConnectionSpec } from "../../practice/customAbutmentScanbodyMatch";
+import {
+  resolveCustomAbutmentConnectionSpec,
+  stripBakedAbutmentTrianglesFromJawGeometry,
+} from "../../practice/customAbutmentScanbodyMatch";
+import { meshesToLabMeshData } from "../../files/labDownloadMeshes";
 import {
   designCustomAbutmentCandidates,
   designCustomAbutmentStl,
@@ -23,6 +27,7 @@ import {
   buildAbutmentPreferenceUpdate,
   clampAbutmentEdit,
   identityAbutmentEdit,
+  gumballInsertionChange,
   gumballPatchSetsPostHeight,
   makeGumball,
   normalizeAbutmentEdit,
@@ -2470,6 +2475,336 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   flatJaw.dispose();
   flatOpp.dispose();
   mesialOnlyJaw.dispose();
+}
+
+// 회귀 1: 상악/하악 스캔에 합성된 이전 어벗(0xd4c59e 비색인 삼각형 수프) 제거 및 미참조 스캔바디 정점 보존
+{
+  const gridSide = 28; // 28 * 28 = 784 정점 연결 악궁 메시
+  const archVertCount = gridSide * gridSide;
+  const unrefScanbodyVertCount = 40;
+  const bakedAbutTriCount = 120;
+  const bakedAbutVertCount = bakedAbutTriCount * 3;
+  const totalVerts = archVertCount + unrefScanbodyVertCount + bakedAbutVertCount;
+  const positions = new Float32Array(totalVerts * 3);
+  const colors = new Float32Array(totalVerts * 3);
+  const gold = new THREE.Color(0xd4c59e);
+
+  for (let iy = 0; iy < gridSide; iy += 1) {
+    for (let ix = 0; ix < gridSide; ix += 1) {
+      const vi = iy * gridSide + ix;
+      positions[vi * 3] = ix * 0.5;
+      positions[vi * 3 + 1] = iy * 0.5;
+      positions[vi * 3 + 2] = 0;
+      colors[vi * 3] = 0.82;
+      colors[vi * 3 + 1] = 0.52;
+      colors[vi * 3 + 2] = 0.5;
+    }
+  }
+  for (let i = 0; i < unrefScanbodyVertCount; i += 1) {
+    const vi = archVertCount + i;
+    positions[vi * 3] = 4 + i * 0.05;
+    positions[vi * 3 + 1] = 4;
+    positions[vi * 3 + 2] = 6;
+    colors[vi * 3] = 0.92;
+    colors[vi * 3 + 1] = 0.92;
+    colors[vi * 3 + 2] = 0.9;
+  }
+  const indices: number[] = [];
+  for (let iy = 0; iy < gridSide - 1; iy += 1) {
+    for (let ix = 0; ix < gridSide - 1; ix += 1) {
+      const a = iy * gridSide + ix;
+      const b = a + 1;
+      const c = a + gridSide;
+      const d = c + 1;
+      indices.push(a, b, c, b, d, c);
+    }
+  }
+  const archTriCount = indices.length / 3;
+  for (let t = 0; t < bakedAbutTriCount; t += 1) {
+    const base = archVertCount + unrefScanbodyVertCount + t * 3;
+    for (let k = 0; k < 3; k += 1) {
+      const vi = base + k;
+      positions[vi * 3] = 5 + k * 0.3;
+      positions[vi * 3 + 1] = 5 + (t % 10) * 0.2;
+      positions[vi * 3 + 2] = 3 + k * 0.2;
+      colors[vi * 3] = gold.r;
+      colors[vi * 3 + 1] = gold.g;
+      colors[vi * 3 + 2] = gold.b;
+    }
+    indices.push(base, base + 1, base + 2);
+  }
+  const pollutedJaw = new THREE.BufferGeometry();
+  pollutedJaw.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  pollutedJaw.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  pollutedJaw.setIndex(indices);
+
+  const stripped = stripBakedAbutmentTrianglesFromJawGeometry(pollutedJaw);
+  assert.equal(stripped, true, "합성된 이전 금색 어벗 삼각형 수프가 감지·제거된다");
+  assert.equal(
+    pollutedJaw.getIndex()!.count / 3,
+    archTriCount,
+    "악궁 삼각형은 그대로 남고 이전 어벗 삼각형만 제거된다",
+  );
+  assert.equal(
+    pollutedJaw.getAttribute("position").count,
+    archVertCount + unrefScanbodyVertCount,
+    "스캔바디 정합용 미참조 정점은 유지되고 어벗 정점만 제거된다",
+  );
+  assert.equal(
+    stripBakedAbutmentTrianglesFromJawGeometry(pollutedJaw),
+    false,
+    "이미 정화된 악궁 지오메트리는 두 번 건드리지 않는다",
+  );
+
+  // meshesToLabMeshData는 인덱스에서 빠진 미참조 정점을 내보내지 않는다.
+  const trimmedMesh = new THREE.Mesh(pollutedJaw, new THREE.MeshStandardMaterial({ vertexColors: true }));
+  const exported = meshesToLabMeshData([trimmedMesh]);
+  assert.ok(exported, "악궁 메시 내보내기가 성공한다");
+  assert.equal(
+    exported!.positions.length / 3,
+    archVertCount,
+    "내보낸 작업 스캔에는 인덱스가 참조하는 정점만 압축 저장된다",
+  );
+  pollutedJaw.dispose();
+  (trimmedMesh.material as THREE.Material).dispose();
+}
+
+// 회귀 2·3·4:
+// - 포스트 이동·스케일·높이·수평 회전은 브리지 각도 변경으로 취급하지 않는다.
+// - 비정상 극단 공유 삽입축(41.9°)이 들어와도 브리지 지대주 직경 폭증(Ø17.96mm) 없이 안전 상한 안에 평행하게 제한된다.
+// - #27 각도 변경 시 #27만 emit하고 #26은 각도만 receive하여 크기·길이를 유지하며 다시 #27로 재-emit하지 않는다.
+{
+  assert.equal(
+    gumballInsertionChange(edit({ shiftLabialMm: 0.8, shiftMesialMm: -0.6 })).direction,
+    false,
+    "포스트 수평 이동은 브리지 각도 변경이 아니다",
+  );
+  assert.equal(
+    gumballInsertionChange(edit({ scale: [1.2, 1.15, 1.1], heightMm: 0.7, yawDeg: 14 })).direction,
+    false,
+    "포스트 크기·길이·수평 회전은 브리지 각도 변경이 아니다",
+  );
+  assert.equal(
+    gumballInsertionChange(edit({ tiltLabialDeg: 6 })).direction,
+    true,
+    "파란 호 기울기 회전만 브리지 각도 변경이다",
+  );
+
+  const makeFlatGrid = (zVal: number) => {
+    const tris: number[] = [];
+    const steps = 32;
+    for (let ix = 0; ix < steps; ix += 1) {
+      for (let iy = 0; iy < steps; iy += 1) {
+        const x0 = -12 + (24 * ix) / steps;
+        const x1 = -12 + (24 * (ix + 1)) / steps;
+        const y0 = -18 + (36 * iy) / steps;
+        const y1 = -18 + (36 * (iy + 1)) / steps;
+        tris.push(x0, y0, zVal, x1, y0, zVal, x1, y1, zVal);
+        tris.push(x0, y0, zVal, x1, y1, zVal, x0, y1, zVal);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+    g.computeVertexNormals();
+    return g;
+  };
+
+  const bridgeJaw = makeFlatGrid(2.6);
+  const bridgeOpp = makeFlatGrid(9.2);
+  const connSpec = resolveCustomAbutmentConnectionSpec({
+    manufacturer: "NEOBIOTECH",
+    system: "IS2",
+    connectionType: "Hex",
+    scanbodySpec: "Ø4.5x9",
+  });
+  const fx26 = {
+    toothNumber: "26",
+    jaw: "upper" as const,
+    fixturePose: {
+      origin: [0, -4.5, 0] as [number, number, number],
+      axis: [0, 0, 1] as [number, number, number],
+      hexX: [1, 0, 0] as [number, number, number],
+      hexY: [0, 1, 0] as [number, number, number],
+    },
+    labialDir: [1, 0, 0] as [number, number, number],
+    mesialDir: [0, 1, 0] as [number, number, number],
+    archOcclusalDir: [0, 0, 1] as [number, number, number],
+    scanbodyTop: [0, -4.5, 9] as [number, number, number],
+    scanbodyRadiusMm: 2.25,
+    scanbodyHeightMm: 9,
+    gingivaFloorMm: 2.6,
+    rmsMm: 0.02,
+    libraryKey: "neo_is2_hex_45_9",
+    connectionSpec: connSpec,
+  };
+  const fx27 = {
+    ...fx26,
+    toothNumber: "27",
+    fixturePose: {
+      origin: [0, 4.5, 0] as [number, number, number],
+      axis: [0, Math.sin((5 * Math.PI) / 180), Math.cos((5 * Math.PI) / 180)] as [number, number, number],
+      hexX: [1, 0, 0] as [number, number, number],
+      hexY: [0, Math.cos((5 * Math.PI) / 180), -Math.sin((5 * Math.PI) / 180)] as [number, number, number],
+    },
+    scanbodyTop: [0, 4.5, 9] as [number, number, number],
+  };
+  const bridgeWorks = [
+    { toothNumber: "26", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["27"] },
+    { toothNumber: "27", prosthesisType: "브리지", customAbutment: true, bridgeLinkedTeeth: ["26"] },
+  ];
+
+  // 극단적인 42° 공유 삽입축이 넘어와도 Ø17.96mm 괴물 마진으로 발산하지 않고 안전 상한 안에 평행하게 제한된다.
+  const extremeRad = (42 * Math.PI) / 180;
+  const extremeAxis: [number, number, number] = [Math.sin(extremeRad), 0, Math.cos(extremeRad)];
+  const capped26 = await designCustomAbutmentStl({
+    fixture: fx26,
+    jawGeometry: bridgeJaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fx27],
+    toothWorks: bridgeWorks,
+    sharedInsertionAxisWorld: extremeAxis,
+  });
+  const capped27 = await designCustomAbutmentStl({
+    fixture: fx27,
+    jawGeometry: bridgeJaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fx26],
+    toothWorks: bridgeWorks,
+    sharedInsertionAxisWorld: extremeAxis,
+  });
+  assert.ok(
+    capped26.metrics.angulationDeg <= 24.5 && capped26.metrics.maxDiameterMm < 11.5,
+    `42° 오염 축이 들어와도 각도(${capped26.metrics.angulationDeg}°)·직경(${capped26.metrics.maxDiameterMm}mm)이 정상 범위로 보호된다`,
+  );
+  const dotCapped =
+    capped26.insertionAxisWorld![0] * capped27.insertionAxisWorld![0] +
+    capped26.insertionAxisWorld![1] * capped27.insertionAxisWorld![1] +
+    capped26.insertionAxisWorld![2] * capped27.insertionAxisWorld![2];
+  assert.ok(dotCapped > 0.9999, "안전 상한 적용 후에도 브리지 두 지대주의 월드 삽입축은 완전히 평행하다");
+
+  // 정상 브리지 초기 생성 후 검볼 세션 테스트
+  const d26 = await designCustomAbutmentStl({
+    fixture: fx26,
+    jawGeometry: bridgeJaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fx27],
+    toothWorks: bridgeWorks,
+  });
+  const d27 = await designCustomAbutmentStl({
+    fixture: fx27,
+    jawGeometry: bridgeJaw,
+    opposingGeometry: bridgeOpp,
+    neighbors: [fx26],
+    toothWorks: bridgeWorks,
+  });
+
+  const scene = new THREE.Scene();
+  const mesh26 = new THREE.Mesh(d26.worldGeometry.clone(), new THREE.MeshBasicMaterial());
+  const mesh27 = new THREE.Mesh(d27.worldGeometry.clone(), new THREE.MeshBasicMaterial());
+  scene.add(mesh26, mesh27);
+
+  const commits: AbutmentEditSummary[] = [];
+  let lastShape26: AbutmentEditSummary | null = null;
+  let lastShape27: AbutmentEditSummary | null = null;
+  const bridgeSession = new AbutmentDirectEditSession({
+    getScene: () => scene,
+    getCamera: () => null,
+    getRenderer: () => null,
+    getHost: () => null,
+    getDesigns: () => [d26, d27],
+    getAbutment: (t) => (t === "26" ? mesh26 : t === "27" ? mesh27 : undefined),
+    getCrown: () => undefined,
+    getMargin: () => undefined,
+    getJawGeometry: () => bridgeJaw,
+    getOpposingGeometry: () => bridgeOpp,
+    getBridgeMates: (t) => (t === "27" ? ["26"] : t === "26" ? ["27"] : []),
+    ui: {
+      gumballOn: true,
+      sculptOn: false,
+      radiusMm: 2.4,
+      readOnly: false,
+      selected: "27",
+      selectedTeeth: ["27"],
+      visible: { "26": true, "27": true },
+      expanded: { "26": false, "27": true },
+    },
+    onBadge: () => {},
+    onShape: (s) => {
+      if (s.tooth === "26") lastShape26 = s;
+      if (s.tooth === "27") lastShape27 = s;
+    },
+    onCommit: (s) => {
+      commits.push(s);
+    },
+    onHistory: () => {},
+  });
+  bridgeSession.sync({ quiet: true });
+
+  // #26에 먼저 크기·길이·수평 이동 편집을 넣어 둔다.
+  const custom26 = edit({ scale: [1.16, 1.12, 1.05], heightMm: 0.55, shiftLabialMm: 0.35, yawDeg: 7 });
+  bridgeSession.setEdit("26", custom26);
+  const internalBridge = bridgeSession as unknown as {
+    show: (t: string, bake: boolean, silent?: boolean, quiet?: boolean, received?: boolean) => void;
+  };
+  internalBridge.show("26", false, true, true);
+  const beforePos26 = (mesh26.geometry.getAttribute("position") as THREE.BufferAttribute).array.slice(0);
+
+  // 1) #27의 포스트 이동·스케일·높이만 바꾸면 #26은 전혀 바뀌지 않는다.
+  bridgeSession.setEdit("27", edit({ shiftLabialMm: 0.7, scale: [1.15, 1.15, 1.1], heightMm: 0.4 }));
+  internalBridge.show("27", false, false, true);
+  const afterNonAngle26 = bridgeSession.editOf("26")!;
+  assert.equal(afterNonAngle26.tiltLabialDeg, 0, "#27 이동·스케일만으로는 #26 각도가 바뀌지 않는다");
+  assert.deepEqual(afterNonAngle26.scale, custom26.scale, "#26 포스트 크기가 그대로다");
+  assert.equal(afterNonAngle26.heightMm, custom26.heightMm, "#26 포스트 높이가 그대로다");
+  const posAfterNonAngle26 = (mesh26.geometry.getAttribute("position") as THREE.BufferAttribute).array;
+  assert.deepEqual(posAfterNonAngle26, beforePos26, "#27 이동·스케일 중 #26 3D 정점은 0mm 변화다");
+
+  // 2) #27의 각도를 바꾸면 #26의 각도만 평행하게 따라가고, #26의 크기·길이와 #27의 길이·각도는 되돌아와 바뀌지 않는다.
+  bridgeSession.setEdit("27", edit({ shiftLabialMm: 0.7, scale: [1.15, 1.15, 1.1], heightMm: 0.4, tiltLabialDeg: 8, tiltMesialDeg: -4 }));
+  internalBridge.show("27", false, false, true);
+  const edit27BeforeSync = bridgeSession.editOf("27")!;
+  const updatedMates = bridgeSession.syncBridgeTiltFrom("27", { bake: true });
+  assert.deepEqual(updatedMates, ["26"], "#27 각도 변경이 연결된 #26에만 단방향 전달된다");
+
+  const edit26AfterTilt = bridgeSession.editOf("26")!;
+  const edit27AfterSync = bridgeSession.editOf("27")!;
+  assert.deepEqual(edit26AfterTilt.scale, custom26.scale, "각도 동기화 후에도 #26의 포스트 스케일(크기/길이)은 보존된다");
+  assert.equal(edit26AfterTilt.heightMm, custom26.heightMm, "각도 동기화 후에도 #26의 포스트 높이 오프셋은 보존된다");
+  assert.equal(edit26AfterTilt.shiftLabialMm, custom26.shiftLabialMm, "각도 동기화 후에도 #26의 수평 위치는 보존된다");
+  assert.equal(edit26AfterTilt.yawDeg, custom26.yawDeg, "각도 동기화 후에도 #26의 수평 회전(yaw)은 보존된다");
+  assert.ok(
+    Math.abs(edit26AfterTilt.tiltLabialDeg) > 1,
+    "#26의 기울기 각도는 #27의 새 삽입축에 맞춰 갱신된다",
+  );
+  assert.deepEqual(edit27AfterSync, edit27BeforeSync, "#26 때문에 #27의 각도·크기·길이가 다시 바뀌지 않는다");
+
+  assert.ok(lastShape26 && lastShape27, "#26·#27 요약이 모두 측정된다");
+  assert.equal(lastShape26!.receivedBridgeSync, true, "전달받은 #26은 receivedBridgeSync로 표시된다");
+  const axis26 = lastShape26!.insertionAxisWorld!;
+  const axis27 = lastShape27!.insertionAxisWorld!;
+  const syncedDot = axis26[0] * axis27[0] + axis26[1] * axis27[1] + axis26[2] * axis27[2];
+  const syncedDiffDeg = (Math.acos(Math.min(1, Math.max(-1, syncedDot))) * 180) / Math.PI;
+  assert.ok(syncedDiffDeg < 0.2, `#27과 #26의 월드 삽입축이 평행하게 일치한다(오차 ${syncedDiffDeg.toFixed(3)}°)`);
+
+  await new Promise<void>((r) => setTimeout(r, 60));
+  const mateCommits = commits.filter((c) => c.tooth === "26");
+  assert.ok(
+    mateCommits.every((c) => c.receivedBridgeSync === true),
+    "#26 커밋은 모두 receivedBridgeSync=true로 기록되어 다시 브리지 emit을 일으키지 않는다",
+  );
+
+  bridgeSession.dispose();
+  mesh26.geometry.dispose();
+  (mesh26.material as THREE.Material).dispose();
+  mesh27.geometry.dispose();
+  (mesh27.material as THREE.Material).dispose();
+  for (const d of [capped26, capped27, d26, d27]) {
+    d.worldGeometry.dispose();
+    d.predictedCrownWorldGeometry.dispose();
+    d.enameloplastyWorldGeometry?.dispose();
+  }
+  bridgeJaw.dispose();
+  bridgeOpp.dispose();
 }
 
 console.log("abutment direct edit ok");

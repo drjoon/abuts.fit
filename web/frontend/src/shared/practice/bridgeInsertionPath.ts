@@ -172,3 +172,19 @@ export function localDirToWorld(
   if (len < 1e-6) return null;
   return [x / len, y / len, z / len];
 }
+
+/** 월드 방향을 픽스처 로컬 방향(hexX, hexY, axis 기저)으로 변환한다. */
+export function worldDirToLocal(
+  world: readonly [number, number, number],
+  pose: FixtureAxisPose,
+): [number, number, number] | null {
+  const wx = world[0];
+  const wy = world[1];
+  const wz = world[2];
+  const lx = (pose.hexX[0] ?? 0) * wx + (pose.hexX[1] ?? 0) * wy + (pose.hexX[2] ?? 0) * wz;
+  const ly = (pose.hexY[0] ?? 0) * wx + (pose.hexY[1] ?? 0) * wy + (pose.hexY[2] ?? 0) * wz;
+  const lz = (pose.axis[0] ?? 0) * wx + (pose.axis[1] ?? 0) * wy + (pose.axis[2] ?? 0) * wz;
+  const len = Math.hypot(lx, ly, lz);
+  if (len < 1e-6) return null;
+  return [lx / len, ly / len, lz / len];
+}
