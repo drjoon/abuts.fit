@@ -2227,6 +2227,110 @@ export const SCANBODY_SPLIT_IMPL_TOKEN: object = {};
  * 3) 치은 열구 바닥(상향 법선 꺾임)과 인접 자연치 인접면·치은 출현 커프 내벽(스캔바디 축을 향하는 내향 법선)에서
  *    성장을 멈추고, 스캔바디·주변 조직 색차가 뚜렷한 스캔에서는 재질 색을 함께 결합해 잔여 막만 흡수한다.
  */
+function filterFloatingScanConfettiIndices(
+  xyz: ArrayLike<number>,
+  vertCount: number,
+  triVertIds: readonly number[],
+): number[] {
+  const restTriCount = Math.floor(triVertIds.length / 3);
+  if (restTriCount < 12_000 || vertCount < 3) return triVertIds as number[];
+
+  let tableCap = 1024;
+  while (tableCap < vertCount * 2) tableCap <<= 1;
+  const tableMask = tableCap - 1;
+  const htQx = new Int32Array(tableCap);
+  const htQy = new Int32Array(tableCap);
+  const htQz = new Int32Array(tableCap);
+  const htVal = new Int32Array(tableCap).fill(-1);
+  const vertToWeld = new Int32Array(vertCount).fill(-1);
+  let nextW = 0;
+
+  const weld = (vi: number): number => {
+    const cached = vertToWeld[vi]!;
+    if (cached >= 0) return cached;
+    const base = vi * 3;
+    const qx = Math.round((xyz[base] ?? 0) * 2000);
+    const qy = Math.round((xyz[base + 1] ?? 0) * 2000);
+    const qz = Math.round((xyz[base + 2] ?? 0) * 2000);
+    let slot = (((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) >>> 0) & tableMask;
+    while (true) {
+      const w = htVal[slot]!;
+      if (w < 0) {
+        const id = nextW++;
+        htQx[slot] = qx;
+        htQy[slot] = qy;
+        htQz[slot] = qz;
+        htVal[slot] = id;
+        vertToWeld[vi] = id;
+        return id;
+      }
+      if (htQx[slot] === qx && htQy[slot] === qy && htQz[slot] === qz) {
+        vertToWeld[vi] = w;
+        return w;
+      }
+      slot = (slot + 1) & tableMask;
+    }
+  };
+
+  const triW0 = new Int32Array(restTriCount);
+  for (let t = 0; t < restTriCount; t += 1) {
+    const off = t * 3;
+    triW0[t] = weld(triVertIds[off]!);
+    weld(triVertIds[off + 1]!);
+    weld(triVertIds[off + 2]!);
+  }
+
+  const parent = new Int32Array(nextW);
+  for (let i = 0; i < nextW; i += 1) parent[i] = i;
+  const find = (start: number): number => {
+    let x = start;
+    while (parent[x]! !== x) {
+      const p = parent[x]!;
+      parent[x] = parent[p]!;
+      x = p;
+    }
+    return x;
+  };
+
+  for (let t = 0; t < restTriCount; t += 1) {
+    const off = t * 3;
+    const ra = find(triW0[t]!);
+    const rb = find(vertToWeld[triVertIds[off + 1]!]!);
+    if (ra !== rb) parent[rb] = ra;
+    const rab = find(ra);
+    const rc = find(vertToWeld[triVertIds[off + 2]!]!);
+    if (rab !== rc) parent[rc] = rab;
+  }
+
+  const compTris = new Int32Array(nextW);
+  let maxCompTris = 0;
+  for (let t = 0; t < restTriCount; t += 1) {
+    const r = find(triW0[t]!);
+    const nextCnt = compTris[r]! + 1;
+    compTris[r] = nextCnt;
+    if (nextCnt > maxCompTris) maxCompTris = nextCnt;
+  }
+  if (maxCompTris < 8_000) return triVertIds as number[];
+
+  const maxScrapTris = Math.min(400, Math.max(24, Math.floor(maxCompTris * 0.004)));
+  let dropCount = 0;
+  for (let t = 0; t < restTriCount; t += 1) {
+    if (compTris[find(triW0[t]!)]! <= maxScrapTris) dropCount += 1;
+  }
+  if (dropCount === 0) return triVertIds as number[];
+
+  const filtered = new Array<number>((restTriCount - dropCount) * 3);
+  let out = 0;
+  for (let t = 0; t < restTriCount; t += 1) {
+    if (compTris[find(triW0[t]!)]! <= maxScrapTris) continue;
+    const off = t * 3;
+    filtered[out++] = triVertIds[off]!;
+    filtered[out++] = triVertIds[off + 1]!;
+    filtered[out++] = triVertIds[off + 2]!;
+  }
+  return filtered;
+}
+
 export function splitScanByScanbodies(
   source: THREE.BufferGeometry,
   fixtures: readonly MatchedScanbodyFixture[],
@@ -2235,7 +2339,7 @@ export function splitScanByScanbodies(
   const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
   const xyz = readPositionArray(source);
-  if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) {
+  if (!pos || !xyz || pos.count < 3) {
     return { rest: source.clone(), scanbodies };
   }
 
@@ -2243,6 +2347,26 @@ export function splitScanByScanbodies(
   const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
   if (triCount <= 0) return { rest: source.clone(), scanbodies };
   const vert = (t: number, c: number) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+  const withIndex = (ids: number[]) => {
+    const g = new THREE.BufferGeometry();
+    for (const [name, attr] of Object.entries(source.attributes)) g.setAttribute(name, attr);
+    g.setIndex(ids);
+    return g;
+  };
+
+  if (fixtures.length === 0) {
+    if (triCount < 12_000) return { rest: source.clone(), scanbodies };
+    const allIds = new Array<number>(triCount * 3);
+    for (let t = 0; t < triCount; t += 1) {
+      const off = t * 3;
+      allIds[off] = vert(t, 0);
+      allIds[off + 1] = vert(t, 1);
+      allIds[off + 2] = vert(t, 2);
+    }
+    const cleaned = filterFloatingScanConfettiIndices(xyz, pos.count, allIds);
+    if (cleaned.length === allIds.length) return { rest: source.clone(), scanbodies };
+    return { rest: withIndex(cleaned), scanbodies };
+  }
 
   const SECTORS = 36;
   const ROI_RAD_PAD_MM = 2.5;
@@ -2572,18 +2696,65 @@ export function splitScanByScanbodies(
 
   const owner = new Int32Array(R).fill(-1);
 
-  // 3) 각 스캔바디마다 부채꼴별 외벽 반경·열구 바닥 높이·자체 보정 색 모델을 구한 뒤 연결 영역 성장
+  // 3) 각 스캔바디마다 원통 축 미세 재중심화·외벽 반경·열구 바닥·색 모델을 구한 뒤 연결 영역 성장
   for (let fi = 0; fi < fixtures.length; fi += 1) {
     const f = fixtures[fi]!;
     const localList = fixRoiList[fi]!;
     if (localList.length === 0) continue;
 
-    const [ox, oy, oz] = f.fixturePose.origin;
+    let [ox, oy, oz] = f.fixturePose.origin;
     const axis = f.fixturePose.axis;
     const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
     const e2 = cross(axis, e1);
     const sbR = f.scanbodyRadiusMm;
     const sbH = f.scanbodyHeightMm;
+
+    // 정합·캐시 포즈에 미세 수평 편심(<=0.42mm)이 있어도 실제 3D 스캔바디 기둥 중심에 맞춰 자른다.
+    const centerVotesU: number[] = [];
+    const centerVotesV: number[] = [];
+    const minBarrelZ = Math.max(1.3, f.gingivaFloorMm + 0.55);
+    const maxBarrelZ = sbH - 0.25;
+    if (maxBarrelZ > minBarrelZ + 0.5) {
+      for (const ri of localList) {
+        const dx = cxArr[ri]! - ox;
+        const dy = cyArr[ri]! - oy;
+        const dz = czArr[ri]! - oz;
+        const hz = dx * axis[0] + dy * axis[1] + dz * axis[2];
+        if (hz < minBarrelZ || hz > maxBarrelZ) continue;
+        const u = dx * e1[0] + dy * e1[1] + dz * e1[2];
+        const v = dx * e2[0] + dy * e2[1] + dz * e2[2];
+        const r = Math.hypot(u, v);
+        if (r < sbR * 0.62 || r > sbR + 0.52) continue;
+        if (isCloserOrInsideOther(cxArr[ri]!, cyArr[ri]!, czArr[ri]!, r, fi)) continue;
+        const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+        if (Math.abs(nAx) > 0.44) continue;
+        const nu = nxArr[ri]! * e1[0] + nyArr[ri]! * e1[1] + nzArr[ri]! * e1[2];
+        const nv = nxArr[ri]! * e2[0] + nyArr[ri]! * e2[1] + nzArr[ri]! * e2[2];
+        const nPerp = Math.hypot(nu, nv);
+        if (nPerp < 0.72) continue;
+        const radialDot = (u * nu + v * nv) / (r * nPerp);
+        const tangCross = Math.abs(u * nv - v * nu) / (r * nPerp);
+        // 평면 베벨 면은 법선이 반경 방향에서 벗어나므로 제외하고 원통 호(arc)만 투표에 사용한다.
+        if (radialDot < 0.94 || tangCross > 0.26) continue;
+        centerVotesU.push(u - sbR * (nu / nPerp));
+        centerVotesV.push(v - sbR * (nv / nPerp));
+      }
+      if (centerVotesU.length >= 24) {
+        centerVotesU.sort((a, c) => a - c);
+        centerVotesV.sort((a, c) => a - c);
+        let du = centerVotesU[Math.floor(centerVotesU.length / 2)]!;
+        let dv = centerVotesV[Math.floor(centerVotesV.length / 2)]!;
+        const shift = Math.hypot(du, dv);
+        if (shift > 0.42) {
+          const s = 0.42 / shift;
+          du *= s;
+          dv *= s;
+        }
+        ox += e1[0] * du + e2[0] * dv;
+        oy += e1[1] * du + e2[1] * dv;
+        oz += e1[2] * du + e2[2] * dv;
+      }
+    }
 
     const wallRBySec: number[][] = Array.from({ length: SECTORS }, () => []);
     const sulcBySec: number[][] = Array.from({ length: SECTORS }, () => []);
@@ -2621,27 +2792,50 @@ export function splitScanByScanbodies(
         wallRBySec[b]!.push(r);
       }
 
-      if (r >= sbR + 0.05 && r <= sbR + 0.95 && hz <= sbH - 0.55 && (nAx >= 0.70 || nEr <= -0.18)) {
-        sulcBySec[b]!.push(hz);
-      }
-
       if (rgbR && rgbG && rgbB) {
+        const cSample: Rgb3 = [rgbR[ri]!, rgbG[ri]!, rgbB[ri]!];
+        const lumSample = (cSample[0] + cSample[1] + cSample[2]) / 3;
         if (
           r <= sbR + 0.08 &&
           hz >= Math.max(1.4, f.gingivaFloorMm + 0.35) &&
           hz <= sbH + 0.12 &&
           (r <= sbR * 0.8 || (nEr > 0.45 && Math.abs(nAx) < 0.65))
         ) {
-          sbColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
-        } else if (r >= sbR + 0.30 && r <= sbR + 1.8 && hz <= sbH - 0.45 && nAx >= 0.72) {
-          tissueColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
+          sbColorSamples.push(cSample);
         } else if (
+          lumSample >= 0.14 &&
+          r >= sbR + 0.34 &&
+          r <= sbR + 1.85 &&
+          hz <= sbH - 0.45 &&
+          nAx >= 0.72
+        ) {
+          tissueColorSamples.push(cSample);
+        } else if (
+          lumSample >= 0.14 &&
           r >= sbR + 0.45 &&
           r <= sbR + 2.2 &&
           nEr <= -0.35 &&
           hz >= f.gingivaFloorMm + 0.6
         ) {
-          tissueColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
+          tissueColorSamples.push(cSample);
+        }
+      }
+
+      // 열구 바닥은 분홍 치은·내향 커프만. 스캔바디 어깨(암적색 상향 면)를 넣으면 sulcZ가
+      // 교합쪽으로 올라 마진이 잔여 선반에 붙는다.
+      if (r >= sbR + 0.05 && r <= sbR + 0.95 && hz <= sbH - 0.55 && (nAx >= 0.70 || nEr <= -0.18)) {
+        if (rgbR && rgbG && rgbB) {
+          const cr = rgbR[ri]!;
+          const cg = rgbG[ri]!;
+          const lum = (cr + cg + rgbB[ri]!) / 3;
+          const darkSbShelf = lum <= 0.37 && cg <= 0.22 && cr <= 0.64;
+          if (darkSbShelf) {
+            // skip — scanbody shoulder / bite collar, not gingiva floor
+          } else {
+            sulcBySec[b]!.push(hz);
+          }
+        } else {
+          sulcBySec[b]!.push(hz);
         }
       }
     }
@@ -2733,15 +2927,58 @@ export function splitScanByScanbodies(
 
     const sbProto = medianRgb(sbColorSamples);
     const tisProto = medianRgb(tissueColorSamples);
+    const tisLum = tisProto ? (tisProto[0] + tisProto[1] + tisProto[2]) / 3 : 0;
     const colorSep = sbProto && tisProto ? colorDist(sbProto, tisProto) : 0;
     const useColor = Boolean(sbProto && tisProto && colorSep >= 0.16);
+    const looksClearlyHealthyTissue = (ri: number) => {
+      if (!rgbR || !rgbG || !rgbB || !tisProto) return false;
+      const c: Rgb3 = [rgbR[ri]!, rgbG[ri]!, rgbB[ri]!];
+      const lum = (c[0] + c[1] + c[2]) / 3;
+      // 암적색·적갈색 스캔바디 어깨는 치은으로 보지 않는다. 여기 걸리면 원심 선반이 남는다.
+      if (lum <= 0.37 && c[1] <= 0.22 && c[0] <= 0.64) return false;
+      if (colorDist(c, tisProto) <= 0.16) return true;
+      // 분홍 치은: G≥0.22 (어깨 잔여 G≈0.19–0.21 과 구분).
+      if (c[0] >= 0.44 && c[1] >= 0.22 && c[0] - c[1] >= 0.14) return true;
+      if (c[0] >= 0.46 && c[1] >= 0.24 && c[2] >= 0.22) return true;
+      return false;
+    };
     const looksLikeScanbodyColor = (ri: number) => {
       if (!useColor || !rgbR || !rgbG || !rgbB || !sbProto || !tisProto) return false;
       const c: Rgb3 = [rgbR[ri]!, rgbG[ri]!, rgbB[ri]!];
       const dSb = colorDist(c, sbProto);
       const dTis = colorDist(c, tisProto);
-      if (c[0] > 0.34 && c[0] - c[1] > 0.13 && c[0] - c[2] > 0.08 && dTis < dSb) return false;
+      const lum = (c[0] + c[1] + c[2]) / 3;
+      // 밝은 분홍 치은만 거절. 어두운 스캔바디 어깨(적갈색)는 R-G가 커도 치은이 아니다.
+      if (
+        lum > 0.30 &&
+        c[0] > 0.34 &&
+        c[0] - c[1] > 0.13 &&
+        c[0] - c[2] > 0.08 &&
+        dTis < dSb
+      ) {
+        return false;
+      }
       return dSb <= Math.max(0.22, colorSep * 0.62) && dSb < dTis * 0.92;
+    };
+    // 스캔바디 칼라·어깨의 암적색 잔여(바이트 실리콘·조명 암부·플라스틱 선반) 판별
+    const looksLikeDarkBiteCollarArtifact = (ri: number) => {
+      if (!rgbR || !rgbG || !rgbB) return false;
+      if (looksClearlyHealthyTissue(ri)) return false;
+      const r0 = rgbR[ri]!;
+      const g0 = rgbG[ri]!;
+      const b0 = rgbB[ri]!;
+      const lum = (r0 + g0 + b0) / 3;
+      // 밝은 분홍 치은 제외
+      if (r0 >= 0.50 && g0 >= 0.22 && r0 - g0 >= 0.14) return false;
+      // 원심 어깨 잔여: lum~0.29–0.37·G~0.15–0.21 도 칼라로 본다.
+      if (tisProto && tisLum >= 0.25) {
+        return (
+          lum <= Math.max(0.37, Math.min(0.38, tisLum * 0.92)) &&
+          g0 <= Math.max(0.21, Math.min(0.22, tisProto[1] * 0.95)) &&
+          r0 <= Math.max(0.62, Math.min(0.64, tisProto[0] * 1.02))
+        );
+      }
+      return lum <= 0.37 && g0 <= 0.21 && r0 <= 0.64;
     };
 
     const triGeom = (ri: number) => {
@@ -2781,8 +3018,16 @@ export function splitScanByScanbodies(
         g.hz >= Math.max(0.85, g.sz - 0.65) &&
         g.nEr > 0.42 &&
         Math.abs(g.nAx) < 0.66;
+      // 원심 등에서 남는 상향 암적색 어깨/선반 — 수직 벽 시드에 못 들어가도 칼라로 시드한다.
+      const isDarkShoulderShelf =
+        looksLikeDarkBiteCollarArtifact(ri) &&
+        g.r <= Math.max(g.rw, sbR) + 0.78 &&
+        g.hz >= Math.max(0.95, g.sz - 0.35) &&
+        g.hz <= sbH - 0.2 &&
+        g.nAx >= 0.55 &&
+        g.nEr >= -0.72;
 
-      if (isInnerOrCap || isCoreWall) {
+      if (isInnerOrCap || isCoreWall || isDarkShoulderShelf) {
         claimed[ri] = 1;
         queue.push(ri);
       }
@@ -2795,7 +3040,8 @@ export function splitScanByScanbodies(
         const g = triGeom(nb);
         if (g.hz < 0.6 || g.hz > sbH + 0.65) continue;
         const maxCoreR = Math.max(g.rw, sbR);
-        if (g.r > maxCoreR + 1.0) continue;
+        const isDarkBite = looksLikeDarkBiteCollarArtifact(nb);
+        if (g.r > maxCoreR + (isDarkBite ? 1.08 : 1.0)) continue;
         if (isCloserOrInsideOther(cxArr[nb]!, cyArr[nb]!, czArr[nb]!, g.r, fi)) continue;
 
         // 스크류홀 내면 및 베벨 안쪽 면
@@ -2804,21 +3050,60 @@ export function splitScanByScanbodies(
           queue.push(nb);
           continue;
         }
-        if (g.r <= g.rw - 0.06 && g.hz >= Math.max(0.95, g.sz + 0.15) && g.nEr >= -0.2) {
+        // 수평 치은 바닥은 wallR 과대추정(평면 베벨) 시 안으로 오인될 수 있어 nAx 로 제외.
+        if (
+          g.r <= g.rw - 0.06 &&
+          g.hz >= Math.max(0.95, g.sz + 0.15) &&
+          g.nEr >= -0.2 &&
+          g.nAx < 0.55
+        ) {
           claimed[nb] = 1;
           queue.push(nb);
           continue;
         }
 
-        // 스캔바디 축 안쪽을 바라보는 면(인접 자연치 인접면·출현 커프 내벽)은 절대 넘지 않는다.
-        if (g.nEr < -0.06) continue;
+        // 스캔바디 축 안쪽을 바라보는 수직 인접치 인접면·출현 커프 내벽은 절대 넘지 않는다.
+        // 벽 바로 밖 암적색 어깨(선반)만 nEr 음수 허용. 바깥 치간 암부는 수평막(nAx>=0.72)일 때만.
+        if (g.nEr < -0.06) {
+          const nearDarkShelf =
+            isDarkBite &&
+            g.r <= maxCoreR + 0.78 &&
+            g.hz >= g.sz - 0.45 &&
+            g.hz <= sbH - 0.35 &&
+            g.nAx >= 0.55 &&
+            g.nEr >= -0.72;
+          const outerDarkFilm =
+            isDarkBite &&
+            g.r <= maxCoreR + 1.05 &&
+            g.hz >= g.sz - 0.45 &&
+            g.hz <= sbH - 0.35 &&
+            g.nAx >= 0.72 &&
+            g.nEr >= -0.62;
+          if (nearDarkShelf || outerDarkFilm) {
+            claimed[nb] = 1;
+            queue.push(nb);
+          }
+          continue;
+        }
 
-        // Zone 1: 스캔바디 기둥·베벨·열구 경계 (r <= maxCoreR + 0.22)
-        if (g.r <= maxCoreR + 0.22) {
-          if (g.hz < sbH - 0.8 && g.nAx >= 0.7 && g.r >= g.rw - 0.06) {
+        // Zone 1: 스캔바디 기둥·베벨·열구 경계 (r <= maxCoreR + 0.24)
+        if (g.r <= maxCoreR + 0.24) {
+          const isOutwardMeniscus =
+            g.nEr >= 0.20 && g.nAx < 0.70 && !looksClearlyHealthyTissue(nb);
+          const isDarkShelf =
+            isDarkBite && g.nAx >= 0.55 && g.r <= maxCoreR + 0.78 && g.hz >= g.sz - 0.35;
+          // wallR 이 공칭으로 부풀어 있어도(평면 베벨) 상향 열구·치은은 지킨다.
+          if (
+            g.hz < sbH - 0.8 &&
+            g.nAx >= 0.7 &&
+            !isDarkBite &&
+            !isDarkShelf &&
+            !isOutwardMeniscus
+          ) {
             const nearSulcusDepth = g.hz <= g.sz + 0.65;
             const outsideFlatBevelNonSb =
-              g.r >= g.rw + 0.05 && (!useColor || !looksLikeScanbodyColor(nb));
+              g.r >= Math.min(g.rw, sbR) + 0.02 &&
+              (!useColor || !looksLikeScanbodyColor(nb));
             if (nearSulcusDepth || outsideFlatBevelNonSb) continue;
           }
           if (g.hz < g.sz - 0.85) continue;
@@ -2827,6 +3112,9 @@ export function splitScanByScanbodies(
             g.r >= g.rw + 0.06 &&
             g.hz < g.sz + 0.45 &&
             g.nAx >= 0.48 &&
+            !isDarkBite &&
+            !isDarkShelf &&
+            !isOutwardMeniscus &&
             !looksLikeScanbodyColor(nb)
           ) {
             continue;
@@ -2836,7 +3124,49 @@ export function splitScanByScanbodies(
           continue;
         }
 
-        // Zone 2: 스캔바디 외벽에 붙어 뻗은 얇은 스캐너 잔여 막 (maxCoreR + 0.22 < r <= maxCoreR + 1.0)
+        // Zone 1.5: 벽 바로 밖 암적색 어깨·선반 (원심 잔여가 주로 여기, r <= maxCoreR + 0.78)
+        if (
+          isDarkBite &&
+          g.r <= maxCoreR + 0.78 &&
+          g.hz >= g.sz - 0.45 &&
+          g.hz <= sbH - 0.25 &&
+          g.nAx >= 0.55 &&
+          g.nEr >= -0.72
+        ) {
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+
+        // Zone 2A: 칼라 밖 검붉은 수평 바이트 막 (r <= maxCoreR + 1.05, 강한 상향만)
+        if (
+          isDarkBite &&
+          g.r <= maxCoreR + 1.05 &&
+          g.hz >= g.sz - 0.45 &&
+          g.hz <= sbH - 0.3 &&
+          g.nAx >= 0.70
+        ) {
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+
+        // Zone 2B: 스캔바디 벽에서 바깥 아래로 이어지는 짧은 외향 메니스커스 립 (r <= maxCoreR + 0.38)
+        // 수평 치은 바닥(nAx 큼)은 제외 — 평면 베벨 바깥 분홍 보존.
+        if (
+          g.r <= maxCoreR + 0.38 &&
+          g.hz >= g.sz - 0.25 &&
+          g.hz <= sbH + 0.1 &&
+          g.nEr >= 0.24 &&
+          g.nAx < 0.70 &&
+          !looksClearlyHealthyTissue(nb)
+        ) {
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+
+        // Zone 2C: 스캔바디 외벽에 붙어 뻗은 얇은 스캐너 잔여 막 (maxCoreR + 0.24 < r <= maxCoreR + 1.0)
         if (g.hz < g.sz + 0.25 || g.hz > sbH + 0.2) continue;
         if (g.nAx >= 0.58) continue;
         if (useColor) {
@@ -2850,21 +3180,27 @@ export function splitScanByScanbodies(
       }
     }
 
-    // 스캔바디 몸통 내부(r <= max(rw, sbR) + 0.22)에 완전히 갇힌 작은 구멍·섬(<= 28개 삼각형) 흡수
+    // 스캔바디 코어·어깨(r <= max(rw, sbR) + 0.65)에 완전히 갇힌 작은 구멍·섬(<= 48개 삼각형) 흡수
     const visitedUnclaimed = new Uint8Array(R);
     for (const ri of localList) {
       if (claimed[ri] || visitedUnclaimed[ri] || owner[ri]! >= 0) continue;
       const g0 = triGeom(ri);
-      if (g0.r > Math.max(g0.rw, sbR) + 0.22 || g0.hz < g0.sz - 0.4) continue;
+      const islandDark = looksLikeDarkBiteCollarArtifact(ri);
+      const islandPad = islandDark ? 0.80 : 0.28;
+      if (g0.r > Math.max(g0.rw, sbR) + islandPad || g0.hz < g0.sz - 0.5) continue;
+      // 상향 분홍 치은 바닥은 섬으로 삼키지 않는다(평면 베벨 바깥 보존). 암적 선반만 허용.
+      if (
+        g0.nAx >= 0.55 &&
+        !islandDark &&
+        !looksLikeScanbodyColor(ri)
+      ) {
+        continue;
+      }
       const comp = [ri];
       visitedUnclaimed[ri] = 1;
       let escaped = false;
       for (let h = 0; h < comp.length; h += 1) {
         const u = comp[h]!;
-        if (edgeCountOfTri[u]! < 3) {
-          escaped = true;
-          break;
-        }
         for (const nb of adj[u]!) {
           if (claimed[nb]) continue;
           if (owner[nb]! >= 0) {
@@ -2872,14 +3208,14 @@ export function splitScanByScanbodies(
             break;
           }
           const gn = triGeom(nb);
-          if (gn.r > Math.max(gn.rw, sbR) + 0.24 || gn.hz < gn.sz - 0.5) {
+          if (gn.r > Math.max(gn.rw, sbR) + islandPad + 0.05 || gn.hz < gn.sz - 0.55) {
             escaped = true;
             break;
           }
           if (!visitedUnclaimed[nb]) {
             visitedUnclaimed[nb] = 1;
             comp.push(nb);
-            if (comp.length > 28) {
+            if (comp.length > 48) {
               escaped = true;
               break;
             }
@@ -2887,30 +3223,45 @@ export function splitScanByScanbodies(
         }
         if (escaped) break;
       }
-      if (!escaped && comp.length <= 28) {
+      if (!escaped && comp.length <= 48) {
         for (const u of comp) claimed[u] = 1;
       }
     }
 
-    // 열구 절단선 톱니 완화: 두 변 이상 이미 스캔바디에 속한 코어 내 외향 삼각형 정리
-    for (let pass = 0; pass < 2; pass += 1) {
+    // 절단 경계 톱니·외톨이 혀(dangling ear/sliver) 정리: 열린 절단선에 매달린 뾰족한 잔여 삼각형 반복 제거
+    for (let pass = 0; pass < 8; pass += 1) {
+      let changed = false;
       for (const ri of localList) {
         if (claimed[ri] || owner[ri]! >= 0) continue;
         const g = triGeom(ri);
-        if (
-          g.r > Math.max(g.rw, sbR) + 0.22 ||
-          g.hz < g.sz - 0.4 ||
-          g.nEr < -0.05 ||
-          g.nAx >= 0.74
-        ) {
+        const maxCoreR = Math.max(g.rw, sbR);
+        const darkOrSb = looksLikeDarkBiteCollarArtifact(ri) || looksLikeScanbodyColor(ri);
+        const nearDarkShelf =
+          darkOrSb && g.r <= maxCoreR + 0.78 && g.nAx >= 0.55 && g.hz >= g.sz - 0.4;
+        const maxPeelR = maxCoreR + (nearDarkShelf ? 0.80 : darkOrSb ? 1.08 : 0.88);
+        if (g.r > maxPeelR || g.hz < g.sz - 0.5 || g.nEr < (nearDarkShelf ? -0.72 : darkOrSb ? -0.58 : -0.35)) {
           continue;
         }
+        // 상향 비암적 치은 바닥은 peel 로 잠식하지 않는다.
+        if (g.nAx >= 0.74 && !darkOrSb) continue;
         let cCnt = 0;
+        let uCnt = 0;
         for (const nb of adj[ri]!) {
           if (claimed[nb]) cCnt += 1;
+          else if (owner[nb]! < 0) uCnt += 1;
         }
-        if (cCnt >= 2) claimed[ri] = 1;
+        if (cCnt === 0) continue;
+        const healthy = looksClearlyHealthyTissue(ri);
+        if (
+          (nearDarkShelf && cCnt >= 1 && !healthy) ||
+          (cCnt >= 2 && (g.r <= maxCoreR + 0.24 ? g.nAx < 0.74 || !healthy : darkOrSb || !healthy)) ||
+          (uCnt <= 1 && !healthy)
+        ) {
+          claimed[ri] = 1;
+          changed = true;
+        }
       }
+      if (!changed) break;
     }
 
     for (const ri of localList) {
@@ -2924,7 +3275,7 @@ export function splitScanByScanbodies(
     if (fi >= 0) triOwner[roiTris[ri]!] = fi;
   }
 
-  const rest: number[] = [];
+  const rawRest: number[] = [];
   const parts: number[][] = fixtures.map(() => []);
   for (let t = 0; t < triCount; t += 1) {
     const a = vert(t, 0);
@@ -2932,15 +3283,10 @@ export function splitScanByScanbodies(
     const c = vert(t, 2);
     const fi = triOwner[t]!;
     if (fi >= 0) parts[fi]!.push(a, b, c);
-    else rest.push(a, b, c);
+    else rawRest.push(a, b, c);
   }
 
-  const withIndex = (ids: number[]) => {
-    const g = new THREE.BufferGeometry();
-    for (const [name, attr] of Object.entries(source.attributes)) g.setAttribute(name, attr);
-    g.setIndex(ids);
-    return g;
-  };
+  const rest = filterFloatingScanConfettiIndices(xyz, pos.count, rawRest);
   fixtures.forEach((f, k) => {
     if (parts[k]!.length > 0) scanbodies.set(f.toothNumber, withIndex(parts[k]!));
   });
