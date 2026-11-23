@@ -1065,22 +1065,6 @@ function jawsAgreeOnAnterior(
   return ua.anterior.dot(la.anterior) >= 0.5;
 }
 
-function captureGeometryPositions(geometry: THREE.BufferGeometry): Float32Array | null {
-  const attr = geometry.getAttribute("position");
-  if (!attr) return null;
-  return new Float32Array(attr.array as Float32Array);
-}
-
-function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32Array) {
-  const attr = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
-  if (!attr || attr.count * 3 !== snap.length) return;
-  (attr.array as Float32Array).set(snap);
-  attr.needsUpdate = true;
-  geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-}
-
 /** 자동 맞춤 품질이 낮은 악만 수동 점 맞춤 대상. 둘 다 weak면 상악→하악. */
 function weakBiteArches(
   quality: readonly BiteFitArchQuality[],
@@ -5074,14 +5058,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             role: s.role,
             geometry: s.geometry,
           }));
-          const snap = alignEntries
-            .map((entry) => ({
-              geometry: entry.geometry,
-              positions: captureGeometryPositions(entry.geometry),
-            }))
-            .filter((row): row is { geometry: THREE.BufferGeometry; positions: Float32Array } =>
-              Boolean(row.positions),
-            );
           const fitResult = await registerJawsToBiteResult(alignEntries, {
             sweepPoses: true,
             cancelled: () => cancelled,
@@ -5110,10 +5086,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 if (cancelled) return;
                 const archOnly = jawScans.filter((scan) => scan.role === role);
                 if (archOnly.length === 0 || biteScans.length === 0) continue;
-                for (const scan of archOnly) {
-                  const row = snap.find((entry) => entry.geometry === scan.geometry);
-                  if (row) restoreGeometryPositions(row.geometry, row.positions);
-                }
+                // 점 1개는 자동 자세를 유지한 채 그 점만 옮긴다. 원본으로 되돌리면 회전이 풀려 바이트가 뜬다.
                 const ok = await startBiteManualAlignRef.current(role, jawScans, biteScans);
                 if (cancelled) {
                   endBiteManualSessionRef.current(false);
