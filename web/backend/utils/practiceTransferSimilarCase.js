@@ -140,6 +140,7 @@ export function toSimilarCaseMatchApi(doc, opts = {}) {
     patientName: resolvePracticeTransferPatientName(doc),
     toothNumbers,
     targetLabName: String(doc?.targetLabName || "").trim(),
+    targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim(),
     createdAt,
     orderYmd: orderDates[0] || toKstYmd(createdAt) || "",
     monthlyRemakeFreeRemaining: remaining,

@@ -1,13 +1,18 @@
 /**
  * 주문(작성) 모달 — 리메이크 체크·6개월 내 원본 의뢰 선택.
+ * 거래 기공소 전체에서 검색. 원본 기공소 ≠ 선택 기공소면 무료 리메이크 vs 유료 신규 선택.
  * related files:
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/shared/components/practice/PracticeRemakeSearchDialog.tsx
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - docs/intent/practice-remake-lab-choice.md
+ * change-log:
+ * - 2026-11-23: 거래 기공소 전체 검색. 기공소 불일치 시 원래/새 기공소 선택.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Repeat } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -49,10 +54,26 @@ const toSimilarCaseMatch = (
     .map((t) => t.trim())
     .filter(Boolean),
   targetLabName: String(transfer.targetLab || "").trim(),
+  targetLabAnchorId: String(transfer.targetLabAnchorId || "").trim() || undefined,
   orderYmd: transfer.orderDate,
   manufacturerStage: transfer.status,
   withinRemakePricingWindow: true,
 });
+
+const isSameLabAsSelected = (
+  source: PracticeSimilarCaseMatch,
+  labAnchorId: string | null,
+  labName: string,
+) => {
+  const selectedId = String(labAnchorId || "").trim();
+  const sourceId = String(source.targetLabAnchorId || "").trim();
+  if (selectedId && sourceId) return selectedId === sourceId;
+  const selectedLabel = normalizeLabLabel(labName);
+  const sourceLabel = normalizeLabLabel(source.targetLabName || "");
+  if (selectedLabel && sourceLabel) return selectedLabel === sourceLabel;
+  // 기공소 미선택·식별 불가 → 충돌 없음(원본으로 연결·전환)
+  return true;
+};
 
 export type PracticeComposeRemakeSectionProps = {
   checked: boolean;
@@ -63,6 +84,10 @@ export type PracticeComposeRemakeSectionProps = {
   labName: string;
   linkedSource: PracticeSimilarCaseMatch | null;
   onLinkedSourceChange: (source: PracticeSimilarCaseMatch | null) => void;
+  /** 원래 기공소 — 기공소를 원본 쪽으로 바꾸고 원본 연결 · 무료 리메이크 */
+  onSwitchToSourceLab: (source: PracticeSimilarCaseMatch) => void;
+  /** 새 기공소 — 리메이크 OFF · 일반 신규(유료) */
+  onChooseNewLabPaid: () => void;
   onPickRequiredChange?: (required: boolean) => void;
   guideTourRemake?: boolean;
   /** 의뢰 수정 중 — 자기 자신은 원본 후보에서 제외 */
@@ -78,6 +103,8 @@ export function PracticeComposeRemakeSection({
   labName,
   linkedSource,
   onLinkedSourceChange,
+  onSwitchToSourceLab,
+  onChooseNewLabPaid,
   onPickRequiredChange,
   guideTourRemake = false,
   excludeTransferMongoId = "",
@@ -88,6 +115,9 @@ export function PracticeComposeRemakeSection({
   const [candidates, setCandidates] = useState<PracticeRecentTransferItem[]>(
     [],
   );
+  /** 원본 기공소 ≠ 선택 기공소 — 무료 리메이크 vs 유료 신규 대기 */
+  const [pendingLabChoice, setPendingLabChoice] =
+    useState<PracticeSimilarCaseMatch | null>(null);
   const searchGenRef = useRef(0);
   const linkedIdRef = useRef("");
   linkedIdRef.current = String(linkedSource?._id || "").trim();
@@ -97,20 +127,34 @@ export function PracticeComposeRemakeSection({
     [patientName],
   );
   const patientReady = /[가-힣]/.test(normalizedPatient);
-  const labReady = Boolean(String(labAnchorId || labName || "").trim());
+
+  const applyCandidate = (transfer: PracticeRecentTransferItem) => {
+    const match = toSimilarCaseMatch(transfer);
+    if (isSameLabAsSelected(match, labAnchorId, labName)) {
+      setPendingLabChoice(null);
+      onLinkedSourceChange(match);
+      onPickRequiredChange?.(false);
+      return;
+    }
+    setPendingLabChoice(match);
+    onLinkedSourceChange(null);
+    onPickRequiredChange?.(true);
+  };
 
   useEffect(() => {
     if (!checked) {
       setCandidates([]);
       setSearching(false);
       setSearchError("");
+      setPendingLabChoice(null);
       onPickRequiredChange?.(false);
       return;
     }
-    if (!authToken || !patientReady || !labReady) {
+    if (!authToken || !patientReady) {
       setCandidates([]);
       setSearching(false);
       setSearchError("");
+      setPendingLabChoice(null);
       onPickRequiredChange?.(false);
       return;
     }
@@ -138,6 +182,7 @@ export function PracticeComposeRemakeSection({
                 ? (res.data as { message?: string })
                 : {};
             setCandidates([]);
+            setPendingLabChoice(null);
             setSearchError(String(body.message || "검색에 실패했습니다."));
             onLinkedSourceChange(null);
             onPickRequiredChange?.(false);
@@ -158,43 +203,35 @@ export function PracticeComposeRemakeSection({
               : [];
           const mapped = mapMyPracticeTransferApiRows(list);
           const grouped = groupPracticeRecentRequests(mapped, []);
-          const labId = String(labAnchorId || "").trim();
-          const labLabel = normalizeLabLabel(labName);
           const excludeId = String(excludeTransferMongoId || "").trim();
           const filtered = grouped
             .filter((t) => canRemakePracticeTransferByStatus(t.status))
             .filter((t) => {
               if (!excludeId) return true;
               return transferKey(t) !== excludeId;
-            })
-            .filter((t) => {
-              const anchor = String(t.targetLabAnchorId || "").trim();
-              if (labId && anchor) return anchor === labId;
-              if (labLabel) {
-                return normalizeLabLabel(t.targetLab || "") === labLabel;
-              }
-              return true;
             });
           setCandidates(filtered);
           if (filtered.length === 1) {
-            onLinkedSourceChange(toSimilarCaseMatch(filtered[0]));
-            onPickRequiredChange?.(false);
+            applyCandidate(filtered[0]);
           } else if (filtered.length === 0) {
+            setPendingLabChoice(null);
             onLinkedSourceChange(null);
             onPickRequiredChange?.(false);
           } else {
-            // 후보가 여러 개여도 이미 고른 원본이 목록에 있으면 선택 완료.
-            // (부분 치아 리메이크: 원본이 더 많은 치아여도 동일)
             const linkedId = linkedIdRef.current;
             const stillValid = Boolean(
               linkedId && filtered.some((t) => transferKey(t) === linkedId),
             );
-            if (!stillValid) onLinkedSourceChange(null);
+            if (!stillValid) {
+              setPendingLabChoice(null);
+              onLinkedSourceChange(null);
+            }
             onPickRequiredChange?.(!stillValid);
           }
         } catch {
           if (searchGenRef.current !== gen) return;
           setCandidates([]);
+          setPendingLabChoice(null);
           setSearchError("검색에 실패했습니다.");
           onLinkedSourceChange(null);
           onPickRequiredChange?.(false);
@@ -205,12 +242,11 @@ export function PracticeComposeRemakeSection({
     }, 350);
 
     return () => window.clearTimeout(timer);
+    // applyCandidate는 lab 비교용. lab 변경 시 재검색은 불필요(거래처 전체).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 환자·체크·제외 id만 재조회
   }, [
     authToken,
     checked,
-    labAnchorId,
-    labName,
-    labReady,
     normalizedPatient,
     onLinkedSourceChange,
     onPickRequiredChange,
@@ -219,10 +255,10 @@ export function PracticeComposeRemakeSection({
   ]);
 
   const selectedId = String(linkedSource?._id || "").trim();
+  const pendingId = String(pendingLabChoice?._id || "").trim();
   const prePlatform =
     checked &&
     patientReady &&
-    labReady &&
     !searching &&
     !searchError &&
     candidates.length === 0;
@@ -253,7 +289,7 @@ export function PracticeComposeRemakeSection({
             />
             <span className="font-semibold text-slate-900">리메이크.</span>{" "}
             {checked
-              ? "최근 6개월 · 같은 환자·치과·기공소 의뢰를 검색합니다."
+              ? "최근 6개월 · 같은 환자·치과 의뢰를 거래 기공소에서 검색합니다."
               : "이전에 받은 보철·어벗을 다시 의뢰할 때 선택하세요."}
           </p>
         </span>
@@ -261,9 +297,9 @@ export function PracticeComposeRemakeSection({
 
       {checked ? (
         <div className="mt-2.5 space-y-2 border-t border-amber-200/80 pt-2.5">
-          {!patientReady || !labReady ? (
+          {!patientReady ? (
             <p className="text-xs text-muted-foreground">
-              {!labReady ? "기공소를 선택해 주세요." : "환자명을 입력해 주세요."}
+              환자명을 입력해 주세요.
             </p>
           ) : searching ? (
             <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -288,36 +324,89 @@ export function PracticeComposeRemakeSection({
                     resolvePracticeTransferListPatientName(transfer) || "—";
                   const teeth =
                     resolvePracticeTransferListToothNumbers(transfer) || "—";
-                  const active = key === selectedId;
+                  const labLabel =
+                    String(transfer.targetLab || "").trim() || "기공소";
+                  const orderYmd = String(transfer.orderDate || "").trim();
+                  const active =
+                    key === selectedId || (Boolean(pendingId) && key === pendingId);
                   return (
                     <button
                       key={key || transfer.transferId}
                       type="button"
-                      onClick={() => {
-                        onLinkedSourceChange(toSimilarCaseMatch(transfer));
-                        onPickRequiredChange?.(false);
-                      }}
+                      onClick={() => applyCandidate(transfer)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
+                        "flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
                         active
                           ? "border-amber-400 bg-white shadow-sm"
                           : "border-transparent bg-white/60 hover:bg-white",
                       )}
                     >
-                      <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
-                        {patient}
-                        <span className="ml-1 font-normal text-muted-foreground">
-                          {teeth}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
+                          {patient}
+                          <span className="ml-1 font-normal text-muted-foreground">
+                            {teeth}
+                          </span>
                         </span>
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          {toStatusBadgeLabel(transfer.status)}
+                        </Badge>
                       </span>
-                      <Badge variant="outline" className="shrink-0 text-[10px]">
-                        {toStatusBadgeLabel(transfer.status)}
-                      </Badge>
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {labLabel}
+                        {orderYmd ? ` · ${orderYmd}` : ""}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              {!selectedId && candidates.length > 1 ? (
+
+              {pendingLabChoice ? (
+                <div className="space-y-2 rounded-md border border-amber-300 bg-white px-2.5 py-2.5">
+                  <p className="text-xs font-medium text-amber-950">
+                    원 기공소와 지금 고른 기공소가 다릅니다.
+                  </p>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    원 기공소:{" "}
+                    {String(pendingLabChoice.targetLabName || "").trim() || "—"}
+                    <br />
+                    원주문일:{" "}
+                    {String(pendingLabChoice.orderYmd || "").trim() || "—"}
+                  </p>
+                  <div className="flex flex-col gap-1.5 sm:flex-row">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 flex-1 bg-amber-600 text-white hover:bg-amber-700"
+                      onClick={() => {
+                        const source = pendingLabChoice;
+                        setPendingLabChoice(null);
+                        onSwitchToSourceLab(source);
+                        onPickRequiredChange?.(false);
+                      }}
+                    >
+                      원래 기공소
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 flex-1"
+                      onClick={() => {
+                        setPendingLabChoice(null);
+                        onChooseNewLabPaid();
+                      }}
+                    >
+                      새 기공소
+                    </Button>
+                  </div>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    원래 기공소는 무료 리메이크입니다.
+                    <br />
+                    새 기공소는 일반 신규 의뢰(유료)입니다.
+                  </p>
+                </div>
+              ) : !selectedId && candidates.length > 1 ? (
                 <p className="text-xs font-medium text-amber-800">
                   원본 의뢰를 선택해 주세요.
                 </p>

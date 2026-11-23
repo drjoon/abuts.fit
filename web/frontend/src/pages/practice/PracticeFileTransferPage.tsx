@@ -609,6 +609,7 @@ const linkedRemakeSourceFromTransfer = (
           .map((t) => t.trim())
           .filter(Boolean),
     targetLabName: String(transfer.targetLab || "").trim(),
+    targetLabAnchorId: String(transfer.targetLabAnchorId || "").trim() || undefined,
     orderYmd: transfer.orderDate,
     manufacturerStage: transfer.status,
     withinRemakePricingWindow: true,
@@ -2113,6 +2114,26 @@ export const PracticeFileTransferPage = ({
             : [];
           const picked = matches[0];
           if (!res.ok || !picked?._id) return;
+          // 원본 기공소 ≠ 선택 기공소면 자동 연결하지 않는다(ComposeRemakeSection 선택 UI).
+          const sourceLabId = String(picked.targetLabAnchorId || "").trim();
+          const currentLabId = String(selectedLabIdRef.current || "").trim();
+          if (sourceLabId && currentLabId && sourceLabId !== currentLabId) {
+            return;
+          }
+          const sourceLabName = String(picked.targetLabName || "")
+            .trim()
+            .toLowerCase();
+          const currentLabName = String(selectedLabNameRef.current || "")
+            .trim()
+            .toLowerCase();
+          if (
+            !sourceLabId &&
+            sourceLabName &&
+            currentLabName &&
+            sourceLabName !== currentLabName
+          ) {
+            return;
+          }
           remakeAutoLinkedFpRef.current = similarCaseFingerprint;
           setLinkedRemakeSource(picked);
         } catch {
@@ -10562,6 +10583,28 @@ export const PracticeFileTransferPage = ({
     [similarCaseFingerprint],
   );
 
+  /** 리메이크 원본 기공소로 전환 · 원본 연결 · 무료 */
+  const handleComposeRemakeSwitchToSourceLab = useCallback(
+    (source: PracticeSimilarCaseMatch) => {
+      const labId = String(source.targetLabAnchorId || "").trim();
+      const labName = String(source.targetLabName || "").trim();
+      const found = findCachedLab(labId, labName);
+      if (found) {
+        selectLabForIntake(found);
+      } else if (labId || labName) {
+        selectLabForIntake({
+          _id: labId || `recent:${labName}`,
+          name: labName || "기공소",
+          businessType: "requestor",
+          requestorKind: "lab",
+        });
+      }
+      setLinkedRemakeSource(source);
+      setComposeRemakePickRequired(false);
+    },
+    [findCachedLab, selectLabForIntake],
+  );
+
   const composeRemakeAboveMemo = useMemo(
     () => (
         <PracticeComposeRemakeSection
@@ -10572,6 +10615,8 @@ export const PracticeFileTransferPage = ({
           labName={String(selectedLab?.name || "").trim()}
           linkedSource={linkedRemakeSource}
           onLinkedSourceChange={setLinkedRemakeSource}
+          onSwitchToSourceLab={handleComposeRemakeSwitchToSourceLab}
+          onChooseNewLabPaid={() => handleComposeRemakeChecked(false)}
           onPickRequiredChange={setComposeRemakePickRequired}
           excludeTransferMongoId={
             editingSentTransfer?.transferMongoId || ""
@@ -10585,6 +10630,7 @@ export const PracticeFileTransferPage = ({
       composeRemakeMode,
       editingSentTransfer?.transferMongoId,
       handleComposeRemakeChecked,
+      handleComposeRemakeSwitchToSourceLab,
       linkedRemakeSource,
       normalizedPatientName,
       platformGuideTour.active,

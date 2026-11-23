@@ -5,6 +5,8 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/utils/practiceTransferSimilarCase.js
  * change-log:
+ * - 2026-11-23: 원본 카드 — 환자·치아·원주문일·기공소·기공비 라벨 행.
+ * - 2026-11-23: 안내 문구 단축 — 선택만 안내, 정책 한 줄·중복 설명 제거.
  * - 2026-10-07: 어벗츠로부터 리메이크=무료. 월 3건 카피 제거.
  * - 2026-10-07: (폐지) 무료=월 3건 잔여. freeRemakeYears 카피 제거(폐지).
  * - 2026-09-21: 무료 창=기공소 freeRemakeYears(카피·뱃지).
@@ -22,7 +24,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { remakePolicySummaryLine } from "@/shared/pricing/remakePolicyCopy";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 
 export type PracticeSimilarCaseMatch = {
@@ -31,6 +32,8 @@ export type PracticeSimilarCaseMatch = {
   patientName: string;
   toothNumbers: string[];
   targetLabName: string;
+  /** 원본 수행/지정 기공소 앵커 — 리메이크 시 기공소 전환용 */
+  targetLabAnchorId?: string;
   createdAt?: string | Date | null;
   orderYmd?: string;
   manufacturerStage?: string;
@@ -80,13 +83,12 @@ export function PracticeSimilarCaseRemakeDialog({
         <DialogHeader className="shrink-0 space-y-1 border-b px-5 py-4 text-left">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <Repeat className="h-5 w-5 text-amber-600" />
-            동일 환자·치아 의뢰가 있습니다
+            이전 의뢰가 있습니다
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            같은 환자·치아 의뢰입니다. 리메이크면 원의뢰에 연결되고 기공소에
-            「리메이크」로 표시됩니다.
+            리메이크하면 원의뢰에 연결됩니다.
             <br />
-            {remakePolicySummaryLine("practice")}
+            신규면 새 의뢰로 보냅니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -102,7 +104,22 @@ export function PracticeSimilarCaseRemakeDialog({
                 Array.isArray(match.toothNumbers) && match.toothNumbers.length
                   ? match.toothNumbers.join(", ")
                   : "—";
-              const feeHint = " · 리메이크비 무료";
+              const rows: Array<{ label: string; value: string }> = [
+                {
+                  label: "환자",
+                  value: String(match.patientName || "").trim() || "—",
+                },
+                { label: "치아", value: teeth },
+                {
+                  label: "원주문일",
+                  value: String(match.orderYmd || "").trim() || "—",
+                },
+                {
+                  label: "기공소",
+                  value: String(match.targetLabName || "").trim() || "—",
+                },
+                { label: "리메이크비", value: "무료" },
+              ];
               return (
                 <button
                   key={match._id}
@@ -111,25 +128,24 @@ export function PracticeSimilarCaseRemakeDialog({
                   onClick={() => onSelectId(match._id)}
                   className={
                     active
-                      ? "flex w-full flex-col gap-1 rounded-md border border-amber-400 bg-amber-50/90 px-3 py-2.5 text-left text-sm"
-                      : "flex w-full flex-col gap-1 rounded-md border border-transparent px-3 py-2.5 text-left text-sm hover:bg-slate-50"
+                      ? "flex w-full flex-col gap-1.5 rounded-md border border-amber-400 bg-amber-50/90 px-3 py-2.5 text-left text-sm"
+                      : "flex w-full flex-col gap-1.5 rounded-md border border-transparent px-3 py-2.5 text-left text-sm hover:bg-slate-50"
                   }
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
-                      {match.patientName || "—"}
-                      <span className="ml-1.5 font-normal text-muted-foreground">
-                        {teeth}
-                      </span>
-                    </span>
+                  <div className="flex items-start gap-2">
+                    <dl className="grid min-w-0 flex-1 grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
+                      {rows.map((row) => (
+                        <div key={row.label} className="contents">
+                          <dt className="text-muted-foreground">{row.label}</dt>
+                          <dd className="min-w-0 truncate font-medium text-slate-900">
+                            {row.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
                     <Badge variant="outline" className="shrink-0 text-[10px]">
                       {toStatusBadgeLabel(match.manufacturerStage || "")}
                     </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {match.orderYmd || "—"} ·{" "}
-                    {match.targetLabName || "기공소"}
-                    {feeHint}
                   </div>
                 </button>
               );
