@@ -1095,23 +1095,190 @@ function weakBiteArches(
  * 카메라가 -Y에서 +Z를 위로 볼 때, 메시 묶음의 넓은 쪽이 화면 가로(+X)가 되게 돌린다.
  * 기하 정점은 건드리지 않고 position·quaternion만 바꾼다.
  */
-function orientMeshesWideHorizontal(meshes: readonly THREE.Mesh[]) {
-  if (meshes.length === 0) return;
+function meshesWorldBox(meshes: readonly THREE.Mesh[]) {
   const box = new THREE.Box3();
   for (const mesh of meshes) {
     mesh.updateWorldMatrix(true, false);
     box.expandByObject(mesh);
   }
+  return box;
+}
+
+function rotateMeshesAroundCenter(meshes: readonly THREE.Mesh[], q: THREE.Quaternion) {
+  if (meshes.length === 0) return;
+  if (Math.abs(q.x) + Math.abs(q.y) + Math.abs(q.z) < 1e-10) return;
+  const box = meshesWorldBox(meshes);
   if (box.isEmpty()) return;
-  const size = box.getSize(new THREE.Vector3());
-  if (size.x >= size.z) return;
   const center = box.getCenter(new THREE.Vector3());
-  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
   for (const mesh of meshes) {
     const local = mesh.position.clone().sub(center);
     local.applyQuaternion(q);
     mesh.position.copy(center).add(local);
     mesh.quaternion.premultiply(q);
+  }
+}
+
+function orientMeshesWideHorizontal(meshes: readonly THREE.Mesh[]) {
+  if (meshes.length === 0) return;
+  const box = meshesWorldBox(meshes);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  if (size.x >= size.z) return;
+  rotateMeshesAroundCenter(
+    meshes,
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2),
+  );
+}
+
+/** 얇은 축을 카메라 시선(+Y)에 맞춰 악궁 면이 화면에 보이게 한다. */
+function orientMeshesFaceCamera(meshes: readonly THREE.Mesh[]) {
+  if (meshes.length === 0) return;
+  const box = meshesWorldBox(meshes);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  if (size.y <= size.x && size.y <= size.z) return;
+  if (size.x <= size.z) {
+    rotateMeshesAroundCenter(
+      meshes,
+      new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(0, 1, 0),
+      ),
+    );
+  } else {
+    rotateMeshesAroundCenter(
+      meshes,
+      new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1),
+        new THREE.Vector3(0, 1, 0),
+      ),
+    );
+  }
+}
+
+function linearToSrgbChannel(channel: number) {
+  const c = Math.min(1, Math.max(0, channel));
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+}
+
+/** 치아(+)·잇몸(−). 아이보리는 밝고 붉은기가 약하다. */
+function toothVsGingivaScore(r: number, g: number, b: number) {
+  const sr = linearToSrgbChannel(r);
+  const sg = linearToSrgbChannel(g);
+  const sb = linearToSrgbChannel(b);
+  const pink = sr - 0.5 * (sg + sb);
+  const luma = 0.299 * sr + 0.587 * sg + 0.114 * sb;
+  return luma * 0.45 - pink;
+}
+
+type BiteToothSample = { x: number; y: number; z: number; score: number };
+
+function sampleMeshesToothColors(meshes: readonly THREE.Mesh[], cap = 6000) {
+  const out: BiteToothSample[] = [];
+  const per = Math.max(400, Math.floor(cap / Math.max(meshes.length, 1)));
+  const world = new THREE.Vector3();
+  for (const mesh of meshes) {
+    const pos = mesh.geometry.getAttribute("position");
+    const color = mesh.geometry.getAttribute("color");
+    if (!pos || pos.count === 0) continue;
+    mesh.updateWorldMatrix(true, false);
+    const colored = Boolean(color && color.count === pos.count);
+    const stride = Math.max(1, Math.floor(pos.count / per));
+    for (let i = 0; i < pos.count; i += stride) {
+      world.set(pos.getX(i), pos.getY(i), pos.getZ(i)).applyMatrix4(mesh.matrixWorld);
+      out.push({
+        x: world.x,
+        y: world.y,
+        z: world.z,
+        score: colored
+          ? toothVsGingivaScore(color!.getX(i), color!.getY(i), color!.getZ(i))
+          : 0,
+      });
+    }
+  }
+  return out;
+}
+
+/** 화면 세로(+Z/−Z) 절반의 치아 점수 평균. 색이 없으면 null. */
+function toothScoreByScreenVertical(meshes: readonly THREE.Mesh[]) {
+  const samples = sampleMeshesToothColors(meshes);
+  const colored = samples.filter((s) => s.score !== 0);
+  if (colored.length < 40) return null;
+  const zs = colored.map((s) => s.z).sort((a, b) => a - b);
+  const lo = zs[Math.floor((zs.length - 1) * 0.22)] ?? 0;
+  const hi = zs[Math.floor((zs.length - 1) * 0.78)] ?? 0;
+  let loSum = 0;
+  let loN = 0;
+  let hiSum = 0;
+  let hiN = 0;
+  for (const s of colored) {
+    if (s.z <= lo) {
+      loSum += s.score;
+      loN += 1;
+    } else if (s.z >= hi) {
+      hiSum += s.score;
+      hiN += 1;
+    }
+  }
+  return {
+    loMean: loN > 0 ? loSum / loN : 0,
+    hiMean: hiN > 0 ? hiSum / hiN : 0,
+  };
+}
+
+/**
+ * 수동 바이트 슬롯 1차 정렬.
+ * - 면이 카메라(+Y)를 보게, 넓은 쪽은 가로(+X)
+ * - 상악: 치아 → 아래(−Z), 하악: 치아 → 위(+Z), 바이트: 치아 세로 중심
+ */
+function orientMeshesForBiteManualSlot(
+  meshes: readonly THREE.Mesh[],
+  slot: "upper" | "lower" | "bite",
+) {
+  if (meshes.length === 0) return;
+  orientMeshesFaceCamera(meshes);
+  orientMeshesWideHorizontal(meshes);
+  const scored = toothScoreByScreenVertical(meshes);
+  if (!scored) return;
+  const flipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+  if (slot === "upper") {
+    // 치아가 −Z(아래) 쪽에 더 많아야 한다.
+    if (scored.hiMean > scored.loMean + 0.02) rotateMeshesAroundCenter(meshes, flipY);
+    return;
+  }
+  if (slot === "lower") {
+    // 치아가 +Z(위) 쪽에 더 많아야 한다.
+    if (scored.loMean > scored.hiMean + 0.02) rotateMeshesAroundCenter(meshes, flipY);
+    return;
+  }
+  // 바이트: 치아 면이 카메라(−Y)를 보게. 세로로 한쪽에만 치아가 몰리면 그 띠가 화면 가운데에 오도록 유지한다.
+  const samples = sampleMeshesToothColors(meshes);
+  const colored = samples.filter((s) => s.score !== 0);
+  if (colored.length < 40) return;
+  const ys = colored.map((s) => s.y).sort((a, b) => a - b);
+  const yLo = ys[Math.floor((ys.length - 1) * 0.22)] ?? 0;
+  const yHi = ys[Math.floor((ys.length - 1) * 0.78)] ?? 0;
+  let yLoSum = 0;
+  let yLoN = 0;
+  let yHiSum = 0;
+  let yHiN = 0;
+  for (const s of colored) {
+    if (s.y <= yLo) {
+      yLoSum += s.score;
+      yLoN += 1;
+    } else if (s.y >= yHi) {
+      yHiSum += s.score;
+      yHiN += 1;
+    }
+  }
+  const yLoMean = yLoN > 0 ? yLoSum / yLoN : 0;
+  const yHiMean = yHiN > 0 ? yHiSum / yHiN : 0;
+  // +Y(카메라 반대)에 치아가 더 많으면 180° 돌려 −Y를 보게 한다.
+  if (yHiMean > yLoMean + 0.02) {
+    rotateMeshesAroundCenter(
+      meshes,
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI),
+    );
   }
 }
 
@@ -3699,21 +3866,18 @@ export function PracticeCustomAbutmentPreviewDialog({
         return Promise.resolve(false);
       }
 
-      // 각 묶음의 넓은 쪽을 가로로 맞춘 뒤, 위·가운데·아래로 떨어뜨린다.
-      orientMeshesWideHorizontal(upperMeshes);
-      orientMeshesWideHorizontal(lowerMeshes);
-      orientMeshesWideHorizontal(biteMeshes);
+      // 치아·잇몸 색으로 1차 방향(상악 치아↓·하악 치아↑·바이트 치아 중앙)을 맞춘 뒤 위·중·아래로 붙인다.
+      orientMeshesForBiteManualSlot(upperMeshes, "upper");
+      orientMeshesForBiteManualSlot(lowerMeshes, "lower");
+      orientMeshesForBiteManualSlot(biteMeshes, "bite");
 
       const extentOf = (meshes: THREE.Mesh[]) => {
-        const box = new THREE.Box3();
-        for (const mesh of meshes) {
-          mesh.updateWorldMatrix(true, false);
-          box.expandByObject(mesh);
-        }
+        const box = meshesWorldBox(meshes);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        const radius = Math.max(size.x, size.y, size.z, size.length() * 0.5, 1) * 0.5;
-        return { box, center, size, radius };
+        // 화면 세로(+Z) 반경만 쓴다. 구 반지름으로 쌓으면 면이 카메라인 악궁이 너무 멀어진다.
+        const halfZ = Math.max(size.z * 0.5, 1);
+        return { box, center, size, halfZ };
       };
       const biteExt = extentOf(biteMeshes);
       const upperExt = upperMeshes.length ? extentOf(upperMeshes) : null;
@@ -3721,28 +3885,28 @@ export function PracticeCustomAbutmentPreviewDialog({
 
       const axisUp = new THREE.Vector3(0, 0, 1);
       const gap =
-        Math.max(biteExt.radius, upperExt?.radius ?? 0, lowerExt?.radius ?? 0, 8) * 0.45;
+        Math.max(biteExt.halfZ, upperExt?.halfZ ?? 0, lowerExt?.halfZ ?? 0, 4) * 0.1;
       const place = (meshes: THREE.Mesh[], center: THREE.Vector3, slot: THREE.Vector3) => {
         const offset = slot.clone().sub(center);
         for (const mesh of meshes) mesh.position.add(offset);
       };
       place(biteMeshes, biteExt.center, new THREE.Vector3(0, 0, 0));
       if (upperExt && lowerExt) {
-        const sepUp = biteExt.radius + upperExt.radius + gap;
-        const sepDown = biteExt.radius + lowerExt.radius + gap;
+        const sepUp = biteExt.halfZ + upperExt.halfZ + gap;
+        const sepDown = biteExt.halfZ + lowerExt.halfZ + gap;
         place(upperMeshes, upperExt.center, axisUp.clone().multiplyScalar(sepUp));
         place(lowerMeshes, lowerExt.center, axisUp.clone().multiplyScalar(-sepDown));
       } else if (upperExt) {
         place(
           upperMeshes,
           upperExt.center,
-          axisUp.clone().multiplyScalar(biteExt.radius + upperExt.radius + gap),
+          axisUp.clone().multiplyScalar(biteExt.halfZ + upperExt.halfZ + gap),
         );
       } else if (lowerExt) {
         place(
           lowerMeshes,
           lowerExt.center,
-          axisUp.clone().multiplyScalar(-(biteExt.radius + lowerExt.radius + gap)),
+          axisUp.clone().multiplyScalar(-(biteExt.halfZ + lowerExt.halfZ + gap)),
         );
       }
 
@@ -3753,11 +3917,11 @@ export function PracticeCustomAbutmentPreviewDialog({
       const aspect = readHostSize(host).aspect;
       const viewDir = new THREE.Vector3(0, -1, 0.2).normalize();
       const up = new THREE.Vector3(0, 0, 1);
-      const dist = radius * 3.6;
+      const dist = radius * 3.2;
       controls.target.copy(center);
       camera.up.copy(up);
       camera.position.copy(center).addScaledVector(viewDir, dist);
-      applyOrthoHeight(camera, Math.max(radius * 1.15, 8), aspect);
+      applyOrthoHeight(camera, Math.max(radius * 1.05, 8), aspect);
       camera.zoom = 1;
       camera.lookAt(center);
       controls.syncFromCamera();
