@@ -117,10 +117,8 @@ import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMe
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
-  biteFitArchQualityOk,
   mergeArchToBiteByPoints,
   registerJawsToBiteResult,
-  type BiteFitArchQuality,
 } from "@/shared/practice/biteRegistration";
 import {
   archPlanAxes,
@@ -1079,16 +1077,6 @@ function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32A
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-}
-
-function weakBiteArches(
-  quality: readonly BiteFitArchQuality[],
-  roles: readonly ("upper" | "lower")[],
-): Array<"upper" | "lower"> {
-  return roles.filter((role) => {
-    const row = quality.find((entry) => entry.role === role);
-    return !row || !biteFitArchQualityOk(row);
-  });
 }
 
 /**
@@ -5092,9 +5080,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               return;
             }
             if (choice === "revise") {
-              const weak = weakBiteArches(fitResult.quality, presentRoles);
-              // 상악 먼저(위·바이트), 이어서 하악(바이트·아래).
-              const manualRoles = (weak.length > 0 ? weak : [...presentRoles]).sort((a, b) =>
+              // 수동은 품질과 무관하게 있는 악을 모두. 상악(위·바이트) → 하악(바이트·아래).
+              const manualRoles = [...presentRoles].sort((a, b) =>
                 a === b ? 0 : a === "upper" ? -1 : 1,
               );
               for (const role of manualRoles) {
