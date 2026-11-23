@@ -8416,36 +8416,16 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm text-foreground">
-                    {status.qualityOk ? (
+                    바이트 정렬되었나요?
+                    {status.attempt > 0 ? (
                       <>
-                        자동 정렬 괜찮을까요?
-                        {status.attempt > 0 ? (
-                          <>
-                            <br />
-                            <span className="text-xs text-muted-foreground">
-                              후보 {status.attempt + 1}
-                            </span>
-                          </>
-                        ) : null}
-                      </>
-                    ) : (
-                      <>
-                        교합이 아직 맞지 않습니다.
                         <br />
-                        {status.canRetry ? (
-                          <span className="text-xs text-muted-foreground">
-                            다른 후보로 다시 맞춰 보세요.
-                            {status.attempt > 0 ? ` (후보 ${status.attempt + 1})` : null}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            다른 자동 후보가 없습니다.
-                            <br />
-                            이 자세로 진행하거나 헤더에서 다시 맞출 수 있습니다.
-                          </span>
-                        )}
+                        <span className="text-xs text-muted-foreground">
+                          후보 {status.attempt + 1}
+                          {!status.canRetry ? " · 다른 자동 후보 없음" : null}
+                        </span>
                       </>
-                    )}
+                    ) : null}
                   </p>
                   <div className="flex gap-2">
                     {status.canRetry ? (
@@ -8465,7 +8445,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       className="h-8"
                       onClick={() => endBiteConfirmSession("confirm")}
                     >
-                      {status.qualityOk ? "확정" : "이 자세로 진행"}
+                      교합 확정
                     </Button>
                   </div>
                 </div>
