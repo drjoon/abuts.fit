@@ -983,7 +983,8 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       `인접 어벗(#25)과 바짝 붙은 기울어진 #24 포스트에서도 모든 측면 벽 두께(최소 ${minPostWallMm.toFixed(3)}mm)가 0.3mm 이상 유지되어 뚫리지 않는다`,
     );
 
-    // 7) 소구치(#14·#24·#25) 단면은 협설로 약간 길고(BL > MD), 협측이 볼록하게 넓고 설측이 덜 돌출된 계란-사각형이며,
+    // 7) 소구치(#14·#24·#25) 단면은 협설로 약간 길고(BL > MD), 사다리꼴 좌표를 뒤집어
+    //    긴 근원심 변이 +labial 반대(-labial)에 있는 계란-사각형이며,
     //    근심에 #24가 붙고 원심이 열린 #25도 원심 볼록 없이 균형 잡힌 계란형·대합거리 1.2mm 우선순위를 지킨다.
     const baseUpperPremolar = {
       ...fixture36,
@@ -1114,8 +1115,8 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       const lingualW = widthAtSlice(uMid - halfBl * 0.45);
       const ratio = lingualW / Math.max(buccalW, 1e-6);
       assert.ok(
-        ratio >= 0.8 && ratio <= 0.96,
-        `${label} 소구치는 설측 폭(${lingualW.toFixed(2)}mm)이 협측 폭(${buccalW.toFixed(2)}mm)보다 살짝 좁은 사각-계란형(비율 ${ratio.toFixed(2)})이다`,
+        ratio >= 1.02 && ratio <= 1.3,
+        `${label} 소구치 사다리꼴은 좌표를 뒤집어 -labial 폭(${lingualW.toFixed(2)}mm)이 +labial 폭(${buccalW.toFixed(2)}mm)보다 살짝 길다(비율 ${ratio.toFixed(2)})`,
       );
     }
     {
