@@ -356,6 +356,7 @@ import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
+  canRemakePracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
@@ -1902,6 +1903,13 @@ export const PracticeFileTransferPage = ({
   const similarCaseCheckGenRef = useRef(0);
   const similarCasePromptedFpRef = useRef("");
   const pendingSubmitAfterSimilarRef = useRef(false);
+  /** 작업시작 전 → 의뢰수정, 작업시작 후 → 리메이크 확인 */
+  const resolveSimilarCaseMatchesRef = useRef<
+    (
+      matches: PracticeSimilarCaseMatch[],
+      fingerprint: string,
+    ) => Promise<"edit" | "remake" | "new">
+  >(async () => "new");
   const [composeRemakePickRequired, setComposeRemakePickRequired] =
     useState(false);
   const [composeRemakeConfirmOpen, setComposeRemakeConfirmOpen] = useState(false);
@@ -2050,10 +2058,10 @@ export const PracticeFileTransferPage = ({
             setSimilarCasePromptOpen(false);
             return;
           }
-          similarCasePromptedFpRef.current = similarCaseFingerprint;
-          setSimilarCaseMatches(matches);
-          setSimilarCaseSelectedId(String(matches[0]?._id || ""));
-          setSimilarCasePromptOpen(true);
+          await resolveSimilarCaseMatchesRef.current(
+            matches,
+            similarCaseFingerprint,
+          );
         } catch {
           // 검색 실패는 전송을 막지 않음(전송 시 한 번 더 시도).
         }
@@ -2114,6 +2122,13 @@ export const PracticeFileTransferPage = ({
             : [];
           const picked = matches[0];
           if (!res.ok || !picked?._id) return;
+          // 작업시작 전(의뢰)은 리메이크 원본이 아님 → 의뢰수정 경로.
+          if (canEditPracticeTransferByStatus(picked.manufacturerStage)) {
+            return;
+          }
+          if (!canRemakePracticeTransferByStatus(picked.manufacturerStage)) {
+            return;
+          }
           // 원본 기공소 ≠ 선택 기공소면 자동 연결하지 않는다(ComposeRemakeSection 선택 UI).
           const sourceLabId = String(picked.targetLabAnchorId || "").trim();
           const currentLabId = String(selectedLabIdRef.current || "").trim();
@@ -6256,6 +6271,127 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  /**
+   * 동일 환자·치아 발견 시:
+   * - 작업시작 전(의뢰) → 의뢰수정
+   * - 작업시작 이후 → 리메이크/신규 확인
+   */
+  const resolveSimilarCaseMatches = useCallback(
+    async (
+      matches: PracticeSimilarCaseMatch[],
+      fingerprint: string,
+    ): Promise<"edit" | "remake" | "new"> => {
+      const editable = matches.filter((m) =>
+        canEditPracticeTransferByStatus(m.manufacturerStage),
+      );
+      const remakeable = matches.filter((m) =>
+        canRemakePracticeTransferByStatus(m.manufacturerStage),
+      );
+
+      if (editable.length > 0) {
+        const match = editable[0];
+        const mongoId = String(match._id || "").trim();
+        const transferId = String(match.transferId || "").trim();
+        const findLocal = (rows: RecentTransferItem[]) =>
+          rows.find((row) => {
+            const rowMongo = String(
+              row.transferMongoIds?.[0] || row.id || "",
+            ).trim();
+            if (mongoId && rowMongo === mongoId) return true;
+            if (
+              transferId &&
+              String(row.transferId || "").trim() === transferId
+            ) {
+              return true;
+            }
+            return false;
+          }) || null;
+
+        let row =
+          findLocal(recentRequests) || findLocal(groupedTransfers) || null;
+
+        if (!row && authToken && (mongoId || transferId)) {
+          try {
+            const qs = new URLSearchParams({ limit: "8" });
+            if (mongoId) qs.set("transferMongoIds", mongoId);
+            else qs.set("transferId", transferId);
+            const res = await apiFetch<unknown>({
+              path: `/api/practice/transfers/my?${qs.toString()}`,
+              method: "GET",
+              token: authToken,
+            });
+            if (res.ok) {
+              const body = res.data;
+              const data =
+                body && typeof body === "object" && "data" in (body as object)
+                  ? (body as { data?: unknown }).data
+                  : body;
+              const list =
+                data &&
+                typeof data === "object" &&
+                Array.isArray((data as { requests?: unknown[] }).requests)
+                  ? ((data as { requests: unknown[] }).requests ?? [])
+                  : [];
+              const mapped = mapMyPracticeTransferApiRows(list);
+              const [full] = groupPracticeRecentRequests(mapped, []);
+              if (full) row = full;
+            }
+          } catch {
+            // 조회 실패 시 아래에서 안내
+          }
+        }
+
+        similarCaseResolutionRef.current = {
+          fingerprint,
+          decision: "new",
+        };
+        similarCasePromptedFpRef.current = fingerprint;
+        pendingSubmitAfterSimilarRef.current = false;
+        setSimilarCasePromptOpen(false);
+        setSimilarCaseMatches([]);
+        setComposeRemakeMode(false);
+        setLinkedRemakeSource(null);
+        setComposeRemakePickRequired(false);
+
+        if (row && canEditPracticeTransferByStatus(row.status)) {
+          handleBeginEditSentTransfer(row);
+          return "edit";
+        }
+
+        toast({
+          title: "의뢰수정을 열 수 없습니다",
+          description: "기존 의뢰를 목록에서 연 뒤 수정해 주세요.",
+          variant: "destructive",
+        });
+        return "new";
+      }
+
+      if (remakeable.length > 0) {
+        similarCasePromptedFpRef.current = fingerprint;
+        setSimilarCaseMatches(remakeable);
+        setSimilarCaseSelectedId(String(remakeable[0]?._id || ""));
+        setSimilarCasePromptOpen(true);
+        return "remake";
+      }
+
+      similarCaseResolutionRef.current = {
+        fingerprint,
+        decision: "new",
+      };
+      setSimilarCaseMatches([]);
+      setSimilarCasePromptOpen(false);
+      return "new";
+    },
+    [
+      authToken,
+      groupedTransfers,
+      handleBeginEditSentTransfer,
+      recentRequests,
+      toast,
+    ],
+  );
+  resolveSimilarCaseMatchesRef.current = resolveSimilarCaseMatches;
+
   /** 캘린더 행은 파일·작업스캔이 없다. 디자인 모달 전에 /my로 채운다. */
   const transferReadyForAbutmentDesign = useCallback(
     (transfer: PracticeRecentTransferItem | null | undefined) => {
@@ -9457,10 +9593,11 @@ export const PracticeFileTransferPage = ({
             ? res.data.data.matches
             : [];
           if (matches.length > 0) {
-            setSimilarCaseMatches(matches);
-            setSimilarCaseSelectedId(String(matches[0]?._id || ""));
-            setSimilarCasePromptOpen(true);
-            return;
+            const outcome = await resolveSimilarCaseMatchesRef.current(
+              matches,
+              similarCaseFingerprint,
+            );
+            if (outcome === "remake" || outcome === "edit") return;
           }
           similarCaseResolutionRef.current = {
             fingerprint: similarCaseFingerprint,

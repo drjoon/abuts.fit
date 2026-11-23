@@ -8130,6 +8130,7 @@ const escapePracticeTransferPatientRegex = (value) =>
  * 리메이크 원본 검색.
  * - q 없음: 최근 180일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
  * - q 있음: 환자명으로 전체 기간 검색(치과의뢰 수신하기 리메이크비는 원본 기간과 무관하게 무료)
+ * - 작업시작 전(의뢰)은 리메이크 원본이 아님 → 의뢰수정 경로
  * GET /api/practice/transfers/remake-candidates?q=&days=180&limit=30
  */
 export async function searchRemakePracticeTransfers(req, res) {

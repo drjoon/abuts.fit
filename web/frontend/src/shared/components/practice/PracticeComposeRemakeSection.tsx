@@ -7,7 +7,8 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - docs/intent/practice-remake-lab-choice.md
  * change-log:
- * - 2026-11-23: 거래 기공소 전체 검색. 기공소 불일치 시 원래/새 기공소 선택.
+ * - 2026-11-23: 작업시작 전 원본은 리메이크 후보에서 제외(의뢰수정 경로).
+ * - 2026-11-23: 연결 유지·원본 카드(환자·치아·원주문일·기공소). 거래 기공소 전체 검색.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Repeat } from "lucide-react";
@@ -71,8 +72,56 @@ const isSameLabAsSelected = (
   const selectedLabel = normalizeLabLabel(labName);
   const sourceLabel = normalizeLabLabel(source.targetLabName || "");
   if (selectedLabel && sourceLabel) return selectedLabel === sourceLabel;
-  // 기공소 미선택·식별 불가 → 충돌 없음(원본으로 연결·전환)
   return true;
+};
+
+const LinkedSourceInfoCard = ({
+  source,
+  feeLabel,
+}: {
+  source: PracticeSimilarCaseMatch;
+  feeLabel: string;
+}) => {
+  const teeth =
+    Array.isArray(source.toothNumbers) && source.toothNumbers.length
+      ? source.toothNumbers.join(", ")
+      : "—";
+  const rows: Array<{ label: string; value: string }> = [
+    {
+      label: "환자",
+      value: String(source.patientName || "").trim() || "—",
+    },
+    { label: "치아", value: teeth },
+    {
+      label: "원주문일",
+      value: String(source.orderYmd || "").trim() || "—",
+    },
+    {
+      label: "기공소",
+      value: String(source.targetLabName || "").trim() || "—",
+    },
+    { label: "리메이크비", value: feeLabel },
+  ];
+  return (
+    <div className="rounded-md border border-amber-300 bg-white px-2.5 py-2.5">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <p className="text-[11px] font-medium text-amber-900">연결 원본</p>
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          {toStatusBadgeLabel(source.manufacturerStage || "")}
+        </Badge>
+      </div>
+      <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-xs">
+        {rows.map((row) => (
+          <div key={row.label} className="contents">
+            <dt className="text-muted-foreground">{row.label}</dt>
+            <dd className="min-w-0 truncate font-medium text-slate-900">
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 };
 
 export type PracticeComposeRemakeSectionProps = {
@@ -184,8 +233,8 @@ export function PracticeComposeRemakeSection({
             setCandidates([]);
             setPendingLabChoice(null);
             setSearchError(String(body.message || "검색에 실패했습니다."));
-            onLinkedSourceChange(null);
-            onPickRequiredChange?.(false);
+            // 이미 고른 원본(유사의뢰 확인 등)은 검색 실패로 지우지 않는다.
+            onPickRequiredChange?.(!linkedIdRef.current);
             return;
           }
           const body = res.data;
@@ -211,30 +260,39 @@ export function PracticeComposeRemakeSection({
               return transferKey(t) !== excludeId;
             });
           setCandidates(filtered);
-          if (filtered.length === 1) {
+          const linkedId = linkedIdRef.current;
+          if (filtered.length === 1 && !linkedId) {
             applyCandidate(filtered[0]);
           } else if (filtered.length === 0) {
             setPendingLabChoice(null);
-            onLinkedSourceChange(null);
-            onPickRequiredChange?.(false);
+            // 유사의뢰·수동으로 이미 연결한 원본은 유지(작업시작 전 원본 포함).
+            if (!linkedId) {
+              onLinkedSourceChange(null);
+              onPickRequiredChange?.(false);
+            } else {
+              onPickRequiredChange?.(false);
+            }
           } else {
-            const linkedId = linkedIdRef.current;
             const stillValid = Boolean(
               linkedId && filtered.some((t) => transferKey(t) === linkedId),
             );
-            if (!stillValid) {
+            if (linkedId && stillValid) {
+              onPickRequiredChange?.(false);
+            } else if (linkedId && !stillValid) {
+              // 목록에 없어도 연결은 유지(검색 창·필터와 무관하게 확정된 원본).
+              onPickRequiredChange?.(false);
+            } else {
               setPendingLabChoice(null);
               onLinkedSourceChange(null);
+              onPickRequiredChange?.(true);
             }
-            onPickRequiredChange?.(!stillValid);
           }
         } catch {
           if (searchGenRef.current !== gen) return;
           setCandidates([]);
           setPendingLabChoice(null);
           setSearchError("검색에 실패했습니다.");
-          onLinkedSourceChange(null);
-          onPickRequiredChange?.(false);
+          onPickRequiredChange?.(!linkedIdRef.current);
         } finally {
           if (searchGenRef.current === gen) setSearching(false);
         }
@@ -242,7 +300,6 @@ export function PracticeComposeRemakeSection({
     }, 350);
 
     return () => window.clearTimeout(timer);
-    // applyCandidate는 lab 비교용. lab 변경 시 재검색은 불필요(거래처 전체).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 환자·체크·제외 id만 재조회
   }, [
     authToken,
@@ -256,12 +313,27 @@ export function PracticeComposeRemakeSection({
 
   const selectedId = String(linkedSource?._id || "").trim();
   const pendingId = String(pendingLabChoice?._id || "").trim();
+  const linkedFeeLabel = (() => {
+    if (!linkedSource) return "무료";
+    const row = candidates.find((t) => transferKey(t) === selectedId);
+    const fee = Math.max(
+      0,
+      Math.round(
+        Number(
+          row?.remakeFeeQuote?.total || row?.remakeFeeQuote?.labFeeTotal || 0,
+        ),
+      ),
+    );
+    return fee > 0 ? formatManWon(fee) : "무료";
+  })();
   const prePlatform =
     checked &&
     patientReady &&
     !searching &&
     !searchError &&
-    candidates.length === 0;
+    candidates.length === 0 &&
+    !linkedSource &&
+    !pendingLabChoice;
 
   return (
     <div
@@ -307,59 +379,76 @@ export function PracticeComposeRemakeSection({
               최근 의뢰 검색 중…
             </p>
           ) : searchError ? (
-            <p className="text-xs text-destructive">{searchError}</p>
+            <>
+              <p className="text-xs text-destructive">{searchError}</p>
+              {linkedSource ? (
+                <LinkedSourceInfoCard
+                  source={linkedSource}
+                  feeLabel={linkedFeeLabel}
+                />
+              ) : null}
+            </>
           ) : prePlatform ? (
             <p className="text-xs leading-snug text-muted-foreground">
               6개월 내 의뢰 없음: {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
             </p>
-          ) : candidates.length > 0 ? (
+          ) : (
             <>
-              <p className="text-[11px] font-medium text-amber-900">
-                연결할 원본 의뢰
-              </p>
-              <div className="max-h-40 space-y-1 overflow-y-auto px-0.5 py-0.5">
-                {candidates.map((transfer) => {
-                  const key = transferKey(transfer);
-                  const patient =
-                    resolvePracticeTransferListPatientName(transfer) || "—";
-                  const teeth =
-                    resolvePracticeTransferListToothNumbers(transfer) || "—";
-                  const labLabel =
-                    String(transfer.targetLab || "").trim() || "기공소";
-                  const orderYmd = String(transfer.orderDate || "").trim();
-                  const active =
-                    key === selectedId || (Boolean(pendingId) && key === pendingId);
-                  return (
-                    <button
-                      key={key || transfer.transferId}
-                      type="button"
-                      onClick={() => applyCandidate(transfer)}
-                      className={cn(
-                        "flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
-                        active
-                          ? "border-amber-400 bg-white shadow-sm"
-                          : "border-transparent bg-white/60 hover:bg-white",
-                      )}
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
-                          {patient}
-                          <span className="ml-1 font-normal text-muted-foreground">
-                            {teeth}
+              {candidates.length > 0 ? (
+                <>
+                  <p className="text-[11px] font-medium text-amber-900">
+                    연결할 원본 의뢰
+                  </p>
+                  <div className="max-h-40 space-y-1 overflow-y-auto px-0.5 py-0.5">
+                    {candidates.map((transfer) => {
+                      const key = transferKey(transfer);
+                      const patient =
+                        resolvePracticeTransferListPatientName(transfer) || "—";
+                      const teeth =
+                        resolvePracticeTransferListToothNumbers(transfer) ||
+                        "—";
+                      const labLabel =
+                        String(transfer.targetLab || "").trim() || "기공소";
+                      const orderYmd = String(transfer.orderDate || "").trim();
+                      const active =
+                        key === selectedId ||
+                        (Boolean(pendingId) && key === pendingId);
+                      return (
+                        <button
+                          key={key || transfer.transferId}
+                          type="button"
+                          onClick={() => applyCandidate(transfer)}
+                          className={cn(
+                            "flex w-full flex-col gap-0.5 rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
+                            active
+                              ? "border-amber-400 bg-white shadow-sm"
+                              : "border-transparent bg-white/60 hover:bg-white",
+                          )}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate font-medium text-slate-900">
+                              {patient}
+                              <span className="ml-1 font-normal text-muted-foreground">
+                                {teeth}
+                              </span>
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 text-[10px]"
+                            >
+                              {toStatusBadgeLabel(transfer.status)}
+                            </Badge>
                           </span>
-                        </span>
-                        <Badge variant="outline" className="shrink-0 text-[10px]">
-                          {toStatusBadgeLabel(transfer.status)}
-                        </Badge>
-                      </span>
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {labLabel}
-                        {orderYmd ? ` · ${orderYmd}` : ""}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {labLabel}
+                            {orderYmd ? ` · ${orderYmd}` : ""}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
 
               {pendingLabChoice ? (
                 <div className="space-y-2 rounded-md border border-amber-300 bg-white px-2.5 py-2.5">
@@ -406,35 +495,18 @@ export function PracticeComposeRemakeSection({
                     새 기공소는 일반 신규 의뢰(유료)입니다.
                   </p>
                 </div>
-              ) : !selectedId && candidates.length > 1 ? (
+              ) : linkedSource ? (
+                <LinkedSourceInfoCard
+                  source={linkedSource}
+                  feeLabel={linkedFeeLabel}
+                />
+              ) : candidates.length > 1 ? (
                 <p className="text-xs font-medium text-amber-800">
                   원본 의뢰를 선택해 주세요.
                 </p>
-              ) : linkedSource ? (
-                (() => {
-                  const row = candidates.find((t) => transferKey(t) === selectedId);
-                  const fee = Math.max(
-                    0,
-                    Math.round(
-                      Number(
-                        row?.remakeFeeQuote?.total ||
-                          row?.remakeFeeQuote?.labFeeTotal ||
-                          0,
-                      ),
-                    ),
-                  );
-                  return (
-                    <p className="text-[11px] text-muted-foreground">
-                      원의뢰{" "}
-                      {linkedSource.transferId || linkedSource.orderYmd || ""}{" "}
-                      연결 · 리메이크 기공비{" "}
-                      {fee > 0 ? formatManWon(fee) : "무료"}
-                    </p>
-                  );
-                })()
               ) : null}
             </>
-          ) : null}
+          )}
         </div>
       ) : null}
     </div>
