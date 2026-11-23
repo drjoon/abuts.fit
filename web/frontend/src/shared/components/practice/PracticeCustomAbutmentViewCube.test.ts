@@ -37,16 +37,16 @@ test("#34 협측 라벨은 아치 바깥쪽 면에 붙고, 근심은 미드라�
   assert.equal(view.labels.top, "교합");
   assert.equal(view.labels.bottom, "치은");
 
-  // #34 구치: 환자 왼쪽 면=협측, 전방 면=근심
-  assert.equal(view.labels.left, "협측");
-  assert.equal(view.labels.right, "설측");
-  assert.equal(view.labels.front, "근심");
-  assert.equal(view.labels.back, "원심");
+  // #34 구치: 환자 오른쪽 면=협측(볼), 후방 면=근심(미드라인 쪽 큐브 매핑)
+  assert.equal(view.labels.right, "협측");
+  assert.equal(view.labels.left, "설측");
+  assert.equal(view.labels.back, "근심");
+  assert.equal(view.labels.front, "원심");
 
   const bucDir = viewCubeDirection(faceOfLabel(view.labels, "협측"), view.frame).viewDir;
-  assert.ok(bucDir.x < -0.9, "협측은 환자 왼쪽");
+  assert.ok(bucDir.x > 0.9, "협측은 큐브 우면(+right)");
   const mesDir = viewCubeDirection(faceOfLabel(view.labels, "근심"), view.frame).viewDir;
-  assert.ok(mesDir.y > 0.9, "근심은 전방(미드라인)");
+  assert.ok(mesDir.y < -0.9, "근심은 큐브 후면(-anterior)");
 });
 
 test("교합 정렬로 악궁 프레임이 돌면 큐브 축도 같이 돈다", () => {
@@ -58,7 +58,7 @@ test("교합 정렬로 악궁 프레임이 돌면 큐브 축도 같이 돈다", 
   assert.ok(faceOfLabel(b.labels, "협측"), "정렬 후에도 협측 라벨이 있다");
 });
 
-test("예전 labialDir이 설측을 가리켜도 라벨·축은 악궁을 따른다", () => {
+test("예전 labialDir이 있어도 축·라벨은 악궁 큐브 매핑을 따른다", () => {
   const frame = frameOf(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
   const staleLingual: [number, number, number] = [0.66, -0.75, 0];
   const view = toothViewCube(
@@ -71,6 +71,6 @@ test("예전 labialDir이 설측을 가리켜도 라벨·축은 악궁을 따른
     frame,
   )!;
   assert.ok(view.frame.anterior.dot(frame.anterior) > 0.99);
-  const bucDir = viewCubeDirection(faceOfLabel(view.labels, "협측"), view.frame).viewDir;
-  assert.ok(bucDir.dot(new THREE.Vector3(...staleLingual).normalize()) < 0);
+  assert.equal(view.labels.right, "협측");
+  assert.equal(view.labels.back, "근심");
 });

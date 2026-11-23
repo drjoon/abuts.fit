@@ -4643,10 +4643,15 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
 
         // 교합 확정 메타가 있으면 자동 확인을 건너뛴다. 헤더 수동 정렬만 다시 돈다.
+        // 저장 디자인이 있는데 qualityOk만 false면 다시 돌리지 않는다 — 돌리면 restored가
+        // 풀리고 스캔바디·형상이 매번 처음부터라 닫고 열 때 작업이 사라진다.
+        const hasSavedTeeth = Boolean(cached && cached.teeth.length > 0);
         const needBitePass =
           biteScans.length > 0 &&
           jawScans.length > 0 &&
-          (forceBiteRecalc || !biteCheck || biteCheck.qualityOk === false);
+          (forceBiteRecalc ||
+            !biteCheck ||
+            (biteCheck.qualityOk === false && !hasSavedTeeth));
         let lastBiteFit: { qualityOk: boolean; moved: boolean; seated: boolean } | null = null;
         if (needBitePass) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
@@ -4747,9 +4752,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (!keepInPlace) {
             const seatedFrame = estimateDentalFrame(alignEntries);
             if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
-            // 교합 정렬로 월드 좌표가 바뀌면 저장 픽스처·labialDir은 더 이상 맞지 않는다.
-            // 큐브·디자인이 정렬 전 방향을 쓰지 않게 다시 잡는다.
-            restored = false;
+            // 수동 교합정렬(원본 재맞춤)이거나 저장본이 없을 때만 픽스처를 다시 잡는다.
+            // 저장본이 있는 채 restored를 풀면 열 때마다 자동생성·첨1로 돌아간다.
+            if (forceBiteRecalc || !hasSavedTeeth) {
+              restored = false;
+            }
           }
           alignedScans = jawScans.map((s) => {
             const attr = s.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -4767,8 +4774,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
         }
-        // 예전: rebuildFromMeta면 restored=true로 올려 정렬 전 픽스처를 다시 썼다.
-        // 교합 정렬로 좌표가 바뀐 뒤에는 restored=false를 유지해 스캔바디를 다시 잡는다.
 
         const frame = estimateDentalFrame(
           jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
