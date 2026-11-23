@@ -1657,7 +1657,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       for (const scan of rawJawScansRef.current) {
         if (scan.jaw !== jaw) continue;
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
-        const split = splitScanByScanbodies(scan.geometry, jawFixtures, scan.texture);
+        const split = splitScanByScanbodies(scan.geometry, jawFixtures);
         const restMesh = makeMesh(split.rest, scan.texture, false);
         restMesh.userData.sourceGeometry = scan.geometry;
         restMesh.visible = visible;

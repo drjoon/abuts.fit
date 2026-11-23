@@ -2156,124 +2156,32 @@ export function cropScanPointsInFixtureFrame(
   return built;
 }
 
-type Rgb3 = [number, number, number];
-type ScanTexturePixels = { data: Uint8ClampedArray; width: number; height: number };
-
-function scanVertexColorScale(color: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): number {
-  return !color.normalized &&
-    (color.array instanceof Uint8Array ||
-      color.array instanceof Uint16Array ||
-      color.array instanceof Uint32Array)
-    ? 1 / 255
-    : 1;
-}
-
-function rgbDistance(a: Rgb3, b: Rgb3): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-/** 분홍·붉은 연조직. */
-function isGingivaRgb(c: Rgb3): boolean {
-  const [r, g, b] = c;
-  return r > 0.32 && r > g * 1.06 && r > b * 1.18 && r - b > 0.07 && g > 0.12;
-}
-
-/** 밝은 저채도 법랑질. */
-function isEnamelRgb(c: Rgb3): boolean {
-  const y = (c[0] + c[1] + c[2]) / 3;
-  const chroma = Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]);
-  return y > 0.62 && chroma < 0.16 && c[2] > c[0] * 0.75;
-}
-
-function medianRgb(samples: Rgb3[]): Rgb3 | null {
-  if (samples.length < 8) return null;
-  const channel = (i: 0 | 1 | 2) => {
-    const sorted = samples.map((s) => s[i]).sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)]!;
-  };
-  return [channel(0), channel(1), channel(2)];
-}
-
-function usableScanbodyProto(samples: Rgb3[]): Rgb3 | null {
-  const proto = medianRgb(samples);
-  if (!proto || isGingivaRgb(proto) || isEnamelRgb(proto)) return null;
-  return proto;
-}
-
-function matchesScanbodyRgb(c: Rgb3, proto: Rgb3): boolean {
-  if (isGingivaRgb(c) || isEnamelRgb(c)) return false;
-  return rgbDistance(c, proto) <= 0.16;
-}
-
-function readScanTexturePixels(texture: THREE.Texture | null | undefined): ScanTexturePixels | null {
-  if (!texture || typeof document === "undefined") return null;
-  const image = texture.image as (CanvasImageSource & { width?: number; height?: number }) | null;
-  if (!image || !image.width || !image.height) return null;
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  try {
-    ctx.drawImage(image, 0, 0);
-  } catch {
-    return null;
-  }
-  return {
-    data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
-    width: canvas.width,
-    height: canvas.height,
-  };
-}
-
-function makeVertexRgbReader(
-  source: THREE.BufferGeometry,
-  texture: THREE.Texture | null | undefined,
-): ((vi: number) => Rgb3 | null) | null {
-  const colorAttr = source.getAttribute("color");
-  if (colorAttr && colorAttr.itemSize >= 3 && colorAttr.count > 0) {
-    const scale = scanVertexColorScale(colorAttr);
-    return (vi) => [colorAttr.getX(vi) * scale, colorAttr.getY(vi) * scale, colorAttr.getZ(vi) * scale];
-  }
-  const uv = source.getAttribute("uv");
-  const pixels = readScanTexturePixels(texture);
-  if (!uv || !pixels || uv.count <= 0) return null;
-  const { data, width, height } = pixels;
-  return (vi) => {
-    let u = uv.getX(vi);
-    let v = uv.getY(vi);
-    u = u - Math.floor(u);
-    v = v - Math.floor(v);
-    if (texture?.flipY !== false) v = 1 - v;
-    const x = Math.min(width - 1, Math.max(0, Math.floor(u * width)));
-    const y = Math.min(height - 1, Math.max(0, Math.floor(v * height)));
-    const o = (y * width + x) * 4;
-    return [data[o]! / 255, data[o + 1]! / 255, data[o + 2]! / 255];
-  };
-}
-
 /**
  * 스캔을 잇몸 위로 솟은 스캔바디 기둥(치아별 조각)과 나머지로 나눈다. 원본 지오메트리는 건드리지 않는다.
- * 나머지 + 보이려는 치아 조각 = 그 치아만 스캔바디를 보인다. 조각은 같은 정점 버퍼를 쓰고 인덱스만 다르다.
  *
- * 정합된 스캔바디 원통 안에서, 스캔 색(버텍스/텍스처)이 스캔바디와 같은 정점만 분리한다.
- * 치은·법랑질 색은 원통 안이어도 남긴다. 색이 없으면 좁은 기하 원통(`sbR+0.2`)만 쓴다.
+ * 정합 축의 각(θ)마다 반경 점유를 본다. 축에 닿은 첫 연결 성분(빈 반경 칸에서 끊김)이 스캔바디다.
+ * 내면(작은 반경)은 그 성분에 포함된다. 성분이 공칭 반경 밖으로 두껍게 이어지면 치은 접촉으로 보고
+ * 얇은 여유만 자른다. 틈 너머 성분은 인접치라 남긴다.
  */
 export function splitScanByScanbodies(
   source: THREE.BufferGeometry,
   fixtures: readonly MatchedScanbodyFixture[],
-  texture?: THREE.Texture | null,
 ): { rest: THREE.BufferGeometry; scanbodies: Map<string, THREE.BufferGeometry> } {
   const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
   const xyz = readPositionArray(source);
   if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) return { rest: source.clone(), scanbodies };
-  const SECTORS = 24;
-  /** 색 없을 때 기하만 쓰는 좁은 원통 패딩(mm). */
-  const GEO_PAD_MM = 0.2;
-  /** 스캔바디 색 잔여를 볼 수 있는 원통 바깥 여유(mm). */
-  const COLOR_REACH_MM = 1.6;
-  const readRgb = makeVertexRgbReader(source, texture);
+  const SECTORS = 36;
+  const RAD_BIN_MM = 0.25;
+  /** 공칭 원통 바깥 기본 여유(mm). 내면·몸통은 항상 여기 안에 있다. */
+  const NOMINAL_PAD_MM = 0.45;
+  /** 빈 칸이 이만큼 이어지면 스캔바디와 인접 조직 사이 틈. */
+  const GAP_BINS = 2;
+  /** 이 두께까지는 스캔바디에 붙은 얇은 잔여 벽. */
+  const THIN_EXTRA_MM = 1.5;
+  /** 그보다 두꺼우면 치은이 붙은 것으로 보고 여기까지만. */
+  const THICK_CLAMP_MM = 0.45;
+  const SEARCH_EXTRA_MM = 2.8;
   const isInsideOtherScanbody = (px: number, py: number, pz: number, skipIdx: number) => {
     for (let j = 0; j < fixtures.length; j += 1) {
       if (j === skipIdx) continue;
@@ -2300,10 +2208,9 @@ export function splitScanByScanbodies(
     const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
     const e2 = cross(axis, e1);
     const rawFloor = new Float64Array(SECTORS).fill(Infinity);
-    const geoR = f.scanbodyRadiusMm + GEO_PAD_MM;
-    const reachR = f.scanbodyRadiusMm + COLOR_REACH_MM;
-    const bodyR = f.scanbodyRadiusMm * 0.82;
-    const colorSamples: Rgb3[] = [];
+    const nominalR = f.scanbodyRadiusMm + NOMINAL_PAD_MM;
+    const reachR = f.scanbodyRadiusMm + SEARCH_EXTRA_MM;
+    const binCount = Math.max(1, Math.ceil(reachR / RAD_BIN_MM));
     for (let vi = 0; vi < pos.count; vi += 1) {
       const px = xyz[vi * 3]!;
       const py = xyz[vi * 3 + 1]!;
@@ -2316,23 +2223,13 @@ export function splitScanByScanbodies(
       const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
       const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
       const r = Math.hypot(u, v);
+      if (r < nominalR || r > f.scanbodyRadiusMm + 1.65) continue;
       if (isInsideOtherScanbody(px, py, pz, fi)) continue;
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
-      if (r >= geoR && r <= f.scanbodyRadiusMm + 1.65 && hz < rawFloor[b]!) rawFloor[b] = hz;
-      if (
-        readRgb &&
-        colorSamples.length < 280 &&
-        r <= bodyR &&
-        hz > 1.5 &&
-        hz < f.scanbodyHeightMm - 0.7 &&
-        vi % 2 === 0
-      ) {
-        const rgb = readRgb(vi);
-        if (rgb) colorSamples.push(rgb);
-      }
+      if (hz < rawFloor[b]!) rawFloor[b] = hz;
     }
     const baseFloor = Math.max(0.75, f.gingivaFloorMm - 0.15);
     const filled = Array.from({ length: SECTORS }, (_, b) =>
@@ -2348,6 +2245,66 @@ export function splitScanByScanbodies(
         Math.min(f.scanbodyHeightMm - 1.3, (prev + cur * 2 + next) * 0.25 - 0.28),
       );
     }
+    const occ = Array.from({ length: SECTORS }, () => new Int32Array(binCount));
+    for (let vi = 0; vi < pos.count; vi += 1) {
+      const px = xyz[vi * 3]!;
+      const py = xyz[vi * 3 + 1]!;
+      const pz = xyz[vi * 3 + 2]!;
+      const rx0 = px - f.fixturePose.origin[0];
+      const ry0 = py - f.fixturePose.origin[1];
+      const rz0 = pz - f.fixturePose.origin[2];
+      const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
+      if (hz < 0.8 || hz > f.scanbodyHeightMm + 0.6) continue;
+      const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
+      const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
+      const r = Math.hypot(u, v);
+      if (r >= reachR) continue;
+      if (isInsideOtherScanbody(px, py, pz, fi)) continue;
+      const b = Math.min(
+        SECTORS - 1,
+        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
+      );
+      if (hz < sectorMinZ[b]!) continue;
+      const bi = Math.min(binCount - 1, Math.floor(r / RAD_BIN_MM));
+      occ[b]![bi]! += 1;
+    }
+    const sectorMaxR = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const bins = occ[b]!;
+      let start = -1;
+      const nominalBin = Math.min(binCount - 1, Math.floor(nominalR / RAD_BIN_MM));
+      for (let bi = 0; bi <= nominalBin; bi += 1) {
+        if (bins[bi]! >= 2) {
+          start = bi;
+          break;
+        }
+      }
+      let outer = nominalR;
+      if (start >= 0) {
+        let emptyRun = 0;
+        let lastRho = (start + 1) * RAD_BIN_MM;
+        for (let bi = start; bi < binCount; bi += 1) {
+          if (bins[bi]! >= 2) {
+            emptyRun = 0;
+            lastRho = (bi + 1) * RAD_BIN_MM;
+          } else {
+            emptyRun += 1;
+            if (emptyRun >= GAP_BINS) break;
+          }
+        }
+        const extra = lastRho - f.scanbodyRadiusMm;
+        outer = extra <= THIN_EXTRA_MM ? Math.max(nominalR, lastRho) : f.scanbodyRadiusMm + THICK_CLAMP_MM;
+      }
+      sectorMaxR[b] = outer;
+    }
+    const smoothed = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const prev = sectorMaxR[(b - 1 + SECTORS) % SECTORS]!;
+      const cur = sectorMaxR[b]!;
+      const next = sectorMaxR[(b + 1) % SECTORS]!;
+      // 양쪽이 잔여 벽이면 사이 빈 부채꼴만 메운다. 벽을 평균으로 줄이지 않는다.
+      smoothed[b] = Math.max(nominalR, cur, Math.min(prev, next));
+    }
     return {
       tooth: f.toothNumber,
       origin: f.fixturePose.origin,
@@ -2356,14 +2313,11 @@ export function splitScanByScanbodies(
       e2,
       radiusMm: f.scanbodyRadiusMm,
       baseFloor,
-      geoR2: geoR ** 2,
-      reachR2: reachR ** 2,
+      sectorMaxR: smoothed,
       sectorMinZ,
-      proto: readRgb ? usableScanbodyProto(colorSamples) : null,
       maxZ: f.scanbodyHeightMm + 1.2,
     };
   });
-  // 인접 스캔바디 두 개가 바짝 붙어 있으면 두 원통 사이의 얇은 스캔 브리지 막도 함께 스캔바디 조각으로 분리한다.
   const bridgedPairs: Array<[number, number]> = [];
   for (let a = 0; a < zones.length; a += 1) {
     for (let b = a + 1; b < zones.length; b += 1) {
@@ -2377,7 +2331,6 @@ export function splitScanByScanbodies(
     const dx = xyz[vi * 3]!;
     const dy = xyz[vi * 3 + 1]!;
     const dz = xyz[vi * 3 + 2]!;
-    const rgb = readRgb?.(vi) ?? null;
     for (let k = 0; k < zones.length; k += 1) {
       const zone = zones[k]!;
       const rx0 = dx - zone.origin[0];
@@ -2388,22 +2341,16 @@ export function splitScanByScanbodies(
       const rx = rx0 - zone.axis[0] * hz;
       const ry = ry0 - zone.axis[1] * hz;
       const rz = rz0 - zone.axis[2] * hz;
-      const r2 = rx * rx + ry * ry + rz * rz;
-      if (r2 > zone.reachR2) continue;
+      const r = Math.hypot(rx, ry, rz);
       const u = rx0 * zone.e1[0] + ry0 * zone.e1[1] + rz0 * zone.e1[2];
       const v = rx0 * zone.e2[0] + ry0 * zone.e2[1] + rz0 * zone.e2[2];
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
+      if (r > zone.sectorMaxR[b]!) continue;
       if (hz < zone.sectorMinZ[b]!) continue;
-      // 색이 있으면 스캔바디 색만 제거. 치은·법랑질은 원통 안이어도 남긴다.
-      if (zone.proto && rgb) {
-        if (!matchesScanbodyRgb(rgb, zone.proto)) continue;
-        return k;
-      }
-      // 색 없음: 정합 스캔바디 좁은 원통만 (어벗 마진·인접치까지 깎지 않음).
-      if (r2 <= zone.geoR2) return k;
+      return k;
     }
     for (const [ia, ib] of bridgedPairs) {
       const za = zones[ia]!;
@@ -2434,11 +2381,6 @@ export function splitScanByScanbodies(
       const qz = dz - (paz + sz * t);
       const capR = (1 - t) * za.radiusMm + t * zb.radiusMm + 0.45;
       if (qx * qx + qy * qy + qz * qz <= capR * capR) {
-        if (rgb) {
-          const hitA = za.proto ? matchesScanbodyRgb(rgb, za.proto) : false;
-          const hitB = zb.proto ? matchesScanbodyRgb(rgb, zb.proto) : false;
-          if ((za.proto || zb.proto) && !hitA && !hitB) continue;
-        }
         return t < 0.5 ? ia : ib;
       }
     }
