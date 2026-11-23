@@ -7500,6 +7500,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     status.kind === "ready" && (designedList.length > 0 || readOnly);
   const biteConfirmOn = status.kind === "bite-confirm";
   const biteManualOn = status.kind === "bite-manual";
+  /** 바이트 자동·수동 정렬 중 — 피니시라인·픽스쳐·디자인 완료를 숨긴다. */
+  const biteAlignChrome = biteConfirmOn || biteManualOn || biteRecalcBusy;
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
   const canRedoEdit = editRev >= 0 && Boolean(directEditRef.current?.canRedo());
   const hasInfoFieldEdits = designedList.some(
@@ -7777,7 +7779,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       <>
                         의뢰 원본 상·하악을 바이트에 다시 맞춥니다.
                         <br />
-                        자동 결과 확인 후 확정하거나 3점으로 수정합니다.
+                        자동 정렬 확인 후 확정하거나 수동 정렬합니다.
                       </>
                     }
                     onClick={() => {
@@ -8052,30 +8054,38 @@ export function PracticeCustomAbutmentPreviewDialog({
                       </div>
                     ) : null}
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <ToolbarToggle
-                      active={showFinishLine}
-                      label="피니시라인"
-                      onClick={() => {
-                        touchViewer("margin");
-                        setShowFinishLine((v) => {
-                          viewerPrefsRef.current = { ...viewerPrefsRef.current, showFinishLine: !v };
-                          return !v;
-                        });
-                      }}
-                    />
-                    <ToolbarToggle
-                      active={showFixtureAnalog}
-                      label="픽스쳐"
-                      onClick={() => {
-                        touchViewer("fixture");
-                        setShowFixtureAnalog((v) => {
-                          viewerPrefsRef.current = { ...viewerPrefsRef.current, showFixtureAnalog: !v };
-                          return !v;
-                        });
-                      }}
-                    />
-                  </div>
+                  {!biteAlignChrome ? (
+                    <div className="flex items-center gap-1.5">
+                      <ToolbarToggle
+                        active={showFinishLine}
+                        label="피니시라인"
+                        onClick={() => {
+                          touchViewer("margin");
+                          setShowFinishLine((v) => {
+                            viewerPrefsRef.current = {
+                              ...viewerPrefsRef.current,
+                              showFinishLine: !v,
+                            };
+                            return !v;
+                          });
+                        }}
+                      />
+                      <ToolbarToggle
+                        active={showFixtureAnalog}
+                        label="픽스쳐"
+                        onClick={() => {
+                          touchViewer("fixture");
+                          setShowFixtureAnalog((v) => {
+                            viewerPrefsRef.current = {
+                              ...viewerPrefsRef.current,
+                              showFixtureAnalog: !v,
+                            };
+                            return !v;
+                          });
+                        }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -8281,9 +8291,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ) : null}
 
 
-                {gracePending ||
-                (remoteMode !== "confirmed" && remoteMode !== "manual") ||
-                (remoteMode === "confirmed" && !labCheckedAt) ? (
+                {!biteAlignChrome &&
+                (gracePending ||
+                  (remoteMode !== "confirmed" && remoteMode !== "manual") ||
+                  (remoteMode === "confirmed" && !labCheckedAt)) ? (
                   <div className="pointer-events-auto max-w-full">
                     <div className="flex max-w-full flex-wrap items-center justify-center gap-2.5 rounded-xl border bg-background/95 p-1.5 shadow-lg backdrop-blur">
                     {gracePending ? (
@@ -8429,9 +8440,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                     "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-3 py-2.5 text-left shadow-lg",
                   )}
                 >
-                  <p className="text-sm text-foreground">
-                    {status.qualityOk ? "자동 맞춤을 확정할까요?" : "자동 점수가 낮습니다."}
-                  </p>
+                  <p className="text-sm text-foreground">자동 정렬 괜찮을까요?</p>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -8448,7 +8457,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       className="h-8"
                       onClick={() => endBiteConfirmSession("revise")}
                     >
-                      수정 (3점)
+                      수동 정렬
                     </Button>
                   </div>
                 </div>
