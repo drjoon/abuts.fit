@@ -215,6 +215,7 @@ import {
 import {
   AbutmentDirectEditSession,
   gumballPatchSetsPostHeight,
+  gumballPatchSetsRadial,
   normalizeAbutmentEdit,
   retainLiveGumballParams,
   type AbutmentEdit,
@@ -1150,6 +1151,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const baselineMetricsRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
   const gumballMetricBaseRef = useRef<Record<string, CustomAbutmentDesignMetrics>>({});
   const gumballParamBaseRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
+  const lastGumballSummaryRef = useRef<Record<string, AbutmentEditSummary>>({});
   const savedGumballEditRef = useRef<Record<string, AbutmentEdit>>({});
   const baselineParamsRef = useRef<Record<string, CustomAbutmentDesignParams>>({});
   const designRunChainRef = useRef<Promise<void>>(Promise.resolve());
@@ -2468,6 +2470,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [authToken, persistChat]);
 
   const applyGumballMetrics = useCallback((summary: AbutmentEditSummary) => {
+    lastGumballSummaryRef.current[summary.tooth] = summary;
     const design = designedListRef.current.find((row) => row.toothNumber === summary.tooth);
     if (!design) return;
     if (savedGumballEditRef.current[summary.tooth]) {
@@ -2843,14 +2846,24 @@ export function PracticeCustomAbutmentPreviewDialog({
         const row = CUSTOM_ABUTMENT_PARAM_SPECS[key];
         return Math.min(row.max, Math.max(row.min, value));
       };
+      const hadBase = Boolean(gumballParamBaseRef.current[summary.tooth]);
       if (!gumballParamBaseRef.current[summary.tooth]) {
         gumballParamBaseRef.current[summary.tooth] = { ...design.params };
       }
       const base = gumballParamBaseRef.current[summary.tooth]!;
+      const prevOverrides = ctx.overrides[summary.tooth] ?? {};
+      const prevHadWidth =
+        prevOverrides.postWidthScale != null ||
+        Math.abs(design.params.postWidthScale - base.postWidthScale) >= 1e-4;
+      const prevHadHeight =
+        prevOverrides.postHeightOffsetMm != null ||
+        Math.abs(design.params.postHeightOffsetMm - base.postHeightOffsetMm) >= 1e-4;
       const taperLinked = (design.params.postTaperLink ?? 1) >= 0.5;
       const next: Partial<CustomAbutmentDesignParams> = {};
       if (Math.abs(summary.widthRatio - 1) >= 0.005) {
         next.postWidthScale = clampKey("postWidthScale", base.postWidthScale * summary.widthRatio);
+      } else if (hadBase && prevHadWidth) {
+        next.postWidthScale = clampKey("postWidthScale", base.postWidthScale);
       }
       if (Math.abs(summary.heightDeltaMm) >= 0.02) {
         next.postHeightOffsetMm = clampKey("postHeightOffsetMm", base.postHeightOffsetMm + summary.heightDeltaMm);
@@ -2864,12 +2877,28 @@ export function PracticeCustomAbutmentPreviewDialog({
             postRetentionSurface(design.metrics.postWallRadiusMm),
           );
         }
+      } else if (hadBase && prevHadHeight) {
+        next.postHeightOffsetMm = clampKey("postHeightOffsetMm", base.postHeightOffsetMm);
+        if (taperLinked) {
+          next.postTaperDeg = computeOptimalPostTaperDeg(
+            design.metrics.postHeightMm,
+            {
+              isBridge: Boolean(design.metrics.isBridge),
+              retainerCount: design.metrics.bridgeRetainerCount,
+            },
+            postRetentionSurface(design.metrics.postWallRadiusMm),
+          );
+        }
       }
       design.params = { ...design.params, ...next };
       ctx.overrides[summary.tooth] = {
-        ...stripDirectEditShiftOverrides(ctx.overrides[summary.tooth] ?? {}),
+        ...stripDirectEditShiftOverrides(prevOverrides),
         ...next,
       };
+      if (summary.neutral) {
+        delete gumballParamBaseRef.current[summary.tooth];
+        delete gumballMetricBaseRef.current[summary.tooth];
+      }
       // 이번 케이스 형상만 남긴다. 계정 기본값은 확정·의뢰에서 고른 항목만 저장한다.
     },
     [],
@@ -5435,6 +5464,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                 directEditRef.current?.setEdit(tooth, savedGumballEditRef.current[tooth]);
                 delete savedGumballEditRef.current[tooth];
               }
+              if (gumballPatchSetsRadial(patch)) {
+                directEditRef.current?.clearBakedRadial([tooth]);
+              }
               if (gumballPatchSetsPostHeight(patch)) {
                 directEditRef.current?.clearBakedVertical([tooth]);
               }
@@ -5450,6 +5482,13 @@ export function PracticeCustomAbutmentPreviewDialog({
             setDesignedList(list);
           }
           directEditRef.current?.sync({ quiet: true });
+          if (mode === "merge") {
+            for (const tooth of teeth) {
+              if (!directEditRef.current?.editOf(tooth)) continue;
+              const liveSummary = lastGumballSummaryRef.current[tooth];
+              if (liveSummary) rememberAbutmentEdit(liveSummary);
+            }
+          }
         } finally {
           activeRedesignCountRef.current = Math.max(0, activeRedesignCountRef.current - 1);
           if (activeRedesignCountRef.current === 0) {
@@ -5470,6 +5509,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       clearGhostCandidateVisuals,
       confirmCandidateForTooth,
       disposeOtherCandidateGeometries,
+      rememberAbutmentEdit,
       removeDesignFromScene,
       syncCandidateSceneForTooth,
     ],

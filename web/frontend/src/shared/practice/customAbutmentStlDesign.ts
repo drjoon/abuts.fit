@@ -4558,13 +4558,32 @@ export async function designCustomAbutmentCandidates(
 async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignResult> {
   const { fixture, jawGeometry, opposingGeometry } = args;
   const bridgeRetentionEarly = resolveToothBridgeRetentionContext(fixture.toothNumber, args.toothWorks);
+  const explicitResolved = args.explicitParams
+    ? resolveCustomAbutmentParams(fixture.toothNumber, args.explicitParams, bridgeRetentionEarly)
+    : null;
   const params = resolveCustomAbutmentParams(fixture.toothNumber, args.params, bridgeRetentionEarly);
   applyAbutmentGenerationLogic(params, fixture.toothNumber, args.logicRules);
   applyStoredDesignParams(params, fixture.toothNumber, args.logicRules);
+  if (args.explicitParams && explicitResolved) {
+    for (const key of Object.keys(args.explicitParams) as (keyof CustomAbutmentDesignParams)[]) {
+      if (args.explicitParams[key] != null && Number.isFinite(Number(args.explicitParams[key]))) {
+        params[key] = explicitResolved[key];
+      }
+    }
+  }
   const conn = fixture.connectionSpec;
   const tpl = abutmentTemplateForTooth(fixture.toothNumber);
   const R = params.marginFilletRadiusMm;
   const shoulderW = params.marginShoulderMm;
+  const hasManualWidthScale =
+    Math.abs(params.marginSizeScale - 1) > 0.01 || Math.abs(params.postWidthScale - 1) > 0.01;
+  const effectiveWidthScale = params.marginSizeScale * params.postWidthScale;
+  const hasManualWidthShrink = effectiveWidthScale < 0.99;
+  // 포스트 수평 배율(postWidthScale)은 마진 숄더 폭(shoulderW)을 일정하게 유지한 채 포스트 반폭과 마진 외경을 함께 비례 조정한다.
+  const scaleMarginHalfByPostWidth = (halfMm: number) =>
+    Math.abs(params.postWidthScale - 1) <= 1e-4
+      ? halfMm
+      : shoulderW + Math.max(0.35, halfMm - shoulderW) * params.postWidthScale;
   let taperSlope = Math.tan(params.postTaperDeg * DEG);
   let chamfer = chamferGeometry(shoulderW, R, taperSlope);
   const posterior = !abutmentTemplateForTooth(fixture.toothNumber).anterior;
@@ -5805,8 +5824,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : posterior
         ? 1 + (mdScale - 1) * 0.5
         : 1 + Math.max(0, mdScale - 1) * 0.35;
-  const marginA = (tpl.marginBlMm / 2) * blScale * params.marginSizeScale;
-  const marginB = (tpl.marginMdMm / 2) * mdScale * params.marginSizeScale;
+  const marginA = scaleMarginHalfByPostWidth((tpl.marginBlMm / 2) * blScale * params.marginSizeScale);
+  const marginB = scaleMarginHalfByPostWidth((tpl.marginMdMm / 2) * mdScale * params.marginSizeScale);
 
   // ── 3) 삽입축:
   // 자동(axisSourceCode -1): 교합면 수직 · 크라운 중심 · 인접 어벗 정렬을 비슷한 비중으로 섞는다.
@@ -7569,7 +7588,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const emergeHalfBl = natHalfBl * (tpl.kind === "molar" ? 0.8 : posterior ? 0.85 : 0.85);
   const emergeHalfMd = crownHalfMd * (tpl.kind === "molar" ? 0.83 : posterior ? 0.86 : 0.88);
   const crownWeight = posterior ? 0.72 : 0.62;
-  const maxFlareSlope = Math.tan((posterior ? 50 : 40) * DEG);
+  const flareDegBase = posterior ? 50 : 40;
+  const flareDegManualBoost = effectiveWidthScale > 1.01 ? Math.min(12, (effectiveWidthScale - 1) * 35) : 0;
+  const maxFlareSlope = Math.tan((flareDegBase + flareDegManualBoost) * DEG);
   // 부위별 크라운 두께 기준 반영:
   // - 소·대구치: 협설 최소 1.0 / 적정 1.5mm, 근원심 최소 0.5 / 적정 1.0mm
   // - 전치: 순설 최소 0.5 / 적정 1.0mm, 근원심 최소 0.5 / 적정 1.0mm
@@ -7583,22 +7604,28 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     : crownWallStd.proximalIdealMm;
   const crownMinus1Bl = Math.max(
     minMarginRadius,
-    (natHalfBl - crownBlIdealMm + 0.1) * params.marginSizeScale,
+    scaleMarginHalfByPostWidth((natHalfBl - crownBlIdealMm + 0.1) * params.marginSizeScale),
   );
   const crownMinus1Md = Math.max(
     boreTopR + 0.45,
-    (crownHalfMd - crownMdIdealMm + 0.1) * params.marginSizeScale,
+    scaleMarginHalfByPostWidth((crownHalfMd - crownMdIdealMm + 0.1) * params.marginSizeScale),
   );
   const maxAnatHalfBl = Math.min(
-    (tpl.maxMarginBlMm / 2) * params.marginSizeScale,
+    scaleMarginHalfByPostWidth((tpl.maxMarginBlMm / 2) * params.marginSizeScale),
     posterior
-      ? Math.max(minMarginRadius + 0.08, (natHalfBl - crownBlIdealMm + shoulderW * 0.25) * params.marginSizeScale)
+      ? Math.max(
+          minMarginRadius + 0.08,
+          scaleMarginHalfByPostWidth((natHalfBl - crownBlIdealMm + shoulderW * 0.25) * params.marginSizeScale),
+        )
       : crownMinus1Bl,
   );
   const maxAnatHalfMd = Math.min(
-    (tpl.maxMarginMdMm / 2) * params.marginSizeScale,
+    scaleMarginHalfByPostWidth((tpl.maxMarginMdMm / 2) * params.marginSizeScale),
     posterior
-      ? Math.max(minMarginRadius + 0.08, (crownHalfMd - crownMdIdealMm + shoulderW * 0.25) * params.marginSizeScale)
+      ? Math.max(
+          minMarginRadius + 0.08,
+          scaleMarginHalfByPostWidth((crownHalfMd - crownMdIdealMm + shoulderW * 0.25) * params.marginSizeScale),
+        )
       : crownMinus1Md,
   );
 
@@ -7607,20 +7634,20 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const cutbackBl = posterior
     ? Math.max(
         floorMarginBl,
-        (emergeHalfBl - crownBlIdealMm + shoulderW * 0.55) * params.marginSizeScale,
+        scaleMarginHalfByPostWidth((emergeHalfBl - crownBlIdealMm + shoulderW * 0.55) * params.marginSizeScale),
       )
     : Math.max(
         floorMarginBl,
-        (natHalfBl - crownBlIdealMm + shoulderW * 0.4) * params.marginSizeScale,
+        scaleMarginHalfByPostWidth((natHalfBl - crownBlIdealMm + shoulderW * 0.4) * params.marginSizeScale),
       );
   const cutbackMd = posterior
     ? Math.max(
         floorMarginMd,
-        (emergeHalfMd - crownMdIdealMm + shoulderW * 0.55) * params.marginSizeScale,
+        scaleMarginHalfByPostWidth((emergeHalfMd - crownMdIdealMm + shoulderW * 0.55) * params.marginSizeScale),
       )
     : Math.max(
         floorMarginMd,
-        (crownHalfMd - crownMdIdealMm + shoulderW * 0.3) * params.marginSizeScale,
+        scaleMarginHalfByPostWidth((crownHalfMd - crownMdIdealMm + shoulderW * 0.3) * params.marginSizeScale),
       );
   let mHalfBl = clamp(
     marginA * uniformTissueScale * (1 - crownWeight) + cutbackBl * crownWeight,
@@ -7660,7 +7687,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       );
     });
 
-  if (spaceFillFactor > 0 && hasWideProximalSpace) {
+  if (!hasManualWidthShrink && spaceFillFactor > 0 && hasWideProximalSpace) {
     // 같은 부위(예: #16·#17 대구치) 인접 어벗이 함께 있으면 자연치와 닿은 한쪽만 비대해지지 않도록 확장을 보수적으로 줄인다.
     const sameKindDamp = hasSameKindAdjacentAbutment ? 0.35 : 1;
     const extraHalfMd = Math.min(0.82, maxProximalExcessMm * 0.45) * spaceFillFactor * sameKindDamp;
@@ -8182,14 +8209,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           normScale: curNormScale,
           minNormScale,
           maxNormScale,
-          sizeLocked: Math.abs(params.marginSizeScale - 1) > 0.01,
+          sizeLocked: hasManualWidthScale,
         },
       };
     }
 
     if (
       mode.peerPlan?.targetNormScale != null &&
-      Math.abs(params.marginSizeScale - 1) <= 0.01 &&
+      !hasManualWidthScale &&
       Number.isFinite(mode.peerPlan.targetNormScale)
     ) {
       const scaleRatio = clamp(mode.peerPlan.targetNormScale / Math.max(1e-4, curNormScale), 0.85, 1.18);
@@ -8625,13 +8652,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   meanMarginZ = smoothMarginZ.reduce((s, v) => s + v, 0) / SECTORS;
   marginRadii = solveMarginRadii(smoothMarginZ, meanMarginZ);
   let finalMeanMarginZ = meanMarginZ;
-  // 포스트 굵기(postWidthScale) 보정도 편심 곱셈 대신 둘레 등폭 오프셋으로 환산해 협·설·근·원 마진 폭을 균일하게 지킨다.
-  const rawMeanPostHalf = Math.max(0.85, (mHalfBl + mHalfMd) * 0.5 - shoulderW);
-  const targetShoulderW = clamp(
-    shoulderW + rawMeanPostHalf * (1 - params.postWidthScale),
-    0.18,
-    1.1,
-  );
+  // 마진 챔퍼 폭은 설정된 등폭 병행 마진 폭(params.marginShoulderMm)을 그대로 유지하고,
+  // 포스트 수평 배율(postWidthScale)은 포스트 반폭과 마진 외경에 함께 반영해 과도하게 넓은 선반이 생기지 않게 한다.
+  const targetShoulderW = clamp(shoulderW, 0.2, 0.9);
   chamfer = chamferGeometry(targetShoulderW, R, taperSlope);
 
   const initMarginHalfBl = mHalfBl;
@@ -9322,7 +9345,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         let cap = Infinity;
         let hardCap = Infinity;
         if (h >= c.h0 + hPostBase + 0.25) {
-          const crown = crownRadiusAt(c, h);
+          const crown = crownRadiusAt(c, h) * Math.max(1, effectiveWidthScale);
           const ramp = smootherstep((h - c.h0) / 1.8);
           const sideAllow = sideAllowanceOf(c.phi);
           const pbCol = Math.floor((wrapAngle(c.phi) / (Math.PI * 2)) * LIMIT_PHI_BINS);
@@ -9429,8 +9452,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 포스트 중심으로 양방향(+/-) 타협 이동한다. 적절 벽(포스트 1.0 / 크라운 기존 적절값)은 반씩 양보하고 최소 벽(0.5 / 크라운 최소)은 절대 넘지 않는다.
     const hasManualAxisShift =
       Math.abs(params.axisShiftLabialMm) > 0.01 || Math.abs(params.axisShiftMesialMm) > 0.01;
-    let lingualScrewWallTargetMm = LINGUAL_SCREW_WALL_LIMIT_MM;
-    let buccalScrewWallTargetMm = SCREW_WALL_MM;
+    const manualWallShrinkT = hasManualWidthShrink
+      ? clamp((0.99 - effectiveWidthScale) / 0.24, 0, 1)
+      : 0;
+    const maxLingualWallTargetMm =
+      LINGUAL_SCREW_WALL_LIMIT_MM * (1 - manualWallShrinkT) + SCREW_WALL_TIGHT_MM * manualWallShrinkT;
+    const maxBuccalWallTargetMm =
+      SCREW_WALL_MM * (1 - manualWallShrinkT) + SCREW_WALL_TIGHT_MM * manualWallShrinkT;
+    let lingualScrewWallTargetMm = maxLingualWallTargetMm;
+    let buccalScrewWallTargetMm = maxBuccalWallTargetMm;
     if (
       posterior &&
       !hasManualAxisShift &&
@@ -9453,7 +9483,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (Math.abs(targetResidualU) > 0.08) {
         const prevPosExtU = mCu + mHalfBl;
         const prevNegExtU = -mCu + mHalfBl;
-        const availGrowHalfBl = Math.max(mHalfBl, Math.min(maxAnatHalfBl + 0.35, (marginCapPosU + marginCapNegU) * 0.5));
+        const availGrowHalfBl = hasManualWidthShrink
+          ? mHalfBl
+          : Math.max(mHalfBl, Math.min(maxAnatHalfBl + 0.35, (marginCapPosU + marginCapNegU) * 0.5));
         const postIdealLimit = availGrowHalfBl - boreTopR - POSTERIOR_POST_WALL_IDEAL_MM;
         const postMinLimit = availGrowHalfBl - boreTopR - POSTERIOR_POST_WALL_MIN_MM;
         const posIdealLimits = [postIdealLimit];
@@ -9488,7 +9520,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const keepNeg = Math.min(marginCapNegU, Math.max(minScrewNegExt, Math.min(prevNegExtU, mHalfBl - clampedU)));
           const maxArchPosExt = Math.min(
             marginCapPosU,
-            maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
+            hasManualWidthShrink
+              ? Math.max(prevPosExtU, maxAnatHalfBl)
+              : maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
           );
           const needPos = clamp(keepNeg + 2 * clampedU, prevPosExtU, maxArchPosExt);
           mCu = (needPos - keepNeg) * 0.5;
@@ -9506,7 +9540,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           const keepPos = Math.min(marginCapPosU, Math.max(minScrewPosExt, Math.min(prevPosExtU, mHalfBl + clampedU)));
           const maxArchNegExt = Math.min(
             marginCapNegU,
-            maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
+            hasManualWidthShrink
+              ? Math.max(prevNegExtU, maxAnatHalfBl)
+              : maxAnatHalfBl + Math.min(1.25, Math.abs(clampedU) * 0.95 + 0.2),
           );
           const needNeg = clamp(keepPos - 2 * clampedU, prevNegExtU, maxArchNegExt);
           mCu = (keepPos - needNeg) * 0.5;
@@ -9521,16 +9557,22 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           mHalfBl = clamp((pos + neg) * 0.5, minMarginRadius + 0.08, maxAnatHalfBl);
           buccalScrewWallTargetMm = 0;
         } else if (mCu > 0.05) {
-          lingualScrewWallTargetMm = clamp(
-            mHalfBl - boreTopR - mCu,
-            POSTERIOR_POST_WALL_MIN_MM,
-            POSTERIOR_POST_WALL_IDEAL_MM,
+          lingualScrewWallTargetMm = Math.min(
+            maxLingualWallTargetMm,
+            clamp(
+              mHalfBl - boreTopR - mCu,
+              POSTERIOR_POST_WALL_MIN_MM,
+              POSTERIOR_POST_WALL_IDEAL_MM,
+            ),
           );
         } else if (mCu < -0.05) {
-          buccalScrewWallTargetMm = clamp(
-            mHalfBl - boreTopR + mCu,
-            POSTERIOR_POST_WALL_MIN_MM,
-            POSTERIOR_POST_WALL_IDEAL_MM,
+          buccalScrewWallTargetMm = Math.min(
+            maxBuccalWallTargetMm,
+            clamp(
+              mHalfBl - boreTopR + mCu,
+              POSTERIOR_POST_WALL_MIN_MM,
+              POSTERIOR_POST_WALL_IDEAL_MM,
+            ),
           );
         }
       }
@@ -10526,7 +10568,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const negBeforeArchStretch = topNegU;
         // 협측 경사 식립(uScrewTop > 0)으로 topPosU가 밀려날 때 설측(topNegU)에 해부 여유가 있으면
         // 단면 중심이 인접치 악궁 중심선(keepTargetCu)에서 협측으로 튕겨 나가지 않도록 설측 반폭을 함께 받쳐 준다.
-        if (hasArchLingualGoal && keepTargetCu < (topPosU - topNegU) * 0.5 - 0.04) {
+        if (!hasManualWidthShrink && hasArchLingualGoal && keepTargetCu < (topPosU - topNegU) * 0.5 - 0.04) {
           const minAllowTopPosU = Math.max(
             minPostR,
             uScrewTop + buccalTightR,
@@ -11005,17 +11047,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         screwSafeR +
         estAntDropBl +
         MIN_MARGIN_SHOULDER_MM;
-      const availPosUWrap = Math.min(capAntPosUInit, Math.max(mExtPosU, maxAnatHalfBl * params.marginSizeScale));
-      const availNegUWrap = Math.min(capAntNegUInit, Math.max(mExtNegU, maxAnatHalfBl * params.marginSizeScale));
-      const availPosVWrap = Math.min(capAntPosVInit, Math.max(mExtPosV, maxAnatHalfMd * params.marginSizeScale));
-      const availNegVWrap = Math.min(capAntNegVInit, Math.max(mExtNegV, maxAnatHalfMd * params.marginSizeScale));
+      const availPosUWrap = Math.min(capAntPosUInit, Math.max(mExtPosU, maxAnatHalfBl));
+      const availNegUWrap = Math.min(capAntNegUInit, Math.max(mExtNegU, maxAnatHalfBl));
+      const availPosVWrap = Math.min(capAntPosVInit, Math.max(mExtPosV, maxAnatHalfMd));
+      const availNegVWrap = Math.min(capAntNegVInit, Math.max(mExtNegV, maxAnatHalfMd));
       const needPosVWrap = Math.max(vScrewTop, vScrewBase) + screwSafeR + estAntDropMd + MIN_MARGIN_SHOULDER_MM;
       const needNegVWrap = Math.max(-vScrewTop, -vScrewBase) + screwSafeR + estAntDropMd + MIN_MARGIN_SHOULDER_MM;
       // 편측 0.1°는 필요 마진을 약 0.02mm만 바꾼다. 그 경계에서 감싸기가 뒤집히면
       // 최대 직경이 1mm 넘게 갈리고, 감싸면 설측 사면이 사라지며 놓치면 스크류 입구가 깃이 된다.
       const wrapTaperSlackMm = 0.1;
       const canWrapBl =
-        reqWrapLabMargin <= maxAnatHalfBl * params.marginSizeScale + 0.35 + wrapTaperSlackMm &&
+        reqWrapLabMargin <= maxAnatHalfBl + 0.35 + wrapTaperSlackMm &&
         Math.max(uScrewTop, uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <=
           availPosUWrap + 0.22 + wrapTaperSlackMm &&
         Math.max(-uScrewTop, -uScrewBase) + screwSafeR + estAntDropBl + MIN_MARGIN_SHOULDER_MM <=
@@ -11024,11 +11066,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         needPosVWrap <=
           availPosVWrap +
             wrapTaperSlackMm +
-            (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04) &&
+            (supragingivalRaisedForStrength && effectiveWidthScale >= 0.97 ? 0.28 : 0.04) &&
         needNegVWrap <=
           availNegVWrap +
             wrapTaperSlackMm +
-            (supragingivalRaisedForStrength && params.marginSizeScale >= 0.97 ? 0.28 : 0.04);
+            (supragingivalRaisedForStrength && effectiveWidthScale >= 0.97 ? 0.28 : 0.04);
       const reqWrapMdMargin =
         Math.max(Math.abs(vScrewTop), Math.abs(vScrewBase)) +
         screwSafeR +
@@ -11038,7 +11080,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         canWrapBl &&
         (canWrapMd ||
           (isSupragingivalMargin &&
-            params.marginSizeScale >= 0.95 &&
+            effectiveWidthScale >= 0.95 &&
             angulationDeg <= 13.5 &&
             reqWrapMdMargin <= maxAnatHalfMd + 0.45));
       // 절치 및 설측 사면이 켜진 견치는 스크류를 360°로 감싸 설측 사면이 막히거나 원기둥이 되지 않게 한다.

@@ -429,14 +429,19 @@ export function retainLiveGumballParams(
     Math.abs(edit.scale[0] - 1) > LIVE_GUMBALL_EPS || Math.abs(edit.scale[1] - 1) > LIVE_GUMBALL_EPS;
   const vertical =
     Math.abs(edit.heightMm) > LIVE_GUMBALL_EPS || Math.abs(edit.scale[2] - 1) > LIVE_GUMBALL_EPS;
-  if (radial && !hasOwnParam(patch, "postWidthScale") && base.postWidthScale != null) {
+  const patchSetsRadial = gumballPatchSetsRadial(patch);
+  if (radial && !patchSetsRadial && base.postWidthScale != null) {
     next.postWidthScale = base.postWidthScale;
   }
-  const patchSetsHeight = hasOwnParam(patch, "postHeightOffsetMm") || hasOwnParam(patch, "occlusalClearanceMm");
+  const patchSetsHeight = gumballPatchSetsPostHeight(patch);
   if (vertical && !patchSetsHeight && base.postHeightOffsetMm != null) {
     next.postHeightOffsetMm = base.postHeightOffsetMm;
   }
   return next;
+}
+
+export function gumballPatchSetsRadial(patch: Partial<CustomAbutmentDesignParams>): boolean {
+  return hasOwnParam(patch, "postWidthScale") || hasOwnParam(patch, "marginSizeScale");
 }
 
 export function gumballPatchSetsPostHeight(patch: Partial<CustomAbutmentDesignParams>): boolean {
@@ -3009,6 +3014,24 @@ export class AbutmentDirectEditSession {
       }
     }
     this.tick();
+  }
+
+  /**
+   * 최대 직경·포스트 굵기로 가로 단면을 다시 만든 뒤, 그 가로 스케일을 검볼에서 뺀다.
+   * 세로 길이·기울기·위치·회전은 그대로 남긴다.
+   */
+  clearBakedRadial(teeth: readonly string[]) {
+    for (const tooth of teeth) {
+      const cur = this.edits.get(tooth);
+      if (!cur) continue;
+      if (Math.abs(cur.scale[0] - 1) <= LIVE_GUMBALL_EPS && Math.abs(cur.scale[1] - 1) <= LIVE_GUMBALL_EPS) {
+        continue;
+      }
+      const next = cloneAbutmentEdit(cur);
+      next.scale = [1, 1, cur.scale[2]];
+      if (editsEqual(next, EMPTY_EDIT)) this.edits.delete(tooth);
+      else this.edits.set(tooth, next);
+    }
   }
 
   /**
