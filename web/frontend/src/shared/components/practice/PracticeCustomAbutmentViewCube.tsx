@@ -1,6 +1,6 @@
 // 커스텀어벗 디자인 뷰어의 방향 큐브. 카메라 방향을 따라 돌고, 면을 누르면 그 방향으로 부드럽게 돌아간다.
 // 큐브를 끌면 화면이 같이 돈다. 위 버튼은 기본 시점·전체 맞춤·화면 90° 돌리기·회전 중심이다.
-// 면 방향은 `sync`에 넘긴 frame(디자인한 치아 기준이면 순·설·교합·치은·근심·원심)이고, 이름은 `faceLabels`가 정한다.
+// 면 방향은 `sync`에 넘긴 악궁 frame. 치아를 고르면 `faceLabels`만 협·설·교합·치은·근·원심으로 바꾼다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/dentalFrame.ts
@@ -97,11 +97,21 @@ function neighborOrigin(
   return hit ? new THREE.Vector3(...hit.origin) : null;
 }
 
+const HORIZONTAL_FACES: ViewCubeFace[] = ["front", "back", "left", "right"];
+const OPPOSITE_FACE: Record<ViewCubeFace, ViewCubeFace> = {
+  front: "back",
+  back: "front",
+  left: "right",
+  right: "left",
+  top: "bottom",
+  bottom: "top",
+};
+
 /**
- * 치아 기준 큐브. 정면=순(협)측, 위=환자 위쪽(상악은 치은, 하악은 교합),
- * 좌·우=근심(미드라인)·원심(7번 쪽).
- * 면 방향·라벨 SSOT는 지금 악궁 프레임(앞·오른쪽·위)+FDI다. 픽스처 없이도(스캔바디 지정 중) 동작한다.
- * 이웃 치아가 있으면 그 자리 접선을 근심으로 쓰고, 접선 부호만 악궁 근심 추정에 맞춘다.
+ * 치아 기준 큐브.
+ * 회전 축은 교합 정렬 후 악궁 프레임(앞·오른쪽·위)을 그대로 쓴다 — 환자 정면/좌우와 같이 돈다.
+ * 라벨만 FDI로 얹는다: 바깥=협(순)측, 아치 안=설(구개)측, 미드라인=근심, 7번 쪽=원심.
+ * 픽스처 없이도(스캔바디 지정 중) 동작한다. 이웃이 있으면 접선으로 근심을 다듬는다.
  */
 export function toothViewCube(
   toothNumber: string,
@@ -118,14 +128,13 @@ export function toothViewCube(
   neighbors?: readonly ToothCubeNeighbor[],
 ): { frame: DentalFrame; labels: ViewCubeFaceLabels } | null {
   const digits = String(toothNumber).trim();
-  const arch = archToothDirs(digits, frame.up.clone().normalize(), frame);
+  const up = frame.up.clone().normalize();
+  const arch = archToothDirs(digits, up, frame);
   if (!arch) return null;
   const { quadrant, position } = arch;
   const upper = quadrant <= 2;
   const anteriorTooth = position <= 3;
-  const up = frame.up.clone().normalize();
 
-  // 바깥=협(순)측, 아치 안쪽=설(구개)측. 현재 악궁 프레임 기준.
   const buccal = arch.buccal.clone();
   const mesialGuess = arch.mesial;
 
@@ -154,21 +163,56 @@ export function toothViewCube(
   mesial.normalize();
   if (mesial.dot(mesialGuess) < 0) mesial.negate();
 
-  // 오른손: 바깥(순·협)을 정면으로 볼 때 오른쪽 = 순협 × 환자 위.
-  const right = new THREE.Vector3().crossVectors(buccal, up).normalize();
-  if (right.lengthSq() < 1e-8) return null;
-  const mesialRight = mesial.dot(right) > 0;
-  return {
-    frame: { up, anterior: buccal, right },
-    labels: {
-      front: anteriorTooth ? "순측" : "협측",
-      back: upper ? "구개측" : "설측",
-      top: upper ? "치은" : "교합",
-      bottom: upper ? "교합" : "치은",
-      left: mesialRight ? "원심" : "근심",
-      right: mesialRight ? "근심" : "원심",
-    },
+  // 큐브 회전 = 악궁 프레임(교합 정렬 결과). 치아 로컬로 돌리지 않는다.
+  const cubeFrame: DentalFrame = {
+    up,
+    anterior: frame.anterior.clone().normalize(),
+    right: frame.right.clone().normalize(),
   };
+
+  const bestAmong = (dir: THREE.Vector3, among: readonly ViewCubeFace[]) => {
+    let best = among[0]!;
+    let bestDot = -Infinity;
+    for (const face of among) {
+      const d = viewCubeDirection(face, cubeFrame).viewDir.dot(dir);
+      if (d > bestDot) {
+        bestDot = d;
+        best = face;
+      }
+    }
+    return best;
+  };
+
+  // 구치: 협·설 = 환자 좌·우(볼 쪽), 근·원 = 전·후(미드라인·7번).
+  // 전치: 순·설 = 전·후, 근·원 = 좌·우.
+  const side = quadrant === 1 || quadrant === 4 ? 1 : -1;
+  let bucFace: ViewCubeFace;
+  let mesFace: ViewCubeFace;
+  if (anteriorTooth) {
+    bucFace = bestAmong(buccal, ["front", "back"]);
+    const remain = HORIZONTAL_FACES.filter((f) => f !== bucFace && f !== OPPOSITE_FACE[bucFace]);
+    mesFace = bestAmong(mesial, remain);
+  } else {
+    bucFace = side > 0 ? "right" : "left";
+    mesFace = bestAmong(mesial, ["front", "back"]);
+  }
+  const linFace = OPPOSITE_FACE[bucFace];
+  const distFace = OPPOSITE_FACE[mesFace];
+
+  const labels: ViewCubeFaceLabels = {
+    front: "",
+    back: "",
+    left: "",
+    right: "",
+    top: upper ? "치은" : "교합",
+    bottom: upper ? "교합" : "치은",
+  };
+  labels[bucFace] = anteriorTooth ? "순측" : "협측";
+  labels[linFace] = upper ? "구개측" : "설측";
+  labels[mesFace] = "근심";
+  labels[distFace] = "원심";
+
+  return { frame: cubeFrame, labels };
 }
 
 const CUBE_REM = 4.5;
