@@ -396,8 +396,11 @@ type BiteManualSession = {
   arch: "upper" | "lower";
   model: THREE.Vector3[];
   bite: THREE.Vector3[];
+  /** 지금 찍는 악궁(상악 또는 하악). */
   archMeshes: THREE.Mesh[];
   biteMeshes: THREE.Mesh[];
+  /** 반대 악궁 — 배치만 보이고 클릭은 받지 않는다. */
+  idleMeshes: THREE.Mesh[];
   marks: THREE.Object3D[];
   resolve: (ok: boolean) => void;
 };
@@ -3603,7 +3606,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!session) return;
       clearBiteManualMarks();
       const scene = sceneRef.current;
-      for (const mesh of [...session.archMeshes, ...session.biteMeshes]) {
+      for (const mesh of [...session.archMeshes, ...session.biteMeshes, ...session.idleMeshes]) {
         scene?.remove(mesh);
         disposeMesh(mesh, true, true);
       }
@@ -3616,7 +3619,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const startBiteManualAlign = useCallback(
     (
       arch: "upper" | "lower",
-      archScans: readonly LoadedJawScan[],
+      jawScans: readonly LoadedJawScan[],
       biteScans: readonly LoadedJawScan[],
     ): Promise<boolean> => {
       const scene = sceneRef.current;
@@ -3626,67 +3629,86 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!scene || !camera || !controls || !host) return Promise.resolve(false);
       if (biteManualRef.current) endBiteManualSession(false);
 
-      const archMeshes: THREE.Mesh[] = [];
-      const biteMeshes: THREE.Mesh[] = [];
-      for (const scan of archScans) {
+      const makeMesh = (scan: LoadedJawScan, idle: boolean) => {
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
         scan.geometry.computeBoundingSphere();
         const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
         mat.side = THREE.DoubleSide;
+        if (scan.role === "bite" || idle) {
+          mat.transparent = true;
+          mat.opacity = idle ? 0.45 : 0.85;
+        }
         const mesh = new THREE.Mesh(scan.geometry, mat);
-        mesh.userData.biteManualRole = arch;
+        mesh.userData.biteManualRole = scan.role;
         scene.add(mesh);
-        archMeshes.push(mesh);
-      }
-      for (const scan of biteScans) {
-        if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
-        scan.geometry.computeBoundingSphere();
-        const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
-        mat.side = THREE.DoubleSide;
-        mat.transparent = true;
-        mat.opacity = 0.85;
-        const mesh = new THREE.Mesh(scan.geometry, mat);
-        mesh.userData.biteManualRole = "bite";
-        scene.add(mesh);
-        biteMeshes.push(mesh);
-      }
+        return mesh;
+      };
+
+      const upperMeshes = jawScans.filter((s) => s.role === "upper").map((s) => makeMesh(s, arch !== "upper"));
+      const lowerMeshes = jawScans.filter((s) => s.role === "lower").map((s) => makeMesh(s, arch !== "lower"));
+      const biteMeshes = biteScans.map((s) => makeMesh(s, false));
+      const archMeshes = arch === "upper" ? upperMeshes : lowerMeshes;
+      const idleMeshes = arch === "upper" ? lowerMeshes : upperMeshes;
       if (archMeshes.length === 0 || biteMeshes.length === 0) {
-        for (const mesh of [...archMeshes, ...biteMeshes]) {
+        for (const mesh of [...upperMeshes, ...lowerMeshes, ...biteMeshes]) {
           scene.remove(mesh);
           disposeMesh(mesh, true, true);
         }
         return Promise.resolve(false);
       }
 
-      const archBox = new THREE.Box3();
-      const biteBox = new THREE.Box3();
-      for (const mesh of archMeshes) archBox.expandByObject(mesh);
-      for (const mesh of biteMeshes) biteBox.expandByObject(mesh);
+      const boxOf = (meshes: THREE.Mesh[]) => {
+        const box = new THREE.Box3();
+        for (const mesh of meshes) box.expandByObject(mesh);
+        return box;
+      };
+      const upperBox = upperMeshes.length ? boxOf(upperMeshes) : null;
+      const lowerBox = lowerMeshes.length ? boxOf(lowerMeshes) : null;
+      const biteBox = boxOf(biteMeshes);
       const viewDir = new THREE.Vector3(0, -1, 0.35).normalize();
       const up = new THREE.Vector3(0, 0, 1);
       const screenRight = new THREE.Vector3().crossVectors(viewDir, up).normalize();
-      const halfAlong = (box: THREE.Box3) => {
+      const screenUp = up.clone().addScaledVector(viewDir, -up.dot(viewDir)).normalize();
+      const halfAlong = (box: THREE.Box3, axis: THREE.Vector3) => {
         const size = box.getSize(new THREE.Vector3());
-        return (
-          0.5 *
-          (Math.abs(size.x * screenRight.x) +
-            Math.abs(size.y * screenRight.y) +
-            Math.abs(size.z * screenRight.z))
-        );
+        return 0.5 * (Math.abs(size.x * axis.x) + Math.abs(size.y * axis.y) + Math.abs(size.z * axis.z));
       };
-      const archHalf = halfAlong(archBox);
-      const biteHalf = halfAlong(biteBox);
-      const gap = Math.max(archHalf, biteHalf, 1) * 0.16;
-      const halfSep = (archHalf + biteHalf + gap) * 0.5;
-      const archCenter = archBox.getCenter(new THREE.Vector3());
-      const biteCenter = biteBox.getCenter(new THREE.Vector3());
-      const archOffset = screenRight.clone().multiplyScalar(-halfSep).sub(archCenter);
-      const biteOffset = screenRight.clone().multiplyScalar(halfSep).sub(biteCenter);
-      for (const mesh of archMeshes) mesh.position.copy(archOffset);
-      for (const mesh of biteMeshes) mesh.position.copy(biteOffset);
+      const biteHalfX = halfAlong(biteBox, screenRight);
+      const upperHalfX = upperBox ? halfAlong(upperBox, screenRight) : 0;
+      const lowerHalfX = lowerBox ? halfAlong(lowerBox, screenRight) : 0;
+      const upperHalfY = upperBox ? halfAlong(upperBox, screenUp) : 0;
+      const lowerHalfY = lowerBox ? halfAlong(lowerBox, screenUp) : 0;
+      const rightHalfX = Math.max(upperHalfX, lowerHalfX, 1);
+      const gapX = Math.max(biteHalfX, rightHalfX, 1) * 0.22;
+      const gapY = Math.max(upperHalfY, lowerHalfY, 1) * 0.28;
+      const sepX = (biteHalfX + rightHalfX + gapX) * 0.5;
+      const sepY = (upperHalfY + lowerHalfY + gapY) * 0.5;
+      // 왼쪽 바이트, 오른쪽 위 상악, 오른쪽 아래 하악.
+      const place = (meshes: THREE.Mesh[], box: THREE.Box3, slot: THREE.Vector3) => {
+        const center = box.getCenter(new THREE.Vector3());
+        const offset = slot.clone().sub(center);
+        for (const mesh of meshes) mesh.position.copy(offset);
+      };
+      place(biteMeshes, biteBox, screenRight.clone().multiplyScalar(-sepX));
+      if (upperBox && upperMeshes.length && lowerBox && lowerMeshes.length) {
+        place(
+          upperMeshes,
+          upperBox,
+          screenRight.clone().multiplyScalar(sepX).addScaledVector(screenUp, sepY),
+        );
+        place(
+          lowerMeshes,
+          lowerBox,
+          screenRight.clone().multiplyScalar(sepX).addScaledVector(screenUp, -sepY),
+        );
+      } else if (upperBox && upperMeshes.length) {
+        place(upperMeshes, upperBox, screenRight.clone().multiplyScalar(sepX));
+      } else if (lowerBox && lowerMeshes.length) {
+        place(lowerMeshes, lowerBox, screenRight.clone().multiplyScalar(sepX));
+      }
 
       const bounds = new THREE.Box3();
-      for (const mesh of [...archMeshes, ...biteMeshes]) {
+      for (const mesh of [...upperMeshes, ...lowerMeshes, ...biteMeshes]) {
         mesh.updateWorldMatrix(true, false);
         bounds.expandByObject(mesh);
       }
@@ -3697,7 +3719,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       controls.target.copy(center);
       camera.up.copy(up);
       camera.position.copy(center).addScaledVector(viewDir, dist);
-      applyOrthoHeight(camera, Math.max(radius * 1.15, 8), aspect);
+      applyOrthoHeight(camera, Math.max(radius * 1.2, 8), aspect);
       camera.zoom = 1;
       camera.lookAt(center);
       controls.syncFromCamera();
@@ -3709,6 +3731,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           bite: [],
           archMeshes,
           biteMeshes,
+          idleMeshes,
           marks: [],
           resolve,
         };
@@ -4851,7 +4874,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   const row = snap.find((entry) => entry.geometry === scan.geometry);
                   if (row) restoreGeometryPositions(row.geometry, row.positions);
                 }
-                const ok = await startBiteManualAlignRef.current(role, archOnly, biteScans);
+                const ok = await startBiteManualAlignRef.current(role, jawScans, biteScans);
                 if (cancelled) {
                   endBiteManualSessionRef.current(false);
                   return;
@@ -8412,6 +8435,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm leading-relaxed text-foreground">
+                    왼쪽 바이트, 오른쪽 위 상악·아래 하악입니다.
+                    <br />
                     {status.arch === "upper" ? "상악" : "하악"}과 바이트에 같은 순서로 점 3개씩
                     찍으세요.
                   </p>
