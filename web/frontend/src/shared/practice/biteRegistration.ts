@@ -44,6 +44,11 @@ type AlignOptions = {
   cancelled?: () => boolean;
   /** 못 붙은 악궁을 여러 자세에서 다시 찾는다. 악궁 하나에 1~2초 더 걸린다. */
   sweepPoses?: boolean;
+  /**
+   * 스윕 후보 순위(0=최선). 「다시 맞추기」때 1,2,…로 올려 다른 자세를 고른다.
+   * 0이 아니면 이미 옮긴 악궁도 다시 스윕한다.
+   */
+  poseRank?: number;
   /** 찾는 중인 자세. matrix는 호출 시점 기하 좌표 기준이고, 화면은 메시 변환으로만 보여 준다. */
   onPose?: (geometry: THREE.BufferGeometry, matrix: THREE.Matrix4) => void;
 };
@@ -1806,6 +1811,7 @@ async function sweepArchPoses(
   accept?: PoseCheck,
 ): Promise<SweepHit | null> {
   if (source.count < 80 || target.count < 80) return null;
+  const poseRank = Math.max(0, Math.floor(options?.poseRank ?? 0));
   const center = cloudCentroid(source);
   const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
   const sampleIds = strideIds(target.count, 110);
@@ -1852,8 +1858,9 @@ async function sweepArchPoses(
   const rank = (fit: Fitness) => fit.sideMean * unitToMm - fit.coverage * 4;
   screened.sort((a, b) => rank(a.fit) - rank(b.fit));
 
-  let best: SweepHit | null = null;
-  for (const row of screened.slice(0, 2)) {
+  const refineCount = Math.min(screened.length, Math.max(2, poseRank + 2));
+  const hits: SweepHit[] = [];
+  for (const row of screened.slice(0, refineCount)) {
     const cloud = cloneCloud(source);
     applyRigid(cloud, rigidFromMatrix(row.matrix));
     const matrix = row.matrix.clone();
@@ -1871,16 +1878,25 @@ async function sweepArchPoses(
     );
     const fit = overlapFitness(cloud, target, grid, unitToMm);
     if (!seatedFit(fit, unitToMm) || !ok(matrix)) continue;
-    if (
-      !best ||
-      fit.coverage > best.fit.coverage + 0.03 ||
-      (fit.coverage >= best.fit.coverage - 0.01 && fit.sideMean < best.fit.sideMean)
-    ) {
-      best = { cloud, matrix, fit };
-    }
+    hits.push({ cloud, matrix, fit });
   }
-  emit?.(best ? best.matrix : new THREE.Matrix4());
-  return best;
+  hits.sort((a, b) => rank(a.fit) - rank(b.fit));
+  // 비슷한 자세는 건너뛰고 poseRank번째를 고른다.
+  const distinct: SweepHit[] = [];
+  const nearMm = mmToUnits(2.5, unitToMm);
+  for (const hit of hits) {
+    const dup = distinct.some((other) => {
+      const dx = (hit.matrix.elements[12] ?? 0) - (other.matrix.elements[12] ?? 0);
+      const dy = (hit.matrix.elements[13] ?? 0) - (other.matrix.elements[13] ?? 0);
+      const dz = (hit.matrix.elements[14] ?? 0) - (other.matrix.elements[14] ?? 0);
+      if (dx * dx + dy * dy + dz * dz >= nearMm * nearMm) return false;
+      return rotationAngle(hit.matrix.clone().multiply(other.matrix.clone().invert())) < 0.35;
+    });
+    if (!dup) distinct.push(hit);
+  }
+  const chosen = distinct[poseRank] ?? null;
+  emit?.(chosen ? chosen.matrix : new THREE.Matrix4());
+  return chosen;
 }
 
 function mergeGeometries(geometries: THREE.BufferGeometry[]) {
@@ -1936,7 +1952,7 @@ export type BiteFitPose = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix
 /**
  * seated: 한 악궁이라도 바이트에 붙었다(제자리 포함). moved: 좌표를 실제로 옮겼다.
  * stopped: cancelled로 멈췄다. 기하는 그대로이고, partial은 멈춘 순간 보이던 악궁 자세다.
- * qualityOk: 입력 상·하악이 모두 붙고 측면 거리·덮음이 수동 전환 기준 안이다.
+ * qualityOk: 입력 상·하악이 모두 붙고 측면 거리·덮음이 기준 안이다.
  */
 export type BiteFitArchQuality = {
   role: "upper" | "lower";
@@ -1955,7 +1971,7 @@ export type BiteFitResult = {
   qualityOk: boolean;
 };
 
-/** 자동 맞춤이 이보다 헐거우면 3점 수동으로 넘긴다. */
+/** 자동 맞춤이 이보다 헐거우면 qualityOk=false. */
 const QUALITY_SIDE_MM = 0.55;
 const QUALITY_COVERAGE = 0.08;
 
@@ -2115,11 +2131,25 @@ async function registerJawsToBiteWork(
     row.seated = true;
     sinkFor(row.geometry)?.(row.matrix);
   };
+  const poseRank = Math.max(0, Math.floor(options?.poseRank ?? 0));
+  const identityPose = new THREE.Matrix4();
+  // 「다시 맞추기」: 이미 옮긴 악궁을 풀어 다음 순위 스윕 후보를 고르게 한다.
+  if (poseRank > 0) {
+    for (const row of fitted) {
+      if (!row.seated || row.matrix.equals(identityPose)) continue;
+      row.seated = false;
+      row.matrix.identity();
+      row.aligned = row.original;
+      sinkFor(row.geometry)?.(row.matrix);
+    }
+  }
   const swept = new Set<ArchFit>();
   for (;;) {
     let progress = false;
     for (const row of fitted) {
       if (row.seated) continue;
+      // 대체 후보는 로컬 ICP 대신 스윕 순위로만 고른다(같은 최소점에 다시 안 붙게).
+      if (poseRank > 0) continue;
       const remain = remainFor(row);
       if (remain.count >= row.targetCount) continue;
       row.targetCount = remain.count;
