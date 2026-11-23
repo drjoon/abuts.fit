@@ -627,6 +627,7 @@ export type CustomAbutmentSnapshotUploadTooth = {
   overrides: Partial<CustomAbutmentDesignParams>;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  baselineParams?: Partial<CustomAbutmentDesignParams>;
   gumballEdit?: AbutmentEdit | null;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -643,6 +644,7 @@ export type UploadedCustomAbutmentSnapshotTooth = {
   overrides: Partial<CustomAbutmentDesignParams>;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  baselineParams?: Partial<CustomAbutmentDesignParams>;
   gumballEdit?: AbutmentEdit | null;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -902,6 +904,9 @@ async function toothFromSnapshotRow(
     overrides: (row.overrides || {}) as Partial<CustomAbutmentDesignParams>,
     params: row.params as CustomAbutmentDesignParams,
     metrics: row.metrics as CustomAbutmentDesignMetrics,
+    ...(row.baselineParams && typeof row.baselineParams === "object"
+      ? { baselineParams: row.baselineParams as CustomAbutmentDesignParams }
+      : {}),
     ...(row.gumballEdit && typeof row.gumballEdit === "object"
       ? { gumballEdit: row.gumballEdit as AbutmentEdit }
       : {}),
@@ -1083,6 +1088,7 @@ export async function uploadCustomAbutmentSnapshotTeeth(
         overrides: row.overrides,
         params: row.params,
         metrics: row.metrics,
+        ...(row.baselineParams ? { baselineParams: row.baselineParams } : {}),
         ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
         ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
         ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
@@ -1139,6 +1145,8 @@ export type CustomAbutmentDesignSyncTooth = {
   overrides: Partial<CustomAbutmentDesignParams>;
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
+  /** 자동 생성 직후 원점 조정값. 관리자 전후 비교·생성 로직에 쓴다. */
+  baselineParams?: Partial<CustomAbutmentDesignParams>;
   gumballEdit?: AbutmentEdit;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -1188,6 +1196,9 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
       params: (tooth.params || {}) as CustomAbutmentDesignParams,
       metrics: (tooth.metrics || {}) as CustomAbutmentDesignMetrics,
       ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
+      ...(tooth.baselineParams && typeof tooth.baselineParams === "object"
+        ? { baselineParams: tooth.baselineParams as Partial<CustomAbutmentDesignParams> }
+        : {}),
       ...(tooth.gumballEdit && typeof tooth.gumballEdit === "object"
         ? { gumballEdit: tooth.gumballEdit as AbutmentEdit }
         : {}),
@@ -1368,6 +1379,7 @@ function uploadedToothFromExisting(
     overrides: row.overrides,
     params: row.params,
     metrics: row.metrics,
+    ...(row.baselineParams ? { baselineParams: row.baselineParams } : {}),
     ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
     ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
     ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),

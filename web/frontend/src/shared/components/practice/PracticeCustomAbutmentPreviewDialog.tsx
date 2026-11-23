@@ -2270,6 +2270,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       activeVariantRef.current[d.toothNumber] ||
       "";
     const insertionAxisWorld = readBridgeInsertionAxis(lockedBridgeAxisRef.current, d.toothNumber);
+    const baselineParams = baselineParamsRef.current[d.toothNumber];
     return {
       toothNumber: d.toothNumber,
       fileName: d.fileName,
@@ -2277,6 +2278,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       overrides: designContextRef.current?.overrides[d.toothNumber] ?? {},
       params: d.params,
       metrics: d.metrics,
+      ...(baselineParams ? { baselineParams } : {}),
       ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
       ...(gumballEdit ? { gumballEdit } : {}),
       ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
@@ -2568,6 +2570,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           rowOverrides: Partial<CustomAbutmentDesignParams>;
           restoredGumball: ReturnType<typeof normalizeAbutmentEdit>;
           proposalInput?: Partial<CustomAbutmentDesignParams>;
+          baselineParams?: Partial<CustomAbutmentDesignParams>;
         }> = [];
         let held = 0;
         for (const row of meta.teeth) {
@@ -2669,6 +2672,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               rowOverrides,
               restoredGumball,
               ...(row.proposalInput ? { proposalInput: row.proposalInput } : {}),
+              ...(row.baselineParams && Object.keys(row.baselineParams).length > 0
+                ? { baselineParams: row.baselineParams }
+                : {}),
             });
           } catch (err) {
             console.warn("[custom-abutment] remote design rebuild failed", row.toothNumber, err);
@@ -2694,6 +2700,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           const toothNumber = row.next.toothNumber;
           ctx.overrides[toothNumber] = row.rowOverrides;
           if (row.proposalInput) proposalInputRef.current[toothNumber] = { ...row.proposalInput };
+          if (row.baselineParams && Object.keys(row.baselineParams).length > 0) {
+            baselineParamsRef.current[toothNumber] = {
+              ...row.next.params,
+              ...row.baselineParams,
+            };
+          }
           if (row.restoredGumball) {
             gumballMetricBaseRef.current[toothNumber] = { ...row.next.metrics };
             gumballParamBaseRef.current[toothNumber] = { ...row.next.params };
@@ -6306,6 +6318,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               null;
             const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
             const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+            const baselineParams = baselineParamsRef.current[d.toothNumber];
             return {
               toothNumber: d.toothNumber,
               fileName: d.fileName,
@@ -6313,6 +6326,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               overrides: ctx?.overrides[d.toothNumber] ?? {},
               params: d.params,
               metrics: d.metrics,
+              ...(baselineParams ? { baselineParams } : {}),
               ...(gumballEdit ? { gumballEdit } : {}),
               ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
               ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
@@ -6401,6 +6415,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               null;
             const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
             const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
+            const baselineParams = baselineParamsRef.current[d.toothNumber];
             return {
               toothNumber: d.toothNumber,
               fileName: d.fileName,
@@ -6408,6 +6423,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               overrides: ctx?.overrides[d.toothNumber] ?? {},
               params: d.params,
               metrics: d.metrics,
+              ...(baselineParams ? { baselineParams } : {}),
               ...(gumballEdit ? { gumballEdit } : {}),
               ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
               ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),

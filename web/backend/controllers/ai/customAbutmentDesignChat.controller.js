@@ -60,6 +60,10 @@ import {
 import { ensureAbutmentDesignGraceWorker } from "../../jobs/abutmentDesignGraceWorker.js";
 import { syncPracticeTransferAbutmentFeeRoute } from "../../services/practiceTransferBilling.service.js";
 import {
+  recordGenerationEdits,
+  teethFromSnapshotRows,
+} from "../../services/abutmentDesignLogic.service.js";
+import {
   quoteCustomAbutmentRouteFees,
   resolveLabFeeScheduleSource,
 } from "../../utils/labFeeSchedule.js";
@@ -252,6 +256,9 @@ function snapshotTeeth(raw, transferId) {
       overrides: row?.overrides && typeof row.overrides === "object" ? row.overrides : {},
       params: row?.params && typeof row.params === "object" ? row.params : {},
       metrics: row?.metrics && typeof row.metrics === "object" ? row.metrics : {},
+      ...(row?.baselineParams && typeof row.baselineParams === "object"
+        ? { baselineParams: row.baselineParams }
+        : {}),
       ...(row?.gumballEdit && typeof row.gumballEdit === "object"
         ? { gumballEdit: row.gumballEdit }
         : {}),
@@ -766,6 +773,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
     const transfer = await PracticeTransfer.findOne({ transferId })
       .select({
         transferId: 1,
+        patientName: 1,
         practiceUserId: 1,
         practiceBusinessAnchorId: 1,
         targetLabAnchorId: 1,
@@ -852,6 +860,17 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
     await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });
+    if (teeth.length > 0 && transfer?.practiceBusinessAnchorId) {
+      void recordGenerationEdits({
+        transferId,
+        practiceBusinessAnchorId: transfer.practiceBusinessAnchorId,
+        userId: req.user?._id,
+        editorName: req.user?.name,
+        action: "save",
+        patientName: transfer.patientName,
+        teeth: teethFromSnapshotRows(teeth),
+      }).catch((err) => console.warn("[AI] design change record failed", err?.message || err));
+    }
     res.json({ success: true, data: { saved: true, savedAt } });
     return;
   } catch (error) {
@@ -1508,6 +1527,18 @@ export async function confirmCustomAbutmentDesign(req, res) {
       },
     });
 
+    if (transferDoc.practiceBusinessAnchorId) {
+      void recordGenerationEdits({
+        transferId,
+        practiceBusinessAnchorId: transferDoc.practiceBusinessAnchorId,
+        userId: req.user?._id,
+        editorName: req.user?.name,
+        action: "confirm",
+        patientName: transferDoc.patientName,
+        teeth: teethFromSnapshotRows(validTeeth),
+      }).catch((err) => console.warn("[AI] design change record failed", err?.message || err));
+    }
+
     void (async () => {
       let promotedRows = [];
       // 치과 확정만으로는 제조사 준비에 올리지 않는다. 기공소 확정이 이미 있으면 그 진입을 유지한다.
@@ -1739,6 +1770,18 @@ export async function requestManualCustomAbutmentDesign(req, res) {
       transfer: transferDoc,
       actorUserId: req.user?._id,
     });
+
+    if (validTeeth.length > 0 && transferDoc.practiceBusinessAnchorId) {
+      void recordGenerationEdits({
+        transferId,
+        practiceBusinessAnchorId: transferDoc.practiceBusinessAnchorId,
+        userId: req.user?._id,
+        editorName: req.user?.name,
+        action: "manual",
+        patientName: transferDoc.patientName,
+        teeth: teethFromSnapshotRows(validTeeth),
+      }).catch((err) => console.warn("[AI] design change record failed", err?.message || err));
+    }
 
     res.json({
       success: true,

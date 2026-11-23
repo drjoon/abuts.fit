@@ -108,6 +108,8 @@ export function toDesignSyncMeta(source) {
     if (gumballEdit) tooth.gumballEdit = gumballEdit;
     const insertionAxisWorld = unitVec(row?.insertionAxisWorld);
     if (insertionAxisWorld) tooth.insertionAxisWorld = insertionAxisWorld;
+    const baselineParams = numberMap(row?.baselineParams);
+    if (Object.keys(baselineParams).length > 0) tooth.baselineParams = baselineParams;
     const gumballBaseParams = numberMap(row?.gumballBaseParams);
     if (Object.keys(gumballBaseParams).length > 0) tooth.gumballBaseParams = gumballBaseParams;
     const gumballBaseMetrics = numberMap(row?.gumballBaseMetrics);

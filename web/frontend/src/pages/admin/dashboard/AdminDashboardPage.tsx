@@ -97,9 +97,7 @@ import { AdminPracticeDelinquencyCard } from "@/pages/admin/dashboard/AdminPract
 import { AdminPracticeLaunchButton } from "@/pages/admin/dashboard/AdminPracticeLaunchButton";
 import { AdminBusinessVerificationCard } from "@/pages/admin/dashboard/AdminBusinessVerificationCard";
 import { AdminNewMembersCard } from "@/pages/admin/dashboard/AdminNewMembersCard";
-import { AdminAiDesignChatUsageCard } from "@/pages/admin/dashboard/AdminAiDesignChatUsageCard";
-import { AdminAiDesignGapCard } from "@/pages/admin/dashboard/AdminAiDesignGapCard";
-import { AdminAbutmentDesignLogicCard } from "@/pages/admin/dashboard/AdminAbutmentDesignLogicCard";
+import { AdminCustomAbutmentDesignHubCard } from "@/pages/admin/dashboard/AdminCustomAbutmentDesignHubCard";
 import { AdminPopbillPointCard } from "@/pages/admin/dashboard/AdminPopbillPointCard";
 import { AdminPopbillBankCard } from "@/pages/admin/dashboard/AdminPopbillBankCard";
 import { HeldSmsCard } from "@/pages/admin/dashboard/HeldSmsCard";
@@ -2410,6 +2408,10 @@ export const AdminDashboardPage = () => {
                   <p className="truncate text-[11px] text-muted-foreground">6 · 8 · 10 · 12mm</p>
                 </div>
               </DashTile>
+              <AdminCustomAbutmentDesignHubCard
+                className={DASH_SPAN.c4}
+                enabled={Boolean(token) && user?.role === "admin"}
+              />
             </DashCluster>
             <DashCluster title="확인할 일">
               <AdminPracticeDelinquencyCard
@@ -2655,18 +2657,6 @@ export const AdminDashboardPage = () => {
                 onClick={() => setGrowthDetailMetric("totalUsers")}
               />
               <AdminNewMembersCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminAiDesignChatUsageCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminAiDesignGapCard
-                className={DASH_SPAN.c2}
-                enabled={Boolean(token) && user?.role === "admin"}
-              />
-              <AdminAbutmentDesignLogicCard
                 className={DASH_SPAN.c2}
                 enabled={Boolean(token) && user?.role === "admin"}
               />

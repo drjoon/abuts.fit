@@ -13,8 +13,15 @@ import {
   AbutmentDesignGenerationRule,
   AbutmentDesignLogicRule,
 } from "../models/abutmentDesignLogic.model.js";
-import { combineToothPatches, mergeRulePatch, summarizeChanges } from "./abutmentDesignLogic.core.js";
+import {
+  combineToothPatches,
+  mergeRulePatch,
+  summarizeChanges,
+  teethFromSnapshotRows,
+} from "./abutmentDesignLogic.core.js";
 import { deleteFileFromS3, getObjectBufferFromS3, putObjectToS3 } from "../utils/s3.utils.js";
+
+export { teethFromSnapshotRows };
 
 const INLINE_MAX = 32 * 1024;
 
@@ -166,6 +173,8 @@ export async function recordGenerationEdits(input) {
     practiceName = clean(anchor?.name, 80);
   }
   const stored = await writePayload(transferId, summary, pending?.s3Key || "");
+  const action =
+    input?.action === "manual" ? "manual" : input?.action === "save" ? "save" : "confirm";
   const fields = {
     transferId,
     userId,
@@ -173,7 +182,7 @@ export async function recordGenerationEdits(input) {
     practiceName,
     editorName: clean(input?.editorName, 40),
     patientName: clean(input?.patientName, 40),
-    action: input?.action === "manual" ? "manual" : "confirm",
+    action,
     status: "pending",
     lines: summary.lines,
     toothNumbers: summary.teeth.map((row) => row.toothNumber),

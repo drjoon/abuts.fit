@@ -282,6 +282,24 @@ export function describeToothChange(tooth) {
   };
 }
 
+/** 스냅샷·확정 치아 행을 변경 기록용 입력으로 맞춘다. */
+export function teethFromSnapshotRows(teeth) {
+  return (Array.isArray(teeth) ? teeth : []).map((row) => {
+    const baseline =
+      (row?.baselineParams && typeof row.baselineParams === "object" && row.baselineParams) ||
+      (row?.gumballBaseParams && typeof row.gumballBaseParams === "object" && row.gumballBaseParams) ||
+      {};
+    const finalParams = row?.params && typeof row.params === "object" ? row.params : {};
+    const gumball = row?.gumballEdit && typeof row.gumballEdit === "object" ? row.gumballEdit : null;
+    return {
+      toothNumber: row?.toothNumber,
+      baselineParams: baseline,
+      finalParams,
+      ...(gumball ? { gumball } : {}),
+    };
+  });
+}
+
 export function summarizeChanges(teeth) {
   const rows = [];
   const lines = [];

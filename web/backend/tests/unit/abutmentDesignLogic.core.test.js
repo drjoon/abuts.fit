@@ -4,6 +4,7 @@ import {
   combineToothPatches,
   describeToothChange,
   mergeRulePatch,
+  teethFromSnapshotRows,
   toothKindOf,
 } from "../../services/abutmentDesignLogic.core.js";
 
@@ -79,5 +80,24 @@ describe("abutment design change record", () => {
       -12,
     );
     expect(mergeRulePatch({ pose: {} }, { pose: { tiltLabialDeg: -3.2 } }).pose.tiltLabialDeg).toBeCloseTo(-3.2);
+  });
+
+  test("snapshot rows keep baseline final and gumball for save recording", () => {
+    const rows = teethFromSnapshotRows([
+      {
+        toothNumber: "13",
+        baselineParams: { occlusalClearanceMm: 1.3 },
+        params: { occlusalClearanceMm: 1.8 },
+        gumballEdit: { tiltLabialDeg: -4 },
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].baselineParams.occlusalClearanceMm).toBe(1.3);
+    expect(rows[0].finalParams.occlusalClearanceMm).toBe(1.8);
+    expect(rows[0].gumball.tiltLabialDeg).toBe(-4);
+    const described = describeToothChange(rows[0]);
+    expect(described.lines).toEqual(
+      expect.arrayContaining(["#13 대합 거리 1.3mm → 1.8mm", "#13 기울기 설측 4°"]),
+    );
   });
 });

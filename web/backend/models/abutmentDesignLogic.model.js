@@ -119,7 +119,7 @@ const changeSchema = new mongoose.Schema(
     practiceName: { type: String, default: "", trim: true },
     editorName: { type: String, default: "", trim: true },
     patientName: { type: String, default: "", trim: true },
-    action: { type: String, enum: ["confirm", "manual"], default: "confirm" },
+    action: { type: String, enum: ["confirm", "manual", "save"], default: "confirm" },
     /** pending 은 관리자 확인 전. user·global 은 반영됨. dismissed 는 건너뜀. */
     status: {
       type: String,
