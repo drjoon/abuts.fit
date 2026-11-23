@@ -1206,6 +1206,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   );
   const [designedList, setDesignedList] = useState<DesignedCustomAbutment[]>([]);
   const [restoredFromCache, setRestoredFromCache] = useState(false);
+  /** null: 아직 모름·바이트 없음. false면 헤더 교합정렬로 고쳐야 한다. */
+  const [occlusionOk, setOcclusionOk] = useState<boolean | null>(null);
   const [colorMapping, setColorMapping] = useState(true);
   const [centerGuide, setCenterGuide] = useState<CenterGuideMode>("off");
   /** 치아별 스캔바디 표시. 기본은 가린다. */
@@ -4382,6 +4384,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         selectedTeethRef.current = [];
         setSelectedTeeth([]);
         setRestoredFromCache(false);
+        setOcclusionOk(null);
         designContextRef.current = null;
         const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
@@ -5330,8 +5333,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               ? "스캔바디를 자동으로 찾지 못했습니다."
               : "교합을 먼저 맞춰 주세요.",
             description: occlusionReady
-              ? "어벗 정보에서 위치를 지정하세요."
-              : "헤더 교합정렬로 맞춘 뒤 다시 열어 주세요.",
+              ? "아래 안내에서 스캔바디 위치를 지정하세요."
+              : "헤더 교합정렬로 맞춘 뒤 디자인을 이어 가세요.",
           });
         }
         const pickJaws = new Set(
@@ -5437,6 +5440,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         setDesignedList(builtAbutments);
         setRestoredFromCache(restored);
+        setOcclusionOk(biteCheck ? Boolean(biteCheck.qualityOk) : null);
         const fromDesign = cached ? normalizeCustomAbutmentChat(cached.chat) : [];
         const restoredChat =
           chatApplyEpochRef.current === chatApplyEpoch
@@ -7369,8 +7373,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     visibleJaws.upper,
   ]);
 
-  const ready =
-    status.kind === "ready" && (designedList.length > 0 || readOnly);
+  /** 스캔·프레임까지 준비됨. 어벗이 없어도 교합정렬·스캔 조작은 가능해야 한다. */
+  const pipelineReady = status.kind === "ready";
+  const ready = pipelineReady && (designedList.length > 0 || readOnly);
   const biteConfirmOn = status.kind === "bite-confirm";
   /** 바이트 자동 정렬 확인 중 — 피니시라인·픽스쳐·디자인 완료를 숨긴다. */
   const biteAlignChrome = biteConfirmOn || biteRecalcBusy;
@@ -7380,7 +7385,31 @@ export function PracticeCustomAbutmentPreviewDialog({
     (d) => (editedInfoFieldsRef.current[d.toothNumber]?.size ?? 0) > 0,
   );
   const canResetAny = canUndoEdit || hasInfoFieldEdits;
-  const viewerLive = ready || status.kind === "pick" || biteConfirmOn;
+  const viewerLive = pipelineReady || status.kind === "pick" || biteConfirmOn;
+  const needsOcclusionFix =
+    pipelineReady && !readOnly && occlusionOk === false && !biteRecalcBusy;
+
+  const triggerBiteRecalc = useCallback(() => {
+    if (biteRecalcBusy) return;
+    const hasOriginalBite = (files || []).some((f) => {
+      if (!f.s3Key || isAbutsWorkScanFileName(f.fileName)) return false;
+      return (
+        resolveOralScanRole({
+          fileName: f.fileName,
+          scanRole: f.scanRole ?? undefined,
+        }) === "bite"
+      );
+    });
+    if (!hasOriginalBite) {
+      toast({
+        title: "바이트 스캔이 없어 다시 맞출 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    forceBiteRecalcRef.current = true;
+    setBiteRecalcEpoch((n) => n + 1);
+  }, [biteRecalcBusy, files, toast]);
 
   useEffect(() => {
     if (!open || !canEditDesign) return;
@@ -7618,6 +7647,29 @@ export function PracticeCustomAbutmentPreviewDialog({
             )}
 
             <div className="flex shrink-0 items-center gap-1">
+              {pipelineReady && canEditDesign ? (
+                <HeaderIconButton
+                  label="교합정렬"
+                  active={biteRecalcBusy || needsOcclusionFix}
+                  disabled={biteRecalcBusy}
+                  tip={
+                    <>
+                      상·하악 교합을 바이트에 다시 맞춥니다.
+                      <br />
+                      한 번 확인·정렬한 뒤에는 자동으로 다시 돌리지 않습니다.
+                      <br />
+                      틀리면 다른 후보로 다시 맞출 수 있습니다.
+                    </>
+                  }
+                  onClick={triggerBiteRecalc}
+                >
+                  {biteRecalcBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Combine className="h-4 w-4" />
+                  )}
+                </HeaderIconButton>
+              ) : null}
               {ready && canEditDesign ? (
                 <>
                   <HeaderIconButton
@@ -7642,47 +7694,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                     }}
                   >
                     <Axis3d className="h-4 w-4" />
-                  </HeaderIconButton>
-                  <HeaderIconButton
-                    label="교합정렬"
-                    active={biteRecalcBusy}
-                    disabled={biteRecalcBusy}
-                    tip={
-                      <>
-                        상·하악 교합을 바이트에 다시 맞춥니다.
-                        <br />
-                        한 번 확인·정렬한 뒤에는 자동으로 다시 돌리지 않습니다.
-                        <br />
-                        틀리면 다른 후보로 다시 맞출 수 있습니다.
-                      </>
-                    }
-                    onClick={() => {
-                      if (biteRecalcBusy) return;
-                      const hasOriginalBite = (files || []).some((f) => {
-                        if (!f.s3Key || isAbutsWorkScanFileName(f.fileName)) return false;
-                        return (
-                          resolveOralScanRole({
-                            fileName: f.fileName,
-                            scanRole: f.scanRole ?? undefined,
-                          }) === "bite"
-                        );
-                      });
-                      if (!hasOriginalBite) {
-                        toast({
-                          title: "바이트 스캔이 없어 다시 맞출 수 없습니다.",
-                          variant: "destructive",
-                        });
-                        return;
-                      }
-                      forceBiteRecalcRef.current = true;
-                      setBiteRecalcEpoch((n) => n + 1);
-                    }}
-                  >
-                    {biteRecalcBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Combine className="h-4 w-4" />
-                    )}
                   </HeaderIconButton>
                   <HeaderIconButton
                     label="되돌리기"
@@ -7979,6 +7990,70 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
+            {!readOnly && pipelineReady && (needsOcclusionFix || designedList.length === 0) ? (
+              <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center px-3">
+                <div
+                  className={cn(
+                    CONTENT_MEASURED_CHROME_CLASS,
+                    "pointer-events-auto space-y-2 rounded-xl border border-amber-400/50 bg-background/95 px-3 py-2.5 text-left shadow-lg",
+                  )}
+                >
+                  <p className="text-sm text-foreground">
+                    {needsOcclusionFix ? (
+                      <>
+                        교합이 맞지 않습니다.
+                        <br />
+                        <span className="text-xs text-muted-foreground">
+                          먼저 교합을 맞춘 뒤 디자인을 이어 가세요.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        스캔바디를 자동으로 찾지 못했습니다.
+                        <br />
+                        <span className="text-xs text-muted-foreground">
+                          스캔바디 상단을 지정하면 디자인을 시작합니다.
+                        </span>
+                      </>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {needsOcclusionFix ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8"
+                        disabled={biteRecalcBusy}
+                        onClick={triggerBiteRecalc}
+                      >
+                        {biteRecalcBusy ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Combine className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        교합정렬
+                      </Button>
+                    ) : null}
+                    {designedList.length === 0 && canEditDesign && !needsOcclusionFix ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        onClick={() => {
+                          const teeth = abutmentToothWorks.map((row) => row.toothNumber);
+                          if (teeth.length === 0) return;
+                          void startScanbodyRepick(teeth);
+                        }}
+                      >
+                        스캔바디 지정
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {viewerLive ? (
               <div
                 ref={viewCubeStackRef}
@@ -8166,6 +8241,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
 
                 {!biteAlignChrome &&
+                designedList.length > 0 &&
                 (gracePending ||
                   (remoteMode !== "confirmed" && remoteMode !== "manual") ||
                   (remoteMode === "confirmed" && !labCheckedAt)) ? (
