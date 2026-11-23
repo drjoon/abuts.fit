@@ -1,5 +1,6 @@
 // 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값)을
-// 이 브라우저 IndexedDB에 둔다. 의뢰 공유 모달을 다시 열 때는 서버 스냅샷을 우선하고,
+// 이 브라우저 IndexedDB에 둔다. 다시 열 때는 더 나중 형상을 쓴다.
+// 서버가 정점 없는 조정값만 더 나중이어도 이 브라우저 메시는 다시 만들지 않는다.
 // 스캔은 캐시에서 읽어 맞춘다.
 // 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
 // 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
@@ -101,6 +102,16 @@ export type CachedCustomAbutmentDesign = {
 
 const isBrowser = typeof window !== "undefined" && !!window.indexedDB;
 let dbPromise: Promise<IDBDatabase> | null = null;
+/** 닫기 직후 다시 열 때 IndexedDB 쓰기보다 먼저 읽는다. */
+const memoryDesignByKey = new Map<string, CachedCustomAbutmentDesign>();
+
+/** 지금 화면의 메시를 네트워크 저장보다 먼저 남긴다. 더 오래된 기록은 덮지 않는다. */
+export function rememberCustomAbutmentDesign(record: CachedCustomAbutmentDesign): void {
+  if (!record?.key || !(Number(record.savedAt) > 0)) return;
+  const prev = memoryDesignByKey.get(record.key);
+  if (prev && prev.savedAt > record.savedAt) return;
+  memoryDesignByKey.set(record.key, record);
+}
 
 function openDb(): Promise<IDBDatabase> {
   if (!isBrowser) return Promise.reject(new Error("IndexedDB를 쓸 수 없습니다."));
@@ -137,8 +148,8 @@ function designHasMeshes(row: { teeth?: readonly unknown[] } | null | undefined)
 }
 
 /**
- * 서버가 메타만 주고 이 브라우저에 메시가 있으면, 메시는 두고 서버 조정값만 얹는다.
- * 리프레시마다 같은 형상을 다시 만들지 않기 위함이다.
+ * 서버 조정값을 이 브라우저 메시 위에 얹는다.
+ * 다시 열 때는 쓰지 않는다. 측정값만 바꾸면 화면 형상과 직경·테이퍼가 어긋난다.
  */
 export function mergeServerMetaOntoLocalMeshes<
   T extends {
@@ -187,27 +198,10 @@ export function mergeServerMetaOntoLocalMeshes<
 }
 
 /**
- * 서버 조정값이 더 나중이면 이 브라우저의 옛 정점을 쓰지 않는다.
- * 모달을 다시 열 때도 소켓과 같이 조정값으로 형상을 다시 만든다.
- */
-function teethForRemoteRebuild<T extends CachedCustomAbutmentTooth>(teeth: readonly T[]): T[] {
-  return teeth.map((row) => ({
-    ...row,
-    localPositions: new ArrayBuffer(0),
-    crownLocalPositions: new ArrayBuffer(0),
-    marginLoopLocal: new ArrayBuffer(0),
-    regenFromMeta: true,
-    solidBodyLocalPositions: undefined,
-    enameloplastyLocalPositions: undefined,
-    sourceS3Key: undefined,
-    sourceCrownS3Key: undefined,
-  }));
-}
-
-/**
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
- * 서버가 더 나중이면 상대가 저장한 디자인을 쓴다. 정점이 없으면 조정값으로 다시 만든다.
- * 같은 시각이고 서버가 메타만이면 이 브라우저 메시를 유지한다.
+ * 서버가 정점 없는 조정값만 더 나중이어도 이 브라우저 메시를 다시 만들지 않는다.
+ * 조정값만으로 다시 만들면 화면에 있던 직경·테이퍼·대합 거리와 달라진다.
+ * 서버에 메시가 있으면 그 시각이 더 나중일 때 서버 형상을 쓴다.
  * 같은 시각이면 기본은 이 브라우저 저장본. 협업 의뢰(`preferServerOnTie`)는 서버를 쓴다.
  */
 export function preferFresherCustomAbutmentDesign<
@@ -233,13 +227,7 @@ export function preferFresherCustomAbutmentDesign<
   const takeServer =
     serverAt > localAt || (Boolean(opts?.preferServerOnTie) && serverAt === localAt);
   if (takeServer) {
-    if (!designHasMeshes(server) && designHasMeshes(local)) {
-      const merged = mergeServerMetaOntoLocalMeshes(local, server);
-      if (serverAt > localAt && Array.isArray(merged.teeth)) {
-        return { ...merged, teeth: teethForRemoteRebuild(merged.teeth) };
-      }
-      return merged;
-    }
+    if (!designHasMeshes(server) && designHasMeshes(local)) return local;
     return server;
   }
   return local;
@@ -308,13 +296,33 @@ function isChatCacheKey(key: IDBValidKey | undefined, row: unknown): boolean {
   return !!row && typeof row === "object" && (row as { kind?: unknown }).kind === "chat";
 }
 
+function freshenCachedDesign(
+  row: CachedCustomAbutmentDesign,
+): CachedCustomAbutmentDesign & { designFresh: boolean } {
+  return {
+    ...row,
+    alignedScans: Array.isArray(row.alignedScans) ? row.alignedScans : [],
+    chat: normalizeCustomAbutmentChat(row.chat),
+    designFresh:
+      row.version === CUSTOM_ABUTMENT_DESIGN_VERSION &&
+      row.fitVersion === CUSTOM_ABUTMENT_FIT_VERSION,
+  };
+}
+
 export async function readCustomAbutmentDesign(
   key: string,
 ): Promise<(CachedCustomAbutmentDesign & { designFresh: boolean }) | null> {
-  if (!isBrowser || !key) return null;
+  const mem = key ? memoryDesignByKey.get(key) : undefined;
+  const memFresh =
+    mem && mem.fitVersion === CUSTOM_ABUTMENT_FIT_VERSION && Array.isArray(mem.teeth)
+      ? freshenCachedDesign(mem)
+      : null;
+  if (!isBrowser || !key) return memFresh;
   try {
     const db = await openDb();
-    return await new Promise((resolve, reject) => {
+    const stored = await new Promise<
+      (CachedCustomAbutmentDesign & { designFresh: boolean }) | null
+    >((resolve, reject) => {
       const request = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
       request.onsuccess = () => {
         const row = request.result as CachedCustomAbutmentDesign | undefined;
@@ -322,24 +330,26 @@ export async function readCustomAbutmentDesign(
           resolve(null);
           return;
         }
-        resolve({
-          ...row,
-          alignedScans: Array.isArray(row.alignedScans) ? row.alignedScans : [],
-          chat: normalizeCustomAbutmentChat(row.chat),
-          designFresh: row.version === CUSTOM_ABUTMENT_DESIGN_VERSION,
-        });
+        resolve(freshenCachedDesign(row));
       };
       request.onerror = () => reject(request.error);
     });
+    if (!memFresh) return stored;
+    if (!stored) return memFresh;
+    return memFresh.savedAt >= stored.savedAt ? memFresh : stored;
   } catch {
-    return null;
+    return memFresh;
   }
 }
 
-/** 저장하고, 오래된 저장본은 MAX_RECORDS개만 남긴다. */
-export async function writeCustomAbutmentDesign(record: CachedCustomAbutmentDesign): Promise<void> {
-  if (!isBrowser || !record.key) return;
+const designWriteTail = new Map<string, Promise<void>>();
+
+async function putCustomAbutmentDesign(record: CachedCustomAbutmentDesign): Promise<void> {
+  const kept = memoryDesignByKey.get(record.key);
+  if (kept && kept.savedAt > record.savedAt) return;
   const db = await openDb();
+  const latest = memoryDesignByKey.get(record.key);
+  if (latest && latest.savedAt > record.savedAt) return;
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
@@ -373,6 +383,21 @@ export async function writeCustomAbutmentDesign(record: CachedCustomAbutmentDesi
       prune();
     };
   });
+}
+
+/** 저장하고, 오래된 저장본은 MAX_RECORDS개만 남긴다. 더 나중 기록은 덮지 않는다. */
+export async function writeCustomAbutmentDesign(record: CachedCustomAbutmentDesign): Promise<void> {
+  rememberCustomAbutmentDesign(record);
+  if (!isBrowser || !record.key) return;
+  const key = record.key;
+  const prev = designWriteTail.get(key) ?? Promise.resolve();
+  const job = prev.catch(() => undefined).then(() => putCustomAbutmentDesign(record));
+  designWriteTail.set(key, job);
+  try {
+    await job;
+  } finally {
+    if (designWriteTail.get(key) === job) designWriteTail.delete(key);
+  }
 }
 
 type CachedCustomAbutmentChat = {

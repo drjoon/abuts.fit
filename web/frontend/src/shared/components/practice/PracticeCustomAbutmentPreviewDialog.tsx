@@ -27,7 +27,7 @@
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY만. 어벗 단독 export 없음.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
-// - 2026-11-23: 모달을 다시 열면 마지막 저장의 디자인·상악·카메라·선택을 따른다.
+// - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -124,6 +124,7 @@ import {
   confirmCustomAbutmentDesignRemote,
   customAbutmentDesignCacheKey,
   preferFresherCustomAbutmentDesign,
+  rememberCustomAbutmentDesign,
   normalizeCustomAbutmentChat,
   parseCustomAbutmentDesignSyncMeta,
   pickCustomAbutmentChat,
@@ -411,6 +412,7 @@ const VIEW_MAX_ZOOM = 8;
 
 type SavedCaView = {
   transferId: string;
+  savedAt?: number;
   pos: [number, number, number];
   quat: [number, number, number, number];
   up: [number, number, number];
@@ -468,6 +470,7 @@ function writeSavedView(
   if (!transferId) return;
   const payload: SavedCaView = {
     transferId,
+    savedAt: Date.now(),
     pos: camera.position.toArray() as [number, number, number],
     quat: camera.quaternion.toArray() as [number, number, number, number],
     up: camera.up.toArray() as [number, number, number],
@@ -2302,8 +2305,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!ctx || list.length === 0) return;
     const scope = chatScopeRef.current;
     const turns = normalizeCustomAbutmentChat(chatTurnsRef.current.filter((t) => !t.pending));
-    const savedChat = turns.length > 0 ? turns : scope ? await readCustomAbutmentChat(scope) : [];
-    await writeCustomAbutmentDesign({
+    const record = {
       key: ctx.cacheKey,
       version: CUSTOM_ABUTMENT_DESIGN_VERSION,
       fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
@@ -2343,13 +2345,23 @@ export function PracticeCustomAbutmentPreviewDialog({
             : {}),
         };
       }),
-      chat: savedChat,
-    });
+      chat: turns,
+    };
+    // 서버 응답을 기다리기 전에 남긴다. 닫고 바로 열어도 방금 메시를 다시 만든다.
+    rememberCustomAbutmentDesign(record);
+    const savedChat = turns.length > 0 ? turns : scope ? await readCustomAbutmentChat(scope) : [];
+    if (savedChat !== turns && savedChat.length > 0) {
+      rememberCustomAbutmentDesign({ ...record, chat: savedChat });
+    }
+    await writeCustomAbutmentDesign({ ...record, chat: savedChat });
   };
 
   const scheduleDesignMetaPublish = () => {
     publishAgainRef.current = true;
-    if (publishRunningRef.current) return;
+    if (publishRunningRef.current) {
+      void cacheCurrentDesign(Date.now());
+      return;
+    }
     publishRunningRef.current = true;
     const epoch = designEpochRef.current;
     void (async () => {
@@ -2368,6 +2380,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           const stamped = pendingMetaStampRef.current;
           pendingMetaStampRef.current = 0;
           const savedAtHint = stamped > 0 ? stamped : Date.now();
+          void cacheCurrentDesign(savedAtHint);
           const teeth = list.map(syncToothFromDesign);
           lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, savedAtHint);
           emitCustomAbutmentLive({
@@ -4234,11 +4247,23 @@ export function PracticeCustomAbutmentPreviewDialog({
         const cached = readOnly
           ? serverDesign
           : preferFresherCustomAbutmentDesign(localCached, serverDesign, {
-              // 의뢰 공유 모달은 다시 열 때 서버 스냅샷을 우선한다(동점 포함).
+              // 동점이면 서버를 쓴다. 서버에 정점이 없으면 이 브라우저 메시를 유지한다.
               preferServerOnTie: Boolean(transferIdParam),
             });
         const serverAt = Number(serverDesign?.savedAt) || 0;
+        const localAt = Number(localCached?.savedAt) || 0;
         if (serverAt > designSavedAtRef.current) designSavedAtRef.current = serverAt;
+        if (
+          !readOnly &&
+          cached &&
+          localCached &&
+          cached === localCached &&
+          localAt > designSavedAtRef.current
+        ) {
+          designSavedAtRef.current = localAt;
+        }
+        // 이번 스냅샷과 같은 시각의 소켓 재전송이 메시를 다시 만들지 않게 한다.
+        if (serverAt > lastRemoteSavedAtRef.current) lastRemoteSavedAtRef.current = serverAt;
         // 정점이 없을 때만 다시 만든다. 검볼만 있으면 저장 메시 위에 얹는다.
         const rebuildFromMeta = Boolean(
           cached?.teeth.some(
@@ -5030,9 +5055,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             !pendingNewer &&
             builtAbutments.length > 0 &&
             Object.keys(candidateChoicesRef.current).length === 0 &&
+            !rebuildFromMeta &&
             (versionMismatch ||
-              (!rebuildFromMeta &&
-                (redesignedFromFit || (!restored && !serverMeshRestore))));
+              redesignedFromFit ||
+              (!restored && !serverMeshRestore));
           if (shouldPublish) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           }
@@ -5054,7 +5080,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           const controls = controlsRef.current;
           const remotePaintView = pendingRemotePaintRef.current?.view ?? null;
           const shared = pendingSharedViewRef.current;
-          if (shared && cam && controls) {
+          const localViewAt = Number(saved?.savedAt) || 0;
+          const sharedViewAt = Number(shared?.savedAt) || 0;
+          // 이 브라우저에서 방금 돌린 카메라가 서버에 남은 이전 화면보다 나중이다.
+          const useSharedView = Boolean(shared && sharedViewAt >= localViewAt);
+          if (useSharedView && shared && cam && controls) {
             applyingSharedViewRef.current = true;
             applySavedView(
               cam,
@@ -5069,6 +5099,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           } else if (saved && cam && controls) {
             const aspect = hostRef.current ? readHostSize(hostRef.current).aspect : 1;
             applySavedView(cam, controls, saved, aspect);
+            if (localViewAt > lastSharedViewAtRef.current) {
+              lastSharedViewAtRef.current = localViewAt;
+            }
           } else if (
             remotePaintView &&
             (pendingRemotePaintRef.current?.shapes?.length ?? 0) > 0 &&
