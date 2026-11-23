@@ -4739,8 +4739,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (!keepInPlace) {
             const seatedFrame = estimateDentalFrame(alignEntries);
             if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
-            // 저장 메시 좌표와 어긋나면 픽스처를 다시 잡는다.
-            if (restored && !forceBiteRecalc) restored = false;
+            // 교합 정렬로 월드 좌표가 바뀌면 저장 픽스처·labialDir은 더 이상 맞지 않는다.
+            // 큐브·디자인이 정렬 전 방향을 쓰지 않게 다시 잡는다.
+            restored = false;
           }
           alignedScans = jawScans.map((s) => {
             const attr = s.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -4758,7 +4759,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
         }
-        if (rebuildFromMeta && jawScans.length > 0) restored = true;
+        // 예전: rebuildFromMeta면 restored=true로 올려 정렬 전 픽스처를 다시 썼다.
+        // 교합 정렬로 좌표가 바뀐 뒤에는 restored=false를 유지해 스캔바디를 다시 잡는다.
 
         const frame = estimateDentalFrame(
           jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
@@ -5201,9 +5203,27 @@ export function PracticeCustomAbutmentPreviewDialog({
                 percent: jaw === "upper" ? 78 : 90,
                 step: `#${matched.toothNumber} 커스텀어벗 디자인 중…`,
               });
+              // 교합 정렬로 픽스처만 다시 잡은 경우 저장 파라미터·선호를 그대로 얹는다.
+              const cachedTooth = cached?.teeth.find((row) => row.toothNumber === matched.toothNumber);
+              const savedOverrides = cachedTooth
+                ? stripDirectEditShiftOverrides(
+                    sharedAbutmentSyncParams(
+                      cachedTooth.params,
+                      parseCustomAbutmentParamOverrides(cachedTooth.overrides),
+                    ),
+                  )
+                : {};
+              const rowOverrides =
+                rebuildFromMeta || forceBiteRecalc
+                  ? savedOverrides
+                  : {};
+              if (Object.keys(rowOverrides).length > 0) {
+                overrides[matched.toothNumber] = rowOverrides;
+              }
               if (!proposalInputRef.current[matched.toothNumber]) {
                 proposalInputRef.current[matched.toothNumber] = {
                   ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                  ...rowOverrides,
                 };
               }
               const cands = await designCustomAbutmentCandidates({
@@ -5212,8 +5232,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                 opposingGeometry: oppGeo,
                 neighbors: jawFixtures,
                 toothWorks: curAllToothWorks,
-                params: preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
-                explicitParams: {},
+                params: {
+                  ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                  ...rowOverrides,
+                },
+                explicitParams: rowOverrides,
                 sharedInsertionAxisWorld: sharedInsertionAxisOf(
                   lockedBridgeAxisRef.current,
                   matched.toothNumber,
