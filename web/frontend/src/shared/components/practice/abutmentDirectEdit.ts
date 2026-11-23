@@ -2809,6 +2809,27 @@ export class AbutmentDirectEditSession {
     this.brush.visible = false;
   }
 
+  /**
+   * 닫기 직전에 화면 검볼을 정점에 남긴다.
+   * 스크류 홀 불리언이 끝나기 전에 닫혀도 지금 직경이 저장된다.
+   */
+  bakeForSave() {
+    if (this.drag) {
+      this.drag = null;
+      this.dragGroup = [];
+      this.bridgeReceiveGroup = [];
+      this.pendingPick = null;
+      this.brush.visible = false;
+    }
+    const pending: string[] = [];
+    for (const [tooth, edit] of this.edits) {
+      const view = this.views.get(tooth);
+      if (!view || editsEqual(edit, view.lastDrilledEdit)) continue;
+      pending.push(tooth);
+    }
+    for (const tooth of pending) this.show(tooth, true);
+  }
+
   /** 상대 디자인이 들어오면 진행 중인 드래그를 확정하지 않고 놓는다. */
   cancelGesture() {
     this.drag = null;
@@ -4088,7 +4109,11 @@ export class AbutmentDirectEditSession {
           regenerateCuffToMargin(view.proposalSolid, solidOut, view.proposalMargin, marginLocal, view.zone);
         }
       }
+      // 홀 뚫기 전에 화면과 같은 외형을 남긴다. 닫기가 불리언보다 빨라도 직경이 유지된다.
       design.solidBodyLocalPositions = solidOut;
+      design.localPositions = new Float32Array(local);
+      design.stlBlob = encodeBinaryStl(solidOut, `abuts.fit custom abutment #${tooth}`);
+      notifyCommit();
       const conn = design.fixture.connectionSpec;
       const l2 = conn?.l2Mm ?? 2.75;
       const zBot = -l2;

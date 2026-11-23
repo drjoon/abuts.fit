@@ -3539,6 +3539,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 모달 닫기·케이스 전환(unmount) 직전에 디자인·카메라·대화를 바로 남긴다. */
   const flushSessionWork = useCallback(() => {
+    directEditRef.current?.bakeForSave();
     window.clearTimeout(editCommitTimerRef.current);
     editCommitTimerRef.current = 0;
     if (!skipSnapshotFlushRef.current) persistDesign();
@@ -4269,11 +4270,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           cached?.teeth.some(
             (row) => row.regenFromMeta || (row.localPositions?.byteLength ?? 0) < 36,
           ),
-        );
-        const versionMismatch = Boolean(
-          remote?.design &&
-            (remote.design.version !== CUSTOM_ABUTMENT_DESIGN_VERSION ||
-              remote.design.fitVersion !== CUSTOM_ABUTMENT_FIT_VERSION),
         );
         proposalInputRef.current = {};
         for (const row of cached?.teeth ?? []) {
@@ -5051,14 +5047,16 @@ export function PracticeCustomAbutmentPreviewDialog({
           const pendingNewer = Boolean(
             pendingRemote && pendingRemote.savedAt > designSavedAtRef.current,
           );
+          // 다시 열 때 만든 형상은 올리지 않는다. 검볼로 키운 직경을 재생성 수치로 덮어쓴다.
           const shouldPublish =
             !pendingNewer &&
             builtAbutments.length > 0 &&
             Object.keys(candidateChoicesRef.current).length === 0 &&
+            !cached &&
             !rebuildFromMeta &&
-            (versionMismatch ||
-              redesignedFromFit ||
-              (!restored && !serverMeshRestore));
+            !redesignedFromFit &&
+            !restored &&
+            !serverMeshRestore;
           if (shouldPublish) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           }
