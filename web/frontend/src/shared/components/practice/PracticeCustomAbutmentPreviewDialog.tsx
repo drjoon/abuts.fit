@@ -1081,7 +1081,7 @@ function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32A
   geometry.computeBoundingSphere();
 }
 
-/** 자동 맞춤 품질이 낮은 악만 수동 3점 대상. 둘 다 weak면 상악→하악. */
+/** 자동 맞춤 품질이 낮은 악만 수동 점 맞춤 대상. 둘 다 weak면 상악→하악. */
 function weakBiteArches(
   quality: readonly BiteFitArchQuality[],
   roles: readonly ("upper" | "lower")[],
@@ -1300,7 +1300,10 @@ function orientMeshesForBiteManualSlot(
   }
 }
 
-/** 바이트 확정·3점 안내 — 모델 옆에 붙인다. */
+/** 수동 바이트 — 악·바이트에 같은 위치 점 1개. */
+const BITE_MANUAL_POINT_COUNT = 1;
+
+/** 바이트 확정·점 안내 — 모델 옆에 붙인다. */
 const BITE_GUIDE_CHROME_CLASS =
   "pointer-events-none absolute right-[min(22vw,14rem)] top-1/2 z-30 -translate-y-1/2";
 
@@ -3999,7 +4002,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         : null;
     if (!side) return;
     const list = session[side];
-    if (list.length >= 3) return;
+    if (list.length >= BITE_MANUAL_POINT_COUNT) return;
     const local = mesh.worldToLocal(hit.point.clone());
     list.push(local.clone());
     const radius = Math.max((mesh.geometry.boundingSphere?.radius ?? 20) * 0.014, 0.35);
@@ -4031,7 +4034,12 @@ export function PracticeCustomAbutmentPreviewDialog({
       model: session.model.length,
       bite: session.bite.length,
     });
-    if (session.model.length < 3 || session.bite.length < 3) return;
+    if (
+      session.model.length < BITE_MANUAL_POINT_COUNT ||
+      session.bite.length < BITE_MANUAL_POINT_COUNT
+    ) {
+      return;
+    }
     const arch = session.arch;
     const modelPts = session.model.map(
       (p) => [p.x, p.y, p.z] as [number, number, number],
@@ -4043,7 +4051,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       setStatus({
         kind: "loading",
         percent: 62,
-        step: `${arch === "upper" ? "상악" : "하악"} 3점 맞춤 중…`,
+        step: `${arch === "upper" ? "상악" : "하악"} 점 맞춤 중…`,
       });
       let ok = false;
       try {
@@ -5114,7 +5122,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 if (!ok) {
                   setStatus({
                     kind: "error",
-                    message: `${role === "upper" ? "상악" : "하악"} 3점 맞춤에 실패했습니다.`,
+                    message: `${role === "upper" ? "상악" : "하악"} 점 맞춤에 실패했습니다.`,
                   });
                   return;
                 }
@@ -8668,20 +8676,21 @@ export function PracticeCustomAbutmentPreviewDialog({
                   <p className="text-sm text-foreground">
                     {status.arch === "upper" ? (
                       <>
-                        상악·바이트에 같은 순서로 점 3개
+                        상악·바이트에 같은 위치 점 1개
                         <br />
                         (상악 위 · 바이트 아래)
                       </>
                     ) : (
                       <>
-                        하악·바이트에 같은 순서로 점 3개
+                        하악·바이트에 같은 위치 점 1개
                         <br />
                         (바이트 위 · 하악 아래)
                       </>
                     )}
                   </p>
                   <p className="text-xs font-medium text-muted-foreground">
-                    모델 {status.model}/3 · 바이트 {status.bite}/3
+                    모델 {status.model}/{BITE_MANUAL_POINT_COUNT} · 바이트{" "}
+                    {status.bite}/{BITE_MANUAL_POINT_COUNT}
                   </p>
                   <div className="flex gap-2">
                     <Button

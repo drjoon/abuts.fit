@@ -2499,7 +2499,8 @@ function cropNearPoints(cloud: Cloud, points: Xyz[], radius: number): Cloud {
 }
 
 /**
- * 모델 점 3개와 바이트 점 3개로 강체를 잡고, 각 점 근처에서 대응점을 고쳐 맞춘다.
+ * 모델·바이트에 찍은 대응점으로 악궁을 바이트에 붙인다.
+ * 점 1개면 평행이동만, 점 3개면 강체(Kabsch). 이후 점 근처에서 대응을 고치고 국소 ICP.
  * 바이트는 그대로 두고 악궁 기하에만 변환을 쓴다.
  */
 export async function mergeArchToBiteByPoints(
@@ -2523,6 +2524,17 @@ export async function mergeArchToBiteByPoints(
   }
 }
 
+function translationRigid(src: Xyz, dst: Xyz): Rigid {
+  return {
+    r: [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ],
+    t: [dst[0] - src[0], dst[1] - src[1], dst[2] - src[2]],
+  };
+}
+
 async function mergeArchToBiteByPointsWork(
   arches: THREE.BufferGeometry[],
   bites: THREE.BufferGeometry[],
@@ -2531,7 +2543,8 @@ async function mergeArchToBiteByPointsWork(
   options?: AlignOptions,
 ): Promise<boolean> {
   if (arches.length === 0 || bites.length === 0) return false;
-  if (archPoints.length < 3 || bitePoints.length < 3) return false;
+  const pairCount = Math.min(archPoints.length, bitePoints.length);
+  if (pairCount < 1) return false;
   for (const geometry of [...arches, ...bites]) {
     if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
   }
@@ -2541,19 +2554,22 @@ async function mergeArchToBiteByPointsWork(
   const biteCloud = mergeGeometries(bites);
   if (archCloud.count < 40 || biteCloud.count < 40) return false;
   const unitToMm = geometryUnits(biteCloud, arches);
-  const src = archPoints.slice(0, 3);
-  const dst = bitePoints.slice(0, 3);
-  const rough = kabsch(pairCloud(src).xyz, pairCloud(dst).xyz, [
-    { s: 0, d: 0 },
-    { s: 1, d: 1 },
-    { s: 2, d: 2 },
-  ]);
+  const useKabsch = pairCount >= 3;
+  const src = archPoints.slice(0, useKabsch ? 3 : 1);
+  const dst = bitePoints.slice(0, useKabsch ? 3 : 1);
+  const rough = useKabsch
+    ? kabsch(pairCloud(src).xyz, pairCloud(dst).xyz, [
+        { s: 0, d: 0 },
+        { s: 1, d: 1 },
+        { s: 2, d: 2 },
+      ])
+    : translationRigid(src[0] ?? [0, 0, 0], dst[0] ?? [0, 0, 0]);
   if (!rough) return false;
   const archGrid = buildGrid(archCloud, mmToUnits(1.1, unitToMm));
   const biteGrid = buildGrid(biteCloud, mmToUnits(1.1, unitToMm));
   const patchR = mmToUnits(2.4, unitToMm);
   const refined: Xyz[] = [];
-  for (let i = 0; i < 3; i += 1) {
+  for (let i = 0; i < src.length; i += 1) {
     const origin = src[i] ?? [0, 0, 0];
     const userBite = dst[i] ?? origin;
     const moved = rigidPoint(rough, origin);
@@ -2563,11 +2579,13 @@ async function mergeArchToBiteByPointsWork(
     refined.push(correlateNearClick(patch, moved, userBite, biteCloud, biteGrid, unitToMm));
     await pause(options);
   }
-  const rigid = kabsch(pairCloud(src).xyz, pairCloud(refined).xyz, [
-    { s: 0, d: 0 },
-    { s: 1, d: 1 },
-    { s: 2, d: 2 },
-  ]);
+  const rigid = useKabsch
+    ? kabsch(pairCloud(src).xyz, pairCloud(refined).xyz, [
+        { s: 0, d: 0 },
+        { s: 1, d: 1 },
+        { s: 2, d: 2 },
+      ])
+    : translationRigid(src[0] ?? [0, 0, 0], refined[0] ?? dst[0] ?? [0, 0, 0]);
   if (!rigid) return false;
   const posed = cloneCloud(archCloud);
   applyRigid(posed, rigid);
