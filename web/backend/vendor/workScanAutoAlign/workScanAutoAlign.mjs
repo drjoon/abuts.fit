@@ -20043,6 +20043,21 @@ function cropNear(cloud, ref, thresh) {
   }
   return { xyz: Float32Array.from(xyz), nrm: Float32Array.from(nrm), count: xyz.length / 3 };
 }
+const QUALITY_SIDE_MM = 0.55;
+const QUALITY_COVERAGE = 0.08;
+function biteFitArchQualityOk(row) {
+  return row.seated && row.sideMm <= QUALITY_SIDE_MM && row.coverage >= QUALITY_COVERAGE;
+}
+function emptyBiteFitResult(partial = []) {
+  return {
+    seated: false,
+    moved: false,
+    stopped: false,
+    partial,
+    quality: [],
+    qualityOk: false
+  };
+}
 async function registerJawsToBiteResult(entries, options) {
   const fitted = [];
   const shown = /* @__PURE__ */ new Map();
@@ -20060,15 +20075,15 @@ async function registerJawsToBiteResult(entries, options) {
     if (!(error2 instanceof BiteAlignCancelled)) throw error2;
     const identity = new Matrix4();
     return {
-      seated: false,
-      moved: false,
-      stopped: true,
-      partial: [...shown].filter(([, matrix]) => !matrix.equals(identity)).map(([geometry, matrix]) => ({ geometry, matrix }))
+      ...emptyBiteFitResult(
+        [...shown].filter(([, matrix]) => !matrix.equals(identity)).map(([geometry, matrix]) => ({ geometry, matrix }))
+      ),
+      stopped: true
     };
   }
 }
 async function registerJawsToBiteWork(entries, fitted, options) {
-  const none = { seated: false, moved: false, stopped: false, partial: [] };
+  const none = emptyBiteFitResult();
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
     (entry) => entry.role === "upper" || entry.role === "lower"
@@ -20353,8 +20368,22 @@ async function registerJawsToBiteWork(entries, fitted, options) {
   await pause(options);
   let seated = false;
   let moved = false;
+  const quality = [];
+  const expected = new Set(
+    arches.map((entry) => entry.role).filter((role) => role === "upper" || role === "lower")
+  );
   for (const row of fitted) {
     if (row.seated) seated = true;
+    const fit = overlapFitness(row.aligned, biteCloud, biteGrid, unitToMm);
+    if (row.role === "upper" || row.role === "lower") {
+      quality.push({
+        role: row.role,
+        seated: row.seated,
+        afterMm: Number((row.after * unitToMm).toFixed(3)),
+        sideMm: Number((fit.sideMean * unitToMm).toFixed(3)),
+        coverage: Number(fit.coverage.toFixed(3))
+      });
+    }
     if (row.matrix.equals(new Matrix4())) continue;
     moved = true;
     row.geometry.applyMatrix4(row.matrix);
@@ -20364,10 +20393,27 @@ async function registerJawsToBiteWork(entries, fitted, options) {
       role: row.role,
       beforeMm: Number((row.before * unitToMm).toFixed(3)),
       afterMm: Number((row.after * unitToMm).toFixed(3)),
-      inliers: row.inliers
+      inliers: row.inliers,
+      sideMm: Number((fit.sideMean * unitToMm).toFixed(3)),
+      coverage: Number(fit.coverage.toFixed(3))
     });
   }
-  return { seated, moved, stopped: false, partial: [] };
+  for (const role of expected) {
+    if (!quality.some((row) => row.role === role)) {
+      quality.push({
+        role,
+        seated: false,
+        afterMm: Number.POSITIVE_INFINITY,
+        sideMm: Number.POSITIVE_INFINITY,
+        coverage: 0
+      });
+    }
+  }
+  const qualityOk = expected.size > 0 && [...expected].every((role) => {
+    const row = quality.find((entry) => entry.role === role);
+    return row ? biteFitArchQualityOk(row) : false;
+  });
+  return { seated, moved, stopped: false, partial: [], quality, qualityOk };
 }
 function geometryUnits(bite, arches) {
   let radius = cloudRadius(bite);

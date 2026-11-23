@@ -1936,13 +1936,43 @@ export type BiteFitPose = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix
 /**
  * seated: 한 악궁이라도 바이트에 붙었다(제자리 포함). moved: 좌표를 실제로 옮겼다.
  * stopped: cancelled로 멈췄다. 기하는 그대로이고, partial은 멈춘 순간 보이던 악궁 자세다.
+ * qualityOk: 입력 상·하악이 모두 붙고 측면 거리·덮음이 수동 전환 기준 안이다.
  */
+export type BiteFitArchQuality = {
+  role: "upper" | "lower";
+  seated: boolean;
+  afterMm: number;
+  sideMm: number;
+  coverage: number;
+};
+
 export type BiteFitResult = {
   seated: boolean;
   moved: boolean;
   stopped: boolean;
   partial: BiteFitPose[];
+  quality: BiteFitArchQuality[];
+  qualityOk: boolean;
 };
+
+/** 자동 맞춤이 이보다 헐거우면 3점 수동으로 넘긴다. */
+const QUALITY_SIDE_MM = 0.55;
+const QUALITY_COVERAGE = 0.08;
+
+export function biteFitArchQualityOk(row: BiteFitArchQuality): boolean {
+  return row.seated && row.sideMm <= QUALITY_SIDE_MM && row.coverage >= QUALITY_COVERAGE;
+}
+
+function emptyBiteFitResult(partial: BiteFitPose[] = []): BiteFitResult {
+  return {
+    seated: false,
+    moved: false,
+    stopped: false,
+    partial,
+    quality: [],
+    qualityOk: false,
+  };
+}
 
 export async function registerJawsToBiteResult(
   entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
@@ -1965,12 +1995,12 @@ export async function registerJawsToBiteResult(
     if (!(error instanceof BiteAlignCancelled)) throw error;
     const identity = new THREE.Matrix4();
     return {
-      seated: false,
-      moved: false,
+      ...emptyBiteFitResult(
+        [...shown]
+          .filter(([, matrix]) => !matrix.equals(identity))
+          .map(([geometry, matrix]) => ({ geometry, matrix })),
+      ),
       stopped: true,
-      partial: [...shown]
-        .filter(([, matrix]) => !matrix.equals(identity))
-        .map(([geometry, matrix]) => ({ geometry, matrix })),
     };
   }
 }
@@ -1990,7 +2020,7 @@ async function registerJawsToBiteWork(
   fitted: ArchFit[],
   options?: AlignOptions,
 ): Promise<BiteFitResult> {
-  const none: BiteFitResult = { seated: false, moved: false, stopped: false, partial: [] };
+  const none = emptyBiteFitResult();
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
     (entry) => entry.role === "upper" || entry.role === "lower",
@@ -2296,8 +2326,24 @@ async function registerJawsToBiteWork(
   await pause(options);
   let seated = false;
   let moved = false;
+  const quality: BiteFitArchQuality[] = [];
+  const expected = new Set(
+    arches
+      .map((entry) => entry.role)
+      .filter((role): role is "upper" | "lower" => role === "upper" || role === "lower"),
+  );
   for (const row of fitted) {
     if (row.seated) seated = true;
+    const fit = overlapFitness(row.aligned, biteCloud, biteGrid, unitToMm);
+    if (row.role === "upper" || row.role === "lower") {
+      quality.push({
+        role: row.role,
+        seated: row.seated,
+        afterMm: Number((row.after * unitToMm).toFixed(3)),
+        sideMm: Number((fit.sideMean * unitToMm).toFixed(3)),
+        coverage: Number(fit.coverage.toFixed(3)),
+      });
+    }
     if (row.matrix.equals(new THREE.Matrix4())) continue;
     moved = true;
     row.geometry.applyMatrix4(row.matrix);
@@ -2308,9 +2354,28 @@ async function registerJawsToBiteWork(
       beforeMm: Number((row.before * unitToMm).toFixed(3)),
       afterMm: Number((row.after * unitToMm).toFixed(3)),
       inliers: row.inliers,
+      sideMm: Number((fit.sideMean * unitToMm).toFixed(3)),
+      coverage: Number(fit.coverage.toFixed(3)),
     });
   }
-  return { seated, moved, stopped: false, partial: [] };
+  for (const role of expected) {
+    if (!quality.some((row) => row.role === role)) {
+      quality.push({
+        role,
+        seated: false,
+        afterMm: Number.POSITIVE_INFINITY,
+        sideMm: Number.POSITIVE_INFINITY,
+        coverage: 0,
+      });
+    }
+  }
+  const qualityOk =
+    expected.size > 0 &&
+    [...expected].every((role) => {
+      const row = quality.find((entry) => entry.role === role);
+      return row ? biteFitArchQualityOk(row) : false;
+    });
+  return { seated, moved, stopped: false, partial: [], quality, qualityOk };
 }
 
 function geometryUnits(bite: Cloud, arches: THREE.BufferGeometry[]) {

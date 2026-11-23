@@ -116,7 +116,12 @@ import {
 import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMeshCache";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
-import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
+import {
+  biteFitArchQualityOk,
+  mergeArchToBiteByPoints,
+  registerJawsToBiteResult,
+  type BiteFitArchQuality,
+} from "@/shared/practice/biteRegistration";
 import {
   archPlanAxes,
   estimateDentalFrame,
@@ -367,8 +372,35 @@ type PipelineStatus =
   | { kind: "loading"; percent: number; step: string }
   | { kind: "ready" }
   | { kind: "pick"; toothNumber: string; phase: "aim" | "empty" | "searching" | "designing" | "miss" }
+  | {
+      kind: "bite-confirm";
+      qualityOk: boolean;
+    }
+  | {
+      kind: "bite-manual";
+      arch: "upper" | "lower";
+      model: number;
+      bite: number;
+    }
   | { kind: "blocked"; message: string }
   | { kind: "error"; message: string };
+
+type BiteConfirmChoice = "confirm" | "revise";
+
+type BiteConfirmSession = {
+  meshes: THREE.Mesh[];
+  resolve: (choice: BiteConfirmChoice) => void;
+};
+
+type BiteManualSession = {
+  arch: "upper" | "lower";
+  model: THREE.Vector3[];
+  bite: THREE.Vector3[];
+  archMeshes: THREE.Mesh[];
+  biteMeshes: THREE.Mesh[];
+  marks: THREE.Object3D[];
+  resolve: (ok: boolean) => void;
+};
 
 type ScanbodyPickJob = {
   toothNumber: string;
@@ -1028,6 +1060,32 @@ function jawsAgreeOnAnterior(
   return ua.anterior.dot(la.anterior) >= 0.5;
 }
 
+function captureGeometryPositions(geometry: THREE.BufferGeometry): Float32Array | null {
+  const attr = geometry.getAttribute("position");
+  if (!attr) return null;
+  return new Float32Array(attr.array as Float32Array);
+}
+
+function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32Array) {
+  const attr = geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!attr || attr.count * 3 !== snap.length) return;
+  (attr.array as Float32Array).set(snap);
+  attr.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+}
+
+function weakBiteArches(
+  quality: readonly BiteFitArchQuality[],
+  roles: readonly ("upper" | "lower")[],
+): Array<"upper" | "lower"> {
+  return roles.filter((role) => {
+    const row = quality.find((entry) => entry.role === role);
+    return !row || !biteFitArchQualityOk(row);
+  });
+}
+
 export function PracticeCustomAbutmentPreviewDialog({
   open,
   onOpenChange,
@@ -1315,6 +1373,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   const pivotSourceRef = useRef<"selection" | "manual" | null>(null);
   const scanbodyPickRef = useRef<ScanbodyPickSession | null>(null);
   const scanbodyPickClickRef = useRef<(clientX: number, clientY: number) => void>(() => {});
+  const biteConfirmRef = useRef<BiteConfirmSession | null>(null);
+  const biteManualRef = useRef<BiteManualSession | null>(null);
+  const biteManualClickRef = useRef<(clientX: number, clientY: number) => void>(() => {});
   const pickEpochRef = useRef(0);
   /** 위치 다시 지정·미매칭 픽에 쓰는 스캔바디 카탈로그. 파이프라인에서 채운다. */
   const scanbodyCatalogRef = useRef<ScanbodyCatalog | null>(null);
@@ -3448,6 +3509,301 @@ export function PracticeCustomAbutmentPreviewDialog({
     void handleScanbodyPickAt(clientX, clientY);
   };
 
+  const clearBiteManualMarks = useCallback(() => {
+    const session = biteManualRef.current;
+    if (!session) return;
+    for (const mark of session.marks) {
+      mark.parent?.remove(mark);
+      mark.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.geometry.dispose();
+          const mat = mesh.material;
+          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+          else mat.dispose();
+        }
+      });
+    }
+    session.marks = [];
+  }, []);
+
+  const endBiteConfirmSession = useCallback(
+    (choice: BiteConfirmChoice) => {
+      const session = biteConfirmRef.current;
+      if (!session) return;
+      const scene = sceneRef.current;
+      for (const mesh of session.meshes) {
+        scene?.remove(mesh);
+        disposeMesh(mesh, true, true);
+      }
+      biteConfirmRef.current = null;
+      session.resolve(choice);
+    },
+    [disposeMesh],
+  );
+
+  const startBiteConfirm = useCallback(
+    (
+      scans: readonly LoadedJawScan[],
+      qualityOk: boolean,
+    ): Promise<BiteConfirmChoice> => {
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      const host = hostRef.current;
+      if (!scene || !camera || !controls || !host) return Promise.resolve("confirm");
+      if (biteConfirmRef.current) endBiteConfirmSession("confirm");
+
+      const meshes: THREE.Mesh[] = [];
+      for (const scan of scans) {
+        if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
+        scan.geometry.computeBoundingSphere();
+        const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
+        mat.side = THREE.DoubleSide;
+        if (scan.role === "bite") {
+          mat.transparent = true;
+          mat.opacity = 0.72;
+        }
+        const mesh = new THREE.Mesh(scan.geometry, mat);
+        scene.add(mesh);
+        meshes.push(mesh);
+      }
+      if (meshes.length === 0) return Promise.resolve("confirm");
+
+      const bounds = new THREE.Box3();
+      for (const mesh of meshes) {
+        mesh.updateWorldMatrix(true, false);
+        bounds.expandByObject(mesh);
+      }
+      const center = bounds.getCenter(new THREE.Vector3());
+      const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
+      const aspect = readHostSize(host).aspect;
+      const viewDir = new THREE.Vector3(0, -1, 0.35).normalize();
+      const up = new THREE.Vector3(0, 0, 1);
+      const dist = radius * 4;
+      controls.target.copy(center);
+      camera.up.copy(up);
+      camera.position.copy(center).addScaledVector(viewDir, dist);
+      applyOrthoHeight(camera, Math.max(radius * 1.15, 8), aspect);
+      camera.zoom = 1;
+      camera.lookAt(center);
+      controls.syncFromCamera();
+
+      return new Promise<BiteConfirmChoice>((resolve) => {
+        biteConfirmRef.current = { meshes, resolve };
+        setStatus({ kind: "bite-confirm", qualityOk });
+      });
+    },
+    [disposeMesh, endBiteConfirmSession],
+  );
+
+  const endBiteManualSession = useCallback(
+    (ok: boolean) => {
+      const session = biteManualRef.current;
+      if (!session) return;
+      clearBiteManualMarks();
+      const scene = sceneRef.current;
+      for (const mesh of [...session.archMeshes, ...session.biteMeshes]) {
+        scene?.remove(mesh);
+        disposeMesh(mesh, true, true);
+      }
+      biteManualRef.current = null;
+      session.resolve(ok);
+    },
+    [clearBiteManualMarks, disposeMesh],
+  );
+
+  const startBiteManualAlign = useCallback(
+    (
+      arch: "upper" | "lower",
+      archScans: readonly LoadedJawScan[],
+      biteScans: readonly LoadedJawScan[],
+    ): Promise<boolean> => {
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      const controls = controlsRef.current;
+      const host = hostRef.current;
+      if (!scene || !camera || !controls || !host) return Promise.resolve(false);
+      if (biteManualRef.current) endBiteManualSession(false);
+
+      const archMeshes: THREE.Mesh[] = [];
+      const biteMeshes: THREE.Mesh[] = [];
+      for (const scan of archScans) {
+        if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
+        scan.geometry.computeBoundingSphere();
+        const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
+        mat.side = THREE.DoubleSide;
+        const mesh = new THREE.Mesh(scan.geometry, mat);
+        mesh.userData.biteManualRole = arch;
+        scene.add(mesh);
+        archMeshes.push(mesh);
+      }
+      for (const scan of biteScans) {
+        if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
+        scan.geometry.computeBoundingSphere();
+        const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
+        mat.side = THREE.DoubleSide;
+        mat.transparent = true;
+        mat.opacity = 0.85;
+        const mesh = new THREE.Mesh(scan.geometry, mat);
+        mesh.userData.biteManualRole = "bite";
+        scene.add(mesh);
+        biteMeshes.push(mesh);
+      }
+      if (archMeshes.length === 0 || biteMeshes.length === 0) {
+        for (const mesh of [...archMeshes, ...biteMeshes]) {
+          scene.remove(mesh);
+          disposeMesh(mesh, true, true);
+        }
+        return Promise.resolve(false);
+      }
+
+      const archBox = new THREE.Box3();
+      const biteBox = new THREE.Box3();
+      for (const mesh of archMeshes) archBox.expandByObject(mesh);
+      for (const mesh of biteMeshes) biteBox.expandByObject(mesh);
+      const viewDir = new THREE.Vector3(0, -1, 0.35).normalize();
+      const up = new THREE.Vector3(0, 0, 1);
+      const screenRight = new THREE.Vector3().crossVectors(viewDir, up).normalize();
+      const halfAlong = (box: THREE.Box3) => {
+        const size = box.getSize(new THREE.Vector3());
+        return (
+          0.5 *
+          (Math.abs(size.x * screenRight.x) +
+            Math.abs(size.y * screenRight.y) +
+            Math.abs(size.z * screenRight.z))
+        );
+      };
+      const archHalf = halfAlong(archBox);
+      const biteHalf = halfAlong(biteBox);
+      const gap = Math.max(archHalf, biteHalf, 1) * 0.16;
+      const halfSep = (archHalf + biteHalf + gap) * 0.5;
+      const archCenter = archBox.getCenter(new THREE.Vector3());
+      const biteCenter = biteBox.getCenter(new THREE.Vector3());
+      const archOffset = screenRight.clone().multiplyScalar(-halfSep).sub(archCenter);
+      const biteOffset = screenRight.clone().multiplyScalar(halfSep).sub(biteCenter);
+      for (const mesh of archMeshes) mesh.position.copy(archOffset);
+      for (const mesh of biteMeshes) mesh.position.copy(biteOffset);
+
+      const bounds = new THREE.Box3();
+      for (const mesh of [...archMeshes, ...biteMeshes]) {
+        mesh.updateWorldMatrix(true, false);
+        bounds.expandByObject(mesh);
+      }
+      const center = bounds.getCenter(new THREE.Vector3());
+      const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
+      const aspect = readHostSize(host).aspect;
+      const dist = radius * 4;
+      controls.target.copy(center);
+      camera.up.copy(up);
+      camera.position.copy(center).addScaledVector(viewDir, dist);
+      applyOrthoHeight(camera, Math.max(radius * 1.15, 8), aspect);
+      camera.zoom = 1;
+      camera.lookAt(center);
+      controls.syncFromCamera();
+
+      return new Promise<boolean>((resolve) => {
+        biteManualRef.current = {
+          arch,
+          model: [],
+          bite: [],
+          archMeshes,
+          biteMeshes,
+          marks: [],
+          resolve,
+        };
+        setStatus({ kind: "bite-manual", arch, model: 0, bite: 0 });
+      });
+    },
+    [disposeMesh, endBiteManualSession],
+  );
+
+  const startBiteConfirmRef = useRef(startBiteConfirm);
+  startBiteConfirmRef.current = startBiteConfirm;
+  const endBiteConfirmSessionRef = useRef(endBiteConfirmSession);
+  endBiteConfirmSessionRef.current = endBiteConfirmSession;
+  const startBiteManualAlignRef = useRef(startBiteManualAlign);
+  startBiteManualAlignRef.current = startBiteManualAlign;
+  const endBiteManualSessionRef = useRef(endBiteManualSession);
+  endBiteManualSessionRef.current = endBiteManualSession;
+
+  biteManualClickRef.current = (clientX, clientY) => {
+    const session = biteManualRef.current;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (!session || !renderer || !camera) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
+      -((clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, camera);
+    const meshes = [...session.archMeshes, ...session.biteMeshes].filter((m) => m.visible);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    if (!hit) return;
+    const mesh = hit.object as THREE.Mesh;
+    const side = session.biteMeshes.includes(mesh)
+      ? "bite"
+      : session.archMeshes.includes(mesh)
+        ? "model"
+        : null;
+    if (!side) return;
+    const list = session[side];
+    if (list.length >= 3) return;
+    const local = mesh.worldToLocal(hit.point.clone());
+    list.push(local);
+    const radius = Math.max((mesh.geometry.boundingSphere?.radius ?? 20) * 0.014, 0.35);
+    const colors = [0xef4444, 0x22c55e, 0xf59e0b];
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 16, 12),
+      new THREE.MeshBasicMaterial({
+        color: colors[list.length - 1] ?? 0xffffff,
+        depthTest: false,
+      }),
+    );
+    sphere.position.copy(local);
+    sphere.renderOrder = 8;
+    const tag = document.createElement("div");
+    tag.textContent = String(list.length);
+    tag.style.cssText =
+      "width:16px;height:16px;margin-top:-8px;border-radius:999px;display:flex;align-items:center;justify-content:center;font:700 10px/1 sans-serif;color:#fff;background:rgba(15,23,42,0.78);pointer-events:none;";
+    const label = new CSS2DObject(tag);
+    label.position.set(0, radius * 2.1, 0);
+    sphere.add(label);
+    mesh.add(sphere);
+    session.marks.push(sphere);
+    setStatus({
+      kind: "bite-manual",
+      arch: session.arch,
+      model: session.model.length,
+      bite: session.bite.length,
+    });
+    if (session.model.length < 3 || session.bite.length < 3) return;
+    const arch = session.arch;
+    const modelPts = session.model.map(
+      (p) => [p.x, p.y, p.z] as [number, number, number],
+    );
+    const bitePts = session.bite.map((p) => [p.x, p.y, p.z] as [number, number, number]);
+    const archGeos = session.archMeshes.map((m) => m.geometry);
+    const biteGeos = session.biteMeshes.map((m) => m.geometry);
+    void (async () => {
+      setStatus({
+        kind: "loading",
+        percent: 62,
+        step: `${arch === "upper" ? "상악" : "하악"} 3점 맞춤 중…`,
+      });
+      let ok = false;
+      try {
+        ok = await mergeArchToBiteByPoints(archGeos, biteGeos, modelPts, bitePts);
+      } catch (err) {
+        console.info("[custom-abutment] bite-points failed", err);
+        ok = false;
+      }
+      endBiteManualSession(ok);
+    })();
+  };
+
   /** 이미 잡힌(또는 잘못된) 치아 스캔바디 위치를 다시 찍게 한다. */
   const startScanbodyRepick = useCallback(
     async (toothNumbers: readonly string[]) => {
@@ -3866,14 +4222,21 @@ export function PracticeCustomAbutmentPreviewDialog({
     let pickDown: { x: number; y: number } | null = null;
     const onPickDown = (e: PointerEvent) => {
       const picking = scanbodyPickRef.current != null && !scanbodyPickRef.current.busy;
+      const biteManual = biteManualRef.current != null;
       pickDown =
-        e.button === 0 && (pivotArmedRef.current || picking) ? { x: e.clientX, y: e.clientY } : null;
+        e.button === 0 && (pivotArmedRef.current || picking || biteManual)
+          ? { x: e.clientX, y: e.clientY }
+          : null;
     };
     const onPickUp = (e: PointerEvent) => {
       const down = pickDown;
       pickDown = null;
       if (!down) return;
       if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) return;
+      if (biteManualRef.current) {
+        biteManualClickRef.current(e.clientX, e.clientY);
+        return;
+      }
       const session = scanbodyPickRef.current;
       if (session && !session.busy) {
         scanbodyPickClickRef.current(e.clientX, e.clientY);
@@ -3883,6 +4246,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       pickPivotAt(e.clientX, e.clientY);
     };
     const onPickDouble = (e: MouseEvent) => {
+      if (biteManualRef.current) return;
       if (scanbodyPickRef.current && !scanbodyPickRef.current.busy) return;
       if (!pickPivotAt(e.clientX, e.clientY)) clearPivot();
     };
@@ -4450,10 +4814,58 @@ export function PracticeCustomAbutmentPreviewDialog({
             role: s.role,
             geometry: s.geometry,
           }));
-          await registerJawsToBiteResult(alignEntries, {
+          const snap = alignEntries
+            .map((entry) => ({
+              geometry: entry.geometry,
+              positions: captureGeometryPositions(entry.geometry),
+            }))
+            .filter((row): row is { geometry: THREE.BufferGeometry; positions: Float32Array } =>
+              Boolean(row.positions),
+            );
+          const fitResult = await registerJawsToBiteResult(alignEntries, {
             sweepPoses: true,
             cancelled: () => cancelled,
           });
+          if (cancelled) return;
+          const presentRoles = (["upper", "lower"] as const).filter((role) =>
+            jawScans.some((scan) => scan.role === role),
+          );
+          if (forceBiteRecalc) {
+            setBiteRecalcBusy(true);
+            const choice = await startBiteConfirmRef.current(
+              [...jawScans, ...biteScans],
+              fitResult.qualityOk,
+            );
+            if (cancelled) {
+              endBiteConfirmSessionRef.current("confirm");
+              return;
+            }
+            if (choice === "revise") {
+              const weak = weakBiteArches(fitResult.quality, presentRoles);
+              const manualRoles = weak.length > 0 ? weak : presentRoles;
+              for (const role of manualRoles) {
+                if (cancelled) return;
+                const archOnly = jawScans.filter((scan) => scan.role === role);
+                if (archOnly.length === 0 || biteScans.length === 0) continue;
+                for (const scan of archOnly) {
+                  const row = snap.find((entry) => entry.geometry === scan.geometry);
+                  if (row) restoreGeometryPositions(row.geometry, row.positions);
+                }
+                const ok = await startBiteManualAlignRef.current(role, archOnly, biteScans);
+                if (cancelled) {
+                  endBiteManualSessionRef.current(false);
+                  return;
+                }
+                if (!ok) {
+                  setStatus({
+                    kind: "error",
+                    message: `${role === "upper" ? "상악" : "하악"} 3점 맞춤에 실패했습니다.`,
+                  });
+                  return;
+                }
+              }
+            }
+          }
           if (cancelled) return;
           const seatedFrame = estimateDentalFrame(alignEntries);
           if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
@@ -5295,6 +5707,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       releaseOriginSwapRef.current();
       pickEpochRef.current += 1;
       scanbodyPickRef.current = null;
+      if (biteConfirmRef.current) endBiteConfirmSessionRef.current("confirm");
+      if (biteManualRef.current) endBiteManualSessionRef.current(false);
     };
   }, [
     authToken,
@@ -7020,14 +7434,17 @@ export function PracticeCustomAbutmentPreviewDialog({
     visibleJaws.upper,
   ]);
 
-  const ready = status.kind === "ready" && (designedList.length > 0 || readOnly);
+  const ready =
+    status.kind === "ready" && (designedList.length > 0 || readOnly);
+  const biteConfirmOn = status.kind === "bite-confirm";
+  const biteManualOn = status.kind === "bite-manual";
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
   const canRedoEdit = editRev >= 0 && Boolean(directEditRef.current?.canRedo());
   const hasInfoFieldEdits = designedList.some(
     (d) => (editedInfoFieldsRef.current[d.toothNumber]?.size ?? 0) > 0,
   );
   const canResetAny = canUndoEdit || hasInfoFieldEdits;
-  const viewerLive = ready || status.kind === "pick";
+  const viewerLive = ready || status.kind === "pick" || biteConfirmOn || biteManualOn;
 
   useEffect(() => {
     if (!open || !canEditDesign) return;
@@ -7298,7 +7715,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       <>
                         의뢰 원본 상·하악을 바이트에 다시 맞춥니다.
                         <br />
-                        전후가 뒤집힌 교합을 고칠 때 씁니다.
+                        자동 결과 확인 후 확정하거나 3점으로 수정합니다.
                       </>
                     }
                     onClick={() => {
@@ -7938,6 +8355,102 @@ export function PracticeCustomAbutmentPreviewDialog({
                       잘못 잡힌 어벗 위를 눌러도 그 위치로 옮깁니다.
                     </p>
                   )}
+                </div>
+              </div>
+            ) : null}
+
+            {status.kind === "bite-confirm" ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
+                <div
+                  className={cn(
+                    CONTENT_MEASURED_CHROME_CLASS,
+                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-4 py-3 text-center shadow-lg",
+                  )}
+                >
+                  <p className="text-sm leading-relaxed text-foreground">
+                    자동으로 맞춘 자세입니다.
+                    <br />
+                    {status.qualityOk ? (
+                      "이 자세로 확정할까요?"
+                    ) : (
+                      <>
+                        자동 점수가 낮습니다.
+                        <br />
+                        확정하거나 3점으로 수정하세요.
+                      </>
+                    )}
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => endBiteConfirmSession("confirm")}
+                    >
+                      확정
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => endBiteConfirmSession("revise")}
+                    >
+                      수정 (3점)
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {status.kind === "bite-manual" ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
+                <div
+                  className={cn(
+                    CONTENT_MEASURED_CHROME_CLASS,
+                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-4 py-3 text-center shadow-lg",
+                  )}
+                >
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {status.arch === "upper" ? "상악" : "하악"}과 바이트에 같은 순서로 점 3개씩
+                    찍으세요.
+                  </p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    모델 {status.model}/3 · 바이트 {status.bite}/3
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      disabled={status.model === 0 && status.bite === 0}
+                      onClick={() => {
+                        const session = biteManualRef.current;
+                        if (!session) return;
+                        clearBiteManualMarks();
+                        session.model = [];
+                        session.bite = [];
+                        setStatus({
+                          kind: "bite-manual",
+                          arch: session.arch,
+                          model: 0,
+                          bite: 0,
+                        });
+                      }}
+                    >
+                      점 지우기
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      onClick={() => endBiteManualSession(false)}
+                    >
+                      취소
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : null}
