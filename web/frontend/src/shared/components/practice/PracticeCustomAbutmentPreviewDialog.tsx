@@ -1107,8 +1107,8 @@ function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32A
 const BITE_GUIDE_CHROME_CLASS =
   "pointer-events-none absolute right-[min(22vw,14rem)] top-1/2 z-30 -translate-y-1/2";
 
-/** 자동 정렬 「다시 맞추기」최대 횟수(0번 포함하면 후보 5개). */
-const BITE_AUTO_RETRY_MAX = 4;
+/** 헤더 교합정렬(수동) 「다시 맞추기」최대 추가 횟수(첫 시도 포함하면 후보 5개). 자동 부트는 1회만. */
+const BITE_MANUAL_RETRY_MAX = 4;
 
 export function PracticeCustomAbutmentPreviewDialog({
   open,
@@ -4676,7 +4676,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           let lastGood = captureAligned();
           let attempt = 0;
           let keepInPlace = false;
-          let everSeated = false;
           for (;;) {
             if (attempt > 0) {
               setStatus({
@@ -4706,44 +4705,33 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
             if (fitResult.seated || fitResult.moved) {
               lastGood = captureAligned();
-              everSeated = true;
             } else if (attempt > 0) {
               for (const row of lastGood) {
                 restoreGeometryPositions(row.geometry, row.positions);
               }
             }
-            // 자동 부트는 확인 UI를 띄우지 않는다. 후보를 돌리고 최선 결과를 쓴다.
+            // 자동 부트는 1회만. 확인 UI 없이 결과(또는 원본)를 쓴다.
             if (!forceBiteRecalc) {
               if (fitResult.qualityOk) break;
-              if (attempt < BITE_AUTO_RETRY_MAX) {
-                attempt += 1;
-                continue;
-              }
-              // 후보를 다 써도 안 맞으면 마지막 붙은 자세를 쓰고, 없으면 원본을 둔다.
               if (!(fitResult.seated || fitResult.moved)) {
-                for (const row of lastGood) {
-                  restoreGeometryPositions(row.geometry, row.positions);
-                }
-                if (!everSeated) {
-                  restoreOriginal();
-                  keepInPlace = true;
-                }
+                restoreOriginal();
+                keepInPlace = true;
               }
               break;
             }
-            // 헤더 교합정렬(수동)만 확인 UI.
+            // 헤더 교합정렬(수동)만 확인 UI·추가 후보.
             setBiteRecalcBusy(true);
             const choice = await startBiteConfirmRef.current(
               [...jawScans, ...biteScans],
               fitResult.qualityOk,
-              { canRetry: attempt < BITE_AUTO_RETRY_MAX, attempt },
+              { canRetry: attempt < BITE_MANUAL_RETRY_MAX, attempt },
             );
             if (cancelled) {
               endBiteConfirmSessionRef.current("confirm");
               return;
             }
             if (choice === "confirm") break;
-            if (attempt >= BITE_AUTO_RETRY_MAX) {
+            if (attempt >= BITE_MANUAL_RETRY_MAX) {
               toast({
                 title: "다른 자동 후보가 없습니다.",
                 description: "헤더 교합정렬로 다시 시도하거나 이 자세로 진행하세요.",
@@ -7411,6 +7399,25 @@ export function PracticeCustomAbutmentPreviewDialog({
     setBiteRecalcEpoch((n) => n + 1);
   }, [biteRecalcBusy, files, toast]);
 
+  /** 자동 판정이 틀려도 지금 보이는 교합을 맞다고 확정한다. */
+  const confirmCurrentOcclusion = useCallback(() => {
+    const ctx = designContextRef.current;
+    if (!ctx) return;
+    const biteCheck: CachedBiteCheck = {
+      checkedAt: Date.now(),
+      qualityOk: true,
+      moved: false,
+      source: "manual",
+    };
+    designContextRef.current = { ...ctx, biteCheck };
+    setOcclusionOk(true);
+    const savedAt = designSavedAtRef.current > 0 ? designSavedAtRef.current : Date.now();
+    if (designedListRef.current.length > 0) {
+      persistDesign(undefined, { publish: false, savedAt });
+    }
+    toast({ title: "지금 교합으로 확정했습니다." });
+  }, [persistDesign, toast]);
+
   useEffect(() => {
     if (!open || !canEditDesign) return;
     const onKey = (event: KeyboardEvent) => {
@@ -7650,16 +7657,22 @@ export function PracticeCustomAbutmentPreviewDialog({
               {pipelineReady && canEditDesign ? (
                 <HeaderIconButton
                   label="교합정렬"
-                  active={biteRecalcBusy || needsOcclusionFix}
+                  active={biteRecalcBusy}
                   disabled={biteRecalcBusy}
                   tip={
-                    <>
-                      상·하악 교합을 바이트에 다시 맞춥니다.
-                      <br />
-                      한 번 확인·정렬한 뒤에는 자동으로 다시 돌리지 않습니다.
-                      <br />
-                      틀리면 다른 후보로 다시 맞출 수 있습니다.
-                    </>
+                    needsOcclusionFix ? (
+                      <>
+                        교합이 맞지 않을 수 있습니다.
+                        <br />
+                        눌러 바이트에 다시 맞춥니다.
+                      </>
+                    ) : (
+                      <>
+                        상·하악 교합을 바이트에 다시 맞춥니다.
+                        <br />
+                        이미 맞으면 자동으로 건드리지 않습니다.
+                      </>
+                    )
                   }
                   onClick={triggerBiteRecalc}
                 >
@@ -8019,20 +8032,32 @@ export function PracticeCustomAbutmentPreviewDialog({
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {needsOcclusionFix ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8"
-                        disabled={biteRecalcBusy}
-                        onClick={triggerBiteRecalc}
-                      >
-                        {biteRecalcBusy ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Combine className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        교합정렬
-                      </Button>
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8"
+                          disabled={biteRecalcBusy}
+                          onClick={triggerBiteRecalc}
+                        >
+                          {biteRecalcBusy ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Combine className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          교합정렬
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={biteRecalcBusy}
+                          onClick={confirmCurrentOcclusion}
+                        >
+                          지금 교합 확정
+                        </Button>
+                      </>
                     ) : null}
                     {designedList.length === 0 && canEditDesign && !needsOcclusionFix ? (
                       <Button
