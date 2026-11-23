@@ -1091,6 +1091,34 @@ function weakBiteArches(
   });
 }
 
+/**
+ * 카메라가 -Y에서 +Z를 위로 볼 때, 메시 묶음의 넓은 쪽이 화면 가로(+X)가 되게 돌린다.
+ * 기하 정점은 건드리지 않고 position·quaternion만 바꾼다.
+ */
+function orientMeshesWideHorizontal(meshes: readonly THREE.Mesh[]) {
+  if (meshes.length === 0) return;
+  const box = new THREE.Box3();
+  for (const mesh of meshes) {
+    mesh.updateWorldMatrix(true, false);
+    box.expandByObject(mesh);
+  }
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  if (size.x >= size.z) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  for (const mesh of meshes) {
+    const local = mesh.position.clone().sub(center);
+    local.applyQuaternion(q);
+    mesh.position.copy(center).add(local);
+    mesh.quaternion.premultiply(q);
+  }
+}
+
+/** 바이트 확정·3점 안내 — 모델 옆에 붙인다. */
+const BITE_GUIDE_CHROME_CLASS =
+  "pointer-events-none absolute right-[min(22vw,14rem)] top-1/2 z-30 -translate-y-1/2";
+
 export function PracticeCustomAbutmentPreviewDialog({
   open,
   onOpenChange,
@@ -3575,6 +3603,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       if (meshes.length === 0) return Promise.resolve("confirm");
 
+      orientMeshesWideHorizontal(meshes);
       const bounds = new THREE.Box3();
       for (const mesh of meshes) {
         mesh.updateWorldMatrix(true, false);
@@ -3583,9 +3612,9 @@ export function PracticeCustomAbutmentPreviewDialog({
       const center = bounds.getCenter(new THREE.Vector3());
       const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
       const aspect = readHostSize(host).aspect;
-      const viewDir = new THREE.Vector3(0, -1, 0.35).normalize();
+      const viewDir = new THREE.Vector3(0, -1, 0.2).normalize();
       const up = new THREE.Vector3(0, 0, 1);
-      const dist = radius * 4;
+      const dist = radius * 3.6;
       controls.target.copy(center);
       camera.up.copy(up);
       camera.position.copy(center).addScaledVector(viewDir, dist);
@@ -3670,6 +3699,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         return Promise.resolve(false);
       }
 
+      // 각 묶음의 넓은 쪽을 가로로 맞춘 뒤, 위·가운데·아래로 떨어뜨린다.
+      orientMeshesWideHorizontal(upperMeshes);
+      orientMeshesWideHorizontal(lowerMeshes);
+      orientMeshesWideHorizontal(biteMeshes);
+
       const extentOf = (meshes: THREE.Mesh[]) => {
         const box = new THREE.Box3();
         for (const mesh of meshes) {
@@ -3678,24 +3712,19 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        const radius = Math.max(size.length() * 0.5, 1);
+        const radius = Math.max(size.x, size.y, size.z, size.length() * 0.5, 1) * 0.5;
         return { box, center, size, radius };
       };
       const biteExt = extentOf(biteMeshes);
       const upperExt = upperMeshes.length ? extentOf(upperMeshes) : null;
       const lowerExt = lowerMeshes.length ? extentOf(lowerMeshes) : null;
 
-      // 화면 위아래(+Z)로 확실히 떨어뜨린다. 바이트 가운데, 위 상악, 아래 하악.
       const axisUp = new THREE.Vector3(0, 0, 1);
-      const gap = Math.max(
-        biteExt.radius,
-        upperExt?.radius ?? 0,
-        lowerExt?.radius ?? 0,
-        8,
-      ) * 0.35;
+      const gap =
+        Math.max(biteExt.radius, upperExt?.radius ?? 0, lowerExt?.radius ?? 0, 8) * 0.45;
       const place = (meshes: THREE.Mesh[], center: THREE.Vector3, slot: THREE.Vector3) => {
         const offset = slot.clone().sub(center);
-        for (const mesh of meshes) mesh.position.copy(offset);
+        for (const mesh of meshes) mesh.position.add(offset);
       };
       place(biteMeshes, biteExt.center, new THREE.Vector3(0, 0, 0));
       if (upperExt && lowerExt) {
@@ -8393,7 +8422,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {status.kind === "bite-confirm" ? (
-              <div className="pointer-events-none absolute right-3 top-1/2 z-30 -translate-y-1/2">
+              <div className={BITE_GUIDE_CHROME_CLASS}>
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
@@ -8427,7 +8456,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {status.kind === "bite-manual" ? (
-              <div className="pointer-events-none absolute right-3 top-1/2 z-30 -translate-y-1/2">
+              <div className={BITE_GUIDE_CHROME_CLASS}>
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
