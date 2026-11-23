@@ -4136,14 +4136,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
 
-        const cachePromise =
-          readOnly || isLabViewer
-            ? Promise.resolve(null)
-            : readCustomAbutmentDesign(cacheKey);
-        const chatPromise =
-          readOnly || isLabViewer
-            ? Promise.resolve([] as CustomAbutmentChatTurn[])
-            : readCustomAbutmentChat(transferIdParam || pipelineKey);
+        // 기공소도 편집 중에는 로컬 메시 캐시를 읽는다. 쓰지 않으면 저장은 되고
+        // 다시 열 때마다 메타만으로 재생성이 되어 방금 검볼·테이퍼 모양이 되돌아간다.
+        const cachePromise = readOnly
+          ? Promise.resolve(null)
+          : readCustomAbutmentDesign(cacheKey);
+        const chatPromise = readOnly
+          ? Promise.resolve([] as CustomAbutmentChatTurn[])
+          : readCustomAbutmentChat(transferIdParam || pipelineKey);
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
         const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
         if (!hasWorkScans) targetRoles.add("bite");
@@ -5047,7 +5047,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           const pendingNewer = Boolean(
             pendingRemote && pendingRemote.savedAt > designSavedAtRef.current,
           );
-          // 다시 열 때 만든 형상은 올리지 않는다. 검볼로 키운 직경을 재생성 수치로 덮어쓴다.
+          // 다시 열 때 만든 형상은 서버에 올리지 않는다. 검볼로 키운 직경을 재생성 수치로 덮어쓴다.
           const shouldPublish =
             !pendingNewer &&
             builtAbutments.length > 0 &&
@@ -5059,6 +5059,17 @@ export function PracticeCustomAbutmentPreviewDialog({
             !serverMeshRestore;
           if (shouldPublish) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
+          } else if (
+            !pendingNewer &&
+            builtAbutments.length > 0 &&
+            (rebuildFromMeta || redesignedFromFit) &&
+            designSavedAtRef.current > 0
+          ) {
+            // 서버 조정값으로 다시 만든 메시만 이 브라우저에 맞춰 둔다.
+            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined, {
+              publish: false,
+              savedAt: designSavedAtRef.current,
+            });
           }
         }
         const pendingRemote = pendingRemoteMetaRef.current;

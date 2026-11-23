@@ -1,6 +1,6 @@
-// 치과 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값)을
+// 치과·기공소 커스텀어벗 디자인 프리뷰 저장. 한 번 만든 디자인(픽스쳐 정합·형상·조정값)을
 // 이 브라우저 IndexedDB에 둔다. 다시 열 때는 더 나중 형상을 쓴다.
-// 서버가 정점 없는 조정값만 더 나중이어도 이 브라우저 메시는 다시 만들지 않는다.
+// 서버 시각이 더 나중이면 정점이 없어도 서버 조정값으로 다시 만든다.
 // 스캔은 캐시에서 읽어 맞춘다.
 // 키는 스캔 파일·치아 정보와 정합 버전이라, 스캔이나 의뢰 치아가 바뀌면 새로 만든다.
 // 형상 버전만 바뀌면 저장된 정합(정렬 스캔·픽스쳐)으로 형상만 다시 만든다(치아당 ~0.3초).
@@ -199,10 +199,10 @@ export function mergeServerMetaOntoLocalMeshes<
 
 /**
  * 이 브라우저 저장본과 서버 스냅샷 중 더 나중에 저장된 형상을 쓴다.
- * 서버가 정점 없는 조정값만 더 나중이어도 이 브라우저 메시를 다시 만들지 않는다.
- * 조정값만으로 다시 만들면 화면에 있던 직경·테이퍼·대합 거리와 달라진다.
- * 서버에 메시가 있으면 그 시각이 더 나중일 때 서버 형상을 쓴다.
- * 같은 시각이면 기본은 이 브라우저 저장본. 협업 의뢰(`preferServerOnTie`)는 서버를 쓴다.
+ * 서버 시각이 더 나중이면 정점이 없어도 서버 조정값으로 다시 만든다.
+ * (로컬 옛 메시를 남기면 저장한 테이퍼·직경이 다시 열 때 되돌아간다.)
+ * 같은 시각에 서버만 정점이 없을 때는 이 브라우저 메시를 유지해 재생성 오차를 피한다.
+ * 협업 의뢰(`preferServerOnTie`)는 동점이면 서버를 고른다.
  */
 export function preferFresherCustomAbutmentDesign<
   T extends {
@@ -224,9 +224,10 @@ export function preferFresherCustomAbutmentDesign<
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  const takeServer =
-    serverAt > localAt || (Boolean(opts?.preferServerOnTie) && serverAt === localAt);
-  if (takeServer) {
+  if (serverAt > localAt) return server;
+  if (serverAt < localAt) return local;
+  // 동점: 협업은 서버, 아니면 로컬. 서버에 정점이 없으면 로컬 메시를 유지한다.
+  if (Boolean(opts?.preferServerOnTie)) {
     if (!designHasMeshes(server) && designHasMeshes(local)) return local;
     return server;
   }
