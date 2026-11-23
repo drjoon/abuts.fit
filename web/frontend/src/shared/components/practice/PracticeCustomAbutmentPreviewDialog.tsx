@@ -28,7 +28,7 @@
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
 // - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
-// - 2026-11-24: 로딩 시 교합 확인·정렬을 먼저 하고 메타를 남긴다. 스캔바디 클릭은 자동 부트에서 빼 디자인으로 간다.
+// - 2026-11-24: 교합을 먼저 확인한다. 확정한 정렬은 작업 스캔 정점 수가 같으면 다시 연다. 이미 고른 스캔바디는 교합을 다시 맞춰도 유지한다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -118,6 +118,12 @@ import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMe
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
+import {
+  captureOcclusionCarry,
+  matchAlignedScans,
+  rebaseCarriedFixtures,
+  type OcclusionCarry,
+} from "@/shared/practice/customAbutmentOcclusionRestore";
 import {
   archPlanAxes,
   estimateDentalFrame,
@@ -1107,7 +1113,7 @@ function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32A
 const BITE_GUIDE_CHROME_CLASS =
   "pointer-events-none absolute right-[min(22vw,14rem)] top-1/2 z-30 -translate-y-1/2";
 
-/** 헤더 교합정렬(수동) 「다시 맞추기」최대 추가 횟수(첫 시도 포함하면 후보 5개). 자동 부트는 1회만. */
+/** 「다시 맞추기」최대 추가 횟수(첫 시도 포함하면 후보 5개). 저장 디자인이 없으면 먼저 묻는다. */
 const BITE_MANUAL_RETRY_MAX = 4;
 
 export function PracticeCustomAbutmentPreviewDialog({
@@ -4374,6 +4380,22 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const runPipeline = async () => {
       preloadMeshUnion();
+      const occlusionCarry: OcclusionCarry | null = forceBiteRecalc
+        ? captureOcclusionCarry(
+            designContextRef.current?.fixtures ?? [],
+            rawJawScansRef.current.map((scan) => {
+              const attr = scan.geometry.getAttribute("position");
+              const count = attr?.count ?? 0;
+              const src = attr?.array;
+              return {
+                role: scan.jaw,
+                vertexCount: count,
+                positions: src instanceof Float32Array ? new Float32Array(src) : new Float32Array(),
+              };
+            }),
+          )
+        : null;
+      let clearBiteBusy = forceBiteRecalc;
       try {
         proposalInputRef.current = {};
         labSourceStlRef.current = {};
@@ -4586,21 +4608,25 @@ export function PracticeCustomAbutmentPreviewDialog({
         let biteCheck: CachedBiteCheck | null = normalizeCachedBiteCheck(cached?.biteCheck);
         if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
           if (cached.alignedScans.length > 0) {
-            const fits = cached.alignedScans.every((row) => {
-              const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName);
-              return scan?.geometry.getAttribute("position")?.count === row.vertexCount;
-            });
-            if (fits) {
-              for (const row of cached.alignedScans) {
-                const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName)!;
-                const attr = scan.geometry.getAttribute("position") as THREE.BufferAttribute;
-                (attr.array as Float32Array).set(new Float32Array(row.positions));
-                attr.needsUpdate = true;
-                scan.geometry.computeVertexNormals();
-                scan.geometry.computeBoundingBox();
-                scan.geometry.computeBoundingSphere();
-              }
-              alignedScans = cached.alignedScans;
+            // 작업 스캔은 원본과 이름이 다르다. 정점 수가 같으면 확정한 좌표를 얹는다.
+            const alignedTargets = matchAlignedScans(
+              cached.alignedScans,
+              jawScans.map((scan) => ({
+                fileName: scan.fileName,
+                role: scan.role,
+                vertexCount: scan.geometry.getAttribute("position")?.count ?? 0,
+                scan,
+              })),
+            );
+            if (alignedTargets) {
+              alignedTargets.forEach((target, index) => {
+                const row = cached.alignedScans[index]!;
+                restoreGeometryPositions(target.scan.geometry, new Float32Array(row.positions));
+              });
+              alignedScans = cached.alignedScans.map((row, index) => ({
+                ...row,
+                fileName: alignedTargets[index]!.fileName,
+              }));
               restored = true;
               if (!biteCheck && hasCachedBiteCheck(cached)) {
                 biteCheck = {
@@ -4653,6 +4679,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             !biteCheck ||
             (biteCheck.qualityOk === false && !hasSavedTeeth));
         let lastBiteFit: { qualityOk: boolean; moved: boolean; seated: boolean } | null = null;
+        let userAcceptedBite = false;
         if (needBitePass) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
           await new Promise<void>((r) => window.setTimeout(r, 0));
@@ -4685,8 +4712,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           let lastGood = captureAligned();
           let attempt = 0;
           let keepInPlace = false;
-          let userAcceptedBite = false;
+          // 저장 디자인이 없으면 스캔바디보다 먼저 교합을 묻는다. 헤더 재정렬도 같은 확인을 쓴다.
+          const askOcclusion = !readOnly && (forceBiteRecalc || !hasSavedTeeth);
+          if (askOcclusion) clearBiteBusy = true;
           for (;;) {
+            keepInPlace = false;
             if (attempt > 0) {
               setStatus({
                 kind: "loading",
@@ -4707,12 +4737,6 @@ export function PracticeCustomAbutmentPreviewDialog({
               moved: fitResult.moved,
               seated: fitResult.seated,
             };
-            // 자동: 이미 바이트에 맞으면 좌표를 건드리지 않는다.
-            if (!forceBiteRecalc && fitResult.qualityOk && !fitResult.moved) {
-              restoreOriginal();
-              keepInPlace = true;
-              break;
-            }
             if (fitResult.seated || fitResult.moved) {
               lastGood = captureAligned();
             } else if (attempt > 0) {
@@ -4720,20 +4744,25 @@ export function PracticeCustomAbutmentPreviewDialog({
                 restoreGeometryPositions(row.geometry, row.positions);
               }
             }
-            // 자동 부트는 1회만. 확인 UI 없이 결과(또는 원본)를 쓴다.
-            if (!forceBiteRecalc) {
-              if (fitResult.qualityOk) break;
-              if (!(fitResult.seated || fitResult.moved)) {
+            if (!askOcclusion) {
+              // 이미 확정한 디자인을 다시 열 때는 확인 없이 1회만 맞춘다.
+              if (fitResult.qualityOk && !fitResult.moved) {
+                restoreOriginal();
+                keepInPlace = true;
+              } else if (!fitResult.qualityOk && !(fitResult.seated || fitResult.moved)) {
                 restoreOriginal();
                 keepInPlace = true;
               }
               break;
             }
-            // 헤더 교합정렬(수동)만 확인 UI·추가 후보.
+            if (fitResult.qualityOk && !fitResult.moved) {
+              restoreOriginal();
+              keepInPlace = true;
+            }
             setBiteRecalcBusy(true);
             const choice = await startBiteConfirmRef.current(
               [...jawScans, ...biteScans],
-              fitResult.qualityOk,
+              fitResult.qualityOk || keepInPlace,
               { canRetry: attempt < BITE_MANUAL_RETRY_MAX, attempt },
             );
             if (cancelled) {
@@ -4774,6 +4803,18 @@ export function PracticeCustomAbutmentPreviewDialog({
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
         }
+
+        const carriedFixtures = rebaseCarriedFixtures(
+          occlusionCarry,
+          jawScans.map((scan) => {
+            const attr = scan.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+            return {
+              role: scan.role,
+              vertexCount: attr?.count ?? 0,
+              positions: (attr?.array as Float32Array | undefined) ?? new Float32Array(),
+            };
+          }),
+        );
 
         const frame = estimateDentalFrame(
           jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
@@ -5145,6 +5186,24 @@ export function PracticeCustomAbutmentPreviewDialog({
             await new Promise<void>((r) => window.setTimeout(r, 16));
             if (cancelled) return;
 
+            const carriedForJaw = carriedFixtures.filter((fx) => fx.jaw === jaw);
+            const carriedCoversJaw =
+              carriedForJaw.length > 0 &&
+              teeth.every((tw) =>
+                carriedForJaw.some((fx) => fx.toothNumber === tw.toothNumber),
+              );
+            let jawGeo: THREE.BufferGeometry;
+            let matchedTeeth: Map<string, MatchedScanbodyFixture>;
+            if (carriedCoversJaw) {
+              // 이미 고른 스캔바디는 다시 맞춘 악궁을 따라간다. 같은 자리를 다시 찍지 않는다.
+              const wantCount = occlusionCarry?.jaws.find((row) => row.role === jaw)?.vertexCount;
+              const scan =
+                jawScanList.find(
+                  (row) => row.geometry.getAttribute("position")?.count === wantCount,
+                ) ?? jawScanList[0]!;
+              jawGeo = scan.geometry;
+              matchedTeeth = new Map(carriedForJaw.map((fx) => [fx.toothNumber, fx]));
+            } else {
             const withModels = await Promise.all(
               teeth.map(async (tw) => ({
                 toothWork: tw,
@@ -5176,11 +5235,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               (a, b) =>
                 b.matched.size - a.matched.size || a.avgRms - b.avgRms || b.verts - a.verts,
             );
-            const jawGeo = perScanMatches[0]!.geometry;
-            if (jaw === "upper") upperPrimary = jawGeo;
-            else lowerPrimary = jawGeo;
-
-            const matchedTeeth = new Map(perScanMatches[0]!.matched);
+            jawGeo = perScanMatches[0]!.geometry;
+            matchedTeeth = new Map(perScanMatches[0]!.matched);
             if (matchedTeeth.size < teeth.length && perScanMatches.length > 1) {
               for (const alt of perScanMatches.slice(1)) {
                 for (const [tn, fx] of alt.matched.entries()) {
@@ -5197,9 +5253,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 }
               }
             }
-            const jawFixtures = teeth
-              .map((tw) => matchedTeeth.get(tw.toothNumber))
-              .filter((m): m is MatchedScanbodyFixture => m != null);
+            for (const fx of carriedForJaw) matchedTeeth.set(fx.toothNumber, fx);
             for (const row of withModels) {
               if (matchedTeeth.has(row.toothWork.toothNumber) || row.models.length === 0) continue;
               pendingPickJobs.push({
@@ -5209,7 +5263,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 models: row.models,
               });
             }
+            }
 
+            if (jaw === "upper") upperPrimary = jawGeo;
+            else lowerPrimary = jawGeo;
+            const jawFixtures = teeth
+              .map((tw) => matchedTeeth.get(tw.toothNumber))
+              .filter((m): m is MatchedScanbodyFixture => m != null);
             for (const matched of jawFixtures) {
               setStatus({
                 kind: "loading",
@@ -5468,11 +5528,25 @@ export function PracticeCustomAbutmentPreviewDialog({
             connections: curConnections,
             busy: false,
           };
-          setStatus({
-            kind: "pick",
-            toothNumber: pendingPickJobs[0]!.toothNumber,
-            phase: "aim",
-          });
+          setStatus({ kind: "pick", toothNumber: pendingPickJobs[0]!.toothNumber, phase: "aim" });
+          if (userAcceptedBite && biteCheck && (cached?.teeth.length ?? 0) === 0) {
+            const savedAt = Date.now();
+            if (savedAt > designSavedAtRef.current) designSavedAtRef.current = savedAt;
+            const record = {
+              key: cacheKey,
+              version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+              savedAt,
+              alignedScans,
+              biteCheck,
+              teeth: [],
+              chat: [],
+            };
+            rememberCustomAbutmentDesign(record);
+            void writeCustomAbutmentDesign(record).catch((err) =>
+              console.warn("[custom-abutment] bite confirm save failed", err),
+            );
+          }
         } else {
           if (pendingPickJobs.length > 0 && builtAbutments.length > 0) {
             toast({
@@ -5495,7 +5569,15 @@ export function PracticeCustomAbutmentPreviewDialog({
             !redesignedFromFit &&
             !restored &&
             !serverMeshRestore;
-          if (shouldPublish) {
+          if (
+            !pendingNewer &&
+            userAcceptedBite &&
+            !restored &&
+            builtAbutments.length > 0
+          ) {
+            // 교합을 확정하고 다시 만든 형상은 지금 시각으로 남긴다. 닫았다 열면 이 프레임을 쓴다.
+            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
+          } else if (shouldPublish) {
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
           } else if (
             !pendingNewer &&
@@ -5612,7 +5694,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         setStatus({ kind: "error", message });
       } finally {
-        if (forceBiteRecalc) setBiteRecalcBusy(false);
+        if (clearBiteBusy) setBiteRecalcBusy(false);
       }
     };
 
