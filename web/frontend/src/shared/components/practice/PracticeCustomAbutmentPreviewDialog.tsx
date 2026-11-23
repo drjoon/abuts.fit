@@ -3729,19 +3729,38 @@ export function PracticeCustomAbutmentPreviewDialog({
   const clearBiteManualMarks = useCallback(() => {
     const session = biteManualRef.current;
     if (!session) return;
-    for (const mark of session.marks) {
+    const dropMark = (mark: THREE.Object3D) => {
+      // CSS2D는 parent.remove만으로는 DOM이 안 지워진다(removed 이벤트가 손자에 안 전달됨).
+      mark.traverse((obj) => {
+        if (obj instanceof CSS2DObject && obj.element?.isConnected) {
+          obj.element.remove();
+        }
+      });
       mark.parent?.remove(mark);
       mark.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
-        if (mesh.isMesh) {
-          mesh.geometry.dispose();
-          const mat = mesh.material;
-          if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-          else mat.dispose();
-        }
+        if (!mesh.isMesh) return;
+        mesh.geometry.dispose();
+        const mat = mesh.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat.dispose();
       });
-    }
+    };
+    for (const mark of session.marks) dropMark(mark);
     session.marks = [];
+    // session.marks 밖·이전 단계 잔상도 메쉬 자식에서 걷는다.
+    for (const mesh of [...session.archMeshes, ...session.biteMeshes, ...session.idleMeshes]) {
+      for (const child of mesh.children.slice()) {
+        if (!child.userData.biteManualMark) continue;
+        dropMark(child);
+      }
+    }
+    // 이미 씬에서 끊긴 CSS2D 고아(화면에만 남는 점)도 걷는다.
+    // 수동 정렬 중에는 이 레이어에 다른 라벨이 없다.
+    const labelHost = labelRendererRef.current?.domElement;
+    if (labelHost) {
+      while (labelHost.firstChild) labelHost.removeChild(labelHost.firstChild);
+    }
   }, []);
 
   const endBiteConfirmSession = useCallback(
@@ -3935,6 +3954,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           marks: [],
           resolve,
         };
+        // 이전 단계 CSS2D 고아가 다음 악 화면에 남지 않게 한다.
+        const labelHost = labelRendererRef.current?.domElement;
+        if (labelHost) {
+          while (labelHost.firstChild) labelHost.removeChild(labelHost.firstChild);
+        }
         setStatus({ kind: "bite-manual", arch, model: 0, bite: 0 });
       });
     },
@@ -3955,6 +3979,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (!session || !renderer || !camera) return;
+    session.group.updateWorldMatrix(true, true);
     const rect = renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
@@ -3975,7 +4000,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const list = session[side];
     if (list.length >= 3) return;
     const local = mesh.worldToLocal(hit.point.clone());
-    list.push(local);
+    list.push(local.clone());
     const radius = Math.max((mesh.geometry.boundingSphere?.radius ?? 20) * 0.014, 0.35);
     const colors = [0xef4444, 0x22c55e, 0xf59e0b];
     const sphere = new THREE.Mesh(
@@ -3987,12 +4012,15 @@ export function PracticeCustomAbutmentPreviewDialog({
     );
     sphere.position.copy(local);
     sphere.renderOrder = 8;
+    sphere.userData.biteManualMark = true;
     const tag = document.createElement("div");
     tag.textContent = String(list.length);
+    tag.dataset.biteManualMark = "1";
     tag.style.cssText =
       "width:16px;height:16px;margin-top:-8px;border-radius:999px;display:flex;align-items:center;justify-content:center;font:700 10px/1 sans-serif;color:#fff;background:rgba(15,23,42,0.78);pointer-events:none;";
     const label = new CSS2DObject(tag);
     label.position.set(0, radius * 2.1, 0);
+    label.userData.biteManualMark = true;
     sphere.add(label);
     mesh.add(sphere);
     session.marks.push(sphere);
@@ -8660,7 +8688,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                       size="sm"
                       variant="outline"
                       className="h-8"
-                      disabled={status.model === 0 && status.bite === 0}
                       onClick={() => {
                         const session = biteManualRef.current;
                         if (!session) return;
