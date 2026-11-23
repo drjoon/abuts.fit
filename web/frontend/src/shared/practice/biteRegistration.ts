@@ -1395,6 +1395,24 @@ function seatedFit(fit: Fitness, unitToMm: number) {
   return fit.sideMean <= mmToUnits(0.72, unitToMm) && fit.coverage >= 0.05;
 }
 
+/** 강체 회전각(라디안). 단위행렬이면 0. */
+function rotationAngle(matrix: THREE.Matrix4): number {
+  const r = rigidFromMatrix(matrix).r;
+  const trace = (r[0]?.[0] ?? 1) + (r[1]?.[1] ?? 1) + (r[2]?.[2] ?? 1);
+  return Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
+}
+
+/**
+ * 제자리에서 이미 바이트에 닿은 악궁을 크게 돌리면, 협측 조각 바이트에
+ * 반대쪽 치아를 대 전후가 뒤집힌 자세가 점수만 좋아 보일 수 있다. 작은 미세 조정만 허용한다.
+ */
+const IN_PLACE_MAX_REORIENT = (Math.PI / 180) * 45;
+
+function allowsInPlaceMove(inPlace: boolean, matrix: THREE.Matrix4): boolean {
+  if (!inPlace) return true;
+  return rotationAngle(matrix) <= IN_PLACE_MAX_REORIENT;
+}
+
 async function alignArch(
   source: Cloud,
   target: Cloud,
@@ -1403,10 +1421,11 @@ async function alignArch(
   emit?: PoseSink,
   accept?: PoseCheck,
 ) {
-  const ok = (matrix: THREE.Matrix4) => !accept || accept(matrix);
   const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
   const before = overlapFitness(source, target, grid, unitToMm);
-  const inPlace = seatedFit(before, unitToMm) && ok(new THREE.Matrix4());
+  const inPlace = seatedFit(before, unitToMm) && (!accept || accept(new THREE.Matrix4()));
+  const poseOk = (matrix: THREE.Matrix4) =>
+    (!accept || accept(matrix)) && allowsInPlaceMove(inPlace, matrix);
   const already = inPlace && before.sideMean <= mmToUnits(0.32, unitToMm);
   if (already) {
     emit?.(new THREE.Matrix4());
@@ -1428,7 +1447,7 @@ async function alignArch(
     buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
     unitToMm,
   );
-  const localOk = ok(localMatrix);
+  const localOk = poseOk(localMatrix);
   let bestCloud = localOk ? local : source;
   let bestMatrix = localOk ? localMatrix : new THREE.Matrix4();
   let bestFit = localOk ? localFit : before;
@@ -1473,7 +1492,7 @@ async function alignArch(
         fit = coarse;
       }
       if (
-        ok(matrix) &&
+        poseOk(matrix) &&
         (fit.coverage > bestFit.coverage + 0.05 ||
           (fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean))
       ) {
@@ -1486,7 +1505,7 @@ async function alignArch(
   const improved =
     bestFit.coverage > before.coverage + 0.08 ||
     bestFit.sideMean + mmToUnits(0.15, unitToMm) < before.sideMean;
-  if (!seatedFit(bestFit, unitToMm) || !improved || !ok(bestMatrix)) {
+  if (!seatedFit(bestFit, unitToMm) || !improved || !poseOk(bestMatrix)) {
     emit?.(new THREE.Matrix4());
     // 제자리에서 이미 붙어 있으면 그 자국을 바이트에서 빼야 반대 악궁이 자기 자국을 찾는다.
     return {
@@ -2229,6 +2248,50 @@ async function registerJawsToBiteWork(
     lone.matrix.identity();
     lone.aligned = lone.original;
     sinkFor(lone.geometry)?.(lone.matrix);
+  }
+  // 제자리에서 이미 맞던 악궁을 크게 돌린 결과는 버린다(협측 바이트 전후 뒤집힘).
+  const biteGrid = buildGrid(biteCloud, mmToUnits(FIT_GRID_MM, unitToMm));
+  for (const row of fitted) {
+    if (!row.seated || row.matrix.equals(identity)) continue;
+    if (rotationAngle(row.matrix) <= IN_PLACE_MAX_REORIENT) continue;
+    const native = overlapFitness(row.original, biteCloud, biteGrid, unitToMm);
+    if (!seatedFit(native, unitToMm)) continue;
+    row.seated = true;
+    row.matrix.identity();
+    row.aligned = row.original;
+    row.after = native.mean;
+    row.inliers = native.inliers;
+    row.side = native.sideMean;
+    sinkFor(row.geometry)?.(row.matrix);
+  }
+  const upperFinal = fitted.find((row) => row.role === "upper" && row.seated);
+  const lowerFinal = fitted.find((row) => row.role === "lower" && row.seated);
+  if (
+    upperFinal &&
+    lowerFinal &&
+    !occlusionPairOk(
+      planAxes(upperFinal.plan, upperFinal.matrix),
+      planAxes(lowerFinal.plan, lowerFinal.matrix),
+      unitToMm,
+    )
+  ) {
+    const drop =
+      rotationAngle(upperFinal.matrix) >= rotationAngle(lowerFinal.matrix)
+        ? upperFinal
+        : lowerFinal;
+    const native = overlapFitness(drop.original, biteCloud, biteGrid, unitToMm);
+    if (seatedFit(native, unitToMm)) {
+      drop.matrix.identity();
+      drop.aligned = drop.original;
+      drop.after = native.mean;
+      drop.inliers = native.inliers;
+      drop.side = native.sideMean;
+    } else {
+      drop.seated = false;
+      drop.matrix.identity();
+      drop.aligned = drop.original;
+    }
+    sinkFor(drop.geometry)?.(drop.matrix);
   }
   await pause(options);
   let seated = false;

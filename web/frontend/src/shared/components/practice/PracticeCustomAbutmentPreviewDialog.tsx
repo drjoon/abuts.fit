@@ -57,6 +57,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   Axis3d,
   Check,
+  Combine,
   Download,
   Loader2,
   Paintbrush,
@@ -116,6 +117,12 @@ import { readCachedScanGeometry, storeScanGeometry } from "@/shared/files/scanMe
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
+import {
+  archPlanAxes,
+  estimateDentalFrame,
+  reseatOcclusalOrigin,
+  type DentalFrame,
+} from "@/shared/practice/dentalFrame";
 import { preloadMeshUnion } from "@/shared/practice/meshUnion";
 import {
   CUSTOM_ABUTMENT_DESIGN_VERSION,
@@ -262,7 +269,6 @@ import {
   type ViewCubeFace,
   type ViewCubeHandle,
 } from "@/shared/components/practice/PracticeCustomAbutmentViewCube";
-import { estimateDentalFrame, type DentalFrame } from "@/shared/practice/dentalFrame";
 import {
   isAbutsWorkScanFileName,
   isOralScanMeshName,
@@ -996,6 +1002,32 @@ function adoptStoredInsertionAxis(
   writeBridgeInsertionAxis(locked, [toothNumber], normalizeInsertionAxis(raw));
 }
 
+function sampleJawPlanPoints(
+  geometry: THREE.BufferGeometry,
+  cap: number,
+): Array<[number, number, number]> {
+  const pos = geometry.getAttribute("position");
+  const out: Array<[number, number, number]> = [];
+  if (!pos || pos.count === 0) return out;
+  const step = Math.max(1, Math.floor(pos.count / Math.max(cap, 1)));
+  for (let i = 0; i < pos.count; i += step) {
+    out.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+  }
+  return out;
+}
+
+/** 상·하악 전치 방향이 같은 쪽을 보면 true. 전후 뒤집힌 작업 스캔을 가린다. */
+function jawsAgreeOnAnterior(
+  upper: THREE.BufferGeometry | null | undefined,
+  lower: THREE.BufferGeometry | null | undefined,
+): boolean {
+  if (!upper || !lower) return true;
+  const ua = archPlanAxes(sampleJawPlanPoints(upper, 1500));
+  const la = archPlanAxes(sampleJawPlanPoints(lower, 1500));
+  if (!ua || !la) return true;
+  return ua.anterior.dot(la.anterior) >= 0.5;
+}
+
 export function PracticeCustomAbutmentPreviewDialog({
   open,
   onOpenChange,
@@ -1272,6 +1304,10 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [pivotSet, setPivotSet] = useState(false);
   const [pivotArmed, setPivotArmed] = useState(false);
   const [gumballOn, setGumballOn] = useState(true);
+  /** 헤더 「바이트」클릭 시 원본 스캔으로 교합을 다시 맞춘다. */
+  const [biteRecalcEpoch, setBiteRecalcEpoch] = useState(0);
+  const [biteRecalcBusy, setBiteRecalcBusy] = useState(false);
+  const forceBiteRecalcRef = useRef(false);
   const [editRev, setEditRev] = useState(0);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
@@ -3542,6 +3578,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     connections,
     patientName,
     workScanFiles,
+    files,
   });
   latestInputsRef.current = {
     abutmentToothWorks,
@@ -3550,6 +3587,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     connections,
     patientName,
     workScanFiles,
+    files,
   };
 
   // 확정 뒤 목록 응답이 파일 이름·스캔 역할만 바꿔도 구강 스캔을 다시 받지 않는다.
@@ -4004,8 +4042,11 @@ export function PracticeCustomAbutmentPreviewDialog({
       connections: curConnections,
       patientName: curPatientName,
       workScanFiles: curWorkScanFiles,
+      files: curRequestFiles,
     } = latestInputsRef.current;
     const token = String(authToken || "").trim();
+    const forceBiteRecalc = forceBiteRecalcRef.current;
+    forceBiteRecalcRef.current = false;
     if (!token) {
       setStatus({ kind: "error", message: "로그인이 필요합니다." });
       return;
@@ -4014,7 +4055,18 @@ export function PracticeCustomAbutmentPreviewDialog({
       setStatus({ kind: "error", message: "커스텀어벗 디자인 대상 치아가 없습니다." });
       return;
     }
-    if (curScanSources.meshes.length === 0) {
+    // 바이트 재계산은 잘못된 작업 스캔 대신 의뢰 원본 상·하악·바이트를 쓴다.
+    const originalMeshes = (curRequestFiles || []).filter(
+      (f) =>
+        Boolean(f.s3Key) &&
+        isOralScanMeshName(f.fileName) &&
+        !isAbutsWorkScanFileName(f.fileName),
+    );
+    const pipelineMeshes =
+      forceBiteRecalc && originalMeshes.length > 0
+        ? originalMeshes
+        : curScanSources.meshes;
+    if (pipelineMeshes.length === 0) {
       if (filesPending) {
         setStatus({
           kind: "loading",
@@ -4033,6 +4085,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const abort = new AbortController();
     let cancelled = false;
     const cacheKey = customAbutmentDesignCacheKey(pipelineKey);
+    if (forceBiteRecalc) setBiteRecalcBusy(true);
 
     const loadCompanionTexture = async (
       fileName: string,
@@ -4174,10 +4227,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           ? Promise.resolve([] as CustomAbutmentChatTurn[])
           : readCustomAbutmentChat(transferIdParam || pipelineKey);
         const targetRoles = new Set<"upper" | "lower" | "bite">(["upper", "lower"]);
-        const hasWorkScans = curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
-        if (!hasWorkScans) targetRoles.add("bite");
+        const hasWorkScans =
+          !forceBiteRecalc &&
+          curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
+        if (!hasWorkScans || forceBiteRecalc) targetRoles.add("bite");
 
-        const toLoad = curScanSources.meshes.filter((f) => {
+        const toLoad = pipelineMeshes.filter((f) => {
           const r = resolveOralScanRole({
             fileName: f.fileName,
             scanRole: f.scanRole ?? undefined,
@@ -4295,10 +4350,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         // 이번 스냅샷과 같은 시각의 소켓 재전송이 메시를 다시 만들지 않게 한다.
         if (serverAt > lastRemoteSavedAtRef.current) lastRemoteSavedAtRef.current = serverAt;
         // 정점이 없을 때만 다시 만든다. 검볼만 있으면 저장 메시 위에 얹는다.
+        // 바이트 재계산 뒤에는 저장 메시 좌표가 교합 프레임과 어긋나 파라미터로 다시 만든다.
         const rebuildFromMeta = Boolean(
-          cached?.teeth.some(
-            (row) => row.regenFromMeta || (row.localPositions?.byteLength ?? 0) < 36,
-          ),
+          forceBiteRecalc ||
+            cached?.teeth.some(
+              (row) => row.regenFromMeta || (row.localPositions?.byteLength ?? 0) < 36,
+            ),
         );
         proposalInputRef.current = {};
         for (const row of cached?.teeth ?? []) {
@@ -4342,7 +4399,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         let meshRestore = false;
         let serverMeshRestore = false;
         let alignedScans: CachedAlignedScan[] = [];
-        if (cached && cached.teeth.length > 0) {
+        if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
           if (cached.alignedScans.length > 0) {
             const fits = cached.alignedScans.every((row) => {
               const scan = jawScans.find((s) => s.role === row.role && s.fileName === row.fileName);
@@ -4363,20 +4420,43 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
           } else if (hasWorkScans) {
             // 작업 스캔은 이미 정렬된 월드 좌표이므로 alignedScans가 비어 있어도 정합을 재사용한다.
-            restored = true;
+            // 상·하악 전치가 반대면(전후 뒤집힘) 원본 스캔으로 파이프라인을 다시 연다.
+            if (
+              jawsAgreeOnAnterior(upperScans[0]?.geometry, lowerScans[0]?.geometry)
+            ) {
+              restored = true;
+            } else if (originalMeshes.length > 0) {
+              for (const s of loadedScans) {
+                s.geometry.dispose();
+                s.texture?.dispose();
+              }
+              if (!cancelled) {
+                forceBiteRecalcRef.current = true;
+                setBiteRecalcEpoch((n) => n + 1);
+              }
+              return;
+            }
           } else if (!rebuildFromMeta && (cached.designFresh || isLabViewer)) {
             meshRestore = true;
           }
         }
 
-        if (!restored && !hasWorkScans && biteScans.length > 0 && jawScans.length > 0) {
+        const needBiteAlign =
+          !restored && biteScans.length > 0 && jawScans.length > 0 && (!hasWorkScans || forceBiteRecalc);
+        if (needBiteAlign) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
           await new Promise<void>((r) => window.setTimeout(r, 0));
-          await registerJawsToBiteResult(
-            loadedScans.map((s) => ({ role: s.role, geometry: s.geometry })),
-            { sweepPoses: true, cancelled: () => cancelled },
-          );
+          const alignEntries = loadedScans.map((s) => ({
+            role: s.role,
+            geometry: s.geometry,
+          }));
+          await registerJawsToBiteResult(alignEntries, {
+            sweepPoses: true,
+            cancelled: () => cancelled,
+          });
           if (cancelled) return;
+          const seatedFrame = estimateDentalFrame(alignEntries);
+          if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
           alignedScans = jawScans.map((s) => {
             const attr = s.geometry.getAttribute("position") as THREE.BufferAttribute;
             return {
@@ -5110,6 +5190,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (transferIdParam) {
           emitCustomAbutmentLive({ kind: "hello", transferId: transferIdParam });
         }
+        if (forceBiteRecalc && !cancelled) {
+          toast({
+            title: "바이트에 다시 맞췄습니다.",
+          });
+        }
 
         window.requestAnimationFrame(() => {
           viewReadyRef.current = true;
@@ -5192,6 +5277,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           return;
         }
         setStatus({ kind: "error", message });
+      } finally {
+        if (forceBiteRecalc) setBiteRecalcBusy(false);
       }
     };
 
@@ -5211,6 +5298,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
   }, [
     authToken,
+    biteRecalcEpoch,
     filesPending,
     hostEl,
     isLabViewer,
@@ -5218,6 +5306,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     pipelineKey,
     readOnly,
     scanDownloadLocked,
+    toast,
     transferIdParam,
   ]);
 
@@ -7200,6 +7289,45 @@ export function PracticeCustomAbutmentPreviewDialog({
                     }}
                   >
                     <Axis3d className="h-4 w-4" />
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    label="바이트"
+                    active={biteRecalcBusy}
+                    disabled={biteRecalcBusy || status.kind === "loading"}
+                    tip={
+                      <>
+                        의뢰 원본 상·하악을 바이트에 다시 맞춥니다.
+                        <br />
+                        전후가 뒤집힌 교합을 고칠 때 씁니다.
+                      </>
+                    }
+                    onClick={() => {
+                      if (biteRecalcBusy) return;
+                      const hasOriginalBite = (files || []).some((f) => {
+                        if (!f.s3Key || isAbutsWorkScanFileName(f.fileName)) return false;
+                        return (
+                          resolveOralScanRole({
+                            fileName: f.fileName,
+                            scanRole: f.scanRole ?? undefined,
+                          }) === "bite"
+                        );
+                      });
+                      if (!hasOriginalBite) {
+                        toast({
+                          title: "바이트 스캔이 없어 다시 맞출 수 없습니다.",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      forceBiteRecalcRef.current = true;
+                      setBiteRecalcEpoch((n) => n + 1);
+                    }}
+                  >
+                    {biteRecalcBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Combine className="h-4 w-4" />
+                    )}
                   </HeaderIconButton>
                   <HeaderIconButton
                     label="되돌리기"
