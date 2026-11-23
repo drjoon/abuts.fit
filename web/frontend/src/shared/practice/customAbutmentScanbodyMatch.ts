@@ -2156,9 +2156,70 @@ export function cropScanPointsInFixtureFrame(
   return built;
 }
 
+type Rgb3 = [number, number, number];
+
+function scanVertexColorScale(color: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): number {
+  return !color.normalized &&
+    (color.array instanceof Uint8Array ||
+      color.array instanceof Uint16Array ||
+      color.array instanceof Uint32Array)
+    ? 1 / 255
+    : 1;
+}
+
+function readVertexRgb(
+  color: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+  v: number,
+  scale: number,
+): Rgb3 {
+  return [color.getX(v) * scale, color.getY(v) * scale, color.getZ(v) * scale];
+}
+
+function rgbDistance(a: Rgb3, b: Rgb3): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+/** 분홍·붉은 연조직. 스캔바디 확장에서 제외한다. */
+function isGingivaRgb(c: Rgb3): boolean {
+  const [r, g, b] = c;
+  return r > 0.32 && r > g * 1.06 && r > b * 1.18 && r - b > 0.07 && g > 0.12;
+}
+
+/** 밝은 저채도 법랑질. 흰 스캔바디와 치아가 비슷하면 확장을 하지 않는다. */
+function isEnamelRgb(c: Rgb3): boolean {
+  const y = (c[0] + c[1] + c[2]) / 3;
+  const chroma = Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]);
+  return y > 0.62 && chroma < 0.16 && c[2] > c[0] * 0.75;
+}
+
+function medianRgb(samples: Rgb3[]): Rgb3 | null {
+  if (samples.length < 8) return null;
+  const channel = (i: 0 | 1 | 2) => {
+    const sorted = samples.map((s) => s[i]).sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)]!;
+  };
+  return [channel(0), channel(1), channel(2)];
+}
+
+/** 코어에서 배운 스캔바디 색. 치은·법랑질이면 바깥 확장을 하지 않는다. */
+function usableScanbodyProto(samples: Rgb3[]): Rgb3 | null {
+  const proto = medianRgb(samples);
+  if (!proto || isGingivaRgb(proto) || isEnamelRgb(proto)) return null;
+  return proto;
+}
+
+function matchesScanbodyRgb(c: Rgb3, proto: Rgb3): boolean {
+  if (isGingivaRgb(c)) return false;
+  if (isEnamelRgb(c)) return false;
+  return rgbDistance(c, proto) <= 0.16;
+}
+
 /**
  * 스캔을 잇몸 위로 솟은 스캔바디 기둥(치아별 조각)과 나머지로 나눈다. 원본 지오메트리는 건드리지 않는다.
  * 나머지 + 보이려는 치아 조각 = 그 치아만 스캔바디를 보인다. 조각은 같은 정점 버퍼를 쓰고 인덱스만 다르다.
+ *
+ * 코어 원통(`sbR+0.34`)은 기하로 분리한다.
+ * 그 밖 근·원심 잔여는 스캔 버텍스 색이 스캔바디와 같을 때만 분리한다. 치은·법랑질 색은 남긴다.
  */
 export function splitScanByScanbodies(
   source: THREE.BufferGeometry,
@@ -2169,6 +2230,18 @@ export function splitScanByScanbodies(
   const xyz = readPositionArray(source);
   if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) return { rest: source.clone(), scanbodies };
   const SECTORS = 24;
+  /** 코어 원통 패딩(mm). */
+  const CORE_PAD_MM = 0.34;
+  /** 색이 스캔바디와 같을 때만 코어 밖으로 보는 거리(mm). */
+  const COLOR_REACH_MM = 2.2;
+  const COLOR_RAD_BIN_MM = 0.4;
+  /** |sector·mesial| 이하면 협·설 — 색 확장 없음. */
+  const PROXIMAL_DOT_MIN = 0.72;
+  const colorAttr = source.getAttribute("color");
+  const colorScale =
+    colorAttr && colorAttr.itemSize >= 3 && colorAttr.count >= pos.count
+      ? scanVertexColorScale(colorAttr)
+      : 0;
   const isInsideOtherScanbody = (px: number, py: number, pz: number, skipIdx: number) => {
     for (let j = 0; j < fixtures.length; j += 1) {
       if (j === skipIdx) continue;
@@ -2195,8 +2268,11 @@ export function splitScanByScanbodies(
     const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
     const e2 = cross(axis, e1);
     const rawFloor = new Float64Array(SECTORS).fill(Infinity);
-    const rOuterMin = f.scanbodyRadiusMm + 0.34;
+    const coreR = f.scanbodyRadiusMm + CORE_PAD_MM;
+    const rOuterMin = coreR;
     const rOuterMax = f.scanbodyRadiusMm + 1.65;
+    const bodyR = f.scanbodyRadiusMm * 0.82;
+    const colorSamples: Rgb3[] = [];
     for (let vi = 0; vi < pos.count; vi += 1) {
       const px = xyz[vi * 3]!;
       const py = xyz[vi * 3 + 1]!;
@@ -2209,13 +2285,23 @@ export function splitScanByScanbodies(
       const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
       const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
       const r = Math.hypot(u, v);
-      if (r < rOuterMin || r > rOuterMax) continue;
       if (isInsideOtherScanbody(px, py, pz, fi)) continue;
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
-      if (hz < rawFloor[b]!) rawFloor[b] = hz;
+      if (r >= rOuterMin && r <= rOuterMax && hz < rawFloor[b]!) rawFloor[b] = hz;
+      if (
+        colorScale &&
+        colorAttr &&
+        colorSamples.length < 280 &&
+        r <= bodyR &&
+        hz > 1.5 &&
+        hz < f.scanbodyHeightMm - 0.7 &&
+        vi % 2 === 0
+      ) {
+        colorSamples.push(readVertexRgb(colorAttr, vi, colorScale));
+      }
     }
     const baseFloor = Math.max(0.75, f.gingivaFloorMm - 0.15);
     const filled = Array.from({ length: SECTORS }, (_, b) =>
@@ -2231,6 +2317,59 @@ export function splitScanByScanbodies(
         Math.min(f.scanbodyHeightMm - 1.3, (prev + cur * 2 + next) * 0.25 - 0.28),
       );
     }
+    const proto = colorScale ? usableScanbodyProto(colorSamples) : null;
+    const mesU = f.mesialDir[0] * e1[0] + f.mesialDir[1] * e1[1] + f.mesialDir[2] * e1[2];
+    const mesV = f.mesialDir[0] * e2[0] + f.mesialDir[1] * e2[1] + f.mesialDir[2] * e2[2];
+    const mesLen = Math.hypot(mesU, mesV) || 1;
+    const reachR = f.scanbodyRadiusMm + COLOR_REACH_MM;
+    const radBinCount = Math.max(1, Math.round((reachR - coreR) / COLOR_RAD_BIN_MM));
+    const sectorMaxR = new Float64Array(SECTORS).fill(coreR);
+    if (proto && colorAttr) {
+      const binMatch = Array.from({ length: SECTORS }, () => new Int32Array(radBinCount));
+      const binCount = Array.from({ length: SECTORS }, () => new Int32Array(radBinCount));
+      const proximalSector = new Uint8Array(SECTORS);
+      for (let b = 0; b < SECTORS; b += 1) {
+        const ang = ((b + 0.5) / SECTORS) * Math.PI * 2 - Math.PI;
+        const proximal = Math.abs((Math.cos(ang) * mesU + Math.sin(ang) * mesV) / mesLen);
+        if (proximal >= PROXIMAL_DOT_MIN) proximalSector[b] = 1;
+      }
+      for (let vi = 0; vi < pos.count; vi += 1) {
+        const px = xyz[vi * 3]!;
+        const py = xyz[vi * 3 + 1]!;
+        const pz = xyz[vi * 3 + 2]!;
+        const rx0 = px - f.fixturePose.origin[0];
+        const ry0 = py - f.fixturePose.origin[1];
+        const rz0 = pz - f.fixturePose.origin[2];
+        const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
+        if (hz < 1.2 || hz > f.scanbodyHeightMm - 0.4) continue;
+        const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
+        const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
+        const r = Math.hypot(u, v);
+        if (r < coreR || r >= reachR) continue;
+        if (isInsideOtherScanbody(px, py, pz, fi)) continue;
+        const b = Math.min(
+          SECTORS - 1,
+          Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
+        );
+        if (!proximalSector[b]) continue;
+        const bi = Math.min(radBinCount - 1, Math.floor((r - coreR) / COLOR_RAD_BIN_MM));
+        binCount[b]![bi]! += 1;
+        if (matchesScanbodyRgb(readVertexRgb(colorAttr, vi, colorScale), proto)) {
+          binMatch[b]![bi]! += 1;
+        }
+      }
+      for (let b = 0; b < SECTORS; b += 1) {
+        if (!proximalSector[b]) continue;
+        let extent = coreR;
+        for (let bi = 0; bi < radBinCount; bi += 1) {
+          const count = binCount[b]![bi]!;
+          if (count < 4) break;
+          if (binMatch[b]![bi]! / count < 0.62) break;
+          extent = Math.min(reachR, coreR + (bi + 1) * COLOR_RAD_BIN_MM);
+        }
+        sectorMaxR[b] = extent;
+      }
+    }
     return {
       tooth: f.toothNumber,
       origin: f.fixturePose.origin,
@@ -2239,8 +2378,10 @@ export function splitScanByScanbodies(
       e2,
       radiusMm: f.scanbodyRadiusMm,
       baseFloor,
-      maxR2: (f.scanbodyRadiusMm + 0.34) ** 2,
+      coreR2: coreR ** 2,
+      sectorMaxR,
       sectorMinZ,
+      proto,
       maxZ: f.scanbodyHeightMm + 1.2,
     };
   });
@@ -2269,14 +2410,21 @@ export function splitScanByScanbodies(
       const ry = ry0 - zone.axis[1] * hz;
       const rz = rz0 - zone.axis[2] * hz;
       const r2 = rx * rx + ry * ry + rz * rz;
-      if (r2 > zone.maxR2) continue;
       const u = rx0 * zone.e1[0] + ry0 * zone.e1[1] + rz0 * zone.e1[2];
       const v = rx0 * zone.e2[0] + ry0 * zone.e2[1] + rz0 * zone.e2[2];
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
-      if (hz >= zone.sectorMinZ[b]!) return k;
+      const maxR = zone.sectorMaxR[b]!;
+      if (r2 > maxR * maxR) continue;
+      if (hz < zone.sectorMinZ[b]!) continue;
+      // 코어 밖은 스캔바디 색인 정점만. 치은·법랑질은 남긴다.
+      if (r2 > zone.coreR2) {
+        if (!zone.proto || !colorAttr || !colorScale) continue;
+        if (!matchesScanbodyRgb(readVertexRgb(colorAttr, vi, colorScale), zone.proto)) continue;
+      }
+      return k;
     }
     for (const [ia, ib] of bridgedPairs) {
       const za = zones[ia]!;

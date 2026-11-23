@@ -41,6 +41,7 @@ import {
   fixturePoseToMatrix4,
   locateNominalToothSlot,
   parseFdiTooth,
+  splitScanByScanbodies,
   type FixtureWorldPose,
   type MatchedScanbodyFixture,
 } from "@/shared/practice/customAbutmentScanbodyMatch";
@@ -1179,8 +1180,9 @@ type SectionRole = "margin" | "post" | "crown";
 
 /**
  * 소구치(premolar) 교합면 해부 단면:
- * 협설(BL)로 약간 길면서 협측(+u, cos ψ > 0)은 조금 더 볼록하고 넓으며,
- * 설측(-u, cos ψ < 0)은 폭을 줄이고 뾰족하게 돌출되지 않게 다듬어 둥근 사각형에 가까운 계란형(난원형) 단면을 만든다.
+ * 협설(BL)로 약간 길고, 협측 근원심이 길며 설측 근원심이 짧은 둥근 사다리꼴.
+ * 단면 각 ψ의 +u(cos ψ > 0)는 화면에서 설측으로 놓이므로, cos 부호만 뒤집어 긴 변을 협측으로 보낸다.
+ * 로프트·마진 솔버는 이 반경을 그대로 쓴다.
  * 종횡비 정규화 각 ψ = atan2(aBl·sin φ, bMd·cos φ) 위에서 C∞ 엄밀 양수 곡률 게이지로 정의해
  * 모든 (aBl, bMd) 비율과 4변 중앙에서도 평탄 절벽 없이 100% 엄밀 볼록 곡선을 보장한다.
  */
@@ -1225,7 +1227,8 @@ function premolarOvoidTrapezoidRadius(
   const a = Math.max(0.35, aBl);
   const b = Math.max(0.35, bMd);
   const psi = Math.atan2(a * Math.sin(phi), b * Math.cos(phi));
-  const cPsi = Math.cos(psi);
+  // +u(cos ψ > 0)가 화면 설측이라, 부호를 뒤집어 긴 근원심 변을 협측에 둔다.
+  const cPsi = -Math.cos(psi);
   const w = 0.96 + 0.1 * cPsi;
   const n =
     role === "post"
@@ -1358,7 +1361,7 @@ function anteriorPolarRadius(
 /**
  * 교합면에서 본 치종·역할별 해부 단면 반경(자연치 구강스캔 + 기공소 커스텀어벗·보철 STL 실측 기반).
  * - 대구치(molar): 포스트 n=3.25·마진 n=3.05의 뚜렷한 둥근 모서리 사각형, 크라운 n=2.65 해부 사각 외형
- * - 소구치(premolar): 협설(BL)로 약간 길고 협측이 넓으며 설측 폭을 줄인 사다리꼴-계란형(난원형) 단면
+ * - 소구치(premolar): 협설(BL)로 약간 길고 협측 근원심이 길며 설측이 짧은 사다리꼴-계란형(난원형) 단면
  * - 견치(canine): 순측 융선 + 근·원심 우각 + 설측 싱귤럼으로 수렴하는 모서리가 둥근 역삼각형/마름모(엄밀 볼록)
  * - 전치(incisor): 완만한 순측 호와 설측 결절로 수렴하는 둥근 역삼각-난원형(엄밀 볼록)
  */
@@ -4590,7 +4593,15 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const contact = params.crownContactMm;
   const clearance = params.occlusalClearanceMm;
 
-  const jawLocalAll = cropScanPointsInFixtureFrame(jawGeometry, fixture.fixturePose, 20);
+  // 표시 trimmed와 동일 SSOT: 스캔바디·인접치 사이 높은 이물질을 뺀 rest로 치은·크라운을 읽는다.
+  const clearFixtures: MatchedScanbodyFixture[] = [
+    fixture,
+    ...(args.neighbors ?? []).filter(
+      (nb) => nb.jaw === fixture.jaw && nb.toothNumber !== fixture.toothNumber,
+    ),
+  ];
+  const clearedJaw = splitScanByScanbodies(jawGeometry, clearFixtures).rest;
+  const jawLocalAll = cropScanPointsInFixtureFrame(clearedJaw, fixture.fixturePose, 20);
   const opposingLocalPts = cropScanPointsInFixtureFrame(opposingGeometry, fixture.fixturePose, 20);
 
   const baseBore = resolveScrewChannelProfile(conn, null);
@@ -4784,7 +4795,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       cylByKey.set(cylKey, built);
       return built;
     };
-    const jawArchPts = sampleCylInFix(jawGeometry, true);
+    const jawArchPts = sampleCylInFix(clearedJaw, true);
     const oppArchPts = sampleCylInFix(opposingGeometry, false);
 
     type ArchStation = { v: number; u: number; w: number };
