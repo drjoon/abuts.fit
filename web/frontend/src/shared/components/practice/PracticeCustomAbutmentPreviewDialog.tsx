@@ -401,6 +401,8 @@ type BiteManualSession = {
   biteMeshes: THREE.Mesh[];
   /** 반대 악궁 — 배치만 보이고 클릭은 받지 않는다. */
   idleMeshes: THREE.Mesh[];
+  /** 세 모델을 한 묶음으로 두어 카메라가 같이 돈다. */
+  group: THREE.Group;
   marks: THREE.Object3D[];
   resolve: (ok: boolean) => void;
 };
@@ -3607,9 +3609,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       clearBiteManualMarks();
       const scene = sceneRef.current;
       for (const mesh of [...session.archMeshes, ...session.biteMeshes, ...session.idleMeshes]) {
-        scene?.remove(mesh);
+        session.group.remove(mesh);
         disposeMesh(mesh, true, true);
       }
+      scene?.remove(session.group);
       biteManualRef.current = null;
       session.resolve(ok);
     },
@@ -3629,8 +3632,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       if (!scene || !camera || !controls || !host) return Promise.resolve(false);
       if (biteManualRef.current) endBiteManualSession(false);
 
+      const group = new THREE.Group();
+      group.name = "bite-manual-layout";
+      scene.add(group);
+
       const makeMesh = (scan: LoadedJawScan, idle: boolean) => {
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
+        scan.geometry.computeBoundingBox();
         scan.geometry.computeBoundingSphere();
         const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
         mat.side = THREE.DoubleSide;
@@ -3640,86 +3648,87 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         const mesh = new THREE.Mesh(scan.geometry, mat);
         mesh.userData.biteManualRole = scan.role;
-        scene.add(mesh);
+        group.add(mesh);
         return mesh;
       };
 
-      const upperMeshes = jawScans.filter((s) => s.role === "upper").map((s) => makeMesh(s, arch !== "upper"));
-      const lowerMeshes = jawScans.filter((s) => s.role === "lower").map((s) => makeMesh(s, arch !== "lower"));
+      const upperMeshes = jawScans
+        .filter((s) => s.role === "upper")
+        .map((s) => makeMesh(s, arch !== "upper"));
+      const lowerMeshes = jawScans
+        .filter((s) => s.role === "lower")
+        .map((s) => makeMesh(s, arch !== "lower"));
       const biteMeshes = biteScans.map((s) => makeMesh(s, false));
       const archMeshes = arch === "upper" ? upperMeshes : lowerMeshes;
       const idleMeshes = arch === "upper" ? lowerMeshes : upperMeshes;
       if (archMeshes.length === 0 || biteMeshes.length === 0) {
         for (const mesh of [...upperMeshes, ...lowerMeshes, ...biteMeshes]) {
-          scene.remove(mesh);
+          group.remove(mesh);
           disposeMesh(mesh, true, true);
         }
+        scene.remove(group);
         return Promise.resolve(false);
       }
 
-      const boxOf = (meshes: THREE.Mesh[]) => {
+      const extentOf = (meshes: THREE.Mesh[]) => {
         const box = new THREE.Box3();
-        for (const mesh of meshes) box.expandByObject(mesh);
-        return box;
-      };
-      const upperBox = upperMeshes.length ? boxOf(upperMeshes) : null;
-      const lowerBox = lowerMeshes.length ? boxOf(lowerMeshes) : null;
-      const biteBox = boxOf(biteMeshes);
-      const viewDir = new THREE.Vector3(0, -1, 0.35).normalize();
-      const up = new THREE.Vector3(0, 0, 1);
-      const screenRight = new THREE.Vector3().crossVectors(viewDir, up).normalize();
-      const screenUp = up.clone().addScaledVector(viewDir, -up.dot(viewDir)).normalize();
-      const halfAlong = (box: THREE.Box3, axis: THREE.Vector3) => {
-        const size = box.getSize(new THREE.Vector3());
-        return 0.5 * (Math.abs(size.x * axis.x) + Math.abs(size.y * axis.y) + Math.abs(size.z * axis.z));
-      };
-      const biteHalfX = halfAlong(biteBox, screenRight);
-      const upperHalfX = upperBox ? halfAlong(upperBox, screenRight) : 0;
-      const lowerHalfX = lowerBox ? halfAlong(lowerBox, screenRight) : 0;
-      const upperHalfY = upperBox ? halfAlong(upperBox, screenUp) : 0;
-      const lowerHalfY = lowerBox ? halfAlong(lowerBox, screenUp) : 0;
-      const rightHalfX = Math.max(upperHalfX, lowerHalfX, 1);
-      const gapX = Math.max(biteHalfX, rightHalfX, 1) * 0.22;
-      const gapY = Math.max(upperHalfY, lowerHalfY, 1) * 0.28;
-      const sepX = (biteHalfX + rightHalfX + gapX) * 0.5;
-      const sepY = (upperHalfY + lowerHalfY + gapY) * 0.5;
-      // 왼쪽 바이트, 오른쪽 위 상악, 오른쪽 아래 하악.
-      const place = (meshes: THREE.Mesh[], box: THREE.Box3, slot: THREE.Vector3) => {
+        for (const mesh of meshes) {
+          mesh.updateWorldMatrix(true, false);
+          box.expandByObject(mesh);
+        }
         const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const radius = Math.max(size.length() * 0.5, 1);
+        return { box, center, size, radius };
+      };
+      const biteExt = extentOf(biteMeshes);
+      const upperExt = upperMeshes.length ? extentOf(upperMeshes) : null;
+      const lowerExt = lowerMeshes.length ? extentOf(lowerMeshes) : null;
+
+      // 화면 위아래(+Z)로 확실히 떨어뜨린다. 바이트 가운데, 위 상악, 아래 하악.
+      const axisUp = new THREE.Vector3(0, 0, 1);
+      const gap = Math.max(
+        biteExt.radius,
+        upperExt?.radius ?? 0,
+        lowerExt?.radius ?? 0,
+        8,
+      ) * 0.35;
+      const place = (meshes: THREE.Mesh[], center: THREE.Vector3, slot: THREE.Vector3) => {
         const offset = slot.clone().sub(center);
         for (const mesh of meshes) mesh.position.copy(offset);
       };
-      place(biteMeshes, biteBox, screenRight.clone().multiplyScalar(-sepX));
-      if (upperBox && upperMeshes.length && lowerBox && lowerMeshes.length) {
+      place(biteMeshes, biteExt.center, new THREE.Vector3(0, 0, 0));
+      if (upperExt && lowerExt) {
+        const sepUp = biteExt.radius + upperExt.radius + gap;
+        const sepDown = biteExt.radius + lowerExt.radius + gap;
+        place(upperMeshes, upperExt.center, axisUp.clone().multiplyScalar(sepUp));
+        place(lowerMeshes, lowerExt.center, axisUp.clone().multiplyScalar(-sepDown));
+      } else if (upperExt) {
         place(
           upperMeshes,
-          upperBox,
-          screenRight.clone().multiplyScalar(sepX).addScaledVector(screenUp, sepY),
+          upperExt.center,
+          axisUp.clone().multiplyScalar(biteExt.radius + upperExt.radius + gap),
         );
+      } else if (lowerExt) {
         place(
           lowerMeshes,
-          lowerBox,
-          screenRight.clone().multiplyScalar(sepX).addScaledVector(screenUp, -sepY),
+          lowerExt.center,
+          axisUp.clone().multiplyScalar(-(biteExt.radius + lowerExt.radius + gap)),
         );
-      } else if (upperBox && upperMeshes.length) {
-        place(upperMeshes, upperBox, screenRight.clone().multiplyScalar(sepX));
-      } else if (lowerBox && lowerMeshes.length) {
-        place(lowerMeshes, lowerBox, screenRight.clone().multiplyScalar(sepX));
       }
 
-      const bounds = new THREE.Box3();
-      for (const mesh of [...upperMeshes, ...lowerMeshes, ...biteMeshes]) {
-        mesh.updateWorldMatrix(true, false);
-        bounds.expandByObject(mesh);
-      }
+      group.updateWorldMatrix(true, true);
+      const bounds = new THREE.Box3().setFromObject(group);
       const center = bounds.getCenter(new THREE.Vector3());
       const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
       const aspect = readHostSize(host).aspect;
-      const dist = radius * 4;
+      const viewDir = new THREE.Vector3(0, -1, 0.2).normalize();
+      const up = new THREE.Vector3(0, 0, 1);
+      const dist = radius * 3.6;
       controls.target.copy(center);
       camera.up.copy(up);
       camera.position.copy(center).addScaledVector(viewDir, dist);
-      applyOrthoHeight(camera, Math.max(radius * 1.2, 8), aspect);
+      applyOrthoHeight(camera, Math.max(radius * 1.15, 8), aspect);
       camera.zoom = 1;
       camera.lookAt(center);
       controls.syncFromCamera();
@@ -3732,6 +3741,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           archMeshes,
           biteMeshes,
           idleMeshes,
+          group,
           marks: [],
           resolve,
         };
@@ -8383,27 +8393,17 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {status.kind === "bite-confirm" ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
+              <div className="pointer-events-none absolute right-3 top-1/2 z-30 -translate-y-1/2">
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
-                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-4 py-3 text-center shadow-lg",
+                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-3 py-2.5 text-left shadow-lg",
                   )}
                 >
-                  <p className="text-sm leading-relaxed text-foreground">
-                    자동으로 맞춘 자세입니다.
-                    <br />
-                    {status.qualityOk ? (
-                      "이 자세로 확정할까요?"
-                    ) : (
-                      <>
-                        자동 점수가 낮습니다.
-                        <br />
-                        확정하거나 3점으로 수정하세요.
-                      </>
-                    )}
+                  <p className="text-sm text-foreground">
+                    {status.qualityOk ? "자동 맞춤을 확정할까요?" : "자동 점수가 낮습니다."}
                   </p>
-                  <div className="flex justify-center gap-2">
+                  <div className="flex gap-2">
                     <Button
                       type="button"
                       size="sm"
@@ -8427,23 +8427,20 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : null}
 
             {status.kind === "bite-manual" ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
+              <div className="pointer-events-none absolute right-3 top-1/2 z-30 -translate-y-1/2">
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
-                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-4 py-3 text-center shadow-lg",
+                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-3 py-2.5 text-left shadow-lg",
                   )}
                 >
-                  <p className="text-sm leading-relaxed text-foreground">
-                    왼쪽 바이트, 오른쪽 위 상악·아래 하악입니다.
-                    <br />
-                    {status.arch === "upper" ? "상악" : "하악"}과 바이트에 같은 순서로 점 3개씩
-                    찍으세요.
+                  <p className="text-sm text-foreground">
+                    {status.arch === "upper" ? "상악" : "하악"}·바이트에 같은 순서로 점 3개
                   </p>
                   <p className="text-xs font-medium text-muted-foreground">
                     모델 {status.model}/3 · 바이트 {status.bite}/3
                   </p>
-                  <div className="flex justify-center gap-2">
+                  <div className="flex gap-2">
                     <Button
                       type="button"
                       size="sm"
