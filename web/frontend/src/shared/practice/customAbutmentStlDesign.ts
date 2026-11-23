@@ -185,11 +185,14 @@ const MIN_NEIGHBOR_MARGIN_PAIR_GAP_MM = 0.9;
 const GINGIVA_INSET_MM = 0.2;
 /** 픽스쳐가 깊게 식립되어 커프 여유가 있을 때 우선 확보할 최소 포스트 높이(mm). 마진은 치은 연하 깊은 끝을 넘지 않는다. */
 const TARGET_RETENTION_POST_HEIGHT_MM = 4.5;
-/** 치은선을 초기 추정하는 범위: 스캔바디 면에서 바깥으로 이만큼(출현 소켓 테두리까지 보되 가파른 인접치 벽 직전에서 멈춘다). */
-const GINGIVA_RIM_REACH_MM = 2.1;
+/** 치은선을 초기 추정하는 범위: 스캔바디 면에서 바깥으로 이만큼(출현 소켓 테두리까지 보되 가파른 인접치 벽 직전에서 멈춘다).
+ * 스캔바디 삭제가 크면 소켓 테두리가 2mm 밖으로 밀리므로 4mm까지 본다. */
+const GINGIVA_RIM_REACH_MM = 4.0;
 const GINGIVA_RIM_BIN_MM = 0.4;
 /** 바깥 칸이 이보다 가파르게 솟으면 잇몸이 아니라 인접치 벽이다. */
 const GINGIVA_RIM_MAX_STEP_MM = 0.95;
+/** 마진 직상방에 치은이 없을 때(스캔바디 대삭제 소켓) 바깥으로 더 찾는 추가 반경(mm). */
+const GINGIVA_SPARSE_EXTRA_REACH_MM = 2.8;
 const MIN_POST_HEIGHT_MM = 4;
 /** 포스트 윗면은 예측 크라운 교합면(인접치 높이)보다 이만큼 낮다. */
 const POST_BELOW_CROWN_MM = 1.5;
@@ -5400,11 +5403,25 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     if (r < sbR + 0.2 || r >= sbR + 0.2 + GINGIVA_RIM_REACH_MM) continue;
     const b = Math.min(SECTORS - 1, Math.floor((wrapAngle(Math.atan2(y, x)) / (Math.PI * 2)) * SECTORS));
     rimBuckets[b]![Math.min(rimBinCount - 1, Math.floor((r - sbR - 0.2) / GINGIVA_RIM_BIN_MM))]!.push(z);
-    if (r >= sbR + 0.35 && r <= sbR + 2.4 && z <= sbH - 0.9) gingivaBuckets[b]!.push(z);
+    if (r >= sbR + 0.35 && r <= sbR + GINGIVA_RIM_REACH_MM + 0.3 && z <= sbH - 0.9) gingivaBuckets[b]!.push(z);
   }
   const rimRaw = rimBuckets.map((bins) => {
     const nearPts = (bins[0]?.length ?? 0) + (bins[1]?.length ?? 0) + (bins[2]?.length ?? 0);
-    if (nearPts < 3) return Number.NaN;
+    // 스캔바디 대삭제면 안쪽 칸이 비어 있다. 바깥 소켓 테두리에서 시드하되 가파른 인접치 벽은 step break로 막는다.
+    if (nearPts < 3) {
+      let rim = Number.NaN;
+      let last = Number.NaN;
+      for (let bi = 3; bi < bins.length; bi += 1) {
+        const list = bins[bi]!;
+        if (list.length < 3) continue;
+        list.sort((a, c) => a - c);
+        const m = list[Math.floor(list.length / 2)]!;
+        if (Number.isFinite(last) && m - last > Math.min(GINGIVA_RIM_MAX_STEP_MM, 0.55)) break;
+        rim = Number.isFinite(rim) ? Math.max(rim, m) : m;
+        last = m;
+      }
+      return rim;
+    }
     let rim = Number.NaN;
     let last = Number.NaN;
     for (const list of bins) {
@@ -5609,10 +5626,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const y = jawLocalPts[i + 1]!;
     const z = jawLocalPts[i + 2]!;
     const r = Math.hypot(x, y);
-    if (r < sbR + 0.7 || r > sbR + 3.4) continue;
+    if (r < sbR + 0.7 || r > sbR + GINGIVA_RIM_REACH_MM + 1.2) continue;
     const b = Math.min(SECTORS - 1, Math.floor((wrapAngle(Math.atan2(y, x)) / (Math.PI * 2)) * SECTORS));
     const zm = smoothMarginZ[b]!;
-    if (r <= sbR + 2.4 && z > sectorMaxNearZ[b]!) sectorMaxNearZ[b] = z;
+    if (r <= sbR + GINGIVA_RIM_REACH_MM + 0.3 && z > sectorMaxNearZ[b]!) sectorMaxNearZ[b] = z;
     if (z >= zm + 0.55 && z <= zm + 1.25) innerBuckets[b]!.push(r);
     if (z < zm + 0.6 || z > zm + 1.8) continue;
     tissueBuckets[b]!.push(r);
@@ -8364,7 +8381,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const baseRetentionRefMeanZ = meanMarginZ;
   const drapeMarginZForRadii = (curRadii: readonly number[]): number[] => {
     const CREST_BIN_MM = 0.35;
-    const CREST_BINS = 6;
+    // 기본 6칸(~2.1mm) + 스캔바디 대삭제 소켓용 여분 — 가파른 인접치 벽은 아래에서 step break로 막는다.
+    const CREST_BINS = 6 + Math.ceil(GINGIVA_SPARSE_EXTRA_REACH_MM / CREST_BIN_MM);
     const sectorRStart = new Array<number>(SECTORS);
     const sectorREnd = new Array<number>(SECTORS);
     const sectorCLab = new Array<number>(SECTORS);
@@ -8404,13 +8422,17 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       sectorSMes[b] = sMes;
       sectorRetromolar[b] = isRetromolar;
       sectorRStart[b] = Math.max(sbR + 0.22, Math.min(rM - 0.32, sbR + 0.55));
+      // 근·원심은 소켓 테두리가 마진보다 멀리 있을 수 있어 여분을 둔다(협·설은 기존).
+      const sparseExtra = isRetromolar ? 0.45 : GINGIVA_SPARSE_EXTRA_REACH_MM * (0.35 + 0.65 * proxW);
       sectorREnd[b] = isRetromolar
-        ? rM + 0.35
-        : (rM + 0.48) * (1 - proxW) + rProxEnd * proxW;
+        ? rM + 0.35 + sparseExtra
+        : (rM + 0.48) * (1 - proxW) + rProxEnd * proxW + sparseExtra;
     }
 
-    const atMarginBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+    const atMarginNearBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
+    const atMarginFarBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
     const nearSupportCounts = new Int32Array(SECTORS);
+    const farSupportCounts = new Int32Array(SECTORS);
     const crestBins: number[][][] = Array.from({ length: SECTORS }, () =>
       Array.from({ length: CREST_BINS }, () => [] as number[]),
     );
@@ -8426,11 +8448,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const rStart = sectorRStart[b]!;
       if (r < rStart) continue;
       const rM = evalPeriodicLinear(curRadii, theta);
-      if (r <= rM + 0.72 && z <= rawGingivaZ[b]! + 2.5) {
-        nearSupportCounts[b] += 1;
+      if (z <= rawGingivaZ[b]! + 2.5) {
+        if (r <= rM + 0.72) nearSupportCounts[b] += 1;
+        else if (r <= rM + 0.72 + GINGIVA_SPARSE_EXTRA_REACH_MM) farSupportCounts[b] += 1;
       }
-      if (r >= Math.max(sbR + 0.22, rM - 0.24) && r <= rM + 0.42 && z <= rawGingivaZ[b]! + 2.4) {
-        atMarginBuckets[b]!.push(z);
+      const rAtLo = Math.max(sbR + 0.22, rM - 0.24);
+      if (r >= rAtLo && z <= rawGingivaZ[b]! + 2.4) {
+        if (r <= rM + 0.42) atMarginNearBuckets[b]!.push(z);
+        else if (r <= rM + 0.42 + GINGIVA_SPARSE_EXTRA_REACH_MM) atMarginFarBuckets[b]!.push(z);
       }
       if (r <= sectorREnd[b]!) {
         const bi = Math.min(CREST_BINS - 1, Math.max(0, Math.floor((r - rStart) / CREST_BIN_MM)));
@@ -8469,32 +8494,47 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const n0 = nearSupportCounts[(b - 1 + SECTORS) % SECTORS]!;
       const n1 = nearSupportCounts[b]!;
       const n2 = nearSupportCounts[(b + 1) % SECTORS]!;
-      return n1 >= 2 || n0 + n1 + n2 >= 4;
+      if (n1 >= 2 || n0 + n1 + n2 >= 4) return true;
+      // 마진 직상방이 스캔 구멍이면 바깥 소켓 테두리 지지점으로 연하 클램프를 살린다.
+      const f0 = farSupportCounts[(b - 1 + SECTORS) % SECTORS]!;
+      const f1 = farSupportCounts[b]!;
+      const f2 = farSupportCounts[(b + 1) % SECTORS]!;
+      return f1 >= 3 || f0 + f1 + f2 >= 6;
     });
-    const gingAtM = atMarginBuckets.map((list, b) => {
+    const pickAtMarginZ = (list: number[], proxW: number) => {
       if (list.length < 2) return Number.NaN;
       list.sort((a, c) => a - c);
-      const proxW = sectorSMes[b]! * sectorSMes[b]!;
       const q = proxW > 0.35 ? 0.68 : 0.5;
       return list[Math.min(list.length - 1, Math.floor(list.length * q))]!;
+    };
+    const gingAtM = Array.from({ length: SECTORS }, (_, b) => {
+      const proxW = sectorSMes[b]! * sectorSMes[b]!;
+      const nearZ = pickAtMarginZ(atMarginNearBuckets[b]!, proxW);
+      if (Number.isFinite(nearZ)) return nearZ;
+      return pickAtMarginZ(atMarginFarBuckets[b]!, proxW);
     });
     fillMissingCircular(gingAtM, rimLow);
 
     const gingCrestRaw = crestBins.map((bins, b) => {
-      // 피니시라인 근처에 잇몸이 없고 치은선이 멀리 떨어져 있는 방향에서는
-      // 먼 바깥 치은 능선을 억지로 따라 올라가지 않고 주변 치은선과 완만하게 잇는다.
+      // 근처·확장 탐색 모두 비면 먼 능선을 억지로 올리지 않고 주변과 잇는다.
       if (!hasNearGingiva[b]) return Number.NaN;
       const cLab = sectorCLab[b]!;
       let crest = Number.NaN;
       let prev = Number.NaN;
-      const binCap = sectorRetromolar[b] ? 2 : bins.length;
+      const nearBins = 6;
+      const allowSparseSeed = nearSupportCounts[b]! < 2;
+      const binCap = sectorRetromolar[b] ? Math.min(4, bins.length) : bins.length;
       for (let bi = 0; bi < binCap; bi += 1) {
         const list = bins[bi]!;
         if (list.length < 2) continue;
+        // 기본 근처 칸이 비면 확장 칸에서 소켓 테두리를 시드한다. 근처가 이미 있으면 확장만으로 새로 올리지 않는다.
+        if (bi >= nearBins && !Number.isFinite(crest) && !allowSparseSeed) continue;
         list.sort((a, c) => a - c);
         const m = list[Math.floor(list.length * 0.55)]!;
         // 반경 0.35mm 안에 0.92mm 넘게 치솟으면 치은이 아니라 인접 자연치 법랑질 벽이므로 직전에서 멈춘다.
         if (Number.isFinite(prev) && m - prev > 0.92) break;
+        // 확장 구간에서는 더 엄격히 막아 인접치·치조 절벽을 타지 않는다.
+        if (bi >= nearBins && Number.isFinite(prev) && m - prev > 0.55) break;
         // 순·협·설측에서 치은정 능선을 넘어 바깥 치조점막으로 꺾여 내려가면 능선 꼭대기를 치은 라인으로 잡는다.
         if (Math.abs(cLab) > 0.35 && Number.isFinite(crest) && m < crest - 0.18) break;
         crest = Number.isFinite(crest) ? Math.max(crest, m) : m;
@@ -14087,11 +14127,11 @@ export function buildJawGingivaMarginProbe(
   const nearRimZs: number[] = [];
   for (let v = 0; v < pos.count; v += vStride) {
     const wx = pos.getX(v), wy = pos.getY(v), wz = pos.getZ(v);
-    if ((wx - ox) ** 2 + (wy - oy) ** 2 + (wz - oz) ** 2 > 144) continue;
+    if ((wx - ox) ** 2 + (wy - oy) ** 2 + (wz - oz) ** 2 > 196) continue;
     const p = toLocalPt(wx, wy, wz);
     if (p[2] < 0.7 || p[2] > sbH - 0.25) continue;
     const r = Math.hypot(p[0], p[1]);
-    if (r >= sbR + 0.25 && r <= sbR + 2.6) nearRimZs.push(p[2]);
+    if (r >= sbR + 0.25 && r <= sbR + GINGIVA_RIM_REACH_MM + 0.4) nearRimZs.push(p[2]);
   }
   nearRimZs.sort((a, c) => a - c);
   const medianRimZ =
@@ -14302,20 +14342,30 @@ export function buildJawGingivaMarginProbe(
 
         const rhoM = rhoBySector[b]!;
         const rhoStart = Math.max(0.35, rhoM - 0.55);
-        const rhoEnd = isRetromolar
+        const rhoNearEnd = isRetromolar
           ? rhoM + 0.35
           : (rhoM + 0.48) * (1 - proxW) + (rhoM + (posterior ? 0.85 : 1.0)) * proxW;
+        // 스캔바디 대삭제 소켓: 마진 직상방이 비면 근·원심 위주로 바깥 소켓 테두리까지 더 찾는다.
+        const sparseExtra = isRetromolar ? 0.45 : GINGIVA_SPARSE_EXTRA_REACH_MM * (0.35 + 0.65 * proxW);
+        const rhoEnd = rhoNearEnd + sparseExtra;
 
         let crest = Number.NaN;
         let prev = Number.NaN;
+        let foundNearBand = false;
         for (let rho = rhoStart; rho <= rhoEnd + 1e-6; rho += 0.22) {
           const px = cx + rho * cp;
           const py = cy + rho * sp;
           if (px * px + py * py < minScanR2) continue;
           const z = sampleGridZ(px, py);
           if (!Number.isFinite(z)) continue;
-          if (rho <= rhoM + 0.65) hasNearGingiva[b] = true;
-          if (Number.isFinite(prev) && z - prev > 0.62) break;
+          if (rho <= rhoM + 0.65) {
+            hasNearGingiva[b] = true;
+            foundNearBand = true;
+          }
+          // 근처 밴드에 치은이 있었는데 능선이 안 잡힌 채 확장만으로 새로 올리지 않는다.
+          if (rho > rhoNearEnd && !Number.isFinite(crest) && foundNearBand) continue;
+          if (rho > rhoNearEnd && !Number.isFinite(crest)) hasNearGingiva[b] = true;
+          if (Number.isFinite(prev) && z - prev > (rho > rhoNearEnd ? 0.48 : 0.62)) break;
           if (Math.abs(cLab) > 0.35 && Number.isFinite(crest) && z < crest - 0.16) break;
           crest = Number.isFinite(crest) ? Math.max(crest, z) : z;
           prev = z;
@@ -14323,7 +14373,8 @@ export function buildJawGingivaMarginProbe(
         gingCrestRaw[b] = crest;
 
         const nearSamples: number[] = [];
-        for (const dRho of [-0.16, 0, 0.16, 0.32]) {
+        const farSamples: number[] = [];
+        for (const dRho of [-0.16, 0, 0.16, 0.32, 0.7, 1.2, 1.8, 2.4, 3.0]) {
           const rho = rhoM + dRho;
           if (rho < 0.3) continue;
           const px = cx + rho * cp;
@@ -14332,12 +14383,14 @@ export function buildJawGingivaMarginProbe(
           const z = sampleGridZ(px, py);
           if (!Number.isFinite(z)) continue;
           if (Number.isFinite(crest) && z > crest + 0.85) continue;
-          nearSamples.push(z);
+          if (dRho <= 0.32) nearSamples.push(z);
+          else farSamples.push(z);
         }
-        if (nearSamples.length > 0) {
-          nearSamples.sort((a, c) => a - c);
+        const pickSamples = nearSamples.length > 0 ? nearSamples : farSamples;
+        if (pickSamples.length > 0) {
+          pickSamples.sort((a, c) => a - c);
           const q = proxW > 0.35 ? 0.7 : 0.5;
-          gingAtMRaw[b] = nearSamples[Math.min(nearSamples.length - 1, Math.floor(nearSamples.length * q))]!;
+          gingAtMRaw[b] = pickSamples[Math.min(pickSamples.length - 1, Math.floor(pickSamples.length * q))]!;
           hasNearGingiva[b] = true;
         }
       }

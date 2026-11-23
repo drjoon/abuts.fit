@@ -7977,6 +7977,23 @@ export function PracticeCustomAbutmentPreviewDialog({
                           });
                         }}
                       />
+                      <ToolbarToggle
+                        active={designedList.some((d) => shownScanbodies[d.toothNumber] === true)}
+                        label="스캔바디"
+                        onClick={() => {
+                          touchViewer("scanbodies");
+                          const next = !designedList.some(
+                            (d) => shownScanbodies[d.toothNumber] === true,
+                          );
+                          viewerPrefsRef.current = {
+                            ...viewerPrefsRef.current,
+                            showScanbodies: next,
+                          };
+                          setShownScanbodies(
+                            Object.fromEntries(designedList.map((d) => [d.toothNumber, next])),
+                          );
+                        }}
+                      />
                     </div>
                   ) : null}
                 </div>
