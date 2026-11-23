@@ -4673,6 +4673,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           let lastGood = captureAligned();
           let attempt = 0;
           let keepInPlace = false;
+          let everSeated = false;
           for (;;) {
             if (attempt > 0) {
               setStatus({
@@ -4702,19 +4703,32 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
             if (fitResult.seated || fitResult.moved) {
               lastGood = captureAligned();
+              everSeated = true;
             } else if (attempt > 0) {
               for (const row of lastGood) {
                 restoreGeometryPositions(row.geometry, row.positions);
               }
             }
-            // 자동: 안 맞으면 후보를 더 돌린다. 수동이거나 후보를 다 쓰면 확인 UI.
+            // 자동 부트는 확인 UI를 띄우지 않는다. 후보를 돌리고 최선 결과를 쓴다.
             if (!forceBiteRecalc) {
               if (fitResult.qualityOk) break;
               if (attempt < BITE_AUTO_RETRY_MAX) {
                 attempt += 1;
                 continue;
               }
+              // 후보를 다 써도 안 맞으면 마지막 붙은 자세를 쓰고, 없으면 원본을 둔다.
+              if (!(fitResult.seated || fitResult.moved)) {
+                for (const row of lastGood) {
+                  restoreGeometryPositions(row.geometry, row.positions);
+                }
+                if (!everSeated) {
+                  restoreOriginal();
+                  keepInPlace = true;
+                }
+              }
+              break;
             }
+            // 헤더 교합정렬(수동)만 확인 UI.
             setBiteRecalcBusy(true);
             const choice = await startBiteConfirmRef.current(
               [...jawScans, ...biteScans],
@@ -4729,7 +4743,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             if (attempt >= BITE_AUTO_RETRY_MAX) {
               toast({
                 title: "다른 자동 후보가 없습니다.",
-                description: "지금 보이는 정렬로 확정해 주세요.",
+                description: "헤더 교합정렬로 다시 시도하거나 이 자세로 진행하세요.",
               });
               break;
             }
@@ -8301,36 +8315,57 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm text-foreground">
-                    자동 정렬 괜찮을까요?
-                    {status.attempt > 0 ? (
+                    {status.qualityOk ? (
                       <>
-                        <br />
-                        <span className="text-xs text-muted-foreground">
-                          후보 {status.attempt + 1}
-                        </span>
+                        자동 정렬 괜찮을까요?
+                        {status.attempt > 0 ? (
+                          <>
+                            <br />
+                            <span className="text-xs text-muted-foreground">
+                              후보 {status.attempt + 1}
+                            </span>
+                          </>
+                        ) : null}
                       </>
-                    ) : null}
+                    ) : (
+                      <>
+                        교합이 아직 맞지 않습니다.
+                        <br />
+                        {status.canRetry ? (
+                          <span className="text-xs text-muted-foreground">
+                            다른 후보로 다시 맞춰 보세요.
+                            {status.attempt > 0 ? ` (후보 ${status.attempt + 1})` : null}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            다른 자동 후보가 없습니다.
+                            <br />
+                            이 자세로 진행하거나 헤더에서 다시 맞출 수 있습니다.
+                          </span>
+                        )}
+                      </>
+                    )}
                   </p>
                   <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => endBiteConfirmSession("confirm")}
-                    >
-                      확정
-                    </Button>
                     {status.canRetry ? (
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
                         className="h-8"
                         onClick={() => endBiteConfirmSession("retry")}
                       >
                         다시 맞추기
                       </Button>
                     ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={status.qualityOk || !status.canRetry ? "default" : "outline"}
+                      className="h-8"
+                      onClick={() => endBiteConfirmSession("confirm")}
+                    >
+                      {status.qualityOk ? "확정" : "이 자세로 진행"}
+                    </Button>
                   </div>
                 </div>
               </div>
