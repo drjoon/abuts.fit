@@ -4571,15 +4571,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         let meshRestore = false;
         let serverMeshRestore = false;
         let alignedScans: CachedAlignedScan[] = [];
-        let biteCheck: CachedBiteCheck | null = normalizeCachedBiteCheck(cached?.biteCheck);
-        if (!biteCheck && hasCachedBiteCheck(cached)) {
-          biteCheck = {
-            checkedAt: Number(cached?.savedAt) || Date.now(),
-            qualityOk: true,
-            moved: (cached?.alignedScans?.length ?? 0) > 0,
-            source: "auto",
-          };
-        }
+        // 정렬 스냅샷을 실제로 얹기 전에는 메타만으로 교합을 건너뛰지 않는다.
+        let biteCheck: CachedBiteCheck | null = null;
         if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
           if (cached.alignedScans.length > 0) {
             const fits = cached.alignedScans.every((row) => {
@@ -4598,6 +4591,16 @@ export function PracticeCustomAbutmentPreviewDialog({
               }
               alignedScans = cached.alignedScans;
               restored = true;
+              // 정렬 좌표를 복원한 뒤에만 저장 메타를 신뢰한다.
+              biteCheck = normalizeCachedBiteCheck(cached.biteCheck);
+              if (!biteCheck && hasCachedBiteCheck(cached)) {
+                biteCheck = {
+                  checkedAt: Number(cached.savedAt) || Date.now(),
+                  qualityOk: true,
+                  moved: true,
+                  source: "auto",
+                };
+              }
             }
           } else if (hasWorkScans) {
             // 작업 스캔은 이미 정렬된 월드 좌표이므로 alignedScans가 비어 있어도 정합을 재사용한다.
@@ -4606,6 +4609,15 @@ export function PracticeCustomAbutmentPreviewDialog({
               jawsAgreeOnAnterior(upperScans[0]?.geometry, lowerScans[0]?.geometry)
             ) {
               restored = true;
+              biteCheck = normalizeCachedBiteCheck(cached.biteCheck);
+              if (!biteCheck && hasCachedBiteCheck(cached)) {
+                biteCheck = {
+                  checkedAt: Number(cached.savedAt) || Date.now(),
+                  qualityOk: true,
+                  moved: false,
+                  source: "auto",
+                };
+              }
             } else if (originalMeshes.length > 0) {
               for (const s of loadedScans) {
                 s.geometry.dispose();
@@ -4622,12 +4634,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
 
-        // 교합 메타가 없으면 로딩 시 확인 1회. 이미 맞으면 풀지 않고 메타만 남긴다.
-        // 헤더 「바이트」는 forceBiteRecalc로 확인 UI와 함께 다시 돌린다.
+        // 메타가 있고 정렬 좌표까지 복원됐을 때만 자동 확인을 건너뛴다.
+        // qualityOk=false 메타·원본 스캔(복원 실패)은 다시 확인한다.
         const needBitePass =
           biteScans.length > 0 &&
           jawScans.length > 0 &&
-          (forceBiteRecalc || !biteCheck);
+          (forceBiteRecalc || !biteCheck || biteCheck.qualityOk === false);
         let lastBiteFit: { qualityOk: boolean; moved: boolean; seated: boolean } | null = null;
         if (needBitePass) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
@@ -4682,37 +4694,26 @@ export function PracticeCustomAbutmentPreviewDialog({
               moved: fitResult.moved,
               seated: fitResult.seated,
             };
-            // 자동 확인: 이미 바이트에 맞으면 좌표를 건드리지 않는다.
+            // 자동: 이미 바이트에 맞으면 좌표를 건드리지 않는다.
             if (!forceBiteRecalc && fitResult.qualityOk && !fitResult.moved) {
               restoreOriginal();
               keepInPlace = true;
               break;
             }
-            if (attempt > 0 && !fitResult.seated) {
+            if (fitResult.seated || fitResult.moved) {
+              lastGood = captureAligned();
+            } else if (attempt > 0) {
               for (const row of lastGood) {
                 restoreGeometryPositions(row.geometry, row.positions);
               }
-              toast({
-                title: "다른 자동 후보가 없습니다.",
-                description: "지금 보이는 정렬로 확정해 주세요.",
-              });
-              if (forceBiteRecalc) {
-                setBiteRecalcBusy(true);
-                await startBiteConfirmRef.current([...jawScans, ...biteScans], false, {
-                  canRetry: false,
-                  attempt,
-                });
-              }
-              break;
             }
-            lastGood = captureAligned();
+            // 자동: 안 맞으면 후보를 더 돌린다. 수동이거나 후보를 다 쓰면 확인 UI.
             if (!forceBiteRecalc) {
-              // 자동: 안 맞으면 이번 정렬을 쓰고, 붙지 못했으면 원본을 유지한다.
-              if (!fitResult.seated && !fitResult.moved) {
-                restoreOriginal();
-                keepInPlace = true;
+              if (fitResult.qualityOk) break;
+              if (attempt < BITE_AUTO_RETRY_MAX) {
+                attempt += 1;
+                continue;
               }
-              break;
             }
             setBiteRecalcBusy(true);
             const choice = await startBiteConfirmRef.current(
@@ -5294,15 +5295,31 @@ export function PracticeCustomAbutmentPreviewDialog({
           geometry: scan.geometry,
           texture: scan.texture,
         }));
-        // 교합 확인·정렬 뒤 디자인으로 간다. 스캔바디 클릭은 자동 부트에 넣지 않는다.
-        // 자동 인식이 전무할 때만 클릭으로 위치를 받는다(디자인을 시작할 수 없을 때).
+        // 교합이 확인된 뒤에만, 자동 인식이 전무할 때 스캔바디 클릭을 연다.
+        // 교합 안 맞는 채로 첨1에 들어가지 않는다.
+        const occlusionReady = Boolean(biteCheck?.qualityOk);
         const bootIntoPick =
           !readOnly &&
           pendingPickJobs.length > 0 &&
           builtAbutments.length === 0 &&
-          !restored &&
           !meshRestore &&
-          !serverMeshRestore;
+          !serverMeshRestore &&
+          occlusionReady;
+        if (
+          !readOnly &&
+          pendingPickJobs.length > 0 &&
+          builtAbutments.length === 0 &&
+          !bootIntoPick
+        ) {
+          toast({
+            title: occlusionReady
+              ? "스캔바디를 자동으로 찾지 못했습니다."
+              : "교합을 먼저 맞춰 주세요.",
+            description: occlusionReady
+              ? "어벗 정보에서 위치를 지정하세요."
+              : "헤더 교합정렬로 맞춘 뒤 다시 열어 주세요.",
+          });
+        }
         const pickJaws = new Set(
           bootIntoPick ? pendingPickJobs.map((job) => job.jaw) : [],
         );
