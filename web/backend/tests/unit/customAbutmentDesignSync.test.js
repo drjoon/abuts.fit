@@ -1,5 +1,6 @@
 import {
   isStaleDesignWrite,
+  sanitizeBiteCheck,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
   toDesignSyncMeta,
@@ -60,6 +61,24 @@ describe("custom abutment design sync meta", () => {
     expect(meta.teeth[0].localPositions).toBeUndefined();
     expect(meta.teeth[0].marginLoopLocal).toBeUndefined();
     expect(meta.updatedBy).toBe("user-a");
+    expect(meta.biteCheck).toBeUndefined();
+  });
+
+  test("sync meta keeps a confirmed bite and drops a broken one", () => {
+    const bite = sanitizeBiteCheck({
+      checkedAt: 40,
+      qualityOk: true,
+      moved: false,
+      source: "manual",
+    });
+    expect(bite.source).toBe("manual");
+    expect(sanitizeBiteCheck({ checkedAt: 0, qualityOk: true })).toBeNull();
+    const meta = toDesignSyncMeta({
+      savedAt: 40,
+      biteCheck: bite,
+      teeth: [{ toothNumber: "16", fixture: { jaw: "upper" }, params: {} }],
+    });
+    expect(meta.biteCheck).toEqual(bite);
   });
 
   test("confirm choice is kept and an invalid fixture is dropped", () => {

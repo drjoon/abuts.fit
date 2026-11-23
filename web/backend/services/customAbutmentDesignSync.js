@@ -56,6 +56,19 @@ export function sanitizeAbutmentChoice(row) {
   };
 }
 
+/** 교합 확정. 상대가 모달을 열 때 교합을 다시 묻지 않게 한다. */
+export function sanitizeBiteCheck(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const checkedAt = Number(raw.checkedAt);
+  if (!(checkedAt > 0)) return null;
+  return {
+    checkedAt: Math.min(Math.round(checkedAt), Date.now() + 2000),
+    qualityOk: Boolean(raw.qualityOk),
+    moved: Boolean(raw.moved),
+    source: raw.source === "manual" ? "manual" : "auto",
+  };
+}
+
 /** 서버에 더 나중 저장이 있으면, base 로 올린 쓰기는 덮어쓰지 않는다. */
 export function isStaleDesignWrite(prevSavedAt, baseSavedAt) {
   const prev = Number(prevSavedAt) || 0;
@@ -120,6 +133,7 @@ export function toDesignSyncMeta(source) {
     teeth.push(tooth);
   }
   if (teeth.length === 0) return null;
+  const biteCheck = sanitizeBiteCheck(source?.biteCheck);
   const mode = source?.mode === "confirmed" || source?.mode === "manual" ? source.mode : undefined;
   const choiceRaw = source?.choice;
   const choice =
@@ -142,6 +156,7 @@ export function toDesignSyncMeta(source) {
     version: Number(source?.version) || 0,
     fitVersion: Number(source?.fitVersion) || 0,
     teeth,
+    ...(biteCheck ? { biteCheck } : {}),
     ...(mode ? { mode } : {}),
     ...(choice ? { choice } : {}),
   };

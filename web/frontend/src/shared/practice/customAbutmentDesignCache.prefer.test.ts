@@ -6,6 +6,7 @@ import {
   preferFresherCustomAbutmentDesign,
   readCustomAbutmentDesign,
   rememberCustomAbutmentDesign,
+  resolveCustomAbutmentReopen,
   type CachedCustomAbutmentDesign,
   type CachedCustomAbutmentTooth,
 } from "./customAbutmentDesignCache";
@@ -74,5 +75,39 @@ const mem = await readCustomAbutmentDesign("mem-key");
 assert.equal(mem?.savedAt, 9);
 assert.equal(mem?.teeth[0]?.metrics.maxDiameterMm, 10.22);
 assert.equal(mem?.designFresh, true);
+
+const reopenBase = {
+  alignedMatched: false,
+  hasWorkScans: true,
+  jawsAgree: false,
+  rebuildFromMeta: true,
+  designFresh: true,
+  isLabViewer: false,
+  biteCheck: null,
+  savedAt: 20,
+};
+const reopened = resolveCustomAbutmentReopen(reopenBase);
+assert.equal(reopened.restored, true);
+assert.equal(reopened.meshRestore, false);
+assert.equal(reopened.biteCheck.qualityOk, true);
+assert.equal(reopened.biteCheck.checkedAt, 20);
+
+const mesh = resolveCustomAbutmentReopen({
+  ...reopenBase,
+  hasWorkScans: false,
+  jawsAgree: true,
+  rebuildFromMeta: false,
+});
+assert.equal(mesh.restored, false);
+assert.equal(mesh.meshRestore, true);
+
+const keptBite = resolveCustomAbutmentReopen({
+  ...reopenBase,
+  alignedMatched: true,
+  biteCheck: { checkedAt: 9, qualityOk: false, moved: true, source: "manual" },
+});
+assert.equal(keptBite.restored, true);
+assert.equal(keptBite.biteCheck.qualityOk, false);
+assert.equal(keptBite.biteCheck.checkedAt, 9);
 
 console.log("custom abutment reopen prefer ok");

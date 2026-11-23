@@ -139,6 +139,37 @@ export function normalizeCachedBiteCheck(
   };
 }
 
+/**
+ * 저장된 어벗이 있으면 교합·스캔바디를 다시 돌리지 않는다.
+ * 작업 스캔에서 스캔바디가 빠져 있어도 픽스처로 형상을 연다.
+ */
+export function resolveCustomAbutmentReopen(input: {
+  alignedMatched: boolean;
+  hasWorkScans: boolean;
+  jawsAgree: boolean;
+  rebuildFromMeta: boolean;
+  designFresh: boolean;
+  isLabViewer: boolean;
+  biteCheck: CachedBiteCheck | null;
+  savedAt: number;
+}): { restored: boolean; meshRestore: boolean; biteCheck: CachedBiteCheck } {
+  const biteCheck =
+    input.biteCheck ??
+    ({
+      checkedAt: input.savedAt > 0 ? input.savedAt : 1,
+      qualityOk: true,
+      moved: false,
+      source: "auto",
+    } satisfies CachedBiteCheck);
+  if (input.alignedMatched || (input.hasWorkScans && input.jawsAgree)) {
+    return { restored: true, meshRestore: false, biteCheck };
+  }
+  if (!input.rebuildFromMeta && (input.designFresh || input.isLabViewer)) {
+    return { restored: false, meshRestore: true, biteCheck };
+  }
+  return { restored: true, meshRestore: false, biteCheck };
+}
+
 const isBrowser = typeof window !== "undefined" && !!window.indexedDB;
 let dbPromise: Promise<IDBDatabase> | null = null;
 /** 닫기 직후 다시 열 때 IndexedDB 쓰기보다 먼저 읽는다. */
@@ -711,6 +742,7 @@ export type CustomAbutmentChoice = {
 
 export type RemoteCustomAbutmentSnapshot = {
   design: (CachedCustomAbutmentDesign & { designFresh: boolean }) | null;
+  biteCheck: CachedBiteCheck | null;
   chat: CustomAbutmentChatTurn[];
   /** 어벗 STL이 S3에 있다. 없으면 의뢰자 화면이 다시 올린다. */
   hasStl: boolean;
@@ -820,10 +852,12 @@ type SnapshotShell = {
   choice: CustomAbutmentChoice;
   sharedView: CustomAbutmentSharedView | null;
   chrome: CustomAbutmentSharedChrome | null;
+  biteCheck: CachedBiteCheck | null;
   design: {
     version: number;
     fitVersion: number;
     savedAt: number;
+    biteCheck?: CachedBiteCheck | null;
     teeth: Array<Record<string, unknown>>;
   } | null;
 };
@@ -848,11 +882,12 @@ function rememberInflight<T>(
 function emptySnapshot(
   shell: Pick<
     SnapshotShell,
-    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView" | "chrome"
+    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView" | "chrome" | "biteCheck"
   >,
 ): RemoteCustomAbutmentSnapshot {
   return {
     design: null,
+    biteCheck: shell.biteCheck ?? null,
     chat: shell.chat,
     hasStl: false,
     paint: shell.paint,
@@ -875,6 +910,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             fitVersion?: number;
             savedAt?: number;
             chat?: unknown;
+            biteCheck?: unknown;
             teeth?: Array<Record<string, unknown>>;
           } | null;
           chat?: unknown;
@@ -897,6 +933,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
           } | null;
           sharedView?: unknown;
           chrome?: unknown;
+          biteCheck?: unknown;
         };
       }>({
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -955,12 +992,16 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
         },
         sharedView: parseCustomAbutmentSharedView(res.data.data.sharedView),
         chrome: parseCustomAbutmentSharedChrome(res.data.data.chrome),
+        biteCheck:
+          normalizeCachedBiteCheck(res.data.data.biteCheck) ??
+          normalizeCachedBiteCheck(raw?.biteCheck),
         design:
           raw && teeth.length > 0
             ? {
                 version: Number(raw.version) || 0,
                 fitVersion: Number(raw.fitVersion) || 0,
                 savedAt: Number(raw.savedAt) || 0,
+                biteCheck: normalizeCachedBiteCheck(raw.biteCheck),
                 teeth,
               }
             : null,
@@ -1068,8 +1109,10 @@ async function hydrateSnapshotShell(
   const teeth = loaded.flatMap((row) => (row ? [row.tooth] : []));
   if (teeth.length === 0) return emptySnapshot(shell);
   const { version, fitVersion, savedAt } = shell.design;
+  const biteCheck = normalizeCachedBiteCheck(shell.design.biteCheck) ?? shell.biteCheck;
   return {
     chat: shell.chat,
+    biteCheck,
     hasStl: loaded.some((row) => Boolean(row?.fromS3)),
     paint: shell.paint,
     mode: shell.mode,
@@ -1084,6 +1127,7 @@ async function hydrateSnapshotShell(
       fitVersion,
       savedAt,
       alignedScans: [],
+      ...(biteCheck ? { biteCheck } : { biteCheck: null }),
       teeth,
       chat: shell.chat,
       designFresh:
@@ -1270,6 +1314,7 @@ export type CustomAbutmentDesignSyncMeta = {
   fitVersion: number;
   teeth: CustomAbutmentDesignSyncTooth[];
   mode?: "confirmed" | "manual";
+  biteCheck?: CachedBiteCheck | null;
   choice?: {
     cancelDeadlineAt?: string | null;
     gracePromoteAt?: string | null;
@@ -1347,6 +1392,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
           labCheckedAt: (choiceRaw as { labCheckedAt?: string | null }).labCheckedAt ?? null,
         }
       : undefined;
+  const biteCheck = normalizeCachedBiteCheck(row.biteCheck);
   return {
     transferId: String(row.transferId || ""),
     savedAt: Number(row.savedAt) || 0,
@@ -1354,9 +1400,50 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
     version: Number(row.version) || 0,
     fitVersion: Number(row.fitVersion) || 0,
     teeth,
+    ...(biteCheck ? { biteCheck } : {}),
     ...(mode ? { mode } : {}),
     ...(choice ? { choice } : {}),
   };
+}
+
+/** 소켓으로 도착한 픽스처·조정값을, 정점 없는 서버 디자인으로 푼다. */
+export function cachedDesignFromSyncMeta(
+  key: string,
+  meta: CustomAbutmentDesignSyncMeta,
+  carry?: {
+    alignedScans?: CachedAlignedScan[];
+    biteCheck?: CachedBiteCheck | null;
+    chat?: CustomAbutmentChatTurn[];
+  } | null,
+): CachedCustomAbutmentDesign & { designFresh: boolean } {
+  const biteCheck = normalizeCachedBiteCheck(meta.biteCheck) ?? normalizeCachedBiteCheck(carry?.biteCheck);
+  return freshenCachedDesign({
+    key,
+    version: Number(meta.version) || 0,
+    fitVersion: Number(meta.fitVersion) || 0,
+    savedAt: meta.savedAt > 0 ? meta.savedAt : Date.now(),
+    alignedScans: Array.isArray(carry?.alignedScans) ? carry.alignedScans : [],
+    biteCheck,
+    teeth: meta.teeth.map((row) => ({
+      toothNumber: row.toothNumber,
+      fileName: row.fileName,
+      fixture: row.fixture,
+      overrides: row.overrides,
+      params: row.params,
+      metrics: row.metrics,
+      ...(row.baselineParams ? { baselineParams: row.baselineParams as CustomAbutmentDesignParams } : {}),
+      ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
+      ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
+      ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
+      ...(row.proposalInput ? { proposalInput: row.proposalInput } : {}),
+      ...(row.insertionAxisWorld ? { insertionAxisWorld: row.insertionAxisWorld } : {}),
+      localPositions: new ArrayBuffer(0),
+      crownLocalPositions: new ArrayBuffer(0),
+      marginLoopLocal: new ArrayBuffer(0),
+      regenFromMeta: true,
+    })),
+    chat: carry?.chat ?? [],
+  });
 }
 
 /** 편집 동기화. STL을 올리지 않고 조정값만 저장한 뒤 상대 화면에 소켓으로 전달된다. */
@@ -1369,6 +1456,7 @@ export async function publishCustomAbutmentDesignMeta(
     baseSavedAt: number;
     savedAt?: number;
     teeth: readonly CustomAbutmentDesignSyncTooth[];
+    biteCheck?: CachedBiteCheck | null;
     chrome?: Record<string, unknown> | null;
   },
 ): Promise<
@@ -1392,6 +1480,7 @@ export async function publishCustomAbutmentDesignMeta(
       baseSavedAt: record.baseSavedAt,
       ...(record.savedAt ? { savedAt: record.savedAt } : {}),
       teeth: record.teeth,
+      ...(record.biteCheck ? { biteCheck: record.biteCheck } : {}),
       ...(record.chrome ? { chrome: record.chrome } : {}),
     },
   });
@@ -1401,10 +1490,18 @@ export async function publishCustomAbutmentDesignMeta(
     return { ok: false, stale: false };
   }
   if (!res.ok) return { ok: false, stale: false };
-  invalidateApiGetCache("custom-abutment-design-snapshot");
-  snapshotShellInflight.delete(id);
-  snapshotFullInflight.delete(id);
+  forgetCustomAbutmentSnapshot(id);
   return { ok: true, savedAt: Number(res.data?.data?.savedAt) || Date.now() };
+}
+
+/** 모달을 다시 열 때 방금 저장된 스냅샷을 받게 캐시를 비운다. */
+export function forgetCustomAbutmentSnapshot(transferId: string): void {
+  const id = transferId.trim();
+  if (id) {
+    snapshotShellInflight.delete(id);
+    snapshotFullInflight.delete(id);
+  }
+  invalidateApiGetCache("custom-abutment-design-snapshot");
 }
 
 export function classifyCustomAbutmentDesignPublish(

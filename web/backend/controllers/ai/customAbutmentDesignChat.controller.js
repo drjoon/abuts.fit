@@ -39,6 +39,7 @@ import {
 import { emitAppEventToUser } from "../../socket.js";
 import {
   isStaleDesignWrite,
+  sanitizeBiteCheck,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
   sharedChromeForApi,
@@ -650,6 +651,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     const storedChat = snapshotChat(stored?.chat);
     const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
     const teeth = snapshotTeeth(stored?.teeth, transferId);
+    const biteCheck = sanitizeBiteCheck(stored?.biteCheck);
     const rawPaint = stored?.paint && typeof stored.paint === "object" ? stored.paint : null;
     const paint = rawPaint
       ? {
@@ -672,6 +674,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
             savedAt: Number(stored?.savedAt) || 0,
             chat,
             teeth,
+            ...(biteCheck ? { biteCheck } : {}),
           }
         : null;
     const billedLines = Array.isArray(transfer?.billing?.lines) ? transfer.billing.lines : [];
@@ -725,6 +728,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       success: true,
       data: {
         design,
+        biteCheck,
         chat,
         paint,
         mode,
@@ -841,6 +845,11 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       previewSet["production.customAbutmentPreview.fitVersion"] = next.fitVersion;
       previewSet["production.customAbutmentPreview.teeth"] = next.teeth;
     }
+    const incomingBite = sanitizeBiteCheck(req.body?.biteCheck);
+    const prevBiteAt = Number(prev?.biteCheck?.checkedAt) || 0;
+    if (incomingBite && incomingBite.checkedAt >= prevBiteAt) {
+      previewSet["production.customAbutmentPreview.biteCheck"] = incomingBite;
+    }
     const incomingChrome = sanitizeSharedChrome(req.body?.chrome);
     const prevChromeAt = Number(prev?.chrome?.savedAt) || 0;
     if (incomingChrome && !(prevChromeAt > savedAt)) {
@@ -857,6 +866,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         version: next.version,
         fitVersion: next.fitVersion,
         teeth: next.teeth,
+        biteCheck: incomingBite && incomingBite.checkedAt >= prevBiteAt ? incomingBite : prev.biteCheck,
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
     await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });
