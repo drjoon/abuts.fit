@@ -399,9 +399,9 @@ type BiteManualSession = {
   /** 지금 찍는 악궁(상악 또는 하악). */
   archMeshes: THREE.Mesh[];
   biteMeshes: THREE.Mesh[];
-  /** 반대 악궁 — 배치만 보이고 클릭은 받지 않는다. */
+  /** 예비. 지금은 반대 악궁을 만들지 않는다(상악 단계·하악 단계 각각 2모델). */
   idleMeshes: THREE.Mesh[];
-  /** 세 모델을 한 묶음으로 두어 카메라가 같이 돈다. */
+  /** 맞출 악궁+바이트를 한 묶음으로 두어 카메라가 같이 돈다. */
   group: THREE.Group;
   marks: THREE.Object3D[];
   resolve: (ok: boolean) => void;
@@ -3849,15 +3849,15 @@ export function PracticeCustomAbutmentPreviewDialog({
       group.name = "bite-manual-layout";
       scene.add(group);
 
-      const makeMesh = (scan: LoadedJawScan, idle: boolean) => {
+      const makeMesh = (scan: LoadedJawScan) => {
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
         scan.geometry.computeBoundingBox();
         scan.geometry.computeBoundingSphere();
         const mat = createModelPreviewMaterial(scan.geometry, scan.texture);
         mat.side = THREE.DoubleSide;
-        if (scan.role === "bite" || idle) {
+        if (scan.role === "bite") {
           mat.transparent = true;
-          mat.opacity = idle ? 0.45 : 0.85;
+          mat.opacity = 0.85;
         }
         const mesh = new THREE.Mesh(scan.geometry, mat);
         mesh.userData.biteManualRole = scan.role;
@@ -3865,17 +3865,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         return mesh;
       };
 
-      const upperMeshes = jawScans
-        .filter((s) => s.role === "upper")
-        .map((s) => makeMesh(s, arch !== "upper"));
-      const lowerMeshes = jawScans
-        .filter((s) => s.role === "lower")
-        .map((s) => makeMesh(s, arch !== "lower"));
-      const biteMeshes = biteScans.map((s) => makeMesh(s, false));
-      const archMeshes = arch === "upper" ? upperMeshes : lowerMeshes;
-      const idleMeshes = arch === "upper" ? lowerMeshes : upperMeshes;
+      // 상악 단계: 상악 위·바이트 아래(하악 숨김). 하악 단계: 바이트 위·하악 아래(상악 숨김).
+      const archMeshes = jawScans.filter((s) => s.role === arch).map((s) => makeMesh(s));
+      const biteMeshes = biteScans.map((s) => makeMesh(s));
+      const idleMeshes: THREE.Mesh[] = [];
       if (archMeshes.length === 0 || biteMeshes.length === 0) {
-        for (const mesh of [...upperMeshes, ...lowerMeshes, ...biteMeshes]) {
+        for (const mesh of [...archMeshes, ...biteMeshes]) {
           group.remove(mesh);
           disposeMesh(mesh, true, true);
         }
@@ -3883,9 +3878,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         return Promise.resolve(false);
       }
 
-      // 치아·잇몸 색으로 1차 방향(상악 치아↓·하악 치아↑·바이트 치아 중앙)을 맞춘 뒤 위·중·아래로 붙인다.
-      orientMeshesForBiteManualSlot(upperMeshes, "upper");
-      orientMeshesForBiteManualSlot(lowerMeshes, "lower");
+      orientMeshesForBiteManualSlot(archMeshes, arch);
       orientMeshesForBiteManualSlot(biteMeshes, "bite");
 
       const extentOf = (meshes: THREE.Mesh[]) => {
@@ -3897,34 +3890,21 @@ export function PracticeCustomAbutmentPreviewDialog({
         return { box, center, size, halfZ };
       };
       const biteExt = extentOf(biteMeshes);
-      const upperExt = upperMeshes.length ? extentOf(upperMeshes) : null;
-      const lowerExt = lowerMeshes.length ? extentOf(lowerMeshes) : null;
+      const archExt = extentOf(archMeshes);
 
       const axisUp = new THREE.Vector3(0, 0, 1);
-      const gap =
-        Math.max(biteExt.halfZ, upperExt?.halfZ ?? 0, lowerExt?.halfZ ?? 0, 4) * 0.1;
+      const gap = Math.max(biteExt.halfZ, archExt.halfZ, 4) * 0.1;
       const place = (meshes: THREE.Mesh[], center: THREE.Vector3, slot: THREE.Vector3) => {
         const offset = slot.clone().sub(center);
         for (const mesh of meshes) mesh.position.add(offset);
       };
-      place(biteMeshes, biteExt.center, new THREE.Vector3(0, 0, 0));
-      if (upperExt && lowerExt) {
-        const sepUp = biteExt.halfZ + upperExt.halfZ + gap;
-        const sepDown = biteExt.halfZ + lowerExt.halfZ + gap;
-        place(upperMeshes, upperExt.center, axisUp.clone().multiplyScalar(sepUp));
-        place(lowerMeshes, lowerExt.center, axisUp.clone().multiplyScalar(-sepDown));
-      } else if (upperExt) {
-        place(
-          upperMeshes,
-          upperExt.center,
-          axisUp.clone().multiplyScalar(biteExt.halfZ + upperExt.halfZ + gap),
-        );
-      } else if (lowerExt) {
-        place(
-          lowerMeshes,
-          lowerExt.center,
-          axisUp.clone().multiplyScalar(-(biteExt.halfZ + lowerExt.halfZ + gap)),
-        );
+      const sep = biteExt.halfZ + archExt.halfZ + gap;
+      if (arch === "upper") {
+        place(archMeshes, archExt.center, axisUp.clone().multiplyScalar(sep * 0.5));
+        place(biteMeshes, biteExt.center, axisUp.clone().multiplyScalar(-sep * 0.5));
+      } else {
+        place(biteMeshes, biteExt.center, axisUp.clone().multiplyScalar(sep * 0.5));
+        place(archMeshes, archExt.center, axisUp.clone().multiplyScalar(-sep * 0.5));
       }
 
       group.updateWorldMatrix(true, true);
@@ -5085,7 +5065,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
             if (choice === "revise") {
               const weak = weakBiteArches(fitResult.quality, presentRoles);
-              const manualRoles = weak.length > 0 ? weak : presentRoles;
+              // 상악 먼저(위·바이트), 이어서 하악(바이트·아래).
+              const manualRoles = (weak.length > 0 ? weak : [...presentRoles]).sort((a, b) =>
+                a === b ? 0 : a === "upper" ? -1 : 1,
+              );
               for (const role of manualRoles) {
                 if (cancelled) return;
                 const archOnly = jawScans.filter((scan) => scan.role === role);
@@ -8654,7 +8637,19 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm text-foreground">
-                    {status.arch === "upper" ? "상악" : "하악"}·바이트에 같은 순서로 점 3개
+                    {status.arch === "upper" ? (
+                      <>
+                        상악·바이트에 같은 순서로 점 3개
+                        <br />
+                        (상악 위 · 바이트 아래)
+                      </>
+                    ) : (
+                      <>
+                        하악·바이트에 같은 순서로 점 3개
+                        <br />
+                        (바이트 위 · 하악 아래)
+                      </>
+                    )}
                   </p>
                   <p className="text-xs font-medium text-muted-foreground">
                     모델 {status.model}/3 · 바이트 {status.bite}/3
