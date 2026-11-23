@@ -291,7 +291,11 @@ export function preferFresherCustomAbutmentDesign<
 ): T | null {
   const localCount = Array.isArray(local?.teeth) ? local.teeth.length : 0;
   const serverCount = Array.isArray(server?.teeth) ? server.teeth.length : 0;
-  if (localCount === 0) return serverCount > 0 ? server : null;
+  // 치아 메시가 없어도 로컬 biteCheck·alignedScans는 서버 선택 시 이어 붙인다.
+  if (localCount === 0) {
+    if (serverCount > 0 && server) return withLocalBiteMeta(server, local ?? undefined);
+    return local;
+  }
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;

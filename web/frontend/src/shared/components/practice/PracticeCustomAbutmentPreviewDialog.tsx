@@ -4574,8 +4574,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         let meshRestore = false;
         let serverMeshRestore = false;
         let alignedScans: CachedAlignedScan[] = [];
-        // 정렬 스냅샷을 실제로 얹기 전에는 메타만으로 교합을 건너뛰지 않는다.
-        let biteCheck: CachedBiteCheck | null = null;
+        // 사용자가 교합 확정한 메타(qualityOk)는 정렬 스냅샷 복원 여부와 무관하게 존중한다.
+        let biteCheck: CachedBiteCheck | null = normalizeCachedBiteCheck(cached?.biteCheck);
         if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
           if (cached.alignedScans.length > 0) {
             const fits = cached.alignedScans.every((row) => {
@@ -4594,8 +4594,6 @@ export function PracticeCustomAbutmentPreviewDialog({
               }
               alignedScans = cached.alignedScans;
               restored = true;
-              // 정렬 좌표를 복원한 뒤에만 저장 메타를 신뢰한다.
-              biteCheck = normalizeCachedBiteCheck(cached.biteCheck);
               if (!biteCheck && hasCachedBiteCheck(cached)) {
                 biteCheck = {
                   checkedAt: Number(cached.savedAt) || Date.now(),
@@ -4612,7 +4610,6 @@ export function PracticeCustomAbutmentPreviewDialog({
               jawsAgreeOnAnterior(upperScans[0]?.geometry, lowerScans[0]?.geometry)
             ) {
               restored = true;
-              biteCheck = normalizeCachedBiteCheck(cached.biteCheck);
               if (!biteCheck && hasCachedBiteCheck(cached)) {
                 biteCheck = {
                   checkedAt: Number(cached.savedAt) || Date.now(),
@@ -4637,8 +4634,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
 
-        // 메타가 있고 정렬 좌표까지 복원됐을 때만 자동 확인을 건너뛴다.
-        // qualityOk=false 메타·원본 스캔(복원 실패)은 다시 확인한다.
+        // 교합 확정 메타가 있으면 자동 확인을 건너뛴다. 헤더 수동 정렬만 다시 돈다.
         const needBitePass =
           biteScans.length > 0 &&
           jawScans.length > 0 &&
@@ -4676,6 +4672,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           let lastGood = captureAligned();
           let attempt = 0;
           let keepInPlace = false;
+          let userAcceptedBite = false;
           for (;;) {
             if (attempt > 0) {
               setStatus({
@@ -4730,14 +4727,12 @@ export function PracticeCustomAbutmentPreviewDialog({
               endBiteConfirmSessionRef.current("confirm");
               return;
             }
-            if (choice === "confirm") break;
-            if (attempt >= BITE_MANUAL_RETRY_MAX) {
-              toast({
-                title: "다른 자동 후보가 없습니다.",
-                description: "헤더 교합정렬로 다시 시도하거나 이 자세로 진행하세요.",
-              });
+            if (choice === "confirm") {
+              // 사용자가 교합 확정하면 알고리즘 qualityOk와 무관하게 맞다고 본다.
+              userAcceptedBite = true;
               break;
             }
+            if (attempt >= BITE_MANUAL_RETRY_MAX) break;
             attempt += 1;
           }
           if (cancelled) return;
@@ -4758,9 +4753,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           biteCheck = {
             checkedAt: Date.now(),
-            qualityOk: Boolean(lastBiteFit?.qualityOk),
+            qualityOk: Boolean(userAcceptedBite || lastBiteFit?.qualityOk),
             moved: Boolean(lastBiteFit?.moved && !keepInPlace),
-            source: forceBiteRecalc ? "manual" : "auto",
+            source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
         }
         if (rebuildFromMeta && jawScans.length > 0) restored = true;
@@ -5310,21 +5305,6 @@ export function PracticeCustomAbutmentPreviewDialog({
           !meshRestore &&
           !serverMeshRestore &&
           occlusionReady;
-        if (
-          !readOnly &&
-          pendingPickJobs.length > 0 &&
-          builtAbutments.length === 0 &&
-          !bootIntoPick
-        ) {
-          toast({
-            title: occlusionReady
-              ? "스캔바디를 자동으로 찾지 못했습니다."
-              : "교합을 먼저 맞춰 주세요.",
-            description: occlusionReady
-              ? "아래 안내에서 스캔바디 위치를 지정하세요."
-              : "헤더 교합정렬로 맞춘 뒤 디자인을 이어 가세요.",
-          });
-        }
         const pickJaws = new Set(
           bootIntoPick ? pendingPickJobs.map((job) => job.jaw) : [],
         );
@@ -5514,12 +5494,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (transferIdParam) {
           emitCustomAbutmentLive({ kind: "hello", transferId: transferIdParam });
         }
-        if (forceBiteRecalc && !cancelled) {
-          toast({
-            title: "바이트에 다시 맞췄습니다.",
-          });
-        }
-
         window.requestAnimationFrame(() => {
           viewReadyRef.current = true;
           const saved = readSavedView(transferIdParam);
@@ -7399,7 +7373,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     setBiteRecalcEpoch((n) => n + 1);
   }, [biteRecalcBusy, files, toast]);
 
-  /** 자동 판정이 틀려도 지금 보이는 교합을 맞다고 확정한다. */
+  /** 자동 판정이 틀려도 지금 보이는 교합을 맞다고 확정한다. 메타에 남겨 자동 재확인을 막는다. */
   const confirmCurrentOcclusion = useCallback(() => {
     const ctx = designContextRef.current;
     if (!ctx) return;
@@ -7411,12 +7385,33 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
     designContextRef.current = { ...ctx, biteCheck };
     setOcclusionOk(true);
-    const savedAt = designSavedAtRef.current > 0 ? designSavedAtRef.current : Date.now();
+    const savedAt = Date.now();
+    if (savedAt > designSavedAtRef.current) designSavedAtRef.current = savedAt;
     if (designedListRef.current.length > 0) {
       persistDesign(undefined, { publish: false, savedAt });
+      return;
     }
-    toast({ title: "지금 교합으로 확정했습니다." });
-  }, [persistDesign, toast]);
+    void (async () => {
+      try {
+        const existing = await readCustomAbutmentDesign(ctx.cacheKey);
+        const record = {
+          key: ctx.cacheKey,
+          version: existing?.version ?? CUSTOM_ABUTMENT_DESIGN_VERSION,
+          fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+          savedAt,
+          alignedScans:
+            ctx.alignedScans.length > 0 ? ctx.alignedScans : (existing?.alignedScans ?? []),
+          biteCheck,
+          teeth: existing?.teeth ?? [],
+          chat: existing?.chat ?? [],
+        };
+        rememberCustomAbutmentDesign(record);
+        await writeCustomAbutmentDesign(record);
+      } catch (err) {
+        console.warn("[custom-abutment] biteCheck save failed", err);
+      }
+    })();
+  }, [persistDesign]);
 
   useEffect(() => {
     if (!open || !canEditDesign) return;
@@ -8003,82 +7998,6 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
-            {!readOnly && pipelineReady && (needsOcclusionFix || designedList.length === 0) ? (
-              <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center px-3">
-                <div
-                  className={cn(
-                    CONTENT_MEASURED_CHROME_CLASS,
-                    "pointer-events-auto space-y-2 rounded-xl border border-amber-400/50 bg-background/95 px-3 py-2.5 text-left shadow-lg",
-                  )}
-                >
-                  <p className="text-sm text-foreground">
-                    {needsOcclusionFix ? (
-                      <>
-                        교합이 맞지 않습니다.
-                        <br />
-                        <span className="text-xs text-muted-foreground">
-                          먼저 교합을 맞춘 뒤 디자인을 이어 가세요.
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        스캔바디를 자동으로 찾지 못했습니다.
-                        <br />
-                        <span className="text-xs text-muted-foreground">
-                          스캔바디 상단을 지정하면 디자인을 시작합니다.
-                        </span>
-                      </>
-                    )}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {needsOcclusionFix ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8"
-                          disabled={biteRecalcBusy}
-                          onClick={triggerBiteRecalc}
-                        >
-                          {biteRecalcBusy ? (
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Combine className="mr-1.5 h-3.5 w-3.5" />
-                          )}
-                          교합정렬
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          disabled={biteRecalcBusy}
-                          onClick={confirmCurrentOcclusion}
-                        >
-                          지금 교합 확정
-                        </Button>
-                      </>
-                    ) : null}
-                    {designedList.length === 0 && canEditDesign && !needsOcclusionFix ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8"
-                        onClick={() => {
-                          const teeth = abutmentToothWorks.map((row) => row.toothNumber);
-                          if (teeth.length === 0) return;
-                          void startScanbodyRepick(teeth);
-                        }}
-                      >
-                        스캔바디 지정
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
             {viewerLive ? (
               <div
                 ref={viewCubeStackRef}
@@ -8258,12 +8177,79 @@ export function PracticeCustomAbutmentPreviewDialog({
             {!readOnly ? (
               <div
                 ref={viewerBottomChromeRef}
-                className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-2 px-3"
+                className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex flex-col items-center gap-2 px-3"
               >
                 {paint.paintOn && viewerLive ? (
                   <ViewPaintToolbar paint={paint} onSaveImage={saveViewImage} />
                 ) : null}
 
+                {pipelineReady && (needsOcclusionFix || designedList.length === 0) ? (
+                  <div
+                    className={cn(
+                      CONTENT_MEASURED_CHROME_CLASS,
+                      "pointer-events-auto space-y-2 rounded-xl border border-amber-400/50 bg-background/95 px-3 py-2.5 text-left shadow-lg",
+                    )}
+                  >
+                    <p className="text-sm text-foreground">
+                      {needsOcclusionFix ? (
+                        <>교합이 맞나요?</>
+                      ) : (
+                        <>
+                          스캔바디를 자동으로 찾지 못했습니다.
+                          <br />
+                          <span className="text-xs text-muted-foreground">
+                            스캔바디 상단을 지정하면 디자인을 시작합니다.
+                          </span>
+                        </>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {needsOcclusionFix ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8"
+                            disabled={biteRecalcBusy}
+                            onClick={triggerBiteRecalc}
+                          >
+                            {biteRecalcBusy ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Combine className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            재정렬
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            disabled={biteRecalcBusy}
+                            onClick={confirmCurrentOcclusion}
+                          >
+                            교합 확정
+                          </Button>
+                        </>
+                      ) : null}
+                      {designedList.length === 0 && canEditDesign && !needsOcclusionFix ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          onClick={() => {
+                            const teeth = abutmentToothWorks.map((row) => row.toothNumber);
+                            if (teeth.length === 0) return;
+                            void startScanbodyRepick(teeth);
+                          }}
+                        >
+                          스캔바디 지정
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
 
                 {!biteAlignChrome &&
                 designedList.length > 0 &&
