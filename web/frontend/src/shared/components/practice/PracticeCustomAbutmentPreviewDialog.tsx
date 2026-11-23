@@ -28,6 +28,7 @@
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
 // - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
+// - 2026-11-24: 로딩 시 교합 확인·정렬을 먼저 하고 메타를 남긴다. 스캔바디 클릭은 자동 부트에서 빼 디자인으로 간다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -146,7 +147,10 @@ import {
   toArrayBuffer,
   writeCustomAbutmentChat,
   writeCustomAbutmentDesign,
+  hasCachedBiteCheck,
+  normalizeCachedBiteCheck,
   type CachedAlignedScan,
+  type CachedBiteCheck,
   type CustomAbutmentChatTurn,
   type CustomAbutmentDesignSyncMeta,
   type CustomAbutmentDesignSyncTooth,
@@ -414,6 +418,7 @@ type DesignContext = {
   allToothWorks: readonly ToothWorkSelection[];
   overrides: Record<string, Partial<CustomAbutmentDesignParams>>;
   alignedScans: CachedAlignedScan[];
+  biteCheck: CachedBiteCheck | null;
 };
 
 const VIEWER_PLAIN_BG = 0xe6e9ec;
@@ -2430,6 +2435,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
       savedAt,
       alignedScans: ctx.alignedScans,
+      biteCheck: ctx.biteCheck,
       teeth: list.map((d) => {
         const gumballEdit =
           directEditRef.current?.editOf(d.toothNumber) ??
@@ -4392,7 +4398,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         const hasWorkScans =
           !forceBiteRecalc &&
           curWorkScanFiles.some((f) => isOralScanMeshName(f.fileName));
-        if (!hasWorkScans || forceBiteRecalc) targetRoles.add("bite");
+        // 교합 확인 메타가 없을 때도 바이트를 받아 1회 확인한다(작업 스캔만 있어도).
+        targetRoles.add("bite");
 
         const toLoad = pipelineMeshes.filter((f) => {
           const r = resolveOralScanRole({
@@ -4564,6 +4571,15 @@ export function PracticeCustomAbutmentPreviewDialog({
         let meshRestore = false;
         let serverMeshRestore = false;
         let alignedScans: CachedAlignedScan[] = [];
+        let biteCheck: CachedBiteCheck | null = normalizeCachedBiteCheck(cached?.biteCheck);
+        if (!biteCheck && hasCachedBiteCheck(cached)) {
+          biteCheck = {
+            checkedAt: Number(cached?.savedAt) || Date.now(),
+            qualityOk: true,
+            moved: (cached?.alignedScans?.length ?? 0) > 0,
+            source: "auto",
+          };
+        }
         if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
           if (cached.alignedScans.length > 0) {
             const fits = cached.alignedScans.every((row) => {
@@ -4606,9 +4622,14 @@ export function PracticeCustomAbutmentPreviewDialog({
           }
         }
 
-        const needBiteAlign =
-          !restored && biteScans.length > 0 && jawScans.length > 0 && (!hasWorkScans || forceBiteRecalc);
-        if (needBiteAlign) {
+        // 교합 메타가 없으면 로딩 시 확인 1회. 이미 맞으면 풀지 않고 메타만 남긴다.
+        // 헤더 「바이트」는 forceBiteRecalc로 확인 UI와 함께 다시 돌린다.
+        const needBitePass =
+          biteScans.length > 0 &&
+          jawScans.length > 0 &&
+          (forceBiteRecalc || !biteCheck);
+        let lastBiteFit: { qualityOk: boolean; moved: boolean; seated: boolean } | null = null;
+        if (needBitePass) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
           await new Promise<void>((r) => window.setTimeout(r, 0));
           const alignEntries = loadedScans.map((s) => ({
@@ -4639,6 +4660,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               );
           let lastGood = captureAligned();
           let attempt = 0;
+          let keepInPlace = false;
           for (;;) {
             if (attempt > 0) {
               setStatus({
@@ -4655,6 +4677,17 @@ export function PracticeCustomAbutmentPreviewDialog({
               cancelled: () => cancelled,
             });
             if (cancelled) return;
+            lastBiteFit = {
+              qualityOk: fitResult.qualityOk,
+              moved: fitResult.moved,
+              seated: fitResult.seated,
+            };
+            // 자동 확인: 이미 바이트에 맞으면 좌표를 건드리지 않는다.
+            if (!forceBiteRecalc && fitResult.qualityOk && !fitResult.moved) {
+              restoreOriginal();
+              keepInPlace = true;
+              break;
+            }
             if (attempt > 0 && !fitResult.seated) {
               for (const row of lastGood) {
                 restoreGeometryPositions(row.geometry, row.positions);
@@ -4673,7 +4706,14 @@ export function PracticeCustomAbutmentPreviewDialog({
               break;
             }
             lastGood = captureAligned();
-            if (!forceBiteRecalc) break;
+            if (!forceBiteRecalc) {
+              // 자동: 안 맞으면 이번 정렬을 쓰고, 붙지 못했으면 원본을 유지한다.
+              if (!fitResult.seated && !fitResult.moved) {
+                restoreOriginal();
+                keepInPlace = true;
+              }
+              break;
+            }
             setBiteRecalcBusy(true);
             const choice = await startBiteConfirmRef.current(
               [...jawScans, ...biteScans],
@@ -4695,8 +4735,12 @@ export function PracticeCustomAbutmentPreviewDialog({
             attempt += 1;
           }
           if (cancelled) return;
-          const seatedFrame = estimateDentalFrame(alignEntries);
-          if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
+          if (!keepInPlace) {
+            const seatedFrame = estimateDentalFrame(alignEntries);
+            if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
+            // 저장 메시 좌표와 어긋나면 픽스처를 다시 잡는다.
+            if (restored && !forceBiteRecalc) restored = false;
+          }
           alignedScans = jawScans.map((s) => {
             const attr = s.geometry.getAttribute("position") as THREE.BufferAttribute;
             return {
@@ -4706,6 +4750,12 @@ export function PracticeCustomAbutmentPreviewDialog({
               positions: toArrayBuffer(attr.array as Float32Array),
             };
           });
+          biteCheck = {
+            checkedAt: Date.now(),
+            qualityOk: Boolean(lastBiteFit?.qualityOk),
+            moved: Boolean(lastBiteFit?.moved && !keepInPlace),
+            source: forceBiteRecalc ? "manual" : "auto",
+          };
         }
         if (rebuildFromMeta && jawScans.length > 0) restored = true;
 
@@ -5191,34 +5241,16 @@ export function PracticeCustomAbutmentPreviewDialog({
 
         // 저장된 픽스처는 슬롯 휴리스틱으로 빼지 않는다.
         // 확정된 치아까지 다시 찍게 되고, 모달을 닫으면 그 빠진 치아가 서버 디자인을 덮어 쓴다.
-        // 저장본에 없는 치아만 스캔바디를 다시 찍게 한다.
+        // 저장본에 없는 치아는 자동 부트에서 스캔바디 클릭(첨1)으로 보내지 않는다.
+        // 디자인 화면의 「스캔바디 다시 지정」으로만 잡는다.
         if (!readOnly && (restored || meshRestore) && !cancelled) {
           const builtTeeth = new Set(builtAbutments.map((d) => d.toothNumber));
           const missing = curToothWorks.filter((tw) => !builtTeeth.has(tw.toothNumber));
-          if (missing.length > 0) {
-            const curCatalog = scanbodyCatalogRef.current ?? (await catalogPromise);
-            if (!cancelled) {
-              scanbodyCatalogRef.current = curCatalog;
-              const queued = new Set(pendingPickJobs.map((job) => job.toothNumber));
-              for (const tw of missing) {
-                if (queued.has(tw.toothNumber)) continue;
-                const parsed = parseFdiTooth(tw.toothNumber);
-                if (!parsed) continue;
-                const models = await loadCandidateScanbodyModels({
-                  toothWork: tw,
-                  catalog: curCatalog,
-                  connections: curConnections,
-                });
-                if (cancelled) break;
-                if (models.length === 0) continue;
-                pendingPickJobs.push({
-                  toothNumber: tw.toothNumber,
-                  jaw: parsed.jaw,
-                  toothWork: tw,
-                  models,
-                });
-              }
-            }
+          if (missing.length > 0 && builtAbutments.length > 0) {
+            toast({
+              title: "일부 치아의 스캔바디를 자동으로 찾지 못했습니다.",
+              description: "어벗 정보에서 위치를 다시 지정하세요.",
+            });
           }
         }
 
@@ -5262,7 +5294,18 @@ export function PracticeCustomAbutmentPreviewDialog({
           geometry: scan.geometry,
           texture: scan.texture,
         }));
-        const pickJaws = new Set(pendingPickJobs.map((job) => job.jaw));
+        // 교합 확인·정렬 뒤 디자인으로 간다. 스캔바디 클릭은 자동 부트에 넣지 않는다.
+        // 자동 인식이 전무할 때만 클릭으로 위치를 받는다(디자인을 시작할 수 없을 때).
+        const bootIntoPick =
+          !readOnly &&
+          pendingPickJobs.length > 0 &&
+          builtAbutments.length === 0 &&
+          !restored &&
+          !meshRestore &&
+          !serverMeshRestore;
+        const pickJaws = new Set(
+          bootIntoPick ? pendingPickJobs.map((job) => job.jaw) : [],
+        );
         const allBuiltFixtures = builtAbutments.map((d) => d.fixture);
         if (upperScans.length > 0) {
           rebuildJawScanMeshes("upper", allBuiltFixtures, pickJaws.size === 0 || pickJaws.has("upper"));
@@ -5324,6 +5367,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           allToothWorks: curAllToothWorks,
           overrides,
           alignedScans,
+          biteCheck,
         };
         designedListRef.current = builtAbutments;
 
@@ -5349,7 +5393,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         if (!viewerTouchRef.current.has("jaws")) {
           setVisibleJaws(
-            pendingPickJobs.length > 0
+            bootIntoPick
               ? {
                   upper: upperScans.length > 0 && pickJaws.has("upper"),
                   lower: lowerScans.length > 0 && pickJaws.has("lower"),
@@ -5376,7 +5420,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           chatTurnsRef.current = restoredChat;
           if (restoredChat.length > savedChat.length) persistChat(restoredChat);
         }
-        if (pendingPickJobs.length > 0) {
+        if (bootIntoPick) {
           pendingPickJobs.sort(
             (a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber),
           );
@@ -5391,6 +5435,12 @@ export function PracticeCustomAbutmentPreviewDialog({
             phase: "aim",
           });
         } else {
+          if (pendingPickJobs.length > 0 && builtAbutments.length > 0) {
+            toast({
+              title: "일부 치아의 스캔바디를 자동으로 찾지 못했습니다.",
+              description: "어벗 정보에서 위치를 다시 지정하세요.",
+            });
+          }
           setStatus({ kind: "ready" });
           const pendingRemote = pendingRemoteMetaRef.current;
           const pendingNewer = Boolean(
@@ -5411,13 +5461,24 @@ export function PracticeCustomAbutmentPreviewDialog({
           } else if (
             !pendingNewer &&
             builtAbutments.length > 0 &&
-            (rebuildFromMeta || redesignedFromFit) &&
+            (rebuildFromMeta || redesignedFromFit || Boolean(biteCheck)) &&
             designSavedAtRef.current > 0
           ) {
-            // 서버 조정값으로 다시 만든 메시만 이 브라우저에 맞춰 둔다.
+            // 서버 조정값으로 다시 만든 메시·교합 메타만 이 브라우저에 맞춰 둔다.
             persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined, {
               publish: false,
               savedAt: designSavedAtRef.current,
+            });
+          } else if (
+            !pendingNewer &&
+            builtAbutments.length > 0 &&
+            biteCheck &&
+            !cached?.biteCheck
+          ) {
+            // 첫 교합 확인 메타를 로컬에 남긴다(재로드 자동 확인 방지).
+            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined, {
+              publish: false,
+              savedAt: designSavedAtRef.current > 0 ? designSavedAtRef.current : Date.now(),
             });
           }
         }
@@ -7552,14 +7613,16 @@ export function PracticeCustomAbutmentPreviewDialog({
                     <Axis3d className="h-4 w-4" />
                   </HeaderIconButton>
                   <HeaderIconButton
-                    label="바이트"
+                    label="교합정렬"
                     active={biteRecalcBusy}
                     disabled={biteRecalcBusy}
                     tip={
                       <>
-                        의뢰 원본 상·하악을 바이트에 다시 맞춥니다.
+                        상·하악 교합을 바이트에 다시 맞춥니다.
                         <br />
-                        자동 정렬을 확인한 뒤, 틀리면 다른 후보로 다시 맞춥니다.
+                        한 번 확인·정렬한 뒤에는 자동으로 다시 돌리지 않습니다.
+                        <br />
+                        틀리면 다른 후보로 다시 맞출 수 있습니다.
                       </>
                     }
                     onClick={() => {

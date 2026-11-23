@@ -89,6 +89,18 @@ export type CachedAlignedScan = {
   positions: ArrayBuffer;
 };
 
+/**
+ * 상·하악 교합 확인(·정렬) 결과.
+ * 있으면 재로드 시 자동 교합 확인을 하지 않는다. 헤더 「바이트」로만 다시 돌린다.
+ */
+export type CachedBiteCheck = {
+  checkedAt: number;
+  qualityOk: boolean;
+  /** 정점을 실제로 옮겼는지. false면 이미 맞는 교합을 유지했다. */
+  moved: boolean;
+  source: "auto" | "manual";
+};
+
 export type CachedCustomAbutmentDesign = {
   key: string;
   /** 형상 버전. 다르면 `fixture`·조정값으로 형상만 다시 만든다. */
@@ -96,9 +108,36 @@ export type CachedCustomAbutmentDesign = {
   fitVersion: number;
   savedAt: number;
   alignedScans: CachedAlignedScan[];
+  /** 교합 확인 메타. 없으면 로딩 시 1회 확인한다. */
+  biteCheck?: CachedBiteCheck | null;
   teeth: CachedCustomAbutmentTooth[];
   chat: CustomAbutmentChatTurn[];
 };
+
+/** 캐시·레거시 alignedScans를 보고 자동 교합 확인을 건너뛸지 판단한다. */
+export function hasCachedBiteCheck(
+  row: { biteCheck?: CachedBiteCheck | null; alignedScans?: readonly CachedAlignedScan[] } | null | undefined,
+): boolean {
+  if (!row) return false;
+  if (row.biteCheck && Number(row.biteCheck.checkedAt) > 0) return true;
+  return Array.isArray(row.alignedScans) && row.alignedScans.length > 0;
+}
+
+export function normalizeCachedBiteCheck(
+  raw: unknown,
+): CachedBiteCheck | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Partial<CachedBiteCheck>;
+  const checkedAt = Number(row.checkedAt);
+  if (!(checkedAt > 0)) return null;
+  const source = row.source === "manual" ? "manual" : "auto";
+  return {
+    checkedAt,
+    qualityOk: Boolean(row.qualityOk),
+    moved: Boolean(row.moved),
+    source,
+  };
+}
 
 const isBrowser = typeof window !== "undefined" && !!window.indexedDB;
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -158,6 +197,7 @@ export function mergeServerMetaOntoLocalMeshes<
     fitVersion?: number;
     teeth?: readonly CachedCustomAbutmentTooth[];
     alignedScans?: CachedAlignedScan[];
+    biteCheck?: CachedBiteCheck | null;
     chat?: CustomAbutmentChatTurn[];
   },
 >(local: T, server: T): T {
@@ -185,6 +225,8 @@ export function mergeServerMetaOntoLocalMeshes<
       regenFromMeta: false,
     };
   });
+  const serverBite = normalizeCachedBiteCheck(server.biteCheck);
+  const localBite = normalizeCachedBiteCheck(local.biteCheck);
   return {
     ...local,
     ...server,
@@ -193,6 +235,7 @@ export function mergeServerMetaOntoLocalMeshes<
       Array.isArray(server.alignedScans) && server.alignedScans.length > 0
         ? server.alignedScans
         : local.alignedScans,
+    biteCheck: serverBite ?? localBite,
     chat: Array.isArray(server.chat) && server.chat.length > 0 ? server.chat : local.chat,
   };
 }
@@ -204,6 +247,33 @@ export function mergeServerMetaOntoLocalMeshes<
  * 같은 시각에 서버만 정점이 없을 때는 이 브라우저 메시를 유지해 재생성 오차를 피한다.
  * 협업 의뢰(`preferServerOnTie`)는 동점이면 서버를 고른다.
  */
+function withLocalBiteMeta<
+  T extends {
+    alignedScans?: CachedAlignedScan[];
+    biteCheck?: CachedBiteCheck | null;
+  },
+>(chosen: T, other: T | null | undefined): T {
+  if (!other) return chosen;
+  const chosenBite = normalizeCachedBiteCheck(chosen.biteCheck);
+  const otherBite = normalizeCachedBiteCheck(other.biteCheck);
+  const chosenAligned =
+    Array.isArray(chosen.alignedScans) && chosen.alignedScans.length > 0
+      ? chosen.alignedScans
+      : null;
+  const otherAligned =
+    Array.isArray(other.alignedScans) && other.alignedScans.length > 0
+      ? other.alignedScans
+      : null;
+  const biteCheck = chosenBite ?? otherBite;
+  const alignedScans = chosenAligned ?? otherAligned ?? chosen.alignedScans ?? [];
+  if (biteCheck === chosenBite && alignedScans === chosen.alignedScans) return chosen;
+  return {
+    ...chosen,
+    alignedScans,
+    biteCheck,
+  };
+}
+
 export function preferFresherCustomAbutmentDesign<
   T extends {
     savedAt?: number;
@@ -211,6 +281,7 @@ export function preferFresherCustomAbutmentDesign<
     fitVersion?: number;
     teeth?: readonly CachedCustomAbutmentTooth[];
     alignedScans?: CachedAlignedScan[];
+    biteCheck?: CachedBiteCheck | null;
     chat?: CustomAbutmentChatTurn[];
   },
 >(
@@ -224,14 +295,14 @@ export function preferFresherCustomAbutmentDesign<
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  if (serverAt > localAt) return server;
-  if (serverAt < localAt) return local;
+  if (serverAt > localAt) return withLocalBiteMeta(server, local);
+  if (serverAt < localAt) return withLocalBiteMeta(local, server);
   // 동점: 협업은 서버, 아니면 로컬. 서버에 정점이 없으면 로컬 메시를 유지한다.
   if (Boolean(opts?.preferServerOnTie)) {
-    if (!designHasMeshes(server) && designHasMeshes(local)) return local;
-    return server;
+    if (!designHasMeshes(server) && designHasMeshes(local)) return withLocalBiteMeta(local, server);
+    return withLocalBiteMeta(server, local);
   }
-  return local;
+  return withLocalBiteMeta(local, server);
 }
 
 /** 대화 저장 키. 정합·형상 버전과 스캔 키가 바뀌어도 같은 의뢰면 그대로다. */
@@ -300,9 +371,11 @@ function isChatCacheKey(key: IDBValidKey | undefined, row: unknown): boolean {
 function freshenCachedDesign(
   row: CachedCustomAbutmentDesign,
 ): CachedCustomAbutmentDesign & { designFresh: boolean } {
+  const biteCheck = normalizeCachedBiteCheck(row.biteCheck);
   return {
     ...row,
     alignedScans: Array.isArray(row.alignedScans) ? row.alignedScans : [],
+    ...(biteCheck ? { biteCheck } : { biteCheck: null }),
     chat: normalizeCustomAbutmentChat(row.chat),
     designFresh:
       row.version === CUSTOM_ABUTMENT_DESIGN_VERSION &&
