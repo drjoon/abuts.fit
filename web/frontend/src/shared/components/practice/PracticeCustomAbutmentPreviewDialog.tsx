@@ -176,6 +176,7 @@ import {
 } from "@/shared/practice/abutmentDesignLogic";
 import { getDesignControls, matchDesignKey } from "@/shared/practice/labDesignControls";
 import {
+  SCANBODY_SPLIT_IMPL_TOKEN,
   detectAndMatchScanbodiesOnJaw,
   matchScanbodyNearPoint,
   splitScanByScanbodies,
@@ -1517,6 +1518,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const rawJawScansRef = useRef<
     Array<{ jaw: "upper" | "lower"; geometry: THREE.BufferGeometry; texture: THREE.Texture | null }>
   >([]);
+  const appliedSplitTokenRef = useRef<object | null>(null);
   const abutmentMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const predictedCrownMeshesRef = useRef(new Map<string, THREE.Mesh>());
   const fixtureMeshesRef = useRef(new Map<string, THREE.Mesh>());
@@ -1654,10 +1656,12 @@ export function PracticeCustomAbutmentPreviewDialog({
       };
 
       const jawFixtures = fixtures.filter((f) => f.jaw === jaw);
+      appliedSplitTokenRef.current = SCANBODY_SPLIT_IMPL_TOKEN;
       for (const scan of rawJawScansRef.current) {
         if (scan.jaw !== jaw) continue;
+        if (scan.texture) scan.geometry.userData.scanTexture = scan.texture;
         if (!scan.geometry.getAttribute("normal")) scan.geometry.computeVertexNormals();
-        const split = splitScanByScanbodies(scan.geometry, jawFixtures);
+        const split = splitScanByScanbodies(scan.geometry, jawFixtures, scan.texture);
         const restMesh = makeMesh(split.rest, scan.texture, false);
         restMesh.userData.sourceGeometry = scan.geometry;
         restMesh.visible = visible;
@@ -4549,6 +4553,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         const lowerScans = loadedScans.filter((s) => s.role === "lower");
         const biteScans = loadedScans.filter((s) => s.role === "bite");
         const jawScans = [...upperScans, ...lowerScans];
+        for (const s of jawScans) {
+          if (s.texture) s.geometry.userData.scanTexture = s.texture;
+        }
 
         // 저장본: 바이트 정렬 결과 정점이 같은 스캔에 맞을 때만 그대로 쓴다.
         // 서버 스냅샷은 alignedScans가 비어 있다 — 최신이면 메시만 복원하고,
@@ -5605,6 +5612,20 @@ export function PracticeCustomAbutmentPreviewDialog({
       for (const m of restList) applyMat(m, roleVisible);
     };
 
+    if (
+      appliedSplitTokenRef.current !== SCANBODY_SPLIT_IMPL_TOKEN &&
+      rawJawScansRef.current.length > 0 &&
+      designedList.length > 0
+    ) {
+      const fixtures = designedList.map((d) => d.fixture);
+      if (rawJawScansRef.current.some((s) => s.jaw === "upper")) {
+        rebuildJawScanMeshes("upper", fixtures, visibleJaws.upper);
+      }
+      if (rawJawScansRef.current.some((s) => s.jaw === "lower")) {
+        rebuildJawScanMeshes("lower", fixtures, visibleJaws.lower);
+      }
+    }
+
     syncJawRole("upper", jawMeshesRef.current.upperScanbody, jawMeshesRef.current.upperTrimmed);
     syncJawRole("lower", jawMeshesRef.current.lowerScanbody, jawMeshesRef.current.lowerTrimmed);
 
@@ -5635,8 +5656,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       picker.visible = visibleTeeth[tooth] !== false;
     }
   }, [
+    SCANBODY_SPLIT_IMPL_TOKEN,
     colorMapping,
     designedList,
+    rebuildJawScanMeshes,
     shownScanbodies,
     scanTransparency,
     selectedTooth,

@@ -2156,261 +2156,793 @@ export function cropScanPointsInFixtureFrame(
   return built;
 }
 
+const TEXTURE_PIXELS_CACHE = new WeakMap<
+  object,
+  { width: number; height: number; data: Uint8Array | Uint8ClampedArray } | null
+>();
+
+function readTexturePixelsForSplit(
+  tex: THREE.Texture | null | undefined,
+): { width: number; height: number; data: Uint8Array | Uint8ClampedArray } | null {
+  const img = tex?.image as
+    | {
+        width?: number;
+        height?: number;
+        naturalWidth?: number;
+        naturalHeight?: number;
+        data?: ArrayLike<number>;
+      }
+    | null
+    | undefined;
+  if (!img || typeof img !== "object") return null;
+  if (TEXTURE_PIXELS_CACHE.has(img)) return TEXTURE_PIXELS_CACHE.get(img) ?? null;
+
+  const w = Number(img.width || img.naturalWidth || 0);
+  const h = Number(img.height || img.naturalHeight || 0);
+  if (w <= 0 || h <= 0) {
+    TEXTURE_PIXELS_CACHE.set(img, null);
+    return null;
+  }
+  if (
+    (img.data instanceof Uint8Array || img.data instanceof Uint8ClampedArray) &&
+    img.data.length >= w * h * 3
+  ) {
+    const out = { width: w, height: h, data: img.data };
+    TEXTURE_PIXELS_CACHE.set(img, out);
+    return out;
+  }
+  if (typeof document !== "undefined") {
+    try {
+      const maxDim = 512;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (ctx) {
+        ctx.drawImage(img as unknown as CanvasImageSource, 0, 0, cw, ch);
+        const imageData = ctx.getImageData(0, 0, cw, ch);
+        const out = { width: cw, height: ch, data: imageData.data };
+        TEXTURE_PIXELS_CACHE.set(img, out);
+        return out;
+      }
+    } catch {
+      // ignore CORS / non-drawable image source
+    }
+  }
+  TEXTURE_PIXELS_CACHE.set(img, null);
+  return null;
+}
+
+/** HMR로 분리 구현이 교체됐을 때 열린 뷰어 메시를 1회 갱신하기 위한 모듈 토큰 */
+export const SCANBODY_SPLIT_IMPL_TOKEN: object = {};
+
 /**
- * 스캔을 잇몸 위로 솟은 스캔바디 기둥(치아별 조각)과 나머지로 나눈다. 원본 지오메트리는 건드리지 않는다.
+ * 스캔을 정합된 각 스캔바디 표면(치아별 조각)과 나머지(치은·인접치)로 분리한다. 원본 지오메트리는 건드리지 않는다.
  *
- * 정합 축의 각(θ)마다 반경 점유를 본다. 축에 닿은 첫 연결 성분(빈 반경 칸에서 끊김)이 스캔바디다.
- * 내면(작은 반경)은 그 성분에 포함된다. 성분이 공칭 반경 밖으로 두껍게 이어지면 치은 접촉으로 보고
- * 얇은 여유만 자른다. 틈 너머 성분은 인접치라 남긴다.
+ * 1) 정합된 스캔바디 축·높이·반경 주변 ROI에서 삼각형 면 법선과 정점 용접 인접 그래프를 구성한다.
+ * 2) 스캔바디 상부 캡·내면·외향 기둥 벽을 시드로 삼아 연결된 삼각형만 따라 내려간다.
+ * 3) 치은 열구 바닥(상향 법선 꺾임)과 인접 자연치 인접면·치은 출현 커프 내벽(스캔바디 축을 향하는 내향 법선)에서
+ *    성장을 멈추고, 스캔바디·주변 조직 색차가 뚜렷한 스캔에서는 재질 색을 함께 결합해 잔여 막만 흡수한다.
  */
 export function splitScanByScanbodies(
   source: THREE.BufferGeometry,
   fixtures: readonly MatchedScanbodyFixture[],
+  texture?: THREE.Texture | null,
 ): { rest: THREE.BufferGeometry; scanbodies: Map<string, THREE.BufferGeometry> } {
   const scanbodies = new Map<string, THREE.BufferGeometry>();
   const pos = source.getAttribute("position");
   const xyz = readPositionArray(source);
-  if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) return { rest: source.clone(), scanbodies };
+  if (fixtures.length === 0 || !pos || !xyz || pos.count < 3) {
+    return { rest: source.clone(), scanbodies };
+  }
+
+  const index = source.getIndex();
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  if (triCount <= 0) return { rest: source.clone(), scanbodies };
+  const vert = (t: number, c: number) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+
   const SECTORS = 36;
-  const RAD_BIN_MM = 0.25;
-  /** 공칭 원통 바깥 기본 여유(mm). 내면·몸통은 항상 여기 안에 있다. */
-  const NOMINAL_PAD_MM = 0.45;
-  /** 빈 칸이 이만큼 이어지면 스캔바디와 인접 조직 사이 틈. */
-  const GAP_BINS = 2;
-  /** 이 두께까지는 스캔바디에 붙은 얇은 잔여 벽. */
-  const THIN_EXTRA_MM = 1.5;
-  /** 그보다 두꺼우면 치은이 붙은 것으로 보고 여기까지만. */
-  const THICK_CLAMP_MM = 0.45;
-  const SEARCH_EXTRA_MM = 2.8;
-  const isInsideOtherScanbody = (px: number, py: number, pz: number, skipIdx: number) => {
-    for (let j = 0; j < fixtures.length; j += 1) {
-      if (j === skipIdx) continue;
-      const other = fixtures[j]!;
-      const ox = px - other.fixturePose.origin[0];
-      const oy = py - other.fixturePose.origin[1];
-      const oz = pz - other.fixturePose.origin[2];
-      const oh =
-        ox * other.fixturePose.axis[0] +
-        oy * other.fixturePose.axis[1] +
-        oz * other.fixturePose.axis[2];
-      if (oh < 0.6 || oh > other.scanbodyHeightMm + 1.2) continue;
-      const orx = ox - other.fixturePose.axis[0] * oh;
-      const ory = oy - other.fixturePose.axis[1] * oh;
-      const orz = oz - other.fixturePose.axis[2] * oh;
-      if (orx * orx + ory * ory + orz * orz <= (other.scanbodyRadiusMm + 0.55) ** 2) {
-        return true;
-      }
-    }
-    return false;
-  };
-  const zones = fixtures.map((f, fi) => {
-    const axis = f.fixturePose.axis;
-    const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
-    const e2 = cross(axis, e1);
-    const rawFloor = new Float64Array(SECTORS).fill(Infinity);
-    const nominalR = f.scanbodyRadiusMm + NOMINAL_PAD_MM;
-    const reachR = f.scanbodyRadiusMm + SEARCH_EXTRA_MM;
-    const binCount = Math.max(1, Math.ceil(reachR / RAD_BIN_MM));
-    for (let vi = 0; vi < pos.count; vi += 1) {
-      const px = xyz[vi * 3]!;
-      const py = xyz[vi * 3 + 1]!;
-      const pz = xyz[vi * 3 + 2]!;
-      const rx0 = px - f.fixturePose.origin[0];
-      const ry0 = py - f.fixturePose.origin[1];
-      const rz0 = pz - f.fixturePose.origin[2];
-      const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
-      if (hz < 0.6 || hz > f.scanbodyHeightMm - 0.55) continue;
-      const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
-      const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
-      const r = Math.hypot(u, v);
-      if (r < nominalR || r > f.scanbodyRadiusMm + 1.65) continue;
-      if (isInsideOtherScanbody(px, py, pz, fi)) continue;
-      const b = Math.min(
-        SECTORS - 1,
-        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
-      );
-      if (hz < rawFloor[b]!) rawFloor[b] = hz;
-    }
-    const baseFloor = Math.max(0.75, f.gingivaFloorMm - 0.15);
-    const filled = Array.from({ length: SECTORS }, (_, b) =>
-      Number.isFinite(rawFloor[b]!) ? rawFloor[b]! : baseFloor,
-    );
-    const sectorMinZ = new Float64Array(SECTORS);
-    for (let b = 0; b < SECTORS; b += 1) {
-      const prev = filled[(b - 1 + SECTORS) % SECTORS]!;
-      const cur = filled[b]!;
-      const next = filled[(b + 1) % SECTORS]!;
-      sectorMinZ[b] = Math.max(
-        0.65,
-        Math.min(f.scanbodyHeightMm - 1.3, (prev + cur * 2 + next) * 0.25 - 0.28),
-      );
-    }
-    const occ = Array.from({ length: SECTORS }, () => new Int32Array(binCount));
-    for (let vi = 0; vi < pos.count; vi += 1) {
-      const px = xyz[vi * 3]!;
-      const py = xyz[vi * 3 + 1]!;
-      const pz = xyz[vi * 3 + 2]!;
-      const rx0 = px - f.fixturePose.origin[0];
-      const ry0 = py - f.fixturePose.origin[1];
-      const rz0 = pz - f.fixturePose.origin[2];
-      const hz = rx0 * axis[0] + ry0 * axis[1] + rz0 * axis[2];
-      if (hz < 0.8 || hz > f.scanbodyHeightMm + 0.6) continue;
-      const u = rx0 * e1[0] + ry0 * e1[1] + rz0 * e1[2];
-      const v = rx0 * e2[0] + ry0 * e2[1] + rz0 * e2[2];
-      const r = Math.hypot(u, v);
-      if (r >= reachR) continue;
-      if (isInsideOtherScanbody(px, py, pz, fi)) continue;
-      const b = Math.min(
-        SECTORS - 1,
-        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
-      );
-      if (hz < sectorMinZ[b]!) continue;
-      const bi = Math.min(binCount - 1, Math.floor(r / RAD_BIN_MM));
-      occ[b]![bi]! += 1;
-    }
-    const sectorMaxR = new Float64Array(SECTORS);
-    for (let b = 0; b < SECTORS; b += 1) {
-      const bins = occ[b]!;
-      let start = -1;
-      const nominalBin = Math.min(binCount - 1, Math.floor(nominalR / RAD_BIN_MM));
-      for (let bi = 0; bi <= nominalBin; bi += 1) {
-        if (bins[bi]! >= 2) {
-          start = bi;
-          break;
-        }
-      }
-      let outer = nominalR;
-      if (start >= 0) {
-        let emptyRun = 0;
-        let lastRho = (start + 1) * RAD_BIN_MM;
-        for (let bi = start; bi < binCount; bi += 1) {
-          if (bins[bi]! >= 2) {
-            emptyRun = 0;
-            lastRho = (bi + 1) * RAD_BIN_MM;
-          } else {
-            emptyRun += 1;
-            if (emptyRun >= GAP_BINS) break;
-          }
-        }
-        const extra = lastRho - f.scanbodyRadiusMm;
-        outer = extra <= THIN_EXTRA_MM ? Math.max(nominalR, lastRho) : f.scanbodyRadiusMm + THICK_CLAMP_MM;
-      }
-      sectorMaxR[b] = outer;
-    }
-    const smoothed = new Float64Array(SECTORS);
-    for (let b = 0; b < SECTORS; b += 1) {
-      const prev = sectorMaxR[(b - 1 + SECTORS) % SECTORS]!;
-      const cur = sectorMaxR[b]!;
-      const next = sectorMaxR[(b + 1) % SECTORS]!;
-      // 양쪽이 잔여 벽이면 사이 빈 부채꼴만 메운다. 벽을 평균으로 줄이지 않는다.
-      smoothed[b] = Math.max(nominalR, cur, Math.min(prev, next));
-    }
-    return {
-      tooth: f.toothNumber,
-      origin: f.fixturePose.origin,
-      axis,
-      e1,
-      e2,
-      radiusMm: f.scanbodyRadiusMm,
-      baseFloor,
-      sectorMaxR: smoothed,
-      sectorMinZ,
-      maxZ: f.scanbodyHeightMm + 1.2,
-    };
+  const ROI_RAD_PAD_MM = 2.5;
+  const ROI_TOP_PAD_MM = 1.6;
+  const ROI_BOT_MM = -0.2;
+
+  // 1) 픽스처별 월드 AABB 및 전체 합집합 AABB로 악궁 전체 삼각형의 90%+ 를 즉시 건너뛴다.
+  let uMinX = Infinity;
+  let uMinY = Infinity;
+  let uMinZ = Infinity;
+  let uMaxX = -Infinity;
+  let uMaxY = -Infinity;
+  let uMaxZ = -Infinity;
+  const fixBounds = fixtures.map((f) => {
+    const o = f.fixturePose.origin;
+    const a = f.fixturePose.axis;
+    const rMax = f.scanbodyRadiusMm + ROI_RAD_PAD_MM;
+    const zMax = f.scanbodyHeightMm + ROI_TOP_PAD_MM;
+    const rx = rMax * Math.sqrt(Math.max(0, 1 - a[0] * a[0]));
+    const ry = rMax * Math.sqrt(Math.max(0, 1 - a[1] * a[1]));
+    const rz = rMax * Math.sqrt(Math.max(0, 1 - a[2] * a[2]));
+    const x0 = o[0] + ROI_BOT_MM * a[0];
+    const x1 = o[0] + zMax * a[0];
+    const y0 = o[1] + ROI_BOT_MM * a[1];
+    const y1 = o[1] + zMax * a[1];
+    const z0 = o[2] + ROI_BOT_MM * a[2];
+    const z1 = o[2] + zMax * a[2];
+    const minX = Math.min(x0, x1) - rx;
+    const maxX = Math.max(x0, x1) + rx;
+    const minY = Math.min(y0, y1) - ry;
+    const maxY = Math.max(y0, y1) + ry;
+    const minZ = Math.min(z0, z1) - rz;
+    const maxZ = Math.max(z0, z1) + rz;
+    if (minX < uMinX) uMinX = minX;
+    if (maxX > uMaxX) uMaxX = maxX;
+    if (minY < uMinY) uMinY = minY;
+    if (maxY > uMaxY) uMaxY = maxY;
+    if (minZ < uMinZ) uMinZ = minZ;
+    if (maxZ > uMaxZ) uMaxZ = maxZ;
+    return { o, a, rMax2: rMax * rMax, zMax, minX, maxX, minY, maxY, minZ, maxZ };
   });
-  const bridgedPairs: Array<[number, number]> = [];
-  for (let a = 0; a < zones.length; a += 1) {
-    for (let b = a + 1; b < zones.length; b += 1) {
-      const topDist = Math.hypot(...sub(fixtures[a]!.scanbodyTop, fixtures[b]!.scanbodyTop));
-      if (topDist <= zones[a]!.radiusMm + zones[b]!.radiusMm + 1.8) {
-        bridgedPairs.push([a, b]);
+
+  const roiTris: number[] = [];
+  const fixRoiList: number[][] = fixtures.map(() => []);
+
+  for (let t = 0; t < triCount; t += 1) {
+    const i0 = vert(t, 0) * 3;
+    const x0 = xyz[i0]!;
+    if (x0 < uMinX - 2.5 || x0 > uMaxX + 2.5) continue;
+    const y0 = xyz[i0 + 1]!;
+    if (y0 < uMinY - 2.5 || y0 > uMaxY + 2.5) continue;
+    const z0 = xyz[i0 + 2]!;
+    if (z0 < uMinZ - 2.5 || z0 > uMaxZ + 2.5) continue;
+
+    const i1 = vert(t, 1) * 3;
+    const i2 = vert(t, 2) * 3;
+    const cx = (x0 + xyz[i1]! + xyz[i2]!) / 3;
+    if (cx < uMinX || cx > uMaxX) continue;
+    const cy = (y0 + xyz[i1 + 1]! + xyz[i2 + 1]!) / 3;
+    if (cy < uMinY || cy > uMaxY) continue;
+    const cz = (z0 + xyz[i1 + 2]! + xyz[i2 + 2]!) / 3;
+    if (cz < uMinZ || cz > uMaxZ) continue;
+
+    let ri = -1;
+    for (let fi = 0; fi < fixBounds.length; fi += 1) {
+      const fb = fixBounds[fi]!;
+      if (
+        cx < fb.minX ||
+        cx > fb.maxX ||
+        cy < fb.minY ||
+        cy > fb.maxY ||
+        cz < fb.minZ ||
+        cz > fb.maxZ
+      ) {
+        continue;
+      }
+      const dx = cx - fb.o[0];
+      const dy = cy - fb.o[1];
+      const dz = cz - fb.o[2];
+      const hz = dx * fb.a[0] + dy * fb.a[1] + dz * fb.a[2];
+      if (hz < ROI_BOT_MM || hz > fb.zMax) continue;
+      const rx = dx - fb.a[0] * hz;
+      const ry = dy - fb.a[1] * hz;
+      const rz = dz - fb.a[2] * hz;
+      if (rx * rx + ry * ry + rz * rz <= fb.rMax2) {
+        if (ri < 0) {
+          ri = roiTris.length;
+          roiTris.push(t);
+        }
+        fixRoiList[fi]!.push(ri);
       }
     }
   }
-  const zoneOf = (vi: number) => {
-    const dx = xyz[vi * 3]!;
-    const dy = xyz[vi * 3 + 1]!;
-    const dz = xyz[vi * 3 + 2]!;
-    for (let k = 0; k < zones.length; k += 1) {
-      const zone = zones[k]!;
-      const rx0 = dx - zone.origin[0];
-      const ry0 = dy - zone.origin[1];
-      const rz0 = dz - zone.origin[2];
-      const hz = rx0 * zone.axis[0] + ry0 * zone.axis[1] + rz0 * zone.axis[2];
-      if (hz > zone.maxZ || hz < 0.6) continue;
-      const rx = rx0 - zone.axis[0] * hz;
-      const ry = ry0 - zone.axis[1] * hz;
-      const rz = rz0 - zone.axis[2] * hz;
-      const r = Math.hypot(rx, ry, rz);
-      const u = rx0 * zone.e1[0] + ry0 * zone.e1[1] + rz0 * zone.e1[2];
-      const v = rx0 * zone.e2[0] + ry0 * zone.e2[1] + rz0 * zone.e2[2];
+
+  const R = roiTris.length;
+  if (R === 0) return { rest: source.clone(), scanbodies };
+
+  // 2) ROI 삼각형 중심·법선·색상·공간 정점 용접(0.5µm) 인접 그래프 구성
+  const col = source.getAttribute("color");
+  const hasVertexColor = Boolean(col && col.itemSize >= 3 && col.count >= pos.count);
+  const colorScale =
+    hasVertexColor && col
+      ? col.array instanceof Uint8Array
+        ? 1 / 255
+        : col.array instanceof Uint16Array
+          ? 1 / 65535
+          : 1
+      : 1;
+
+  const resolvedTex =
+    texture ?? (source.userData?.scanTexture as THREE.Texture | null | undefined) ?? null;
+  const uv = !hasVertexColor ? source.getAttribute("uv") : undefined;
+  const texPixels =
+    !hasVertexColor && uv && uv.itemSize >= 2 && uv.count >= pos.count
+      ? readTexturePixelsForSplit(resolvedTex)
+      : null;
+  const texStride =
+    texPixels && texPixels.data.length >= texPixels.width * texPixels.height * 4 ? 4 : 3;
+  const texFlipY = resolvedTex ? resolvedTex.flipY !== false : true;
+  const hasColor = hasVertexColor || Boolean(texPixels);
+
+  const cxArr = new Float64Array(R);
+  const cyArr = new Float64Array(R);
+  const czArr = new Float64Array(R);
+  const nxArr = new Float64Array(R);
+  const nyArr = new Float64Array(R);
+  const nzArr = new Float64Array(R);
+  const rgbR = hasColor ? new Float32Array(R) : null;
+  const rgbG = hasColor ? new Float32Array(R) : null;
+  const rgbB = hasColor ? new Float32Array(R) : null;
+
+  const vertWeld = new Int32Array(pos.count).fill(-1);
+  const hashBuckets = new Map<number, number[]>();
+  let nextW = 0;
+  const weldVert = (vi: number): number => {
+    const cached = vertWeld[vi]!;
+    if (cached >= 0) return cached;
+    const x = xyz[vi * 3]!;
+    const y = xyz[vi * 3 + 1]!;
+    const z = xyz[vi * 3 + 2]!;
+    const qx = Math.round(x * 2000);
+    const qy = Math.round(y * 2000);
+    const qz = Math.round(z * 2000);
+    const h = ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) | 0;
+    const bucket = hashBuckets.get(h);
+    if (bucket) {
+      for (let k = 0; k < bucket.length; k += 4) {
+        if (bucket[k] === qx && bucket[k + 1] === qy && bucket[k + 2] === qz) {
+          const w = bucket[k + 3]!;
+          vertWeld[vi] = w;
+          return w;
+        }
+      }
+      const w = nextW++;
+      bucket.push(qx, qy, qz, w);
+      vertWeld[vi] = w;
+      return w;
+    }
+    const w = nextW++;
+    hashBuckets.set(h, [qx, qy, qz, w]);
+    vertWeld[vi] = w;
+    return w;
+  };
+
+  const edgeFirst = new Map<number, number>();
+  const edgeExtra = new Map<number, number[]>();
+  const adj: number[][] = Array.from({ length: R }, () => []);
+  const edgeCountOfTri = new Uint8Array(R);
+  let orientVote = 0;
+  const refAxis = fixtures[0]!.fixturePose.axis;
+
+  for (let ri = 0; ri < R; ri += 1) {
+    const t = roiTris[ri]!;
+    const vi0 = vert(t, 0);
+    const vi1 = vert(t, 1);
+    const vi2 = vert(t, 2);
+    const i0 = vi0 * 3;
+    const i1 = vi1 * 3;
+    const i2 = vi2 * 3;
+    const x0 = xyz[i0]!;
+    const y0 = xyz[i0 + 1]!;
+    const z0 = xyz[i0 + 2]!;
+    const x1 = xyz[i1]!;
+    const y1 = xyz[i1 + 1]!;
+    const z1 = xyz[i1 + 2]!;
+    const x2 = xyz[i2]!;
+    const y2 = xyz[i2 + 1]!;
+    const z2 = xyz[i2 + 2]!;
+
+    cxArr[ri] = (x0 + x1 + x2) / 3;
+    cyArr[ri] = (y0 + y1 + y2) / 3;
+    czArr[ri] = (z0 + z1 + z2) / 3;
+
+    const ux = x1 - x0;
+    const uy = y1 - y0;
+    const uz = z1 - z0;
+    const vx = x2 - x0;
+    const vy = y2 - y0;
+    const vz = z2 - z0;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl > 1e-12) {
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+    }
+    nxArr[ri] = nx;
+    nyArr[ri] = ny;
+    nzArr[ri] = nz;
+    const dAx = nx * refAxis[0] + ny * refAxis[1] + nz * refAxis[2];
+    if (Math.abs(dAx) > 0.72) orientVote += dAx;
+
+    if (rgbR && rgbG && rgbB) {
+      if (hasVertexColor && col) {
+        rgbR[ri] = ((col.getX(vi0) + col.getX(vi1) + col.getX(vi2)) / 3) * colorScale;
+        rgbG[ri] = ((col.getY(vi0) + col.getY(vi1) + col.getY(vi2)) / 3) * colorScale;
+        rgbB[ri] = ((col.getZ(vi0) + col.getZ(vi1) + col.getZ(vi2)) / 3) * colorScale;
+      } else if (texPixels && uv) {
+        const uMean = (uv.getX(vi0) + uv.getX(vi1) + uv.getX(vi2)) / 3;
+        const vMean = (uv.getY(vi0) + uv.getY(vi1) + uv.getY(vi2)) / 3;
+        const uw = uMean - Math.floor(uMean);
+        const vw = vMean - Math.floor(vMean);
+        const px = Math.min(texPixels.width - 1, Math.max(0, Math.floor(uw * texPixels.width)));
+        const py = Math.min(
+          texPixels.height - 1,
+          Math.max(0, Math.floor((texFlipY ? 1 - vw : vw) * texPixels.height)),
+        );
+        const off = (py * texPixels.width + px) * texStride;
+        rgbR[ri] = (texPixels.data[off] ?? 0) / 255;
+        rgbG[ri] = (texPixels.data[off + 1] ?? 0) / 255;
+        rgbB[ri] = (texPixels.data[off + 2] ?? 0) / 255;
+      }
+    }
+
+    const w0 = weldVert(vi0);
+    const w1 = weldVert(vi1);
+    const w2 = weldVert(vi2);
+    const pairs = [w0, w1, w1, w2, w2, w0];
+    for (let e = 0; e < 6; e += 2) {
+      let a = pairs[e]!;
+      let b = pairs[e + 1]!;
+      if (a === b) continue;
+      if (a > b) {
+        const tmp = a;
+        a = b;
+        b = tmp;
+      }
+      const ek = a * 2097152 + b;
+      const first = edgeFirst.get(ek);
+      if (first === undefined) {
+        edgeFirst.set(ek, ri);
+      } else {
+        adj[first]!.push(ri);
+        adj[ri]!.push(first);
+        if (edgeCountOfTri[first]! < 3) edgeCountOfTri[first]! += 1;
+        if (edgeCountOfTri[ri]! < 3) edgeCountOfTri[ri]! += 1;
+        const extras = edgeExtra.get(ek);
+        if (extras) {
+          for (const ex of extras) {
+            adj[ex]!.push(ri);
+            adj[ri]!.push(ex);
+          }
+          extras.push(ri);
+        } else {
+          edgeExtra.set(ek, [ri]);
+        }
+      }
+    }
+  }
+
+  if (orientVote < 0) {
+    for (let ri = 0; ri < R; ri += 1) {
+      nxArr[ri] = -nxArr[ri]!;
+      nyArr[ri] = -nyArr[ri]!;
+      nzArr[ri] = -nzArr[ri]!;
+    }
+  }
+
+  const isCloserOrInsideOther = (
+    px: number,
+    py: number,
+    pz: number,
+    myR: number,
+    skipIdx: number,
+  ) => {
+    for (let j = 0; j < fixtures.length; j += 1) {
+      if (j === skipIdx) continue;
+      const o = fixtures[j]!;
+      const ox = px - o.fixturePose.origin[0];
+      const oy = py - o.fixturePose.origin[1];
+      const oz = pz - o.fixturePose.origin[2];
+      const oh =
+        ox * o.fixturePose.axis[0] +
+        oy * o.fixturePose.axis[1] +
+        oz * o.fixturePose.axis[2];
+      if (oh < 0.5 || oh > o.scanbodyHeightMm + 0.8) continue;
+      const or = Math.hypot(
+        ox - o.fixturePose.axis[0] * oh,
+        oy - o.fixturePose.axis[1] * oh,
+        oz - o.fixturePose.axis[2] * oh,
+      );
+      if (or < myR - 0.04 || or <= o.scanbodyRadiusMm + 0.18) return true;
+    }
+    return false;
+  };
+
+  type Rgb3 = [number, number, number];
+  const colorDist = (a: Rgb3, b: Rgb3) => {
+    const la = (a[0] + a[1] + a[2]) / 3;
+    const lb = (b[0] + b[1] + b[2]) / 3;
+    return Math.hypot(
+      (la - lb) * 0.65,
+      (a[0] - a[1] - (b[0] - b[1])) * 2.2,
+      (a[0] - a[2] - (b[0] - b[2])) * 2.0,
+    );
+  };
+  const medianRgb = (samples: Rgb3[]): Rgb3 | null => {
+    if (samples.length < 12) return null;
+    const ch = (k: 0 | 1 | 2) => {
+      const sorted = samples.map((x) => x[k]).sort((a, c) => a - c);
+      return sorted[Math.floor(sorted.length / 2)]!;
+    };
+    return [ch(0), ch(1), ch(2)];
+  };
+
+  const owner = new Int32Array(R).fill(-1);
+
+  // 3) 각 스캔바디마다 부채꼴별 외벽 반경·열구 바닥 높이·자체 보정 색 모델을 구한 뒤 연결 영역 성장
+  for (let fi = 0; fi < fixtures.length; fi += 1) {
+    const f = fixtures[fi]!;
+    const localList = fixRoiList[fi]!;
+    if (localList.length === 0) continue;
+
+    const [ox, oy, oz] = f.fixturePose.origin;
+    const axis = f.fixturePose.axis;
+    const e1 = norm(Math.abs(axis[2]) < 0.9 ? cross(axis, [0, 0, 1]) : cross(axis, [1, 0, 0]));
+    const e2 = cross(axis, e1);
+    const sbR = f.scanbodyRadiusMm;
+    const sbH = f.scanbodyHeightMm;
+
+    const wallRBySec: number[][] = Array.from({ length: SECTORS }, () => []);
+    const sulcBySec: number[][] = Array.from({ length: SECTORS }, () => []);
+    const sbColorSamples: Rgb3[] = [];
+    const tissueColorSamples: Rgb3[] = [];
+
+    for (const ri of localList) {
+      const dx = cxArr[ri]! - ox;
+      const dy = cyArr[ri]! - oy;
+      const dz = czArr[ri]! - oz;
+      const hz = dx * axis[0] + dy * axis[1] + dz * axis[2];
+      if (hz < 0.55 || hz > sbH + 1.0) continue;
+      const u = dx * e1[0] + dy * e1[1] + dz * e1[2];
+      const v = dx * e2[0] + dy * e2[1] + dz * e2[2];
+      const r = Math.hypot(u, v);
+      if (isCloserOrInsideOther(cxArr[ri]!, cyArr[ri]!, czArr[ri]!, r, fi)) continue;
       const b = Math.min(
         SECTORS - 1,
         Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
       );
-      if (r > zone.sectorMaxR[b]!) continue;
-      if (hz < zone.sectorMinZ[b]!) continue;
-      return k;
+      const rx = dx - axis[0] * hz;
+      const ry = dy - axis[1] * hz;
+      const rz = dz - axis[2] * hz;
+      const nEr = r > 1e-4 ? (nxArr[ri]! * rx + nyArr[ri]! * ry + nzArr[ri]! * rz) / r : 0;
+      const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+
+      if (
+        r >= sbR * 0.65 &&
+        r <= sbR + 0.34 &&
+        hz >= Math.max(1.0, f.gingivaFloorMm + 0.25) &&
+        hz <= sbH - 0.15 &&
+        nEr > 0.48 &&
+        Math.abs(nAx) < 0.62
+      ) {
+        wallRBySec[b]!.push(r);
+      }
+
+      if (r >= sbR + 0.05 && r <= sbR + 0.95 && hz <= sbH - 0.55 && (nAx >= 0.70 || nEr <= -0.18)) {
+        sulcBySec[b]!.push(hz);
+      }
+
+      if (rgbR && rgbG && rgbB) {
+        if (
+          r <= sbR + 0.08 &&
+          hz >= Math.max(1.4, f.gingivaFloorMm + 0.35) &&
+          hz <= sbH + 0.12 &&
+          (r <= sbR * 0.8 || (nEr > 0.45 && Math.abs(nAx) < 0.65))
+        ) {
+          sbColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
+        } else if (r >= sbR + 0.30 && r <= sbR + 1.8 && hz <= sbH - 0.45 && nAx >= 0.72) {
+          tissueColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
+        } else if (
+          r >= sbR + 0.45 &&
+          r <= sbR + 2.2 &&
+          nEr <= -0.35 &&
+          hz >= f.gingivaFloorMm + 0.6
+        ) {
+          tissueColorSamples.push([rgbR[ri]!, rgbG[ri]!, rgbB[ri]!]);
+        }
+      }
     }
-    for (const [ia, ib] of bridgedPairs) {
-      const za = zones[ia]!;
-      const zb = zones[ib]!;
-      const ha =
-        (dx - za.origin[0]) * za.axis[0] +
-        (dy - za.origin[1]) * za.axis[1] +
-        (dz - za.origin[2]) * za.axis[2];
-      const hb =
-        (dx - zb.origin[0]) * zb.axis[0] +
-        (dy - zb.origin[1]) * zb.axis[1] +
-        (dz - zb.origin[2]) * zb.axis[2];
-      if (ha < za.baseFloor + 0.35 || hb < zb.baseFloor + 0.35 || ha > za.maxZ || hb > zb.maxZ) {
+
+    const rawWallR = new Float64Array(SECTORS).fill(NaN);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const arr = wallRBySec[b]!;
+      if (arr.length >= 3) {
+        arr.sort((a, c) => a - c);
+        const q88 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.88))]!;
+        rawWallR[b] = Math.max(sbR * 0.78, Math.min(sbR + 0.26, q88));
+      }
+    }
+    const filledWallR = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      if (Number.isFinite(rawWallR[b]!)) {
+        filledWallR[b] = rawWallR[b]!;
         continue;
       }
-      const pax = za.origin[0] + za.axis[0] * ha;
-      const pay = za.origin[1] + za.axis[1] * ha;
-      const paz = za.origin[2] + za.axis[2] * ha;
-      const sx = zb.origin[0] + zb.axis[0] * hb - pax;
-      const sy = zb.origin[1] + zb.axis[1] * hb - pay;
-      const sz = zb.origin[2] + zb.axis[2] * hb - paz;
-      const s2 = sx * sx + sy * sy + sz * sz;
-      if (s2 < 1e-4) continue;
-      const t = ((dx - pax) * sx + (dy - pay) * sy + (dz - paz) * sz) / s2;
-      if (t <= 0 || t >= 1) continue;
-      const qx = dx - (pax + sx * t);
-      const qy = dy - (pay + sy * t);
-      const qz = dz - (paz + sz * t);
-      const capR = (1 - t) * za.radiusMm + t * zb.radiusMm + 0.45;
-      if (qx * qx + qy * qy + qz * qz <= capR * capR) {
-        return t < 0.5 ? ia : ib;
+      let found = sbR;
+      for (let d = 1; d <= 6; d += 1) {
+        const l = rawWallR[(b - d + SECTORS) % SECTORS]!;
+        const r = rawWallR[(b + d) % SECTORS]!;
+        if (Number.isFinite(l) && Number.isFinite(r)) {
+          found = 0.5 * (l + r);
+          break;
+        }
+        if (Number.isFinite(l)) {
+          found = l;
+          break;
+        }
+        if (Number.isFinite(r)) {
+          found = r;
+          break;
+        }
+      }
+      filledWallR[b] = found;
+    }
+    const wallR = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      wallR[b] =
+        0.25 * filledWallR[(b - 1 + SECTORS) % SECTORS]! +
+        0.5 * filledWallR[b]! +
+        0.25 * filledWallR[(b + 1) % SECTORS]!;
+    }
+
+    const baseSulc = Math.max(0.75, f.gingivaFloorMm);
+    const rawSulc = new Float64Array(SECTORS).fill(NaN);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const arr = sulcBySec[b]!;
+      if (arr.length >= 2) {
+        arr.sort((a, c) => a - c);
+        rawSulc[b] = arr[Math.floor(arr.length * 0.1)]!;
       }
     }
-    return -1;
-  };
-  const index = source.getIndex();
-  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
-  const vert = (t: number, c: number) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+    const filledSulc = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      if (Number.isFinite(rawSulc[b]!)) {
+        filledSulc[b] = rawSulc[b]!;
+        continue;
+      }
+      let found = baseSulc;
+      for (let d = 1; d <= SECTORS / 2; d += 1) {
+        const l = rawSulc[(b - d + SECTORS) % SECTORS]!;
+        const r = rawSulc[(b + d) % SECTORS]!;
+        if (Number.isFinite(l) && Number.isFinite(r)) {
+          found = 0.5 * (l + r);
+          break;
+        }
+        if (Number.isFinite(l)) {
+          found = l;
+          break;
+        }
+        if (Number.isFinite(r)) {
+          found = r;
+          break;
+        }
+      }
+      filledSulc[b] = found;
+    }
+    const sulcZ = new Float64Array(SECTORS);
+    for (let b = 0; b < SECTORS; b += 1) {
+      const s =
+        0.25 * filledSulc[(b - 1 + SECTORS) % SECTORS]! +
+        0.5 * filledSulc[b]! +
+        0.25 * filledSulc[(b + 1) % SECTORS]!;
+      sulcZ[b] = Math.max(0.65, Math.min(sbH - 1.15, s));
+    }
+
+    const sbProto = medianRgb(sbColorSamples);
+    const tisProto = medianRgb(tissueColorSamples);
+    const colorSep = sbProto && tisProto ? colorDist(sbProto, tisProto) : 0;
+    const useColor = Boolean(sbProto && tisProto && colorSep >= 0.16);
+    const looksLikeScanbodyColor = (ri: number) => {
+      if (!useColor || !rgbR || !rgbG || !rgbB || !sbProto || !tisProto) return false;
+      const c: Rgb3 = [rgbR[ri]!, rgbG[ri]!, rgbB[ri]!];
+      const dSb = colorDist(c, sbProto);
+      const dTis = colorDist(c, tisProto);
+      if (c[0] > 0.34 && c[0] - c[1] > 0.13 && c[0] - c[2] > 0.08 && dTis < dSb) return false;
+      return dSb <= Math.max(0.22, colorSep * 0.62) && dSb < dTis * 0.92;
+    };
+
+    const triGeom = (ri: number) => {
+      const dx = cxArr[ri]! - ox;
+      const dy = cyArr[ri]! - oy;
+      const dz = czArr[ri]! - oz;
+      const hz = dx * axis[0] + dy * axis[1] + dz * axis[2];
+      const u = dx * e1[0] + dy * e1[1] + dz * e1[2];
+      const v = dx * e2[0] + dy * e2[1] + dz * e2[2];
+      const r = Math.hypot(u, v);
+      const b = Math.min(
+        SECTORS - 1,
+        Math.max(0, Math.floor(((Math.atan2(v, u) + Math.PI) / (Math.PI * 2)) * SECTORS)),
+      );
+      const rx = dx - axis[0] * hz;
+      const ry = dy - axis[1] * hz;
+      const rz = dz - axis[2] * hz;
+      const nEr = r > 1e-4 ? (nxArr[ri]! * rx + nyArr[ri]! * ry + nzArr[ri]! * rz) / r : 0;
+      const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+      return { hz, r, b, rw: wallR[b]!, sz: sulcZ[b]!, nEr, nAx };
+    };
+
+    const claimed = new Uint8Array(R);
+    const queue: number[] = [];
+
+    for (const ri of localList) {
+      if (owner[ri]! >= 0) continue;
+      const g = triGeom(ri);
+      if (g.hz < 0.7 || g.hz > sbH + 0.55) continue;
+      if (isCloserOrInsideOther(cxArr[ri]!, cyArr[ri]!, czArr[ri]!, g.r, fi)) continue;
+
+      const isInnerOrCap =
+        (g.r <= sbR * 0.76 && g.hz >= 0.8) ||
+        (g.r <= Math.min(g.rw, sbR) - 0.02 && g.hz >= Math.max(1.1, sbH - 2.2));
+      const isCoreWall =
+        g.r <= Math.max(g.rw, sbR) + 0.14 &&
+        g.hz >= Math.max(0.85, g.sz - 0.65) &&
+        g.nEr > 0.42 &&
+        Math.abs(g.nAx) < 0.66;
+
+      if (isInnerOrCap || isCoreWall) {
+        claimed[ri] = 1;
+        queue.push(ri);
+      }
+    }
+
+    for (let head = 0; head < queue.length; head += 1) {
+      const cur = queue[head]!;
+      for (const nb of adj[cur]!) {
+        if (claimed[nb] || owner[nb]! >= 0) continue;
+        const g = triGeom(nb);
+        if (g.hz < 0.6 || g.hz > sbH + 0.65) continue;
+        const maxCoreR = Math.max(g.rw, sbR);
+        if (g.r > maxCoreR + 1.0) continue;
+        if (isCloserOrInsideOther(cxArr[nb]!, cyArr[nb]!, czArr[nb]!, g.r, fi)) continue;
+
+        // 스크류홀 내면 및 베벨 안쪽 면
+        if (g.r <= sbR * 0.78 && g.hz >= 0.7) {
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+        if (g.r <= g.rw - 0.06 && g.hz >= Math.max(0.95, g.sz + 0.15) && g.nEr >= -0.2) {
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+
+        // 스캔바디 축 안쪽을 바라보는 면(인접 자연치 인접면·출현 커프 내벽)은 절대 넘지 않는다.
+        if (g.nEr < -0.06) continue;
+
+        // Zone 1: 스캔바디 기둥·베벨·열구 경계 (r <= maxCoreR + 0.22)
+        if (g.r <= maxCoreR + 0.22) {
+          if (g.hz < sbH - 0.8 && g.nAx >= 0.7 && g.r >= g.rw - 0.06) {
+            const nearSulcusDepth = g.hz <= g.sz + 0.65;
+            const outsideFlatBevelNonSb =
+              g.r >= g.rw + 0.05 && (!useColor || !looksLikeScanbodyColor(nb));
+            if (nearSulcusDepth || outsideFlatBevelNonSb) continue;
+          }
+          if (g.hz < g.sz - 0.85) continue;
+          if (
+            useColor &&
+            g.r >= g.rw + 0.06 &&
+            g.hz < g.sz + 0.45 &&
+            g.nAx >= 0.48 &&
+            !looksLikeScanbodyColor(nb)
+          ) {
+            continue;
+          }
+          claimed[nb] = 1;
+          queue.push(nb);
+          continue;
+        }
+
+        // Zone 2: 스캔바디 외벽에 붙어 뻗은 얇은 스캐너 잔여 막 (maxCoreR + 0.22 < r <= maxCoreR + 1.0)
+        if (g.hz < g.sz + 0.25 || g.hz > sbH + 0.2) continue;
+        if (g.nAx >= 0.58) continue;
+        if (useColor) {
+          if (!looksLikeScanbodyColor(nb)) continue;
+          if (g.nEr < 0.2) continue;
+        } else {
+          if (g.r > maxCoreR + 0.34 || g.nEr < 0.48) continue;
+        }
+        claimed[nb] = 1;
+        queue.push(nb);
+      }
+    }
+
+    // 스캔바디 몸통 내부(r <= max(rw, sbR) + 0.22)에 완전히 갇힌 작은 구멍·섬(<= 28개 삼각형) 흡수
+    const visitedUnclaimed = new Uint8Array(R);
+    for (const ri of localList) {
+      if (claimed[ri] || visitedUnclaimed[ri] || owner[ri]! >= 0) continue;
+      const g0 = triGeom(ri);
+      if (g0.r > Math.max(g0.rw, sbR) + 0.22 || g0.hz < g0.sz - 0.4) continue;
+      const comp = [ri];
+      visitedUnclaimed[ri] = 1;
+      let escaped = false;
+      for (let h = 0; h < comp.length; h += 1) {
+        const u = comp[h]!;
+        if (edgeCountOfTri[u]! < 3) {
+          escaped = true;
+          break;
+        }
+        for (const nb of adj[u]!) {
+          if (claimed[nb]) continue;
+          if (owner[nb]! >= 0) {
+            escaped = true;
+            break;
+          }
+          const gn = triGeom(nb);
+          if (gn.r > Math.max(gn.rw, sbR) + 0.24 || gn.hz < gn.sz - 0.5) {
+            escaped = true;
+            break;
+          }
+          if (!visitedUnclaimed[nb]) {
+            visitedUnclaimed[nb] = 1;
+            comp.push(nb);
+            if (comp.length > 28) {
+              escaped = true;
+              break;
+            }
+          }
+        }
+        if (escaped) break;
+      }
+      if (!escaped && comp.length <= 28) {
+        for (const u of comp) claimed[u] = 1;
+      }
+    }
+
+    // 열구 절단선 톱니 완화: 두 변 이상 이미 스캔바디에 속한 코어 내 외향 삼각형 정리
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (const ri of localList) {
+        if (claimed[ri] || owner[ri]! >= 0) continue;
+        const g = triGeom(ri);
+        if (
+          g.r > Math.max(g.rw, sbR) + 0.22 ||
+          g.hz < g.sz - 0.4 ||
+          g.nEr < -0.05 ||
+          g.nAx >= 0.74
+        ) {
+          continue;
+        }
+        let cCnt = 0;
+        for (const nb of adj[ri]!) {
+          if (claimed[nb]) cCnt += 1;
+        }
+        if (cCnt >= 2) claimed[ri] = 1;
+      }
+    }
+
+    for (const ri of localList) {
+      if (claimed[ri]) owner[ri] = fi;
+    }
+  }
+
+  const triOwner = new Int32Array(triCount).fill(-1);
+  for (let ri = 0; ri < R; ri += 1) {
+    const fi = owner[ri]!;
+    if (fi >= 0) triOwner[roiTris[ri]!] = fi;
+  }
+
   const rest: number[] = [];
-  const parts: number[][] = zones.map(() => []);
+  const parts: number[][] = fixtures.map(() => []);
   for (let t = 0; t < triCount; t += 1) {
     const a = vert(t, 0);
     const b = vert(t, 1);
     const c = vert(t, 2);
-    const za = zoneOf(a);
-    const zb = zoneOf(b);
-    const zc = zoneOf(c);
-    const zMatch =
-      za >= 0 && (zb === za || zc === za) ? za : zb >= 0 && zc === zb ? zb : -1;
-    if (zMatch >= 0) parts[zMatch]!.push(a, b, c);
+    const fi = triOwner[t]!;
+    if (fi >= 0) parts[fi]!.push(a, b, c);
     else rest.push(a, b, c);
   }
+
   const withIndex = (ids: number[]) => {
     const g = new THREE.BufferGeometry();
     for (const [name, attr] of Object.entries(source.attributes)) g.setAttribute(name, attr);
     g.setIndex(ids);
     return g;
   };
-  zones.forEach((zone, k) => {
-    if (parts[k]!.length > 0) scanbodies.set(zone.tooth, withIndex(parts[k]!));
+  fixtures.forEach((f, k) => {
+    if (parts[k]!.length > 0) scanbodies.set(f.toothNumber, withIndex(parts[k]!));
   });
   return { rest: withIndex(rest), scanbodies };
 }
