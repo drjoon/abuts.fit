@@ -55,3 +55,25 @@ test("교합 정렬로 악궁 프레임이 돌면 큐브 협측도 같이 돈다
   assert.ok(a.frame.anterior.dot(b.frame.anterior) < -0.5, "프레임이 바뀌면 큐브 협측도 뒤집힌다");
   assert.equal(b.labels.front, "협측");
 });
+
+test("픽스처 없이도 #34는 협·설·교합·치은·근·원심 라벨을 쓴다", () => {
+  const frame = frameOf(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
+  const view = toothViewCube("34", null, frame);
+  assert.ok(view);
+  assert.deepEqual(view!.labels, {
+    front: "협측",
+    back: "설측",
+    top: "교합",
+    bottom: "치은",
+    left: view!.labels.left,
+    right: view!.labels.right,
+  });
+  assert.ok(
+    (view!.labels.left === "근심" && view!.labels.right === "원심") ||
+      (view!.labels.left === "원심" && view!.labels.right === "근심"),
+    "좌우는 근심·원심이다",
+  );
+  // 근심은 미드라인(+Y) 쪽, 원심은 그 반대
+  const mesialDir = view!.labels.right === "근심" ? view!.frame.right : view!.frame.right.clone().negate();
+  assert.ok(mesialDir.dot(new THREE.Vector3(0, 1, 0)) > 0, "근심이 전방(미드라인) 쪽이다");
+});

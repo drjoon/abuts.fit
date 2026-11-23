@@ -2297,22 +2297,30 @@ export function PracticeCustomAbutmentPreviewDialog({
     [animateCameraTo],
   );
 
+  const pickToothNumber = status.kind === "pick" ? status.toothNumber : null;
   const cubeView = useMemo(() => {
     const frame = frameRef.current;
-    if (!frame || designedList.length === 0) return null;
+    if (!frame) return null;
     const designed =
-      designedList.find((d) => d.toothNumber === selectedTooth) ?? designedList[0];
+      designedList.find((d) => d.toothNumber === selectedTooth) ?? designedList[0] ?? null;
+    const toothNumber =
+      designed?.toothNumber ??
+      selectedTooth ??
+      pickToothNumber ??
+      abutmentToothWorks[0]?.toothNumber ??
+      null;
+    if (!toothNumber) return null;
     const view = toothViewCube(
-      designed.toothNumber,
-      designed.fixture,
+      toothNumber,
+      designed?.fixture ?? null,
       frame,
       designedList.map((row) => ({
         toothNumber: row.toothNumber,
         origin: row.fixture.fixturePose.origin,
       })),
     );
-    return view ? { ...view, toothNumber: designed.toothNumber } : null;
-  }, [designedList, selectedTooth]);
+    return view ? { ...view, toothNumber } : null;
+  }, [abutmentToothWorks, designedList, pickToothNumber, selectedTooth]);
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 

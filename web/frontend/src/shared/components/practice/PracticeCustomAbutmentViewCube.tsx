@@ -98,20 +98,22 @@ function neighborOrigin(
 }
 
 /**
- * 디자인한 치아 기준 큐브. 정면=순(협)측, 위=환자 위쪽(상악은 치은, 하악은 교합),
- * 좌·우=근심·원심.
- * 면 방향 SSOT는 지금 악궁 프레임(앞·오른쪽·위)+FDI다. 교합 정렬 뒤 frame이 바뀌면 큐브도 같이 바뀐다.
- * 픽스처 labial/mesial은 예전에 맞춘 월드 방향이라 교합 정렬 후에는 어긋날 수 있어 큐브 축으로 쓰지 않는다.
+ * 치아 기준 큐브. 정면=순(협)측, 위=환자 위쪽(상악은 치은, 하악은 교합),
+ * 좌·우=근심(미드라인)·원심(7번 쪽).
+ * 면 방향·라벨 SSOT는 지금 악궁 프레임(앞·오른쪽·위)+FDI다. 픽스처 없이도(스캔바디 지정 중) 동작한다.
  * 이웃 치아가 있으면 그 자리 접선을 근심으로 쓰고, 접선 부호만 악궁 근심 추정에 맞춘다.
  */
 export function toothViewCube(
   toothNumber: string,
-  fixture: {
-    labialDir: Vec3;
-    archOcclusalDir: Vec3;
-    mesialDir?: Vec3 | null;
-    fixturePose?: { origin: Vec3 };
-  },
+  fixture:
+    | {
+        labialDir?: Vec3;
+        archOcclusalDir?: Vec3;
+        mesialDir?: Vec3 | null;
+        fixturePose?: { origin: Vec3 };
+      }
+    | null
+    | undefined,
   frame: DentalFrame,
   neighbors?: readonly ToothCubeNeighbor[],
 ): { frame: DentalFrame; labels: ViewCubeFaceLabels } | null {
@@ -123,11 +125,11 @@ export function toothViewCube(
   const anteriorTooth = position <= 3;
   const up = frame.up.clone().normalize();
 
-  // 순·협측 = 현재 악궁 프레임 기준(교합 정렬 후 frame).
+  // 바깥=협(순)측, 아치 안쪽=설(구개)측. 현재 악궁 프레임 기준.
   const buccal = arch.buccal.clone();
   const mesialGuess = arch.mesial;
 
-  const self = fixture.fixturePose ? new THREE.Vector3(...fixture.fixturePose.origin) : null;
+  const self = fixture?.fixturePose ? new THREE.Vector3(...fixture.fixturePose.origin) : null;
   const otherCentral = quadrant === 1 ? 2 : quadrant === 2 ? 1 : quadrant === 3 ? 4 : 3;
   const mesialTooth =
     position > 1
