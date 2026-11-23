@@ -1199,37 +1199,59 @@ function sampleMeshesToothColors(meshes: readonly THREE.Mesh[], cap = 6000) {
   return out;
 }
 
-/** 화면 세로(+Z/−Z) 절반의 치아 점수 평균. 색이 없으면 null. */
-function toothScoreByScreenVertical(meshes: readonly THREE.Mesh[]) {
+/**
+ * 화면 평면(XZ)에서 치아가 몰린 방향.
+ * 치아 점수 가중 무게중심 − 기하 중심. 왼쪽을 보면 (−1,0,0), 아래면 (0,0,−1).
+ */
+function estimateToothDirScreenXZ(meshes: readonly THREE.Mesh[]) {
   const samples = sampleMeshesToothColors(meshes);
   const colored = samples.filter((s) => s.score !== 0);
   if (colored.length < 40) return null;
-  const zs = colored.map((s) => s.z).sort((a, b) => a - b);
-  const lo = zs[Math.floor((zs.length - 1) * 0.22)] ?? 0;
-  const hi = zs[Math.floor((zs.length - 1) * 0.78)] ?? 0;
-  let loSum = 0;
-  let loN = 0;
-  let hiSum = 0;
-  let hiN = 0;
+  let cx = 0;
+  let cz = 0;
   for (const s of colored) {
-    if (s.z <= lo) {
-      loSum += s.score;
-      loN += 1;
-    } else if (s.z >= hi) {
-      hiSum += s.score;
-      hiN += 1;
-    }
+    cx += s.x;
+    cz += s.z;
   }
-  return {
-    loMean: loN > 0 ? loSum / loN : 0,
-    hiMean: hiN > 0 ? hiSum / hiN : 0,
-  };
+  cx /= colored.length;
+  cz /= colored.length;
+  let tx = 0;
+  let tz = 0;
+  let w = 0;
+  for (const s of colored) {
+    const weight = Math.max(0, s.score);
+    if (weight < 1e-6) continue;
+    tx += (s.x - cx) * weight;
+    tz += (s.z - cz) * weight;
+    w += weight;
+  }
+  if (w < 1e-6) return null;
+  const dir = new THREE.Vector3(tx / w, 0, tz / w);
+  if (dir.lengthSq() < 1e-8) return null;
+  return dir.normalize();
+}
+
+/** 화면에서 치아 방향을 target(예: 아래 −Z)으로 Y축 회전. */
+function rotateToothDirOnScreen(
+  meshes: readonly THREE.Mesh[],
+  target: THREE.Vector3,
+) {
+  const tooth = estimateToothDirScreenXZ(meshes);
+  if (!tooth) return;
+  const from = new THREE.Vector3(tooth.x, 0, tooth.z);
+  if (from.lengthSq() < 1e-8) return;
+  from.normalize();
+  const to = new THREE.Vector3(target.x, 0, target.z);
+  if (to.lengthSq() < 1e-8) return;
+  to.normalize();
+  if (from.dot(to) > 0.995) return;
+  rotateMeshesAroundCenter(meshes, new THREE.Quaternion().setFromUnitVectors(from, to));
 }
 
 /**
  * 수동 바이트 슬롯 1차 정렬.
  * - 면이 카메라(+Y)를 보게, 넓은 쪽은 가로(+X)
- * - 상악: 치아 → 아래(−Z), 하악: 치아 → 위(+Z), 바이트: 치아 세로 중심
+ * - 상악: 치아 → 아래(−Z), 하악: 치아 → 위(+Z), 바이트: 치아면이 카메라
  */
 function orientMeshesForBiteManualSlot(
   meshes: readonly THREE.Mesh[],
@@ -1238,20 +1260,16 @@ function orientMeshesForBiteManualSlot(
   if (meshes.length === 0) return;
   orientMeshesFaceCamera(meshes);
   orientMeshesWideHorizontal(meshes);
-  const scored = toothScoreByScreenVertical(meshes);
-  if (!scored) return;
-  const flipY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   if (slot === "upper") {
-    // 치아가 −Z(아래) 쪽에 더 많아야 한다.
-    if (scored.hiMean > scored.loMean + 0.02) rotateMeshesAroundCenter(meshes, flipY);
+    // 치아 → 아래. 이후 wide 가로 회전은 치아 방향을 다시 옆으로 돌리므로 하지 않는다.
+    rotateToothDirOnScreen(meshes, new THREE.Vector3(0, 0, -1));
     return;
   }
   if (slot === "lower") {
-    // 치아가 +Z(위) 쪽에 더 많아야 한다.
-    if (scored.loMean > scored.hiMean + 0.02) rotateMeshesAroundCenter(meshes, flipY);
+    rotateToothDirOnScreen(meshes, new THREE.Vector3(0, 0, 1));
     return;
   }
-  // 바이트: 치아 면이 카메라(−Y)를 보게. 세로로 한쪽에만 치아가 몰리면 그 띠가 화면 가운데에 오도록 유지한다.
+  // 바이트: 치아 면이 카메라(−Y)를 보게.
   const samples = sampleMeshesToothColors(meshes);
   const colored = samples.filter((s) => s.score !== 0);
   if (colored.length < 40) return;
@@ -1273,7 +1291,6 @@ function orientMeshesForBiteManualSlot(
   }
   const yLoMean = yLoN > 0 ? yLoSum / yLoN : 0;
   const yHiMean = yHiN > 0 ? yHiSum / yHiN : 0;
-  // +Y(카메라 반대)에 치아가 더 많으면 180° 돌려 −Y를 보게 한다.
   if (yHiMean > yLoMean + 0.02) {
     rotateMeshesAroundCenter(
       meshes,
