@@ -324,6 +324,7 @@ test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
 
 test("협설이 더 넓어도 근원심을 앞뒤로 잡는다", () => {
   // 편측 치열(+X 전치)에 협설(−Y) 플랩을 붙여 PCA가 협설을 장축으로 유인한다.
+  // 플랩은 치열 줄에서 충분히 떨어뜨려 크기 투표에 섞이지 않게 한다.
   const coords = unilateralSizedQuadrant(16, 24, 0);
   const pts: Array<[number, number, number]> = [];
   for (let i = 0; i + 2 < coords.length; i += 3) {
@@ -331,7 +332,7 @@ test("협설이 더 넓어도 근원심을 앞뒤로 잡는다", () => {
   }
   for (let i = 0; i <= 30; i += 1) {
     for (let j = 0; j <= 24; j += 1) {
-      pts.push([-8 + i * 0.7, -6 - j * 1.1, 22]);
+      pts.push([-8 + i * 0.7, -12 - j * 1.1, 22]);
     }
   }
   const mark = [{ toothNumber: "15", point: [6.5, 0.6, 16] as const }];
@@ -343,4 +344,30 @@ test("협설이 더 넓어도 근원심을 앞뒤로 잡는다", () => {
   const out = orientAnteriorFromAbutmentFdi(seededBl, mark, pts);
   assert.ok(out.anterior.x > 0.55, `협설 시드여도 전치는 +X (got ${out.anterior.toArray().join(",")})`);
   assert.ok(Math.abs(out.anterior.y) < 0.55, "앞이 협설로 서지 않는다");
+});
+
+test("근심에 치아가 많아도 옆 대구치 쪽을 원심으로 잡는다", () => {
+  // 스캔바디(+6.5) 왼쪽(−X)에 큰 대구치 하나, 오른쪽(+X)에 작은 치아를 여러 개.
+  // 예전 합산 평균은 전치 줄이 이겨 180° 뒤집혔다.
+  const pts: Array<[number, number, number]> = [];
+  const addBlob = (cx: number, cy: number, rx: number, ry: number, step: number) => {
+    for (let x = -rx; x <= rx; x += step) {
+      for (let y = -ry; y <= ry; y += step) {
+        if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
+        pts.push([cx + x, cy + y, 16]);
+      }
+    }
+  };
+  addBlob(-4, 0, 4.2, 3.6, 0.55); // #16 대구치
+  addBlob(10, 0.3, 2.2, 2.0, 0.55); // #14
+  addBlob(14, 0.2, 2.0, 1.8, 0.55); // #13
+  addBlob(18, 0.1, 1.8, 1.6, 0.55); // #12
+  addBlob(22, 0, 1.7, 1.5, 0.55); // #11
+  // 장축 PCA용 얇은 줄
+  for (let x = -8; x <= 26; x += 0.8) pts.push([x, 0.05, 15.5]);
+  const mark = [{ toothNumber: "15", point: [6.5, 0.2, 16] as const }];
+  const out = orientAnteriorFromAbutmentFdi(axisFrame(1), mark, pts);
+  assert.ok(out.anterior.x > 0.55, `옆 대구치가 원심 (got ${out.anterior.toArray().join(",")})`);
+  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), mark, pts);
+  assert.ok(flipped.anterior.x > 0.55, "뒤집힌 시드도 전치(+X)로 되돌린다");
 });

@@ -180,6 +180,9 @@ export function orientAnteriorFromAbutmentFdi(
     return xMm * ax[0] + yMm * ax[1];
   };
 
+  const toothWeight = (t: ToothHit) =>
+    t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
+
   const scoreMdAxis = (ax: readonly [number, number]) => {
     let distalOnPlus = 0;
     let asymmetry = 0;
@@ -189,58 +192,93 @@ export function orientAnteriorFromAbutmentFdi(
       teeth.length >= 2 ? teeth.map((t) => t.x * ax[0] + t.y * ax[1]) : null;
     if (toothAlongs) {
       span = Math.max(...toothAlongs) - Math.min(...toothAlongs);
+      // 스캔바디 바로 옆·같은 치열 줄만: 가까운 큰 쪽=원심.
+      // 근심 합산·구개 플랩은 180°/오인 원심을 만든다.
+      const rx = -ax[1];
+      const ry = ax[0];
       for (const mark of parsed) {
         const origin = pointAlong(mark.point, ax);
-        let plusBest = 0;
-        let minusBest = 0;
-        let plusArea = 0;
-        let plusN = 0;
-        let minusArea = 0;
-        let minusN = 0;
+        const markDx = (mark.point[0]! - mean.x) * toMm;
+        const markDy = (mark.point[1]! - mean.y) * toMm;
+        const markDz = (mark.point[2]! - mean.z) * toMm;
+        const markAcross =
+          (markDx * e1.x + markDy * e1.y + markDz * e1.z) * rx +
+          (markDx * e2.x + markDy * e2.y + markDz * e2.z) * ry;
+        let plusNear: { rel: number; w: number } | null = null;
+        let minusNear: { rel: number; w: number } | null = null;
         for (let ti = 0; ti < teeth.length; ti += 1) {
           const t = teeth[ti]!;
           const rel = toothAlongs[ti]! - origin;
-          if (Math.abs(rel) < 3.0 || Math.abs(rel) > 48) continue;
-          const weight = t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
+          const ad = Math.abs(rel);
+          if (ad < 3.0 || ad > 28) continue;
+          const across = t.x * rx + t.y * ry;
+          if (Math.abs(across - markAcross) > 5.0) continue;
+          const w = toothWeight(t);
           if (rel > 0) {
-            plusArea += weight;
-            plusN += 1;
-            if (weight > plusBest) plusBest = weight;
-          } else {
-            minusArea += weight;
-            minusN += 1;
-            if (weight > minusBest) minusBest = weight;
+            if (!plusNear || ad < plusNear.rel) plusNear = { rel: ad, w };
+          } else if (!minusNear || ad < minusNear.rel) {
+            minusNear = { rel: ad, w };
           }
         }
-        if (plusN > 0 && minusN > 0) {
-          decided = true;
-          const plusMean = plusArea / plusN;
-          const minusMean = minusArea / minusN;
-          const ratio = Math.max(plusMean, minusMean) / Math.max(Math.min(plusMean, minusMean), 1);
-          const bestRatio = Math.max(plusBest, minusBest) / Math.max(Math.min(plusBest, minusBest), 1);
-          asymmetry += Math.max(ratio, bestRatio);
-          if (plusBest > minusBest * 1.08 || plusMean > minusMean * 1.1) distalOnPlus += 1;
-          else if (minusBest > plusBest * 1.08 || minusMean > plusMean * 1.1) distalOnPlus -= 1;
-        } else if (plusN >= 1 && minusN === 0 && plusBest >= 34) {
+        if (plusNear && minusNear) {
+          if (plusNear.w > minusNear.w * 1.08) {
+            decided = true;
+            distalOnPlus += 1;
+            asymmetry += plusNear.w / Math.max(minusNear.w, 1);
+          } else if (minusNear.w > plusNear.w * 1.08) {
+            decided = true;
+            distalOnPlus -= 1;
+            asymmetry += minusNear.w / Math.max(plusNear.w, 1);
+          }
+        } else if (plusNear && !minusNear && plusNear.w >= 34) {
           decided = true;
           distalOnPlus += 1;
           asymmetry += 1.2;
-        } else if (minusN >= 1 && plusN === 0 && minusBest >= 34) {
+        } else if (minusNear && !plusNear && minusNear.w >= 34) {
           decided = true;
           distalOnPlus -= 1;
           asymmetry += 1.2;
         }
       }
+      // 옆 치아가 약하면 줄 양 끝 크기: 큰 쪽=원심. 구개 플랩은 픽스처 줄에서 뺀다.
+      if (!decided && span >= 10 && parsed.length > 0) {
+        const mark0 = parsed[0]!;
+        const mdx = (mark0.point[0]! - mean.x) * toMm;
+        const mdy = (mark0.point[1]! - mean.y) * toMm;
+        const mdz = (mark0.point[2]! - mean.z) * toMm;
+        const rowAcross =
+          (mdx * e1.x + mdy * e1.y + mdz * e1.z) * rx +
+          (mdx * e2.x + mdy * e2.y + mdz * e2.z) * ry;
+        const loCut = Math.min(...toothAlongs) + span * 0.32;
+        const hiCut = Math.max(...toothAlongs) - span * 0.32;
+        let loBest = 0;
+        let hiBest = 0;
+        let loN = 0;
+        let hiN = 0;
+        for (let ti = 0; ti < teeth.length; ti += 1) {
+          const along = toothAlongs[ti]!;
+          const across = teeth[ti]!.x * rx + teeth[ti]!.y * ry;
+          if (Math.abs(across - rowAcross) > 5.0) continue;
+          const w = toothWeight(teeth[ti]!);
+          if (along <= loCut) {
+            loN += 1;
+            if (w > loBest) loBest = w;
+          } else if (along >= hiCut) {
+            hiN += 1;
+            if (w > hiBest) hiBest = w;
+          }
+        }
+        if (loN > 0 && hiN > 0 && (hiBest > loBest * 1.1 || loBest > hiBest * 1.1)) {
+          decided = true;
+          asymmetry += Math.max(hiBest, loBest) / Math.max(Math.min(hiBest, loBest), 1);
+          if (hiBest > loBest) distalOnPlus += 1;
+          else distalOnPlus -= 1;
+        }
+      }
     }
-    // 치아 분할이 약하면 점구름 덩어리 폭으로 근원심을 가린다.
-    // 대구치 쪽은 협설·교합면이 넓고, 전치 쪽은 좁다.
-    if (!decided && parsed.length > 0) {
-      const mark = parsed[0]!;
-      const origin = pointAlong(mark.point, ax);
-      const plusW: number[] = [];
-      const minusW: number[] = [];
-      const rx = -ax[1];
-      const ry = ax[0];
+    // 점구름 협설 폭은 구개·치은 플랩에 끌려 전치를 원심으로 오인한다.
+    // 치아 분할이 있을 때는 쓰지 않고, span만 보조로 본다.
+    if (!decided && (!toothAlongs || teeth.length < 2) && parsed.length > 0) {
       const allAlong: number[] = [];
       for (const p of pts) {
         const dx = (p[0] - mean.x) * toMm;
@@ -248,31 +286,11 @@ export function orientAnteriorFromAbutmentFdi(
         const dz = (p[2] - mean.z) * toMm;
         const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
         const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
-        const along = xMm * ax[0] + yMm * ax[1];
-        allAlong.push(along);
-        const rel = along - origin;
-        if (Math.abs(rel) < 4 || Math.abs(rel) > 40) continue;
-        const across = xMm * rx + yMm * ry;
-        if (rel > 0) plusW.push(across);
-        else minusW.push(across);
+        allAlong.push(xMm * ax[0] + yMm * ax[1]);
       }
       if (allAlong.length >= 20) {
         allAlong.sort((a, b) => a - b);
         span = allAlong[Math.floor(allAlong.length * 0.92)]! - allAlong[Math.floor(allAlong.length * 0.08)]!;
-      }
-      if (plusW.length >= 8 && minusW.length >= 8) {
-        plusW.sort((a, b) => a - b);
-        minusW.sort((a, b) => a - b);
-        const width = (arr: number[]) =>
-          arr[Math.floor(arr.length * 0.9)]! - arr[Math.floor(arr.length * 0.1)]!;
-        const pw = width(plusW);
-        const mw = width(minusW);
-        if (pw > mw * 1.2 || mw > pw * 1.2) {
-          decided = true;
-          asymmetry += Math.max(pw, mw) / Math.max(Math.min(pw, mw), 1);
-          if (pw > mw) distalOnPlus += 1;
-          else distalOnPlus -= 1;
-        }
       }
     }
     // 같은 사분악 여러 픽스처: 작은 번호 = 전치.
