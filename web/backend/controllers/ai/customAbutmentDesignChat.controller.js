@@ -46,6 +46,7 @@ import {
   sharedChromeForApi,
   sharedDesignViewForApi,
   sanitizeAbutmentChoice,
+  sanitizeEditedInfoFields,
   toDesignSyncMeta,
   unitVec,
 } from "../../services/customAbutmentDesignSync.js";
@@ -261,6 +262,9 @@ function snapshotTeeth(raw, transferId) {
       ...(row?.baselineParams && typeof row.baselineParams === "object"
         ? { baselineParams: row.baselineParams }
         : {}),
+      ...(row?.baselineMetrics && typeof row.baselineMetrics === "object"
+        ? { baselineMetrics: row.baselineMetrics }
+        : {}),
       ...(row?.gumballEdit && typeof row.gumballEdit === "object"
         ? { gumballEdit: row.gumballEdit }
         : {}),
@@ -272,6 +276,9 @@ function snapshotTeeth(raw, transferId) {
         : {}),
       ...(row?.proposalInput && typeof row.proposalInput === "object"
         ? { proposalInput: row.proposalInput }
+        : {}),
+      ...(Array.isArray(row?.editedInfoFields)
+        ? { editedInfoFields: sanitizeEditedInfoFields(row.editedInfoFields) ?? [] }
         : {}),
       ...sanitizeAbutmentChoice(row),
     };

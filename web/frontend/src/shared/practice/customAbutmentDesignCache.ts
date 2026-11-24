@@ -147,6 +147,33 @@ export function normalizeCachedBiteCheck(
   };
 }
 
+/** 정보 패널 손댄 필드. DesignTree AbutmentInfoFieldKey 와 같다. */
+const ABUTMENT_INFO_FIELD_KEYS = new Set([
+  "marginSubgMm",
+  "maxDiameterMm",
+  "marginFilletRadiusMm",
+  "postHeightMm",
+  "postTaperDeg",
+  "postTaperLink",
+  "postLingualBevelMm",
+  "postLabialBevelMm",
+  "occlusalClearanceMm",
+  "axisSource",
+]);
+
+/** 서버·소켓에서 온 손댄 필드. 빈 배열은 지우기 신호다. */
+export function normalizeEditedInfoFields(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: string[] = [];
+  for (const item of raw) {
+    const key = String(item || "").trim();
+    if (!ABUTMENT_INFO_FIELD_KEYS.has(key) || out.includes(key)) continue;
+    out.push(key);
+    if (out.length >= 16) break;
+  }
+  return out;
+}
+
 /**
  * 저장된 어벗이 있으면 교합·스캔바디를 다시 돌리지 않는다.
  * 작업 스캔에서 스캔바디가 빠져 있어도 픽스처로 형상을 연다.
@@ -815,6 +842,8 @@ export type CustomAbutmentSnapshotUploadTooth = {
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
   baselineParams?: Partial<CustomAbutmentDesignParams>;
+  baselineMetrics?: CustomAbutmentDesignMetrics;
+  editedInfoFields?: string[];
   gumballEdit?: AbutmentEdit | null;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -832,6 +861,8 @@ export type UploadedCustomAbutmentSnapshotTooth = {
   params: CustomAbutmentDesignParams;
   metrics: CustomAbutmentDesignMetrics;
   baselineParams?: Partial<CustomAbutmentDesignParams>;
+  baselineMetrics?: CustomAbutmentDesignMetrics;
+  editedInfoFields?: string[];
   gumballEdit?: AbutmentEdit | null;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -1100,6 +1131,7 @@ async function toothFromSnapshotRow(
   if (!crownLocalPositions) {
     crownLocalPositions = base64ToBuffer(String(row.crownLocalPositions || ""));
   }
+  const editedInfoFields = normalizeEditedInfoFields(row.editedInfoFields);
   const shared = {
     toothNumber: String(row.toothNumber || ""),
     fileName,
@@ -1110,6 +1142,10 @@ async function toothFromSnapshotRow(
     ...(row.baselineParams && typeof row.baselineParams === "object"
       ? { baselineParams: row.baselineParams as CustomAbutmentDesignParams }
       : {}),
+    ...(row.baselineMetrics && typeof row.baselineMetrics === "object"
+      ? { baselineMetrics: row.baselineMetrics as CustomAbutmentDesignMetrics }
+      : {}),
+    ...(editedInfoFields ? { editedInfoFields } : {}),
     ...(row.gumballEdit && typeof row.gumballEdit === "object"
       ? { gumballEdit: row.gumballEdit as AbutmentEdit }
       : {}),
@@ -1298,6 +1334,8 @@ export async function uploadCustomAbutmentSnapshotTeeth(
         params: row.params,
         metrics: row.metrics,
         ...(row.baselineParams ? { baselineParams: row.baselineParams } : {}),
+        ...(row.baselineMetrics ? { baselineMetrics: row.baselineMetrics } : {}),
+        ...(row.editedInfoFields ? { editedInfoFields: row.editedInfoFields } : {}),
         ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
         ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
         ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
@@ -1356,6 +1394,10 @@ export type CustomAbutmentDesignSyncTooth = {
   metrics: CustomAbutmentDesignMetrics;
   /** 자동 생성 직후 원점 조정값. 관리자 전후 비교·생성 로직에 쓴다. */
   baselineParams?: Partial<CustomAbutmentDesignParams>;
+  /** 정보 패널 리셋 기준 측정값. */
+  baselineMetrics?: CustomAbutmentDesignMetrics;
+  /** 정보 패널에서 손댄 필드. 빈 배열이면 표시를 지운다. */
+  editedInfoFields?: string[];
   gumballEdit?: AbutmentEdit;
   gumballBaseParams?: Partial<CustomAbutmentDesignParams>;
   gumballBaseMetrics?: CustomAbutmentDesignMetrics;
@@ -1399,6 +1441,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
     const jaw = (fixture as { jaw?: unknown }).jaw;
     if (jaw !== "upper" && jaw !== "lower") continue;
     const insertionAxisWorld = normalizeInsertionAxis(tooth.insertionAxisWorld);
+    const editedInfoFields = normalizeEditedInfoFields(tooth.editedInfoFields);
     teeth.push({
       toothNumber,
       fileName: String(tooth.fileName || ""),
@@ -1410,6 +1453,10 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
       ...(tooth.baselineParams && typeof tooth.baselineParams === "object"
         ? { baselineParams: tooth.baselineParams as Partial<CustomAbutmentDesignParams> }
         : {}),
+      ...(tooth.baselineMetrics && typeof tooth.baselineMetrics === "object"
+        ? { baselineMetrics: tooth.baselineMetrics as CustomAbutmentDesignMetrics }
+        : {}),
+      ...(editedInfoFields ? { editedInfoFields } : {}),
       ...(tooth.gumballEdit && typeof tooth.gumballEdit === "object"
         ? { gumballEdit: tooth.gumballEdit as AbutmentEdit }
         : {}),
@@ -1500,6 +1547,8 @@ export function cachedDesignFromSyncMeta(
       params: row.params,
       metrics: row.metrics,
       ...(row.baselineParams ? { baselineParams: row.baselineParams as CustomAbutmentDesignParams } : {}),
+      ...(row.baselineMetrics ? { baselineMetrics: row.baselineMetrics } : {}),
+      ...(row.editedInfoFields ? { editedInfoFields: row.editedInfoFields } : {}),
       ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
       ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
       ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),
@@ -1679,6 +1728,8 @@ function uploadedToothFromExisting(
     params: row.params,
     metrics: row.metrics,
     ...(row.baselineParams ? { baselineParams: row.baselineParams } : {}),
+    ...(row.baselineMetrics ? { baselineMetrics: row.baselineMetrics } : {}),
+    ...(row.editedInfoFields ? { editedInfoFields: row.editedInfoFields } : {}),
     ...(row.gumballEdit ? { gumballEdit: row.gumballEdit } : {}),
     ...(row.gumballBaseParams ? { gumballBaseParams: row.gumballBaseParams } : {}),
     ...(row.gumballBaseMetrics ? { gumballBaseMetrics: row.gumballBaseMetrics } : {}),

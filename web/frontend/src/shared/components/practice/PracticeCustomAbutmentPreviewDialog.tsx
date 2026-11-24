@@ -2455,6 +2455,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       "";
     const insertionAxisWorld = readBridgeInsertionAxis(lockedBridgeAxisRef.current, d.toothNumber);
     const baselineParams = baselineParamsRef.current[d.toothNumber];
+    const baselineMetrics = baselineMetricsRef.current[d.toothNumber];
+    const editedInfoFields = [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])];
     return {
       toothNumber: d.toothNumber,
       fileName: d.fileName,
@@ -2463,6 +2465,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       params: d.params,
       metrics: d.metrics,
       ...(baselineParams ? { baselineParams } : {}),
+      ...(baselineMetrics ? { baselineMetrics } : {}),
+      editedInfoFields,
       ...(insertionAxisWorld ? { insertionAxisWorld } : {}),
       ...(gumballEdit ? { gumballEdit } : {}),
       ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
@@ -2808,6 +2812,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           restoredGumball: ReturnType<typeof normalizeAbutmentEdit>;
           proposalInput?: Partial<CustomAbutmentDesignParams>;
           baselineParams?: Partial<CustomAbutmentDesignParams>;
+          baselineMetrics?: CustomAbutmentDesignMetrics;
+          editedInfoFields?: string[];
         }> = [];
         let held = 0;
         for (const row of meta.teeth) {
@@ -2912,6 +2918,10 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...(row.baselineParams && Object.keys(row.baselineParams).length > 0
                 ? { baselineParams: row.baselineParams }
                 : {}),
+              ...(row.baselineMetrics && Object.keys(row.baselineMetrics).length > 0
+                ? { baselineMetrics: row.baselineMetrics }
+                : {}),
+              ...(row.editedInfoFields ? { editedInfoFields: row.editedInfoFields } : {}),
             });
           } catch (err) {
             console.warn("[custom-abutment] remote design rebuild failed", row.toothNumber, err);
@@ -2946,6 +2956,17 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...row.next.params,
               ...row.baselineParams,
             };
+          }
+          if (row.baselineMetrics && Object.keys(row.baselineMetrics).length > 0) {
+            baselineMetricsRef.current[toothNumber] = {
+              ...row.next.metrics,
+              ...row.baselineMetrics,
+            };
+          }
+          if (row.editedInfoFields) {
+            editedInfoFieldsRef.current[toothNumber] = new Set(
+              row.editedInfoFields as AbutmentInfoFieldKey[],
+            );
           }
           if (row.restoredGumball) {
             gumballMetricBaseRef.current[toothNumber] = { ...row.next.metrics };
@@ -7074,6 +7095,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
             const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
             const baselineParams = baselineParamsRef.current[d.toothNumber];
+            const baselineMetrics = baselineMetricsRef.current[d.toothNumber];
+            const editedInfoFields = [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])];
             return {
               toothNumber: d.toothNumber,
               fileName: d.fileName,
@@ -7082,6 +7105,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               params: d.params,
               metrics: d.metrics,
               ...(baselineParams ? { baselineParams } : {}),
+              ...(baselineMetrics ? { baselineMetrics } : {}),
+              editedInfoFields,
               ...(gumballEdit ? { gumballEdit } : {}),
               ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
               ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),
@@ -7171,6 +7196,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             const gumballBaseParams = gumballParamBaseRef.current[d.toothNumber];
             const gumballBaseMetrics = gumballMetricBaseRef.current[d.toothNumber];
             const baselineParams = baselineParamsRef.current[d.toothNumber];
+            const baselineMetrics = baselineMetricsRef.current[d.toothNumber];
+            const editedInfoFields = [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])];
             return {
               toothNumber: d.toothNumber,
               fileName: d.fileName,
@@ -7179,6 +7206,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               params: d.params,
               metrics: d.metrics,
               ...(baselineParams ? { baselineParams } : {}),
+              ...(baselineMetrics ? { baselineMetrics } : {}),
+              editedInfoFields,
               ...(gumballEdit ? { gumballEdit } : {}),
               ...(gumballEdit && gumballBaseParams ? { gumballBaseParams } : {}),
               ...(gumballEdit && gumballBaseMetrics ? { gumballBaseMetrics } : {}),

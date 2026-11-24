@@ -19,6 +19,35 @@ export const ABUTMENT_VARIANT_IDS = [
 
 const ABUTMENT_VARIANT_SET = new Set(ABUTMENT_VARIANT_IDS);
 
+/** 정보 패널에서 손댄 필드. FE AbutmentInfoFieldKey 와 같다. */
+export const ABUTMENT_INFO_FIELD_KEYS = [
+  "marginSubgMm",
+  "maxDiameterMm",
+  "marginFilletRadiusMm",
+  "postHeightMm",
+  "postTaperDeg",
+  "postTaperLink",
+  "postLingualBevelMm",
+  "postLabialBevelMm",
+  "occlusalClearanceMm",
+  "axisSource",
+];
+
+const ABUTMENT_INFO_FIELD_SET = new Set(ABUTMENT_INFO_FIELD_KEYS);
+
+/** 정보 패널 편집 표시. 빈 배열도 남겨 상대 화면의 손댄 표시를 지운다. */
+export function sanitizeEditedInfoFields(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const item of raw) {
+    const key = String(item || "").trim();
+    if (!ABUTMENT_INFO_FIELD_SET.has(key) || out.includes(key)) continue;
+    out.push(key);
+    if (out.length >= 16) break;
+  }
+  return out;
+}
+
 /** 재생성 후보 id·피커 상태. 메시 버퍼는 넣지 않는다. */
 export function sanitizeAbutmentChoice(row) {
   if (!row || typeof row !== "object") return {};
@@ -146,12 +175,17 @@ export function toDesignSyncMeta(source) {
     if (insertionAxisWorld) tooth.insertionAxisWorld = insertionAxisWorld;
     const baselineParams = numberMap(row?.baselineParams);
     if (Object.keys(baselineParams).length > 0) tooth.baselineParams = baselineParams;
+    const baselineMetrics = numberMap(row?.baselineMetrics);
+    if (Object.keys(baselineMetrics).length > 0) tooth.baselineMetrics = baselineMetrics;
     const gumballBaseParams = numberMap(row?.gumballBaseParams);
     if (Object.keys(gumballBaseParams).length > 0) tooth.gumballBaseParams = gumballBaseParams;
     const gumballBaseMetrics = numberMap(row?.gumballBaseMetrics);
     if (Object.keys(gumballBaseMetrics).length > 0) tooth.gumballBaseMetrics = gumballBaseMetrics;
     const proposalInput = numberMap(row?.proposalInput);
     if (Object.keys(proposalInput).length > 0) tooth.proposalInput = proposalInput;
+    if (Array.isArray(row?.editedInfoFields)) {
+      tooth.editedInfoFields = sanitizeEditedInfoFields(row.editedInfoFields) ?? [];
+    }
     Object.assign(tooth, sanitizeAbutmentChoice(row));
     teeth.push(tooth);
   }

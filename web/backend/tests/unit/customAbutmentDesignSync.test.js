@@ -1,6 +1,7 @@
 import {
   isStaleDesignWrite,
   sanitizeBiteCheck,
+  sanitizeEditedInfoFields,
   sanitizeJawPose,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
@@ -30,6 +31,8 @@ describe("custom abutment design sync meta", () => {
           params: { postHeightOffsetMm: 0.4, ignored: "x" },
           overrides: { marginFilletRadiusMm: 0.6 },
           metrics: { postHeightMm: 7.5 },
+          baselineMetrics: { postHeightMm: 7.2, ignored: "y" },
+          editedInfoFields: ["postHeightMm", "bad", "occlusalClearanceMm", "postHeightMm"],
           gumballEdit: { heightMm: 0.2, shiftLabialMm: 0.1 },
           insertionAxisWorld: [0, 0, -2],
           variantId: "buccal_top_open",
@@ -52,6 +55,8 @@ describe("custom abutment design sync meta", () => {
     expect(meta.teeth[0].toothNumber).toBe("16");
     expect(meta.teeth[0].fixture.scanbodyTop).toEqual([1, 2, 3]);
     expect(meta.teeth[0].params).toEqual({ postHeightOffsetMm: 0.4 });
+    expect(meta.teeth[0].baselineMetrics).toEqual({ postHeightMm: 7.2 });
+    expect(meta.teeth[0].editedInfoFields).toEqual(["postHeightMm", "occlusalClearanceMm"]);
     expect(meta.teeth[0].gumballEdit.heightMm).toBe(0.2);
     expect(meta.teeth[0].insertionAxisWorld).toEqual([0, 0, -1]);
     expect(meta.teeth[0].variantId).toBe("buccal_top_open");
@@ -63,6 +68,8 @@ describe("custom abutment design sync meta", () => {
     expect(meta.teeth[0].marginLoopLocal).toBeUndefined();
     expect(meta.updatedBy).toBe("user-a");
     expect(meta.biteCheck).toBeUndefined();
+    expect(sanitizeEditedInfoFields([])).toEqual([]);
+    expect(sanitizeEditedInfoFields(null)).toBeNull();
   });
 
   test("sync meta keeps a confirmed bite and drops a broken one", () => {
