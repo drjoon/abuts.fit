@@ -22,7 +22,6 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Crown,
-  Crosshair,
   Hexagon,
   Eye,
   EyeOff,
@@ -1678,7 +1677,7 @@ export function PracticeCustomAbutmentDesignTree({
                 onRepickScanbody(targets);
               }}
             >
-              <Crosshair className="h-3.5 w-3.5" />
+              <Hexagon className="h-3.5 w-3.5" />
             </button>
           ) : null}
           {onRegenerate ? (
@@ -1800,7 +1799,7 @@ export function PracticeCustomAbutmentDesignTree({
                         onRepickScanbody(targets);
                       }}
                     >
-                      <Crosshair className="h-3.5 w-3.5" />
+                      <Hexagon className="h-3.5 w-3.5" />
                     </button>
                   ) : null}
                   {onRegenerateTooth ? (
