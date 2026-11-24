@@ -307,3 +307,17 @@ test("치아 하나여도 악궁 장축 위 위치로 앞뒤를 고른다", () =
   const incisorFlipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), incisor, cloud);
   assert.ok(incisorFlipped.anterior.x > 0.9, "전치가 뒤쪽에 있으면 축을 뒤집는다");
 });
+
+test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
+  // #15 소구치 자리. −X 대구치, +X 전치.
+  const coords = unilateralSizedQuadrant(16, 24, 0);
+  const pts: Array<[number, number, number]> = [];
+  for (let i = 0; i + 2 < coords.length; i += 3) {
+    pts.push([coords[i]!, coords[i + 1]!, coords[i + 2]!]);
+  }
+  const mark = [{ toothNumber: "15", point: [6.5, 0.6, 16] as const }];
+  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), mark, pts);
+  assert.ok(kept.anterior.x > 0.7, "큰 치아가 −X면 +X가 전치다");
+  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), mark, pts);
+  assert.ok(flipped.anterior.x > 0.7, "앞이 대구치 쪽이면 뒤집는다");
+});

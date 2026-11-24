@@ -1094,12 +1094,27 @@ function archMarksFromFixtures(fixtures: readonly MatchedScanbodyFixture[]): Abu
 
 function collectArchPoints(geometries: readonly THREE.BufferGeometry[]) {
   const out: Array<[number, number, number]> = [];
-  for (const geo of geometries) out.push(...samplePositions(geo, 2000));
+  for (const geo of geometries) out.push(...samplePositions(geo, 6000));
   return out;
 }
 
 function anteriorSignFlipped(before: DentalFrame, after: DentalFrame) {
   return after.anterior.dot(before.anterior) < 0;
+}
+
+/** 픽스처·FDI로 앞뒤를 고친 프레임. 바뀌었으면 axes도 돌려준다. */
+function applyAbutmentArchOrientation(
+  frame: DentalFrame,
+  fixtures: readonly MatchedScanbodyFixture[],
+  geometries: readonly THREE.BufferGeometry[],
+): { frame: DentalFrame; axes: ReturnType<typeof archFrameAxes>; flipped: boolean } {
+  const oriented = orientAnteriorFromAbutmentFdi(
+    frame,
+    archMarksFromFixtures(fixtures),
+    collectArchPoints(geometries),
+  );
+  const flipped = anteriorSignFlipped(frame, oriented);
+  return { frame: oriented, axes: archFrameAxes(oriented), flipped };
 }
 
 function flipFixtureOcclusalDirs(fx: MatchedScanbodyFixture): MatchedScanbodyFixture {
@@ -3615,21 +3630,20 @@ export function PracticeCustomAbutmentPreviewDialog({
             row.toothNumber !== fixture.toothNumber &&
             row.toothNumber !== displacedTooth,
         );
-        const oriented = orientAnteriorFromAbutmentFdi(
+        const oriented = applyAbutmentArchOrientation(
           frame,
-          archMarksFromFixtures([...siblingFixtures, fixture]),
-          collectArchPoints(rawJawScansRef.current.map((scan) => scan.geometry)),
+          [...siblingFixtures, fixture],
+          rawJawScansRef.current.map((scan) => scan.geometry),
         );
         let placed = fixture;
         let siblings = siblingFixtures;
-        if (anteriorSignFlipped(frame, oriented)) {
-          frameRef.current = oriented;
-          const axes = archFrameAxes(oriented);
-          if (axes) ctx.archFrame = axes;
-          setFrameEpoch((n) => n + 1);
+        frameRef.current = oriented.frame;
+        if (oriented.axes) ctx.archFrame = oriented.axes;
+        setFrameEpoch((n) => n + 1);
+        if (oriented.flipped) {
           const again = matchScanbodyNearPoint({
             jawGeometry: matchedGeo,
-            frame: oriented,
+            frame: oriented.frame,
             toothWork: job.toothWork,
             models: job.models,
             connections: session.connections,
@@ -5213,18 +5227,15 @@ export function PracticeCustomAbutmentPreviewDialog({
           return;
         }
         if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
-          const oriented = orientAnteriorFromAbutmentFdi(
+          const oriented = applyAbutmentArchOrientation(
             frame,
-            archMarksFromFixtures(cached.teeth.map((row) => row.fixture)),
-            collectArchPoints(jawScans.map((scan) => scan.geometry)),
+            cached.teeth.map((row) => row.fixture),
+            jawScans.map((scan) => scan.geometry),
           );
-          if (anteriorSignFlipped(frame, oriented)) {
-            frame = oriented;
-            const axes = archFrameAxes(frame);
-            if (axes) {
-              sessionArchFrame = axes;
-              archOriented = true;
-            }
+          frame = oriented.frame;
+          if (oriented.axes) {
+            sessionArchFrame = oriented.axes;
+            if (oriented.flipped) archOriented = true;
           }
         }
         frameRef.current = frame;
@@ -5703,20 +5714,19 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           const matchedNow = jawJobs.flatMap((job) => job.fixtures);
           if (matchedNow.length > 0) {
-            const oriented = orientAnteriorFromAbutmentFdi(
+            const oriented = applyAbutmentArchOrientation(
               frame,
-              archMarksFromFixtures(matchedNow),
-              collectArchPoints(jawScans.map((scan) => scan.geometry)),
+              matchedNow,
+              jawScans.map((scan) => scan.geometry),
             );
-            if (anteriorSignFlipped(frame, oriented)) {
-              frame = oriented;
-              frameRef.current = frame;
-              const axes = archFrameAxes(frame);
-              if (axes) {
-                sessionArchFrame = axes;
-                archOriented = true;
-              }
-              setFrameEpoch((n) => n + 1);
+            frame = oriented.frame;
+            frameRef.current = frame;
+            if (oriented.axes) {
+              sessionArchFrame = oriented.axes;
+              if (oriented.flipped) archOriented = true;
+            }
+            setFrameEpoch((n) => n + 1);
+            if (oriented.flipped) {
               for (const job of jawJobs) {
                 if (job.carried || !job.withModels) continue;
                 const rematched = detectAndMatchScanbodiesOnJaw({
@@ -8389,9 +8399,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             ) : (
               <div className="min-w-0 flex-1" />
             )}
+          </div>
 
-            <div className="flex shrink-0 items-center gap-1">
-              {pipelineReady && canEditDesign ? (
+          <div className="flex shrink-0 items-center gap-1">
+              {canEditDesign && viewerLive ? (
                 <HeaderIconButton
                   label="교합정렬"
                   active={biteRecalcBusy}
@@ -8592,7 +8603,6 @@ export function PracticeCustomAbutmentPreviewDialog({
                   </PopoverContent>
                 </Popover>
               ) : null}
-            </div>
           </div>
 
           <DialogClose
