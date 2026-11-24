@@ -408,25 +408,12 @@ export function preferFresherCustomAbutmentDesign<
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  if (serverAt > localAt) {
-    // 서버가 더 나중이면 조정값은 서버. 정점이 없을 때만 이 브라우저 메시를 빌려 쓴다.
-    if (
-      Boolean(opts?.preferServerOnTie) &&
-      !designHasMeshes(server) &&
-      designHasMeshes(local)
-    ) {
-      return withLocalBiteMeta(mergeServerMetaOntoLocalMeshes(local, server), local);
-    }
-    return withLocalBiteMeta(server, local);
-  }
+  // 서버가 더 나중이면 이 브라우저의 옛 메시를 쓰지 않는다.
+  // 메시를 남기면 저장된 테이퍼·높이로 패널만 바뀌고 형상은 예전 디자인이다.
+  if (serverAt > localAt) return withLocalBiteMeta(server, local);
   if (serverAt < localAt) return withLocalBiteMeta(local, server);
-  // 동점: 협업은 서버 조정값. 서버에 정점이 없으면 로컬 메시 위에 서버 메타를 얹는다.
-  if (Boolean(opts?.preferServerOnTie)) {
-    if (!designHasMeshes(server) && designHasMeshes(local)) {
-      return withLocalBiteMeta(mergeServerMetaOntoLocalMeshes(local, server), local);
-    }
-    return withLocalBiteMeta(server, local);
-  }
+  // 동점: 협업은 서버 메타로 다시 만든다. 로컬 메시가 상대 저장보다 앞설 수 있다.
+  if (Boolean(opts?.preferServerOnTie)) return withLocalBiteMeta(server, local);
   return withLocalBiteMeta(local, server);
 }
 

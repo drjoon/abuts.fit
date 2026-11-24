@@ -50,7 +50,8 @@ const serverMeta = design(2, 8.96, false);
 const chosen = preferFresherCustomAbutmentDesign(local, serverMeta, { preferServerOnTie: true });
 assert.equal(chosen?.savedAt, 2);
 assert.equal(chosen?.teeth[0]?.metrics.maxDiameterMm, 8.96);
-assert.equal(chosen?.teeth[0]?.localPositions.byteLength, 36);
+assert.equal(chosen?.teeth[0]?.regenFromMeta, true);
+assert.equal(chosen?.teeth[0]?.localPositions.byteLength, 0);
 
 const serverMesh = design(2, 9.1, true);
 assert.equal(
@@ -65,7 +66,8 @@ const tieChosen = preferFresherCustomAbutmentDesign(tieLocal, tieServer, {
 });
 assert.equal(tieChosen?.savedAt, 5);
 assert.equal(tieChosen?.teeth[0]?.metrics.maxDiameterMm, 8.96);
-assert.equal(tieChosen?.teeth[0]?.localPositions.byteLength, 36);
+assert.equal(tieChosen?.teeth[0]?.regenFromMeta, true);
+assert.equal(tieChosen?.teeth[0]?.localPositions.byteLength, 0);
 
 const newerLocal = design(3, 10.22, true);
 const olderServer = design(1, 8.96, false);
