@@ -41,6 +41,7 @@
 // - 2026-11-24: 스캔바디 클릭 대기에 들어가기 전에 카메라를 맞춘다. 맞추지 않으면 빈 모눈만 보이다가 돌리면 메시가 들어온다.
 // - 2026-11-24: 저장 뷰가 메시에서 멀면 다시 맞춘다. 편측은 fit 뒤에 모델정렬 애니를 시작해 원점 애니로 덮지 않는다.
 // - 2026-11-24: 헤더 모델정렬 제거. 초기=교합→(모델정렬)→스캔바디. 헤더 교합=스캔바디 재생성, 헤더 스캔바디=모델정렬 후 검출.
+// - 2026-11-25: 교합 확정 다음은 스캔바디 클릭이 아니라 모델정렬 확인 후 스캔바디. 저장 축이 있어도 확정 직후에는 묻는다.
 // - 2026-11-24: 스캔바디용 모델정렬은 교합면·첫 치아 중심. 위=협측, 10/30 오른쪽=근심, 20/40 오른쪽=원심.
 // - 2026-11-24: 스캔바디 모델정렬을 확인한 뒤 카메라를 돌리지 않는다. 축·화면은 세션 메타에 남기고, 저장된 축은 다시 열 때 자동 앞뒤 확정으로 덮지 않는다.
 // - 2026-11-24: 스캔바디 뒤 큐브는 교합면이 화면과 나란하다(위=협측). 어벗 수평각은 악궁 반지름에 붙인다.
@@ -4040,7 +4041,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     (opts?: { required?: boolean; toothNumber?: string }) => {
       if (readOnly) return;
       if (biteRecalcBusy && !opts?.required) return;
-      if (statusRef.current.kind === "pick" || statusRef.current.kind === "bite-confirm") return;
+      if (statusRef.current.kind === "pick") return;
+      // 교합 확정 직후 파이프라인이 required로 연다. 확정 카드가 아직 떠 있어도 모델정렬로 넘긴다.
+      if (statusRef.current.kind === "bite-confirm" && !opts?.required) return;
       if (statusRef.current.kind === "model-orient") return;
       const toothNumber = String(opts?.toothNumber || "").trim();
       const frame = frameRef.current;
@@ -5620,7 +5623,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           jawScans.map((scan) => ({ role: scan.role, geometry: scan.geometry })),
         );
         const hasSavedTeeth = Boolean(cached && cached.teeth.length > 0);
-        // 헤더 교합·이미 저장한 모델정렬은 축을 유지한다. 헤더 스캔바디는 확인 때 새로 잡는다.
+        // 헤더 스캔바디는 확인 때 축을 새로 잡는다. 교합 확정 직후에도 저장 축을 확인으로 덮을 수 있다.
         let lockedArchFrame =
           forceBiteRecalc || hadSessionArchFrame ? sessionArchFrame : null;
         let archOriented = false;
@@ -5635,11 +5638,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         let userAcceptedBite = false;
         let deferOcclusionConfirm = false;
         let pickBuiltScene = false;
-        /** 초기·헤더 스캔바디: 검출 전에 모델정렬. 헤더 교합(+기존 축) 재생성은 건너뛴다. */
-        const needModelOrientBeforeScanbody =
-          !readOnly &&
-          ((forceFreshAutogen && !forceBiteRecalc) ||
-            (!hasSavedTeeth && !(forceBiteRecalc && hadSessionArchFrame)));
         const retryBitePose = () => {
           if (occlusionCarry && occlusionCarry.fixtures.length > 0) {
             occlusionCarryRef.current = occlusionCarry;
@@ -5845,6 +5843,11 @@ export function PracticeCustomAbutmentPreviewDialog({
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
           if (keepInPlace) sessionJawPose = null;
+          // 교합을 방금 확정했으면 저장 디자인을 유지하지 않고 모델정렬→스캔바디로 간다.
+          if (userAcceptedBite && !readOnly && (forceFreshAutogen || !hasSavedTeeth)) {
+            restored = false;
+            meshRestore = false;
+          }
         } else if (!forceBiteRecalc && !hasWorkScans && sessionJawPose) {
           // 원본 스캔은 의뢰에 저장된 자세로만 옮긴다. 파일 정점을 작업 결과로 쓰지 않는다.
           applySessionJawPose(jawScans, sessionJawPose);
@@ -6220,8 +6223,15 @@ export function PracticeCustomAbutmentPreviewDialog({
         } else if (readOnly && cached?.designFresh) {
           setStatus({ kind: "loading", percent: 80, step: "저장된 디자인을 여는 중…" });
         } else {
-          if (needModelOrientBeforeScanbody) {
-            // 초기·헤더 스캔바디: 교합 다음(또는 단독)으로 모델정렬 → 스캔바디 검출.
+          // 교합 확정 직후·헤더 스캔바디·저장 축 없는 초기: 검출 전에 모델정렬.
+          // 저장 축이 있어도 방금 교합을 확정했으면 스캔바디 클릭으로 건너뛰지 않는다.
+          const orientBeforeScanbody =
+            !readOnly &&
+            (userAcceptedBite ||
+              (forceFreshAutogen && !forceBiteRecalc) ||
+              (!hasSavedTeeth && !(forceBiteRecalc && hadSessionArchFrame)));
+          if (orientBeforeScanbody) {
+            // 교합 다음(또는 단독)으로 모델정렬 → 스캔바디 검출.
             const orientTooth =
               [...curToothWorks]
                 .sort(
@@ -9002,7 +9012,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     bitePoseRankRef.current = 0;
-    // 교합정렬: 바뀐 교합에 맞춰 스캔바디를 다시 생성한다(모델정렬은 건드리지 않음).
+    // 교합정렬: 확정 뒤에 모델 방향을 확인하고, 그 축으로 스캔바디를 다시 잡는다.
     occlusionCarryRef.current = null;
     pendingFreshAutogenRef.current = true;
     forceFreshAutogenRef.current = true;
@@ -9350,7 +9360,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       <>
                         교합을 다시 맞춥니다.
                         <br />
-                        스캔바디는 새 교합에 맞춰 다시 만듭니다.
+                        이어서 모델 방향과 스캔바디를 다시 잡습니다.
                       </>
                     }
                     disabled={biteRecalcBusy || modelOrientOn}
@@ -10059,9 +10069,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                     return (
                       <p className="text-sm leading-relaxed text-foreground">
                         {tooth ? `#${tooth} ` : ""}
-                        교합면에서 보고 방향을 맞춘 뒤 확인을 누르세요.
+                        모델 방향을 맞춘 뒤 확인하면 스캔바디를 잡습니다.
                         <br />
-                        위쪽은 협측, 아래쪽은 설측입니다.
+                        교합면에서 보세요. 위쪽은 협측, 아래쪽은 설측입니다.
                         <br />
                         {rightMesial
                           ? "오른쪽이 근심, 왼쪽이 원심이 되게 하세요."
