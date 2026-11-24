@@ -159,6 +159,7 @@
  * - 2026-08-20: 원격 draft 파일은 union merge. autosave echo(파일 없음)가 업로드 직후 목록을 비우지 않게 한다.
  * - 2026-08-20: filesTouched/replace만 첨부 축소 허용. autosave HTTP가 소켓 반영을 덮지 않게 ref 동기화.
  * - 2026-08-20: 로컬 첨부는 peek 재실행 대신 ensureFilesUploaded로 이어서 draft append. iOS 카메라 복귀 후 focus에서도 재시도.
+ * - 2026-11-24: 전송 클릭 시점 첨부를 잡아 둔다. 유사케이스 대기·promote·렌더가 ref를 비워도 그 파일로 올린다.
  * - 2026-08-28: 모바일 휴지통 — 의뢰현황과 동일 인셋 시트·헤더·카드 스타일.
  * - 2026-08-28: 모바일 — 메인 의뢰/휴지, 의뢰현황(+신규), 작성 모달 안내·휴지만. 모달 오픈 토스트 생략.
  * - 2026-08-28: 모바일 신규의뢰 — 인셋 시트·라운드·세이프에리어. 본문 패딩 확대.
@@ -1609,6 +1610,8 @@ export const PracticeFileTransferPage = ({
   const activeDraftSeenInListRef = useRef<string | null>(null);
   const pendingLocalFilesRef = useRef<File[]>([]);
   const draftFilesRef = useRef<DraftTransferFileItem[]>([]);
+  /** 마지막으로 커밋된 draftFiles. 같은 배열로 다시 그리면 업로드가 먼저 채운 ref를 비우지 않는다. */
+  const draftFilesStateMirrorRef = useRef(draftFiles);
   const draftSummaryIdRef = useRef<string | null>(null);
   const activeDraftIdRef = useRef<string | null>(null);
   /** 어벗생산의뢰 등에서 navigate state.prefilledFiles 1회만 소비 */
@@ -1721,7 +1724,10 @@ export const PracticeFileTransferPage = ({
     }
   }, [selectedLab, setSelectedLab, pinnedLabs]);
   pendingLocalFilesRef.current = files;
-  draftFilesRef.current = draftFiles;
+  if (draftFilesStateMirrorRef.current !== draftFiles) {
+    draftFilesStateMirrorRef.current = draftFiles;
+    draftFilesRef.current = draftFiles;
+  }
   activeDraftIdRef.current = activeDraftId;
   editingSentTransferRef.current = editingSentTransfer;
   draftSummaryIdRef.current = String(draftSummary?.id || "").trim() || null;
@@ -8017,9 +8023,9 @@ export const PracticeFileTransferPage = ({
   const syncDraftFilesToServer = async (
     nextDraftFiles: DraftTransferFileItem[],
     options?: { mode?: "append" | "replace" },
-  ) => {
-    if (!authToken) return;
-    if (editingSentTransferRef.current) return;
+  ): Promise<boolean> => {
+    if (!authToken) return false;
+    if (editingSentTransferRef.current) return false;
 
     const keepDraftWithoutFiles =
       nextDraftFiles.length === 0 &&
@@ -8042,11 +8048,11 @@ export const PracticeFileTransferPage = ({
       pendingLocalFormEditRef.current = false;
       setFormSyncStatus("idle");
       setActiveDraftId(null);
-      return;
+      return true;
     }
 
     // 파일 반영도 완성형 한글 환자명이 있을 때만 서버 draft를 만든다/갱신한다.
-    if (!hasAutosaveReadyPatientName(normalizedPatientName)) return;
+    if (!hasAutosaveReadyPatientName(normalizedPatientName)) return false;
 
     const transferMemo = buildPracticeTransferMemo({
       memo: requestMemo,
@@ -8114,6 +8120,7 @@ export const PracticeFileTransferPage = ({
     });
     draftFilesRef.current = mergedReturned;
     setDraftFiles(mergedReturned);
+    return true;
   };
 
   useEffect(() => {
@@ -8221,7 +8228,18 @@ export const PracticeFileTransferPage = ({
         if (additions.length) {
           draftFilesRef.current = nextDraftFiles;
           setDraftFiles(nextDraftFiles);
-          await syncDraftFilesToServer(nextDraftFiles, { mode: "append" });
+          const synced = await syncDraftFilesToServer(nextDraftFiles, {
+            mode: "append",
+          });
+          if (seq !== mobileFilePromoteSeqRef.current) return;
+          if (!synced) {
+            logPracticeFileSync("promote:sync-skipped", {
+              seq,
+              fileCount: nextDraftFiles.length,
+            });
+            setFormSyncStatus("pending");
+            return;
+          }
         } else {
           logPracticeFileSync("promote:no-additions", {
             seq,
@@ -9559,6 +9577,14 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
+    // 유사케이스 확인·promote가 ref를 비우기 전에 화면의 첨부를 고정한다.
+    const localFilesAtSubmitStart = pendingLocalFilesRef.current.filter(
+      (file) => !isGuideTourDemoFile(file),
+    );
+    const draftFilesAtSubmitStart = draftFilesRef.current.filter(
+      (row) => !isLeakedGuideTourDemoDraft(row),
+    );
+
     // 신규 작성: 동일 환자·치아 미확인 시 전송 전 확인(리메이크/신규).
     if (
       !editingSentTransfer &&
@@ -9674,15 +9700,35 @@ export const PracticeFileTransferPage = ({
     requestSubmittingRef.current = true;
     setRequestSubmitting(true);
     try {
-      // promote(로컬→draft) 도중 stale draftFiles/빈 files로 전송되면 스캔이 빠진다.
-      if (pendingLocalFilesRef.current.length > 0) {
+      const hasLocalFilesAtSubmit =
+        localFilesAtSubmitStart.length > 0 ||
+        pendingLocalFilesRef.current.some((file) => !isGuideTourDemoFile(file));
+      if (hasLocalFilesAtSubmit && !fileSyncInFlightRef.current) {
         setFilePromoteRetryNonce((n) => n + 1);
+        const promoteWaitStart = Date.now();
+        while (
+          !fileSyncInFlightRef.current &&
+          Date.now() - promoteWaitStart < 400
+        ) {
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, 16);
+          });
+        }
       }
       await waitForComposeFileSyncIdle(60_000);
 
-      const localFilesForSubmit = pendingLocalFilesRef.current.filter(
-        (file) => !isGuideTourDemoFile(file),
-      );
+      const seenLocalKeys = new Set<string>();
+      const localFilesForSubmit = [
+        ...localFilesAtSubmitStart,
+        ...pendingLocalFilesRef.current.filter(
+          (file) => !isGuideTourDemoFile(file),
+        ),
+      ].filter((file) => {
+        const key = toTempUploadFileKey(file);
+        if (seenLocalKeys.has(key)) return false;
+        seenLocalKeys.add(key);
+        return true;
+      });
       const uploadedTempFiles: TempUploadedFile[] =
         await resolveUploadedTempFiles(localFilesForSubmit);
 
@@ -9696,9 +9742,20 @@ export const PracticeFileTransferPage = ({
           location: String(f.location || "").trim(),
         }))
         .filter((row) => row.originalName && row.s3Key);
+      if (
+        localFilesForSubmit.length > 0 &&
+        localTempFiles.length < localFilesForSubmit.length
+      ) {
+        throw new Error(
+          "첨부 파일을 올리지 못했습니다. 다시 전송해 주세요.",
+        );
+      }
 
-      const draftSnapshot = draftFilesRef.current.filter(
-        (row) => !isLeakedGuideTourDemoDraft(row),
+      const draftSnapshot = mergeDraftTransferFileItems(
+        draftFilesAtSubmitStart,
+        draftFilesRef.current.filter(
+          (row) => !isLeakedGuideTourDemoDraft(row),
+        ),
       );
       const seenS3 = new Set(
         draftSnapshot

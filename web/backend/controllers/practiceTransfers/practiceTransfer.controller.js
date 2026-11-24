@@ -979,6 +979,33 @@ const mapPracticeTransferFilesFromCaseInfos = (caseInfos) =>
     })
     .filter(Boolean);
 
+/** 전송 본문에 파일이 없을 때 draft에 이미 올라간 스캔을 의뢰 파일로 옮긴다. */
+const mapPracticeTransferFilesFromDraftRows = (rows, patientName) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const originalName = String(row?.originalName || "").trim();
+      const s3Key = String(row?.s3Key || row?.key || "").trim();
+      if (!originalName || !s3Key || !isAllowedPracticeFile(originalName)) return null;
+      const storedRole = resolveStoredScanRole({ originalName });
+      return {
+        patientName: String(patientName || "").trim(),
+        tooth: "",
+        ...(storedRole.scanRole
+          ? {
+              scanRole: storedRole.scanRole,
+              scanRoleSetBy: storedRole.scanRoleSetBy,
+            }
+          : {}),
+        file: {
+          originalName,
+          mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+          size: Number(row?.size || 0) || 0,
+          s3Key,
+        },
+      };
+    })
+    .filter(Boolean);
+
 const extractTransferIdFromMessage = (message) => {
   const raw = String(message || "").trim();
   const matched = raw.match(/\[\s*전송ID\s*:\s*([^\]]+)\]/i);
@@ -3537,11 +3564,47 @@ export async function createPracticeTransfer(req, res) {
     const transferMemo =
       String(req.body?.transferMemo || "").trim() || extractTransferMemoFromMessage(message);
 
-    const files = dedupePracticeTransferFilesByNameSize(
+    let files = dedupePracticeTransferFilesByNameSize(
       stampPracticeTransferFileBatch(
         mapPracticeTransferFilesFromCaseInfos(caseInfos),
       ),
     );
+    if (files.length === 0) {
+      const rawDraftIdForFiles = String(req.body?.draftId || "").trim();
+      if (rawDraftIdForFiles && Types.ObjectId.isValid(rawDraftIdForFiles)) {
+        try {
+          const { scope } = await buildPracticeOwnedScope(req);
+          const draftForFiles = await PracticeTransferDraft.findOne({
+            _id: new Types.ObjectId(rawDraftIdForFiles),
+            deletedAt: null,
+            ...scope,
+          })
+            .select({ files: 1 })
+            .lean();
+          const recovered = dedupePracticeTransferFilesByNameSize(
+            stampPracticeTransferFileBatch(
+              mapPracticeTransferFilesFromDraftRows(
+                draftForFiles?.files,
+                patientNameFromTransferMemo(transferMemo),
+              ),
+            ),
+          );
+          if (recovered.length > 0) {
+            console.warn("[practice-file-sync] create recovered draft files", {
+              transferId,
+              draftId: rawDraftIdForFiles,
+              fileCount: recovered.length,
+            });
+            files = recovered;
+          }
+        } catch (draftFileErr) {
+          console.warn(
+            "[practice-file-sync] create draft file recovery failed",
+            draftFileErr?.message || draftFileErr,
+          );
+        }
+      }
+    }
 
     const toothWorksRaw =
       (Array.isArray(req.body?.toothWorks) && req.body.toothWorks) ||
