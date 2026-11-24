@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-24: 스트림 프로파일 재시도·null readFrame 방지.
 // - 2026-11-23: 상주 ffmpeg 스트림으로 감시. 프레임마다 프로세스 생성 금지.
 // - 2026-11-23: 감시 프레임을 라이브 뷰(/live)로 제공한다.
 // - 2026-11-23: 페달 없이 영상을 보다가 움직임이 멈추고 선명하면 로컬 OCR.
@@ -122,16 +123,8 @@ export function createWatcher({
       fps: streamFps,
       log,
     });
-    stream.start();
-    // 첫 프레임이 쓰일 때까지 잠깐 기다린다.
-    for (let i = 0; i < 8; i += 1) {
-      await sleep(250);
-      const buf = await stream.readFrame();
-      if (buf) {
-        setLiveFrame(buf);
-        break;
-      }
-    }
+    const buf = await stream.startUntilFrame({ waitMs: 2500, attempts: 10 });
+    setLiveFrame(buf);
     return device;
   }
 
@@ -146,13 +139,18 @@ export function createWatcher({
     await ensureStream();
     let buffer = null;
     for (let i = 0; i < 4; i += 1) {
+      if (!stream?.running) break;
       buffer = (await stream.readFrame()) || liveFrame;
       if (buffer) break;
       await sleep(200);
     }
     if (!buffer) {
+      const detail = stream?.lastStderr?.trim?.() || "";
       const err = new Error("라이브 프레임을 아직 받지 못했습니다.");
       err.code = "capture-failed";
+      err.detail = detail.slice(0, 400);
+      // 죽은 스트림은 다음 ensureStream에서 다시 연다.
+      await stopStream();
       throw err;
     }
     setLiveFrame(buffer);
