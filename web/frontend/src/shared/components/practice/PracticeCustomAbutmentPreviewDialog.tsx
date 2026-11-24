@@ -32,13 +32,14 @@
 // - 2026-11-24: 편측·세션 archFrame 없음은 모델정렬 → 교합정렬 → 스캔바디. archFrame 있으면 바로 검출.
 // - 2026-11-24: 근심/원심 클릭 모달 제거. 앞뒤는 자동 확정하고, 헤더 「모델정렬」으로 수동 보정한다.
 // - 2026-11-24: 모델정렬 모드에서 모눈·십자선을 켜고, 미드라인·교합면을 맞춰 축을 확정한다.
-// - 2026-11-24: 헤더는 교합정렬·모델정렬·검볼만. 되돌리기·다시실행·초기값·페인트는 헤더에서 뺀다.
+// - 2026-11-24: 헤더는 교합정렬·모델정렬·스캔바디검출. 검볼·피니시라인·픽스쳐·스캔바디표시는 작업영역 상단 아이콘.
 // - 2026-11-24: 교합정렬·모델정렬은 독립. 한쪽을 바꿔도 기설정한 다른 쪽(jawPose/archFrame)은 덮지 않는다.
-// - 2026-11-24: 교합정렬·모델정렬 확정 후 기존 어벗·수동값을 전부 지우고 스캔바디 검출→자동생성을 처음부터 다시 한다.
+// - 2026-11-24: 교합·모델정렬은 기존 악궁·픽스처·어벗을 강체 변환으로 옮긴다. 전체 재검출은 헤더 스캔바디만.
 // - 2026-11-24: 모델정렬 확인 후 카메라를 기본 뷰로 돌리지 않는다. 맞춘 시점의 화면을 유지한다.
 // - 2026-11-24: 바이트 정렬 확인 모달도 모델정렬과 같이 작업영역 하단 가운데에 둔다.
 // - 2026-11-24: 가로·세로 중앙선은 모눈보다 굵은 하늘색 점선으로 눈에 띄게 한다.
 // - 2026-11-24: 스캔바디 클릭 대기에 들어가기 전에 카메라를 맞춘다. 맞추지 않으면 빈 모눈만 보이다가 돌리면 메시가 들어온다.
+// - 2026-11-24: 저장 뷰가 메시에서 멀면 다시 맞춘다. 편측은 fit 뒤에 모델정렬 애니를 시작해 원점 애니로 덮지 않는다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -68,8 +69,11 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   ArrowDownUp,
   Check,
+  CircleDashed,
   Compass,
+  Cylinder,
   Download,
+  Hexagon,
   Loader2,
   Move3d,
   Settings,
@@ -130,6 +134,8 @@ import {
   matchAlignedScans,
   rebaseCarriedFixtures,
   rigidFitCorresponding,
+  transformDirection,
+  transformFixture,
   type OcclusionCarry,
 } from "@/shared/practice/customAbutmentOcclusionRestore";
 import {
@@ -566,6 +572,38 @@ function applySavedView(
   camera.updateMatrixWorld();
   controls.syncFromCamera();
 }
+
+/** 저장·공유 뷰가 메시 AABB에서 멀면 빈 모눈만 보이다가 돌려야 들어온다. */
+function cameraFramesTargets(
+  camera: THREE.OrthographicCamera,
+  controls: ScreenSpaceOrbitControls,
+  targets: readonly THREE.Object3D[],
+): boolean {
+  if (targets.length === 0) return true;
+  const box = new THREE.Box3();
+  for (const obj of targets) {
+    obj.updateMatrixWorld(true);
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) {
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      if (mesh.geometry.boundingBox && !mesh.geometry.boundingBox.isEmpty()) {
+        box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));
+      }
+    } else {
+      box.expandByObject(obj);
+    }
+  }
+  if (box.isEmpty()) return true;
+  const center = box.getCenter(new THREE.Vector3());
+  const span = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
+  if (controls.target.distanceTo(center) > span * 1.25) return false;
+  const halfH = Math.abs(camera.top - camera.bottom) / (2 * Math.max(camera.zoom, 1e-4));
+  const halfW = Math.abs(camera.right - camera.left) / (2 * Math.max(camera.zoom, 1e-4));
+  const viewSpan = Math.hypot(halfW, halfH) * 2;
+  if (viewSpan < span * 0.08) return false;
+  return true;
+}
+
 const VIEW_ANIM_MS = 280;
 
 function labDesignConfirmHint(cancelDeadlineAt: string | null): ReactNode {
@@ -689,6 +727,7 @@ function ToolbarToggle({
   label,
   tip,
   disabled,
+  iconOnly = false,
 }: {
   active: boolean;
   onClick: () => void;
@@ -696,26 +735,29 @@ function ToolbarToggle({
   label: string;
   tip?: ReactNode;
   disabled?: boolean;
+  /** 아이콘만 보이고 라벨은 툴팁·aria로 둔다. */
+  iconOnly?: boolean;
 }) {
   const button = (
     <Button
       type="button"
       size="sm"
       variant={active ? "default" : "outline"}
-      className="h-8 gap-1.5 px-2.5 text-xs"
+      className={iconOnly ? "h-8 w-8 shrink-0 px-0" : "h-8 gap-1.5 px-2.5 text-xs"}
       disabled={disabled}
+      aria-label={label}
       onClick={onClick}
     >
       {icon}
-      <span>{label}</span>
+      {iconOnly ? null : <span>{label}</span>}
     </Button>
   );
-  if (!tip) return button;
+  if (!tip && !iconOnly) return button;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="bottom" className="z-[520]">
-        {tip}
+        {tip ?? label}
       </TooltipContent>
     </Tooltip>
   );
@@ -4021,7 +4063,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     setStatus(nextStatus);
   }, []);
 
-  /** 모델정렬만 갱신한다. 교합(jawPose·biteCheck)은 그대로 둔다. 어벗은 전부 지우고 자동생성을 다시 돈다. */
+  /** 모델정렬만 갱신한다. 교합(jawPose·biteCheck)은 그대로 둔다. 기존 악궁·어벗은 강체 변환한다. */
   const confirmModelOrient = useCallback(() => {
     if (statusRef.current.kind !== "model-orient") return;
     if (biteRecalcBusy && !modelOrientGateRef.current) return;
@@ -4029,49 +4071,12 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (!camera) return;
     const prev = frameRef.current;
     const next = dentalFrameFromViewOrientation(camera.quaternion, prev?.up ?? null);
-    frameRef.current = next;
-    setFrameEpoch((n) => n + 1);
     const axes = archFrameAxes(next);
-    const ctx = designContextRef.current;
-    if (axes && ctx) {
-      // jawPose·biteCheck는 건드리지 않는다 — 교합정렬과 독립.
-      designContextRef.current = {
-        ...ctx,
-        archFrame: axes,
-        fixtures: [],
-        overrides: {},
-      };
-      for (const tooth of [...abutmentMeshesRef.current.keys()]) removeDesignFromScene(tooth);
-      setDesignedList([]);
-      const savedAt = Date.now();
-      if (savedAt > designSavedAtRef.current) designSavedAtRef.current = savedAt;
-      void (async () => {
-        try {
-          const existing = await readCustomAbutmentDesign(ctx.cacheKey);
-          const record = {
-            key: ctx.cacheKey,
-            version: existing?.version ?? CUSTOM_ABUTMENT_DESIGN_VERSION,
-            fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-            savedAt,
-            alignedScans:
-              ctx.alignedScans.length > 0 ? ctx.alignedScans : (existing?.alignedScans ?? []),
-            biteCheck: ctx.biteCheck ?? existing?.biteCheck ?? null,
-            jawPose: ctx.jawPose ?? existing?.jawPose ?? null,
-            archFrame: axes,
-            teeth: [],
-            chat: existing?.chat ?? [],
-          };
-          rememberCustomAbutmentDesign(record);
-          await writeCustomAbutmentDesign(record);
-        } catch (err) {
-          console.warn("[custom-abutment] archFrame save failed", err);
-        }
-      })();
-    }
-    toast({ title: "모델정렬을 반영했습니다." });
     const gate = modelOrientGateRef.current;
     if (gate) {
-      // 편측 부트: 파이프라인이 이어서 교합→스캔바디로 간다.
+      // 편측 부트: 축만 넘기고 파이프라인이 교합→스캔바디로 이어간다.
+      frameRef.current = next;
+      setFrameEpoch((n) => n + 1);
       modelOrientGateRef.current = null;
       setModelOrientRequired(false);
       const nextStatus = {
@@ -4084,20 +4089,150 @@ export function PracticeCustomAbutmentPreviewDialog({
       gate(axes);
       return;
     }
-    // 헤더 수동 정렬: 맞춘 카메라 그대로 두고 스캔바디부터 다시 돈다.
-    occlusionCarryRef.current = null;
-    pendingFreshAutogenRef.current = true;
-    forceFreshAutogenRef.current = true;
-    setBiteRecalcBusy(true);
-    const nextStatus = {
-      kind: "loading" as const,
-      percent: 68,
-      step: "스캔바디 인식 및 픽스쳐 위치 정합 중…",
+
+    // 헤더 수동 정렬: 맞춘 축으로 악궁·픽스처·어벗을 같이 돌리고, 재검출은 하지 않는다.
+    const origin = new THREE.Vector3();
+    const box = new THREE.Box3();
+    for (const scan of rawJawScansRef.current) {
+      if (!scan.geometry.boundingBox) scan.geometry.computeBoundingBox();
+      if (scan.geometry.boundingBox && !scan.geometry.boundingBox.isEmpty()) {
+        box.union(scan.geometry.boundingBox);
+      }
+    }
+    for (const d of designedListRef.current) {
+      if (!d.worldGeometry.boundingBox) d.worldGeometry.computeBoundingBox();
+      if (d.worldGeometry.boundingBox && !d.worldGeometry.boundingBox.isEmpty()) {
+        box.union(d.worldGeometry.boundingBox);
+      }
+    }
+    if (!box.isEmpty()) box.getCenter(origin);
+    else if (controlsRef.current) origin.copy(controlsRef.current.target);
+
+    const { right, anterior, up } = next;
+    const matrix = new THREE.Matrix4().set(
+      right.x,
+      right.y,
+      right.z,
+      -right.dot(origin),
+      anterior.x,
+      anterior.y,
+      anterior.z,
+      -anterior.dot(origin),
+      up.x,
+      up.y,
+      up.z,
+      -up.dot(origin),
+      0,
+      0,
+      0,
+      1,
+    );
+    const elements = Array.from(matrix.elements) as number[];
+
+    for (const scan of rawJawScansRef.current) {
+      scan.geometry.applyMatrix4(matrix);
+      scan.geometry.computeVertexNormals();
+      scan.geometry.computeBoundingBox();
+    }
+    for (const [tooth, axis] of lockedBridgeAxisRef.current.entries()) {
+      lockedBridgeAxisRef.current.set(tooth, transformDirection(elements, axis));
+    }
+
+    const prevDesigns = designedListRef.current;
+    const nextDesigns: DesignedCustomAbutment[] = [];
+    for (const d of prevDesigns) {
+      const fx = transformFixture(d.fixture, elements);
+      const insertion = d.insertionAxisWorld
+        ? transformDirection(elements, d.insertionAxisWorld)
+        : undefined;
+      if (insertion) adoptStoredInsertionAxis(lockedBridgeAxisRef.current, d.toothNumber, insertion);
+      const rebuilt = buildDesignedCustomAbutment({
+        fixture: fx,
+        fileName: d.fileName,
+        localPositions: d.localPositions,
+        ...(d.solidBodyLocalPositions?.length
+          ? { solidBodyLocalPositions: d.solidBodyLocalPositions }
+          : {}),
+        crownLocalPositions: d.crownLocalPositions,
+        marginLoopLocal: d.marginLoopLocal,
+        ...(d.enameloplastyLocalPositions?.length
+          ? { enameloplastyLocalPositions: d.enameloplastyLocalPositions }
+          : {}),
+        params: d.params,
+        metrics: d.metrics,
+        ...(insertion ? { insertionAxisWorld: insertion } : {}),
+      });
+      d.worldGeometry.dispose();
+      d.predictedCrownWorldGeometry.dispose();
+      d.enameloplastyWorldGeometry?.dispose();
+      removeDesignFromScene(d.toothNumber, true);
+      addDesignToScene(rebuilt);
+      nextDesigns.push(rebuilt);
+    }
+
+    const canonFrame: DentalFrame = {
+      right: new THREE.Vector3(1, 0, 0),
+      anterior: new THREE.Vector3(0, 1, 0),
+      up: new THREE.Vector3(0, 0, 1),
     };
+    frameRef.current = canonFrame;
+    setFrameEpoch((n) => n + 1);
+    const canonAxes = archFrameAxes(canonFrame);
+    const fixtures = nextDesigns.map((d) => d.fixture);
+    if (rawJawScansRef.current.some((s) => s.jaw === "upper")) {
+      rebuildJawScanMeshes(
+        "upper",
+        fixtures.filter((fx) => fx.jaw === "upper"),
+        visibleJaws.upper,
+      );
+    }
+    if (rawJawScansRef.current.some((s) => s.jaw === "lower")) {
+      rebuildJawScanMeshes(
+        "lower",
+        fixtures.filter((fx) => fx.jaw === "lower"),
+        visibleJaws.lower,
+      );
+    }
+
+    designedListRef.current = nextDesigns;
+    setDesignedList(nextDesigns);
+    const ctx = designContextRef.current;
+    if (ctx) {
+      const alignedScans = rawJawScansRef.current.map((scan, index) => {
+        const attr = scan.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const prevAligned = ctx.alignedScans[index];
+        return {
+          fileName: prevAligned?.fileName ?? `${scan.jaw}.scan`,
+          role: scan.jaw,
+          vertexCount: attr?.count ?? 0,
+          positions: toArrayBuffer((attr?.array as Float32Array) ?? new Float32Array()),
+        };
+      });
+      designContextRef.current = {
+        ...ctx,
+        archFrame: canonAxes,
+        fixtures,
+        alignedScans: alignedScans.length > 0 ? alignedScans : ctx.alignedScans,
+      };
+    }
+
+    const nextStatus = { kind: "ready" as const };
     statusRef.current = nextStatus;
     setStatus(nextStatus);
-    setBiteRecalcEpoch((n) => n + 1);
-  }, [biteRecalcBusy, removeDesignFromScene, toast]);
+    toast({ title: "모델정렬을 반영했습니다." });
+    persistDesign(undefined, { dirty: true });
+    fitDefaultCamera();
+  }, [
+    addDesignToScene,
+    biteRecalcBusy,
+    fitDefaultCamera,
+    persistDesign,
+    rebuildJawScanMeshes,
+    removeDesignFromScene,
+    toast,
+    visibleJaws.lower,
+    visibleJaws.upper,
+  ]);
 
   /** 이미 잡힌(또는 잘못된) 치아 스캔바디 위치를 다시 찍게 한다. */
   const startScanbodyRepick = useCallback(
@@ -4927,8 +5062,23 @@ export function PracticeCustomAbutmentPreviewDialog({
         const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
         /** 메시를 올린 뒤 저장·공유 뷰가 있으면 복원하고, 없으면 악궁에 맞춘다. */
-        const frameViewerAfterMeshes = () => {
+        const collectVisibleFitTargets = () => {
+          const abutMeshes = [...abutmentMeshesRef.current.values()].filter((m) => m.visible);
+          const jawMeshes = [
+            ...jawMeshesRef.current.upperTrimmed,
+            ...jawMeshesRef.current.upperScanbody,
+            ...jawMeshesRef.current.lowerTrimmed,
+            ...jawMeshesRef.current.lowerScanbody,
+          ].filter((m) => m.visible);
+          return jawMeshes.length > 0 ? [...jawMeshes, ...abutMeshes] : abutMeshes;
+        };
+        const frameViewerAfterMeshes = (opts?: {
+          preferFit?: boolean;
+          after?: () => void;
+        }) => {
           window.requestAnimationFrame(() => {
+            // 모델정렬 애니가 저장 뷰·fit을 덮어 빈 원점만 남기지 않게 먼저 끊는다.
+            viewAnimRef.current = null;
             viewReadyRef.current = true;
             const saved = readSavedView(transferIdParam);
             const cam = cameraRef.current;
@@ -4938,7 +5088,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             const localViewAt = Number(saved?.savedAt) || 0;
             const sharedViewAt = Number(shared?.savedAt) || 0;
             const useSharedView = Boolean(shared && sharedViewAt > 0);
-            if (useSharedView && shared && cam && controls) {
+            let restoredPose = false;
+            if (opts?.preferFit) {
+              fitDefaultCamera();
+            } else if (useSharedView && shared && cam && controls) {
               applyingSharedViewRef.current = true;
               applySavedView(
                 cam,
@@ -4950,12 +5103,14 @@ export function PracticeCustomAbutmentPreviewDialog({
                 lastSharedViewAtRef.current = shared.savedAt;
               }
               applyingSharedViewRef.current = false;
+              restoredPose = true;
             } else if (saved && cam && controls) {
               const aspect = hostRef.current ? readHostSize(hostRef.current).aspect : 1;
               applySavedView(cam, controls, saved, aspect);
               if (localViewAt > lastSharedViewAtRef.current) {
                 lastSharedViewAtRef.current = localViewAt;
               }
+              restoredPose = true;
             } else if (
               remotePaintView &&
               (pendingRemotePaintRef.current?.shapes?.length ?? 0) > 0 &&
@@ -4974,6 +5129,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               cam.lookAt(controls.target);
               cam.updateMatrixWorld();
               controls.syncFromCamera();
+              restoredPose = true;
             } else {
               fitDefaultCamera();
             }
@@ -4992,7 +5148,17 @@ export function PracticeCustomAbutmentPreviewDialog({
               arrived.savedAt > lastSharedViewAtRef.current
             ) {
               applyIncomingSharedView(arrived);
+              restoredPose = true;
             }
+            // 저장·공유 뷰가 메시에서 멀면(빈 모눈) 악궁에 다시 맞추고, 그 빈 뷰를 저장에서 지운다.
+            if ((restoredPose || !opts?.preferFit) && cam && controls) {
+              const targets = collectVisibleFitTargets();
+              if (targets.length > 0 && !cameraFramesTargets(cam, controls, targets)) {
+                fitDefaultCamera();
+                writeSavedView(transferIdParam, cam, controls.target);
+              }
+            }
+            opts?.after?.();
           });
         };
 
@@ -5435,9 +5601,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               nextPose[role] = fit.elements.map((value) => Math.round(value * 1e6) / 1e6);
             }
             sessionJawPose = normalizeJawPose(nextPose);
-            // 수동 교합정렬(원본 재맞춤)이거나 저장본이 없을 때만 픽스처를 다시 잡는다.
-            // 저장본이 있는 채 restored를 풀면 열 때마다 자동생성·첨1로 돌아간다.
-            if (forceBiteRecalc || !hasSavedTeeth) {
+            // 교합정렬(forceBiteRecalc): restored를 풀어 carry로 픽스처만 옮긴다(검출 없음).
+            // 저장본이 없거나 모델정렬(forceFreshAutogen)이면 검출부터 다시 잡는다.
+            if (forceBiteRecalc || forceFreshAutogen || !hasSavedTeeth) {
               restored = false;
             }
           }
@@ -5876,8 +6042,11 @@ export function PracticeCustomAbutmentPreviewDialog({
             frameRef.current = frame;
             setFrameEpoch((n) => n + 1);
             setModelOrientRequired(true);
-            beginModelOrient({ required: true });
-            frameViewerAfterMeshes();
+            // fit으로 메시 중심에 맞춘 뒤 모델정렬 애니를 시작한다. 순서를 바꾸면 원점만 돌다 빈 모눈이 된다.
+            frameViewerAfterMeshes({
+              preferFit: true,
+              after: () => beginModelOrient({ required: true }),
+            });
             const confirmedAxes = await new Promise<StoredArchFrame | null>((resolve) => {
               modelOrientGateRef.current = resolve;
             });
@@ -5946,7 +6115,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           setStatus({
             kind: "loading",
             percent: 68,
-            step: "스캔바디 인식 및 픽스쳐 위치 정합 중…",
+            step:
+              forceBiteRecalc &&
+              !forceFreshAutogen &&
+              (occlusionCarry?.fixtures.length ?? 0) > 0
+                ? "교합에 맞춰 픽스처를 옮기는 중…"
+                : "스캔바디 인식 및 픽스쳐 위치 정합 중…",
           });
           await new Promise<void>((r) => window.setTimeout(r, 16));
           if (cancelled) return;
@@ -5980,14 +6154,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             const teeth = teethByJaw[jaw];
             if (jawScanList.length === 0 || teeth.length === 0) continue;
 
-            setStatus({
-              kind: "loading",
-              percent: jaw === "upper" ? 72 : 82,
-              step: `${teeth.map((t) => `#${t.toothNumber}`).join(" ")} 스캔바디 매칭 중…`,
-            });
-            await new Promise<void>((r) => window.setTimeout(r, 16));
-            if (cancelled) return;
-
             const carriedForJaw = carriedFixtures.filter((fx) => fx.jaw === jaw);
             const carriedCoversJaw =
               carriedForJaw.length > 0 &&
@@ -6001,7 +6167,14 @@ export function PracticeCustomAbutmentPreviewDialog({
               models: LoadedScanbodyModel[];
             }> | null = null;
             if (carriedCoversJaw) {
-              // 이미 고른 스캔바디는 다시 맞춘 악궁을 따라간다. 같은 자리를 다시 찍지 않는다.
+              // 교합정렬 등: 이미 고른 스캔바디는 검출 없이 다시 맞춘 악궁만 따라간다.
+              setStatus({
+                kind: "loading",
+                percent: jaw === "upper" ? 72 : 82,
+                step: `${teeth.map((t) => `#${t.toothNumber}`).join(" ")} 픽스처 위치 반영 중…`,
+              });
+              await new Promise<void>((r) => window.setTimeout(r, 16));
+              if (cancelled) return;
               const wantCount = occlusionCarry?.jaws.find((row) => row.role === jaw)?.vertexCount;
               const scan =
                 jawScanList.find(
@@ -6010,6 +6183,13 @@ export function PracticeCustomAbutmentPreviewDialog({
               jawGeo = scan.geometry;
               matchedTeeth = new Map(carriedForJaw.map((fx) => [fx.toothNumber, fx]));
             } else {
+            setStatus({
+              kind: "loading",
+              percent: jaw === "upper" ? 72 : 82,
+              step: `${teeth.map((t) => `#${t.toothNumber}`).join(" ")} 스캔바디 매칭 중…`,
+            });
+            await new Promise<void>((r) => window.setTimeout(r, 16));
+            if (cancelled) return;
             withModels = await Promise.all(
               teeth.map(async (tw) => ({
                 toothWork: tw,
@@ -6276,7 +6456,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               lower: lowerScans.length > 0,
             });
             setStatus({ kind: "pick", toothNumber: pendingPickJobs[0]!.toothNumber, phase: "aim" });
-            frameViewerAfterMeshes();
+            // 스캔바디 클릭 전에는 이전 빈 저장 뷰를 쓰지 않고 악궁에 맞춘다.
+            frameViewerAfterMeshes({ preferFit: true });
             await new Promise<void>((resolve) => {
               scanbodyGateRef.current = resolve;
             });
@@ -6313,8 +6494,99 @@ export function PracticeCustomAbutmentPreviewDialog({
                 return;
               }
             }
+            const allCarried =
+              jawJobs.length > 0 &&
+              jawJobs.every((job) => job.carried) &&
+              curToothWorks.every((tw) =>
+                jawJobs.some((job) =>
+                  job.fixtures.some((fx) => fx.toothNumber === tw.toothNumber),
+                ),
+              );
+            // 교합정렬: 픽스처만 옮긴 뒤 저장 로컬 메시를 다시 얹는다(재검출·재생성 없음).
+            const reposeCached =
+              forceBiteRecalc &&
+              !forceFreshAutogen &&
+              allCarried &&
+              Boolean(cached?.teeth.some((row) => (row.localPositions?.byteLength ?? 0) >= 36));
+            if (reposeCached && cached) {
+              setStatus({
+                kind: "loading",
+                percent: 80,
+                step: "교합에 맞춰 어벗을 옮기는 중…",
+              });
+              const byTooth = new Map(
+                jawJobs.flatMap((job) => job.fixtures).map((fx) => [fx.toothNumber, fx] as const),
+              );
+              for (const row of cached.teeth) {
+                const matched = byTooth.get(row.toothNumber);
+                if (!matched || (row.localPositions?.byteLength ?? 0) < 36) continue;
+                adoptStoredInsertionAxis(
+                  lockedBridgeAxisRef.current,
+                  row.toothNumber,
+                  row.insertionAxisWorld,
+                );
+                const restoredGumball = !readOnly ? normalizeAbutmentEdit(row.gumballEdit) : null;
+                if (restoredGumball) {
+                  savedGumballEditRef.current[row.toothNumber] = restoredGumball;
+                  if (row.gumballBaseParams) {
+                    gumballParamBaseRef.current[row.toothNumber] = {
+                      ...row.params,
+                      ...parseCustomAbutmentParamOverrides(row.gumballBaseParams),
+                    };
+                  }
+                  if (row.gumballBaseMetrics) {
+                    gumballMetricBaseRef.current[row.toothNumber] = { ...row.gumballBaseMetrics };
+                  }
+                }
+                const rowOverrides = stripDirectEditShiftOverrides(
+                  sharedAbutmentSyncParams(
+                    row.params,
+                    parseCustomAbutmentParamOverrides(row.overrides),
+                  ),
+                );
+                overrides[row.toothNumber] = rowOverrides;
+                if (!proposalInputRef.current[row.toothNumber]) {
+                  proposalInputRef.current[row.toothNumber] = {
+                    ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                    ...rowOverrides,
+                  };
+                }
+                const stored = new Float32Array(row.localPositions);
+                const view = await openScrewChannelForView(stored, matched);
+                const savedSolid = row.solidBodyLocalPositions?.byteLength
+                  ? new Float32Array(row.solidBodyLocalPositions)
+                  : view !== stored || abutmentTopLooksClosed(stored)
+                    ? stored
+                    : undefined;
+                const rebuilt = buildDesignedCustomAbutment({
+                  fixture: matched,
+                  fileName: row.fileName,
+                  localPositions: view,
+                  ...(savedSolid ? { solidBodyLocalPositions: savedSolid } : {}),
+                  crownLocalPositions: new Float32Array(row.crownLocalPositions),
+                  marginLoopLocal: new Float32Array(row.marginLoopLocal),
+                  ...(row.enameloplastyLocalPositions?.byteLength
+                    ? {
+                        enameloplastyLocalPositions: new Float32Array(
+                          row.enameloplastyLocalPositions,
+                        ),
+                      }
+                    : {}),
+                  params: row.params,
+                  metrics: row.metrics,
+                  ...(row.insertionAxisWorld
+                    ? { insertionAxisWorld: row.insertionAxisWorld }
+                    : {}),
+                });
+                if (restoredGumball) {
+                  directEditRef.current?.setEdit(row.toothNumber, restoredGumball);
+                }
+                builtAbutments.push(rebuilt);
+              }
+            }
             for (const job of jawJobs) {
               for (const matched of job.fixtures) {
+                if (builtAbutments.some((d) => d.toothNumber === matched.toothNumber)) continue;
                 setStatus({
                   kind: "loading",
                   percent: job.jaw === "upper" ? 78 : 90,
@@ -8548,11 +8820,18 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     bitePoseRankRef.current = 0;
-    occlusionCarryRef.current = null;
-    // 교합정렬: 기존 어벗·수동값·픽스처 carry를 버리고 검출부터 다시 한다.
-    // 바이트 자세 「다시」재진입은 carry만 쓰고, pendingFreshAutogen으로 손본 값은 계속 막는다.
-    pendingFreshAutogenRef.current = true;
+    // 교합정렬: 스캔바디 검출은 하지 않는다. 파이프라인이 현재 픽스처·스캔을 carry로 넘겨
+    // 다시 맞춘 악궁에만 옮긴다. (모델정렬만 검출부터 다시 돈다.)
     forceBiteRecalcRef.current = true;
+    setBiteRecalcEpoch((n) => n + 1);
+  }, [biteRecalcBusy, files, toast]);
+
+  /** 헤더 스캔바디: 어벗·수동값을 지우고 전체 스캔바디 검출→자동생성을 다시 돈다. */
+  const triggerScanbodyRedetect = useCallback(() => {
+    if (!canEditDesign || biteRecalcBusy) return;
+    if (modelOrientOn || biteConfirmOn || statusRef.current.kind === "pick") return;
+    occlusionCarryRef.current = null;
+    pendingFreshAutogenRef.current = true;
     forceFreshAutogenRef.current = true;
     const ctx = designContextRef.current;
     if (ctx) {
@@ -8580,12 +8859,26 @@ export function PracticeCustomAbutmentPreviewDialog({
           rememberCustomAbutmentDesign(record);
           await writeCustomAbutmentDesign(record);
         } catch (err) {
-          console.warn("[custom-abutment] bite realign wipe failed", err);
+          console.warn("[custom-abutment] scanbody redetect wipe failed", err);
         }
       })();
     }
+    setBiteRecalcBusy(true);
+    const nextStatus = {
+      kind: "loading" as const,
+      percent: 68,
+      step: "스캔바디 인식 및 픽스쳐 위치 정합 중…",
+    };
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
     setBiteRecalcEpoch((n) => n + 1);
-  }, [biteRecalcBusy, files, removeDesignFromScene, toast]);
+  }, [
+    biteConfirmOn,
+    biteRecalcBusy,
+    canEditDesign,
+    modelOrientOn,
+    removeDesignFromScene,
+  ]);
 
   /** 자동 판정이 틀려도 지금 보이는 교합을 맞다고 확정한다. 메타에 남겨 자동 재확인을 막는다. */
   const confirmCurrentOcclusion = useCallback(() => {
@@ -8851,23 +9144,21 @@ export function PracticeCustomAbutmentPreviewDialog({
                   >
                     <Compass className="h-4 w-4" />
                   </HeaderIconButton>
+                  <HeaderIconButton
+                    label="스캔바디 검출"
+                    tip={
+                      <>
+                        전체 스캔바디를 다시 찾습니다.
+                        <br />
+                        기존 어벗은 지워집니다.
+                      </>
+                    }
+                    disabled={biteRecalcBusy || modelOrientOn || biteConfirmOn}
+                    onClick={triggerScanbodyRedetect}
+                  >
+                    <Hexagon className="h-4 w-4" />
+                  </HeaderIconButton>
                 </>
-              ) : null}
-              {ready && canEditDesign ? (
-                <HeaderIconButton
-                  label="검볼"
-                  active={gumballOn && !paint.paintOn}
-                  onClick={() => {
-                    touchViewer("gumball");
-                    if (paint.paintOn) paint.setPaintOn(false);
-                    setGumballOn((on) => {
-                      viewerPrefsRef.current = { ...viewerPrefsRef.current, gumballOn: !on };
-                      return !on;
-                    });
-                  }}
-                >
-                  <Move3d className="h-4 w-4" />
-                </HeaderIconButton>
               ) : null}
               <HeaderIconButton
                 label="크라운 스캔"
@@ -9048,8 +9339,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   {!biteAlignChrome ? (
                     <div className="flex items-center gap-1.5">
                       <ToolbarToggle
+                        iconOnly
                         active={showFinishLine}
                         label="피니시라인"
+                        icon={<CircleDashed className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("margin");
                           setShowFinishLine((v) => {
@@ -9062,8 +9355,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                         }}
                       />
                       <ToolbarToggle
+                        iconOnly
                         active={showFixtureAnalog}
                         label="픽스쳐"
+                        icon={<Cylinder className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("fixture");
                           setShowFixtureAnalog((v) => {
@@ -9076,8 +9371,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                         }}
                       />
                       <ToolbarToggle
+                        iconOnly
                         active={designedList.some((d) => shownScanbodies[d.toothNumber] === true)}
                         label="스캔바디"
+                        icon={<Hexagon className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("scanbodies");
                           const next = !designedList.some(
@@ -9092,6 +9389,25 @@ export function PracticeCustomAbutmentPreviewDialog({
                           );
                         }}
                       />
+                      {ready && canEditDesign ? (
+                        <ToolbarToggle
+                          iconOnly
+                          active={gumballOn && !paint.paintOn}
+                          label="검볼"
+                          icon={<Move3d className="h-4 w-4" />}
+                          onClick={() => {
+                            touchViewer("gumball");
+                            if (paint.paintOn) paint.setPaintOn(false);
+                            setGumballOn((on) => {
+                              viewerPrefsRef.current = {
+                                ...viewerPrefsRef.current,
+                                gumballOn: !on,
+                              };
+                              return !on;
+                            });
+                          }}
+                        />
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

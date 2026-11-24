@@ -241,13 +241,13 @@ export function captureOcclusionCarry(
   };
 }
 
-/** 다시 맞춘 악궁으로 스캔바디를 옮긴다. 강체가 아니면 그 악은 빼서 다시 고르게 둔다. */
-export function rebaseCarriedFixtures(
+/** 교합 전·후 악궁 정점으로 역할별 강체 행렬을 구한다. */
+export function resolveCarryJawMatrices(
   carry: OcclusionCarry | null,
   jaws: readonly JawPositionCloud[],
-): MatchedScanbodyFixture[] {
-  if (!carry) return [];
+): Map<string, readonly number[]> {
   const matrixByRole = new Map<string, readonly number[]>();
+  if (!carry) return matrixByRole;
   const used = new Set<JawPositionCloud>();
   for (const src of carry.jaws) {
     const candidates = jaws.filter(
@@ -263,6 +263,16 @@ export function rebaseCarriedFixtures(
     used.add(best.jaw);
     matrixByRole.set(src.role, best.fit.elements);
   }
+  return matrixByRole;
+}
+
+/** 다시 맞춘 악궁으로 스캔바디를 옮긴다. 강체가 아니면 그 악은 빼서 다시 고르게 둔다. */
+export function rebaseCarriedFixtures(
+  carry: OcclusionCarry | null,
+  jaws: readonly JawPositionCloud[],
+): MatchedScanbodyFixture[] {
+  const matrixByRole = resolveCarryJawMatrices(carry, jaws);
+  if (!carry || matrixByRole.size === 0) return [];
   const out: MatchedScanbodyFixture[] = [];
   for (const fixture of carry.fixtures) {
     const matrix = matrixByRole.get(fixture.jaw);
@@ -270,4 +280,12 @@ export function rebaseCarriedFixtures(
     out.push(transformFixture(fixture, matrix));
   }
   return out;
+}
+
+/** 월드 방향 벡터에 강체 회전만 적용한다. */
+export function transformDirection(
+  elements: readonly number[],
+  dir: readonly [number, number, number],
+): [number, number, number] {
+  return applyDir(elements, [dir[0], dir[1], dir[2]]);
 }
