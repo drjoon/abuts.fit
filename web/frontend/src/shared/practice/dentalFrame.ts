@@ -817,12 +817,557 @@ function findMidlineAnteriorAxis(
   }
 
   // 2) 편측 사분악(10·40번대 등, 전치 정중선 미포함):
-  //    치관 능선만으로 전치·구치를 가른다. 구개·치은 폭은 정중선 절단에서 전치를 넓게 보여 쓰지 않는다.
-  //    소구치·견치 쪽은 협설로 좁고, 대구치 쪽은 넓으며 교합 봉우리가 많다.
+  //    끝 구간 폭은 쓰지 않는다. 전치가 휘어 모이면 그 끝이 대구치보다 넓어 앞뒤가 뒤집힌다.
+  //    치아를 하나씩 나눠 짧은 폭·교합면 넓이로 대구치·소구치·전치를 가리고,
+  //    편측 7칸(대구치 2·소구치 2·전치 3)에 빠진 칸을 두고 맞춘다. 큰 쪽이 구치다.
+  const byToothSize = anteriorFromToothSizes(upperCrowns, lowerCrowns, e1, e2);
+  if (byToothSize) {
+    return { anterior: byToothSize, midlineOffsetRightMm: 0 };
+  }
   return {
     anterior: anteriorFromCrownTaper(samples, e1, e2, majorDir),
     midlineOffsetRightMm: 0,
   };
+}
+
+type ToothClass = "M" | "P" | "A";
+
+type RawTooth = {
+  x: number;
+  y: number;
+  area: number;
+  minor: number;
+  major: number;
+  cusps: number;
+};
+
+type ToothHit = RawTooth & { cls: ToothClass };
+
+/** 편측 한쪽. 구치에서 전치로. 빠진 치아는 칸만 건너뛴다. */
+const QUADRANT_TOOTH_TEMPLATE: readonly ToothClass[] = ["M", "M", "P", "P", "A", "A", "A"];
+
+function heightBuckets(cells: readonly CrownCell[]): Map<string, CrownCell[]> {
+  const map = new Map<string, CrownCell[]>();
+  for (const c of cells) {
+    const key = `${Math.round(c.xMm / 1.5)},${Math.round(c.yMm / 1.5)}`;
+    const list = map.get(key);
+    if (list) list.push(c);
+    else map.set(key, [c]);
+  }
+  return map;
+}
+
+function heightNear(map: Map<string, CrownCell[]>, x: number, y: number, radiusMm: number): number | null {
+  const gx = Math.round(x / 1.5);
+  const gy = Math.round(y / 1.5);
+  const r2 = radiusMm * radiusMm;
+  let best = -Infinity;
+  let found = false;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const list = map.get(`${gx + dx},${gy + dy}`);
+      if (!list) continue;
+      for (const c of list) {
+        const ddx = c.xMm - x;
+        const ddy = c.yMm - y;
+        if (ddx * ddx + ddy * ddy > r2) continue;
+        found = true;
+        if (c.hOccMm > best) best = c.hOccMm;
+      }
+    }
+  }
+  return found ? best : null;
+}
+
+/** 교합면이 끊기지 않으면 같은 치아의 봉우리다. 치아 사이 골이 비거나 내려가면 다른 치아다. */
+function ridgeHolds(
+  a: CrownCell,
+  b: CrownCell,
+  map: Map<string, CrownCell[]>,
+): boolean {
+  const dist = Math.hypot(a.xMm - b.xMm, a.yMm - b.yMm);
+  if (dist > 9) return false;
+  const steps = Math.max(1, Math.round(dist / 1.15));
+  let minH = Infinity;
+  for (let s = 1; s <= steps; s += 1) {
+    const t = s / (steps + 1);
+    const h = heightNear(map, a.xMm + (b.xMm - a.xMm) * t, a.yMm + (b.yMm - a.yMm) * t, 0.9);
+    if (h == null) return false;
+    if (h < minH) minH = h;
+  }
+  return Math.min(a.hOccMm, b.hOccMm) - minH < 1.45;
+}
+
+function localMaxima(cells: readonly CrownCell[]): CrownCell[] {
+  const heights = cells.map((c) => c.hOccMm).sort((a, b) => a - b);
+  const floor = quantileSorted(heights, 0.4);
+  const band = cells.filter((c) => c.hOccMm >= floor);
+  const maxima: CrownCell[] = [];
+  for (const c of band) {
+    let taller = false;
+    for (const o of band) {
+      if (o === c) continue;
+      if (Math.hypot(o.xMm - c.xMm, o.yMm - c.yMm) <= 3.3 && o.hOccMm > c.hOccMm + 0.18) {
+        taller = true;
+        break;
+      }
+    }
+    if (!taller) maxima.push(c);
+  }
+  maxima.sort((a, b) => b.hOccMm - a.hOccMm);
+  const kept: CrownCell[] = [];
+  for (const c of maxima) {
+    if (kept.some((k) => Math.hypot(k.xMm - c.xMm, k.yMm - c.yMm) < 2.35)) continue;
+    kept.push(c);
+    if (kept.length >= 48) break;
+  }
+  return kept;
+}
+
+function spanOnAxis(pts: readonly CrownCell[], ax: number, ay: number): number {
+  if (pts.length === 0) return 0;
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  const vals = pts.map((p) => (p.xMm - mx) * ax + (p.yMm - my) * ay).sort((a, b) => a - b);
+  return quantileSorted(vals, 0.9) - quantileSorted(vals, 0.1);
+}
+
+function toothAxes(pts: readonly CrownCell[]): { minor: number; major: number } {
+  if (pts.length < 3) return { minor: 0, major: 0 };
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const p of pts) {
+    const dx = p.xMm - mx;
+    const dy = p.yMm - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const a = spanOnAxis(pts, c, s);
+  const b = spanOnAxis(pts, -s, c);
+  return { minor: Math.min(a, b), major: Math.max(a, b) };
+}
+
+function countCusps(pts: readonly CrownCell[]): number {
+  const candidates: CrownCell[] = [];
+  for (const c of pts) {
+    const near: number[] = [];
+    for (const o of pts) {
+      if (Math.hypot(o.xMm - c.xMm, o.yMm - c.yMm) <= 4.2) near.push(o.hOccMm);
+    }
+    if (near.length < 3) continue;
+    near.sort((a, b) => a - b);
+    const base = quantileSorted(near, 0.45);
+    if (c.hOccMm >= base + 0.28) candidates.push(c);
+  }
+  candidates.sort((a, b) => b.hOccMm - a.hOccMm);
+  const kept: CrownCell[] = [];
+  for (const c of candidates) {
+    if (kept.some((k) => Math.hypot(k.xMm - c.xMm, k.yMm - c.yMm) < 2.7)) continue;
+    kept.push(c);
+    if (kept.length >= 6) break;
+  }
+  return kept.length;
+}
+
+function occlusalRelief(pts: readonly CrownCell[]): number {
+  if (pts.length === 0) return 0;
+  let top = -Infinity;
+  const hs: number[] = [];
+  for (const p of pts) {
+    hs.push(p.hOccMm);
+    if (p.hOccMm > top) top = p.hOccMm;
+  }
+  hs.sort((a, b) => a - b);
+  // 절치 교두는 칸이 하나라 상위 분위수는 평면에 남는다. 최고점과 중앙을 비교한다.
+  return top - quantileSorted(hs, 0.5);
+}
+
+/** 한 치아보다 긴 덩어리는 밀도 골에서 나눈다. 맞닿은 교합면이 한 덩어리로 붙은 경우다. */
+function splitWideTooth(pts: readonly CrownCell[], depth: number): Array<{ pts: CrownCell[] }> {
+  if (depth > 6 || pts.length < 10) return [{ pts: [...pts] }];
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const p of pts) {
+    const dx = p.xMm - mx;
+    const dy = p.yMm - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const spanA = spanOnAxis(pts, c, s);
+  const spanB = spanOnAxis(pts, -s, c);
+  const majorIsA = spanA >= spanB;
+  const ax = majorIsA ? c : -s;
+  const ay = majorIsA ? s : c;
+  const major = Math.max(spanA, spanB);
+  if (major < 12.8) return [{ pts: [...pts] }];
+
+  const proj = pts.map((p) => (p.xMm - mx) * ax + (p.yMm - my) * ay);
+  let minS = Infinity;
+  let maxS = -Infinity;
+  for (const v of proj) {
+    if (v < minS) minS = v;
+    if (v > maxS) maxS = v;
+  }
+  const binW = 1.5;
+  const nBins = Math.ceil((maxS - minS) / binW);
+  if (nBins < 4) return [{ pts: [...pts] }];
+  const counts = new Array<number>(nBins).fill(0);
+  for (const v of proj) {
+    const bin = Math.min(nBins - 1, Math.max(0, Math.floor((v - minS) / binW)));
+    counts[bin] = (counts[bin] ?? 0) + 1;
+  }
+  let bestAt = -1;
+  let bestScore = 0;
+  for (let i = 1; i < nBins - 1; i += 1) {
+    let leftPeak = 0;
+    let rightPeak = 0;
+    for (let k = 0; k < i; k += 1) leftPeak = Math.max(leftPeak, counts[k] ?? 0);
+    for (let k = i + 1; k < nBins; k += 1) rightPeak = Math.max(rightPeak, counts[k] ?? 0);
+    if (leftPeak < 3 || rightPeak < 3) continue;
+    // 점이 이어진 능선은 나누지 않는다. 치아 사이처럼 빈 칸이 있을 때만 자른다.
+    if ((counts[i] ?? 0) > 0) continue;
+    const score = Math.min(leftPeak, rightPeak) - (counts[i] ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestAt = i;
+    }
+  }
+  if (bestAt < 0) return [{ pts: [...pts] }];
+  const cut = minS + (bestAt + 0.5) * binW;
+  const left: CrownCell[] = [];
+  const right: CrownCell[] = [];
+  for (let i = 0; i < pts.length; i += 1) {
+    if ((proj[i] ?? 0) < cut) left.push(pts[i]!);
+    else right.push(pts[i]!);
+  }
+  if (left.length < 3 || right.length < 3) return [{ pts: [...pts] }];
+  return [...splitWideTooth(left, depth + 1), ...splitWideTooth(right, depth + 1)];
+}
+
+function segmentJawTeeth(cells: readonly CrownCell[]): { teeth: RawTooth[]; connectedSheet: boolean } {
+  if (cells.length < 8) return { teeth: [], connectedSheet: false };
+  const map = heightBuckets(cells);
+  const seeds = localMaxima(cells);
+  if (seeds.length === 0) return { teeth: [], connectedSheet: false };
+  const parent = seeds.map((_, i) => i);
+  const find = (i: number): number => {
+    let p = i;
+    for (let guard = parent.length; guard > 0 && parent[p] !== p; guard -= 1) p = parent[p]!;
+    return p;
+  };
+  for (let i = 0; i < seeds.length; i += 1) {
+    for (let j = i + 1; j < seeds.length; j += 1) {
+      if (!ridgeHolds(seeds[i]!, seeds[j]!, map)) continue;
+      const a = find(i);
+      const b = find(j);
+      if (a !== b) parent[a] = b;
+    }
+  }
+  const groups = new Map<number, CrownCell[]>();
+  for (let i = 0; i < seeds.length; i += 1) {
+    const root = find(i);
+    const list = groups.get(root);
+    if (list) list.push(seeds[i]!);
+    else groups.set(root, [seeds[i]!]);
+  }
+  const groupList = [...groups.values()];
+  const buckets: CrownCell[][] = groupList.map(() => []);
+  for (const c of cells) {
+    let best = -1;
+    let bestD = 6.4;
+    for (let g = 0; g < groupList.length; g += 1) {
+      for (const seed of groupList[g]!) {
+        const d = Math.hypot(c.xMm - seed.xMm, c.yMm - seed.yMm);
+        if (d < bestD) {
+          bestD = d;
+          best = g;
+        }
+      }
+    }
+    if (best >= 0) buckets[best]!.push(c);
+  }
+
+  type Blob = { pts: CrownCell[] };
+  let blobs: Blob[] = [];
+  for (let g = 0; g < groupList.length; g += 1) {
+    const pts = buckets[g]!;
+    if (pts.length < 3) continue;
+    blobs.push({ pts });
+  }
+  blobs = blobs.flatMap((blob) => splitWideTooth(blob.pts, 0));
+  const centroid = (pts: readonly CrownCell[]) => {
+    let x = 0;
+    let y = 0;
+    for (const p of pts) {
+      x += p.xMm;
+      y += p.yMm;
+    }
+    return { x: x / pts.length, y: y / pts.length };
+  };
+  const surfacesTouch = (a: readonly CrownCell[], b: readonly CrownCell[]) => {
+    const step = a.length > 80 ? 3 : 1;
+    for (let i = 0; i < a.length; i += step) {
+      const p = a[i]!;
+      for (const q of b) {
+        if (Math.hypot(p.xMm - q.xMm, p.yMm - q.yMm) < 1.5) return true;
+      }
+    }
+    return false;
+  };
+  for (let guard = blobs.length; guard > 0; guard -= 1) {
+    let merged = false;
+    outer: for (let i = 0; i < blobs.length; i += 1) {
+      const ci = centroid(blobs[i]!.pts);
+      for (let j = i + 1; j < blobs.length; j += 1) {
+        const cj = centroid(blobs[j]!.pts);
+        const close = Math.hypot(ci.x - cj.x, ci.y - cj.y) <= 6.2;
+        if (!close && !surfacesTouch(blobs[i]!.pts, blobs[j]!.pts)) continue;
+        blobs[i] = { pts: blobs[i]!.pts.concat(blobs[j]!.pts) };
+        blobs.splice(j, 1);
+        merged = true;
+        break outer;
+      }
+    }
+    if (!merged) break;
+  }
+
+  const out: RawTooth[] = [];
+  let connectedSheet = false;
+  for (const blob of blobs) {
+    const c = centroid(blob.pts);
+    const axes = toothAxes(blob.pts);
+    const area = blob.pts.length * 4;
+    const relief = occlusalRelief(blob.pts);
+    if (area < 14 || area > 155) continue;
+    if (axes.minor < 2.4) continue;
+    // 빈 칸 없이 이어진 치열은 치아로 나누지 않는다. 끝 폭 판별에 맡긴다.
+    if (axes.major > 16.8) {
+      connectedSheet = true;
+      continue;
+    }
+    // 구개·치은처럼 편평한 면은 치아가 아니다.
+    if (relief < 0.2) continue;
+    out.push({
+      x: c.x,
+      y: c.y,
+      area,
+      minor: axes.minor,
+      major: axes.major,
+      cusps: countCusps(blob.pts),
+    });
+  }
+  return { teeth: out, connectedSheet };
+}
+
+function classifyTeeth(raw: readonly RawTooth[]): ToothHit[] {
+  if (raw.length === 0) return [];
+  let maxArea = 0;
+  let maxMinor = 0;
+  for (const t of raw) {
+    if (t.area > maxArea) maxArea = t.area;
+    if (t.minor > maxMinor) maxMinor = t.minor;
+  }
+  return raw.map((t) => {
+    const rel = 0.55 * (t.area / maxArea) + 0.45 * (t.minor / Math.max(maxMinor, 0.001));
+    let cls: ToothClass;
+    if ((t.cusps >= 3 && rel >= 0.7) || (rel >= 0.82 && t.minor >= maxMinor * 0.75)) cls = "M";
+    else if (rel <= 0.52 || (t.cusps <= 1 && t.area <= maxArea * 0.5 && t.minor <= maxMinor * 0.72)) cls = "A";
+    else cls = "P";
+    return { ...t, cls };
+  });
+}
+
+function classCost(obs: ToothClass, slot: ToothClass): number {
+  if (obs === slot) return 0;
+  if ((obs === "M" && slot === "A") || (obs === "A" && slot === "M")) return 2.5;
+  return 1.05;
+}
+
+/** 관찰된 치아 줄을 편측 7칸의 부분 수열에 맞춘다. 앞쪽 빈 칸은 공짜(소구치부터 찍힌 스캔). */
+function templateCost(order: readonly ToothClass[]): number {
+  const n = order.length;
+  const m = QUADRANT_TOOTH_TEMPLATE.length;
+  const inf = 1e6;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => Array(m + 1).fill(inf));
+  for (let j = 0; j <= m; j += 1) dp[0]![j] = 0;
+  for (let i = 1; i <= n; i += 1) {
+    for (let j = 1; j <= m; j += 1) {
+      let best = inf;
+      for (let k = 0; k < j; k += 1) {
+        const prev = dp[i - 1]![k]!;
+        if (prev >= inf) continue;
+        const gaps = j - 1 - k;
+        const cost = prev + gaps * 0.4 + classCost(order[i - 1]!, QUADRANT_TOOTH_TEMPLATE[j - 1]!);
+        if (cost < best) best = cost;
+      }
+      dp[i]![j] = best;
+    }
+  }
+  let best = inf;
+  for (let j = 1; j <= m; j += 1) best = Math.min(best, dp[n]![j]!);
+  return best;
+}
+
+/** 뒤로 갈수록 치아가 커지면 벌점. 중절치가 측절치보다 조금 큰 정도는 넘긴다. */
+function sizeDisorder(order: readonly RawTooth[]): number {
+  let pen = 0;
+  for (let i = 0; i < order.length; i += 1) {
+    for (let j = i + 1; j < order.length; j += 1) {
+      const growth = order[j]!.area / Math.max(order[i]!.area, 1);
+      if (growth > 1.22) pen += Math.min(1.6, (growth - 1.22) * 2.2);
+    }
+  }
+  return pen;
+}
+
+function toothMajorAxis(teeth: readonly RawTooth[]): [number, number] | null {
+  if (teeth.length < 2) return null;
+  let mx = 0;
+  let my = 0;
+  for (const t of teeth) {
+    mx += t.x;
+    my += t.y;
+  }
+  mx /= teeth.length;
+  my /= teeth.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const t of teeth) {
+    const dx = t.x - mx;
+    const dy = t.y - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  if (xx + yy < 16) return null;
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const along = xx * c * c + 2 * xy * c * s + yy * s * s;
+  const across = xx * s * s - 2 * xy * c * s + yy * c * c;
+  return along >= across ? [c, s] : [-s, c];
+}
+
+function projectTeeth(teeth: readonly ToothHit[], ax: number, ay: number): ToothHit[] {
+  return [...teeth].sort((a, b) => a.x * ax + a.y * ay - (b.x * ax + b.y * ay));
+}
+
+/** 양쪽 끝이 가운데보다 크면 말굽이다. 편측 크기 규칙을 쓰지 않는다. */
+function bothEndsPosterior(sorted: readonly ToothHit[]): boolean {
+  if (sorted.length < 4) return false;
+  const mid = sorted[Math.floor(sorted.length / 2)]!;
+  return sorted[0]!.area > mid.area * 1.22 && sorted[sorted.length - 1]!.area > mid.area * 1.22;
+}
+
+function absorbOpposing(teeth: readonly ToothHit[]): ToothHit[] {
+  const used = new Array(teeth.length).fill(false);
+  const order = teeth.map((t, i) => ({ t, i })).sort((a, b) => b.t.area - a.t.area);
+  const out: ToothHit[] = [];
+  for (const row of order) {
+    if (used[row.i]) continue;
+    used[row.i] = true;
+    for (const other of order) {
+      if (used[other.i]) continue;
+      if (Math.hypot(other.t.x - row.t.x, other.t.y - row.t.y) <= 4.2) used[other.i] = true;
+    }
+    out.push(row.t);
+  }
+  return out;
+}
+
+function dropInternalSpecks(sorted: readonly ToothHit[]): ToothHit[] {
+  return sorted.filter((t, i) => {
+    if (i === 0 || i === sorted.length - 1) return true;
+    const prev = sorted[i - 1]!;
+    const next = sorted[i + 1]!;
+    const ref = Math.min(prev.area, next.area);
+    return !(t.cusps <= 1 && t.area < ref * 0.48 && t.minor < 4.6);
+  });
+}
+
+/**
+ * 편측에서 앞(전치) 방향.
+ * 큰 치아가 구치, 작은 치아가 전치다. 빠진 치아·부정교합은 7칸 맞춤으로 넘긴다.
+ * 치아가 안 나뉘거나 크기가 비슷하면 null. 그때는 끝 폭으로 돌아간다.
+ */
+function anteriorFromToothSizes(
+  upper: readonly CrownCell[],
+  lower: readonly CrownCell[],
+  e1: THREE.Vector3,
+  e2: THREE.Vector3,
+): THREE.Vector3 | null {
+  const upperSeg = segmentJawTeeth(upper);
+  const lowerSeg = segmentJawTeeth(lower);
+  if (upperSeg.connectedSheet || lowerSeg.connectedSheet) return null;
+  const pooled = absorbOpposing([
+    ...classifyTeeth(upperSeg.teeth),
+    ...classifyTeeth(lowerSeg.teeth),
+  ]);
+  const axis = toothMajorAxis(pooled);
+  if (!axis) return null;
+  let sorted = dropInternalSpecks(projectTeeth(pooled, axis[0], axis[1]));
+  if (sorted.length < 2 || bothEndsPosterior(sorted)) return null;
+  const refined = toothMajorAxis(sorted);
+  if (refined) sorted = dropInternalSpecks(projectTeeth(sorted, refined[0], refined[1]));
+  const dir = refined ?? axis;
+  if (sorted.length < 2 || bothEndsPosterior(sorted)) return null;
+
+  let maxArea = 0;
+  let minArea = Infinity;
+  for (const t of sorted) {
+    if (t.area > maxArea) maxArea = t.area;
+    if (t.area < minArea) minArea = t.area;
+  }
+  if (!(maxArea / Math.max(minArea, 1) >= 1.3)) return null;
+
+  const forward = sorted;
+  const backward = [...sorted].reverse();
+  const score = (order: readonly ToothHit[]) => templateCost(order.map((t) => t.cls)) + sizeDisorder(order);
+  const forwardScore = score(forward);
+  const backwardScore = score(backward);
+  if (!Number.isFinite(forwardScore) || !Number.isFinite(backwardScore)) return null;
+  let sign: 1 | -1 | 0 = 0;
+  if (forwardScore + 0.75 <= backwardScore) sign = 1;
+  else if (backwardScore + 0.75 <= forwardScore) sign = -1;
+  if (sign === 0) return null;
+
+  return new THREE.Vector3()
+    .addScaledVector(e1, dir[0] * sign)
+    .addScaledVector(e2, dir[1] * sign)
+    .normalize();
 }
 
 /** 치관 협설 폭·교합 봉우리로 장축의 전치 쪽을 고른다. */
@@ -844,7 +1389,7 @@ function anteriorFromCrownTaper(
 /**
  * 스캔 모델 전체를 파악해
  * 1) 치아(교합)와 잇몸(치은)으로 위(+up = 두개 쪽)를 잡고,
- * 2) 전치·구치로 앞(+anterior = 전치, 좁고 이어진 끝)과 뒤(구치, 넓거나 좌우로 갈라진 끝)를 잡은 뒤,
+ * 2) 전치·구치로 앞(+anterior = 전치)과 뒤(구치)를 잡은 뒤,
  * 3) 오른손 좌표계 { up, anterior, right }를 돌려준다. 메시 정점은 바꾸지 않는다.
  * 치아 큐브의 근심은 이 미드라인 쪽, 원심은 7번(제2대구치) 쪽이다.
  */

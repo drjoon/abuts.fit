@@ -119,6 +119,119 @@ test("편측 10·40번대는 구개가 전치 쪽에 넓어도 앞은 전치다"
   }
 });
 
+/**
+ * 편측 7칸. 앞(+X 근처)에 작은 전치 3개가 옆으로 퍼져 끝 폭은 대구치보다 넓다.
+ * 빠진 칸·부정교합(옆 밀림)이 있어도 큰 치아 쪽이 구치다.
+ */
+function unilateralSizedQuadrant(
+  zTooth: number,
+  zGum: number,
+  yaw: number,
+  opts?: { keep?: readonly number[]; shift?: readonly number[]; palate?: boolean },
+): number[] {
+  const out: number[] = [];
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const push = (x: number, y: number, z: number) => {
+    out.push(c * x - s * y, s * x + c * y, z);
+  };
+  const teeth = [
+    { x: -30, y: 0, md: 10.2, bl: 10.8, cusps: 4 },
+    { x: -16.5, y: 1, md: 9.8, bl: 10.4, cusps: 4 },
+    { x: -4, y: 1.4, md: 7, bl: 8.6, cusps: 2 },
+    { x: 6.5, y: 0.6, md: 6.8, bl: 8.2, cusps: 2 },
+    { x: 16, y: -7.5, md: 7, bl: 7, cusps: 1 },
+    { x: 21, y: 0.5, md: 6.2, bl: 5.6, cusps: 1 },
+    { x: 16.5, y: 9, md: 8, bl: 6.2, cusps: 1 },
+  ];
+  const keep = opts?.keep ?? [0, 1, 2, 3, 4, 5, 6];
+  const shift = opts?.shift ?? [];
+  for (const index of keep) {
+    const tooth = teeth[index];
+    if (!tooth) continue;
+    const x = tooth.x;
+    const y = tooth.y + (shift[index] ?? 0);
+    const hx = tooth.md / 2;
+    const hy = tooth.bl / 2;
+    for (let ix = -1; ix <= 1.001; ix += 0.28) {
+      for (let iy = -1; iy <= 1.001; iy += 0.28) {
+        if (ix * ix + iy * iy > 1) continue;
+        push(x + ix * hx, y + iy * hy, zTooth);
+        push(x + ix * hx * 0.55, y + iy * hy * 0.55, zGum);
+      }
+    }
+    const cuspZ = zTooth + Math.sign(zTooth - zGum) * 0.75;
+    const cuspAt = (cx: number, cy: number) => push(x + cx, y + cy, cuspZ);
+    if (tooth.cusps >= 4) {
+      cuspAt(-0.32 * tooth.md, -0.28 * tooth.bl);
+      cuspAt(-0.32 * tooth.md, 0.28 * tooth.bl);
+      cuspAt(0.32 * tooth.md, -0.28 * tooth.bl);
+      cuspAt(0.32 * tooth.md, 0.28 * tooth.bl);
+    } else if (tooth.cusps === 2) {
+      cuspAt(-0.36 * tooth.md, 0);
+      cuspAt(0.36 * tooth.md, 0);
+    } else {
+      cuspAt(0, 0);
+    }
+  }
+  if (opts?.palate) {
+    for (let i = 0; i <= 16; i += 1) {
+      for (let j = 0; j <= 14; j += 1) {
+        push(8 + i, -16 - j * 0.9, zGum + 1);
+      }
+    }
+  }
+  return out;
+}
+
+test("편측은 전치가 넓게 퍼져도 작은 치아 쪽이 앞이다", () => {
+  for (const yaw of [0, Math.PI * 0.4, Math.PI]) {
+    const frame = estimateDentalFrame([
+      cloud("upper", unilateralSizedQuadrant(16, 26, yaw, { palate: true })),
+      cloud("lower", unilateralSizedQuadrant(6, 0, yaw)),
+    ]);
+    assert.ok(frame, `yaw ${yaw}`);
+    const incisor = new THREE.Vector3(Math.cos(yaw), Math.sin(yaw), 0);
+    assert.ok(
+      frame!.anterior.dot(incisor) > 0.7,
+      `작은 전치가 앞이다 yaw=${yaw} dot=${frame!.anterior.dot(incisor)} ant=${frame!.anterior.toArray().join(",")}`,
+    );
+  }
+});
+
+test("편측은 빠진 치아와 부정교합이 있어도 큰 쪽이 구치다", () => {
+  const cases: Array<{ keep: number[]; shift: number[]; label: string }> = [
+    { keep: [1, 3, 4, 5], shift: [0, 3.2, -2.4, 4.1, -3.5, 2.2, -1.8], label: "대구·소구·전치 일부" },
+    { keep: [0, 1, 2], shift: [2.5, -3.4, 4.2, 0, 0, 0, 0], label: "구치만" },
+    { keep: [2, 3, 5, 6], shift: [-1, 2, -3.6, 3.1, 0, -2.8, 4.4], label: "소구치와 전치" },
+  ];
+  for (const row of cases) {
+    const frame = estimateDentalFrame([
+      cloud("upper", unilateralSizedQuadrant(16, 26, 0.6, { keep: row.keep, shift: row.shift })),
+      cloud("lower", unilateralSizedQuadrant(6, 0, 0.6, { keep: row.keep, shift: row.shift })),
+    ]);
+    assert.ok(frame, row.label);
+    const incisor = new THREE.Vector3(Math.cos(0.6), Math.sin(0.6), 0);
+    assert.ok(
+      frame!.anterior.dot(incisor) > 0.65,
+      `${row.label} dot=${frame!.anterior.dot(incisor)} ant=${frame!.anterior.toArray().join(",")}`,
+    );
+  }
+});
+
+test("하악 편측만 있어도 작은 치아 쪽이 앞이다", () => {
+  const frame = estimateDentalFrame([
+    cloud("lower", unilateralSizedQuadrant(8, 0, Math.PI * 0.5, { keep: [0, 2, 4, 6], shift: [0, 0, 3.5, 0, -4, 0, 2.5] })),
+  ]);
+  assert.ok(frame);
+  const incisor = new THREE.Vector3(Math.cos(Math.PI * 0.5), Math.sin(Math.PI * 0.5), 0);
+  assert.ok(
+    frame!.anterior.dot(incisor) > 0.65,
+    `하악 편측 dot=${frame!.anterior.dot(incisor)} ant=${frame!.anterior.toArray().join(",")}`,
+  );
+  assert.ok(frame!.up.z > 0.7, "하악 위쪽은 치아 쪽이다");
+});
+
 test("하악만 있어도 앞은 전치, 교합은 치아 쪽이다", () => {
   const frame = estimateDentalFrame([cloud("lower", horseshoe(8, 0, Math.PI))]);
   assert.ok(frame);
