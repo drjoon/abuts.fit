@@ -33,6 +33,8 @@
 // - 2026-11-24: 모델정렬 모드에서 모눈·십자선을 켜고, 미드라인·교합면을 맞춰 축을 확정한다.
 // - 2026-11-24: 헤더는 교합정렬·모델정렬·검볼만. 되돌리기·다시실행·초기값·페인트는 헤더에서 뺀다.
 // - 2026-11-24: 교합정렬·모델정렬은 독립. 한쪽을 바꿔도 기설정한 다른 쪽(jawPose/archFrame)은 덮지 않는다.
+// - 2026-11-24: 모델정렬 확인 후 카메라를 기본 뷰로 돌리지 않는다. 맞춘 시점의 화면을 유지한다.
+// - 2026-11-24: 바이트 정렬 확인 모달도 모델정렬과 같이 작업영역 하단 가운데에 둔다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -1193,9 +1195,9 @@ function restoreGeometryPositions(geometry: THREE.BufferGeometry, snap: Float32A
   geometry.computeBoundingSphere();
 }
 
-/** 바이트 자동 정렬 확인 — 모델 옆에 붙인다. */
+/** 바이트 자동 정렬 확인 — 모델정렬과 같이 작업영역 하단 가운데. */
 const BITE_GUIDE_CHROME_CLASS =
-  "pointer-events-none absolute right-[min(22vw,14rem)] top-1/2 z-30 -translate-y-1/2";
+  "pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3";
 
 /** 「다시 맞추기」최대 추가 횟수(첫 시도 포함하면 후보 5개). 저장 디자인이 없으면 먼저 묻는다. */
 const BITE_MANUAL_RETRY_MAX = 4;
@@ -4040,9 +4042,9 @@ export function PracticeCustomAbutmentPreviewDialog({
     const nextStatus = { kind: "ready" as const };
     statusRef.current = nextStatus;
     setStatus(nextStatus);
-    fitDefaultCamera();
+    // 맞춘 카메라 그대로 둔다. fitDefaultCamera로 기본 뷰로 점프하지 않는다.
     toast({ title: "모델정렬을 반영했습니다." });
-  }, [fitDefaultCamera, persistDesign, toast]);
+  }, [persistDesign, toast]);
 
   /** 이미 잡힌(또는 잘못된) 치아 스캔바디 위치를 다시 찍게 한다. */
   const startScanbodyRepick = useCallback(
@@ -9305,10 +9307,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                 <div
                   className={cn(
                     CONTENT_MEASURED_CHROME_CLASS,
-                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-3 py-2.5 text-left shadow-lg",
+                    "pointer-events-auto space-y-2 rounded-xl border border-primary/40 bg-background/95 px-4 py-3 text-center shadow-lg",
                   )}
                 >
-                  <p className="text-sm text-foreground">
+                  <p className="text-sm leading-relaxed text-foreground">
                     바이트 정렬되었나요?
                     {status.attempt > 0 ? (
                       <>
@@ -9320,7 +9322,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                       </>
                     ) : null}
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex justify-center gap-2">
                     {status.canRetry ? (
                       <Button
                         type="button"
