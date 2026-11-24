@@ -3981,6 +3981,20 @@ export function PracticeCustomAbutmentPreviewDialog({
         mdPickRef.current.resolve(false);
         mdPickRef.current = null;
       }
+      // 클릭 대상인 악 스캔이 가려져 있으면 픽이 불가능하다. 픽 동안은 무조건 켠다.
+      const hasUpper =
+        jawMeshesRef.current.upperTrimmed.length + jawMeshesRef.current.upperScanbody.length > 0;
+      const hasLower =
+        jawMeshesRef.current.lowerTrimmed.length + jawMeshesRef.current.lowerScanbody.length > 0;
+      for (const m of [
+        ...jawMeshesRef.current.upperTrimmed,
+        ...jawMeshesRef.current.lowerTrimmed,
+      ]) {
+        m.visible = true;
+      }
+      if (hasUpper || hasLower) {
+        setVisibleJaws({ upper: hasUpper, lower: hasLower });
+      }
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       const host = hostRef.current;
@@ -5941,6 +5955,15 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ? designContextRef.current.fixtures
                 : jawJobs.flatMap((job) => job.fixtures)) ?? [];
             if (orientFixtures.length > 0 && frameRef.current) {
+              // rebuildJawScanMeshes는 rawJawScansRef만 본다. 이 시점(본문 6202 전)엔
+              // 비어 있을 수 있어, 근원심 픽·교합 확인 전에 스캔을 먼저 올린다.
+              if (rawJawScansRef.current.length === 0) {
+                rawJawScansRef.current = jawScans.map((scan) => ({
+                  jaw: scan.role as "upper" | "lower",
+                  geometry: scan.geometry,
+                  texture: scan.texture,
+                }));
+              }
               if (
                 upperScans.length > 0 &&
                 jawMeshesRef.current.upperTrimmed.length === 0
@@ -5961,6 +5984,10 @@ export function PracticeCustomAbutmentPreviewDialog({
                   true,
                 );
               }
+              setVisibleJaws({
+                upper: upperScans.length > 0,
+                lower: lowerScans.length > 0,
+              });
               const oriented = await ensureArchMdBlOrPickRef.current(
                 frameRef.current,
                 orientFixtures,
