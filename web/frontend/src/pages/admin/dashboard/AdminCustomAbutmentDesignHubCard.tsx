@@ -4,6 +4,8 @@
 // - web/backend/controllers/admin/admin.aiDesignChatUsage.controller.js
 // - web/backend/controllers/admin/admin.aiDesignGap.controller.js
 // - web/backend/controllers/admin/admin.abutmentDesignLogic.controller.js
+// change-log:
+// - 2026-11-25: 60초 폴링 제거. 대시보드를 열 때 한 번만 조회.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
@@ -160,8 +162,9 @@ export function AdminCustomAbutmentDesignHubCard({
       }
       return res.data.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const gapQuery = useQuery({
@@ -177,8 +180,9 @@ export function AdminCustomAbutmentDesignHubCard({
       }
       return res.data.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const logicQuery = useQuery({
@@ -194,8 +198,9 @@ export function AdminCustomAbutmentDesignHubCard({
       }
       return res.data.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const reviewGap = useMutation({

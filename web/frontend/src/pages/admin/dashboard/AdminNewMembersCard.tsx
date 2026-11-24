@@ -3,6 +3,7 @@
 // - web/backend/controllers/admin/admin.newMembers.controller.js
 // change-log:
 // - 2026-10-26: 가입 후 7일간 신규 회원을 관리자 대시보드에 표시.
+// - 2026-11-25: 60초 폴링 제거. 대시보드를 열 때 한 번만 조회.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { UserPlus } from "lucide-react";
@@ -77,8 +78,9 @@ export function AdminNewMembersCard({
       }
       return res.data.data;
     },
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const members = query.data?.members || [];

@@ -37,28 +37,34 @@ const fmt = (iso: string) =>
 export function AdminPopbillPointCard({ enabled = true, className }: Props) {
   const [data, setData] = useState<PointData | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const chargePollRef = useRef<number | null>(null);
 
   const load = useCallback(async (force = false) => {
     if (!enabled) return;
-    const next = await loadOnce(
-      "admin:popbill-point",
-      ADMIN_SNAPSHOT_TTL_MS,
-      async () => {
-        try {
-          const res = await request<{ data?: PointData }>({
-            path: force ? "/api/admin/popbill/point?fresh=1" : "/api/admin/popbill/point",
-            method: "GET",
-          });
-          if (!res.ok) return null;
-          return res.data?.data || null;
-        } catch {
-          return null;
-        }
-      },
-      force,
-    );
-    if (next) setData(next);
+    setLoading(true);
+    try {
+      const next = await loadOnce(
+        "admin:popbill-point",
+        ADMIN_SNAPSHOT_TTL_MS,
+        async () => {
+          try {
+            const res = await request<{ data?: PointData }>({
+              path: force ? "/api/admin/popbill/point?fresh=1" : "/api/admin/popbill/point",
+              method: "GET",
+            });
+            if (!res.ok) return null;
+            return res.data?.data || null;
+          } catch {
+            return null;
+          }
+        },
+        force,
+      );
+      if (next) setData(next);
+    } finally {
+      setLoading(false);
+    }
   }, [enabled]);
 
   useEffect(() => {
@@ -88,14 +94,17 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
       else window.location.href = url;
       if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
       const started = Date.now();
+      // 충전 창이 열린 동안만 잔액 확인. 최대 3분·창 닫힘 후 1회.
+      let ticks = 0;
+      const maxTicks = 22; // 8초 × 22 ≈ 3분
       chargePollRef.current = window.setInterval(() => {
+        ticks += 1;
         void load(true);
         const closed = !win || win.closed;
-        const elapsed = Date.now() - started;
-        if ((closed && elapsed > 12_000) || elapsed > 3 * 60 * 1000) {
+        if (closed || ticks >= maxTicks) {
           if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
           chargePollRef.current = null;
-          void load(true);
+          if (!closed) void load(true);
         }
       }, 8_000);
     } finally {
@@ -114,6 +123,7 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
       className={className}
       title="팝빌 포인트"
       icon={<Coins className="h-4 w-4 text-muted-foreground" />}
+      onClick={() => void load(true)}
       extra={
         showCharge ? (
           <button
@@ -140,7 +150,9 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
           className={`truncate text-[11px] ${shortage ? "text-rose-600" : "text-muted-foreground"}`}
         >
           {!data
-            ? "불러오는 중…"
+            ? loading
+              ? "불러오는 중…"
+              : "—"
             : !data.configured
               ? "팝빌 미설정"
               : data.shortage

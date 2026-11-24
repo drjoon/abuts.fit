@@ -84,27 +84,33 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
   const [data, setData] = useState<HeldData | null>(null);
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async (force = false) => {
     if (!enabled) return;
-    const next = await loadOnce(
-      "admin:sms-held",
-      ADMIN_SNAPSHOT_TTL_MS,
-      async () => {
-        try {
-          const res = await request<{ data?: HeldData }>({
-            path: "/api/admin/sms/held",
-            method: "GET",
-          });
-          if (!res.ok) return null;
-          return res.data?.data || null;
-        } catch {
-          return null;
-        }
-      },
-      force,
-    );
-    if (next) setData(next);
+    setLoading(true);
+    try {
+      const next = await loadOnce(
+        "admin:sms-held",
+        ADMIN_SNAPSHOT_TTL_MS,
+        async () => {
+          try {
+            const res = await request<{ data?: HeldData }>({
+              path: "/api/admin/sms/held",
+              method: "GET",
+            });
+            if (!res.ok) return null;
+            return res.data?.data || null;
+          } catch {
+            return null;
+          }
+        },
+        force,
+      );
+      if (next) setData(next);
+    } finally {
+      setLoading(false);
+    }
   }, [enabled]);
 
   useEffect(() => {
@@ -151,16 +157,20 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
         tone={pending > 0 ? "danger" : "default"}
         icon={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
         onClick={() => {
-          void load(true);
           setOpen(true);
+          void load(true);
         }}
       >
         <div className="flex min-h-full flex-col justify-end gap-0.5">
           <DashBigNumber value={pending.toLocaleString()} unit="묶음" />
           <p className="truncate text-[11px] text-muted-foreground">
-            {pending > 0
-              ? `${(data?.recipientCount || 0).toLocaleString()}명 · 확인 후 발송`
-              : "막힌 문자 없음"}
+            {!data
+              ? loading
+                ? "불러오는 중…"
+                : "—"
+              : pending > 0
+                ? `${(data.recipientCount || 0).toLocaleString()}명 · 확인 후 발송`
+                : "막힌 문자 없음"}
           </p>
         </div>
       </DashTile>
@@ -177,7 +187,11 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            {pending === 0 ? (
+            {loading && !data ? (
+              <div className="mx-1.5 my-6 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-muted-foreground">
+                불러오는 중…
+              </div>
+            ) : pending === 0 ? (
               <div className="mx-1.5 my-6 rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-muted-foreground">
                 보류된 문자가 없습니다.
               </div>

@@ -52,22 +52,33 @@ function statusLines(text: string) {
 export function AdminPopbillBankCard({ enabled = true, className }: Props) {
   const [data, setData] = useState<BankData | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!enabled) return;
-    const next = await loadOnce("admin:popbill-bank", ADMIN_SNAPSHOT_TTL_MS, async () => {
-      try {
-        const res = await request<{ data?: BankData }>({
-          path: "/api/admin/popbill/bank",
-          method: "GET",
-        });
-        if (!res.ok) return null;
-        return res.data?.data || null;
-      } catch {
-        return null;
-      }
-    });
-    if (next) setData(next);
+    setLoading(true);
+    try {
+      const next = await loadOnce(
+        "admin:popbill-bank",
+        ADMIN_SNAPSHOT_TTL_MS,
+        async () => {
+          try {
+            const res = await request<{ data?: BankData }>({
+              path: "/api/admin/popbill/bank",
+              method: "GET",
+            });
+            if (!res.ok) return null;
+            return res.data?.data || null;
+          } catch {
+            return null;
+          }
+        },
+        force,
+      );
+      if (next) setData(next);
+    } finally {
+      setLoading(false);
+    }
   }, [enabled]);
 
   useEffect(() => {
@@ -111,7 +122,8 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
 
   const statusHint = (() => {
     if (busy) return "조회 요청 중…";
-    if (!data) return "불러오는 중…";
+    if (loading && !data) return "불러오는 중…";
+    if (!data) return "—";
     if (!data.configured) return "팝빌 연동 없음";
     if (data.error) {
       const parts = statusLines(data.error);
@@ -127,6 +139,7 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
       className={className}
       title={`${data?.bankName || "하나은행"} 잔액`}
       icon={<Landmark className="h-4 w-4 text-muted-foreground" />}
+      onClick={() => void load(true)}
       extra={
         data?.configured ? (
           <button
