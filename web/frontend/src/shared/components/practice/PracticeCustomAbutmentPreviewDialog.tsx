@@ -6381,6 +6381,29 @@ export function PracticeCustomAbutmentPreviewDialog({
               description: "어벗 정보에서 위치를 다시 지정하세요.",
             });
           }
+          // 저장된 디자인은 교합 확인을 건너뛰므로, 여기서 근원심이 안 잡히면 클릭을 받는다.
+          const readyFixtures = designContextRef.current?.fixtures ?? [];
+          if (!deferOcclusionConfirm && !readOnly && frameRef.current && readyFixtures.length > 0) {
+            const oriented = await ensureArchMdBlOrPickRef.current(
+              frameRef.current,
+              readyFixtures,
+              jawScans.map((scan) => scan.geometry),
+            );
+            if (cancelled) return;
+            frame = oriented.frame;
+            frameRef.current = oriented.frame;
+            if (oriented.axes) {
+              sessionArchFrame = oriented.axes;
+              archOriented = true;
+              if (designContextRef.current) {
+                designContextRef.current = {
+                  ...designContextRef.current,
+                  archFrame: oriented.axes,
+                };
+              }
+            }
+            setFrameEpoch((n) => n + 1);
+          }
           setStatus({ kind: "ready" });
           const pendingRemote = pendingRemoteMetaRef.current;
           const pendingNewer = Boolean(

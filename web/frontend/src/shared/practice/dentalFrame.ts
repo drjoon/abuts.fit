@@ -277,16 +277,9 @@ export function resolveArchMdBlOrientation(
             distalOnPlus -= 1;
             asymmetry += minusNear.w / Math.max(plusNear.w, 1);
           }
-        } else if (plusNear && !minusNear && plusNear.w >= 34) {
-          decided = true;
-          distalOnPlus += 1;
-          asymmetry += 1.2;
-        } else if (minusNear && !plusNear && minusNear.w >= 34) {
-          decided = true;
-          distalOnPlus -= 1;
-          asymmetry += 1.2;
         }
       }
+      // 한쪽만 치아가 있으면(원심 대구치 결손) 그 치아를 원심으로 보지 않는다.
       // 옆 치아가 약하면 줄 양 끝 크기: 큰 쪽=원심.
       if (!decided && span >= 10 && parsed.length > 0) {
         const mark0 = parsed[0]!;
@@ -320,6 +313,43 @@ export function resolveArchMdBlOrientation(
           asymmetry += Math.max(hiBest, loBest) / Math.max(Math.min(hiBest, loBest), 1);
           if (hiBest > loBest) distalOnPlus += 1;
           else distalOnPlus -= 1;
+        }
+      }
+      // 결손 대구치: 전치(작은 단면)가 있는 쪽이 근심.
+      if (!decided && parsed.length > 0 && teeth.length >= 3) {
+        const mark0 = parsed[0]!;
+        const mdx = (mark0.point[0]! - mean.x) * toMm;
+        const mdy = (mark0.point[1]! - mean.y) * toMm;
+        const mdz = (mark0.point[2]! - mean.z) * toMm;
+        const rowAcross =
+          (mdx * e1.x + mdy * e1.y + mdz * e1.z) * rx +
+          (mdx * e2.x + mdy * e2.y + mdz * e2.z) * ry;
+        let aAlong = 0;
+        let aN = 0;
+        let postAlong = 0;
+        let postN = 0;
+        for (let ti = 0; ti < teeth.length; ti += 1) {
+          const across = teeth[ti]!.x * rx + teeth[ti]!.y * ry;
+          if (Math.abs(across - rowAcross) > 6) continue;
+          const along = toothAlongs[ti]!;
+          if (teeth[ti]!.cls === "A") {
+            aAlong += along;
+            aN += 1;
+          } else {
+            postAlong += along;
+            postN += 1;
+          }
+        }
+        if (aN >= 1 && postN >= 1) {
+          const aMean = aAlong / aN;
+          const pMean = postAlong / postN;
+          if (pMean > aMean + 4) {
+            decided = true;
+            distalOnPlus += 1;
+          } else if (aMean > pMean + 4) {
+            decided = true;
+            distalOnPlus -= 1;
+          }
         }
       }
       if (decided && distalOnPlus !== 0) signalA = distalOnPlus > 0 ? 1 : -1;
@@ -364,39 +394,9 @@ export function resolveArchMdBlOrientation(
         }
       }
     }
-    if (fdiHits > 0 && fdiOnPlus !== 0) {
-      signalB = fdiOnPlus > 0 ? 1 : -1;
-    } else if (parsed.length >= 1) {
-      const only = parsed[0]!;
-      const origin = pointAlong(only.point, ax);
-      const alongs: number[] = [];
-      if (teeth.length >= 2) {
-        for (const t of teeth) alongs.push(t.x * ax[0] + t.y * ax[1]);
-      } else {
-        for (const p of pts) {
-          const dx = (p[0] - mean.x) * toMm;
-          const dy = (p[1] - mean.y) * toMm;
-          const dz = (p[2] - mean.z) * toMm;
-          const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
-          const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
-          alongs.push(xMm * ax[0] + yMm * ax[1]);
-        }
-      }
-      alongs.sort((a, b) => a - b);
-      if (alongs.length >= 8) {
-        const lo = alongs[Math.floor(alongs.length * 0.08)]!;
-        const hi = alongs[Math.min(alongs.length - 1, Math.floor(alongs.length * 0.92))]!;
-        const archSpan = hi - lo;
-        if (archSpan >= 8) {
-          const u = (origin - lo) / archSpan;
-          const expectedU = (8.5 - only.pos) / 7;
-          const errPlusIsAnt = Math.abs(u - expectedU);
-          const errMinusIsAnt = Math.abs(1 - u - expectedU);
-          if (errMinusIsAnt + 0.1 < errPlusIsAnt) signalB = 1;
-          else if (errPlusIsAnt + 0.1 < errMinusIsAnt) signalB = -1;
-        }
-      }
-    }
+    // 픽스처가 둘 이상일 때만 FDI 순서를 쓴다.
+    // 치아 하나인 편악은 장축 위 상대 위치가 잘린 스캔에서 부호가 뒤집힌다.
+    if (fdiHits > 0 && fdiOnPlus !== 0) signalB = fdiOnPlus > 0 ? 1 : -1;
 
     const seedAlign = Math.abs(ax[0] * seedAxis[0] + ax[1] * seedAxis[1]);
     const score =
@@ -407,17 +407,13 @@ export function resolveArchMdBlOrientation(
   };
 
   const scored = [scoreMdAxis(major), scoreMdAxis(minor)];
-  let bestIdx = scored[0]!.score >= scored[1]!.score ? 0 : 1;
-  if (Math.abs(scored[0]!.score - scored[1]!.score) < 0.6) {
+  // 치아 중심이 길게 늘어선 쪽이 근원심이다.
+  // 구개·잇몸처럼 짧은 축의 크기 투표가 더 커도 축을 바꾸지 않는다.
+  let bestIdx = (scored[0]?.span ?? 0) >= (scored[1]?.span ?? 0) ? 0 : 1;
+  if (Math.abs((scored[0]?.span ?? 0) - (scored[1]?.span ?? 0)) < 4) {
     const a0 = Math.abs(major[0] * seedAxis[0] + major[1] * seedAxis[1]);
     const a1 = Math.abs(minor[0] * seedAxis[0] + minor[1] * seedAxis[1]);
     bestIdx = a0 >= a1 ? 0 : 1;
-  }
-  // 인접치(A)가 잡힌 축을 우선한다(협설 후보가 점수만 높을 때).
-  const usable = (row: (typeof scored)[number]) =>
-    row.signalA !== 0 && (row.signalB === 0 || row.signalB === row.signalA);
-  if (usable(scored[0]!) !== usable(scored[1]!)) {
-    bestIdx = usable(scored[0]!) ? 0 : 1;
   }
   const axis = bestIdx === 0 ? major : minor;
   const best = scored[bestIdx]!;

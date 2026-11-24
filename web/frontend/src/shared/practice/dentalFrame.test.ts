@@ -320,7 +320,7 @@ test("근심·원심 클릭으로 앞 축을 맞춘다", () => {
 });
 
 test("인접치와 FDI 부호가 충돌하면 확정하지 않는다", () => {
-  // −X에 큰 치아(원심 후보)인데 FDI #17은 장축 앞쪽에 있어 B가 반대 부호를 낸다.
+  // −X가 큰 치아인데, 픽스처 번호는 +X 쪽이 더 구치(#16)다.
   const pts: Array<[number, number, number]> = [];
   const addBlob = (cx: number, cy: number, rx: number, ry: number, step: number) => {
     for (let x = -rx; x <= rx; x += step) {
@@ -331,12 +331,40 @@ test("인접치와 FDI 부호가 충돌하면 확정하지 않는다", () => {
     }
   };
   addBlob(-8, 0, 4.5, 3.8, 0.55);
-  addBlob(4, 0, 2.0, 1.8, 0.55);
-  for (let x = -12; x <= 10; x += 0.7) pts.push([x, 0.05, 15.5]);
-  const mark = [{ toothNumber: "17", point: [6, 0, 16] as const }];
-  const resolved = resolveArchMdBlOrientation(axisFrame(1), mark, pts);
+  addBlob(8, 0, 2.0, 1.8, 0.55);
+  for (let x = -14; x <= 14; x += 0.7) pts.push([x, 0.05, 15.5]);
+  const marks = [
+    { toothNumber: "14", point: [-8, 0, 16] as const },
+    { toothNumber: "16", point: [8, 0, 16] as const },
+  ];
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), marks, pts);
   assert.equal(resolved.confirmed, false);
   assert.ok(resolved.pickToothNumber);
+});
+
+test("원심 대구치가 없고 구개가 넓어도 치아 줄이 근원심이다", () => {
+  // #15 자리(index 3). 대구치(0·1)는 없고, 앞니는 +X. 구개 플랩이 협설로 넓다.
+  const coords = unilateralSizedQuadrant(16, 24, 0, {
+    keep: [2, 3, 4, 5, 6],
+    palate: true,
+  });
+  const pts: Array<[number, number, number]> = [];
+  for (let i = 0; i + 2 < coords.length; i += 3) {
+    pts.push([coords[i]!, coords[i + 1]!, coords[i + 2]!]);
+  }
+  const mark = [{ toothNumber: "15", point: [6.5, 0.6, 16] as const }];
+  const seededBl = {
+    up: new THREE.Vector3(0, 0, 1),
+    anterior: new THREE.Vector3(0, 1, 0),
+    right: new THREE.Vector3(-1, 0, 0),
+  };
+  const resolved = resolveArchMdBlOrientation(seededBl, mark, pts);
+  assert.equal(resolved.confirmed, true);
+  assert.ok(
+    resolved.frame.anterior.x > 0.55,
+    `전치(+X)가 근심 (got ${resolved.frame.anterior.toArray().join(",")})`,
+  );
+  assert.ok(Math.abs(resolved.frame.anterior.y) < 0.55, "앞이 구개(협설)로 서지 않는다");
 });
 
 test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
