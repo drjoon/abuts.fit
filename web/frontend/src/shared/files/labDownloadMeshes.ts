@@ -105,16 +105,17 @@ function texturePixels(
   if (!ctx) return null;
   try {
     ctx.drawImage(image, 0, 0);
+    const pixels = {
+      data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+      width: canvas.width,
+      height: canvas.height,
+    };
+    cache.set(image, pixels);
+    return pixels;
   } catch {
+    // CORS·비-Canvas 이미지·캔버스 한도 — 버텍스/재질 색으로 대체한다.
     return null;
   }
-  const pixels = {
-    data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
-    width: canvas.width,
-    height: canvas.height,
-  };
-  cache.set(image, pixels);
-  return pixels;
 }
 
 /** 프리뷰와 같다. 텍스처가 있으면 그걸, 없으면 버텍스 칼라, 둘 다 없으면 재질색. */

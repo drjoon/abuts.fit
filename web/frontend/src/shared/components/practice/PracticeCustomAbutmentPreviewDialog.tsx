@@ -120,6 +120,7 @@ import {
   encodeLabMeshData,
   meshesToLabMeshData,
 } from "@/shared/files/labDownloadMeshes";
+import { zipStoreBlobs } from "@/shared/files/zipStoreBlobs";
 import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
@@ -9329,10 +9330,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         toast({ title: "받을 스캔이 없습니다." });
         return;
       }
-      const { default: JSZip } = await import("jszip");
-      const zip = new JSZip();
-      for (const file of packed) zip.file(file.name, file.blob);
-      const blob = await zip.generateAsync({ type: "blob" });
+      // jszip 동적 import는 Vite optimizeDeps 캐시가 비면 SPA HTML을 받아 실패한다.
+      // 소수 파일이라 비압축 ZIP으로 묶어 같은 클릭에서 바로 받는다.
+      const blob = await zipStoreBlobs(packed);
       saveBlobAsDownload(blob, `${crownScanStem(patientName, "크라운작업")}.zip`);
       if (biteMissing) toast({ title: "바이트 스캔을 넣지 못했습니다." });
     } catch (err) {

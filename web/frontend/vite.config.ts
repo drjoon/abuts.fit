@@ -110,7 +110,7 @@ export default defineConfig(({ mode }) => {
       // 이미 immutable로 박힌 옛 ?v= URL만 버린다.
       esbuildOptions: {
         define: {
-          __ABUTS_OPTIMIZE_DEPS_REV__: '"3"',
+          __ABUTS_OPTIMIZE_DEPS_REV__: '"4"',
         },
       },
     },
