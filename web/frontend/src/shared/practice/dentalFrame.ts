@@ -75,6 +75,110 @@ export function dentalFrameFromStored(raw: StoredArchFrame | null | undefined): 
   return { up, anterior, right: expect };
 }
 
+export type AbutmentArchMark = {
+  toothNumber: string;
+  /** 픽스처 플랫폼 원점. 악궁 장축에 투영한다. */
+  point: readonly [number, number, number];
+};
+
+function fdiQuadrantPos(toothNumber: string): { quadrant: number; pos: number } | null {
+  const digits = String(toothNumber || "").replace(/\D/g, "");
+  if (!/^[1-4][1-8]$/.test(digits)) return null;
+  return { quadrant: Number(digits[0]), pos: Number(digits[1]) };
+}
+
+function percentileOf(sorted: readonly number[], p: number) {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)));
+  return sorted[idx] ?? 0;
+}
+
+/**
+ * 스캔바디 픽스처와 어벗 FDI로 앞(+anterior = 전치) 부호만 고친다.
+ * 같은 사분악에서 번호가 작을수록 전치(근심)다.
+ * 치아가 하나면 악궁 점구름의 장축 위 상대 위치와 FDI 칸을 비교한다.
+ * 사분악 표가 갈리면 메시가 잡은 부호를 유지한다.
+ */
+export function orientAnteriorFromAbutmentFdi(
+  frame: DentalFrame,
+  marks: readonly AbutmentArchMark[],
+  archPoints: readonly (readonly [number, number, number])[],
+): DentalFrame {
+  const up = frame.up.clone().normalize();
+  const anterior = frame.anterior.clone();
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-8) return frame;
+  anterior.normalize();
+
+  const project = (p: readonly [number, number, number]) =>
+    p[0] * anterior.x + p[1] * anterior.y + p[2] * anterior.z;
+
+  const parsed: Array<{ quadrant: number; pos: number; proj: number }> = [];
+  for (const mark of marks) {
+    const fdi = fdiQuadrantPos(mark.toothNumber);
+    if (!fdi || !mark.point || mark.point.length < 3) continue;
+    const proj = project(mark.point);
+    if (!Number.isFinite(proj)) continue;
+    parsed.push({ ...fdi, proj });
+  }
+  if (parsed.length === 0) return frame;
+
+  const byQuad = new Map<number, typeof parsed>();
+  for (const row of parsed) {
+    const list = byQuad.get(row.quadrant);
+    if (list) list.push(row);
+    else byQuad.set(row.quadrant, [row]);
+  }
+
+  const samples: number[] = [];
+  for (const p of archPoints) {
+    if (!p || p.length < 3) continue;
+    const proj = project(p);
+    if (Number.isFinite(proj)) samples.push(proj);
+  }
+  samples.sort((a, b) => a - b);
+  const lo = percentileOf(samples, 0.08);
+  const hi = percentileOf(samples, 0.92);
+  const span = hi - lo;
+
+  let flipVotes = 0;
+  let keepVotes = 0;
+  for (const group of byQuad.values()) {
+    if (group.length >= 2) {
+      let score = 0;
+      for (let i = 0; i < group.length; i += 1) {
+        for (let j = i + 1; j < group.length; j += 1) {
+          const a = group[i]!;
+          const b = group[j]!;
+          const dPos = a.pos - b.pos;
+          const dProj = a.proj - b.proj;
+          if (dPos === 0 || Math.abs(dProj) < 0.4) continue;
+          // 번호가 작은 쪽이 장축 +anterior(전치)에 있어야 한다.
+          score += dPos * dProj < 0 ? 1 : -1;
+        }
+      }
+      if (score > 0) keepVotes += 1;
+      else if (score < 0) flipVotes += 1;
+      continue;
+    }
+    const only = group[0]!;
+    if (samples.length < 12 || span < 8) continue;
+    // 0 = 현재 축의 뒤쪽 끝, 1 = 앞(+anterior) 끝.
+    const u = (only.proj - lo) / span;
+    const expectedU = (8.5 - only.pos) / 7;
+    const errKeep = Math.abs(u - expectedU);
+    const errFlip = Math.abs(1 - u - expectedU);
+    if (errFlip + 0.12 < errKeep) flipVotes += 1;
+    else if (errKeep + 0.12 < errFlip) keepVotes += 1;
+  }
+
+  if (flipVotes <= keepVotes) return frame;
+  anterior.negate();
+  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
+  if (right.lengthSq() < 1e-8) return frame;
+  return { up, anterior, right };
+}
+
 type Pt3 = [number, number, number];
 
 export function samplePositions(geometry: THREE.BufferGeometry, cap: number): Pt3[] {

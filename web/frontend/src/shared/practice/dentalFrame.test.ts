@@ -2,7 +2,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { archFrameAxes, dentalFrameFromStored, estimateDentalFrame, type FrameMesh } from "./dentalFrame";
+import {
+  archFrameAxes,
+  dentalFrameFromStored,
+  estimateDentalFrame,
+  orientAnteriorFromAbutmentFdi,
+  type DentalFrame,
+  type FrameMesh,
+} from "./dentalFrame";
 
 function cloud(role: "upper" | "lower", coords: number[]): FrameMesh {
   const geometry = new THREE.BufferGeometry();
@@ -253,4 +260,50 @@ test("말굽을 돌려도 앞은 전치, 위는 두개 쪽이다", () => {
     const right = new THREE.Vector3().crossVectors(frame!.anterior, frame!.up);
     assert.ok(frame!.right.dot(right) > 0.9, "오른쪽은 앞×위");
   }
+});
+
+function lineArch(from: number, to: number, n = 40): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = i / (n - 1);
+    out.push([from + (to - from) * t, 0, 0]);
+  }
+  return out;
+}
+
+function axisFrame(anteriorX: number): DentalFrame {
+  return {
+    up: new THREE.Vector3(0, 0, 1),
+    anterior: new THREE.Vector3(anteriorX, 0, 0),
+    right: new THREE.Vector3(0, anteriorX, 0),
+  };
+}
+
+test("같은 사분악에서 번호가 작은 픽스처가 전치 쪽이다", () => {
+  const cloud = lineArch(-24, 24);
+  const marks = [
+    { toothNumber: "14", point: [10, 0, 0] as const },
+    { toothNumber: "16", point: [-12, 0, 0] as const },
+  ];
+  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), marks, cloud);
+  assert.ok(kept.anterior.x > 0.9, "14가 16보다 앞이면 +X를 유지한다");
+  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), marks, cloud);
+  assert.ok(flipped.anterior.x > 0.9, "뒤집힌 축은 작은 번호 쪽으로 되돌린다");
+  const right = new THREE.Vector3().crossVectors(flipped.anterior, flipped.up);
+  assert.ok(flipped.right.dot(right) > 0.9);
+});
+
+test("치아 하나여도 악궁 장축 위 위치로 앞뒤를 고른다", () => {
+  const cloud = lineArch(-24, 24);
+  const molar = [{ toothNumber: "16", point: [-14, 0, 0] as const }];
+  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), molar, cloud);
+  assert.ok(kept.anterior.x > 0.9, "대구치는 장축의 뒤쪽에 있다");
+  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), molar, cloud);
+  assert.ok(flipped.anterior.x > 0.9, "대구치가 앞쪽에 있으면 축을 뒤집는다");
+
+  const incisor = [{ toothNumber: "13", point: [16, 0, 0] as const }];
+  const incisorKept = orientAnteriorFromAbutmentFdi(axisFrame(1), incisor, cloud);
+  assert.ok(incisorKept.anterior.x > 0.9, "전치는 장축의 앞쪽에 있다");
+  const incisorFlipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), incisor, cloud);
+  assert.ok(incisorFlipped.anterior.x > 0.9, "전치가 뒤쪽에 있으면 축을 뒤집는다");
 });

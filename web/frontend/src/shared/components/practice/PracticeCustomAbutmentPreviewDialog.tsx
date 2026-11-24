@@ -28,7 +28,7 @@
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
 // - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
-// - 2026-11-24: 교합을 먼저 확인한다. 확정한 정렬은 작업 스캔 정점 수가 같으면 다시 연다. 이미 고른 스캔바디는 교합을 다시 맞춰도 유지한다.
+// - 2026-11-24: 스캔바디를 먼저 고른다. 픽스처 위치와 어벗 FDI로 앞·뒤를 잡은 뒤 교합을 확정한다. 이미 고른 스캔바디는 교합을 다시 맞춰도 유지한다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -130,7 +130,10 @@ import {
   archPlanAxes,
   dentalFrameFromStored,
   estimateDentalFrame,
+  orientAnteriorFromAbutmentFdi,
   reseatOcclusalOrigin,
+  samplePositions,
+  type AbutmentArchMark,
   type DentalFrame,
 } from "@/shared/practice/dentalFrame";
 import { preloadMeshUnion } from "@/shared/practice/meshUnion";
@@ -1082,6 +1085,28 @@ function jawsAgreeOnAnterior(
   return ua.anterior.dot(la.anterior) >= 0.5;
 }
 
+function archMarksFromFixtures(fixtures: readonly MatchedScanbodyFixture[]): AbutmentArchMark[] {
+  return fixtures.map((fx) => ({
+    toothNumber: fx.toothNumber,
+    point: [fx.fixturePose.origin[0], fx.fixturePose.origin[1], fx.fixturePose.origin[2]],
+  }));
+}
+
+function collectArchPoints(geometries: readonly THREE.BufferGeometry[]) {
+  const out: Array<[number, number, number]> = [];
+  for (const geo of geometries) out.push(...samplePositions(geo, 2000));
+  return out;
+}
+
+function anteriorSignFlipped(before: DentalFrame, after: DentalFrame) {
+  return after.anterior.dot(before.anterior) < 0;
+}
+
+function flipFixtureOcclusalDirs(fx: MatchedScanbodyFixture): MatchedScanbodyFixture {
+  const neg = (v: readonly number[]) => [-v[0]!, -v[1]!, -v[2]!] as typeof fx.labialDir;
+  return { ...fx, labialDir: neg(fx.labialDir), mesialDir: neg(fx.mesialDir) };
+}
+
 /** 자동 맞춤 품질이 낮은 악만 수동 점 맞춤 대상. 둘 다 weak면 상악→하악. */
 /**
  * 카메라가 -Y에서 +Z를 위로 볼 때, 메시 묶음의 넓은 쪽이 화면 가로(+X)가 되게 돌린다.
@@ -1305,6 +1330,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [restoredFromCache, setRestoredFromCache] = useState(false);
   /** null: 아직 모름·바이트 없음. false면 헤더 교합정렬로 고쳐야 한다. */
   const [occlusionOk, setOcclusionOk] = useState<boolean | null>(null);
+  /** 악궁 앞·뒤를 고치면 큐브를 다시 그린다. frameRef만 바뀌면 메모가 안 돈다. */
+  const [frameEpoch, setFrameEpoch] = useState(0);
   const [colorMapping, setColorMapping] = useState(true);
   const [centerGuide, setCenterGuide] = useState<CenterGuideMode>("off");
   /** 치아별 스캔바디 표시. 기본은 가린다. */
@@ -1519,6 +1546,12 @@ export function PracticeCustomAbutmentPreviewDialog({
   requestDesignReloadRef.current = requestDesignReload;
   const [biteRecalcBusy, setBiteRecalcBusy] = useState(false);
   const forceBiteRecalcRef = useRef(false);
+  /** 교합 다시 맞추기 후보 번호. 스캔바디 뒤에 확인하므로 재진입으로 넘긴다. */
+  const bitePoseRankRef = useRef(0);
+  /** 다시 맞추기 재진입 때 이미 고른 스캔바디를 넘긴다. */
+  const occlusionCarryRef = useRef<OcclusionCarry | null>(null);
+  /** 스캔바디를 다 고를 때까지 파이프라인이 기다린다. */
+  const scanbodyGateRef = useRef<(() => void) | null>(null);
   const [editRev, setEditRev] = useState(0);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
@@ -2447,7 +2480,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       })),
     );
     return view ? { ...view, toothNumber } : null;
-  }, [abutmentToothWorks, designedList, pickToothNumber, selectedTooth]);
+  }, [abutmentToothWorks, designedList, frameEpoch, pickToothNumber, selectedTooth]);
   cubeFrameRef.current = cubeView?.frame ?? null;
   const cubeFaceLabels = cubeView?.labels ?? null;
 
@@ -3576,19 +3609,42 @@ export function PracticeCustomAbutmentPreviewDialog({
         const jawGeo = ctx.jawGeometry[job.jaw] ?? matchedGeo;
         ctx.jawGeometry[job.jaw] = matchedGeo;
 
+        const siblingFixtures = ctx.fixtures.filter(
+          (row) =>
+            row.jaw === job.jaw &&
+            row.toothNumber !== fixture.toothNumber &&
+            row.toothNumber !== displacedTooth,
+        );
+        const oriented = orientAnteriorFromAbutmentFdi(
+          frame,
+          archMarksFromFixtures([...siblingFixtures, fixture]),
+          collectArchPoints(rawJawScansRef.current.map((scan) => scan.geometry)),
+        );
+        let placed = fixture;
+        let siblings = siblingFixtures;
+        if (anteriorSignFlipped(frame, oriented)) {
+          frameRef.current = oriented;
+          const axes = archFrameAxes(oriented);
+          if (axes) ctx.archFrame = axes;
+          setFrameEpoch((n) => n + 1);
+          const again = matchScanbodyNearPoint({
+            jawGeometry: matchedGeo,
+            frame: oriented,
+            toothWork: job.toothWork,
+            models: job.models,
+            connections: session.connections,
+            point: matchPoint,
+            excludeTops,
+          });
+          if (again) placed = again;
+          siblings = siblingFixtures.map(flipFixtureOcclusalDirs);
+        }
+
         setStatus({ kind: "pick", toothNumber: job.toothNumber, phase: "designing" });
         await new Promise<void>((r) => window.setTimeout(r, 16));
         if (pickEpochRef.current !== epoch) return;
 
-        const jawFixtures = [
-          ...ctx.fixtures.filter(
-            (row) =>
-              row.jaw === job.jaw &&
-              row.toothNumber !== fixture.toothNumber &&
-              row.toothNumber !== displacedTooth,
-          ),
-          fixture,
-        ];
+        const jawFixtures = [...siblings, placed];
         const preference = preferenceRef.current;
         const builtCands = new Map<string, CustomAbutmentDesignCandidate[]>();
         const discardBuilt = () => {
@@ -3717,10 +3773,16 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
           if (session.jobs.length === 0) {
           scanbodyPickRef.current = null;
-          setVisibleJaws(jawsForJobs([]));
-          setStatus({ kind: "ready" });
-          if (Object.keys(candidateChoicesRef.current).length === 0) {
-            persistDesign(undefined, { dirty: true });
+          const gate = scanbodyGateRef.current;
+          if (gate) {
+            scanbodyGateRef.current = null;
+            gate();
+          } else {
+            setVisibleJaws(jawsForJobs([]));
+            setStatus({ kind: "ready" });
+            if (Object.keys(candidateChoicesRef.current).length === 0) {
+              persistDesign(undefined, { dirty: true });
+            }
           }
         } else {
           setVisibleJaws(jawsForJobs(session.jobs));
@@ -3780,7 +3842,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     (
       scans: readonly LoadedJawScan[],
       qualityOk: boolean,
-      opts?: { canRetry?: boolean; attempt?: number },
+      opts?: { canRetry?: boolean; attempt?: number; keepCamera?: boolean },
     ): Promise<BiteConfirmChoice> => {
       const scene = sceneRef.current;
       const camera = cameraRef.current;
@@ -3805,7 +3867,19 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       if (meshes.length === 0) return Promise.resolve("confirm");
 
-      orientMeshesWideHorizontal(meshes);
+      const anatomical = frameRef.current;
+      if (opts?.keepCamera) {
+        const canRetry = opts?.canRetry !== false;
+        const attempt = Math.max(0, opts?.attempt ?? 0);
+        const nextStatus = { kind: "bite-confirm" as const, qualityOk, canRetry, attempt };
+        statusRef.current = nextStatus;
+        return new Promise<BiteConfirmChoice>((resolve) => {
+          biteConfirmRef.current = { meshes, resolve };
+          setStatus(nextStatus);
+        });
+      }
+
+      if (!anatomical) orientMeshesWideHorizontal(meshes);
       const bounds = new THREE.Box3();
       for (const mesh of meshes) {
         mesh.updateWorldMatrix(true, false);
@@ -3814,8 +3888,10 @@ export function PracticeCustomAbutmentPreviewDialog({
       const center = bounds.getCenter(new THREE.Vector3());
       const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
       const aspect = readHostSize(host).aspect;
-      const viewDir = new THREE.Vector3(0, -1, 0.2).normalize();
-      const up = new THREE.Vector3(0, 0, 1);
+      const viewDir = anatomical
+        ? anatomical.anterior.clone().multiplyScalar(0.85).addScaledVector(anatomical.up, 0.4).normalize()
+        : new THREE.Vector3(0, -1, 0.2).normalize();
+      const up = anatomical ? anatomical.up.clone() : new THREE.Vector3(0, 0, 1);
       const dist = radius * 3.6;
       controls.target.copy(center);
       camera.up.copy(up);
@@ -4465,6 +4541,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const token = String(authToken || "").trim();
     const forceBiteRecalc = forceBiteRecalcRef.current;
     forceBiteRecalcRef.current = false;
+    if (!forceBiteRecalc) bitePoseRankRef.current = 0;
     if (!token) {
       setStatus({ kind: "error", message: "로그인이 필요합니다." });
       return;
@@ -4615,8 +4692,11 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const runPipeline = async () => {
       preloadMeshUnion();
+      const stashedCarry = occlusionCarryRef.current;
+      occlusionCarryRef.current = null;
       const occlusionCarry: OcclusionCarry | null = forceBiteRecalc
-        ? captureOcclusionCarry(
+        ? (stashedCarry ??
+          captureOcclusionCarry(
             designContextRef.current?.fixtures ?? [],
             rawJawScansRef.current.map((scan) => {
               const attr = scan.geometry.getAttribute("position");
@@ -4628,7 +4708,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 positions: src instanceof Float32Array ? new Float32Array(src) : new Float32Array(),
               };
             }),
-          )
+          ))
         : null;
       let clearBiteBusy = forceBiteRecalc;
       try {
@@ -4939,6 +5019,38 @@ export function PracticeCustomAbutmentPreviewDialog({
             (biteCheck.qualityOk === false && !hasSavedTeeth));
         let lastBiteFit: { qualityOk: boolean; moved: boolean; seated: boolean } | null = null;
         let userAcceptedBite = false;
+        let deferOcclusionConfirm = false;
+        let pickBuiltScene = false;
+        const retryBitePose = () => {
+          if (occlusionCarry && occlusionCarry.fixtures.length > 0) {
+            occlusionCarryRef.current = occlusionCarry;
+          } else {
+            const picked = captureOcclusionCarry(
+              designContextRef.current?.fixtures ?? [],
+              rawJawScansRef.current.map((scan) => {
+                const attr = scan.geometry.getAttribute("position");
+                const count = attr?.count ?? 0;
+                const src = attr?.array;
+                return {
+                  role: scan.jaw,
+                  vertexCount: count,
+                  positions: src instanceof Float32Array ? new Float32Array(src) : new Float32Array(),
+                };
+              }),
+            );
+            if (picked) occlusionCarryRef.current = picked;
+          }
+          bitePoseRankRef.current += 1;
+          forceBiteRecalcRef.current = true;
+          const held = new Set(rawJawScansRef.current.map((scan) => scan.geometry));
+          if (!jawScans.some((scan) => held.has(scan.geometry))) {
+            for (const scan of loadedScans) {
+              scan.geometry.dispose();
+              scan.texture?.dispose();
+            }
+          }
+          setBiteRecalcEpoch((n) => n + 1);
+        };
         if (needBitePass) {
           setStatus({ kind: "loading", percent: 58, step: "상·하악 교합을 맞추는 중…" });
           await new Promise<void>((r) => window.setTimeout(r, 0));
@@ -4971,7 +5083,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           let lastGood = captureAligned();
           let attempt = 0;
           let keepInPlace = false;
-          // 저장 디자인이 없으면 스캔바디보다 먼저 교합을 묻는다. 헤더 재정렬도 같은 확인을 쓴다.
+          // 스캔바디와 FDI 축 다음에 교합을 묻는다. 헤더 재정렬도 같은 확인을 쓴다.
           const askOcclusion = !readOnly && (forceBiteRecalc || !hasSavedTeeth);
           if (askOcclusion) clearBiteBusy = true;
           for (;;) {
@@ -4987,7 +5099,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
             const fitResult = await registerJawsToBiteResult(alignEntries, {
               sweepPoses: true,
-              poseRank: attempt,
+              poseRank: askOcclusion ? bitePoseRankRef.current : attempt,
               cancelled: () => cancelled,
             });
             if (cancelled) return;
@@ -5018,23 +5130,8 @@ export function PracticeCustomAbutmentPreviewDialog({
               restoreOriginal();
               keepInPlace = true;
             }
-            setBiteRecalcBusy(true);
-            const choice = await startBiteConfirmRef.current(
-              [...jawScans, ...biteScans],
-              fitResult.qualityOk || keepInPlace,
-              { canRetry: attempt < BITE_MANUAL_RETRY_MAX, attempt },
-            );
-            if (cancelled) {
-              endBiteConfirmSessionRef.current("confirm");
-              return;
-            }
-            if (choice === "confirm") {
-              // 사용자가 교합 확정하면 알고리즘 qualityOk와 무관하게 맞다고 본다.
-              userAcceptedBite = true;
-              break;
-            }
-            if (attempt >= BITE_MANUAL_RETRY_MAX) break;
-            attempt += 1;
+            deferOcclusionConfirm = true;
+            break;
           }
           if (cancelled) return;
           if (!keepInPlace) {
@@ -5077,7 +5174,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           biteCheck = {
             checkedAt: Date.now(),
-            qualityOk: Boolean(userAcceptedBite || lastBiteFit?.qualityOk),
+            qualityOk: Boolean(!deferOcclusionConfirm && (userAcceptedBite || lastBiteFit?.qualityOk)),
             moved: Boolean(lastBiteFit?.moved && !keepInPlace),
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
@@ -5099,7 +5196,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           }),
         );
 
-        const frame =
+        let frame =
           dentalFrameFromStored(sessionArchFrame) ??
           estimateDentalFrame(
             jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
@@ -5115,7 +5212,23 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           return;
         }
+        if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
+          const oriented = orientAnteriorFromAbutmentFdi(
+            frame,
+            archMarksFromFixtures(cached.teeth.map((row) => row.fixture)),
+            collectArchPoints(jawScans.map((scan) => scan.geometry)),
+          );
+          if (anteriorSignFlipped(frame, oriented)) {
+            frame = oriented;
+            const axes = archFrameAxes(frame);
+            if (axes) {
+              sessionArchFrame = axes;
+              archOriented = true;
+            }
+          }
+        }
         frameRef.current = frame;
+        setFrameEpoch((n) => n + 1);
 
         let upperPrimary = upperScans[0]?.geometry ?? null;
         let lowerPrimary = lowerScans[0]?.geometry ?? null;
@@ -5465,6 +5578,16 @@ export function PracticeCustomAbutmentPreviewDialog({
             if (parsed) teethByJaw[parsed.jaw].push(tw);
           }
 
+          const jawJobs: Array<{
+            jaw: "upper" | "lower";
+            jawGeo: THREE.BufferGeometry;
+            oppGeo: THREE.BufferGeometry | null;
+            teeth: ToothWorkSelection[];
+            fixtures: MatchedScanbodyFixture[];
+            carried: boolean;
+            withModels: Array<{ toothWork: ToothWorkSelection; models: LoadedScanbodyModel[] }> | null;
+          }> = [];
+
           for (const jaw of ["upper", "lower"] as const) {
             const jawScanList = jaw === "upper" ? upperScans : lowerScans;
             const oppGeo = jaw === "upper" ? lowerPrimary : upperPrimary;
@@ -5487,6 +5610,10 @@ export function PracticeCustomAbutmentPreviewDialog({
               );
             let jawGeo: THREE.BufferGeometry;
             let matchedTeeth: Map<string, MatchedScanbodyFixture>;
+            let withModels: Array<{
+              toothWork: ToothWorkSelection;
+              models: LoadedScanbodyModel[];
+            }> | null = null;
             if (carriedCoversJaw) {
               // 이미 고른 스캔바디는 다시 맞춘 악궁을 따라간다. 같은 자리를 다시 찍지 않는다.
               const wantCount = occlusionCarry?.jaws.find((row) => row.role === jaw)?.vertexCount;
@@ -5497,7 +5624,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               jawGeo = scan.geometry;
               matchedTeeth = new Map(carriedForJaw.map((fx) => [fx.toothNumber, fx]));
             } else {
-            const withModels = await Promise.all(
+            withModels = await Promise.all(
               teeth.map(async (tw) => ({
                 toothWork: tw,
                 models: await loadCandidateScanbodyModels({
@@ -5563,68 +5690,226 @@ export function PracticeCustomAbutmentPreviewDialog({
             const jawFixtures = teeth
               .map((tw) => matchedTeeth.get(tw.toothNumber))
               .filter((m): m is MatchedScanbodyFixture => m != null);
-            for (const matched of jawFixtures) {
-              setStatus({
-                kind: "loading",
-                percent: jaw === "upper" ? 78 : 90,
-                step: `#${matched.toothNumber} 커스텀어벗 디자인 중…`,
-              });
-              // 교합 정렬로 픽스처만 다시 잡은 경우 저장 파라미터·선호를 그대로 얹는다.
-              const cachedTooth = cached?.teeth.find((row) => row.toothNumber === matched.toothNumber);
-              const savedOverrides = cachedTooth
-                ? stripDirectEditShiftOverrides(
-                    sharedAbutmentSyncParams(
-                      cachedTooth.params,
-                      parseCustomAbutmentParamOverrides(cachedTooth.overrides),
-                    ),
-                  )
-                : {};
-              const rowOverrides =
-                rebuildFromMeta || forceBiteRecalc
-                  ? savedOverrides
-                  : {};
-              if (Object.keys(rowOverrides).length > 0) {
-                overrides[matched.toothNumber] = rowOverrides;
+            jawJobs.push({
+              jaw,
+              jawGeo,
+              oppGeo,
+              teeth,
+              fixtures: jawFixtures,
+              carried: carriedCoversJaw,
+              withModels,
+            });
+          }
+
+          const matchedNow = jawJobs.flatMap((job) => job.fixtures);
+          if (matchedNow.length > 0) {
+            const oriented = orientAnteriorFromAbutmentFdi(
+              frame,
+              archMarksFromFixtures(matchedNow),
+              collectArchPoints(jawScans.map((scan) => scan.geometry)),
+            );
+            if (anteriorSignFlipped(frame, oriented)) {
+              frame = oriented;
+              frameRef.current = frame;
+              const axes = archFrameAxes(frame);
+              if (axes) {
+                sessionArchFrame = axes;
+                archOriented = true;
               }
-              if (!proposalInputRef.current[matched.toothNumber]) {
-                proposalInputRef.current[matched.toothNumber] = {
-                  ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
-                  ...rowOverrides,
-                };
-              }
-              const cands = await designCustomAbutmentCandidates({
-                fixture: matched,
-                jawGeometry: jawGeo,
-                opposingGeometry: oppGeo,
-                neighbors: jawFixtures,
-                toothWorks: curAllToothWorks,
-                params: {
-                  ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
-                  ...rowOverrides,
-                },
-                explicitParams: rowOverrides,
-                sharedInsertionAxisWorld: sharedInsertionAxisOf(
-                  lockedBridgeAxisRef.current,
-                  matched.toothNumber,
-                ),
-                logicRules: logicRulesRef.current,
-                patientName: curPatientName,
-              });
-              if (cancelled) {
-                for (const c of cands) {
-                  c.design.worldGeometry.dispose();
-                  c.design.predictedCrownWorldGeometry.dispose();
-                  c.design.enameloplastyWorldGeometry?.dispose();
+              setFrameEpoch((n) => n + 1);
+              for (const job of jawJobs) {
+                if (job.carried || !job.withModels) continue;
+                const rematched = detectAndMatchScanbodiesOnJaw({
+                  jawGeometry: job.jawGeo,
+                  frame,
+                  teeth: job.withModels,
+                  connections: curConnections,
+                });
+                if (rematched.size === 0) continue;
+                job.fixtures = job.teeth
+                  .map((tw) => rematched.get(tw.toothNumber))
+                  .filter((m): m is MatchedScanbodyFixture => m != null);
+                for (let i = pendingPickJobs.length - 1; i >= 0; i -= 1) {
+                  if (pendingPickJobs[i]!.jaw === job.jaw) pendingPickJobs.splice(i, 1);
                 }
-                break;
+                for (const row of job.withModels) {
+                  if (rematched.has(row.toothWork.toothNumber) || row.models.length === 0) continue;
+                  pendingPickJobs.push({
+                    toothNumber: row.toothWork.toothNumber,
+                    jaw: job.jaw,
+                    toothWork: row.toothWork,
+                    models: row.models,
+                  });
+                }
               }
-              if (cands.length >= 2) {
-                candidateChoicesRef.current[matched.toothNumber] = {
-                  candidates: cands,
-                  selectedIndex: null,
-                };
+            }
+          }
+
+          const askBiteAfterScanbody = async (keepCamera: boolean) => {
+            if (!deferOcclusionConfirm || cancelled) return "skip" as const;
+            setFrameEpoch((n) => n + 1);
+            setBiteRecalcBusy(true);
+            const choice = await startBiteConfirmRef.current(
+              keepCamera ? biteScans : [...jawScans, ...biteScans],
+              Boolean(lastBiteFit?.qualityOk),
+              {
+                canRetry: bitePoseRankRef.current < BITE_MANUAL_RETRY_MAX,
+                attempt: bitePoseRankRef.current,
+                keepCamera,
+              },
+            );
+            if (cancelled) {
+              endBiteConfirmSessionRef.current("confirm");
+              return "cancel" as const;
+            }
+            if (choice === "retry" && bitePoseRankRef.current < BITE_MANUAL_RETRY_MAX) {
+              return "retry" as const;
+            }
+            userAcceptedBite = true;
+            bitePoseRankRef.current = 0;
+            if (biteCheck) {
+              biteCheck = {
+                ...biteCheck,
+                checkedAt: Date.now(),
+                qualityOk: true,
+                source: "manual",
+              };
+            }
+            deferOcclusionConfirm = false;
+            return "ok" as const;
+          };
+
+          pickBuiltScene =
+            deferOcclusionConfirm &&
+            jawJobs.every((job) => job.fixtures.length === 0) &&
+            pendingPickJobs.length > 0;
+          if (pickBuiltScene) {
+            rawJawScansRef.current = jawScans.map((scan) => ({
+              jaw: scan.role as "upper" | "lower",
+              geometry: scan.geometry,
+              texture: scan.texture,
+            }));
+            designContextRef.current = {
+              cacheKey,
+              patientName: String(curPatientName || ""),
+              jawGeometry: { upper: upperPrimary, lower: lowerPrimary },
+              fixtures: [],
+              allToothWorks: curAllToothWorks,
+              overrides,
+              alignedScans,
+              biteCheck,
+              jawPose: sessionJawPose,
+              archFrame: sessionArchFrame,
+            };
+            if (upperScans.length > 0) rebuildJawScanMeshes("upper", [], true);
+            if (lowerScans.length > 0) rebuildJawScanMeshes("lower", [], true);
+            pendingPickJobs.sort(
+              (a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber),
+            );
+            scanbodyPickRef.current = {
+              jobs: pendingPickJobs,
+              connections: curConnections,
+              busy: false,
+            };
+            setVisibleJaws({
+              upper: upperScans.length > 0,
+              lower: lowerScans.length > 0,
+            });
+            setStatus({ kind: "pick", toothNumber: pendingPickJobs[0]!.toothNumber, phase: "aim" });
+            await new Promise<void>((resolve) => {
+              scanbodyGateRef.current = resolve;
+            });
+            scanbodyGateRef.current = null;
+            if (cancelled) return;
+            const liveAxes = frameRef.current ? archFrameAxes(frameRef.current) : null;
+            if (liveAxes) {
+              const prev = sessionArchFrame?.anterior;
+              const next = liveAxes.anterior;
+              const agree = prev
+                ? prev[0]! * next[0]! + prev[1]! * next[1]! + prev[2]! * next[2]!
+                : 1;
+              if (agree < 0.2) archOriented = true;
+              sessionArchFrame = liveAxes;
+              if (designContextRef.current) {
+                designContextRef.current = { ...designContextRef.current, archFrame: liveAxes };
               }
-              builtAbutments.push(cands[0]!.design);
+            }
+            const biteOutcome = await askBiteAfterScanbody(true);
+            if (biteOutcome === "cancel" || cancelled) return;
+            if (biteOutcome === "retry") {
+              retryBitePose();
+              return;
+            }
+            for (const design of designedListRef.current) builtAbutments.push(design);
+          } else {
+            if (jawJobs.some((job) => job.fixtures.length > 0)) {
+              const biteOutcome = await askBiteAfterScanbody(false);
+              if (biteOutcome === "cancel" || cancelled) return;
+              if (biteOutcome === "retry") {
+                retryBitePose();
+                return;
+              }
+            }
+            for (const job of jawJobs) {
+              for (const matched of job.fixtures) {
+                setStatus({
+                  kind: "loading",
+                  percent: job.jaw === "upper" ? 78 : 90,
+                  step: `#${matched.toothNumber} 커스텀어벗 디자인 중…`,
+                });
+                const cachedTooth = cached?.teeth.find((row) => row.toothNumber === matched.toothNumber);
+                const savedOverrides = cachedTooth
+                  ? stripDirectEditShiftOverrides(
+                      sharedAbutmentSyncParams(
+                        cachedTooth.params,
+                        parseCustomAbutmentParamOverrides(cachedTooth.overrides),
+                      ),
+                    )
+                  : {};
+                const rowOverrides = rebuildFromMeta || forceBiteRecalc ? savedOverrides : {};
+                if (Object.keys(rowOverrides).length > 0) {
+                  overrides[matched.toothNumber] = rowOverrides;
+                }
+                if (!proposalInputRef.current[matched.toothNumber]) {
+                  proposalInputRef.current[matched.toothNumber] = {
+                    ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                    ...rowOverrides,
+                  };
+                }
+                const cands = await designCustomAbutmentCandidates({
+                  fixture: matched,
+                  jawGeometry: job.jawGeo,
+                  opposingGeometry: job.oppGeo,
+                  neighbors: job.fixtures,
+                  toothWorks: curAllToothWorks,
+                  params: {
+                    ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                    ...rowOverrides,
+                  },
+                  explicitParams: rowOverrides,
+                  sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                    lockedBridgeAxisRef.current,
+                    matched.toothNumber,
+                  ),
+                  logicRules: logicRulesRef.current,
+                  patientName: curPatientName,
+                });
+                if (cancelled) {
+                  for (const c of cands) {
+                    c.design.worldGeometry.dispose();
+                    c.design.predictedCrownWorldGeometry.dispose();
+                    c.design.enameloplastyWorldGeometry?.dispose();
+                  }
+                  return;
+                }
+                if (cands.length >= 2) {
+                  candidateChoicesRef.current[matched.toothNumber] = {
+                    candidates: cands,
+                    selectedIndex: null,
+                  };
+                }
+                builtAbutments.push(cands[0]!.design);
+              }
             }
           }
         }
@@ -5684,8 +5969,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           geometry: scan.geometry,
           texture: scan.texture,
         }));
-        // 교합이 확인된 뒤에만, 자동 인식이 전무할 때 스캔바디 클릭을 연다.
-        // 교합 안 맞는 채로 첨1에 들어가지 않는다.
+        // 자동 인식이 전무하면 스캔바디를 먼저 고른 뒤 교합을 묻는다.
+        // 일부만 찾은 경우에는 확정 뒤에 나머지를 다시 지정한다.
         const occlusionReady = Boolean(biteCheck?.qualityOk);
         const bootIntoPick =
           !readOnly &&
@@ -5698,18 +5983,20 @@ export function PracticeCustomAbutmentPreviewDialog({
           bootIntoPick ? pendingPickJobs.map((job) => job.jaw) : [],
         );
         const allBuiltFixtures = builtAbutments.map((d) => d.fixture);
-        if (upperScans.length > 0) {
+        if (!pickBuiltScene && upperScans.length > 0) {
           rebuildJawScanMeshes("upper", allBuiltFixtures, pickJaws.size === 0 || pickJaws.has("upper"));
         }
-        if (lowerScans.length > 0) {
+        if (!pickBuiltScene && lowerScans.length > 0) {
           rebuildJawScanMeshes("lower", allBuiltFixtures, pickJaws.size === 0 || pickJaws.has("lower"));
         }
 
         const nextVisibleTeeth: Record<string, boolean> = {};
         for (const d of builtAbutments) {
           nextVisibleTeeth[d.toothNumber] = true;
-          addDesignToScene(d);
-          syncCandidateSceneForTooth(d.toothNumber);
+          if (!pickBuiltScene) {
+            addDesignToScene(d);
+            syncCandidateSceneForTooth(d.toothNumber);
+          }
         }
 
         const nextBaselineMetrics: Record<string, CustomAbutmentDesignMetrics> = {};
@@ -6014,6 +6301,8 @@ export function PracticeCustomAbutmentPreviewDialog({
       releaseOriginSwapRef.current();
       pickEpochRef.current += 1;
       scanbodyPickRef.current = null;
+      scanbodyGateRef.current?.();
+      scanbodyGateRef.current = null;
       if (biteConfirmRef.current) endBiteConfirmSessionRef.current("confirm");
     };
   }, [
@@ -7819,6 +8108,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       });
       return;
     }
+    bitePoseRankRef.current = 0;
     forceBiteRecalcRef.current = true;
     setBiteRecalcEpoch((n) => n + 1);
   }, [biteRecalcBusy, files, toast]);
