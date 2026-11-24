@@ -1,0 +1,33 @@
+---
+description: 커스텀어벗 단면 형상 계산은 Gemini Carbon만 수정한다. 위치·각도는 다른 AI도 조절할 수 있다.
+alwaysApply: true
+---
+
+# 커스텀어벗 메시 — 형상과 배치
+
+교합면 단면의 **형상 계산**과, 그 메시를 **어디에 어떤 각도로 둘지**는 따로 둔다. 꼭짓점은 모두 둥글다.
+
+## 형상
+
+- 대구치: 사각형
+- 소구치: 사다리꼴. 협측 근원심 모서리가 설측 근원심 모서리보다 길다
+- 전치: 역삼각형. 협측(순측)에 모서리, 설측에 꼭짓점
+
+단면 `phi = 0`(+u, labial)이 협측·순측이고 `phi = π`이 설측이다. 소구치의 긴 변은 `phi = 0` 쪽이다.
+
+## 누가 고치나
+
+- **단면 형상 계산**(반경·게이지·사다리꼴/사각형/역삼각형, `toothSectionRadius`와 그 호출부)은 **Gemini Carbon**(`gemini-4-carbon-medium`)만 수정한다. 다른 모델은 이 계산을 고치지 않는다. 다른 AI로 이 계산을 고쳐 원하는 단면을 얻은 적이 없다.
+- **위치·각도**(중심, 삽입축, 악궁 정렬, 회전, 어느 치아 위에 둘지)는 다른 AI도 조절할 수 있다.
+
+## Do / Don't
+
+```ts
+// ❌ BAD — 다른 모델이 소구치 반경 부호를 뒤집음
+const cPsi = -Math.cos(psi);
+
+// ✅ GOOD — 형상은 Gemini Carbon. 다른 모델은 배치만
+alignedLabialWorld = rotateAround(axis, yawDeg);
+```
+
+SSOT: 루트 `rules.md` §0.7. 계산: `web/frontend/src/shared/practice/customAbutmentStlDesign.ts`.
