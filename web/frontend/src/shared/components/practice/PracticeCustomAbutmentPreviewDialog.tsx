@@ -37,6 +37,7 @@
 // - 2026-11-24: 모델정렬 확인 후 카메라를 기본 뷰로 돌리지 않는다. 맞춘 시점의 화면을 유지한다.
 // - 2026-11-24: 바이트 정렬 확인 모달도 모델정렬과 같이 작업영역 하단 가운데에 둔다.
 // - 2026-11-24: 가로·세로 중앙선은 모눈보다 굵은 하늘색 점선으로 눈에 띄게 한다.
+// - 2026-11-24: 스캔바디 클릭 대기에 들어가기 전에 카메라를 맞춘다. 맞추지 않으면 빈 모눈만 보이다가 돌리면 메시가 들어온다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -4892,6 +4893,75 @@ export function PracticeCustomAbutmentPreviewDialog({
         designContextRef.current = null;
         const chatApplyEpoch = ++chatApplyEpochRef.current;
         setStatus({ kind: "loading", percent: 8, step: "구강 스캔을 불러오는 중…" });
+        /** 메시를 올린 뒤 저장·공유 뷰가 있으면 복원하고, 없으면 악궁에 맞춘다. */
+        const frameViewerAfterMeshes = () => {
+          window.requestAnimationFrame(() => {
+            viewReadyRef.current = true;
+            const saved = readSavedView(transferIdParam);
+            const cam = cameraRef.current;
+            const controls = controlsRef.current;
+            const remotePaintView = pendingRemotePaintRef.current?.view ?? null;
+            const shared = pendingSharedViewRef.current;
+            const localViewAt = Number(saved?.savedAt) || 0;
+            const sharedViewAt = Number(shared?.savedAt) || 0;
+            const useSharedView = Boolean(shared && sharedViewAt > 0);
+            if (useSharedView && shared && cam && controls) {
+              applyingSharedViewRef.current = true;
+              applySavedView(
+                cam,
+                controls,
+                { ...shared, transferId: transferIdParam },
+                hostRef.current ? readHostSize(hostRef.current).aspect : 1,
+              );
+              if (shared.savedAt > lastSharedViewAtRef.current) {
+                lastSharedViewAtRef.current = shared.savedAt;
+              }
+              applyingSharedViewRef.current = false;
+            } else if (saved && cam && controls) {
+              const aspect = hostRef.current ? readHostSize(hostRef.current).aspect : 1;
+              applySavedView(cam, controls, saved, aspect);
+              if (localViewAt > lastSharedViewAtRef.current) {
+                lastSharedViewAtRef.current = localViewAt;
+              }
+            } else if (
+              remotePaintView &&
+              (pendingRemotePaintRef.current?.shapes?.length ?? 0) > 0 &&
+              cam &&
+              controls &&
+              hostRef.current
+            ) {
+              cam.position.fromArray(remotePaintView.position);
+              controls.target.fromArray(remotePaintView.target);
+              cam.up.fromArray(remotePaintView.up);
+              if (remotePaintView.span && remotePaintView.span > 0) {
+                const aspect = readHostSize(hostRef.current).aspect;
+                applyOrthoHeight(cam, remotePaintView.span / 2, aspect);
+                cam.zoom = 1;
+              }
+              cam.lookAt(controls.target);
+              cam.updateMatrixWorld();
+              controls.syncFromCamera();
+            } else {
+              fitDefaultCamera();
+            }
+            if (
+              pendingRemotePaintRef.current?.shapes?.length &&
+              paintStateRef.current.paintRef.current
+            ) {
+              const shapes = pendingRemotePaintRef.current.shapes;
+              paintStateRef.current.paintRef.current.replaceShapes(shapes, { silent: true });
+              paintStateRef.current.setCount(shapes.length);
+            }
+            const arrived = pendingSharedViewRef.current;
+            if (
+              arrived &&
+              arrived !== shared &&
+              arrived.savedAt > lastSharedViewAtRef.current
+            ) {
+              applyIncomingSharedView(arrived);
+            }
+          });
+        };
 
         // 기공소도 편집 중에는 로컬 메시 캐시를 읽는다. 쓰지 않으면 저장은 되고
         // 다시 열 때마다 메타만으로 재생성이 되어 방금 검볼·테이퍼 모양이 되돌아간다.
@@ -6052,11 +6122,16 @@ export function PracticeCustomAbutmentPreviewDialog({
               connections: curConnections,
               busy: false,
             };
+            setAvailableJaws({
+              upper: upperScans.length > 0,
+              lower: lowerScans.length > 0,
+            });
             setVisibleJaws({
               upper: upperScans.length > 0,
               lower: lowerScans.length > 0,
             });
             setStatus({ kind: "pick", toothNumber: pendingPickJobs[0]!.toothNumber, phase: "aim" });
+            frameViewerAfterMeshes();
             await new Promise<void>((resolve) => {
               scanbodyGateRef.current = resolve;
             });
@@ -6480,73 +6555,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (transferIdParam) {
           emitCustomAbutmentLive({ kind: "hello", transferId: transferIdParam });
         }
-        window.requestAnimationFrame(() => {
-          viewReadyRef.current = true;
-          const saved = readSavedView(transferIdParam);
-          const cam = cameraRef.current;
-          const controls = controlsRef.current;
-          const remotePaintView = pendingRemotePaintRef.current?.view ?? null;
-          const shared = pendingSharedViewRef.current;
-          const localViewAt = Number(saved?.savedAt) || 0;
-          const sharedViewAt = Number(shared?.savedAt) || 0;
-          // 의뢰 세션에 카메라가 있으면 그 화면을 연다.
-          const useSharedView = Boolean(shared && sharedViewAt > 0);
-          if (useSharedView && shared && cam && controls) {
-            applyingSharedViewRef.current = true;
-            applySavedView(
-              cam,
-              controls,
-              { ...shared, transferId: transferIdParam },
-              hostRef.current ? readHostSize(hostRef.current).aspect : 1,
-            );
-            if (shared.savedAt > lastSharedViewAtRef.current) {
-              lastSharedViewAtRef.current = shared.savedAt;
-            }
-            applyingSharedViewRef.current = false;
-          } else if (saved && cam && controls) {
-            const aspect = hostRef.current ? readHostSize(hostRef.current).aspect : 1;
-            applySavedView(cam, controls, saved, aspect);
-            if (localViewAt > lastSharedViewAtRef.current) {
-              lastSharedViewAtRef.current = localViewAt;
-            }
-          } else if (
-            remotePaintView &&
-            (pendingRemotePaintRef.current?.shapes?.length ?? 0) > 0 &&
-            cam &&
-            controls &&
-            hostRef.current
-          ) {
-            cam.position.fromArray(remotePaintView.position);
-            controls.target.fromArray(remotePaintView.target);
-            cam.up.fromArray(remotePaintView.up);
-            if (remotePaintView.span && remotePaintView.span > 0) {
-              const aspect = readHostSize(hostRef.current).aspect;
-              applyOrthoHeight(cam, remotePaintView.span / 2, aspect);
-              cam.zoom = 1;
-            }
-            cam.lookAt(controls.target);
-            cam.updateMatrixWorld();
-            controls.syncFromCamera();
-          } else {
-            fitDefaultCamera();
-          }
-          if (
-            pendingRemotePaintRef.current?.shapes?.length &&
-            paintStateRef.current.paintRef.current
-          ) {
-            const shapes = pendingRemotePaintRef.current.shapes;
-            paintStateRef.current.paintRef.current.replaceShapes(shapes, { silent: true });
-            paintStateRef.current.setCount(shapes.length);
-          }
-          const arrived = pendingSharedViewRef.current;
-          if (
-            arrived &&
-            arrived !== shared &&
-            arrived.savedAt > lastSharedViewAtRef.current
-          ) {
-            applyIncomingSharedView(arrived);
-          }
-        });
+        // 스캔바디 클릭 대기에서 이미 맞췄어도, 어벗을 붙인 뒤 한 번 더 맞춘다.
+        frameViewerAfterMeshes();
       } catch (err) {
         if (cancelled || (err as { name?: string } | null)?.name === "AbortError") return;
         const message =
