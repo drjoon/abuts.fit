@@ -5389,6 +5389,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   const distalAdjDigits = ownFdi && ownFdi.pos < 8 ? `${ownFdi.digits[0]}${ownFdi.pos + 1}` : null;
   const mesialAllowance = neighborScannedCrownAllowance(mesialAdjDigits);
   const distalAllowance = neighborScannedCrownAllowance(distalAdjDigits);
+  // 매칭된 이웃 스캔바디는 중간면 분리용으로 wallMm이 0이다. 그건 완성 치관이 아니므로
+  // 절단연·교합면 높이에서는 뺀다. 안 빼면 그 쪽 잇몸 둔덕이 짧은 인접치로 잡혀 포스트가 짧아진다.
+  const mesialIsMatchedAbutment =
+    Boolean(mesialAdjDigits) && neighbors.some((nb) => nb.toothNumber === mesialAdjDigits);
+  const distalIsMatchedAbutment =
+    Boolean(distalAdjDigits) && neighbors.some((nb) => nb.toothNumber === distalAdjDigits);
   // ── 1) 픽스쳐 둘레 치은연 높이 → 스캘럽 마진 높이
   const rawGingivaZ = new Array<number>(SECTORS).fill(Number.NaN);
   const gingivaBuckets: number[][] = Array.from({ length: SECTORS }, () => []);
@@ -5696,15 +5702,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       occInFix[2] < 0 ? scale3(norm3(occInFix), -1) : norm3(occInFix),
       labXY,
     );
-    const hasMesNbSb =
-      Boolean(mesialAdjDigits) && neighbors.some((nb) => nb.toothNumber === mesialAdjDigits);
-    const hasDisNbSb =
-      Boolean(distalAdjDigits) && neighbors.some((nb) => nb.toothNumber === distalAdjDigits);
     const adjRatios = measureAdjacentNaturalToothScales(jawLocalPts, c0, occSizeFrame, mesXY, sbR, sbH, {
       mesialAdjDigits,
       distalAdjDigits,
-      skipMesial: hasMesNbSb || mesialAllowance.wallMm > 0,
-      skipDistal: hasDisNbSb || distalAllowance.wallMm > 0 || hasDistalRetromolarPad,
+      skipMesial: mesialIsMatchedAbutment || mesialAllowance.wallMm > 0,
+      skipDistal: distalIsMatchedAbutment || distalAllowance.wallMm > 0 || hasDistalRetromolarPad,
     });
     const oppRatio = measureOpposingToothScale(
       opposingLocalPts,
@@ -6008,8 +6010,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           Math.max(2.2, marginB),
           { radius: sbR, height: sbH },
           {
-            skipPos: mesialAllowance.wallMm > 0,
-            skipNeg: distalAllowance.wallMm > 0,
+            skipPos: mesialAllowance.wallMm > 0 || mesialIsMatchedAbutment,
+            skipNeg: distalAllowance.wallMm > 0 || distalIsMatchedAbutment,
             ownClinicalHeightMm: tpl.anatomy.crown.clinicalHeightMm,
             posClinicalHeightMm: mesialAdjDigits
               ? getToothAnatomy(mesialAdjDigits).crown.clinicalHeightMm
@@ -6937,8 +6939,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // MIN_POST_HEIGHT_MM 때문에 대합치를 파고드는 일을 절대 허용하지 않는다.
   const minSafePostHeightMm = hasOpposing ? 2.2 : MIN_POST_HEIGHT_MM;
   // 인접한 치아가 직접어벗·프렙 지대치면 그 치아 높이는 아직 크라운이 올라가기 전이므로 인접 완성 치관 높이에서 뺀다.
-  const posHasFinishedNeighbor = (mesialSignOnV > 0 ? mesialAllowance : distalAllowance).wallMm === 0;
-  const negHasFinishedNeighbor = (mesialSignOnV > 0 ? distalAllowance : mesialAllowance).wallMm === 0;
+  // 매칭된 이웃 스캔바디도 wallMm이 0이지만 완성 치관이 아니다. 그 쪽 잇몸 높이는 넣지 않는다.
+  const posIsMesial = mesialSignOnV > 0;
+  const posHasFinishedNeighbor =
+    (posIsMesial ? mesialAllowance : distalAllowance).wallMm === 0 &&
+    !(posIsMesial ? mesialIsMatchedAbutment : distalIsMatchedAbutment);
+  const negHasFinishedNeighbor =
+    (posIsMesial ? distalAllowance : mesialAllowance).wallMm === 0 &&
+    !(posIsMesial ? distalIsMatchedAbutment : mesialIsMatchedAbutment);
   const adjacentTopH =
     posHasFinishedNeighbor || negHasFinishedNeighbor
       ? adjacentOcclusalHeight(
