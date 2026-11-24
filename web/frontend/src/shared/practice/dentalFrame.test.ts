@@ -321,3 +321,26 @@ test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
   const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), mark, pts);
   assert.ok(flipped.anterior.x > 0.7, "앞이 대구치 쪽이면 뒤집는다");
 });
+
+test("협설이 더 넓어도 근원심을 앞뒤로 잡는다", () => {
+  // 편측 치열(+X 전치)에 협설(−Y) 플랩을 붙여 PCA가 협설을 장축으로 유인한다.
+  const coords = unilateralSizedQuadrant(16, 24, 0);
+  const pts: Array<[number, number, number]> = [];
+  for (let i = 0; i + 2 < coords.length; i += 3) {
+    pts.push([coords[i]!, coords[i + 1]!, coords[i + 2]!]);
+  }
+  for (let i = 0; i <= 30; i += 1) {
+    for (let j = 0; j <= 24; j += 1) {
+      pts.push([-8 + i * 0.7, -6 - j * 1.1, 22]);
+    }
+  }
+  const mark = [{ toothNumber: "15", point: [6.5, 0.6, 16] as const }];
+  const seededBl = {
+    up: new THREE.Vector3(0, 0, 1),
+    anterior: new THREE.Vector3(0, 1, 0),
+    right: new THREE.Vector3(-1, 0, 0),
+  };
+  const out = orientAnteriorFromAbutmentFdi(seededBl, mark, pts);
+  assert.ok(out.anterior.x > 0.55, `협설 시드여도 전치는 +X (got ${out.anterior.toArray().join(",")})`);
+  assert.ok(Math.abs(out.anterior.y) < 0.55, "앞이 협설로 서지 않는다");
+});

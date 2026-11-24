@@ -147,108 +147,183 @@ export function orientAnteriorFromAbutmentFdi(
     if (cand.length > teeth.length) teeth = cand;
   }
 
-  // 치아 줄 장축(교합면). 없으면 시드 앞뒤를 장축으로 쓴다.
-  let axis = toothMajorAxis(teeth);
-  if (!axis && teeth.length >= 2) {
+  // 교합면 후보 축 2개(PCA 장·단축). 협설을 장축으로 잡으면 큐브가 90° 돈다.
+  // 픽스처 기준 큰/작은 치아 대비가 더 큰 쪽을 근원심으로 쓴다.
+  const seedAxis: [number, number] = [e1.dot(seedAnt), e2.dot(seedAnt)];
+  const seedLen = Math.hypot(seedAxis[0], seedAxis[1]);
+  if (seedLen > 1e-6) {
+    seedAxis[0] /= seedLen;
+    seedAxis[1] /= seedLen;
+  }
+  let major = toothMajorAxis(teeth);
+  if (!major && teeth.length >= 2) {
     const sorted = [...teeth].sort((a, b) => a.x - b.x || a.y - b.y);
     const a = sorted[0]!;
     const b = sorted[sorted.length - 1]!;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
-    if (len >= 4) axis = [dx / len, dy / len];
+    if (len >= 4) major = [dx / len, dy / len];
   }
-  if (!axis) {
-    axis = [e1.dot(seedAnt), e2.dot(seedAnt)];
-    const len = Math.hypot(axis[0], axis[1]);
-    if (len < 1e-6) return finish(seedAnt);
-    axis = [axis[0] / len, axis[1] / len];
+  if (!major) {
+    if (seedLen < 1e-6) return finish(seedAnt);
+    major = [seedAxis[0], seedAxis[1]];
   }
+  const minor: [number, number] = [-major[1], major[0]];
 
-  const markAlongMm = (point: readonly [number, number, number]) => {
+  const pointAlong = (point: readonly [number, number, number], ax: readonly [number, number]) => {
     const dx = (point[0]! - mean.x) * toMm;
     const dy = (point[1]! - mean.y) * toMm;
     const dz = (point[2]! - mean.z) * toMm;
     const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
     const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
-    return xMm * axis![0] + yMm * axis![1];
+    return xMm * ax[0] + yMm * ax[1];
   };
 
-  // +axis 쪽이 대구치(원심)이면 distalOnPlus > 0.
-  let distalOnPlus = 0;
-  let sizeDecided = false;
-  if (teeth.length >= 2) {
-    for (const mark of parsed) {
-      const origin = markAlongMm(mark.point);
-      let plusBest = 0;
-      let minusBest = 0;
-      let plusArea = 0;
-      let plusN = 0;
-      let minusArea = 0;
-      let minusN = 0;
-      for (const t of teeth) {
-        const along = t.x * axis[0] + t.y * axis[1];
-        const rel = along - origin;
-        if (Math.abs(rel) < 3.0 || Math.abs(rel) > 48) continue;
-        const weight = t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
-        if (rel > 0) {
-          plusArea += weight;
-          plusN += 1;
-          if (weight > plusBest) plusBest = weight;
-        } else {
-          minusArea += weight;
-          minusN += 1;
-          if (weight > minusBest) minusBest = weight;
+  const scoreMdAxis = (ax: readonly [number, number]) => {
+    let distalOnPlus = 0;
+    let asymmetry = 0;
+    let span = 0;
+    let decided = false;
+    const toothAlongs =
+      teeth.length >= 2 ? teeth.map((t) => t.x * ax[0] + t.y * ax[1]) : null;
+    if (toothAlongs) {
+      span = Math.max(...toothAlongs) - Math.min(...toothAlongs);
+      for (const mark of parsed) {
+        const origin = pointAlong(mark.point, ax);
+        let plusBest = 0;
+        let minusBest = 0;
+        let plusArea = 0;
+        let plusN = 0;
+        let minusArea = 0;
+        let minusN = 0;
+        for (let ti = 0; ti < teeth.length; ti += 1) {
+          const t = teeth[ti]!;
+          const rel = toothAlongs[ti]! - origin;
+          if (Math.abs(rel) < 3.0 || Math.abs(rel) > 48) continue;
+          const weight = t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
+          if (rel > 0) {
+            plusArea += weight;
+            plusN += 1;
+            if (weight > plusBest) plusBest = weight;
+          } else {
+            minusArea += weight;
+            minusN += 1;
+            if (weight > minusBest) minusBest = weight;
+          }
+        }
+        if (plusN > 0 && minusN > 0) {
+          decided = true;
+          const plusMean = plusArea / plusN;
+          const minusMean = minusArea / minusN;
+          const ratio = Math.max(plusMean, minusMean) / Math.max(Math.min(plusMean, minusMean), 1);
+          const bestRatio = Math.max(plusBest, minusBest) / Math.max(Math.min(plusBest, minusBest), 1);
+          asymmetry += Math.max(ratio, bestRatio);
+          if (plusBest > minusBest * 1.08 || plusMean > minusMean * 1.1) distalOnPlus += 1;
+          else if (minusBest > plusBest * 1.08 || minusMean > plusMean * 1.1) distalOnPlus -= 1;
+        } else if (plusN >= 1 && minusN === 0 && plusBest >= 34) {
+          decided = true;
+          distalOnPlus += 1;
+          asymmetry += 1.2;
+        } else if (minusN >= 1 && plusN === 0 && minusBest >= 34) {
+          decided = true;
+          distalOnPlus -= 1;
+          asymmetry += 1.2;
         }
       }
-      if (plusN > 0 && minusN > 0) {
-        sizeDecided = true;
-        const plusMean = plusArea / plusN;
-        const minusMean = minusArea / minusN;
-        if (plusBest > minusBest * 1.08 || plusMean > minusMean * 1.1) distalOnPlus += 1;
-        else if (minusBest > plusBest * 1.08 || minusMean > plusMean * 1.1) distalOnPlus -= 1;
-      } else if (plusN >= 1 && minusN === 0 && plusBest >= 34) {
-        sizeDecided = true;
-        distalOnPlus += 1;
-      } else if (minusN >= 1 && plusN === 0 && minusBest >= 34) {
-        sizeDecided = true;
-        distalOnPlus -= 1;
+    }
+    // 치아 분할이 약하면 점구름 덩어리 폭으로 근원심을 가린다.
+    // 대구치 쪽은 협설·교합면이 넓고, 전치 쪽은 좁다.
+    if (!decided && parsed.length > 0) {
+      const mark = parsed[0]!;
+      const origin = pointAlong(mark.point, ax);
+      const plusW: number[] = [];
+      const minusW: number[] = [];
+      const rx = -ax[1];
+      const ry = ax[0];
+      const allAlong: number[] = [];
+      for (const p of pts) {
+        const dx = (p[0] - mean.x) * toMm;
+        const dy = (p[1] - mean.y) * toMm;
+        const dz = (p[2] - mean.z) * toMm;
+        const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
+        const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
+        const along = xMm * ax[0] + yMm * ax[1];
+        allAlong.push(along);
+        const rel = along - origin;
+        if (Math.abs(rel) < 4 || Math.abs(rel) > 40) continue;
+        const across = xMm * rx + yMm * ry;
+        if (rel > 0) plusW.push(across);
+        else minusW.push(across);
+      }
+      if (allAlong.length >= 20) {
+        allAlong.sort((a, b) => a - b);
+        span = allAlong[Math.floor(allAlong.length * 0.92)]! - allAlong[Math.floor(allAlong.length * 0.08)]!;
+      }
+      if (plusW.length >= 8 && minusW.length >= 8) {
+        plusW.sort((a, b) => a - b);
+        minusW.sort((a, b) => a - b);
+        const width = (arr: number[]) =>
+          arr[Math.floor(arr.length * 0.9)]! - arr[Math.floor(arr.length * 0.1)]!;
+        const pw = width(plusW);
+        const mw = width(minusW);
+        if (pw > mw * 1.2 || mw > pw * 1.2) {
+          decided = true;
+          asymmetry += Math.max(pw, mw) / Math.max(Math.min(pw, mw), 1);
+          if (pw > mw) distalOnPlus += 1;
+          else distalOnPlus -= 1;
+        }
       }
     }
-  }
-
-  // 같은 사분악 픽스처가 둘 이상이면 번호가 작은 쪽 = 전치(+anterior).
-  let fdiOnPlus = 0;
-  let fdiDecided = false;
-  const byQuad = new Map<number, typeof parsed>();
-  for (const row of parsed) {
-    const list = byQuad.get(row.quadrant);
-    if (list) list.push(row);
-    else byQuad.set(row.quadrant, [row]);
-  }
-  for (const group of byQuad.values()) {
-    if (group.length < 2) continue;
-    for (let i = 0; i < group.length; i += 1) {
-      for (let j = i + 1; j < group.length; j += 1) {
-        const a = group[i]!;
-        const b = group[j]!;
-        const dPos = a.pos - b.pos;
-        const dAlong = markAlongMm(a.point) - markAlongMm(b.point);
-        if (dPos === 0 || Math.abs(dAlong) < 0.5) continue;
-        fdiDecided = true;
-        // 작은 번호가 +axis에 있으면 +axis가 전치 → distal은 −axis.
-        fdiOnPlus += dPos * dAlong < 0 ? -1 : 1;
+    // 같은 사분악 여러 픽스처: 작은 번호 = 전치.
+    let fdiOnPlus = 0;
+    let fdiHits = 0;
+    const byQuad = new Map<number, typeof parsed>();
+    for (const row of parsed) {
+      const list = byQuad.get(row.quadrant);
+      if (list) list.push(row);
+      else byQuad.set(row.quadrant, [row]);
+    }
+    for (const group of byQuad.values()) {
+      if (group.length < 2) continue;
+      for (let i = 0; i < group.length; i += 1) {
+        for (let j = i + 1; j < group.length; j += 1) {
+          const a = group[i]!;
+          const b = group[j]!;
+          const dPos = a.pos - b.pos;
+          const dAlong = pointAlong(a.point, ax) - pointAlong(b.point, ax);
+          if (dPos === 0 || Math.abs(dAlong) < 0.5) continue;
+          fdiHits += 1;
+          fdiOnPlus += dPos * dAlong < 0 ? -1 : 1;
+        }
       }
     }
-  }
+    const seedAlign = Math.abs(ax[0] * seedAxis[0] + ax[1] * seedAxis[1]);
+    // 근원심은 치아 줄이 길고, 한쪽이 확연히 크다. 협설은 span·대비가 작다.
+    const score =
+      (decided ? asymmetry * 4 + Math.min(span, 45) * 0.22 : Math.min(span, 45) * 0.05) +
+      (fdiHits > 0 ? 2.5 : 0) +
+      seedAlign * 0.2;
+    let distalSign: 1 | -1 | 0 = 0;
+    if (decided && distalOnPlus !== 0) distalSign = distalOnPlus > 0 ? 1 : -1;
+    else if (fdiHits > 0 && fdiOnPlus !== 0) distalSign = fdiOnPlus > 0 ? 1 : -1;
+    return { score, distalSign, decided, span };
+  };
 
-  let distalSign: 1 | -1 | 0 = 0;
-  if (sizeDecided && distalOnPlus !== 0) distalSign = distalOnPlus > 0 ? 1 : -1;
-  else if (fdiDecided && fdiOnPlus !== 0) distalSign = fdiOnPlus > 0 ? 1 : -1;
-  else if (parsed.length >= 1) {
-    // 치아를 못 나눠도 장축(또는 시드) 위 FDI 칸으로 앞뒤를 고른다.
+  const scored = [scoreMdAxis(major), scoreMdAxis(minor)];
+  let bestIdx = scored[0]!.score >= scored[1]!.score ? 0 : 1;
+  // 대비가 비슷하면 시드 앞뒤(추정 근원심)에 가까운 축을 쓴다.
+  if (Math.abs(scored[0]!.score - scored[1]!.score) < 0.6) {
+    const a0 = Math.abs(major[0] * seedAxis[0] + major[1] * seedAxis[1]);
+    const a1 = Math.abs(minor[0] * seedAxis[0] + minor[1] * seedAxis[1]);
+    bestIdx = a0 >= a1 ? 0 : 1;
+  }
+  const axis = bestIdx === 0 ? major : minor;
+  let distalSign = scored[bestIdx]!.distalSign;
+
+  if (distalSign === 0 && parsed.length >= 1) {
     const only = parsed[0]!;
-    const origin = markAlongMm(only.point);
+    const origin = pointAlong(only.point, axis);
     const alongs: number[] = [];
     if (teeth.length >= 2) {
       for (const t of teeth) alongs.push(t.x * axis[0] + t.y * axis[1]);
