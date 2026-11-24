@@ -38,6 +38,7 @@ import {
   type DentalFrame,
 } from "@/shared/practice/dentalFrame";
 import {
+  archOutwardAtPoint,
   cropScanPointsInFixtureFrame,
   fixturePoseToMatrix4,
   locateNominalToothSlot,
@@ -5512,6 +5513,38 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
         vTargetOcc = nextV;
         uTargetOcc = nextU;
+      }
+    }
+
+    // 조금 돌아 있으면 악궁 중심→픽스처 반지름(협측)에 붙인다. 많이 어긋난 부정교합은 그대로 둔다.
+    if (ownFdi && ownFdi.pos >= 4 && Math.abs(params.postYawDeg) <= 1e-3 && refDentalFrame) {
+      const radial = archOutwardAtPoint({
+        geometry: clearedJaw,
+        frame: refDentalFrame,
+        jaw: fixture.jaw,
+        point: fixture.fixturePose.origin,
+        toothNumber: fixture.toothNumber,
+      });
+      if (radial) {
+        const radialFix = worldDirToFixtureLocal(radial.labialDir, fixture.fixturePose);
+        let radialOcc = sub3(radialFix, scale3(wOccPlane, dot3(radialFix, wOccPlane)));
+        if (Math.hypot(radialOcc[0], radialOcc[1], radialOcc[2]) > 1e-5) {
+          radialOcc = norm3(radialOcc);
+          if (dot3(radialOcc, uTargetOcc) < 0) radialOcc = scale3(radialOcc, -1);
+          const align = Math.max(-1, Math.min(1, dot3(uTargetOcc, radialOcc)));
+          const ang = Math.acos(align);
+          const pull = ang < 18 * DEG ? 1 : !jawArchBothSides && ang < 28 * DEG ? 0.85 : 0;
+          if (pull > 0) {
+            const mixed = norm3(add3(scale3(uTargetOcc, 1 - pull), scale3(radialOcc, pull)));
+            let nextV = sub3(vTargetOcc, scale3(wOccPlane, dot3(vTargetOcc, wOccPlane)));
+            nextV = sub3(nextV, scale3(mixed, dot3(nextV, mixed)));
+            if (Math.hypot(nextV[0], nextV[1], nextV[2]) < 1e-5) nextV = cross3(wOccPlane, mixed);
+            nextV = norm3(nextV);
+            if (dot3(nextV, vTargetOcc) < 0) nextV = scale3(nextV, -1);
+            uTargetOcc = norm3(sub3(mixed, scale3(wOccPlane, dot3(mixed, wOccPlane))));
+            vTargetOcc = nextV;
+          }
+        }
       }
     }
 

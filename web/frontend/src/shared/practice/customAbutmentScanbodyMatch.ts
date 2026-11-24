@@ -945,6 +945,69 @@ function mesialDirOf(slot: {
   return mesial;
 }
 
+/**
+ * 악궁 중심(말굽 극)에서 한 점을 잇는 방향. 그 점의 협측이고, 수직이 치열 접선이다.
+ * 편측이라 말굽 각이 안 나오면 null.
+ */
+export function archOutwardAtPoint(args: {
+  geometry: THREE.BufferGeometry;
+  frame: DentalFrame;
+  jaw: "upper" | "lower";
+  point: Vec3;
+  toothNumber?: string;
+}): { labialDir: Vec3; mesialDir: Vec3 } | null {
+  const pts = samplePositions(args.geometry, 6000);
+  if (pts.length < 40) return null;
+  const jawAxes = computeJawOcclusalAxes(pts, args.frame, args.jaw);
+  if (!jawAxes) return null;
+  const { occlusalDir, archRight, archAnterior, mean } = jawAxes;
+
+  const heights = pts.map((p) => dot(p, occlusalDir));
+  const sortedH = [...heights].sort((a, b) => a - b);
+  const cut = quantile(sortedH, 0.55);
+  const band = pts.filter((_, i) => (heights[i] ?? 0) >= cut);
+  const usePts = band.length >= 60 ? band : pts;
+
+  const proj = usePts.map((p) => {
+    const rel = sub(p, mean);
+    return {
+      r: dot(rel, archRight),
+      a: dot(rel, archAnterior),
+    };
+  });
+  const rs = proj.map((q) => q.r).sort((a, b) => a - b);
+  const as = proj.map((q) => q.a).sort((a, b) => a - b);
+  const poleR = (quantile(rs, 0.05) + quantile(rs, 0.95)) / 2;
+  const aHi = quantile(as, 0.95);
+  const depth = Math.max(aHi - quantile(as, 0.05), 1e-3);
+  const poleA = aHi - depth * 0.38;
+
+  const angs = proj
+    .map((q) => ({ ang: Math.atan2(q.r - poleR, q.a - poleA), dist: Math.hypot(q.r - poleR, q.a - poleA) }))
+    .filter((q) => q.dist > depth * 0.22);
+  const spanR = quantile(
+    angs.map((q) => q.ang).filter((a) => a > 0.08).sort((a, b) => a - b),
+    0.92,
+  );
+  const spanL = quantile(
+    angs.map((q) => -q.ang).filter((a) => a > 0.08).sort((a, b) => a - b),
+    0.92,
+  );
+  if (Math.max(spanR, spanL) < 0.4) return null;
+
+  const rel = sub(args.point, mean);
+  const pr = dot(rel, archRight) - poleR;
+  const pa = dot(rel, archAnterior) - poleA;
+  if (Math.hypot(pr, pa) < 1.5) return null;
+  const labialDir = norm(add(scale(archRight, pr), scale(archAnterior, pa)));
+  const parsed = args.toothNumber ? parseFdiTooth(args.toothNumber) : null;
+  const side: 1 | -1 = parsed?.side ?? (pr >= 0 ? 1 : -1);
+  let mesial = norm(cross(occlusalDir, labialDir));
+  const hint = add(scale(archRight, -side), archAnterior);
+  if (dot(mesial, hint) < 0) mesial = scale(mesial, -1);
+  return { labialDir, mesialDir: mesial };
+}
+
 /** 악궁 말굽 형태에서 FDI 치아의 기준 슬롯 중심과 법선·순측 방향을 찾는다. */
 export function locateNominalToothSlot(args: {
   geometry: THREE.BufferGeometry;

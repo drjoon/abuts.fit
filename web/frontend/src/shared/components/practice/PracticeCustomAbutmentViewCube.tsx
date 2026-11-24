@@ -1,6 +1,6 @@
 // 커스텀어벗 디자인 뷰어의 방향 큐브. 카메라 방향을 따라 돌고, 면을 누르면 그 방향으로 부드럽게 돌아간다.
 // 큐브를 끌면 화면이 같이 돈다. 위 버튼은 기본 시점·전체 맞춤·화면 90° 돌리기·회전 중심이다.
-// 면 방향은 `sync`에 넘긴 악궁 frame. 치아를 고르면 `faceLabels`만 협·설·교합·치은·근·원심으로 바꾼다.
+// 치아를 고르면 큐브 축은 그 치아의 교합·협측이다. 교합면에서 보면 면이 화면과 나란하고 위가 협측이다.
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentPreviewDialog.tsx
 // - web/frontend/src/shared/practice/dentalFrame.ts
@@ -109,9 +109,9 @@ const OPPOSITE_FACE: Record<ViewCubeFace, ViewCubeFace> = {
 
 /**
  * 치아 기준 큐브.
- * 회전 축은 교합 정렬 후 악궁 프레임(앞·오른쪽·위)을 그대로 쓴다 — 환자 정면/좌우와 같이 돈다.
- * 라벨만 FDI로 얹는다: 바깥=협(순)측, 아치 안=설(구개)측, 미드라인=근심, 7번 쪽=원심.
- * 픽스처 없이도(스캔바디 지정 중) 동작한다. 이웃이 있으면 접선으로 근심을 다듬는다.
+ * 회전은 그 치아의 교합·협측이다. 모델정렬(교합면에서 위=협측)과 같은 화면에서 면이 화면과 나란하다.
+ * 라벨: 바깥=협(순)측, 아치 안=설(구개)측, 미드라인=근심, 7번 쪽=원심.
+ * 픽스처 없이도(스캔바디 지정 중) 동작한다. 이웃이 있으면 접선으로 근심 라벨만 다듬는다.
  */
 export function toothViewCube(
   toothNumber: string,
@@ -163,12 +163,12 @@ export function toothViewCube(
   mesial.normalize();
   if (mesial.dot(mesialGuess) < 0) mesial.negate();
 
-  // 큐브 회전 = 악궁 프레임(교합 정렬 결과). 치아 로컬로 돌리지 않는다.
-  const cubeFrame: DentalFrame = {
-    up,
-    anterior: frame.anterior.clone().normalize(),
-    right: frame.right.clone().normalize(),
-  };
+  // 앞=협측, 위=두개. 교합면에서 보면 윗면(또는 아랫면)의 위쪽이 화면 위(협측)와 겹친다.
+  const anterior = buccal.clone();
+  const right = new THREE.Vector3().crossVectors(anterior, up);
+  if (right.lengthSq() < 1e-8) return null;
+  right.normalize();
+  const cubeFrame: DentalFrame = { up, anterior, right };
 
   const bestAmong = (dir: THREE.Vector3, among: readonly ViewCubeFace[]) => {
     let best = among[0]!;
@@ -183,21 +183,11 @@ export function toothViewCube(
     return best;
   };
 
-  // 모델 앞(전치)·위(두개)가 잡힌 뒤의 라벨. 악궁마다 뒤집지 않는다.
-  // 구치: 바깥=협측, 안쪽=설·구개, 미드라인=근심, 7번(제2대구치)=원심.
-  // 전치: 앞=순측, 뒤=설·구개, 미드라인=근심.
   // 위·아래: 상악은 위가 치은·아래가 교합, 하악은 위가 교합·아래가 치은.
-  const side = quadrant === 1 || quadrant === 4 ? 1 : -1;
-  let bucFace: ViewCubeFace;
-  let mesFace: ViewCubeFace;
-  if (anteriorTooth) {
-    bucFace = bestAmong(buccal, ["front", "back"]);
-    const remain = HORIZONTAL_FACES.filter((f) => f !== bucFace && f !== OPPOSITE_FACE[bucFace]);
-    mesFace = bestAmong(mesial, remain);
-  } else {
-    bucFace = side > 0 ? "right" : "left";
-    mesFace = bestAmong(mesial, ["front", "back"]);
-  }
+  // 수평 면은 치아 축에 붙인다. 앞=협(순)측, 그 수직=근심.
+  const bucFace = bestAmong(buccal, HORIZONTAL_FACES);
+  const remain = HORIZONTAL_FACES.filter((f) => f !== bucFace && f !== OPPOSITE_FACE[bucFace]);
+  const mesFace = bestAmong(mesial, remain);
   const linFace = OPPOSITE_FACE[bucFace];
   const distFace = OPPOSITE_FACE[mesFace];
 
