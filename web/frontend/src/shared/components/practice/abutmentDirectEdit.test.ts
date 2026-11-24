@@ -476,7 +476,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
 }
 
 // #36 대구치에서 협측 대합치가 낮고 설측 대합치가 높은 경우:
-// 1) 초기 생성부터 포스트 최상단은 평평한 면(교합 방향 2° 이내)이고 최단 거리는 설정값(1.3 / 1.5mm)에 맞춰진다.
+// 1) 초기 생성부터 포스트 윗면은 대합치 교합면과 수평이고 최단 거리는 설정값(1.3 / 1.5mm)에 맞춰진다.
 // 2) 파란 회전 툴로 각도를 돌릴 때도 마진 왜곡·음수 테이퍼 없이 평평한 상단 각도가 회전하며 최단 대합 거리가 유지된다.
 {
   const makeGridSurface = (
@@ -567,7 +567,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       `최단 대합 거리(${designed.metrics.occlusalClearanceMm}mm)가 설정값(${targetClear}mm)에 맞춰진다`,
     );
 
-    // 교합면은 2° 안에서 대합 경사를 따른다. 홈처럼 눕히지 않으므로 협·설 거리는 약 0.7mm까지 벌어진다.
+    // 윗면은 대합치 교합면(약 16°)과 수평이라 협·설 대합 거리가 같다.
     const solid = designed.solidBodyLocalPositions!;
     let topZMax = -Infinity;
     for (let i = 2; i < solid.length; i += 3) topZMax = Math.max(topZMax, solid[i]!);
@@ -585,16 +585,16 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       const x = solid[i]!;
       const y = solid[i + 1]!;
       const z = solid[i + 2]!;
-      if (z < topZMax - 2.4 || Math.abs(y) > 0.8) continue;
+      if (z < topZMax - 1.6 || Math.abs(y) > 1.1) continue;
       const dx = x - topCx;
-      if (dx > 1.2 && dx < 2.8) minBuccalGap = Math.min(minBuccalGap, oppZAt(x, y) - z);
-      if (dx < -1.2 && dx > -2.8) minLingualGap = Math.min(minLingualGap, oppZAt(x, y) - z);
+      if (dx > 0.7) minBuccalGap = Math.min(minBuccalGap, oppZAt(x, y) - z);
+      if (dx < -0.7) minLingualGap = Math.min(minLingualGap, oppZAt(x, y) - z);
     }
     assert.ok(
       Number.isFinite(minBuccalGap) &&
         Number.isFinite(minLingualGap) &&
-        Math.abs(minBuccalGap - minLingualGap) < 0.75,
-      `초기 생성 포스트 상단의 협측(${minBuccalGap.toFixed(2)}mm)·설측(${minLingualGap.toFixed(2)}mm) 대합 거리가 비슷하다`,
+        Math.abs(minBuccalGap - minLingualGap) < 0.4,
+      `초기 생성 포스트 상단의 협측(${minBuccalGap.toFixed(2)}mm)·설측(${minLingualGap.toFixed(2)}mm) 대합 거리가 대합 교합면과 같다`,
     );
 
     if (targetClear === 1.5) {
@@ -677,15 +677,24 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     const solid = partialDesigned.solidBodyLocalPositions!;
     let topZMax = -Infinity;
     for (let i = 2; i < solid.length; i += 3) topZMax = Math.max(topZMax, solid[i]!);
+    let topCx = 0;
+    let topCn = 0;
+    for (let i = 0; i < solid.length; i += 3) {
+      if (solid[i + 2]! < topZMax - 2.0) continue;
+      topCx += solid[i]!;
+      topCn += 1;
+    }
+    topCx = topCn > 0 ? topCx / topCn : 0;
     let buccalTopZ = -Infinity;
     let lingualTopZ = -Infinity;
     for (let i = 0; i < solid.length; i += 3) {
       const x = solid[i]!;
       const y = solid[i + 1]!;
       const z = solid[i + 2]!;
-      if (Math.abs(y) > 0.8 || z < topZMax - 2.6) continue;
-      if (x > 1.8 && x < 2.8) buccalTopZ = Math.max(buccalTopZ, z);
-      if (x < -0.6 && x > -1.5) lingualTopZ = Math.max(lingualTopZ, z);
+      if (Math.abs(y) > 1.1 || z < topZMax - 2.6) continue;
+      const dx = x - topCx;
+      if (dx > 0.8) buccalTopZ = Math.max(buccalTopZ, z);
+      if (dx < -0.4) lingualTopZ = Math.max(lingualTopZ, z);
     }
     assert.ok(
       lingualTopZ > buccalTopZ + 0.35,

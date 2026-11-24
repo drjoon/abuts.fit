@@ -7,7 +7,7 @@
 //    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
-//    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    → 윗면 라운드. 소·대구치 윗면은 대합치 교합면과 수평인 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
 //    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
@@ -142,10 +142,8 @@ const TOP_ROUND_ANTERIOR_MM = 0.5;
 const TOP_ROUND_STEPS = 12;
 /** 픽스쳐 사이가 이 안이면 붙은 치아로 보고 삽입축을 평행하게 맞춘다. */
 const PARALLEL_GROUP_MM = 13;
-/** 소·대구치 윗면이 대합 경사를 따르는 삽입축 프레임 기울기 상한. */
+/** 소·대구치 윗면이 대합 교합면을 따르는 기울기 상한. 이보다 가파르면 평면이 홈처럼 눕는다. */
 const FLAT_TOP_MAX_TILT = Math.tan(18 * DEG);
-/** 교합 방향에서 본 구치 윗면 기울기. 0이면 교합면과 평행한 평평한 면. */
-const FLAT_TOP_ARCH_MAX_TILT = Math.tan(2 * DEG);
 /** 구치 사면 제안 높이. 삽입축이 클수록 마진에 가깝게 시작한다. 깎는 것은 패널에서 체크했을 때뿐이다. */
 const POSTERIOR_BL_BEVEL_MIN_DEG = 6;
 /** 전치에서 크라운 제한 때문에 포스트가 안으로 들어갈 때 아래로 벌어지는 최대 기울기. */
@@ -9277,7 +9275,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
   /**
    * 윗면 높이. 구치 교합면과 전치 절단연 모두 하나의 평면이다.
-   * 구치는 대합 경사를 조금 따르되, 교합 방향 기울기는 2°를 넘기지 않아 홈처럼 파이지 않는다.
+   * 구치는 대합치 교합면과 수평이다. 대합이 없으면 악궁 교합 방향에 수직인 평면이다.
+   * 삽입축에 수직으로 두면 협측이 낮아진다.
    */
   const fitTopSurface = (opts?: {
     clearanceMm?: number;
@@ -9296,27 +9295,21 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const curRaw = opts?.rawCols ?? topRaw;
     let gu = 0;
     let gv = 0;
+    const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
+    const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
+    const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
     if (posterior) {
       if (oppTopPlane) {
         gu = oppTopPlane.gu;
         gv = oppTopPlane.gv;
+      } else {
+        gu = levelGu;
+        gv = levelGv;
       }
       const g = Math.hypot(gu, gv);
       if (g > FLAT_TOP_MAX_TILT) {
         gu *= FLAT_TOP_MAX_TILT / g;
         gv *= FLAT_TOP_MAX_TILT / g;
-      }
-      // 삽입축에 수직인 윗면은 교합 시점에서 한쪽으로 파인다. 그 기울기를 2° 안으로 되돌린다.
-      const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
-      const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
-      const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
-      const dHu = gu * wOcc + dot3(frame.uLabial, occInFix);
-      const dHv = gv * wOcc + dot3(frame.vSide, occInFix);
-      const gArch = Math.hypot(dHu, dHv);
-      if (gArch > FLAT_TOP_ARCH_MAX_TILT) {
-        const t = FLAT_TOP_ARCH_MAX_TILT / gArch;
-        gu = levelGu + (gu - levelGu) * t;
-        gv = levelGv + (gv - levelGv) * t;
       }
     } else {
       const hasEnoughOppCols = colHasOpp.filter(Boolean).length >= 12;
@@ -9386,16 +9379,33 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     // 대합치가 있을 때는 포스트 최소 높이가 대합 최소 크라운 두께(구치 0.7mm / 전치 1.0mm)를 절대 침범하지 않게
     // 메쉬 역전 방지 하한(0.35mm)만 둔다. 대합치가 없을 때만 기본 최소 벽 높이(2.2mm)를 적용한다.
     const minPostWall = hasOpposing ? 0.35 : 2.2;
-    let minTop = Math.max(
-      ...cols.map((c) => c.h0 + curChamferH + minPostWall - gu * c.tipU - gv * c.tipV),
-    );
+    const minTopAt = (sGu: number, sGv: number) =>
+      Math.max(...cols.map((c) => c.h0 + curChamferH + minPostWall - sGu * c.tipU - sGv * c.tipV));
+    let minTop = minTopAt(gu, gv);
     if (hasOpposing && Number.isFinite(aHard) && minTop > aHard && Math.hypot(gu, gv) > 1e-4) {
-      gu *= 0.45;
-      gv *= 0.45;
+      if (posterior) {
+        // 기울기를 0으로 누르면 삽입축에 수직이 되어 협측이 낮아진다.
+        // 벽이 서는 범위에서 대합 교합면에 가장 가까운 기울기를 남긴다.
+        const wantGu = gu;
+        const wantGv = gv;
+        let lo = 0;
+        let hi = 1;
+        for (let it = 0; it < 8; it += 1) {
+          const mid = (lo + hi) * 0.5;
+          const sGu = levelGu + (wantGu - levelGu) * mid;
+          const sGv = levelGv + (wantGv - levelGv) * mid;
+          const caps = evalOpposingCaps(sGu, sGv);
+          if (Number.isFinite(caps.aHard) && minTopAt(sGu, sGv) > caps.aHard) hi = mid;
+          else lo = mid;
+        }
+        gu = levelGu + (wantGu - levelGu) * lo;
+        gv = levelGv + (wantGv - levelGv) * lo;
+      } else {
+        gu *= 0.45;
+        gv *= 0.45;
+      }
       ({ aClear, aHard } = evalOpposingCaps(gu, gv));
-      minTop = Math.max(
-        ...cols.map((c) => c.h0 + curChamferH + minPostWall - gu * c.tipU - gv * c.tipV),
-      );
+      minTop = minTopAt(gu, gv);
     }
 
     let a = Infinity;
