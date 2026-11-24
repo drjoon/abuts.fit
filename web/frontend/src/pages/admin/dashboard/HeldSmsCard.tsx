@@ -3,12 +3,17 @@
 // - web/backend/controllers/admin/adminHeldSms.controller.js
 // change-log:
 // - 2026-11-25: 30초 폴링 제거. 대시보드를 열 때 한 번, 카드를 열거나 보낸 뒤에만 다시 조회.
+// - 2026-11-25: 리마운트·HMR로 같은 API가 반복되지 않게 캐시 우선, 클릭 시에만 강제 조회.
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquareWarning, Send, Trash2 } from "lucide-react";
 import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
-import { ADMIN_SNAPSHOT_TTL_MS, loadOnce } from "@/pages/admin/dashboard/loadOnce";
+import {
+  ADMIN_SNAPSHOT_TTL_MS,
+  loadOnce,
+  peekOnce,
+} from "@/pages/admin/dashboard/loadOnce";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -114,8 +119,16 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
   }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
+    const cached = peekOnce<HeldData>("admin:sms-held");
+    if (cached.hit) {
+      if (cached.data) setData(cached.data);
+      return;
+    }
     void load();
-  }, [load]);
+    // enabled만 — load 식별자 변경으로 재조회하지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/enabled once
+  }, [enabled]);
 
   const pending = data?.pendingCount || 0;
 

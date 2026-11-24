@@ -5,12 +5,17 @@
 // - 2026-10-13: 숫자와 P가 카드 안에서 겹치지 않게 충전 버튼을 헤더로 옮김. 복귀 시 잔액 재조회.
 // - 2026-10-13: 팝빌 파트너 잔여포인트 부족 시 관리자 충전 안내(계좌 확인은 수동 검증으로 통과 중).
 // - 2026-11-25: 주기·포커스 재조회 제거. 대시보드를 열 때 한 번, 충전 창이 열려 있을 때만 다시 조회.
+// - 2026-11-25: 리마운트·HMR로 같은 API가 반복되지 않게 캐시 우선, 클릭·충전 시에만 강제 조회.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Coins } from "lucide-react";
 import { toast } from "sonner";
 import { DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
-import { ADMIN_SNAPSHOT_TTL_MS, loadOnce } from "@/pages/admin/dashboard/loadOnce";
+import {
+  ADMIN_SNAPSHOT_TTL_MS,
+  loadOnce,
+  peekOnce,
+} from "@/pages/admin/dashboard/loadOnce";
 
 type PointData = {
   configured: boolean;
@@ -68,11 +73,21 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
   }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
+    const cached = peekOnce<PointData>("admin:popbill-point");
+    if (cached.hit) {
+      if (cached.data) setData(cached.data);
+      return;
+    }
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/enabled once
+  }, [enabled]);
+
+  useEffect(() => {
     return () => {
       if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
     };
-  }, [load]);
+  }, []);
 
   const charge = async () => {
     // 비동기 후 window.open은 팝업 차단되므로 먼저 창을 연다.

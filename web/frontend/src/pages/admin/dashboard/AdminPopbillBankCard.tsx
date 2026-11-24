@@ -6,6 +6,7 @@
 // - 2026-10-14: 조회 상태 메시지를 카드에 문장 단위로 표시.
 // - 2026-10-14: 관리자 대시보드에 하나은행 잔액. 20분 자동 수집 결과를 보여주고 즉시 조회할 수 있다.
 // - 2026-11-25: 1분 재조회 제거. 수집된 잔액은 대시보드를 열 때 한 번만 읽고, 즉시 조회는 버튼.
+// - 2026-11-25: 리마운트·HMR로 같은 API가 반복되지 않게 캐시 우선, 클릭·조회 시에만 강제 조회.
 import { useCallback, useEffect, useState } from "react";
 import { Landmark } from "lucide-react";
 import { DashTile } from "@/shared/ui/dashboard/DashTile";
@@ -13,6 +14,7 @@ import { request } from "@/shared/api/apiClient";
 import {
   ADMIN_SNAPSHOT_TTL_MS,
   loadOnce,
+  peekOnce,
   rememberOnce,
 } from "@/pages/admin/dashboard/loadOnce";
 
@@ -82,8 +84,15 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
   }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
+    const cached = peekOnce<BankData>("admin:popbill-bank");
+    if (cached.hit) {
+      if (cached.data) setData(cached.data);
+      return;
+    }
     void load();
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/enabled once
+  }, [enabled]);
 
   const sync = async () => {
     setBusy(true);
