@@ -372,12 +372,12 @@ test("인접치와 FDI가 충돌하면 인접치(A)를 따른다", () => {
   );
 });
 
-test("교합면 뷰에서 오른쪽이 전방이다", () => {
-  // 카메라: −Z를 보고, +X가 화면 오른쪽. 교합면을 내려다보면 up=+Z.
+test("순측 뷰에서 카메라 쪽이 전방·화면 위가 두개다", () => {
+  // 기본 카메라: −Z를 보고 +Y가 화면 위. 순측에서 보면 앞=+Z, 위=+Y.
   const q = new THREE.Quaternion();
-  const frame = dentalFrameFromViewOrientation(q, new THREE.Vector3(0, 0, 1));
-  assert.ok(frame.anterior.x > 0.9, "화면 오른쪽(+X)이 전방");
-  assert.ok(frame.up.z > 0.9, "두개(+Z) 유지");
+  const frame = dentalFrameFromViewOrientation(q, new THREE.Vector3(0, 1, 0));
+  assert.ok(frame.anterior.z > 0.9, "카메라 쪽(+Z)이 전방");
+  assert.ok(frame.up.y > 0.9, "화면 위(+Y)가 두개");
 });
 
 test("원심 대구치가 없고 구개가 넓어도 치아 줄이 근원심이다", () => {

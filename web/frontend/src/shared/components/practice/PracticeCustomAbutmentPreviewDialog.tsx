@@ -30,6 +30,7 @@
 // - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
 // - 2026-11-24: 스캔바디를 먼저 고른다. 픽스처 위치와 어벗 FDI로 앞·뒤를 잡은 뒤 교합을 확정한다. 이미 고른 스캔바디는 교합을 다시 맞춰도 유지한다.
 // - 2026-11-24: 근심/원심 클릭 모달 제거. 앞뒤는 자동 확정하고, 헤더 「모델 방향」으로 수동 보정한다.
+// - 2026-11-24: 모델 방향 모드에서 모눈·십자선을 켜고, 미드라인·교합면을 맞춰 축을 확정한다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -3968,21 +3969,17 @@ export function PracticeCustomAbutmentPreviewDialog({
   const ensureArchMdBlOrPickRef = useRef(ensureArchMdBlOrPick);
   ensureArchMdBlOrPickRef.current = ensureArchMdBlOrPick;
 
-  /** 수동 모델 방향: 교합면이 가운데·오른쪽이 전방이 되게 돌린 뒤 확인. */
+  /** 수동 모델 방향: 세로선=미드라인·가로선=교합면에 맞춘 뒤 확인. */
   const beginModelOrient = useCallback(() => {
     if (readOnly || biteRecalcBusy) return;
     if (statusRef.current.kind === "pick" || statusRef.current.kind === "bite-confirm") return;
     if (statusRef.current.kind === "model-orient") return;
     const frame = frameRef.current;
-    const camera = cameraRef.current;
     const controls = controlsRef.current;
-    if (frame && camera && controls) {
-      // 상악은 아래에서(+up 쪽을 봄), 하악·양악은 위에서(−up 쪽을 봄) 교합면을 본다.
-      const onlyUpper = prepJaws.has("upper") && !prepJaws.has("lower");
-      const preferUpper = onlyUpper || (visibleJaws.upper && !visibleJaws.lower);
-      const viewDir = preferUpper ? frame.up.clone().negate() : frame.up.clone();
-      // 화면 위=환자 우측 → 화면 오른쪽=전방.
-      const upDir = frame.right.clone();
+    if (frame && controls) {
+      // 순측에서 본다. 세로=미드라인, 가로=교합면 가이드에 맞추기 쉽게.
+      const viewDir = frame.anterior.clone();
+      const upDir = frame.up.clone();
       const eye = controls.target.clone().addScaledVector(viewDir.normalize(), 1);
       const m = new THREE.Matrix4().lookAt(eye, controls.target, upDir.normalize());
       animateCameraTo(new THREE.Quaternion().setFromRotationMatrix(m));
@@ -3990,7 +3987,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const nextStatus = { kind: "model-orient" as const };
     statusRef.current = nextStatus;
     setStatus(nextStatus);
-  }, [animateCameraTo, biteRecalcBusy, prepJaws, readOnly, visibleJaws.lower, visibleJaws.upper]);
+  }, [animateCameraTo, biteRecalcBusy, readOnly]);
 
   const cancelModelOrient = useCallback(() => {
     if (statusRef.current.kind !== "model-orient") return;
@@ -8637,9 +8634,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                     disabled={biteRecalcBusy || biteConfirmOn || status.kind === "pick"}
                     tip={
                       <>
-                        오른쪽이 전방, 왼쪽이 후방,
+                        모눈과 십자선이 켜집니다.
                         <br />
-                        가운데가 교합면이 되게 돌린 뒤 확인합니다.
+                        세로선에 미드라인, 가로선에 교합면을 맞춥니다.
                       </>
                     }
                     onClick={() => {
@@ -8843,11 +8840,11 @@ export function PracticeCustomAbutmentPreviewDialog({
               onShapesCommit={handlePaintCommit}
             />
 
-            {centerGuide !== "off" ? (
+            {centerGuide !== "off" || modelOrientOn ? (
               <div
                 className="pointer-events-none absolute inset-0 z-[3]"
                 style={
-                  centerGuide === "grid"
+                  centerGuide === "grid" || modelOrientOn
                     ? {
                         backgroundImage:
                           "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px)," +
@@ -9391,9 +9388,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm leading-relaxed text-foreground">
-                    오른쪽이 전방, 왼쪽이 후방,
+                    세로 점선에 미드라인,
                     <br />
-                    가운데가 교합면이 되도록 모델을 돌린 뒤 확인을 누르세요.
+                    가로 점선에 교합 평면을 맞춘 뒤 확인을 누르세요.
                   </p>
                   <div className="flex justify-center gap-2">
                     <Button

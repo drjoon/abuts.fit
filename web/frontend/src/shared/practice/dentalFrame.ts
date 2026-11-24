@@ -440,14 +440,16 @@ export function resolveArchMdBlOrientation(
 }
 
 /**
- * 화면에서 오른쪽=전방·왼쪽=후방·가운데(카메라 정면)=교합면일 때
- * 카메라 자세로 해부 축을 읽는다. seedUp이 있으면 두개 쪽 부호를 맞춘다.
+ * 순측(전방)에서 볼 때: 세로 중앙선=미드라인, 가로 점선=교합면.
+ * 화면 위=두개, 카메라 쪽=전치(앞). seedUp이 있으면 두개 쪽 부호를 맞춘다.
  */
 export function dentalFrameFromViewOrientation(
   cameraQuaternion: THREE.Quaternion,
   seedUp?: THREE.Vector3 | null,
 ): DentalFrame {
-  const anterior = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraQuaternion);
+  const viewDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion);
+  // 순측에서 보면 viewDir는 전→후. 앞(전치)은 카메라 쪽(−viewDir).
+  const anterior = viewDir.clone().multiplyScalar(-1);
   if (anterior.lengthSq() < 1e-8) {
     return {
       up: new THREE.Vector3(0, 0, 1),
@@ -456,9 +458,7 @@ export function dentalFrameFromViewOrientation(
     };
   }
   anterior.normalize();
-  const viewDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion);
-  // 교합면을 바라볼 때 viewDir는 교합→치근 쪽. 두개(+up)는 −viewDir에 가깝다.
-  let up = viewDir.clone().multiplyScalar(-1);
+  let up = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraQuaternion);
   if (up.lengthSq() < 1e-8) up = new THREE.Vector3(0, 0, 1);
   else up.normalize();
   if (seedUp && seedUp.lengthSq() > 1e-8 && up.dot(seedUp) < 0) up.negate();
