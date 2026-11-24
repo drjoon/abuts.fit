@@ -958,7 +958,12 @@ function findMidlineAnteriorAxis(
   e1: THREE.Vector3,
   e2: THREE.Vector3,
   toMm: number,
-): { anterior: THREE.Vector3; midlineOffsetRightMm: number } {
+): {
+  anterior: THREE.Vector3;
+  midlineOffsetRightMm: number;
+  /** 말굽 정중선이 잡히면 full, 아니면 편측·부분. */
+  archExtent: "full" | "partial";
+} {
   const samples: Weighted2D[] = [];
   for (const c of upperCrowns) {
     samples.push({ x: c.xMm, y: c.yMm, h: c.hOccMm, w: c.isPeak ? 1.55 : 1.25, isUpper: true });
@@ -981,7 +986,7 @@ function findMidlineAnteriorAxis(
     }
   }
   if (samples.length < 6) {
-    return { anterior: e1.clone(), midlineOffsetRightMm: 0 };
+    return { anterior: e1.clone(), midlineOffsetRightMm: 0, archExtent: "partial" };
   }
 
   let sw = 0;
@@ -1217,7 +1222,7 @@ function findMidlineAnteriorAxis(
         .addScaledVector(e1, ax * sign)
         .addScaledVector(e2, ay * sign)
         .normalize();
-      return { anterior, midlineOffsetRightMm: refinedMid * sign };
+      return { anterior, midlineOffsetRightMm: refinedMid * sign, archExtent: "full" };
     }
   }
 
@@ -1227,11 +1232,12 @@ function findMidlineAnteriorAxis(
   //    편측 7칸(대구치 2·소구치 2·전치 3)에 빠진 칸을 두고 맞춘다. 큰 쪽이 구치다.
   const byToothSize = anteriorFromToothSizes(upperCrowns, lowerCrowns, e1, e2);
   if (byToothSize) {
-    return { anterior: byToothSize, midlineOffsetRightMm: 0 };
+    return { anterior: byToothSize, midlineOffsetRightMm: 0, archExtent: "partial" };
   }
   return {
     anterior: anteriorFromCrownTaper(samples, e1, e2, majorDir),
     midlineOffsetRightMm: 0,
+    archExtent: "partial",
   };
 }
 
@@ -1799,6 +1805,22 @@ function anteriorFromCrownTaper(
  * 치아 큐브의 근심은 이 미드라인 쪽, 원심은 7번(제2대구치) 쪽이다.
  */
 export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame | null {
+  return estimateDentalFrameDetailed(loaded)?.frame ?? null;
+}
+
+/**
+ * 편측(사분악·부분) 스캔이면 true.
+ * 말굽 정중선이 잡히는 전악·3/4악은 false. 판별 불가면 편측으로 본다.
+ */
+export function isPartialArchScan(loaded: readonly FrameMesh[]): boolean {
+  const detailed = estimateDentalFrameDetailed(loaded);
+  if (!detailed) return true;
+  return detailed.archExtent === "partial";
+}
+
+function estimateDentalFrameDetailed(
+  loaded: readonly FrameMesh[],
+): { frame: DentalFrame; archExtent: "full" | "partial" } | null {
   const upperPts: Pt3[] = [];
   const lowerPts: Pt3[] = [];
   const archPts: Pt3[] = [];
@@ -1973,7 +1995,7 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
     singleGrid = extractJawCrownCells(archPts, mean, up, e1, e2, toMm, occSign);
   }
 
-  const { anterior } = findMidlineAnteriorAxis(
+  const { anterior, archExtent } = findMidlineAnteriorAxis(
     upperGrid?.crownCells ?? (upperMesh && !lowerMesh ? (singleGrid?.crownCells ?? []) : []),
     lowerGrid?.crownCells ?? (!upperMesh && singleGrid ? singleGrid.crownCells : []),
     archPts,
@@ -1989,7 +2011,7 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
 
   const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
   if (right.lengthSq() < 1e-8) return null;
-  return { up, anterior, right };
+  return { frame: { up, anterior, right }, archExtent };
 }
 
 /**

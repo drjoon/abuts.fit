@@ -7,6 +7,7 @@ import {
   dentalFrameFromStored,
   dentalFrameFromViewOrientation,
   estimateDentalFrame,
+  isPartialArchScan,
   orientAnteriorFromAbutmentFdi,
   orientAnteriorFromMesialDistalClick,
   resolveArchMdBlOrientation,
@@ -102,6 +103,23 @@ function unilateralRightQuadrant(
   }
   return out;
 }
+
+test("말굽은 전악, 사분악은 편측으로 본다", () => {
+  assert.equal(
+    isPartialArchScan([
+      cloud("upper", horseshoe(16, 24, 0)),
+      cloud("lower", horseshoe(6, 0, 0)),
+    ]),
+    false,
+  );
+  assert.equal(
+    isPartialArchScan([
+      cloud("upper", unilateralRightQuadrant(16, 24, 0, false)),
+      cloud("lower", unilateralRightQuadrant(6, 0, 0, false)),
+    ]),
+    true,
+  );
+});
 
 test("편측 10·40번대는 구개가 전치 쪽에 넓어도 앞은 전치다", () => {
   const noPalate = estimateDentalFrame([
