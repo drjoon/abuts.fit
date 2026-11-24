@@ -557,7 +557,8 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
       fixture: fixture36,
       jawGeometry: jawGeo,
       opposingGeometry: oppGeo,
-      params: { occlusalClearanceMm: targetClear },
+      // 대합치 평면 옵션: 윗면이 대합 교합면과 수평이어야 협·설 거리가 같다.
+      params: { occlusalClearanceMm: targetClear, postTopPlaneCode: 1 },
     });
     assert.ok(designed.metrics.occlusalClearanceMm != null, "대합 거리가 측정된다");
     assert.ok(
@@ -664,7 +665,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     fixture: fixture36,
     jawGeometry: jawGeo,
     opposingGeometry: partialOppGeo,
-    params: { occlusalClearanceMm: 1.3 },
+    params: { occlusalClearanceMm: 1.3, postTopPlaneCode: 1 },
   });
   assert.ok(
     partialDesigned.metrics.occlusalClearanceMm != null &&
@@ -736,6 +737,26 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     assert.ok(
       at1.metrics.postHeightMm - at3.metrics.postHeightMm > 1.75,
       `대합 거리 1mm(${at1.metrics.postHeightMm}mm) → 3mm(${at3.metrics.postHeightMm}mm) 변경 시 포스트 길이가 실제로 줄어든다`,
+    );
+
+    // 기울진 대합면에서 2.3 → 1.2로 줄여도 실측이 입력값 근처(±0.08)에 붙는다.
+    const at23 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { occlusalClearanceMm: 2.3, postHeightOffsetMm: 0 },
+    });
+    const patch12 = computeParamsFromInfoFieldEdit(at23, "occlusalClearanceMm", 1.2);
+    const at12 = await designCustomAbutmentStl({
+      fixture: fixture36,
+      jawGeometry: jawGeo,
+      opposingGeometry: tallOppGeo,
+      params: { ...at23.params, ...patch12 },
+    });
+    assert.ok(
+      at12.metrics.occlusalClearanceMm != null &&
+        Math.abs(at12.metrics.occlusalClearanceMm - 1.2) <= 0.08,
+      `대합 거리 2.3→1.2 입력 시 최단 대합 거리(${at12.metrics.occlusalClearanceMm}mm)가 1.2mm에 가깝게 맞춰진다`,
     );
 
     // postHeightOffsetMm=+3, occlusalClearanceMm=3.5로 0.7mm에 걸려 있던 상태에서:

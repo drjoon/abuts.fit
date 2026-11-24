@@ -97,6 +97,7 @@ export type AbutmentInfoFieldKey =
   | "postTaperLink"
   | "postLingualBevelMm"
   | "postLabialBevelMm"
+  | "postTopPlaneCode"
   | "occlusalClearanceMm"
   | "axisSource";
 
@@ -111,6 +112,7 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   postTaperLink: "높이·테이퍼 연결",
   postLingualBevelMm: "설측 사면",
   postLabialBevelMm: "순측 사면",
+  postTopPlaneCode: "교합 대상",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
@@ -165,6 +167,8 @@ export function formatAbutmentInfoFieldValue(
       return m.postLabialBevelMm != null && m.postLabialBevelMm > 0
         ? `${cleanNum(m.postLabialBevelMm, 1)}mm`
         : "없음";
+    case "postTopPlaneCode":
+      return "-";
     case "occlusalClearanceMm":
       return m.occlusalClearanceMm != null ? `${cleanNum(m.occlusalClearanceMm, 2)}mm` : "대합치 없음";
     case "axisSource":
@@ -294,6 +298,9 @@ export function computeParamsFromInfoFieldEdit(
       return {
         postLabialBevelMm: Number(Math.min(maxBevel, Math.max(0.5, num)).toFixed(1)),
       };
+    }
+    case "postTopPlaneCode": {
+      return { postTopPlaneCode: num >= 0.5 ? 1 : 0 };
     }
     case "occlusalClearanceMm": {
       if (m.occlusalClearanceMm == null) return {};
@@ -884,6 +891,69 @@ function posteriorBevelHint(side: "설측" | "협측") {
       <br />
       삽입축이 기울어 어벗이 가상 크라운 {side}으로 치우치면 그 쪽을 깎습니다.
     </>
+  );
+}
+
+/** 포스트 상단 교합 대상. 교합면·대합치 중 하나만 켠다. */
+function PostTopPlaneRow({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  disabled?: boolean;
+  onCommit: (next: number) => void;
+}) {
+  const useArch = value < 0.5;
+  const option = (
+    code: 0 | 1,
+    label: string,
+    hint: ReactNode,
+  ) => {
+    const on = code === 0 ? useArch : !useArch;
+    return (
+      <label className="inline-flex items-center gap-1.5">
+        <Checkbox
+          checked={on}
+          disabled={disabled}
+          aria-label={label}
+          onCheckedChange={(state) => {
+            if (disabled) return;
+            if (state === true) onCommit(code);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="cursor-help text-foreground">{label}</span>
+          </TooltipTrigger>
+          <TooltipContent side="left" align="center" className="z-[520] max-w-[16rem] text-xs leading-relaxed">
+            {hint}
+          </TooltipContent>
+        </Tooltip>
+      </label>
+    );
+  };
+  return (
+    <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
+      <span className="shrink-0 text-muted-foreground">교합 대상</span>
+      <div className="ml-auto flex items-center gap-3">
+        {option(
+          0,
+          "교합면",
+          <>
+            포스트 상단을 악궁 교합면에 평행하게 그립니다.
+          </>,
+        )}
+        {option(
+          1,
+          "대합치",
+          <>
+            포스트 상단을 대합치 평면에 평행하게 그립니다.
+          </>,
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1958,6 +2028,18 @@ export function PracticeCustomAbutmentDesignTree({
                       disabled={rowDisabled}
                       onCommit={(v) => onEditField?.(item, "postLabialBevelMm", v)}
                     />
+                    {editable ? (
+                      <PostTopPlaneRow
+                        value={item.params.postTopPlaneCode ?? 0}
+                        disabled={rowDisabled}
+                        onCommit={(v) => onEditField?.(item, "postTopPlaneCode", v)}
+                      />
+                    ) : (
+                      <DetailRow
+                        label="교합 대상"
+                        value={(item.params.postTopPlaneCode ?? 0) >= 0.5 ? "대합치" : "교합면"}
+                      />
+                    )}
                     {m.occlusalClearanceMm != null && editable ? (
                       <EditableNumberRow
                         label="대합 거리"

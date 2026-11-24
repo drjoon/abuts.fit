@@ -8,6 +8,7 @@ const PARAM_LABEL = {
   occlusalClearanceMm: "대합 거리",
   postTaperDeg: "테이퍼",
   postTaperLink: "높이·테이퍼 연결",
+  postTopPlaneCode: "교합 대상",
   postLingualBevelMm: "설측 사면",
   postLabialBevelMm: "순측 사면",
   postYawDeg: "포스트 회전",
@@ -50,7 +51,7 @@ export function toothKindOf(toothNumber) {
 function noiseOf(key) {
   if (/Scale$/.test(key)) return 0.008;
   if (/Deg$/.test(key) || key === "axisSourceCode") return 0.2;
-  if (key === "postTaperLink" || key === "axisToOpposing") return 0.2;
+  if (key === "postTaperLink" || key === "axisToOpposing" || key === "postTopPlaneCode") return 0.2;
   return 0.02;
 }
 
@@ -58,7 +59,7 @@ function capOf(key) {
   if (key === "axisTargetDeg" || key === "axisMaxDeg") return 24;
   if (/Scale$/.test(key)) return 0.45;
   if (/Deg$/.test(key)) return 15;
-  if (key === "axisSourceCode" || key === "postTaperLink") return 3;
+  if (key === "axisSourceCode" || key === "postTaperLink" || key === "postTopPlaneCode") return 3;
   return 2.5;
 }
 
@@ -148,13 +149,21 @@ function formatNum(value) {
 function unitOf(key) {
   if (/Scale$/.test(key)) return "배";
   if (/Deg$/.test(key)) return "°";
-  if (key === "postTaperLink" || key === "axisToOpposing" || key === "axisSourceCode") return "";
+  if (
+    key === "postTaperLink" ||
+    key === "axisToOpposing" ||
+    key === "axisSourceCode" ||
+    key === "postTopPlaneCode"
+  ) {
+    return "";
+  }
   return "mm";
 }
 
 function formatParam(key, value) {
   if (key === "axisSourceCode") return AXIS_SOURCE[String(Math.round(value))] || formatNum(value);
   if (key === "postTaperLink") return value >= 0.5 ? "연결" : "개별";
+  if (key === "postTopPlaneCode") return value >= 0.5 ? "대합치" : "교합면";
   const unit = unitOf(key);
   return `${formatNum(value)}${unit}`;
 }

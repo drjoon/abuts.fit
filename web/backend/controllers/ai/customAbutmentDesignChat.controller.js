@@ -92,6 +92,7 @@ const PARAM_SPECS = {
   occlusalClearanceMm: { label: "포스트 최정점 → 대합 거리(기본 1.5mm, 최소 0.7mm)", unit: "mm", min: 0.7, max: Infinity },
   postTaperDeg: { label: "포스트 축벽 편측 테이퍼(작은 면적 2°, 큰 면적·다지대치 브리지는 조금 더, 싱글 최대 3.8°·브리지 최대 4.2°)", unit: "°", min: 2, max: 4.2 },
   postTaperLink: { label: "포스트 높이·테이퍼 접착력 연결(1=연결, 0=해제)", unit: "", min: 0, max: 1 },
+  postTopPlaneCode: { label: "포스트 상단 교합 대상(0=악궁 교합면에 평행, 1=대합치 평면에 평행)", unit: "", min: 0, max: 1 },
   postLingualBevelMm: { label: "설측 사면 — 마진에서 사면이 시작되는 높이(-1=전치 자동·구치 없음, 0=없음, 0.5~11.5mm, 포스트 높이 미만). 구치는 양수일 때만 깎는다", unit: "mm", min: -1, max: 11.5 },
   postLabialBevelMm: { label: "순측·협측 사면 — 마진에서 사면이 시작되는 높이(기본 0=없음, 0~11.5mm, 포스트 높이 미만). 구치는 양수일 때만 깎고, 전치는 0이면 절단연 크라운 두께가 부족할 때만 필요한 높이를 잡는다", unit: "mm", min: 0, max: 11.5 },
   postYawDeg: {
@@ -156,6 +157,7 @@ const clampParam = (key, v) => {
   const clamped = Math.min(spec.max, Math.max(spec.min, v));
   if (key === "marginFilletRadiusMm") return Math.round(clamped * 10) / 10;
   if (key === "postTaperLink") return clamped >= 0.5 ? 1 : 0;
+  if (key === "postTopPlaneCode") return clamped >= 0.5 ? 1 : 0;
   return clamped;
 };
 

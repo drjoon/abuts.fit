@@ -7,7 +7,7 @@
 //    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
-//    → 윗면 라운드. 소·대구치 윗면은 대합치 교합면과 수평인 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    → 윗면 라운드. 소·대구치 윗면은 교합 대상(악궁 교합면·대합치 평면)에 평행한 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
 //    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
@@ -9298,8 +9298,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
     const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
     const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
+    // postTopPlaneCode: 0=악궁 교합면 평행(기본), 1=대합치 평면 평행
+    const useOpposingTopPlane = (params.postTopPlaneCode ?? 0) >= 0.5;
     if (posterior) {
-      if (oppTopPlane) {
+      if (useOpposingTopPlane && oppTopPlane) {
         gu = oppTopPlane.gu;
         gv = oppTopPlane.gv;
       } else {
@@ -9311,7 +9313,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         gu *= FLAT_TOP_MAX_TILT / g;
         gv *= FLAT_TOP_MAX_TILT / g;
       }
-    } else {
+    } else if (useOpposingTopPlane) {
       const hasEnoughOppCols = colHasOpp.filter(Boolean).length >= 12;
       let s1 = 0, su = 0, sv = 0, suu = 0, svv = 0, suv = 0, sh = 0, suh = 0, svh = 0;
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
@@ -9336,6 +9338,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       // 전치부(절치·견치) 절단 상단은 순설 경사(gu)를 두지 않아 설측 사면과 2단 경사가 생기지 않게 한다.
       gu = 0;
       gv = clamp(gv, -Math.tan(4 * DEG), Math.tan(4 * DEG));
+    } else {
+      // 교합면: 악궁 교합 방향에 수직인 평면. 순설 경사(gu)는 두지 않는다.
+      gu = 0;
+      gv = clamp(levelGv, -Math.tan(4 * DEG), Math.tan(4 * DEG));
     }
 
     const effClearance =
@@ -9409,8 +9415,9 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     let a = Infinity;
-    if (usedArchOcclusalPlane) {
-      // 바로 옆 자연치가 없으면 윗면은 악궁 교합면이다. 가까운 대합이 그 높이를 내리지 않는다.
+    // 대합 거리를 직접 입력하면 악궁 교합면 고정 높이보다 대합 맞춤(aClear)을 우선한다.
+    if (usedArchOcclusalPlane && !curExplicit) {
+      // 바로 옆 자연치가 없으면 윗면은 악궁 교합면고정. 가까운 대합이 그 높이를 내리지 않는다.
       a = postTopH + curOffsetH;
     } else if (hasOpposing && Number.isFinite(aClear)) {
       if (posterior || curExplicit) {
@@ -9423,6 +9430,8 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (Number.isFinite(aHard)) {
         a = Math.min(a, aHard);
       }
+    } else if (usedArchOcclusalPlane) {
+      a = postTopH + curOffsetH;
     } else {
       for (let col = 0; col < ANGULAR_COLS; col += 1) {
         const c = cols[col]!;
@@ -9448,12 +9457,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
       if (incisorDeepBite && a > postTopH + 0.15) a = postTopH;
     }
-    if (bridgeMatchedTopH != null && Number.isFinite(bridgeMatchedTopH)) {
+    // 대합 거리 직접 입력 시 브리지·인접 상한이 입력값을 밀어내지 않게 한다.
+    if (!curExplicit && bridgeMatchedTopH != null && Number.isFinite(bridgeMatchedTopH)) {
       let peak = -Infinity;
       for (const c of cols) peak = Math.max(peak, a + gu * c.tipU + gv * c.tipV);
       if (peak > bridgeMatchedTopH + 0.04) a = Math.max(minTop, a - (peak - bridgeMatchedTopH));
     }
-    if (Number.isFinite(peerMaxPostTopH)) {
+    if (!curExplicit && Number.isFinite(peerMaxPostTopH)) {
       let peak = -Infinity;
       for (const c of cols) peak = Math.max(peak, a + gu * c.tipU + gv * c.tipV);
       if (peak > peerMaxPostTopH + 0.02) a = Math.max(minTop, a - (peak - peerMaxPostTopH));
@@ -13583,7 +13593,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 절치 기본 생성은 교합을 향한 면만으로 높이를 맞추고, 수직 벽 때문에 인접 절단연 아래로 내리지 않는다.
   const oppTrisLocal =
     tpl.kind === "incisor" && !hasExplicitClearance ? incisorFaceTris : oppTrisAll;
-  const shiftDownLimit = usedArchOcclusalPlane
+  const shiftDownLimit = usedArchOcclusalPlane && !hasExplicitClearance
     ? 0
     : incisorDeepBite && !hasExplicitClearance
       ? -1.4
@@ -13620,11 +13630,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let maxShiftUp = incisorDeepBite
         ? Math.min(8, Math.max(maxShiftUpBase, postTopH - measuredH + planeShift))
         : maxShiftUpBase;
-      if (bridgeMatchedTopH != null) {
+      if (!hasExplicitClearance && bridgeMatchedTopH != null) {
         const axialH = measuredH / Math.max(frame.w[2], 0.35);
         maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, bridgeMatchedTopH - axialH));
       }
-      if (Number.isFinite(peerMaxPostTopH)) {
+      if (!hasExplicitClearance && Number.isFinite(peerMaxPostTopH)) {
         const axialH = measuredH / Math.max(frame.w[2], 0.35);
         maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, peerMaxPostTopH - axialH));
       }
@@ -13706,10 +13716,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       shape = buildShape();
     }
     // 구치부·명시적 대합 거리 지정 및 비딥바이트 전치에서: 수직 격자(occInFix) 기반 보정과 실제 3D 표면 최단 거리(closestSurfaceClearanceMm)
-    // 사이에 기울기·교두 경사 오차가 남거나 최소 절단/교합 두께(구치 0.7mm, 전치 1.0mm) 아래로 내려가면 3D 거리로 최대 3회 수렴한다.
+    // 사이에 기울기·교두 경사 오차가 남거나 최소 절단/교합 두께(구치 0.7mm, 전치 1.0mm) 아래로 내려가면
+    // 3D 거리로 수렴한다(명시 입력·구치는 최대 10회, 그 외 3회).
     if (oppTrisAll.length >= 9 && !incisorDeepBite) {
       let prevAbsErr = Infinity;
-      for (let refine = 0; refine < 3; refine += 1) {
+      const maxRefine = hasExplicitClearance || posterior ? 10 : 3;
+      const clearTol = hasExplicitClearance ? 0.025 : 0.04;
+      for (let refine = 0; refine < maxRefine; refine += 1) {
         const refSurface: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
         const refTopCap: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
         for (let col = 0; col < shape.postByCol.length; col += 1) {
@@ -13767,23 +13780,76 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
         const goalClear = !posterior && !hasExplicitClearance ? Math.max(minClearanceFloor, Math.min(targetClear, curMeshClear + 0.6)) : targetClear;
         const err = curMeshClear - goalClear;
         const absErr = Math.abs(err);
-        if (absErr <= 0.04 || absErr >= prevAbsErr - 0.01) break;
+        if (absErr <= clearTol) break;
+        // 개선이 거의 없으면 중단. 다만 명시 대합 거리는 잔여가 클 때 한 번 더 밀어 본다.
+        if (absErr >= prevAbsErr - 0.005) {
+          if (!(hasExplicitClearance && absErr > clearTol && refine < maxRefine - 1 && absErr < prevAbsErr + 0.02)) {
+            break;
+          }
+        }
         prevAbsErr = absErr;
         let maxShiftUp = maxShiftUpBase;
-        if (bridgeMatchedTopH != null) {
+        if (!hasExplicitClearance && bridgeMatchedTopH != null) {
           const axialH = measureShapePostHeightMm(shape) / Math.max(frame.w[2], 0.35);
           maxShiftUp = Math.min(maxShiftUp, planeShift + Math.max(0, bridgeMatchedTopH - axialH));
         }
-        const stepShift = clamp(err, -2.5, 2.5);
+        // 기울진 윗면에서는 축방향 shift가 3D 거리를 1:1로 줄이지 않으므로 명시 입력은 약간 과보정한다.
+        const gain = hasExplicitClearance ? 1.15 : 1.0;
+        const stepShift = clamp(err * gain, -2.5, 2.5);
         const nextShift = clamp(planeShift + stepShift, shiftDownLimit, maxShiftUp);
-        if (Math.abs(nextShift - planeShift) < 0.008) break;
+        if (Math.abs(nextShift - planeShift) < 0.004) break;
         planeShift = nextShift;
-        syncLinkedTaperForHeight(measureShapePostHeightMm(shape));
         shape = buildShape();
+        if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
+          shape = buildShape();
+          // 테이퍼가 바뀌면 오차 기준을 다시 잡아 대합 거리 수렴을 이어간다.
+          prevAbsErr = Infinity;
+        }
       }
     }
     if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
       shape = buildShape();
+      // 최종 테이퍼 맞춤 뒤 대합 거리가 다시 벌어지면 짧게 한 번 더 맞춘다.
+      if (hasExplicitClearance && oppTrisAll.length >= 9 && !incisorDeepBite) {
+        for (let extra = 0; extra < 4; extra += 1) {
+          const refSurface: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
+          const refTopCap: number[] = [shape.postApex[0], shape.postApex[1], shape.postApex[2]];
+          for (let col = 0; col < shape.postByCol.length; col += 1) {
+            const post = shape.postByCol[col]!;
+            if (post.length === 0) continue;
+            const minColPostZ = cols[col]!.marginPt[2] + 0.2;
+            const topStart = Math.max(0, post.length - TOP_ROUND_STEPS - 1);
+            for (let idx = 0; idx < post.length; idx += 1) {
+              const p = post[idx]!;
+              if (p[2] >= minColPostZ || idx >= topStart) {
+                refSurface.push(p[0], p[1], p[2]);
+              }
+              if (idx >= topStart && (col % 2 === 0 || idx === post.length - 1)) {
+                refTopCap.push(p[0], p[1], p[2]);
+              }
+            }
+          }
+          const curMeshClear = closestSurfaceClearanceMm({
+            points: new Float32Array(refSurface),
+            topPoints: new Float32Array(refTopCap),
+            opposingTris: oppTrisAll,
+            origin: c0,
+            up: frame.w,
+            labialHint: frame.uLabial,
+            minHeightMm: 0.35,
+            maxHeightMm: 22,
+            maxAbsUMm: 12,
+            postCorridorMarginMm: Math.max(2.2, crownHalfMd - marginB + 1.5),
+          });
+          if (curMeshClear == null || !Number.isFinite(curMeshClear)) break;
+          const err = curMeshClear - targetClear;
+          if (Math.abs(err) <= 0.025) break;
+          const nextShift = clamp(planeShift + clamp(err * 1.15, -2.5, 2.5), shiftDownLimit, maxShiftUpBase);
+          if (Math.abs(nextShift - planeShift) < 0.004) break;
+          planeShift = nextShift;
+          shape = buildShape();
+        }
+      }
     }
   } else if (syncLinkedTaperForHeight(measureShapePostHeightMm(shape))) {
     shape = buildShape();
