@@ -9817,22 +9817,20 @@ export function RequestorPracticeReceivePage({
         } else {
           setLabDesignFilesPending(false);
         }
-        const hydratedRest = await Promise.all(
-          next.map(async (item, index) => {
-            if (index === safe) return item;
-            return hydrateLabTransferForDesign(item);
-          }),
-        );
+        // 지금 건(+이웃 1건)만 채운다. 대기열 전체 /my는 스캔 로딩을 막는다.
+        const prefetchIdx =
+          safe + 1 < next.length ? safe + 1 : safe - 1;
+        const prefetch =
+          prefetchIdx >= 0 && prefetchIdx !== safe ? next[prefetchIdx] : null;
+        if (!prefetch || labTransferHasDesignScan(prefetch)) return;
+        const hydratedPrefetch = await hydrateLabTransferForDesign(prefetch);
         if (labDesignOpenSeqRef.current !== seq) return;
-        setLabDesignItems((prev) => {
-          if (prev.length !== hydratedRest.length) return prev;
-          return hydratedRest.map((item, index) =>
-            index === safe ? prev[index] || item : item,
-          );
-        });
-        for (const item of hydratedRest) {
-          applyHydratedLabTransfer(item);
-        }
+        setLabDesignItems((prev) =>
+          prev.map((item, index) =>
+            index === prefetchIdx ? hydratedPrefetch : item,
+          ),
+        );
+        applyHydratedLabTransfer(hydratedPrefetch);
       })();
     },
     [applyHydratedLabTransfer, hydrateLabTransferForDesign],

@@ -6550,6 +6550,9 @@ export const PracticeFileTransferPage = ({
       );
       const first = items[safeStart];
       if (!first) return;
+      // 지금 여는 의뢰만 hydrate한다. 대기열 전체를 /my로 받으면
+      // 스캔 다운로드와 DB가 겹쳐 「구강 스캔을 불러오는 중」이 길어진다.
+      // 다음 건은 onReviewIndexChange에서 필요할 때만 채운다.
       const hydratedFirst = await hydratePracticeTransferForDesign(first.transfer);
       const nextItems = items.map((item, index) =>
         index === safeStart
@@ -6563,28 +6566,29 @@ export const PracticeFileTransferPage = ({
       setDesignReviewItems(nextItems);
       setDesignReviewIndex(safeStart);
       setAbutmentDesignOpen(true);
-      void Promise.all(
-        nextItems.map(async (item, index) => {
-          if (index === safeStart) return item;
-          const hydrated = await hydratePracticeTransferForDesign(item.transfer);
-          return {
-            ...item,
-            transfer: hydrated,
-            label: buildAbutmentDesignReviewLabel(hydrated) || item.label,
-          };
-        }),
-      ).then((hydratedRest) => {
-        setDesignReviewItems((prev) => {
-          if (prev.length !== hydratedRest.length) return prev;
-          return hydratedRest.map((item, index) =>
-            index === safeStart
-              ? prev[index] || item
-              : item,
+      const prefetchIdx = safeStart + 1 < nextItems.length ? safeStart + 1 : safeStart - 1;
+      const prefetch = prefetchIdx >= 0 ? nextItems[prefetchIdx] : null;
+      if (prefetch && !transferReadyForAbutmentDesign(prefetch.transfer)) {
+        void hydratePracticeTransferForDesign(prefetch.transfer).then((hydrated) => {
+          setDesignReviewItems((prev) =>
+            prev.map((item, index) =>
+              index === prefetchIdx
+                ? {
+                    ...item,
+                    transfer: hydrated,
+                    label: buildAbutmentDesignReviewLabel(hydrated) || item.label,
+                  }
+                : item,
+            ),
           );
         });
-      });
+      }
     },
-    [buildAbutmentDesignReviewLabel, hydratePracticeTransferForDesign],
+    [
+      buildAbutmentDesignReviewLabel,
+      hydratePracticeTransferForDesign,
+      transferReadyForAbutmentDesign,
+    ],
   );
 
   const openAbutmentDesignFromTransfer = useCallback(

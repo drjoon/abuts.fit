@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-24: 같은 s3Key가 여러 PracticeTransfer에 있을 때 당사자 의뢰를 먼저 고른다(복제 작업스캔 403).
 // - 2026-09-26: 임시 업로드 presign·파트 URL·multer S3 업로드를 파일 단위로 동시에 처리.
 //   다운로드 권한 조회는 File·사업자 → Transfer → Request → Chat 순으로 허용 시 바로 멈춘다.
 //   S3 프록시 다운로드는 pipeline으로 보내 오류·클라이언트 중단 시 S3 body를 닫는다.
@@ -650,7 +651,9 @@ const canUserAccessS3Key = async (req, key) => {
   // PracticeTransfer 파일 접근 허용
   // - practice 전송자(작성자)
   // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
-  const practiceTransfer = await PracticeTransfer.findOne({
+  // 같은 s3Key가 여러 의뢰에 복제되면 findOne이 원본 의뢰만 보고 403이 난다.
+  // 현재 사용자가 당사자인 의뢰를 먼저 고른다.
+  const practiceTransferKeyMatch = {
     $or: [
       { "files.file.s3Key": key },
       { "production.designFiles.file.s3Key": key },
@@ -659,23 +662,47 @@ const canUserAccessS3Key = async (req, key) => {
       { "production.labWorkScanFiles.file.s3Key": key },
       { "resultFiles.file.s3Key": key },
     ],
-  })
-    .select({
-      practiceUserId: 1,
-      practiceBusinessAnchorId: 1,
-      targetLabAnchorId: 1,
-      assigneeLabAnchorId: 1,
-      toothWorks: 1,
-      production: 1,
-      files: 1,
-    })
-    .lean()
-    .exec();
+  };
+  const practiceTransferSelect = {
+    practiceUserId: 1,
+    practiceBusinessAnchorId: 1,
+    targetLabAnchorId: 1,
+    assigneeLabAnchorId: 1,
+    toothWorks: 1,
+    production: 1,
+    files: 1,
+  };
+  const currentUserId = String(req.user?._id || "").trim();
+  const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
+  const practicePartyOr = [];
+  if (currentUserId) {
+    practicePartyOr.push({ practiceUserId: currentUserId });
+  }
+  if (currentAnchorId) {
+    practicePartyOr.push(
+      { practiceBusinessAnchorId: currentAnchorId },
+      { targetLabAnchorId: currentAnchorId },
+      { assigneeLabAnchorId: currentAnchorId },
+    );
+  }
+  let practiceTransfers = practicePartyOr.length
+    ? await PracticeTransfer.find({
+        $and: [practiceTransferKeyMatch, { $or: practicePartyOr }],
+      })
+        .select(practiceTransferSelect)
+        .limit(8)
+        .lean()
+        .exec()
+    : [];
+  if (practiceTransfers.length === 0 && req.user?.role === "internalLab") {
+    const anyTransfer = await PracticeTransfer.findOne(practiceTransferKeyMatch)
+      .select(practiceTransferSelect)
+      .lean()
+      .exec();
+    if (anyTransfer) practiceTransfers = [anyTransfer];
+  }
 
-  if (practiceTransfer) {
-    const currentUserId = String(req.user?._id || "").trim();
-    const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
-
+  for (const practiceTransfer of practiceTransfers) {
     const isPracticeOwner =
       currentUserId &&
       currentUserId === String(practiceTransfer?.practiceUserId || "").trim();
@@ -702,7 +729,8 @@ const canUserAccessS3Key = async (req, key) => {
         : []
       ).some((entry) => String(entry?.file?.s3Key || "").trim() === key);
       if (isOralScanKey && shouldLockLabOralScanDownload(practiceTransfer)) {
-        return false;
+        // 이 의뢰에서는 잠금. 다른 당사자 의뢰가 있으면 계속 본다.
+        continue;
       }
       return true;
     }
