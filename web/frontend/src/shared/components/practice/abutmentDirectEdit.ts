@@ -48,6 +48,8 @@ import { subtractTriangleSoups } from "../../practice/meshUnion";
 import { computeCreasedVertexNormals, withDoubleSidePick } from "../../three/backFaceShell";
 
 const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
+/** 노란 2D 스케일 점의 검볼 로컬 좌표(우상). 1D 스케일 허브 기준으로도 쓴다. */
+const GUMBALL_SCALE2_CORNER = 0.36;
 export const GUMBALL_SIZE_PX = 76;
 const SCALE_MIN = 0.65;
 const SCALE_MAX = 1.45;
@@ -281,13 +283,26 @@ type HandleHit = {
 
 type Drag =
   | {
-      kind: "move" | "scale";
+      kind: "move";
       tooth: string;
       axis: number;
       axisWorld: THREE.Vector3;
       start: AbutmentEdit;
       startAlong: number;
       /** 제스처 측정 원점. 드래그 동안 고정. */
+      pivotWorld: THREE.Vector3;
+      pointerId: number;
+    }
+  | {
+      kind: "scale";
+      tooth: string;
+      axis: number;
+      axisWorld: THREE.Vector3;
+      start: AbutmentEdit;
+      startAlong: number;
+      /** 노란 허브의 축 투영. 허브에서 멀어지면 커진다. */
+      hubAlong: number;
+      startHubDist: number;
       pivotWorld: THREE.Vector3;
       pointerId: number;
     }
@@ -307,7 +322,6 @@ type Drag =
       axis: number;
       axis2: number;
       start: AbutmentEdit;
-      startRadialDir: THREE.Vector3;
       startRadialLen: number;
       pivotWorld: THREE.Vector3;
       pointerId: number;
@@ -2668,7 +2682,7 @@ function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, 
   group.add(dot, scaleHit);
 }
 
-/** 노란 점 우상 쪽 평면 이동 화살표. 예전 축 이동 화살표와 같은 크기. */
+/** 노란 점 우상 쪽 평면 이동 화살표. 길이는 예전 축 화살표의 절반. */
 function addCornerMoveArrow(
   group: THREE.Group,
   axis: 0 | 1,
@@ -2676,19 +2690,19 @@ function addCornerMoveArrow(
   gap: number,
   colorMat: THREE.MeshBasicMaterial,
 ) {
-  const shaftLen = 0.3;
-  const coneH = 0.16;
+  const shaftLen = 0.15;
+  const coneH = 0.08;
   // 노란 점에서 gap만큼 띄운 뒤 시작한다.
   const start = corner + gap;
   const shaft = tagHandle(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, shaftLen, 12), colorMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, shaftLen, 12), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
     colorMat,
   );
   const head = tagHandle(
-    new THREE.Mesh(new THREE.ConeGeometry(0.1, coneH, 14), colorMat),
+    new THREE.Mesh(new THREE.ConeGeometry(0.07, coneH, 14), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
@@ -2716,7 +2730,7 @@ export function makeGumball(tooth: string) {
 
   // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 76px.
   // 뱃지 우상 노란 2D 스케일. 화살표(+X/+Y) 반대쪽에 축 1D 스케일 점. 회전 호는 좌하.
-  const scale2Corner = 0.36;
+  const scale2Corner = GUMBALL_SCALE2_CORNER;
   const fromYellow = 0.26;
 
   // 파란 화면 평면 회전 호: 3사분면(169°~281°).
@@ -2761,12 +2775,12 @@ export function makeGumball(tooth: string) {
   addAxisScaleDot(group, 0, scale2Corner - fromYellow, scale2Corner);
   addAxisScaleDot(group, 1, scale2Corner, scale2Corner - fromYellow);
 
-  // 평면 이동 화살표: 노란 점에서 띄운 뒤 +X/+Y.
+  // 평면 이동 화살표: 노란 점에서 띄운 뒤 +X/+Y (절반 길이).
   addCornerMoveArrow(group, 0, scale2Corner, fromYellow, basicMat(AXIS_COLOR[0]!));
   addCornerMoveArrow(group, 1, scale2Corner, fromYellow, basicMat(AXIS_COLOR[1]!));
-  const move2HitAt = scale2Corner + fromYellow + 0.3 * 0.55;
+  const move2HitAt = scale2Corner + fromYellow + 0.15 * 0.55;
   const move2Hit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.14), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.12), basicMat(0xffffff, 0)),
     "move2",
     0,
     1,
@@ -3489,19 +3503,44 @@ export class AbutmentDirectEditSession {
     const start = cloneAbutmentEdit(this.ensureEdit(handle.tooth));
     // 호는 검볼(포스트) 중심에 그려진다. 각도를 피니시라인에서 재면 좌하 호가 힌지 근처라 회전이 튀거나 안 된다.
     const center = this.resolveGumballCenter(view, start, handle.tooth);
-    if (handle.op === "move" || handle.op === "scale") {
+    if (handle.op === "move") {
       const axis = this.cameraAxis(handle.axis, vC, view).clone();
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return false;
       const along = hit.sub(center).dot(axis);
       this.drag = {
-        kind: handle.op,
+        kind: "move",
         tooth: handle.tooth,
         axis: handle.axis,
         axisWorld: axis,
         start,
         startAlong: along,
+        pivotWorld: center.clone(),
+        pointerId: event.pointerId,
+      };
+      return true;
+    }
+    if (handle.op === "scale") {
+      const axis = this.cameraAxis(handle.axis, vC, view).clone();
+      this.axisPlane(axis, center);
+      const hit = this.rayOnPlane(event);
+      if (!hit) return false;
+      const along = hit.sub(center).dot(axis);
+      // 노란 허브 기준 거리로 키운다. 화살표 반대쪽 점도 허브에서 멀어지면 커진다.
+      view.gumball.updateMatrixWorld(true);
+      vA.set(GUMBALL_SCALE2_CORNER, GUMBALL_SCALE2_CORNER, 0).applyMatrix4(view.gumball.matrixWorld);
+      const hubAlong = vA.sub(center).dot(axis);
+      const startHubDist = Math.max(Math.abs(along - hubAlong), 0.12);
+      this.drag = {
+        kind: "scale",
+        tooth: handle.tooth,
+        axis: handle.axis,
+        axisWorld: axis,
+        start,
+        startAlong: along,
+        hubAlong,
+        startHubDist,
         pivotWorld: center.clone(),
         pointerId: event.pointerId,
       };
@@ -3545,16 +3584,13 @@ export class AbutmentDirectEditSession {
     if (handle.op !== "scale2" && handle.op !== "scale3") return false;
     this.viewPlane(center);
     const hit = this.rayOnPlane(event) ?? raycaster.ray.closestPointToPoint(center, vA).clone();
-    const radial = hit.sub(center);
-    const radialLen = Math.max(radial.length(), 0.2);
-    const radialDir = radial.lengthSq() > 1e-8 ? radial.clone().normalize() : this.cameraAxis(0, vC, view).clone();
+    const radialLen = Math.max(hit.distanceTo(center), 0.2);
     this.drag = {
       kind: handle.op,
       tooth: handle.tooth,
       axis: handle.axis,
       axis2: handle.axis2,
       start,
-      startRadialDir: radialDir,
       startRadialLen: radialLen,
       pivotWorld: center.clone(),
       pointerId: event.pointerId,
@@ -3681,19 +3717,25 @@ export class AbutmentDirectEditSession {
       if (!hit) return null;
       return { kind: "translate", delta: hit.sub(drag.startHit).clone() };
     }
-    if (drag.kind === "move" || drag.kind === "scale") {
+    if (drag.kind === "move") {
       const axis = drag.axisWorld;
       const center = drag.pivotWorld;
       this.axisPlane(axis, center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
       const along = hit.sub(center).dot(axis);
-      const delta = along - drag.startAlong;
-      if (drag.kind === "move") {
-        return { kind: "translate", delta: axis.clone().multiplyScalar(delta) };
-      }
-      const refSpan = Math.max(Math.abs(drag.startAlong), 0.25);
-      return { kind: "scaleAxes", axes: [axis.clone()], factor: clamp(1 + delta / refSpan, 0.4, 2.2) };
+      return { kind: "translate", delta: axis.clone().multiplyScalar(along - drag.startAlong) };
+    }
+    if (drag.kind === "scale") {
+      const axis = drag.axisWorld;
+      const center = drag.pivotWorld;
+      this.axisPlane(axis, center);
+      const hit = this.rayOnPlane(event);
+      if (!hit) return null;
+      const along = hit.sub(center).dot(axis);
+      const hubDist = Math.max(Math.abs(along - drag.hubAlong), 0.04);
+      const factor = clamp(hubDist / drag.startHubDist, 0.4, 2.2);
+      return { kind: "scaleAxes", axes: [axis.clone()], factor };
     }
     if (drag.kind === "rot") {
       const center = drag.pivotWorld;
@@ -3724,12 +3766,15 @@ export class AbutmentDirectEditSession {
       this.viewPlane(center);
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
-      const proj = hit.sub(center).dot(drag.startRadialDir);
-      const factor = clamp(proj / Math.max(drag.startRadialLen, 0.2), 0.4, 2.2);
+      // 중심에서 멀어지는 거리 비. 대각·가로·세로 어느 쪽으로 끌어도 XY가 변한다.
+      const factor = clamp(hit.distanceTo(center) / Math.max(drag.startRadialLen, 0.2), 0.4, 2.2);
       if (drag.kind === "scale3") return { kind: "scaleUniform", factor };
-      const a = this.cameraAxis(drag.axis, vB, view).clone();
-      const b = drag.axis2 >= 0 ? this.cameraAxis(drag.axis2, vC, view).clone() : null;
-      return { kind: "scaleAxes", axes: b ? [a, b] : [a], factor };
+      // 포스트 단면 XY(순측·근심). 화면 축 투영은 옆보기에서 높이까지 섞인다.
+      return {
+        kind: "scaleAxes",
+        axes: [view.axes[0]!.clone(), view.axes[1]!.clone()],
+        factor,
+      };
     }
     return null;
   }
