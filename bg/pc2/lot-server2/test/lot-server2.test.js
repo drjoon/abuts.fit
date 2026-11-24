@@ -40,6 +40,25 @@ test("dshow 목록에서 영상 장치만 고른다", () => {
   assert.equal(chooseDevice(devices, "").input, "video=ViTiny UM20");
 });
 
+test("dshow 목록은 섹션 헤더 없이 (video) 태그도 읽는다", () => {
+  const text = `
+[dshow @ 000001e473dcb640] "Digital Microscope Camera" (video)
+[dshow @ 000001e473dcb640]   Alternative name "@device_pnp_\\\\?\\usb#vid_1bcf&pid_2c99"
+[dshow @ 000001e473dcb640] "디지털 오디오 인터페이스(Digital Microscope Camera)" (audio)
+[in#0 @ 000001e473dcb4c0] Error opening input: Immediate exit requested
+`;
+  const devices = parseVideoDevices(text, "win32");
+  assert.deepEqual(
+    devices.map((device) => device.name),
+    ["Digital Microscope Camera"],
+  );
+  assert.equal(
+    chooseDevice(devices, "").input,
+    "video=Digital Microscope Camera",
+  );
+  assert.equal(annotateDevices(devices)[0].preferred, true);
+});
+
 test("avfoundation 목록은 화면·Continuity보다 로컬 카메라를 고른다", () => {
   const text = `
 AVFoundation video devices:

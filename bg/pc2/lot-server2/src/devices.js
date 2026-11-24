@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-24: dshow 목록에 섹션 헤더가 없어도 "(video)" 태그를 읽는다(ffmpeg 6.1).
 // - 2026-11-23: Continuity/화면캡처 제외·장치 태그. 카메라 모듈과 함께 쓴다.
 // - 2026-11-21: ffmpeg 장치 목록에서 현미경 카메라를 고른다.
 // related files:
@@ -52,12 +53,20 @@ function parseDshow(lines) {
       section = "audio";
       continue;
     }
-    if (section !== "video") continue;
+    if (section === "audio") continue;
     if (lower.includes("alternative name")) continue;
     if (/\(audio\)/i.test(line)) continue;
+    // ffmpeg 6.1 essentials 등은 "DirectShow video devices" 헤더 없이
+    // "Name" (video) 줄만 출력한다. 태그가 있으면 섹션 없이도 채택한다.
     const tagged = line.match(/"([^"]+)"\s+\(video\)/i);
+    if (tagged) {
+      const name = cleanName(tagged[1]);
+      if (name) devices.push({ name, input: `video=${name}`, kind: "video" });
+      continue;
+    }
+    if (section !== "video") continue;
     const plain = line.match(/"([^"]+)"/);
-    const name = cleanName(tagged?.[1] || plain?.[1]);
+    const name = cleanName(plain?.[1]);
     if (!name) continue;
     devices.push({ name, input: `video=${name}`, kind: "video" });
   }
