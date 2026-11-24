@@ -42,6 +42,7 @@
 // - 2026-11-24: 저장 뷰가 메시에서 멀면 다시 맞춘다. 편측은 fit 뒤에 모델정렬 애니를 시작해 원점 애니로 덮지 않는다.
 // - 2026-11-24: 헤더 모델정렬 제거. 초기=교합→(모델정렬)→스캔바디. 헤더 교합=스캔바디 재생성, 헤더 스캔바디=모델정렬 후 검출.
 // - 2026-11-25: 교합 확정 다음은 스캔바디 클릭이 아니라 모델정렬 확인 후 스캔바디. 저장 축이 있어도 확정 직후에는 묻는다.
+// - 2026-11-25: 모델정렬 카메라는 악궁 교합면(frame.up). 슬롯 PCA·픽스처 기울기로 교합축을 덮지 않는다.
 // - 2026-11-24: 스캔바디용 모델정렬은 교합면·첫 치아 중심. 위=협측, 10/30 오른쪽=근심, 20/40 오른쪽=원심.
 // - 2026-11-24: 스캔바디 모델정렬을 확인한 뒤 카메라를 돌리지 않는다. 축·화면은 세션 메타에 남기고, 저장된 축은 다시 열 때 자동 앞뒤 확정으로 덮지 않는다.
 // - 2026-11-24: 스캔바디 뒤 큐브는 교합면이 화면과 나란하다(위=협측). 어벗 수평각은 악궁 반지름에 붙인다.
@@ -4057,6 +4058,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         );
         const geometry =
           jawScans[0]?.geometry ?? rawJawScansRef.current[0]?.geometry ?? null;
+        // 교합면 법선은 악궁 frame.up만 쓴다. 슬롯 PCA는 스캔바디·픽스처 쪽으로 기울 수 있다.
         let center = controls.target.clone();
         let occlusal = frame.up.clone();
         if (parsed?.jaw === "upper") occlusal.negate();
@@ -4072,18 +4074,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           if (slot) {
             center.set(slot.center[0], slot.center[1], slot.center[2]);
-            occlusal.set(slot.occlusalDir[0], slot.occlusalDir[1], slot.occlusalDir[2]);
             buccal.set(slot.labialDir[0], slot.labialDir[1], slot.labialDir[2]).normalize();
-            mesial
-              .crossVectors(
-                new THREE.Vector3(
-                  slot.occlusalDir[0],
-                  slot.occlusalDir[1],
-                  slot.occlusalDir[2],
-                ),
-                buccal,
-              )
-              .normalize();
+            mesial.crossVectors(occlusal, buccal).normalize();
             const hint = new THREE.Vector3(
               slot.archRight[0],
               slot.archRight[1],
@@ -4097,7 +4089,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                   slot.archAnterior[2],
                 ),
               );
-            if (mesial.dot(hint) < 0) mesial.negate();
+            hint.addScaledVector(occlusal, -hint.dot(occlusal));
+            if (hint.lengthSq() > 1e-8 && mesial.dot(hint) < 0) mesial.negate();
           }
         }
         if (occlusal.lengthSq() < 1e-8) occlusal.copy(frame.up).normalize();
@@ -4105,6 +4098,11 @@ export function PracticeCustomAbutmentPreviewDialog({
         buccal.addScaledVector(occlusal, -buccal.dot(occlusal));
         if (buccal.lengthSq() < 1e-8) buccal.copy(frame.anterior).normalize();
         else buccal.normalize();
+        mesial.addScaledVector(occlusal, -mesial.dot(occlusal));
+        mesial.addScaledVector(buccal, -mesial.dot(buccal));
+        if (mesial.lengthSq() < 1e-8) mesial.crossVectors(occlusal, buccal);
+        if (mesial.lengthSq() < 1e-8) mesial.copy(frame.right);
+        else mesial.normalize();
         const quadrant = parsed ? Number(parsed.digits[0]) : 1;
         const screenRight =
           quadrant === 1 || quadrant === 3 ? mesial.clone() : mesial.clone().negate();
@@ -4222,11 +4220,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       statusRef.current.kind === "model-orient"
         ? String(statusRef.current.toothNumber || "").trim()
         : "";
-    const next = orientTooth
-      ? dentalFrameFromOcclusalToothView(camera.quaternion, orientTooth, prev?.up ?? null)
-      : dentalFrameFromViewOrientation(camera.quaternion, prev?.up ?? null);
-    const axes = archFrameAxes(next);
     const gate = modelOrientGateRef.current;
+    // 스캔바디 직전 확정은 사용자가 맞춘 교합면만 따른다. 이전(추정) up으로 부호를 뒤집지 않는다.
+    const seedUp = gate ? null : prev?.up ?? null;
+    const next = orientTooth
+      ? dentalFrameFromOcclusalToothView(camera.quaternion, orientTooth, seedUp)
+      : dentalFrameFromViewOrientation(camera.quaternion, seedUp);
+    const axes = archFrameAxes(next);
     if (gate) {
       // 스캔바디 직전: 맞춘 화면은 그대로 두고 축만 넘긴다.
       frameRef.current = next;

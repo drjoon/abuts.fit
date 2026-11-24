@@ -599,7 +599,7 @@ function angleAbsDiff(a: number, b: number) {
   return Math.abs(d);
 }
 
-/** 스캔 전체에서 잡은 교합평면·미드라인(frame)을 우선 쓰되, 악궁이 따로 기울어 있으면 자체 PCA 법선으로 보완한다. */
+/** 교합면·악궁 축은 모델정렬·교합으로 잡은 frame을 쓴다. 부분 스캔 PCA는 쓰지 않는다. */
 function computeJawOcclusalAxes(
   pts: Array<[number, number, number]>,
   frame: DentalFrame,
@@ -608,34 +608,11 @@ function computeJawOcclusalAxes(
   const m = meanVec(pts);
   if (!m) return null;
   const mean: Vec3 = [m.x, m.y, m.z];
-  const cov = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-  for (const p of pts) {
-    const dx = p[0] - mean[0];
-    const dy = p[1] - mean[1];
-    const dz = p[2] - mean[2];
-    cov[0] += dx * dx;
-    cov[1] += dx * dy;
-    cov[2] += dx * dz;
-    cov[4] += dy * dy;
-    cov[5] += dy * dz;
-    cov[8] += dz * dz;
-  }
-  cov[3] = cov[1]!;
-  cov[6] = cov[2]!;
-  cov[7] = cov[5]!;
-  const eig = jacobi3(cov);
-  let minIdx = 0;
-  if (eig.values[1]! < eig.values[minIdx]!) minIdx = 1;
-  if (eig.values[2]! < eig.values[minIdx]!) minIdx = 2;
-  let occPca = norm(eig.vec(minIdx));
-  const wantOcc: Vec3 = norm(
+  const occ: Vec3 = norm(
     jaw === "upper"
       ? [-frame.up.x, -frame.up.y, -frame.up.z]
       : [frame.up.x, frame.up.y, frame.up.z],
   );
-  if (dot(occPca, wantOcc) < 0) occPca = scale(occPca, -1);
-  // frame이 전체 상·하악 교합평면으로 잘 잡혀 있으면(PCA와 32° 이내) 교합평면 법선을 그대로 따른다.
-  const occ = dot(occPca, wantOcc) >= Math.cos((32 * Math.PI) / 180) ? wantOcc : occPca;
 
   const rawRight: Vec3 = [frame.right.x, frame.right.y, frame.right.z];
   const archRight = norm(sub(rawRight, scale(occ, dot(rawRight, occ))));
