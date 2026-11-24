@@ -97,6 +97,41 @@ assert.ok(Math.abs(linear[1]! - 1) < 1e-4, "근심은 선형에서 그대로");
 const planar = one([2, 1, 6], edit({ scale: [1.1, 1.2, 1] }));
 assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4, "평면은 두 축");
 
+{
+  // 픽스처가 원심으로 치우쳐 포스트 중심이 근심에 있다. 노란 XY 스케일로 줄이면
+  // 직선 원심 벽이 스크류 축을 넘고, 원점 원호 보정은 그 벽 가운데만 패이게 만든다.
+  const eccentric = {
+    ...zone,
+    centerL: 0,
+    centerM: 1.8,
+    boreTopR: 1.05,
+    screwR: 1.25,
+  };
+  const src = new Float32Array([
+    -1.6, -1.7, 6,
+    0, -1.7, 6,
+    1.6, -1.7, 6,
+    0, 3.4, 6,
+  ]);
+  const shrunk = new Float32Array(src.length);
+  refitLocalPositions(src, edit({ scale: [0.7, 0.7, 1] }), eccentric, shrunk);
+  const distalY = [shrunk[1]!, shrunk[4]!, shrunk[7]!];
+  assert.ok(
+    Math.abs(distalY[0]! - distalY[1]!) < 0.04 && Math.abs(distalY[2]! - distalY[1]!) < 0.04,
+    `XY 축소 후에도 원심 벽이 직선이다(${distalY.map((y) => y.toFixed(3)).join(", ")})`,
+  );
+  assert.ok(
+    distalY.every((y) => y < -1.25),
+    `원심 벽이 스크류 축 밖으로 남는다(${distalY.map((y) => y.toFixed(3)).join(", ")})`,
+  );
+  const grown = new Float32Array(src.length);
+  refitLocalPositions(src, edit({ scale: [1.3, 1.3, 1] }), eccentric, grown);
+  assert.ok(
+    grown[4]! < shrunk[4]! && grown[4]! < -1.7,
+    `XY 확대는 원심 벽을 축 반대쪽으로 밀고 접지 않는다(${grown[4]})`,
+  );
+}
+
 const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
 assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
 
