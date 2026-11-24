@@ -362,7 +362,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   assert.equal(geo.getAttribute("normal")?.count, 6, "정점 개수 변경 시 normal 버퍼도 새 크기로 재생성된다");
 }
 
-// 검볼 노란 2D 스케일·그 점에 붙은 우상 이동·좌하 회전 핸들이 정면 광선에 잡히는지 검증
+// 검볼 노란 2D·축 1D 스케일·우상 이동·좌하 회전 핸들이 정면 광선에 잡히는지 검증
 {
   const gb = makeGumball("38");
   gb.updateMatrixWorld(true);
@@ -375,7 +375,13 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     assert.ok(found, `(${x}, ${y})에서 ${expectedOp} 핸들이 잡힌다`);
   };
   checkRay(0.36, 0.36, "scale2");
-  checkRay(0.6, 0.6, "move2");
+  // 화살표 반대쪽 축 1D 스케일 점(빨강 -X, 초록 -Y).
+  checkRay(0.1, 0.36, "scale");
+  checkRay(0.36, 0.1, "scale");
+  // 노란 점과 화살표·1D 점 사이 간격.
+  checkRay(0.44, 0.36, "scale2");
+  checkRay(0.36, 0.44, "scale2");
+  checkRay(0.78, 0.78, "move2");
   checkRay(-0.51, -0.51, "rot");
 }
 

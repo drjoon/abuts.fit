@@ -4,7 +4,7 @@
 // 기울기는 포스트 축을 비틀지 않는 강체 회전이라 표면이 꼬이지 않는다.
 // 파란 축은 화면 밖이다. 우상 이동 화살표는 화면 오른쪽·위인데, 포스트가 화면 아래로 길어지면 검볼을 180° 돌려 그 쪽을 가리킨다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
-// 노란 점에 붙은 우상 화살표는 평면 이동, 노란 점은 평면 2D 스케일이다.
+// 노란 점은 평면 2D 스케일. 화살표 반대쪽 녹·빨 점은 축 1D 스케일. 우상 화살표는 평면 이동.
 // 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
 // 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
 // 검볼을 움직이면 어벗 정보 수치를 다시 읽고, 손을 떼면 되돌리기 기록에 남긴다.
@@ -2651,16 +2651,35 @@ export function screenGumballQuaternion(
   return out.setFromRotationMatrix(gumballBasis);
 }
 
-/** 노란 스케일 점에 붙는 평면 이동 화살표. 예전 축 이동 화살표와 같은 크기. */
+/** 축 1D 스케일 점. 노란 점 기준 화살표 반대쪽에 둔다. */
+function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, radius = 0.07) {
+  const scaleMat = basicMat(AXIS_COLOR[axis]!);
+  const dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(radius, 14, 10), scaleMat), "scale", axis, -1, scaleMat);
+  dot.position.set(x, y, 0.04);
+  dot.renderOrder = 46;
+  const scaleHit = tagHandle(
+    new THREE.Mesh(new THREE.SphereGeometry(radius + 0.045, 12, 8), basicMat(0xffffff, 0)),
+    "scale",
+    axis,
+    -1,
+    scaleMat,
+  );
+  scaleHit.position.copy(dot.position);
+  group.add(dot, scaleHit);
+}
+
+/** 노란 점 우상 쪽 평면 이동 화살표. 예전 축 이동 화살표와 같은 크기. */
 function addCornerMoveArrow(
   group: THREE.Group,
   axis: 0 | 1,
   corner: number,
+  gap: number,
   colorMat: THREE.MeshBasicMaterial,
 ) {
   const shaftLen = 0.3;
   const coneH = 0.16;
-  const start = corner + 0.07;
+  // 노란 점에서 gap만큼 띄운 뒤 시작한다.
+  const start = corner + gap;
   const shaft = tagHandle(
     new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, shaftLen, 12), colorMat),
     "move2",
@@ -2696,8 +2715,9 @@ export function makeGumball(tooth: string) {
   group.frustumCulled = false;
 
   // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 76px.
-  // 뱃지 우상에 노란 2D 스케일 점과 그 점에 붙인 평면 이동 화살표. 회전 호는 좌하.
+  // 뱃지 우상 노란 2D 스케일. 화살표(+X/+Y) 반대쪽에 축 1D 스케일 점. 회전 호는 좌하.
   const scale2Corner = 0.36;
+  const fromYellow = 0.26;
 
   // 파란 화면 평면 회전 호: 3사분면(169°~281°).
   const arcColor = AXIS_COLOR[2]!;
@@ -2737,12 +2757,16 @@ export function makeGumball(tooth: string) {
   scale2Hit.position.copy(scale2Dot.position);
   group.add(scale2Dot, scale2Hit);
 
-  // 평면 이동 화살표: 노란 점에 붙이고, 제거한 축 화살표와 같은 크기.
-  addCornerMoveArrow(group, 0, scale2Corner, basicMat(AXIS_COLOR[0]!));
-  addCornerMoveArrow(group, 1, scale2Corner, basicMat(AXIS_COLOR[1]!));
-  const move2HitAt = scale2Corner + 0.07 + 0.3 * 0.55;
+  // 축 1D 스케일: 빨간 화살표(+X) 반대(-X), 초록 화살표(+Y) 반대(-Y).
+  addAxisScaleDot(group, 0, scale2Corner - fromYellow, scale2Corner);
+  addAxisScaleDot(group, 1, scale2Corner, scale2Corner - fromYellow);
+
+  // 평면 이동 화살표: 노란 점에서 띄운 뒤 +X/+Y.
+  addCornerMoveArrow(group, 0, scale2Corner, fromYellow, basicMat(AXIS_COLOR[0]!));
+  addCornerMoveArrow(group, 1, scale2Corner, fromYellow, basicMat(AXIS_COLOR[1]!));
+  const move2HitAt = scale2Corner + fromYellow + 0.3 * 0.55;
   const move2Hit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.14), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.14), basicMat(0xffffff, 0)),
     "move2",
     0,
     1,
@@ -2789,11 +2813,14 @@ function paintHandle(object: THREE.Object3D | null, hot: boolean) {
 function pickGumballHit(groups: THREE.Object3D[]) {
   const hits = raycaster.intersectObjects(groups, true);
   if (hits.length <= 1) return hits[0];
+  // 노란 XY 스케일이 우상 이동 화살표보다 앞선다. 겹치면 스케일이다.
   const rank = (obj: THREE.Object3D) => {
     const h = handleFrom(obj);
     if (!h) return 9;
-    if (h.op === "scale" || h.op === "scale2" || h.op === "move2" || h.op === "center") return 0;
-    return 1;
+    if (h.op === "scale" || h.op === "scale2" || h.op === "scale3") return 0;
+    if (h.op === "move2" || h.op === "center") return 1;
+    if (h.op === "move" || h.op === "rot") return 2;
+    return 3;
   };
   let best = hits[0]!;
   let bestRank = rank(best.object);
