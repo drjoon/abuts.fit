@@ -94,10 +94,9 @@ function percentileOf(sorted: readonly number[], p: number) {
 }
 
 /**
- * 스캔바디 픽스처와 어벗 FDI로 앞(+anterior = 전치) 부호만 고친다.
- * 1) 같은 사분악 여러 개: 번호가 작을수록 전치(근심).
- * 2) 픽스처 주변 치아 크기: 큰 쪽(대구치)이 원심, 작은 쪽이 전치.
- * 3) 치아를 못 나누면 악궁 장축 위 FDI 칸 위치로 부호를 고른다.
+ * 스캔바디 픽스처와 어벗 FDI로 앞(+anterior = 전치·근심)을 절대 방향으로 잡는다.
+ * 추정 축을 유지/뒤집기만 하지 않는다 — 치아 줄 장축을 새로 세운 뒤
+ * 픽스처 옆에서 큰 치아(대구치) 쪽을 원심으로 둔다.
  */
 export function orientAnteriorFromAbutmentFdi(
   frame: DentalFrame,
@@ -105,150 +104,187 @@ export function orientAnteriorFromAbutmentFdi(
   archPoints: readonly (readonly [number, number, number])[],
 ): DentalFrame {
   const up = frame.up.clone().normalize();
-  const anterior = frame.anterior.clone();
-  anterior.addScaledVector(up, -anterior.dot(up));
-  if (anterior.lengthSq() < 1e-8) return frame;
-  anterior.normalize();
+  const seedAnt = frame.anterior.clone();
+  seedAnt.addScaledVector(up, -seedAnt.dot(up));
+  if (seedAnt.lengthSq() < 1e-8) return frame;
+  seedAnt.normalize();
 
-  const project = (p: readonly [number, number, number]) =>
-    p[0] * anterior.x + p[1] * anterior.y + p[2] * anterior.z;
-
-  const parsed: Array<{ quadrant: number; pos: number; proj: number; point: readonly [number, number, number] }> =
-    [];
+  const parsed: Array<{
+    quadrant: number;
+    pos: number;
+    point: readonly [number, number, number];
+  }> = [];
   for (const mark of marks) {
     const fdi = fdiQuadrantPos(mark.toothNumber);
     if (!fdi || !mark.point || mark.point.length < 3) continue;
-    const proj = project(mark.point);
-    if (!Number.isFinite(proj)) continue;
-    parsed.push({ ...fdi, proj, point: mark.point });
+    parsed.push({ ...fdi, point: mark.point });
   }
   if (parsed.length === 0) return frame;
 
+  const finish = (anterior: THREE.Vector3): DentalFrame => {
+    anterior.addScaledVector(up, -anterior.dot(up));
+    if (anterior.lengthSq() < 1e-8) return frame;
+    anterior.normalize();
+    const right = new THREE.Vector3().crossVectors(anterior, up);
+    if (right.lengthSq() < 1e-8) return frame;
+    right.normalize();
+    return { up, anterior, right };
+  };
+
+  const pts = archPoints.filter(
+    (p): p is Pt3 => Boolean(p && p.length >= 3 && Number.isFinite(p[0]) && Number.isFinite(p[1])),
+  );
+  const mean = meanVec(pts);
+  if (!mean || pts.length < 40) return finish(seedAnt);
+
+  const toMm = spanUnitsToMm(pts, mean);
+  const { e1, e2 } = planeBasis(up);
+  let teeth: ToothHit[] = [];
+  for (const occSign of [1, -1] as const) {
+    const grid = extractJawCrownCells(pts, mean, up, e1, e2, toMm, occSign);
+    const seg = segmentJawTeeth(grid.crownCells);
+    const cand = absorbOpposing(classifyTeeth(seg.teeth));
+    if (cand.length > teeth.length) teeth = cand;
+  }
+
+  // 치아 줄 장축(교합면). 없으면 시드 앞뒤를 장축으로 쓴다.
+  let axis = toothMajorAxis(teeth);
+  if (!axis && teeth.length >= 2) {
+    const sorted = [...teeth].sort((a, b) => a.x - b.x || a.y - b.y);
+    const a = sorted[0]!;
+    const b = sorted[sorted.length - 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len >= 4) axis = [dx / len, dy / len];
+  }
+  if (!axis) {
+    axis = [e1.dot(seedAnt), e2.dot(seedAnt)];
+    const len = Math.hypot(axis[0], axis[1]);
+    if (len < 1e-6) return finish(seedAnt);
+    axis = [axis[0] / len, axis[1] / len];
+  }
+
+  const markAlongMm = (point: readonly [number, number, number]) => {
+    const dx = (point[0]! - mean.x) * toMm;
+    const dy = (point[1]! - mean.y) * toMm;
+    const dz = (point[2]! - mean.z) * toMm;
+    const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
+    const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
+    return xMm * axis![0] + yMm * axis![1];
+  };
+
+  // +axis 쪽이 대구치(원심)이면 distalOnPlus > 0.
+  let distalOnPlus = 0;
+  let sizeDecided = false;
+  if (teeth.length >= 2) {
+    for (const mark of parsed) {
+      const origin = markAlongMm(mark.point);
+      let plusBest = 0;
+      let minusBest = 0;
+      let plusArea = 0;
+      let plusN = 0;
+      let minusArea = 0;
+      let minusN = 0;
+      for (const t of teeth) {
+        const along = t.x * axis[0] + t.y * axis[1];
+        const rel = along - origin;
+        if (Math.abs(rel) < 3.0 || Math.abs(rel) > 48) continue;
+        const weight = t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
+        if (rel > 0) {
+          plusArea += weight;
+          plusN += 1;
+          if (weight > plusBest) plusBest = weight;
+        } else {
+          minusArea += weight;
+          minusN += 1;
+          if (weight > minusBest) minusBest = weight;
+        }
+      }
+      if (plusN > 0 && minusN > 0) {
+        sizeDecided = true;
+        const plusMean = plusArea / plusN;
+        const minusMean = minusArea / minusN;
+        if (plusBest > minusBest * 1.08 || plusMean > minusMean * 1.1) distalOnPlus += 1;
+        else if (minusBest > plusBest * 1.08 || minusMean > plusMean * 1.1) distalOnPlus -= 1;
+      } else if (plusN >= 1 && minusN === 0 && plusBest >= 34) {
+        sizeDecided = true;
+        distalOnPlus += 1;
+      } else if (minusN >= 1 && plusN === 0 && minusBest >= 34) {
+        sizeDecided = true;
+        distalOnPlus -= 1;
+      }
+    }
+  }
+
+  // 같은 사분악 픽스처가 둘 이상이면 번호가 작은 쪽 = 전치(+anterior).
+  let fdiOnPlus = 0;
+  let fdiDecided = false;
   const byQuad = new Map<number, typeof parsed>();
   for (const row of parsed) {
     const list = byQuad.get(row.quadrant);
     if (list) list.push(row);
     else byQuad.set(row.quadrant, [row]);
   }
-
-  let flipVotes = 0;
-  let keepVotes = 0;
-
-  // 1) 같은 사분악에 픽스처가 둘 이상이면 번호 순서로 앞뒤를 고정한다.
   for (const group of byQuad.values()) {
     if (group.length < 2) continue;
-    let score = 0;
     for (let i = 0; i < group.length; i += 1) {
       for (let j = i + 1; j < group.length; j += 1) {
         const a = group[i]!;
         const b = group[j]!;
         const dPos = a.pos - b.pos;
-        const dProj = a.proj - b.proj;
-        if (dPos === 0 || Math.abs(dProj) < 0.4) continue;
-        score += dPos * dProj < 0 ? 1 : -1;
+        const dAlong = markAlongMm(a.point) - markAlongMm(b.point);
+        if (dPos === 0 || Math.abs(dAlong) < 0.5) continue;
+        fdiDecided = true;
+        // 작은 번호가 +axis에 있으면 +axis가 전치 → distal은 −axis.
+        fdiOnPlus += dPos * dAlong < 0 ? -1 : 1;
       }
     }
-    if (score > 0) keepVotes += 2;
-    else if (score < 0) flipVotes += 2;
   }
 
-  // 2) 픽스처 옆 치아 크기. 큰 쪽(대구치)이 원심 = −anterior.
-  const pts = archPoints.filter(
-    (p): p is Pt3 => Boolean(p && p.length >= 3 && Number.isFinite(p[0]) && Number.isFinite(p[1])),
-  );
-  const mean = meanVec(pts);
-  if (mean && pts.length >= 40) {
-    const toMm = spanUnitsToMm(pts, mean);
-    const { e1, e2 } = planeBasis(up);
-    // 상악·하악 교합 부호가 다르다. 치아가 더 많이 나오는 쪽을 쓴다.
-    let teeth: ToothHit[] = [];
-    for (const occSign of [1, -1] as const) {
-      const grid = extractJawCrownCells(pts, mean, up, e1, e2, toMm, occSign);
-      const seg = segmentJawTeeth(grid.crownCells);
-      const cand = absorbOpposing(classifyTeeth(seg.teeth));
-      if (cand.length > teeth.length) teeth = cand;
-    }
+  let distalSign: 1 | -1 | 0 = 0;
+  if (sizeDecided && distalOnPlus !== 0) distalSign = distalOnPlus > 0 ? 1 : -1;
+  else if (fdiDecided && fdiOnPlus !== 0) distalSign = fdiOnPlus > 0 ? 1 : -1;
+  else if (parsed.length >= 1) {
+    // 치아를 못 나눠도 장축(또는 시드) 위 FDI 칸으로 앞뒤를 고른다.
+    const only = parsed[0]!;
+    const origin = markAlongMm(only.point);
+    const alongs: number[] = [];
     if (teeth.length >= 2) {
-      const ax = e1.dot(anterior);
-      const ay = e2.dot(anterior);
-      for (const mark of parsed) {
-        const markAlong =
-          ((mark.point[0]! - mean.x) * anterior.x +
-            (mark.point[1]! - mean.y) * anterior.y +
-            (mark.point[2]! - mean.z) * anterior.z) *
-          toMm;
-        let plusBest = 0;
-        let minusBest = 0;
-        let plusArea = 0;
-        let plusN = 0;
-        let minusArea = 0;
-        let minusN = 0;
-        for (const t of teeth) {
-          const along = t.x * ax + t.y * ay;
-          const rel = along - markAlong;
-          // 픽스처 바로 위는 빼고, 같은 사분악 줄(약 한 칸~제2대구치)만 본다.
-          if (Math.abs(rel) < 3.2 || Math.abs(rel) > 45) continue;
-          const weight = t.cls === "M" ? t.area * 1.35 : t.area;
-          if (rel > 0) {
-            plusArea += weight;
-            plusN += 1;
-            if (weight > plusBest) plusBest = weight;
-          } else {
-            minusArea += weight;
-            minusN += 1;
-            if (weight > minusBest) minusBest = weight;
-          }
-        }
-        // 한쪽에만 치아가 보여도, 그쪽이 확연히 크면 대구치(원심)로 본다.
-        if (plusN > 0 && minusN > 0) {
-          const plusMean = plusArea / plusN;
-          const minusMean = minusArea / minusN;
-          if (plusBest > minusBest * 1.12 || plusMean > minusMean * 1.15) flipVotes += 3;
-          else if (minusBest > plusBest * 1.12 || minusMean > plusMean * 1.15) keepVotes += 3;
-        } else if (plusN >= 1 && minusN === 0 && (plusBest >= 40 || parsed[0]!.pos <= 5)) {
-          // +anterior에만 큰 치아가 모이면 그쪽이 구치다.
-          if (plusBest >= 36) flipVotes += 2;
-        } else if (minusN >= 1 && plusN === 0 && minusBest >= 36) {
-          keepVotes += 2;
-        }
+      for (const t of teeth) alongs.push(t.x * axis[0] + t.y * axis[1]);
+    } else {
+      for (const p of pts) {
+        const dx = (p[0] - mean.x) * toMm;
+        const dy = (p[1] - mean.y) * toMm;
+        const dz = (p[2] - mean.z) * toMm;
+        const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
+        const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
+        alongs.push(xMm * axis[0] + yMm * axis[1]);
+      }
+    }
+    alongs.sort((a, b) => a - b);
+    if (alongs.length >= 8) {
+      const lo = alongs[Math.floor(alongs.length * 0.08)]!;
+      const hi = alongs[Math.min(alongs.length - 1, Math.floor(alongs.length * 0.92))]!;
+      const span = hi - lo;
+      if (span >= 8) {
+        const u = (origin - lo) / span;
+        const expectedU = (8.5 - only.pos) / 7;
+        const errPlusIsAnt = Math.abs(u - expectedU);
+        const errMinusIsAnt = Math.abs(1 - u - expectedU);
+        if (errMinusIsAnt + 0.1 < errPlusIsAnt) distalSign = 1;
+        else if (errPlusIsAnt + 0.1 < errMinusIsAnt) distalSign = -1;
       }
     }
   }
 
-  // 3) 치아를 못 나눴고 표도 없으면 악궁 장축 위 FDI 칸 위치로 고른다.
-  if (flipVotes === 0 && keepVotes === 0) {
-    const samples: number[] = [];
-    for (const p of pts) samples.push(project(p));
-    samples.sort((a, b) => a - b);
-    const lo = percentileOf(samples, 0.08);
-    const hi = percentileOf(samples, 0.92);
-    const span = hi - lo;
-    if (samples.length >= 12 && span >= 8) {
-      for (const only of parsed) {
-        const u = (only.proj - lo) / span;
-        // 대구치(6~8)는 장축의 뒤쪽, 전치(1~3)는 앞쪽. 소구치는 치아 크기 쪽에 맡긴다.
-        if (only.pos >= 6) {
-          if (u > 0.58) flipVotes += 1;
-          else if (u < 0.42) keepVotes += 1;
-        } else if (only.pos <= 3) {
-          if (u < 0.42) flipVotes += 1;
-          else if (u > 0.58) keepVotes += 1;
-        } else {
-          const expectedU = (8.5 - only.pos) / 7;
-          const errKeep = Math.abs(u - expectedU);
-          const errFlip = Math.abs(1 - u - expectedU);
-          if (errFlip + 0.18 < errKeep) flipVotes += 1;
-          else if (errKeep + 0.18 < errFlip) keepVotes += 1;
-        }
-      }
-    }
-  }
+  if (distalSign === 0) return finish(seedAnt);
 
-  if (flipVotes <= keepVotes) return frame;
-  anterior.negate();
-  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
-  if (right.lengthSq() < 1e-8) return frame;
-  return { up, anterior, right };
+  // +axis가 원심이면 앞(전치)은 −axis.
+  const anterior = new THREE.Vector3()
+    .addScaledVector(e1, axis[0] * -distalSign)
+    .addScaledVector(e2, axis[1] * -distalSign);
+  return finish(anterior);
 }
 
 type Pt3 = [number, number, number];

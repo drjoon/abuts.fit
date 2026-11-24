@@ -5755,17 +5755,43 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
           }
 
-          const askBiteAfterScanbody = async (keepCamera: boolean) => {
+          const askBiteAfterScanbody = async (_keepCamera: boolean) => {
             if (!deferOcclusionConfirm || cancelled) return "skip" as const;
+            // 교합 확인 직전에 스캔바디·치아 크기로 앞뒤를 한 번 더 고정한다.
+            const orientFixtures =
+              (designContextRef.current?.fixtures.length
+                ? designContextRef.current.fixtures
+                : jawJobs.flatMap((job) => job.fixtures)) ?? [];
+            if (orientFixtures.length > 0 && frameRef.current) {
+              const oriented = applyAbutmentArchOrientation(
+                frameRef.current,
+                orientFixtures,
+                jawScans.map((scan) => scan.geometry),
+              );
+              frame = oriented.frame;
+              frameRef.current = oriented.frame;
+              if (oriented.axes) {
+                sessionArchFrame = oriented.axes;
+                archOriented = true;
+                if (designContextRef.current) {
+                  designContextRef.current = {
+                    ...designContextRef.current,
+                    archFrame: oriented.axes,
+                    fixtures: orientFixtures,
+                  };
+                }
+              }
+            }
             setFrameEpoch((n) => n + 1);
             setBiteRecalcBusy(true);
+            // 축을 고친 뒤라 카메라를 해부 방향으로 다시 잡는다(keepCamera 금지).
             const choice = await startBiteConfirmRef.current(
-              keepCamera ? biteScans : [...jawScans, ...biteScans],
+              [...jawScans, ...biteScans],
               Boolean(lastBiteFit?.qualityOk),
               {
                 canRetry: bitePoseRankRef.current < BITE_MANUAL_RETRY_MAX,
                 attempt: bitePoseRankRef.current,
-                keepCamera,
+                keepCamera: false,
               },
             );
             if (cancelled) {
