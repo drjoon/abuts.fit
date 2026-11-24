@@ -146,24 +146,44 @@ function grid(zAt: (x: number, y: number) => number, x0: number, x1: number, y0:
 }
 
 const ging = -3.2;
-const bump = (x: number, y: number, cy: number) => {
-  const dx = x;
+// 전치 절단연: 순측으로 좁고 높게. 여러 근원심 위치에 Spee처럼 둔다.
+const incisal = (x: number, y: number, cy: number, crownH: number) => {
+  const dx = x - 1.1;
   const dy = y - cy;
-  const c = (dx * dx) / (3.2 * 3.2) + (dy * dy) / (3.5 * 3.5);
+  const c = (dx * dx) / (2.6 * 2.6) + (dy * dy) / (3.2 * 3.2);
   if (c >= 1) return ging;
-  return ging - 9.2 * Math.sqrt(1 - c);
+  return ging - crownH * Math.sqrt(1 - c);
 };
-const archJaw = grid((x, y) => Math.min(ging, bump(x, y, 22), bump(x, y, -22)), -8, 8, -30, 30, 36, 120);
+const archJaw = grid(
+  (x, y) =>
+    Math.min(
+      ging,
+      incisal(x, y, 20, 10.4),
+      incisal(x, y, 26, 10.1),
+      incisal(x, y, -20, 10.2),
+      incisal(x, y, -26, 9.9),
+    ),
+  -8,
+  8,
+  -34,
+  34,
+  40,
+  140,
+);
 const closeOpp = grid(() => -6.1, -7, 7, -7, 7, 16, 16);
 const planePost = await designCustomAbutmentStl({
   fixture: fixture11,
   jawGeometry: archJaw,
   opposingGeometry: closeOpp,
-  toothWorks: [{ toothNumber: "11", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+  neighbors: [fixture12],
+  toothWorks: [
+    { toothNumber: "11", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+    { toothNumber: "12", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] },
+  ],
 });
 assert.ok(
-  planePost.metrics.postHeightMm > 5.4,
-  `인접 자연치가 없으면 악궁 교합면으로 포스트를 올린다(${planePost.metrics.postHeightMm}mm). 가까운 대합만으로 2mm대에 두지 않는다`,
+  planePost.metrics.postHeightMm > 5.8,
+  `전치 절단연으로 그린 악궁 교합 곡면으로 포스트를 올린다(${planePost.metrics.postHeightMm}mm). 가까운 대합만으로 2mm대에 두지 않는다`,
 );
 archJaw.dispose();
 closeOpp.dispose();

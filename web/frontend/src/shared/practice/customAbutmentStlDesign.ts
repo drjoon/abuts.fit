@@ -10,7 +10,7 @@
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
-//    바로 옆 자연치가 없으면 악궁에 있는 치아 전체의 교합면을 기준으로 한다.
+//    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
 //    설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
@@ -2356,9 +2356,19 @@ function adjacentOcclusalHeight(
 
 const archOcclusalHeightCache = new WeakMap<Float32Array, Map<string, number>>();
 
+type ArchLandmarkSample = {
+  /** 근원심(악궁 진행) 좌표 mm. */
+  s: number;
+  /** 마진 중심 기준 교합 방향 높이 mm. */
+  h: number;
+  /** 전치 절단연이면 true, 구치 중심구면 false. */
+  anterior: boolean;
+};
+
 /**
- * 바로 옆 자연치가 없을 때 쓰는 악궁 교합면 높이. 마진 중심에서 교합 방향 mm.
- * 치아 교합면·절단연만 모아 평면을 맞추고, 이 치아 위치의 높이를 돌려준다. 없으면 NaN.
+ * 악궁 교합 곡면 높이. 마진 중심에서 교합 방향 mm.
+ * 전치부 칸은 절단연(순측 높은 끝), 구치부 칸은 중심구(교합면 낮은 골)만 모아
+ * Spee 곡선(근원심 2차)을 맞춘 뒤 이 치아 위치 높이를 돌려준다. 없으면 NaN.
  */
 function measureArchOcclusalHeight(
   pts: Float32Array,
@@ -2367,9 +2377,10 @@ function measureArchOcclusalHeight(
   labialHint: Vec3,
   ownScanbody: { radius: number; height: number },
   neighborCylinders: readonly NeighborLocal[],
+  opts?: { preferAnterior?: boolean },
 ): number {
   const r3 = (v: number) => Math.round(v * 50);
-  const key = `${r3(c0[2])}|${r3(up[0])},${r3(up[1])},${r3(up[2])}|${r3(labialHint[0])},${r3(labialHint[1])}|${neighborCylinders.map((nb) => nb.toothNumber).join(",")}`;
+  const key = `${r3(c0[2])}|${r3(up[0])},${r3(up[1])},${r3(up[2])}|${r3(labialHint[0])},${r3(labialHint[1])}|${neighborCylinders.map((nb) => nb.toothNumber).join(",")}|${opts?.preferAnterior ? 1 : 0}`;
   let byKey = archOcclusalHeightCache.get(pts);
   if (!byKey) {
     byKey = new Map();
@@ -2381,11 +2392,22 @@ function measureArchOcclusalHeight(
   const computed = ((): number => {
     if (pts.length < 90) return Number.NaN;
     const archFr = insertionFrame(norm3(up), labialHint);
-    const CELL = 3.4;
-    const buckets = new Map<string, number[]>();
-    const stride = pts.length > 210000 ? Math.ceil(pts.length / 210000) : 1;
-    const ownR = ownScanbody.radius + 1.1;
-    const ownH = ownScanbody.height + 1.2;
+    const CELL_S = 3.6;
+    const CELL_U = 2.2;
+    type CellPts = { hs: number[]; us: number[]; n: number };
+    const cells = new Map<string, CellPts>();
+    const stride = pts.length > 240000 ? Math.ceil(pts.length / 240000) : 1;
+    const ownR = ownScanbody.radius + 1.15;
+    const ownH = ownScanbody.height + 1.3;
+    const nearImplantUv = (u: number, v: number) => {
+      for (const nb of neighborCylinders) {
+        const rel = sub3(nb.origin, c0);
+        const nu = dot3(rel, archFr.uLabial);
+        const nv = dot3(rel, archFr.vSide);
+        if (Math.hypot(nu - u, nv - v) < nb.radius + 3.4) return true;
+      }
+      return false;
+    };
     for (let i = 0; i < pts.length; i += 3 * stride) {
       const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
       if (Math.hypot(p[0], p[1]) < ownR && p[2] < ownH) continue;
@@ -2397,7 +2419,7 @@ function measureArchOcclusalHeight(
         const t = rx * nb.axis[0] + ry * nb.axis[1] + rz * nb.axis[2];
         if (t < -0.8 || t > nb.height + 1.4) continue;
         const radial = rx * rx + ry * ry + rz * rz - t * t;
-        const lim = nb.radius + 1.6;
+        const lim = nb.radius + 1.7;
         if (radial < lim * lim) {
           onNeighbor = true;
           break;
@@ -2406,87 +2428,145 @@ function measureArchOcclusalHeight(
       if (onNeighbor) continue;
       const rel = sub3(p, c0);
       const h = dot3(rel, archFr.w);
-      if (h < 1.4 || h > 15.5) continue;
+      if (h < 1.6 || h > 15.8) continue;
       const u = dot3(rel, archFr.uLabial);
       const v = dot3(rel, archFr.vSide);
       const r = Math.hypot(u, v);
-      if (r < 5.5 || r > 50) continue;
-      const ku = Math.round(u / CELL);
-      const kv = Math.round(v / CELL);
-      const slot = `${ku},${kv}`;
-      const list = buckets.get(slot);
-      if (list) list.push(h);
-      else buckets.set(slot, [h]);
-    }
-    const tops: Array<{ u: number; v: number; h: number }> = [];
-    for (const [slot, list] of buckets) {
-      if (list.length < 14) continue;
-      list.sort((a, b) => a - b);
-      const bot = list[Math.floor(list.length * 0.18)]!;
-      const top = list[Math.floor(list.length * 0.9)]!;
-      if (top < 5.2 || top - bot < 2.2) continue;
-      const [ku, kv] = slot.split(",").map(Number);
-      const u = ku! * CELL;
-      const v = kv! * CELL;
-      let nearImplant = false;
-      for (const nb of neighborCylinders) {
-        const rel = sub3(nb.origin, c0);
-        const nu = dot3(rel, archFr.uLabial);
-        const nv = dot3(rel, archFr.vSide);
-        if (Math.hypot(nu - u, nv - v) < nb.radius + 3.2) {
-          nearImplant = true;
-          break;
-        }
+      if (r < 5.2 || r > 54) continue;
+      if (nearImplantUv(u, v)) continue;
+      const ks = Math.round(v / CELL_S);
+      const ku = Math.round(u / CELL_U);
+      const slot = `${ks},${ku}`;
+      const cell = cells.get(slot);
+      if (cell) {
+        cell.hs.push(h);
+        cell.us.push(u);
+        cell.n += 1;
+      } else {
+        cells.set(slot, { hs: [h], us: [u], n: 1 });
       }
-      if (nearImplant) continue;
-      tops.push({ u, v, h: top });
     }
-    if (tops.length < 4) return Number.NaN;
-    const hs = tops.map((t) => t.h).sort((a, b) => a - b);
+
+    // 근원심 띠마다 순설 칸을 모아 전치(절단연)·구치(중심구) 랜드마크를 고른다.
+    const byStrip = new Map<number, Array<{ u: number; hs: number[]; n: number }>>();
+    for (const [slot, cell] of cells) {
+      if (cell.n < 10) continue;
+      const [ks, ku] = slot.split(",").map(Number);
+      const u = ku! * CELL_U;
+      const list = byStrip.get(ks!);
+      if (list) list.push({ u, hs: cell.hs, n: cell.n });
+      else byStrip.set(ks!, [{ u, hs: cell.hs, n: cell.n }]);
+    }
+
+    const landmarks: ArchLandmarkSample[] = [];
+    for (const [ks, rows] of byStrip) {
+      const s = ks * CELL_S;
+      if (Math.abs(s) < 4.8) continue;
+      rows.sort((a, b) => a.u - b.u);
+      const allH: number[] = [];
+      for (const row of rows) {
+        for (const h of row.hs) allH.push(h);
+      }
+      if (allH.length < 24) continue;
+      allH.sort((a, b) => a - b);
+      const stripTop = allH[Math.floor(allH.length * 0.92)]!;
+      const stripBot = allH[Math.floor(allH.length * 0.2)]!;
+      if (stripTop < 5.0 || stripTop - stripBot < 2.0) continue;
+
+      const uSpan = rows[rows.length - 1]!.u - rows[0]!.u;
+      // 순설로 좁고 순측이 높으면 전치 절단연. 넓으면 구치 중심구.
+      const looksAnterior = uSpan < 7.2 || (Math.abs(s) < 18 && uSpan < 9.0);
+      if (looksAnterior) {
+        const labialRows = rows.filter((row) => row.u >= -0.4);
+        const pool = labialRows.length >= 1 ? labialRows : rows.slice(-Math.max(1, Math.ceil(rows.length * 0.45)));
+        const labH: number[] = [];
+        for (const row of pool) {
+          const sorted = [...row.hs].sort((a, b) => a - b);
+          labH.push(sorted[Math.floor(sorted.length * 0.9)]!);
+        }
+        labH.sort((a, b) => a - b);
+        const incisal = labH[Math.floor(labH.length * 0.7)]!;
+        if (incisal >= 5.4) landmarks.push({ s, h: incisal, anterior: true });
+      } else {
+        // 교합면 중앙 띠의 낮은 골(중심구). 교두정(상위)은 쓰지 않는다.
+        const midLo = Math.floor(rows.length * 0.28);
+        const midHi = Math.ceil(rows.length * 0.72);
+        const midRows = rows.slice(midLo, Math.max(midLo + 1, midHi));
+        const grooveH: number[] = [];
+        for (const row of midRows) {
+          const sorted = [...row.hs].sort((a, b) => a - b);
+          const localTop = sorted[Math.floor(sorted.length * 0.88)]!;
+          const localBot = sorted[Math.floor(sorted.length * 0.22)]!;
+          if (localTop - localBot < 0.9) continue;
+          grooveH.push(sorted[Math.floor(sorted.length * 0.42)]!);
+        }
+        if (grooveH.length < 1) continue;
+        grooveH.sort((a, b) => a - b);
+        const groove = grooveH[Math.floor(grooveH.length * 0.5)]!;
+        if (groove >= 4.6) landmarks.push({ s, h: groove, anterior: false });
+      }
+    }
+    if (landmarks.length < 3) return Number.NaN;
+
+    const preferAnt = opts?.preferAnterior !== false;
+    const ant = landmarks.filter((l) => l.anterior);
+    const post = landmarks.filter((l) => !l.anterior);
+    // 전치 어벗은 절단연을 우선하고, 구치 어벗은 중심구를 우선한다. 표본이 부족하면 전부 쓴다.
+    let used =
+      preferAnt && ant.length >= 2 ? ant : !preferAnt && post.length >= 2 ? post : landmarks;
+    if (used.length < 3) used = landmarks;
+    const hs = used.map((l) => l.h).sort((a, b) => a - b);
     const median = hs[Math.floor(hs.length * 0.5)]!;
-    const kept = tops.filter((t) => Math.abs(t.h - median) <= 3.4);
-    const samples = kept.length >= 4 ? kept : tops;
+    used = used.filter((l) => Math.abs(l.h - median) <= 3.8);
+    if (used.length < 3) used = landmarks.filter((l) => Math.abs(l.h - median) <= 4.2);
+    if (used.length < 3) return Number.NaN;
+
+    // Spee: h(s) = c0 + c1·s + c2·s². 이 치아(s=0) 높이는 c0.
     let n = 0;
-    let su = 0;
-    let sv = 0;
-    let suu = 0;
-    let svv = 0;
-    let suv = 0;
+    let ss = 0;
+    let s2 = 0;
+    let s3 = 0;
+    let s4 = 0;
     let sh = 0;
-    let suh = 0;
-    let svh = 0;
-    for (const s of samples) {
+    let s1h = 0;
+    let s2h = 0;
+    for (const l of used) {
+      const s = l.s;
+      const sSq = s * s;
       n += 1;
-      su += s.u;
-      sv += s.v;
-      suu += s.u * s.u;
-      svv += s.v * s.v;
-      suv += s.u * s.v;
-      sh += s.h;
-      suh += s.u * s.h;
-      svh += s.v * s.h;
+      ss += s;
+      s2 += sSq;
+      s3 += sSq * s;
+      s4 += sSq * sSq;
+      sh += l.h;
+      s1h += s * l.h;
+      s2h += sSq * l.h;
     }
+    // 정규방정식 3×3
+    const A00 = n;
+    const A01 = ss;
+    const A02 = s2;
+    const A11 = s2;
+    const A12 = s3;
+    const A22 = s4;
     const det =
-      n * (suu * svv - suv * suv) - su * (su * svv - suv * sv) + sv * (su * suv - suu * sv);
+      A00 * (A11 * A22 - A12 * A12) -
+      A01 * (A01 * A22 - A12 * A02) +
+      A02 * (A01 * A12 - A11 * A02);
     let hAt = median;
     if (Math.abs(det) > 1e-3) {
-      const h0 =
-        (sh * (suu * svv - suv * suv) -
-          su * (suh * svv - suv * svh) +
-          sv * (suh * suv - suu * svh)) /
-        det;
-      const a =
-        (n * (suh * svv - suv * svh) - sh * (su * svv - suv * sv) + sv * (su * svh - suh * sv)) / det;
-      const b =
-        (n * (suu * svh - suh * suv) - su * (su * svh - suh * sv) + sh * (su * suv - suu * sv)) / det;
-      if (Number.isFinite(h0) && Number.isFinite(a) && Number.isFinite(b)) {
-        const hasPos = samples.some((s) => s.v > 8 || s.u > 8);
-        const hasNeg = samples.some((s) => s.v < -8 || s.u < -8);
-        hAt = hasPos && hasNeg ? h0 : median * 0.65 + h0 * 0.35;
+      const inv00 = (A11 * A22 - A12 * A12) / det;
+      const inv01 = (A02 * A12 - A01 * A22) / det;
+      const inv02 = (A01 * A12 - A02 * A11) / det;
+      const c0h = inv00 * sh + inv01 * s1h + inv02 * s2h;
+      if (Number.isFinite(c0h)) {
+        const span = Math.max(...used.map((l) => Math.abs(l.s)));
+        // 한쪽에만 랜드마크가 있으면 중앙값과 섞어 과외삽을 막는다.
+        hAt = span >= 14 ? c0h : median * 0.55 + c0h * 0.45;
       }
     }
     if (!Number.isFinite(hAt)) return Number.NaN;
-    return clamp(hAt, 5.2, 13.2);
+    return clamp(hAt, 5.0, 13.5);
   })();
   byKey.set(key, computed);
   return computed;
@@ -7116,23 +7196,34 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ? Math.min(guideAxial + 0.35, guideAxial * 0.8 + mirrorTopH * 0.2)
       : guideAxial;
   }
-  // 바로 옆 자연치가 없으면 임플란트 쪽 잇몸이나 가까운 대합으로 짧게 만들지 않고, 악궁 교합면을 쓴다.
+  // 바로 옆 완성 자연치가 한쪽이라도 비면(무치악·이웃 어벗) 악궁 교합 곡면을 쓴다.
+  // 전치 = 절단연, 구치 = 중심구. 가까운 대합만으로 2mm대에 두지 않는다.
   let usedArchOcclusalPlane = false;
   const hasImmediateNeighborHeight =
     Number.isFinite(adjacentTopH) ||
     (tpl.kind === "incisor" && incisorGuide != null && Number.isFinite(incisorGuide.incisalH));
-  if (!hasImmediateNeighborHeight) {
-    const planeOccH = measureArchOcclusalHeight(
-      cropScanPointsInFixtureFrame(clearedJaw, fixture.fixturePose, 52),
-      c0,
-      occInFix,
-      alignedLabInFix,
-      { radius: sbR, height: sbH },
-      neighbors,
-    );
-    if (Number.isFinite(planeOccH)) {
-      const axial = Math.max(0.72, Math.abs(dot3(frame.w, norm3(occInFix))));
-      archCrownTopH = planeOccH / axial;
+  const bothImmediateFinished =
+    posHasFinishedNeighbor && negHasFinishedNeighbor && hasImmediateNeighborHeight;
+  const planeOccH = measureArchOcclusalHeight(
+    cropScanPointsInFixtureFrame(clearedJaw, fixture.fixturePose, 54),
+    c0,
+    occInFix,
+    alignedLabInFix,
+    { radius: sbR, height: sbH },
+    neighbors,
+    { preferAnterior: !posterior },
+  );
+  if (Number.isFinite(planeOccH)) {
+    const axial = Math.max(0.72, Math.abs(dot3(frame.w, norm3(occInFix))));
+    const planeAxial = planeOccH / axial;
+    if (!bothImmediateFinished) {
+      // 한쪽만 자연치면 그 절단연과 악궁 곡면 중 높은 쪽(심미 절단선)을 따른다.
+      archCrownTopH = Number.isFinite(archCrownTopH)
+        ? Math.max(archCrownTopH, planeAxial)
+        : planeAxial;
+      usedArchOcclusalPlane = true;
+    } else if (!Number.isFinite(archCrownTopH)) {
+      archCrownTopH = planeAxial;
       usedArchOcclusalPlane = true;
     }
   }
