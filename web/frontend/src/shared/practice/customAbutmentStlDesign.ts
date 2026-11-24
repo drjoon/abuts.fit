@@ -10,6 +10,7 @@
 //    → 윗면 라운드. 소·대구치 윗면은 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
+//    바로 옆 자연치가 없으면 악궁에 있는 치아 전체의 교합면을 기준으로 한다.
 //    설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
@@ -2351,6 +2352,144 @@ function adjacentOcclusalHeight(
     if (top >= ADJACENT_TOOTH_MIN_H_MM) tops.push(top);
   }
   return tops.length ? tops.reduce((s, v) => s + v, 0) / tops.length : Number.NaN;
+}
+
+const archOcclusalHeightCache = new WeakMap<Float32Array, Map<string, number>>();
+
+/**
+ * 바로 옆 자연치가 없을 때 쓰는 악궁 교합면 높이. 마진 중심에서 교합 방향 mm.
+ * 치아 교합면·절단연만 모아 평면을 맞추고, 이 치아 위치의 높이를 돌려준다. 없으면 NaN.
+ */
+function measureArchOcclusalHeight(
+  pts: Float32Array,
+  c0: Vec3,
+  up: Vec3,
+  labialHint: Vec3,
+  ownScanbody: { radius: number; height: number },
+  neighborCylinders: readonly NeighborLocal[],
+): number {
+  const r3 = (v: number) => Math.round(v * 50);
+  const key = `${r3(c0[2])}|${r3(up[0])},${r3(up[1])},${r3(up[2])}|${r3(labialHint[0])},${r3(labialHint[1])}|${neighborCylinders.map((nb) => nb.toothNumber).join(",")}`;
+  let byKey = archOcclusalHeightCache.get(pts);
+  if (!byKey) {
+    byKey = new Map();
+    archOcclusalHeightCache.set(pts, byKey);
+  }
+  const cached = byKey.get(key);
+  if (cached != null) return cached;
+
+  const computed = ((): number => {
+    if (pts.length < 90) return Number.NaN;
+    const archFr = insertionFrame(norm3(up), labialHint);
+    const CELL = 3.4;
+    const buckets = new Map<string, number[]>();
+    const stride = pts.length > 210000 ? Math.ceil(pts.length / 210000) : 1;
+    const ownR = ownScanbody.radius + 1.1;
+    const ownH = ownScanbody.height + 1.2;
+    for (let i = 0; i < pts.length; i += 3 * stride) {
+      const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+      if (Math.hypot(p[0], p[1]) < ownR && p[2] < ownH) continue;
+      let onNeighbor = false;
+      for (const nb of neighborCylinders) {
+        const rx = p[0] - nb.origin[0];
+        const ry = p[1] - nb.origin[1];
+        const rz = p[2] - nb.origin[2];
+        const t = rx * nb.axis[0] + ry * nb.axis[1] + rz * nb.axis[2];
+        if (t < -0.8 || t > nb.height + 1.4) continue;
+        const radial = rx * rx + ry * ry + rz * rz - t * t;
+        const lim = nb.radius + 1.6;
+        if (radial < lim * lim) {
+          onNeighbor = true;
+          break;
+        }
+      }
+      if (onNeighbor) continue;
+      const rel = sub3(p, c0);
+      const h = dot3(rel, archFr.w);
+      if (h < 1.4 || h > 15.5) continue;
+      const u = dot3(rel, archFr.uLabial);
+      const v = dot3(rel, archFr.vSide);
+      const r = Math.hypot(u, v);
+      if (r < 5.5 || r > 50) continue;
+      const ku = Math.round(u / CELL);
+      const kv = Math.round(v / CELL);
+      const slot = `${ku},${kv}`;
+      const list = buckets.get(slot);
+      if (list) list.push(h);
+      else buckets.set(slot, [h]);
+    }
+    const tops: Array<{ u: number; v: number; h: number }> = [];
+    for (const [slot, list] of buckets) {
+      if (list.length < 14) continue;
+      list.sort((a, b) => a - b);
+      const bot = list[Math.floor(list.length * 0.18)]!;
+      const top = list[Math.floor(list.length * 0.9)]!;
+      if (top < 5.2 || top - bot < 2.2) continue;
+      const [ku, kv] = slot.split(",").map(Number);
+      const u = ku! * CELL;
+      const v = kv! * CELL;
+      let nearImplant = false;
+      for (const nb of neighborCylinders) {
+        const rel = sub3(nb.origin, c0);
+        const nu = dot3(rel, archFr.uLabial);
+        const nv = dot3(rel, archFr.vSide);
+        if (Math.hypot(nu - u, nv - v) < nb.radius + 3.2) {
+          nearImplant = true;
+          break;
+        }
+      }
+      if (nearImplant) continue;
+      tops.push({ u, v, h: top });
+    }
+    if (tops.length < 4) return Number.NaN;
+    const hs = tops.map((t) => t.h).sort((a, b) => a - b);
+    const median = hs[Math.floor(hs.length * 0.5)]!;
+    const kept = tops.filter((t) => Math.abs(t.h - median) <= 3.4);
+    const samples = kept.length >= 4 ? kept : tops;
+    let n = 0;
+    let su = 0;
+    let sv = 0;
+    let suu = 0;
+    let svv = 0;
+    let suv = 0;
+    let sh = 0;
+    let suh = 0;
+    let svh = 0;
+    for (const s of samples) {
+      n += 1;
+      su += s.u;
+      sv += s.v;
+      suu += s.u * s.u;
+      svv += s.v * s.v;
+      suv += s.u * s.v;
+      sh += s.h;
+      suh += s.u * s.h;
+      svh += s.v * s.h;
+    }
+    const det =
+      n * (suu * svv - suv * suv) - su * (su * svv - suv * sv) + sv * (su * suv - suu * sv);
+    let hAt = median;
+    if (Math.abs(det) > 1e-3) {
+      const h0 =
+        (sh * (suu * svv - suv * suv) -
+          su * (suh * svv - suv * svh) +
+          sv * (suh * suv - suu * svh)) /
+        det;
+      const a =
+        (n * (suh * svv - suv * svh) - sh * (su * svv - suv * sv) + sv * (su * svh - suh * sv)) / det;
+      const b =
+        (n * (suu * svh - suh * suv) - su * (su * svh - suh * sv) + sh * (su * suv - suu * sv)) / det;
+      if (Number.isFinite(h0) && Number.isFinite(a) && Number.isFinite(b)) {
+        const hasPos = samples.some((s) => s.v > 8 || s.u > 8);
+        const hasNeg = samples.some((s) => s.v < -8 || s.u < -8);
+        hAt = hasPos && hasNeg ? h0 : median * 0.65 + h0 * 0.35;
+      }
+    }
+    if (!Number.isFinite(hAt)) return Number.NaN;
+    return clamp(hAt, 5.2, 13.2);
+  })();
+  byKey.set(key, computed);
+  return computed;
 }
 
 type IncisorNeighborGuide = {
@@ -6977,6 +7116,26 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ? Math.min(guideAxial + 0.35, guideAxial * 0.8 + mirrorTopH * 0.2)
       : guideAxial;
   }
+  // 바로 옆 자연치가 없으면 임플란트 쪽 잇몸이나 가까운 대합으로 짧게 만들지 않고, 악궁 교합면을 쓴다.
+  let usedArchOcclusalPlane = false;
+  const hasImmediateNeighborHeight =
+    Number.isFinite(adjacentTopH) ||
+    (tpl.kind === "incisor" && incisorGuide != null && Number.isFinite(incisorGuide.incisalH));
+  if (!hasImmediateNeighborHeight) {
+    const planeOccH = measureArchOcclusalHeight(
+      cropScanPointsInFixtureFrame(clearedJaw, fixture.fixturePose, 52),
+      c0,
+      occInFix,
+      alignedLabInFix,
+      { radius: sbR, height: sbH },
+      neighbors,
+    );
+    if (Number.isFinite(planeOccH)) {
+      const axial = Math.max(0.72, Math.abs(dot3(frame.w, norm3(occInFix))));
+      archCrownTopH = planeOccH / axial;
+      usedArchOcclusalPlane = true;
+    }
+  }
   const offsetH = params.postHeightOffsetMm;
   const desiredOccThickness = posterior
     ? clamp(Math.max(clearance, 1.2), 1.0, 1.5)
@@ -7023,34 +7182,40 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     tpl.kind === "incisor"
       ? robustOcclusalTableHeight(oppTableField, -2.4, 4.6, Math.max(2.4, marginB * 0.9))
       : Infinity;
-  const neighborPostH = Number.isFinite(antIncisalCap)
-    ? antIncisalCap
-    : Number.isFinite(noOppTop)
-      ? noOppTop
-      : tpl.postHeightMm;
+  const neighborPostH =
+    usedArchOcclusalPlane && Number.isFinite(neighborHeightCap)
+      ? neighborHeightCap
+      : Number.isFinite(antIncisalCap)
+        ? antIncisalCap
+        : Number.isFinite(noOppTop)
+          ? noOppTop
+          : tpl.postHeightMm;
   // 절치는 인접 절단연 길이가 1순위. 교합을 향한 대합면이 더 가까울 때만 그 면까지 낮춘다.
+  // 바로 옆 자연치가 없어 악궁 교합면을 쓴 경우는 가까운 대합이 그 높이를 끌어내리지 않는다.
   // 구치·대합 거리를 직접 고친 경우는 대합 거리를 높이에 맞춘다.
   let postTopH =
-    (tpl.kind === "incisor" && !hasExplicitClearance
-      ? Math.min(neighborPostH, Number.isFinite(incisorTableH) ? incisorTableH - clearance : Infinity)
-      : hasOpposing
-        ? posterior || hasExplicitClearance
-          ? oppRefH - clearance
-          : Math.min(antIncisalCap, oppRefH - clearance)
-        : noOppTop) + offsetH;
-  if (tpl.kind === "incisor" && !hasExplicitClearance) {
+    (usedArchOcclusalPlane
+      ? neighborPostH
+      : tpl.kind === "incisor" && !hasExplicitClearance
+        ? Math.min(neighborPostH, Number.isFinite(incisorTableH) ? incisorTableH - clearance : Infinity)
+        : hasOpposing
+          ? posterior || hasExplicitClearance
+            ? oppRefH - clearance
+            : Math.min(antIncisalCap, oppRefH - clearance)
+          : noOppTop) + offsetH;
+  if (!usedArchOcclusalPlane && tpl.kind === "incisor" && !hasExplicitClearance) {
     if (Number.isFinite(incisorTableH) && offsetH <= 0) {
       postTopH = Math.min(postTopH, incisorTableH - clearance);
     }
-  } else if (hasOpposing && offsetH <= 0) {
+  } else if (!usedArchOcclusalPlane && hasOpposing && offsetH <= 0) {
     postTopH = Math.min(postTopH, oppRefH - clearance);
   }
   postTopH = Math.max(minSafePostHeightMm, postTopH);
-  if (tpl.kind === "incisor" && !hasExplicitClearance) {
+  if (!usedArchOcclusalPlane && tpl.kind === "incisor" && !hasExplicitClearance) {
     if (Number.isFinite(incisorTableH)) {
       postTopH = Math.min(postTopH, Math.max(minSafePostHeightMm, incisorTableH - minClearanceFloor));
     }
-  } else if (hasOpposing) {
+  } else if (!usedArchOcclusalPlane && hasOpposing) {
     // 뼈대 최소 높이(2.2mm)에서도 최소 크라운 두께(또는 명시 대합 거리 하한)는 반드시 남긴다.
     postTopH = Math.min(postTopH, Math.max(1.8, oppRefH - minClearanceFloor));
   }
@@ -7116,7 +7281,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       ? Math.max(minSafePostHeightMm, oppRefH - clearance)
       : Infinity;
   const naturalTopH = posterior && Number.isFinite(effClearTopH) ? effClearTopH : postTopH;
-  const archSafeCapH = !posterior && Number.isFinite(baseCap) ? baseCap + 0.35 : Infinity;
+  const archSafeCapH = usedArchOcclusalPlane
+    ? neighborPostH + 0.35
+    : !posterior && Number.isFinite(baseCap)
+      ? baseCap + 0.35
+      : Infinity;
   const safeTopH = Math.min(
     archSafeCapH,
     Number.isFinite(effClearTopH) ? Math.max(effClearTopH, posterior ? 0 : postTopH) : Infinity,
@@ -8813,7 +8982,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       const oppH = deepLabialTip
         ? opposingBandMinHeight(heightField, tu - 0.35, tu + 0.5, Math.abs(tv) + 0.4)
         : heightField.heightAt(tu, tv, 1.05);
-      if (Number.isFinite(oppH)) {
+      if (Number.isFinite(oppH) && !usedArchOcclusalPlane) {
         hasColOpp = true;
         hTop = posterior ? oppH - clearance + Math.max(0, offsetH) : Math.min(hTop, oppH - clearance);
         if (!deepLabialTip) {
@@ -9062,7 +9231,10 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     let a = Infinity;
-    if (hasOpposing && Number.isFinite(aClear)) {
+    if (usedArchOcclusalPlane) {
+      // 바로 옆 자연치가 없으면 윗면은 악궁 교합면이다. 가까운 대합이 그 높이를 내리지 않는다.
+      a = postTopH + curOffsetH;
+    } else if (hasOpposing && Number.isFinite(aClear)) {
       if (posterior || curExplicit) {
         a = aClear;
       } else {
@@ -9087,7 +9259,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       let labialU = 0.45;
       for (const c of cols) if (c.tipU > labialU) labialU = c.tipU;
       const incisorCapField = oppTableField ?? (curExplicit ? oppField : null);
-      if (incisorDeepBite && hasOpposing && incisorCapField) {
+      if (incisorDeepBite && hasOpposing && incisorCapField && !usedArchOcclusalPlane) {
         let labialCap = Infinity;
         const tipLo = Math.max(incisorPalatalContactU + 0.55, labialU - 0.85);
         for (const cell of incisorCapField.list) {
@@ -13233,7 +13405,11 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
   // 절치 기본 생성은 교합을 향한 면만으로 높이를 맞추고, 수직 벽 때문에 인접 절단연 아래로 내리지 않는다.
   const oppTrisLocal =
     tpl.kind === "incisor" && !hasExplicitClearance ? incisorFaceTris : oppTrisAll;
-  const shiftDownLimit = incisorDeepBite && !hasExplicitClearance ? -1.4 : -20;
+  const shiftDownLimit = usedArchOcclusalPlane
+    ? 0
+    : incisorDeepBite && !hasExplicitClearance
+      ? -1.4
+      : -20;
   // 대합 거리·포스트 높이·테이퍼·챔퍼 R 편집과 무관한 기준 상태에서 마진·베이스 단면을 먼저 1회 확정한다.
   buildShape(true);
   // 연결이 끊기면 높이 맞춤은 기준 테이퍼로 하고, 사용자가 준 각은 그 높이에 나중에 얹는다.

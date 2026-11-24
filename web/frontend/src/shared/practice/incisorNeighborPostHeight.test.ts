@@ -121,3 +121,51 @@ alone.worldGeometry.dispose();
 alone.predictedCrownWorldGeometry.dispose();
 withNeighbor.worldGeometry.dispose();
 withNeighbor.predictedCrownWorldGeometry.dispose();
+
+// 바로 옆 자연치가 없고 대합은 가까울 때, 멀리 있는 치아 교합면 높이로 포스트를 잡는다.
+function grid(zAt: (x: number, y: number) => number, x0: number, x1: number, y0: number, y1: number, nx: number, ny: number) {
+  const tris: number[] = [];
+  const at = (ix: number, iy: number) => {
+    const x = x0 + ((x1 - x0) * ix) / nx;
+    const y = y0 + ((y1 - y0) * iy) / ny;
+    return [x, y, zAt(x, y)] as const;
+  };
+  for (let ix = 0; ix < nx; ix += 1) {
+    for (let iy = 0; iy < ny; iy += 1) {
+      const p00 = at(ix, iy);
+      const p10 = at(ix + 1, iy);
+      const p11 = at(ix + 1, iy + 1);
+      const p01 = at(ix, iy + 1);
+      tris.push(...p00, ...p10, ...p11, ...p00, ...p11, ...p01);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(tris), 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const ging = -3.2;
+const bump = (x: number, y: number, cy: number) => {
+  const dx = x;
+  const dy = y - cy;
+  const c = (dx * dx) / (3.2 * 3.2) + (dy * dy) / (3.5 * 3.5);
+  if (c >= 1) return ging;
+  return ging - 9.2 * Math.sqrt(1 - c);
+};
+const archJaw = grid((x, y) => Math.min(ging, bump(x, y, 22), bump(x, y, -22)), -8, 8, -30, 30, 36, 120);
+const closeOpp = grid(() => -6.1, -7, 7, -7, 7, 16, 16);
+const planePost = await designCustomAbutmentStl({
+  fixture: fixture11,
+  jawGeometry: archJaw,
+  opposingGeometry: closeOpp,
+  toothWorks: [{ toothNumber: "11", prosthesisType: "크라운", customAbutment: true, bridgeLinkedTeeth: [] }],
+});
+assert.ok(
+  planePost.metrics.postHeightMm > 5.4,
+  `인접 자연치가 없으면 악궁 교합면으로 포스트를 올린다(${planePost.metrics.postHeightMm}mm). 가까운 대합만으로 2mm대에 두지 않는다`,
+);
+archJaw.dispose();
+closeOpp.dispose();
+planePost.worldGeometry.dispose();
+planePost.predictedCrownWorldGeometry.dispose();
