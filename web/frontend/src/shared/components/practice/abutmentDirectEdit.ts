@@ -2690,7 +2690,7 @@ function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, 
   group.add(dot, scaleHit);
 }
 
-/** 노란 점 우상 쪽 평면 이동 화살표. 굵기는 스케일 점과 같고, 길이는 짧게. */
+/** 노란 점 우상 쪽 평면 이동 화살표. 머리·꼬리 평균 굵기가 스케일 점과 같다. */
 function addCornerMoveArrow(
   group: THREE.Group,
   axis: 0 | 1,
@@ -2700,17 +2700,20 @@ function addCornerMoveArrow(
 ) {
   const shaftLen = GUMBALL_ARROW_SHAFT;
   const coneH = GUMBALL_ARROW_CONE_H;
+  // (꼬리 반지름 + 머리 반지름) / 2 ≈ 점 반지름.
+  const shaftR = 0.04;
+  const coneR = GUMBALL_DOT_R * 2 - shaftR;
   // 스케일 점과 같은 가장자리 간격: 점 중심이 corner±gap일 때 점 바깥쪽과 맞춤.
   const start = corner + gap - GUMBALL_DOT_R;
   const shaft = tagHandle(
-    new THREE.Mesh(new THREE.CylinderGeometry(GUMBALL_DOT_R, GUMBALL_DOT_R, shaftLen, 12), colorMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 12), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
     colorMat,
   );
   const head = tagHandle(
-    new THREE.Mesh(new THREE.ConeGeometry(GUMBALL_DOT_R * 1.35, coneH, 14), colorMat),
+    new THREE.Mesh(new THREE.ConeGeometry(coneR, coneH, 14), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
