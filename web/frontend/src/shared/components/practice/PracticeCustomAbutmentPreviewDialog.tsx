@@ -47,6 +47,7 @@
 // - 2026-11-24: 스캔바디 모델정렬을 확인한 뒤 카메라를 돌리지 않는다. 축·화면은 세션 메타에 남기고, 저장된 축은 다시 열 때 자동 앞뒤 확정으로 덮지 않는다.
 // - 2026-11-24: 스캔바디 뒤 큐브는 교합면이 화면과 나란하다(위=협측). 어벗 수평각은 악궁 반지름에 붙인다.
 // - 2026-11-25: 구치 커스텀어벗은 모델정렬 수평선(근원심)에 평행하다. 접선으로 기울이지 않는다.
+// - 2026-11-25: 모델정렬 중에는 대합 악을 끈다. 확인·취소 때 이전 상·하악 표시로 되돌린다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -1652,6 +1653,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const holdSetupViewRef = useRef(false);
   /** 부트·재검출 강제 모델정렬이면 취소 버튼을 숨긴다. */
   const [modelOrientRequired, setModelOrientRequired] = useState(false);
+  /** 모델정렬에 들어가기 전 상·하악 표시. 확인·취소 때 되돌린다. */
+  const modelOrientPrevJawsRef = useRef<{ upper: boolean; lower: boolean } | null>(null);
   const [editRev, setEditRev] = useState(0);
   const pivotArmedRef = useRef(false);
   pivotArmedRef.current = pivotArmed;
@@ -4050,9 +4053,23 @@ export function PracticeCustomAbutmentPreviewDialog({
   const ensureArchMdBlOrPickRef = useRef(ensureArchMdBlOrPick);
   ensureArchMdBlOrPickRef.current = ensureArchMdBlOrPick;
 
+  /** 모델정렬에서 끈 대합 악 표시를 이전 값으로 되돌린다. */
+  const restoreModelOrientJaws = useCallback(() => {
+    const prev = modelOrientPrevJawsRef.current;
+    modelOrientPrevJawsRef.current = null;
+    if (!prev) return;
+    setVisibleJaws(prev);
+    chromeStateRef.current = {
+      ...chromeStateRef.current,
+      showUpper: prev.upper,
+      showLower: prev.lower,
+    };
+  }, []);
+
   /**
    * 스캔바디용 모델 방향: 첫 치아 중심·교합면 시점.
    * 화면 위=협측, 10/30 오른쪽=근심, 20/40 오른쪽=원심.
+   * 작업 치아 악만 켜 두고 대합 악은 끈다.
    */
   const beginModelOrient = useCallback(
     (opts?: { required?: boolean; toothNumber?: string }) => {
@@ -4067,8 +4084,19 @@ export function PracticeCustomAbutmentPreviewDialog({
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       const host = hostRef.current;
+      const parsed = parseFdiTooth(toothNumber);
+      if (parsed) {
+        setVisibleJaws((prev) => {
+          modelOrientPrevJawsRef.current ??= { ...prev };
+          const hasUpper = rawJawScansRef.current.some((s) => s.jaw === "upper");
+          const hasLower = rawJawScansRef.current.some((s) => s.jaw === "lower");
+          return {
+            upper: parsed.jaw === "upper" && hasUpper,
+            lower: parsed.jaw === "lower" && hasLower,
+          };
+        });
+      }
       if (frame && camera && controls) {
-        const parsed = parseFdiTooth(toothNumber);
         const jawScans = rawJawScansRef.current.filter(
           (scan) => !parsed || scan.jaw === parsed.jaw,
         );
@@ -4154,6 +4182,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   const cancelModelOrient = useCallback(() => {
     if (statusRef.current.kind !== "model-orient") return;
+    restoreModelOrientJaws();
     const gate = modelOrientGateRef.current;
     if (gate) {
       modelOrientGateRef.current = null;
@@ -4164,7 +4193,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const nextStatus = { kind: "ready" as const };
     statusRef.current = nextStatus;
     setStatus(nextStatus);
-  }, []);
+  }, [restoreModelOrientJaws]);
 
   /** 모델정렬 축과 그 시점의 카메라를 세션 메타·이 브라우저 캐시에 남긴다. */
   const persistModelSetupSession = useCallback((axes: StoredArchFrame) => {
@@ -4243,6 +4272,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       ? dentalFrameFromOcclusalToothView(camera.quaternion, orientTooth, seedUp)
       : dentalFrameFromViewOrientation(camera.quaternion, seedUp);
     const axes = archFrameAxes(next);
+    restoreModelOrientJaws();
     if (gate) {
       // 스캔바디 직전: 맞춘 화면은 그대로 두고 축만 넘긴다.
       frameRef.current = next;
@@ -4406,6 +4436,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     persistModelSetupSession,
     rebuildJawScanMeshes,
     removeDesignFromScene,
+    restoreModelOrientJaws,
     toast,
     visibleJaws.lower,
     visibleJaws.upper,
@@ -7230,6 +7261,16 @@ export function PracticeCustomAbutmentPreviewDialog({
         const gate = modelOrientGateRef.current;
         modelOrientGateRef.current = null;
         gate(null);
+      }
+      if (modelOrientPrevJawsRef.current) {
+        const prev = modelOrientPrevJawsRef.current;
+        modelOrientPrevJawsRef.current = null;
+        setVisibleJaws(prev);
+        chromeStateRef.current = {
+          ...chromeStateRef.current,
+          showUpper: prev.upper,
+          showLower: prev.lower,
+        };
       }
       setModelOrientRequired(false);
       if (biteConfirmRef.current) endBiteConfirmSessionRef.current("confirm");
