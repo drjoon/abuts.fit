@@ -40,6 +40,7 @@ import { emitAppEventToUser } from "../../socket.js";
 import {
   isStaleDesignWrite,
   sanitizeBiteCheck,
+  sanitizeJawPose,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
   sharedChromeForApi,
@@ -652,6 +653,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     const chat = storedChat.length >= fromGaps.length ? storedChat : fromGaps;
     const teeth = snapshotTeeth(stored?.teeth, transferId);
     const biteCheck = sanitizeBiteCheck(stored?.biteCheck);
+    const jawPose = sanitizeJawPose(stored?.jawPose);
     const rawPaint = stored?.paint && typeof stored.paint === "object" ? stored.paint : null;
     const paint = rawPaint
       ? {
@@ -675,6 +677,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
             chat,
             teeth,
             ...(biteCheck ? { biteCheck } : {}),
+            ...(jawPose ? { jawPose } : {}),
           }
         : null;
     const billedLines = Array.isArray(transfer?.billing?.lines) ? transfer.billing.lines : [];
@@ -729,6 +732,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       data: {
         design,
         biteCheck,
+        jawPose,
         chat,
         paint,
         mode,
@@ -833,10 +837,13 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       next.teeth = teeth;
     }
     const previewSet = {
-      "production.customAbutmentPreview.savedAt": next.savedAt,
       "production.customAbutmentPreview.updatedBy": next.updatedBy,
-      "production.customAbutmentPreview.chat": next.chat,
     };
+    // 치아·대화가 있을 때만 디자인 시각을 올린다. 화면·옵션만 저장하면 디자인 충돌 시각이 밀리지 않는다.
+    if (teeth.length > 0 || chat.length > 0) {
+      previewSet["production.customAbutmentPreview.savedAt"] = next.savedAt;
+      previewSet["production.customAbutmentPreview.chat"] = next.chat;
+    }
     if (req.body?.paint && typeof req.body.paint === "object") {
       previewSet["production.customAbutmentPreview.paint"] = next.paint;
     }
@@ -849,6 +856,19 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
     const prevBiteAt = Number(prev?.biteCheck?.checkedAt) || 0;
     if (incomingBite && incomingBite.checkedAt >= prevBiteAt) {
       previewSet["production.customAbutmentPreview.biteCheck"] = incomingBite;
+    }
+    const incomingPose = sanitizeJawPose(req.body?.jawPose);
+    if (incomingPose) {
+      previewSet["production.customAbutmentPreview.jawPose"] = incomingPose;
+    }
+    const incomingView = sanitizeSharedDesignView(req.body?.view);
+    const prevViewAt = Number(prev?.sharedView?.savedAt) || 0;
+    if (incomingView && !(prevViewAt > savedAt)) {
+      previewSet["production.customAbutmentPreview.sharedView"] = {
+        ...incomingView,
+        savedAt,
+        updatedBy,
+      };
     }
     const incomingChrome = sanitizeSharedChrome(req.body?.chrome);
     const prevChromeAt = Number(prev?.chrome?.savedAt) || 0;
@@ -867,6 +887,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         fitVersion: next.fitVersion,
         teeth: next.teeth,
         biteCheck: incomingBite && incomingBite.checkedAt >= prevBiteAt ? incomingBite : prev.biteCheck,
+        jawPose: incomingPose || prev.jawPose,
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
     await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });

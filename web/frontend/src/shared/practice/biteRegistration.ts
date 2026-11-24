@@ -1969,6 +1969,8 @@ export type BiteFitResult = {
   partial: BiteFitPose[];
   quality: BiteFitArchQuality[];
   qualityOk: boolean;
+  /** 원본 스캔 기준 악궁 자세. 의뢰 세션에만 남긴다. */
+  jawPose?: { upper?: number[]; lower?: number[] };
 };
 
 /** 자동 맞춤이 이보다 헐거우면 qualityOk=false. */
@@ -2356,6 +2358,13 @@ async function registerJawsToBiteWork(
   await pause(options);
   let seated = false;
   let moved = false;
+  const jawPose: { upper?: number[]; lower?: number[] } = {};
+  for (const role of ["upper", "lower"] as const) {
+    const rows = fitted.filter((row) => row.role === role);
+    const pick = rows.find((row) => row.seated && !row.matrix.equals(new THREE.Matrix4())) ?? rows.find((row) => !row.matrix.equals(new THREE.Matrix4()));
+    if (!pick) continue;
+    jawPose[role] = pick.matrix.toArray().map((value) => Math.round(value * 1e6) / 1e6);
+  }
   const quality: BiteFitArchQuality[] = [];
   const expected = new Set(
     arches
@@ -2405,7 +2414,15 @@ async function registerJawsToBiteWork(
       const row = quality.find((entry) => entry.role === role);
       return row ? biteFitArchQualityOk(row) : false;
     });
-  return { seated, moved, stopped: false, partial: [], quality, qualityOk };
+  return {
+    seated,
+    moved,
+    stopped: false,
+    partial: [],
+    quality,
+    qualityOk,
+    ...(jawPose.upper || jawPose.lower ? { jawPose } : {}),
+  };
 }
 
 function geometryUnits(bite: Cloud, arches: THREE.BufferGeometry[]) {

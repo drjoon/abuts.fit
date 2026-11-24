@@ -122,6 +122,7 @@ import {
   captureOcclusionCarry,
   matchAlignedScans,
   rebaseCarriedFixtures,
+  rigidFitCorresponding,
   type OcclusionCarry,
 } from "@/shared/practice/customAbutmentOcclusionRestore";
 import {
@@ -138,6 +139,7 @@ import {
   cachedDesignFromSyncMeta,
   confirmCustomAbutmentDesignRemote,
   customAbutmentDesignCacheKey,
+  customAbutmentSessionCacheKey,
   forgetCustomAbutmentSnapshot,
   preferFresherCustomAbutmentDesign,
   rememberCustomAbutmentDesign,
@@ -147,6 +149,7 @@ import {
   classifyCustomAbutmentDesignPublish,
   publishCustomAbutmentDesignMeta,
   publishCustomAbutmentSharedView,
+  publishCustomAbutmentWorkSession,
   parseCustomAbutmentSharedChrome,
   parseCustomAbutmentSharedView,
   readCustomAbutmentChat,
@@ -156,7 +159,9 @@ import {
   writeCustomAbutmentChat,
   writeCustomAbutmentDesign,
   normalizeCachedBiteCheck,
+  normalizeJawPose,
   resolveCustomAbutmentReopen,
+  type CustomAbutmentJawPose,
   type CachedAlignedScan,
   type CachedBiteCheck,
   type CustomAbutmentChatTurn,
@@ -427,6 +432,7 @@ type DesignContext = {
   overrides: Record<string, Partial<CustomAbutmentDesignParams>>;
   alignedScans: CachedAlignedScan[];
   biteCheck: CachedBiteCheck | null;
+  jawPose: CustomAbutmentJawPose | null;
 };
 
 const VIEWER_PLAIN_BG = 0xe6e9ec;
@@ -1041,6 +1047,22 @@ function sampleJawPlanPoints(
     out.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
   }
   return out;
+}
+
+/** 의뢰에 저장된 악궁 자세를 그 역할의 스캔에 한 번 적용한다. */
+function applySessionJawPose(
+  scans: readonly { role: string; geometry: THREE.BufferGeometry }[],
+  pose: CustomAbutmentJawPose,
+) {
+  for (const scan of scans) {
+    const raw = scan.role === "upper" ? pose.upper : scan.role === "lower" ? pose.lower : null;
+    if (!raw) continue;
+    const matrix = new THREE.Matrix4().fromArray(raw);
+    if (matrix.equals(new THREE.Matrix4())) continue;
+    scan.geometry.applyMatrix4(matrix);
+    scan.geometry.computeVertexNormals();
+    scan.geometry.computeBoundingBox();
+  }
 }
 
 /** 상·하악 전치 방향이 같은 쪽을 보면 true. 전후 뒤집힌 작업 스캔을 가린다. */
@@ -2471,6 +2493,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       savedAt,
       alignedScans: ctx.alignedScans,
       biteCheck: ctx.biteCheck,
+      jawPose: ctx.jawPose,
       teeth: list.map((d) => {
         const gumballEdit =
           directEditRef.current?.editOf(d.toothNumber) ??
@@ -2516,6 +2539,23 @@ export function PracticeCustomAbutmentPreviewDialog({
     await writeCustomAbutmentDesign({ ...record, chat: savedChat });
   };
 
+  const currentSessionView = () => {
+    const cam = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!cam || !controls) return null;
+    return {
+      pos: cam.position.toArray(),
+      quat: cam.quaternion.toArray(),
+      up: cam.up.toArray(),
+      target: controls.target.toArray(),
+      zoom: cam.zoom,
+      top: cam.top,
+      bottom: cam.bottom,
+      left: cam.left,
+      right: cam.right,
+    };
+  };
+
   const scheduleDesignMetaPublish = () => {
     publishAgainRef.current = true;
     if (publishRunningRef.current) {
@@ -2557,6 +2597,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...(designContextRef.current?.biteCheck
                 ? { biteCheck: designContextRef.current.biteCheck }
                 : {}),
+              ...(designContextRef.current?.jawPose
+                ? { jawPose: designContextRef.current.jawPose }
+                : {}),
             },
           });
           lastLocalChromeAtRef.current = performance.now();
@@ -2578,7 +2621,11 @@ export function PracticeCustomAbutmentPreviewDialog({
               ...(designContextRef.current?.biteCheck
                 ? { biteCheck: designContextRef.current.biteCheck }
                 : {}),
+              ...(designContextRef.current?.jawPose
+                ? { jawPose: designContextRef.current.jawPose }
+                : {}),
               chrome: chromeStateRef.current,
+              view: currentSessionView(),
             }),
           );
           if (result.kind === "stale") {
@@ -2689,9 +2736,13 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (waiting && meta.teeth.length > 0) requestDesignReloadRef.current(meta.savedAt);
         return;
       }
-      if (meta.biteCheck && designContextRef.current) {
-        designContextRef.current = { ...designContextRef.current, biteCheck: meta.biteCheck };
-        if (meta.biteCheck.qualityOk) setOcclusionOk(true);
+      if (designContextRef.current && (meta.biteCheck || meta.jawPose)) {
+        designContextRef.current = {
+          ...designContextRef.current,
+          ...(meta.biteCheck ? { biteCheck: meta.biteCheck } : {}),
+          ...(meta.jawPose ? { jawPose: meta.jawPose } : {}),
+        };
+        if (meta.biteCheck?.qualityOk) setOcclusionOk(true);
       }
       if (meta.mode === "confirmed" || meta.mode === "manual") setRemoteMode(meta.mode);
       if (meta.choice) {
@@ -3940,6 +3991,13 @@ export function PracticeCustomAbutmentPreviewDialog({
       persist,
       view: pose,
     });
+    if (persist && token) {
+      void publishCustomAbutmentWorkSession(token, transferId, {
+        savedAt,
+        view: pose,
+        chrome: chromeStateRef.current,
+      }).catch((err) => console.warn("[custom-abutment] session view save failed", err));
+    }
     if (sent && !persist) {
       window.clearTimeout(viewPersistTimerRef.current);
       viewPersistTimerRef.current = window.setTimeout(() => {
@@ -4310,7 +4368,8 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const abort = new AbortController();
     let cancelled = false;
-    const cacheKey = customAbutmentDesignCacheKey(pipelineKey);
+    const cacheKey = customAbutmentSessionCacheKey(transferIdParam || "", pipelineKey);
+    const legacyCacheKey = customAbutmentDesignCacheKey(pipelineKey);
     if (forceBiteRecalc) setBiteRecalcBusy(true);
 
     const loadCompanionTexture = async (
@@ -4465,7 +4524,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         // 다시 열 때마다 메타만으로 재생성이 되어 방금 검볼·테이퍼 모양이 되돌아간다.
         const cachePromise = readOnly
           ? Promise.resolve(null)
-          : readCustomAbutmentDesign(cacheKey);
+          : readCustomAbutmentDesign(cacheKey).then(async (session) => {
+              if (session?.teeth.length || legacyCacheKey === cacheKey) return session;
+              const legacy = await readCustomAbutmentDesign(legacyCacheKey);
+              if (!legacy?.teeth.length) return session;
+              return { ...legacy, key: cacheKey };
+            });
         const chatPromise = readOnly
           ? Promise.resolve([] as CustomAbutmentChatTurn[])
           : readCustomAbutmentChat(transferIdParam || pipelineKey);
@@ -4664,7 +4728,13 @@ export function PracticeCustomAbutmentPreviewDialog({
           normalizeCachedBiteCheck(cached?.biteCheck) ??
           normalizeCachedBiteCheck(remote?.biteCheck);
         let alignedMatched = false;
-        if (!forceBiteRecalc && cached && cached.teeth.length > 0 && cached.alignedScans.length > 0) {
+        if (
+          !forceBiteRecalc &&
+          cached &&
+          cached.teeth.length > 0 &&
+          cached.alignedScans.length > 0 &&
+          !normalizeJawPose(cached.jawPose)
+        ) {
           // 작업 스캔은 원본과 이름이 다르다. 정점 수가 같으면 확정한 좌표를 얹는다.
           const alignedTargets = matchAlignedScans(
             cached.alignedScans,
@@ -4722,6 +4792,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         // 교합 확정 메타가 있으면 자동 확인을 건너뛴다. 헤더 수동 정렬만 다시 돈다.
         // 저장 디자인이 있는데 qualityOk만 false면 다시 돌리지 않는다 — 돌리면 restored가
         // 풀리고 스캔바디·형상이 매번 처음부터라 닫고 열 때 작업이 사라진다.
+        let sessionJawPose = normalizeJawPose(cached?.jawPose) ?? normalizeJawPose(remote?.jawPose);
         const hasSavedTeeth = Boolean(cached && cached.teeth.length > 0);
         const needBitePass =
           biteScans.length > 0 &&
@@ -4832,6 +4903,18 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (!keepInPlace) {
             const seatedFrame = estimateDentalFrame(alignEntries);
             if (seatedFrame) reseatOcclusalOrigin(alignEntries, seatedFrame);
+            const nextPose: CustomAbutmentJawPose = {};
+            for (const scan of jawScans) {
+              const role = scan.role === "upper" || scan.role === "lower" ? scan.role : null;
+              if (!role || nextPose[role]) continue;
+              const orig = originalSnap.find((row) => row.geometry === scan.geometry);
+              const now = captureGeometryPositions(scan.geometry);
+              if (!orig || !now) continue;
+              const fit = rigidFitCorresponding(orig.positions, now);
+              if (!fit) continue;
+              nextPose[role] = fit.elements.map((value) => Math.round(value * 1e6) / 1e6);
+            }
+            sessionJawPose = normalizeJawPose(nextPose);
             // 수동 교합정렬(원본 재맞춤)이거나 저장본이 없을 때만 픽스처를 다시 잡는다.
             // 저장본이 있는 채 restored를 풀면 열 때마다 자동생성·첨1로 돌아간다.
             if (forceBiteRecalc || !hasSavedTeeth) {
@@ -4853,6 +4936,10 @@ export function PracticeCustomAbutmentPreviewDialog({
             moved: Boolean(lastBiteFit?.moved && !keepInPlace),
             source: forceBiteRecalc || userAcceptedBite ? "manual" : "auto",
           };
+          if (keepInPlace) sessionJawPose = null;
+        } else if (!forceBiteRecalc && !hasWorkScans && sessionJawPose) {
+          // 원본 스캔은 의뢰에 저장된 자세로만 옮긴다. 파일 정점을 작업 결과로 쓰지 않는다.
+          applySessionJawPose(jawScans, sessionJawPose);
         }
 
         const carriedFixtures = rebaseCarriedFixtures(
@@ -5517,6 +5604,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           overrides,
           alignedScans,
           biteCheck,
+          jawPose: sessionJawPose,
         };
         designedListRef.current = builtAbutments;
 
@@ -5589,6 +5677,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               savedAt,
               alignedScans,
               biteCheck,
+              jawPose: sessionJawPose,
               teeth: [],
               chat: [],
             };
@@ -5667,8 +5756,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           const shared = pendingSharedViewRef.current;
           const localViewAt = Number(saved?.savedAt) || 0;
           const sharedViewAt = Number(shared?.savedAt) || 0;
-          // 이 브라우저에서 방금 돌린 카메라가 서버에 남은 이전 화면보다 나중이다.
-          const useSharedView = Boolean(shared && sharedViewAt >= localViewAt);
+          // 의뢰 세션에 카메라가 있으면 그 화면을 연다.
+          const useSharedView = Boolean(shared && sharedViewAt > 0);
           if (useSharedView && shared && cam && controls) {
             applyingSharedViewRef.current = true;
             applySavedView(
@@ -6407,6 +6496,14 @@ export function PracticeCustomAbutmentPreviewDialog({
         persist: true,
         chrome: chromeStateRef.current,
       });
+      const token = String(authToken || "").trim();
+      if (token) {
+        void publishCustomAbutmentWorkSession(token, transferIdParam, {
+          savedAt,
+          chrome: chromeStateRef.current,
+          view: currentSessionView(),
+        }).catch((err) => console.warn("[custom-abutment] session chrome save failed", err));
+      }
     }, 120);
     return () => window.clearTimeout(chromeSyncTimerRef.current);
   }, [
@@ -6424,6 +6521,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     transferIdParam,
     visibleJaws,
     visibleTeeth,
+    authToken,
   ]);
 
   useEffect(() => {
@@ -6505,6 +6603,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             teeth,
             ...(designContextRef.current?.biteCheck
               ? { biteCheck: designContextRef.current.biteCheck }
+              : {}),
+            ...(designContextRef.current?.jawPose
+              ? { jawPose: designContextRef.current.jawPose }
               : {}),
           },
         });
@@ -7378,7 +7479,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       .then((prefs) => {
         if (cancel) return;
         viewerPrefsRef.current = prefs;
-        if (chromeOwnedRef.current) {
+        if (chromeOwnedRef.current || pendingChromeRef.current) {
           setViewerHydrated(true);
           return;
         }
@@ -7418,6 +7519,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   useEffect(() => {
     if (!open || !viewerHydrated || designedList.length === 0) return;
+    if (chromeOwnedRef.current) return;
     setExpandedTeeth((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -7570,6 +7672,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           alignedScans:
             ctx.alignedScans.length > 0 ? ctx.alignedScans : (existing?.alignedScans ?? []),
           biteCheck,
+          jawPose: ctx.jawPose,
           teeth: existing?.teeth ?? [],
           chat: existing?.chat ?? [],
         };

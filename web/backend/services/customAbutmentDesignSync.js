@@ -56,6 +56,29 @@ export function sanitizeAbutmentChoice(row) {
   };
 }
 
+function poseMatrix(raw) {
+  if (!Array.isArray(raw) || raw.length < 16) return null;
+  const out = [];
+  for (let i = 0; i < 16; i += 1) {
+    const value = Number(raw[i]);
+    if (!Number.isFinite(value) || Math.abs(value) > 1e6) return null;
+    out.push(Math.round(value * 1e6) / 1e6);
+  }
+  return out;
+}
+
+/** 악궁 자세. 스캔 파일별 정점이 아니라 의뢰 세션의 상·하악 각 하나다. */
+export function sanitizeJawPose(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const upper = poseMatrix(raw.upper);
+  const lower = poseMatrix(raw.lower);
+  if (!upper && !lower) return null;
+  return {
+    ...(upper ? { upper } : {}),
+    ...(lower ? { lower } : {}),
+  };
+}
+
 /** 교합 확정. 상대가 모달을 열 때 교합을 다시 묻지 않게 한다. */
 export function sanitizeBiteCheck(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -134,6 +157,7 @@ export function toDesignSyncMeta(source) {
   }
   if (teeth.length === 0) return null;
   const biteCheck = sanitizeBiteCheck(source?.biteCheck);
+  const jawPose = sanitizeJawPose(source?.jawPose);
   const mode = source?.mode === "confirmed" || source?.mode === "manual" ? source.mode : undefined;
   const choiceRaw = source?.choice;
   const choice =
@@ -157,6 +181,7 @@ export function toDesignSyncMeta(source) {
     fitVersion: Number(source?.fitVersion) || 0,
     teeth,
     ...(biteCheck ? { biteCheck } : {}),
+    ...(jawPose ? { jawPose } : {}),
     ...(mode ? { mode } : {}),
     ...(choice ? { choice } : {}),
   };

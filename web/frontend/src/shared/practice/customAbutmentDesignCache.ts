@@ -101,6 +101,12 @@ export type CachedBiteCheck = {
   source: "auto" | "manual";
 };
 
+/** 악궁 하나의 교합 자세(열 우선 4x4). 스캔 파일이 아니라 의뢰 세션에 둔다. */
+export type CustomAbutmentJawPose = {
+  upper?: number[];
+  lower?: number[];
+};
+
 export type CachedCustomAbutmentDesign = {
   key: string;
   /** 형상 버전. 다르면 `fixture`·조정값으로 형상만 다시 만든다. */
@@ -110,6 +116,8 @@ export type CachedCustomAbutmentDesign = {
   alignedScans: CachedAlignedScan[];
   /** 교합 확인 메타. 없으면 로딩 시 1회 확인한다. */
   biteCheck?: CachedBiteCheck | null;
+  /** 원본 스캔을 작업 프레임으로 옮기는 자세. 파일별 정점과 따로 둔다. */
+  jawPose?: CustomAbutmentJawPose | null;
   teeth: CachedCustomAbutmentTooth[];
   chat: CustomAbutmentChatTurn[];
 };
@@ -205,6 +213,37 @@ export function customAbutmentDesignCacheKey(inputKey: string): string {
   return `f${CUSTOM_ABUTMENT_FIT_VERSION}:${inputKey}`;
 }
 
+/** 디자인 세션 키. 의뢰가 있으면 스캔 파일과 무관하게 그 의뢰 하나다. */
+export function customAbutmentSessionCacheKey(transferId: string, pipelineKey: string): string {
+  const id = transferId.trim();
+  if (id) return customAbutmentDesignCacheKey(`transfer:${id}`);
+  return customAbutmentDesignCacheKey(pipelineKey);
+}
+
+function poseMatrix(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length < 16) return null;
+  const out: number[] = [];
+  for (let i = 0; i < 16; i += 1) {
+    const value = Number(raw[i]);
+    if (!Number.isFinite(value) || Math.abs(value) > 1e6) return null;
+    out.push(Math.round(value * 1e6) / 1e6);
+  }
+  return out;
+}
+
+/** 의뢰에 저장된 악궁 자세. 파일별 정점 스냅샷은 받지 않는다. */
+export function normalizeJawPose(raw: unknown): CustomAbutmentJawPose | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as { upper?: unknown; lower?: unknown };
+  const upper = poseMatrix(row.upper);
+  const lower = poseMatrix(row.lower);
+  if (!upper && !lower) return null;
+  return {
+    ...(upper ? { upper } : {}),
+    ...(lower ? { lower } : {}),
+  };
+}
+
 function toothHasMesh(row: unknown): boolean {
   if (!row || typeof row !== "object") return false;
   const tooth = row as CachedCustomAbutmentTooth;
@@ -282,11 +321,14 @@ function withLocalBiteMeta<
   T extends {
     alignedScans?: CachedAlignedScan[];
     biteCheck?: CachedBiteCheck | null;
+    jawPose?: CustomAbutmentJawPose | null;
   },
 >(chosen: T, other: T | null | undefined): T {
   if (!other) return chosen;
   const chosenBite = normalizeCachedBiteCheck(chosen.biteCheck);
   const otherBite = normalizeCachedBiteCheck(other.biteCheck);
+  const chosenPose = normalizeJawPose(chosen.jawPose);
+  const otherPose = normalizeJawPose(other.jawPose);
   const chosenAligned =
     Array.isArray(chosen.alignedScans) && chosen.alignedScans.length > 0
       ? chosen.alignedScans
@@ -296,12 +338,20 @@ function withLocalBiteMeta<
       ? other.alignedScans
       : null;
   const biteCheck = chosenBite ?? otherBite;
+  const jawPose = chosenPose ?? otherPose;
   const alignedScans = chosenAligned ?? otherAligned ?? chosen.alignedScans ?? [];
-  if (biteCheck === chosenBite && alignedScans === chosen.alignedScans) return chosen;
+  if (
+    biteCheck === chosenBite &&
+    jawPose === chosenPose &&
+    alignedScans === chosen.alignedScans
+  ) {
+    return chosen;
+  }
   return {
     ...chosen,
     alignedScans,
     biteCheck,
+    jawPose,
   };
 }
 
@@ -313,6 +363,7 @@ export function preferFresherCustomAbutmentDesign<
     teeth?: readonly CachedCustomAbutmentTooth[];
     alignedScans?: CachedAlignedScan[];
     biteCheck?: CachedBiteCheck | null;
+    jawPose?: CustomAbutmentJawPose | null;
     chat?: CustomAbutmentChatTurn[];
   },
 >(
@@ -743,6 +794,7 @@ export type CustomAbutmentChoice = {
 export type RemoteCustomAbutmentSnapshot = {
   design: (CachedCustomAbutmentDesign & { designFresh: boolean }) | null;
   biteCheck: CachedBiteCheck | null;
+  jawPose: CustomAbutmentJawPose | null;
   chat: CustomAbutmentChatTurn[];
   /** 어벗 STL이 S3에 있다. 없으면 의뢰자 화면이 다시 올린다. */
   hasStl: boolean;
@@ -853,11 +905,13 @@ type SnapshotShell = {
   sharedView: CustomAbutmentSharedView | null;
   chrome: CustomAbutmentSharedChrome | null;
   biteCheck: CachedBiteCheck | null;
+  jawPose: CustomAbutmentJawPose | null;
   design: {
     version: number;
     fitVersion: number;
     savedAt: number;
     biteCheck?: CachedBiteCheck | null;
+    jawPose?: CustomAbutmentJawPose | null;
     teeth: Array<Record<string, unknown>>;
   } | null;
 };
@@ -882,12 +936,13 @@ function rememberInflight<T>(
 function emptySnapshot(
   shell: Pick<
     SnapshotShell,
-    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView" | "chrome" | "biteCheck"
+    "chat" | "paint" | "mode" | "manualDesign" | "feeGuide" | "choice" | "sharedView" | "chrome" | "biteCheck" | "jawPose"
   >,
 ): RemoteCustomAbutmentSnapshot {
   return {
     design: null,
     biteCheck: shell.biteCheck ?? null,
+    jawPose: shell.jawPose ?? null,
     chat: shell.chat,
     hasStl: false,
     paint: shell.paint,
@@ -911,6 +966,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
             savedAt?: number;
             chat?: unknown;
             biteCheck?: unknown;
+            jawPose?: unknown;
             teeth?: Array<Record<string, unknown>>;
           } | null;
           chat?: unknown;
@@ -934,6 +990,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
           sharedView?: unknown;
           chrome?: unknown;
           biteCheck?: unknown;
+          jawPose?: unknown;
         };
       }>({
         path: `/api/ai/custom-abutment-design-snapshot?transferId=${encodeURIComponent(id)}`,
@@ -995,6 +1052,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
         biteCheck:
           normalizeCachedBiteCheck(res.data.data.biteCheck) ??
           normalizeCachedBiteCheck(raw?.biteCheck),
+        jawPose: normalizeJawPose(res.data.data.jawPose) ?? normalizeJawPose(raw?.jawPose),
         design:
           raw && teeth.length > 0
             ? {
@@ -1002,6 +1060,7 @@ async function fetchSnapshotShell(token: string, id: string): Promise<SnapshotSh
                 fitVersion: Number(raw.fitVersion) || 0,
                 savedAt: Number(raw.savedAt) || 0,
                 biteCheck: normalizeCachedBiteCheck(raw.biteCheck),
+                jawPose: normalizeJawPose(raw.jawPose),
                 teeth,
               }
             : null,
@@ -1110,9 +1169,11 @@ async function hydrateSnapshotShell(
   if (teeth.length === 0) return emptySnapshot(shell);
   const { version, fitVersion, savedAt } = shell.design;
   const biteCheck = normalizeCachedBiteCheck(shell.design.biteCheck) ?? shell.biteCheck;
+  const jawPose = normalizeJawPose(shell.design.jawPose) ?? shell.jawPose;
   return {
     chat: shell.chat,
     biteCheck,
+    jawPose,
     hasStl: loaded.some((row) => Boolean(row?.fromS3)),
     paint: shell.paint,
     mode: shell.mode,
@@ -1128,6 +1189,7 @@ async function hydrateSnapshotShell(
       savedAt,
       alignedScans: [],
       ...(biteCheck ? { biteCheck } : { biteCheck: null }),
+      ...(jawPose ? { jawPose } : { jawPose: null }),
       teeth,
       chat: shell.chat,
       designFresh:
@@ -1315,6 +1377,7 @@ export type CustomAbutmentDesignSyncMeta = {
   teeth: CustomAbutmentDesignSyncTooth[];
   mode?: "confirmed" | "manual";
   biteCheck?: CachedBiteCheck | null;
+  jawPose?: CustomAbutmentJawPose | null;
   choice?: {
     cancelDeadlineAt?: string | null;
     gracePromoteAt?: string | null;
@@ -1393,6 +1456,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
         }
       : undefined;
   const biteCheck = normalizeCachedBiteCheck(row.biteCheck);
+  const jawPose = normalizeJawPose(row.jawPose);
   return {
     transferId: String(row.transferId || ""),
     savedAt: Number(row.savedAt) || 0,
@@ -1401,6 +1465,7 @@ export function parseCustomAbutmentDesignSyncMeta(raw: unknown): CustomAbutmentD
     fitVersion: Number(row.fitVersion) || 0,
     teeth,
     ...(biteCheck ? { biteCheck } : {}),
+    ...(jawPose ? { jawPose } : {}),
     ...(mode ? { mode } : {}),
     ...(choice ? { choice } : {}),
   };
@@ -1413,10 +1478,12 @@ export function cachedDesignFromSyncMeta(
   carry?: {
     alignedScans?: CachedAlignedScan[];
     biteCheck?: CachedBiteCheck | null;
+    jawPose?: CustomAbutmentJawPose | null;
     chat?: CustomAbutmentChatTurn[];
   } | null,
 ): CachedCustomAbutmentDesign & { designFresh: boolean } {
   const biteCheck = normalizeCachedBiteCheck(meta.biteCheck) ?? normalizeCachedBiteCheck(carry?.biteCheck);
+  const jawPose = normalizeJawPose(meta.jawPose) ?? normalizeJawPose(carry?.jawPose);
   return freshenCachedDesign({
     key,
     version: Number(meta.version) || 0,
@@ -1424,6 +1491,7 @@ export function cachedDesignFromSyncMeta(
     savedAt: meta.savedAt > 0 ? meta.savedAt : Date.now(),
     alignedScans: Array.isArray(carry?.alignedScans) ? carry.alignedScans : [],
     biteCheck,
+    jawPose,
     teeth: meta.teeth.map((row) => ({
       toothNumber: row.toothNumber,
       fileName: row.fileName,
@@ -1457,7 +1525,9 @@ export async function publishCustomAbutmentDesignMeta(
     savedAt?: number;
     teeth: readonly CustomAbutmentDesignSyncTooth[];
     biteCheck?: CachedBiteCheck | null;
+    jawPose?: CustomAbutmentJawPose | null;
     chrome?: Record<string, unknown> | null;
+    view?: Record<string, unknown> | null;
   },
 ): Promise<
   | { ok: true; savedAt: number }
@@ -1481,7 +1551,9 @@ export async function publishCustomAbutmentDesignMeta(
       ...(record.savedAt ? { savedAt: record.savedAt } : {}),
       teeth: record.teeth,
       ...(record.biteCheck ? { biteCheck: record.biteCheck } : {}),
+      ...(record.jawPose ? { jawPose: record.jawPose } : {}),
       ...(record.chrome ? { chrome: record.chrome } : {}),
+      ...(record.view ? { view: record.view } : {}),
     },
   });
   if (res.status === 409) {
@@ -1492,6 +1564,33 @@ export async function publishCustomAbutmentDesignMeta(
   if (!res.ok) return { ok: false, stale: false };
   forgetCustomAbutmentSnapshot(id);
   return { ok: true, savedAt: Number(res.data?.data?.savedAt) || Date.now() };
+}
+
+/** 화면·상단 옵션·카메라. 채팅은 넣지 않는다. 치아가 없어도 세션에 남긴다. */
+export async function publishCustomAbutmentWorkSession(
+  token: string,
+  transferId: string,
+  record: {
+    savedAt: number;
+    chrome?: Record<string, unknown> | null;
+    view?: Record<string, unknown> | null;
+  },
+): Promise<void> {
+  const id = transferId.trim();
+  if (!token || !id || (!record.chrome && !record.view)) return;
+  const res = await request({
+    path: "/api/ai/custom-abutment-design-snapshot",
+    method: "PUT",
+    token,
+    jsonBody: {
+      transferId: id,
+      savedAt: record.savedAt,
+      ...(record.chrome ? { chrome: record.chrome } : {}),
+      ...(record.view ? { view: record.view } : {}),
+    },
+  });
+  if (!res.ok) throw new Error("작업 세션을 저장하지 못했습니다.");
+  forgetCustomAbutmentSnapshot(id);
 }
 
 /** 모달을 다시 열 때 방금 저장된 스냅샷을 받게 캐시를 비운다. */

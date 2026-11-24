@@ -6,6 +6,8 @@ import {
   preferFresherCustomAbutmentDesign,
   readCustomAbutmentDesign,
   rememberCustomAbutmentDesign,
+  customAbutmentSessionCacheKey,
+  normalizeJawPose,
   resolveCustomAbutmentReopen,
   type CachedCustomAbutmentDesign,
   type CachedCustomAbutmentTooth,
@@ -109,5 +111,15 @@ const keptBite = resolveCustomAbutmentReopen({
 assert.equal(keptBite.restored, true);
 assert.equal(keptBite.biteCheck.qualityOk, false);
 assert.equal(keptBite.biteCheck.checkedAt, 9);
+
+assert.equal(customAbutmentSessionCacheKey("PTX-1", "scan-a"), customAbutmentSessionCacheKey("PTX-1", "scan-b"));
+assert.notEqual(customAbutmentSessionCacheKey("", "scan-a"), customAbutmentSessionCacheKey("", "scan-b"));
+const pose = normalizeJawPose({
+  upper: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1],
+  lower: [],
+});
+assert.equal(pose?.upper?.[14], 3);
+assert.equal(pose?.lower, undefined);
+assert.equal(normalizeJawPose({ upper: [1] }), null);
 
 console.log("custom abutment reopen prefer ok");
