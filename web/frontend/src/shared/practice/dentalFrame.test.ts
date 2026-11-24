@@ -5,6 +5,7 @@ import * as THREE from "three";
 import {
   archFrameAxes,
   dentalFrameFromStored,
+  dentalFrameFromOcclusalToothView,
   dentalFrameFromViewOrientation,
   estimateDentalFrame,
   isPartialArchScan,
@@ -396,6 +397,56 @@ test("순측 뷰에서 카메라 쪽이 전방·화면 위가 두개다", () => 
   const frame = dentalFrameFromViewOrientation(q, new THREE.Vector3(0, 1, 0));
   assert.ok(frame.anterior.z > 0.9, "카메라 쪽(+Z)이 전방");
   assert.ok(frame.up.y > 0.9, "화면 위(+Y)가 두개");
+});
+
+test("교합면 뷰(#16)에서 협측·근원심으로 악궁 축을 되돌린다", () => {
+  const up = new THREE.Vector3(0, 0, 1);
+  const anterior = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3(1, 0, 0);
+  const side = 1;
+  const phi = (6 / 8) * 1.45;
+  const buccal = right
+    .clone()
+    .multiplyScalar(side * Math.sin(phi))
+    .addScaledVector(anterior, Math.cos(phi))
+    .normalize();
+  const mesial = anterior
+    .clone()
+    .multiplyScalar(Math.sin(phi))
+    .addScaledVector(right, -side * Math.cos(phi))
+    .normalize();
+  // 상악 교합: look=+두개, 화면 위=협측, 오른쪽=근심(10번대).
+  const m = new THREE.Matrix4().makeBasis(mesial, buccal, up.clone().negate());
+  const q = new THREE.Quaternion().setFromRotationMatrix(m);
+  const frame = dentalFrameFromOcclusalToothView(q, "16", up);
+  assert.ok(frame.up.z > 0.9, "두개(+Z)");
+  assert.ok(frame.anterior.y > 0.85, `전치(+Y) got ${frame.anterior.toArray().join(",")}`);
+  assert.ok(frame.right.x > 0.85, `환자 우측(+X) got ${frame.right.toArray().join(",")}`);
+});
+
+test("교합면 뷰(#26)는 화면 오른쪽이 원심이어도 같은 악궁 축이다", () => {
+  const up = new THREE.Vector3(0, 0, 1);
+  const anterior = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3(1, 0, 0);
+  const side = -1;
+  const phi = (6 / 8) * 1.45;
+  const buccal = right
+    .clone()
+    .multiplyScalar(side * Math.sin(phi))
+    .addScaledVector(anterior, Math.cos(phi))
+    .normalize();
+  const mesial = anterior
+    .clone()
+    .multiplyScalar(Math.sin(phi))
+    .addScaledVector(right, -side * Math.cos(phi))
+    .normalize();
+  // 20번대: 화면 오른쪽=원심=−근심.
+  const m = new THREE.Matrix4().makeBasis(mesial.clone().negate(), buccal, up.clone().negate());
+  const q = new THREE.Quaternion().setFromRotationMatrix(m);
+  const frame = dentalFrameFromOcclusalToothView(q, "26", up);
+  assert.ok(frame.up.z > 0.9, "두개(+Z)");
+  assert.ok(frame.anterior.y > 0.85, `전치(+Y) got ${frame.anterior.toArray().join(",")}`);
+  assert.ok(frame.right.x > 0.85, `환자 우측(+X) got ${frame.right.toArray().join(",")}`);
 });
 
 test("원심 대구치가 없고 구개가 넓어도 치아 줄이 근원심이다", () => {

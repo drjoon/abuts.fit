@@ -470,6 +470,66 @@ export function dentalFrameFromViewOrientation(
 }
 
 /**
+ * 교합면에서 볼 때: 화면 위=협측·아래=설측.
+ * 10/30번대는 오른쪽=근심·왼쪽=원심, 20/40번대는 오른쪽=원심·왼쪽=근심.
+ * look은 교합 쪽 → 치아(치은). seedUp이 있으면 두개 부호를 맞춘다.
+ */
+export function dentalFrameFromOcclusalToothView(
+  cameraQuaternion: THREE.Quaternion,
+  toothNumber: string,
+  seedUp?: THREE.Vector3 | null,
+): DentalFrame {
+  const fdi = fdiQuadrantPos(toothNumber);
+  const look = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion);
+  if (look.lengthSq() < 1e-8) {
+    return dentalFrameFromViewOrientation(cameraQuaternion, seedUp);
+  }
+  look.normalize();
+  const screenUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraQuaternion);
+  const screenRight = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraQuaternion);
+  if (screenUp.lengthSq() < 1e-8 || screenRight.lengthSq() < 1e-8) {
+    return dentalFrameFromViewOrientation(cameraQuaternion, seedUp);
+  }
+  screenUp.normalize();
+  screenRight.normalize();
+
+  // 상악: 교합면이 아래 → 카메라가 아래에서 위를 봄(look≈두개).
+  // 하악: 교합면이 위 → 카메라가 위에서 아래를 봄(look≈−두개).
+  const upper = !fdi || fdi.quadrant <= 2;
+  let up = (upper ? look.clone() : look.clone().negate()).normalize();
+  if (seedUp && seedUp.lengthSq() > 1e-8 && up.dot(seedUp) < 0) up.negate();
+
+  const buccal = screenUp.clone().addScaledVector(up, -screenUp.dot(up));
+  if (buccal.lengthSq() < 1e-8) {
+    return dentalFrameFromViewOrientation(cameraQuaternion, seedUp);
+  }
+  buccal.normalize();
+
+  const quadrant = fdi?.quadrant ?? 1;
+  // 10/30: 화면 오른쪽=근심. 20/40: 화면 오른쪽=원심.
+  const mesialSign = quadrant === 1 || quadrant === 3 ? 1 : -1;
+  let mesial = screenRight.clone().multiplyScalar(mesialSign);
+  mesial.addScaledVector(up, -mesial.dot(up));
+  if (mesial.lengthSq() < 1e-8) mesial.crossVectors(up, buccal);
+  if (mesial.lengthSq() < 1e-8) {
+    return finishArchFrame({ up, anterior: buccal.clone(), right: new THREE.Vector3() }, up, buccal);
+  }
+  mesial.normalize();
+
+  // archToothDirs 역산: B = s·sinφ·R + cosφ·A, M = sinφ·A − s·cosφ·R
+  // → A = cosφ·B + sinφ·M (side 무관). right는 finishArchFrame이 잡는다.
+  const position = fdi?.pos ?? 6;
+  const phi = (Math.min(position, 8) / 8) * 1.45;
+  const cosPhi = Math.cos(phi);
+  const sinPhi = Math.sin(phi);
+  const anterior = buccal
+    .clone()
+    .multiplyScalar(cosPhi)
+    .addScaledVector(mesial, sinPhi);
+  return finishArchFrame({ up, anterior, right: new THREE.Vector3() }, up, anterior);
+}
+
+/**
  * 확정된 축만 적용. 신호 부족이면 입력 프레임을 그대로 둔다.
  */
 export function orientAnteriorFromAbutmentFdi(
