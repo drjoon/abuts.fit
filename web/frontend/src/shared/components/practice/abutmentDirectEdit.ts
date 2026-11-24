@@ -2818,7 +2818,7 @@ export class AbutmentDirectEditSession {
    * 닫기 직전에 화면 검볼을 정점에 남긴다.
    * 스크류 홀 불리언이 끝나기 전에 닫혀도 지금 직경이 저장된다.
    */
-  bakeForSave() {
+  bakeForSave(): boolean {
     if (this.drag) {
       this.drag = null;
       this.dragGroup = [];
@@ -2833,6 +2833,7 @@ export class AbutmentDirectEditSession {
       pending.push(tooth);
     }
     for (const tooth of pending) this.show(tooth, true);
+    return pending.length > 0;
   }
 
   /** 상대 디자인이 들어오면 진행 중인 드래그를 확정하지 않고 놓는다. */

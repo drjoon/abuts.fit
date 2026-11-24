@@ -1139,6 +1139,66 @@ const BITE_GUIDE_CHROME_CLASS =
 
 /** 「다시 맞추기」최대 추가 횟수(첫 시도 포함하면 후보 5개). 저장 디자인이 없으면 먼저 묻는다. */
 const BITE_MANUAL_RETRY_MAX = 4;
+const SESSION_WIDTH_MIN = 0.65;
+const SESSION_WIDTH_MAX = 1.45;
+
+/** 저장된 패널 수치를 생성 입력으로 고정한다. 연결 테이퍼가 각을 다시 계산하지 않게 한다. */
+function sessionLockedParams(
+  params: Partial<CustomAbutmentDesignParams>,
+  metrics: Partial<CustomAbutmentDesignMetrics> | undefined,
+): Partial<CustomAbutmentDesignParams> {
+  const next = { ...params };
+  const taper = Number(metrics?.postTaperDeg);
+  const clearance = Number(metrics?.occlusalClearanceMm);
+  const fillet = Number(metrics?.marginFilletRadiusMm);
+  if (Number.isFinite(taper)) next.postTaperDeg = taper;
+  if (Number.isFinite(clearance)) next.occlusalClearanceMm = clearance;
+  if (Number.isFinite(fillet)) next.marginFilletRadiusMm = fillet;
+  return next;
+}
+
+function hasSessionShapeNumbers(
+  metrics: Partial<CustomAbutmentDesignMetrics> | undefined,
+): boolean {
+  return Number.isFinite(Number(metrics?.postTaperDeg)) && Number.isFinite(Number(metrics?.postHeightMm));
+}
+
+/**
+ * 세션에 남은 테이퍼·높이·직경으로 메시를 다시 만든다.
+ * 직경은 한 번만 굵기를 보정해 맞춘다.
+ */
+async function designFromSessionMetrics(
+  args: Parameters<typeof designCustomAbutmentStl>[0],
+  metrics: Partial<CustomAbutmentDesignMetrics> | undefined,
+): Promise<DesignedCustomAbutment> {
+  const locked = sessionLockedParams(args.explicitParams ?? args.params ?? {}, metrics);
+  const height = Number(metrics?.postHeightMm);
+  const base = {
+    ...args,
+    params: { ...(args.params ?? {}), ...locked },
+    explicitParams: locked,
+    lockMeasuredShape: true,
+    ...(Number.isFinite(height) && height > 0 ? { preservePostHeightMm: height } : {}),
+  };
+  let built = await designCustomAbutmentStl(base);
+  const target = Number(metrics?.maxDiameterMm);
+  const got = Number(built.metrics.maxDiameterMm);
+  const width = Number(built.params.postWidthScale) || 1;
+  if (!(Number.isFinite(target) && target > 0 && got > 0.5 && Math.abs(target - got) >= 0.2)) {
+    return built;
+  }
+  const nextWidth = Math.min(SESSION_WIDTH_MAX, Math.max(SESSION_WIDTH_MIN, width * (target / got)));
+  if (Math.abs(nextWidth - width) < 0.01) return built;
+  built.worldGeometry.dispose();
+  built.predictedCrownWorldGeometry.dispose();
+  built.enameloplastyWorldGeometry?.dispose();
+  const again = { ...locked, postWidthScale: nextWidth };
+  return designCustomAbutmentStl({
+    ...base,
+    params: { ...base.params, postWidthScale: nextWidth },
+    explicitParams: again,
+  });
+}
 
 export function PracticeCustomAbutmentPreviewDialog({
   open,
@@ -1313,6 +1373,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const ignoreEditCommitRef = useRef(false);
   /** 서버가 인정한 마지막 저장 시각. 이보다 오래된 쓰기는 거절된다. */
   const designSavedAtRef = useRef(0);
+  /** 이 화면에서 형상을 바꿨을 때만 서버 치아를 덮어쓴다. 열기만 한 재생성을 올리지 않는다. */
+  const designDirtyRef = useRef(false);
   /** 소켓으로 보낸 디자인 시각. hello가 더 오래된 화면을 지금 시각으로 덮지 않게 한다. */
   const lastEmittedDesignAtRef = useRef(0);
   const pendingRemoteMetaRef = useRef<CustomAbutmentDesignSyncMeta | null>(null);
@@ -1321,6 +1383,18 @@ export function PracticeCustomAbutmentPreviewDialog({
   >(async () => {});
   const publishAgainRef = useRef(false);
   const publishRunningRef = useRef(false);
+  const pendingDesignPublishRef = useRef<{
+    token: string;
+    transferId: string;
+    savedAt: number;
+    baseSavedAt: number;
+    teeth: CustomAbutmentDesignSyncTooth[];
+    liveTeeth: CustomAbutmentDesignSyncTooth[];
+    biteCheck: CachedBiteCheck | null;
+    jawPose: CustomAbutmentJawPose | null;
+    chrome: Record<string, unknown> | null;
+    view: Record<string, unknown> | null;
+  } | null>(null);
   const viewerPrefsRef = useRef<CustomAbutmentViewerPrefs>({
     ...DEFAULT_CUSTOM_ABUTMENT_VIEWER_PREFS,
     expandedTeeth: {},
@@ -2565,20 +2639,38 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
   };
 
+  const captureDesignPublish = () => {
+    if (!designDirtyRef.current) return;
+    if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
+    const transferId = transferIdRef.current;
+    const list = designedListRef.current;
+    const token = String(authToken || "").trim();
+    const ctx = designContextRef.current;
+    if (!token || !transferId || list.length === 0 || !ctx) return;
+    const savedAt = Math.max(designSavedAtRef.current + 1, Date.now());
+    const teeth = list.map((row) => syncToothFromDesign(row));
+    pendingDesignPublishRef.current = {
+      token,
+      transferId,
+      savedAt,
+      baseSavedAt: designSavedAtRef.current,
+      teeth,
+      liveTeeth: teeth,
+      biteCheck: ctx.biteCheck ?? null,
+      jawPose: ctx.jawPose ?? null,
+      chrome: { ...chromeStateRef.current },
+      view: currentSessionView(),
+    };
+    void cacheCurrentDesign(savedAt);
+  };
+
   const scheduleDesignMetaPublish = () => {
+    // 닫기·언마운트 전에 지금 메시를 잡아 둔다. await 뒤에 목록을 다시 읽지 않는다.
+    captureDesignPublish();
+    if (!pendingDesignPublishRef.current) return;
     publishAgainRef.current = true;
-    if (publishRunningRef.current) {
-      // 로컬만 Date.now()로 올리면 서버보다 새로 보여 상대 저장을 덮어쓴다. 같은 스탬프를 쓴다.
-      const stamp =
-        pendingMetaStampRef.current > 0
-          ? pendingMetaStampRef.current
-          : Math.max(designSavedAtRef.current, Date.now());
-      pendingMetaStampRef.current = stamp;
-      void cacheCurrentDesign(stamp);
-      return;
-    }
+    if (publishRunningRef.current) return;
     publishRunningRef.current = true;
-    const epoch = designEpochRef.current;
     void (async () => {
       let acceptedAt = 0;
       let spins = 0;
@@ -2586,62 +2678,45 @@ export function PracticeCustomAbutmentPreviewDialog({
         while (publishAgainRef.current && spins < 5) {
           spins += 1;
           publishAgainRef.current = false;
-          if (designEpochRef.current !== epoch) return;
-          if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
-          const transferId = transferIdRef.current;
-          const list = designedListRef.current;
-          const token = String(authToken || "").trim();
-          if (!token || !transferId || list.length === 0) return;
-          const stamped = pendingMetaStampRef.current;
-          pendingMetaStampRef.current = 0;
-          const savedAtHint =
-            stamped > 0 ? stamped : Math.max(designSavedAtRef.current + 1, Date.now());
-          void cacheCurrentDesign(savedAtHint);
-          const teeth = list.map(syncToothFromDesign);
-          lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, savedAtHint);
+          const snap = pendingDesignPublishRef.current;
+          pendingDesignPublishRef.current = null;
+          if (!snap) return;
+          lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, snap.savedAt);
           emitCustomAbutmentLive({
             kind: "design",
-            transferId,
-            savedAt: savedAtHint,
+            transferId: snap.transferId,
+            savedAt: snap.savedAt,
             design: {
-              transferId,
-              savedAt: savedAtHint,
+              transferId: snap.transferId,
+              savedAt: snap.savedAt,
               updatedBy: authUserIdRef.current,
               version: CUSTOM_ABUTMENT_DESIGN_VERSION,
               fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-              teeth,
-              ...(designContextRef.current?.biteCheck
-                ? { biteCheck: designContextRef.current.biteCheck }
-                : {}),
-              ...(designContextRef.current?.jawPose
-                ? { jawPose: designContextRef.current.jawPose }
-                : {}),
+              teeth: snap.liveTeeth,
+              ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
+              ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
             },
           });
           lastLocalChromeAtRef.current = performance.now();
-          lastChromeAtRef.current = Math.max(lastChromeAtRef.current, savedAtHint);
+          lastChromeAtRef.current = Math.max(lastChromeAtRef.current, snap.savedAt);
           emitCustomAbutmentLive({
             kind: "chrome",
-            transferId,
-            savedAt: savedAtHint,
+            transferId: snap.transferId,
+            savedAt: snap.savedAt,
             persist: true,
-            chrome: chromeStateRef.current,
+            chrome: snap.chrome,
           });
           const result = classifyCustomAbutmentDesignPublish(
-            await publishCustomAbutmentDesignMeta(token, transferId, {
+            await publishCustomAbutmentDesignMeta(snap.token, snap.transferId, {
               version: CUSTOM_ABUTMENT_DESIGN_VERSION,
               fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-              baseSavedAt: designSavedAtRef.current,
-              savedAt: savedAtHint,
-              teeth,
-              ...(designContextRef.current?.biteCheck
-                ? { biteCheck: designContextRef.current.biteCheck }
-                : {}),
-              ...(designContextRef.current?.jawPose
-                ? { jawPose: designContextRef.current.jawPose }
-                : {}),
-              chrome: chromeStateRef.current,
-              view: currentSessionView(),
+              baseSavedAt: snap.baseSavedAt,
+              savedAt: snap.savedAt,
+              teeth: snap.teeth,
+              ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
+              ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
+              chrome: snap.chrome,
+              view: snap.view,
             }),
           );
           if (result.kind === "stale") {
@@ -2654,7 +2729,6 @@ export function PracticeCustomAbutmentPreviewDialog({
             });
             return;
           }
-          if (designEpochRef.current !== epoch) return;
           if (result.kind !== "ok") {
             acceptedAt = 0;
             continue;
@@ -2662,12 +2736,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
           acceptedAt = result.savedAt;
         }
-        if (acceptedAt > 0 && designEpochRef.current === epoch) await cacheCurrentDesign(acceptedAt);
+        if (acceptedAt > 0) await cacheCurrentDesign(acceptedAt);
       } catch (err) {
         console.warn("[custom-abutment] design meta publish failed", err);
       } finally {
         publishRunningRef.current = false;
-        if (publishAgainRef.current && designEpochRef.current === epoch) scheduleDesignMetaPublish();
+        if (publishAgainRef.current && pendingDesignPublishRef.current) scheduleDesignMetaPublish();
       }
     })();
   };
@@ -2675,8 +2749,9 @@ export function PracticeCustomAbutmentPreviewDialog({
   /** 지금 디자인·조정값을 서버에 올리고, 서버가 인정한 시각으로만 이 브라우저에 남긴다. */
   const persistDesign = useCallback((
     chat?: readonly ChatTurn[],
-    opts?: { publish?: boolean; savedAt?: number },
+    opts?: { publish?: boolean; savedAt?: number; dirty?: boolean },
   ) => {
+    if (opts?.dirty) designDirtyRef.current = true;
     if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
     const turns = normalizeCustomAbutmentChat(
       (chat ?? chatTurnsRef.current).filter((t) => !t.pending),
@@ -2693,6 +2768,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       }
       return;
     }
+    if (!designDirtyRef.current) return;
     scheduleDesignMetaPublish();
   }, [authToken, persistChat]);
 
@@ -2871,8 +2947,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           };
           try {
             const wantCandidates =
-              (row.picker === true && (row.candidates?.length ?? 0) >= 2) ||
-              (variantId !== "" && variantId !== "space_fill");
+              !hasSessionShapeNumbers(row.metrics) &&
+              ((row.picker === true && (row.candidates?.length ?? 0) >= 2) ||
+                (variantId !== "" && variantId !== "space_fill"));
             let next: DesignedCustomAbutment;
             let choice: ToothCandidateChoice | null = null;
             const extras: DesignedCustomAbutment[] = [];
@@ -2907,7 +2984,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                 for (const extra of ordered.slice(1)) extras.push(extra.design);
               }
             } else {
-              next = await designCustomAbutmentStl(designArgs);
+              next = hasSessionShapeNumbers(row.metrics)
+                ? await designFromSessionMetrics(designArgs, row.metrics)
+                : await designCustomAbutmentStl(designArgs);
               activeVariantRef.current[row.toothNumber] = variantId || "space_fill";
             }
             if (epoch !== designEpochRef.current) {
@@ -3204,7 +3283,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       syncCandidateSceneForTooth(toothNumber);
       directEditRef.current?.sync({ quiet: true });
       directEditRef.current?.tick();
-      if (shouldPersist && !suppressLiveEmitRef.current) persistDesign();
+      if (shouldPersist && !suppressLiveEmitRef.current) persistDesign(undefined, { dirty: true });
     },
     [
       addDesignToScene,
@@ -3262,7 +3341,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       syncCandidateSceneForTooth(toothNumber);
       directEditRef.current?.sync({ quiet: true });
       directEditRef.current?.tick();
-      if (!suppressLiveEmitRef.current) persistDesign();
+      if (!suppressLiveEmitRef.current) persistDesign(undefined, { dirty: true });
     },
     [addDesignToScene, applySelectionPivot, persistDesign, removeDesignFromScene, syncCandidateSceneForTooth],
   );
@@ -3318,6 +3397,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         confirmCandidateForTooth(summary.tooth, false);
       }
       if (!summary.neutral) labGeometryTouchedRef.current = true;
+      designDirtyRef.current = true;
       applyGumballMetrics(summary);
       // 연결된 브리지 형제가 각도를 receive한 커밋은 크기·길이 오버라이드를 건드리지 않고 다시 emit하지 않는다.
       if (!summary.receivedBridgeSync) {
@@ -3624,12 +3704,12 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
           }
         }
-        if (session.jobs.length === 0) {
+          if (session.jobs.length === 0) {
           scanbodyPickRef.current = null;
           setVisibleJaws(jawsForJobs([]));
           setStatus({ kind: "ready" });
           if (Object.keys(candidateChoicesRef.current).length === 0) {
-            persistDesign();
+            persistDesign(undefined, { dirty: true });
           }
         } else {
           setVisibleJaws(jawsForJobs(session.jobs));
@@ -3909,7 +3989,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
   /** 모달 닫기·케이스 전환(unmount) 직전에 디자인·카메라·대화를 바로 남긴다. */
   const flushSessionWork = useCallback(() => {
-    directEditRef.current?.bakeForSave();
+    if (directEditRef.current?.bakeForSave()) designDirtyRef.current = true;
     window.clearTimeout(editCommitTimerRef.current);
     editCommitTimerRef.current = 0;
     if (!skipSnapshotFlushRef.current) persistDesign();
@@ -4705,10 +4785,10 @@ export function PracticeCustomAbutmentPreviewDialog({
         }
         // 이번 스냅샷과 같은 시각의 소켓 재전송이 메시를 다시 만들지 않게 한다.
         if (serverAt > lastRemoteSavedAtRef.current) lastRemoteSavedAtRef.current = serverAt;
-        // 정점이 없을 때만 다시 만든다. 검볼만 있으면 저장 메시 위에 얹는다.
-        // 바이트 재계산 뒤에는 저장 메시 좌표가 교합 프레임과 어긋나 파라미터로 다시 만든다.
+        // 세션 수치가 있으면 그 테이퍼·높이·직경으로 메시를 다시 만든다. 저장된 정점은 쓰지 않는다.
         const rebuildFromMeta = Boolean(
           forceBiteRecalc ||
+            cached?.teeth.some((row) => hasSessionShapeNumbers(row.metrics)) ||
             cached?.teeth.some(
               (row) => row.regenFromMeta || (row.localPositions?.byteLength ?? 0) < 36,
             ),
@@ -5097,7 +5177,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               };
             }
             if (restoredGumball) {
-              const freshBuilt = await designCustomAbutmentStl({
+              const gumballArgs = {
                 fixture: row.fixture,
                 jawGeometry: jawGeo,
                 opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
@@ -5114,31 +5194,37 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
-              });
+              };
+              const freshBuilt = hasSessionShapeNumbers(row.gumballBaseMetrics)
+                ? await designFromSessionMetrics(gumballArgs, row.gumballBaseMetrics)
+                : await designCustomAbutmentStl(gumballArgs);
               gumballMetricBaseRef.current[row.toothNumber] = { ...freshBuilt.metrics };
               gumballParamBaseRef.current[row.toothNumber] = { ...freshBuilt.params };
               directEditRef.current?.setEdit(row.toothNumber, restoredGumball);
               builtAbutments.push(freshBuilt);
-            } else if (rebuildFromMeta && cached.designFresh) {
+            } else if (rebuildFromMeta && (cached.designFresh || hasSessionShapeNumbers(row.metrics))) {
+              const sessionArgs = {
+                fixture: row.fixture,
+                jawGeometry: jawGeo,
+                opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
+                neighbors: fixtures.filter((f) => f.jaw === jaw),
+                toothWorks: curAllToothWorks,
+                params: {
+                  ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                  ...rowOverrides,
+                },
+                explicitParams: rowOverrides,
+                sharedInsertionAxisWorld: sharedInsertionAxisOf(
+                  lockedBridgeAxisRef.current,
+                  row.toothNumber,
+                ),
+                logicRules: logicRulesRef.current,
+                patientName: curPatientName,
+              };
               builtAbutments.push(
-                await designCustomAbutmentStl({
-                  fixture: row.fixture,
-                  jawGeometry: jawGeo,
-                  opposingGeometry: jaw === "upper" ? lowerPrimary : upperPrimary,
-                  neighbors: fixtures.filter((f) => f.jaw === jaw),
-                  toothWorks: curAllToothWorks,
-                  params: {
-                    ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
-                    ...rowOverrides,
-                  },
-                  explicitParams: rowOverrides,
-                  sharedInsertionAxisWorld: sharedInsertionAxisOf(
-                    lockedBridgeAxisRef.current,
-                    row.toothNumber,
-                  ),
-                  logicRules: logicRulesRef.current,
-                  patientName: curPatientName,
-                }),
+                hasSessionShapeNumbers(row.metrics)
+                  ? await designFromSessionMetrics(sessionArgs, row.metrics)
+                  : await designCustomAbutmentStl(sessionArgs),
               );
             } else {
               const freshCands = await designCustomAbutmentCandidates({
@@ -5748,7 +5834,9 @@ export function PracticeCustomAbutmentPreviewDialog({
             builtAbutments.length > 0 &&
             (!pickerOpen || (userAcceptedBite && !restored));
           if (shareUnstoredDesign) {
-            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined);
+            persistDesign(restoredChat && restoredChat.length > 0 ? restoredChat : undefined, {
+              dirty: true,
+            });
           } else if (
             !pendingNewer &&
             builtAbutments.length > 0 &&
@@ -6265,7 +6353,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         "replace",
       );
       if (applied && designEpochRef.current === epoch && opts?.persist !== false) {
-        persistDesign();
+        persistDesign(undefined, { dirty: true });
       }
     },
     [applyDesignChanges, persistDesign],
@@ -6792,6 +6880,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       nextValue: number | AbutmentAxisSource | { min: number; max: number },
     ) => {
       if (!canEditDesign) return;
+      designDirtyRef.current = true;
       const explicitTargetNumbers = abutmentEditTargets(selectedTeethRef.current, item.toothNumber);
       const receivedMateNumbers: string[] = [];
       if (field === "axisSource") {
@@ -7782,7 +7871,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       .then((applied) => {
         if (!applied) return;
         for (const t of targets) editedInfoFieldsRef.current[t]?.clear();
-        persistDesign();
+        persistDesign(undefined, { dirty: true });
       })
       .catch(() => {
         designedListRef.current = previousList;

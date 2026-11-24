@@ -3737,6 +3737,11 @@ type DesignArgs = {
   sharedInsertionAxisWorld?: readonly [number, number, number] | null;
   /** 브리지 형제 각도 동기화 재생성 시 기존 포스트 높이를 유지할 목표 높이(mm). */
   preservePostHeightMm?: number | null;
+  /**
+   * 저장된 테이퍼·높이를 다시 풀지 않는다.
+   * 연결 테이퍼와 대합 맞춤이 세션 수치를 초기 디자인으로 되돌리지 않게 한다.
+   */
+  lockMeasuredShape?: boolean;
 };
 
 export type CustomAbutmentConflictVariant =
@@ -13204,7 +13209,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
   };
   const syncLinkedTaperForHeight = (heightMm: number): boolean => {
-    if (!isTaperLinked) return false;
+    if (args.lockMeasuredShape || !isTaperLinked) return false;
     refreshAxialWallRadius();
     const nextDeg = computeOptimalPostTaperDeg(heightMm, bridgeRetention, { radiusMm: axialWallRadiusMm });
     if (Math.abs(nextDeg - effectiveTaperDeg) < 0.05) return false;
@@ -13241,7 +13246,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     (tpl.kind === "incisor" && !hasExplicitClearance
       ? oppTrisLocal.length >= 9
       : oppTrisLocal.length >= 9 || oppNear.length > 0);
-  if (canShiftToOpposing) {
+  if (canShiftToOpposing && !args.lockMeasuredShape) {
     const targetClear =
       offsetH >= 0
         ? Math.max(minClearanceFloor, clearance - offsetH)

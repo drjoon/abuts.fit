@@ -784,7 +784,6 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         return { ...row, size, crownS3Key };
       }),
     );
-    const teeth = validated.filter(Boolean);
     const transfer = await PracticeTransfer.findOne({ transferId })
       .select({
         transferId: 1,
@@ -797,6 +796,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
       })
       .lean();
     const prev = transfer?.production?.customAbutmentPreview || {};
+    const teeth = validated.filter(Boolean);
     if (teeth.length > 0 && isStaleDesignWrite(prev.savedAt, req.body?.baseSavedAt)) {
       const current = toDesignSyncMeta({
         ...prev,
