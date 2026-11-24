@@ -469,6 +469,9 @@ export function dentalFrameFromViewOrientation(
   );
 }
 
+/** 교합면 정렬이 치아 위치(phi)로 협측·근심을 악궁 축에 접는 각도 폭. */
+const OCCLUSAL_TOOTH_PHI_SPAN = 1.45;
+
 /**
  * 교합면에서 볼 때: 화면 위=협측·아래=설측.
  * 10/30번대는 오른쪽=근심·왼쪽=원심, 20/40번대는 오른쪽=원심·왼쪽=근심.
@@ -519,7 +522,7 @@ export function dentalFrameFromOcclusalToothView(
   // archToothDirs 역산: B = s·sinφ·R + cosφ·A, M = sinφ·A − s·cosφ·R
   // → A = cosφ·B + sinφ·M (side 무관). right는 finishArchFrame이 잡는다.
   const position = fdi?.pos ?? 6;
-  const phi = (Math.min(position, 8) / 8) * 1.45;
+  const phi = (Math.min(position, 8) / 8) * OCCLUSAL_TOOTH_PHI_SPAN;
   const cosPhi = Math.cos(phi);
   const sinPhi = Math.sin(phi);
   const anterior = buccal
@@ -527,6 +530,38 @@ export function dentalFrameFromOcclusalToothView(
     .multiplyScalar(cosPhi)
     .addScaledVector(mesial, sinPhi);
   return finishArchFrame({ up, anterior, right: new THREE.Vector3() }, up, anterior);
+}
+
+/**
+ * 모델정렬 교합면 뷰가 구치에 심어 둔 축.
+ * 화면 위=협측, 화면 가로=근원심(악궁선). 전치·견치는 null.
+ */
+export function occlusalViewToothDirs(
+  frame: DentalFrame,
+  toothNumber: string,
+): { buccal: THREE.Vector3; mesial: THREE.Vector3 } | null {
+  const fdi = fdiQuadrantPos(toothNumber);
+  if (!fdi || fdi.pos < 4) return null;
+  const phi = (Math.min(fdi.pos, 8) / 8) * OCCLUSAL_TOOTH_PHI_SPAN;
+  const sin = Math.sin(phi);
+  const cos = Math.cos(phi);
+  const side = fdi.quadrant === 1 || fdi.quadrant === 4 ? 1 : -1;
+  const buccal = frame.right
+    .clone()
+    .multiplyScalar(side * sin)
+    .addScaledVector(frame.anterior, cos);
+  const mesial = frame.anterior
+    .clone()
+    .multiplyScalar(sin)
+    .addScaledVector(frame.right, -side * cos);
+  buccal.addScaledVector(frame.up, -buccal.dot(frame.up));
+  mesial.addScaledVector(frame.up, -mesial.dot(frame.up));
+  if (buccal.lengthSq() < 1e-8 || mesial.lengthSq() < 1e-8) return null;
+  buccal.normalize();
+  mesial.addScaledVector(buccal, -mesial.dot(buccal));
+  if (mesial.lengthSq() < 1e-8) return null;
+  mesial.normalize();
+  return { buccal, mesial };
 }
 
 /**

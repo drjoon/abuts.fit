@@ -46,6 +46,7 @@
 // - 2026-11-24: 스캔바디용 모델정렬은 교합면·첫 치아 중심. 위=협측, 10/30 오른쪽=근심, 20/40 오른쪽=원심.
 // - 2026-11-24: 스캔바디 모델정렬을 확인한 뒤 카메라를 돌리지 않는다. 축·화면은 세션 메타에 남기고, 저장된 축은 다시 열 때 자동 앞뒤 확정으로 덮지 않는다.
 // - 2026-11-24: 스캔바디 뒤 큐브는 교합면이 화면과 나란하다(위=협측). 어벗 수평각은 악궁 반지름에 붙인다.
+// - 2026-11-25: 구치 커스텀어벗은 모델정렬 수평선(근원심)에 평행하다. 접선으로 기울이지 않는다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -3087,6 +3088,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             explicitParams: rowOverrides,
             logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
+            archFrame: frameRef.current,
           };
           try {
             const wantCandidates =
@@ -3775,6 +3777,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, fx.toothNumber),
             logicRules: logicRulesRef.current,
             patientName: ctx.patientName,
+            archFrame: frameRef.current,
           });
           if (pickEpochRef.current !== epoch) {
             for (const c of cands) {
@@ -6007,6 +6010,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
+                archFrame: frameRef.current,
               };
               const freshBuilt = hasSessionShapeNumbers(row.gumballBaseMetrics)
                 ? await designFromSessionMetrics(gumballArgs, row.gumballBaseMetrics)
@@ -6033,6 +6037,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
+                archFrame: frameRef.current,
               };
               builtAbutments.push(
                 hasSessionShapeNumbers(row.metrics)
@@ -6057,6 +6062,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ),
                 logicRules: logicRulesRef.current,
                 patientName: curPatientName,
+                archFrame: frameRef.current,
               });
               const primaryDesign = freshCands[0]!.design;
               if (freshCands.length >= 2) {
@@ -6146,6 +6152,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ),
                   logicRules: logicRulesRef.current,
                   patientName: curPatientName,
+                  archFrame: frameRef.current,
                 });
                 freshSolid.worldGeometry.dispose();
                 freshSolid.predictedCrownWorldGeometry.dispose();
@@ -6823,6 +6830,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   ),
                   logicRules: logicRulesRef.current,
                   patientName: curPatientName,
+                  archFrame: frameRef.current,
                 });
                 if (cancelled) {
                   for (const c of cands) {
@@ -7434,6 +7442,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, tooth),
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
+                archFrame: frameRef.current,
               });
               next = nextCands[0]!.design;
             } else {
@@ -7449,6 +7458,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 ...(preservePostHeightMm != null ? { preservePostHeightMm } : {}),
                 logicRules: logicRulesRef.current,
                 patientName: ctx.patientName,
+                archFrame: frameRef.current,
               });
             }
             if (designEpochRef.current !== epoch) {
@@ -8362,6 +8372,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               explicitParams: spec.baselineParams,
               logicRules: [],
               patientName: ctx.patientName,
+              archFrame: frameRef.current,
             });
             origin.enameloplastyWorldGeometry?.dispose();
             if (epoch !== compareEpochRef.current) {

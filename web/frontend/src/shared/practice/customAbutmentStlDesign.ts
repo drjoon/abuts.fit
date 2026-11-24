@@ -34,6 +34,7 @@ import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import {
   archPlanAxes,
   estimateDentalFrame,
+  occlusalViewToothDirs,
   samplePositions,
   type DentalFrame,
 } from "@/shared/practice/dentalFrame";
@@ -3961,6 +3962,11 @@ type DesignArgs = {
    * 연결 테이퍼와 대합 맞춤이 세션 수치를 초기 디자인으로 되돌리지 않게 한다.
    */
   lockMeasuredShape?: boolean;
+  /**
+   * 모델정렬이 확정한 악궁 축.
+   * 구치는 이 축의 수평선(근원심)에 평행하게 두고, 스캔 접선으로 기울이지 않는다.
+   */
+  archFrame?: DentalFrame | null;
 };
 
 export type CustomAbutmentConflictVariant =
@@ -4946,6 +4952,35 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (dot3(vTargetOcc, mesGuessFix) < 0) vTargetOcc = scale3(vTargetOcc, -1);
     }
 
+    // 모델정렬 뒤 구치의 수평선은 근원심이다. 악궁 접선·반지름으로 다시 돌리지 않는다.
+    let lockPosteriorHorizontal = false;
+    const alignedDirs =
+      args.archFrame && ownFdi && ownFdi.pos >= 4 && Math.abs(params.postYawDeg) <= 1e-3
+        ? occlusalViewToothDirs(args.archFrame, fixture.toothNumber)
+        : null;
+    if (alignedDirs) {
+      const bucFix = worldDirToFixtureLocal(
+        [alignedDirs.buccal.x, alignedDirs.buccal.y, alignedDirs.buccal.z],
+        fixture.fixturePose,
+      );
+      const mesFix = worldDirToFixtureLocal(
+        [alignedDirs.mesial.x, alignedDirs.mesial.y, alignedDirs.mesial.z],
+        fixture.fixturePose,
+      );
+      let nextU = sub3(bucFix, scale3(wOccPlane, dot3(bucFix, wOccPlane)));
+      let nextV = sub3(mesFix, scale3(wOccPlane, dot3(mesFix, wOccPlane)));
+      if (Math.hypot(nextU[0], nextU[1], nextU[2]) > 1e-5 && Math.hypot(nextV[0], nextV[1], nextV[2]) > 1e-5) {
+        nextU = norm3(nextU);
+        nextV = sub3(nextV, scale3(nextU, dot3(nextV, nextU)));
+        if (Math.hypot(nextV[0], nextV[1], nextV[2]) > 1e-5) {
+          uTargetOcc = nextU;
+          vTargetOcc = norm3(nextV);
+          lockPosteriorHorizontal = true;
+          yawConfidence = 0.95;
+        }
+      }
+    }
+
     const gingHs: number[] = [];
     for (let i = 0; i < jawLocalPts.length; i += 3) {
       const x = jawLocalPts[i]!;
@@ -5319,6 +5354,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           adjacentAbutmentLineSlope,
         });
         const rotateBy = (slope: number) => {
+          if (lockPosteriorHorizontal) return;
           const nextV = norm3(add3(vTargetOcc, scale3(uTargetOcc, slope)));
           const nextU = norm3(sub3(uTargetOcc, scale3(nextV, dot3(uTargetOcc, nextV))));
           vTargetOcc = nextV;
@@ -5391,7 +5427,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
 
       // 악궁·대합 스테이션이 모두 부족한 경우에만 인접 접촉벽 기울기를 보조로 쓴다.
-      if (!archFitSucceeded) {
+      if (!archFitSucceeded && !lockPosteriorHorizontal) {
         let slopeWeightSum = 0;
         let slopeWeighted = 0;
         for (const sign of [1, -1] as const) {
@@ -5517,7 +5553,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     }
 
     // 조금 돌아 있으면 악궁 중심→픽스처 반지름(협측)에 붙인다. 많이 어긋난 부정교합은 그대로 둔다.
-    if (ownFdi && ownFdi.pos >= 4 && Math.abs(params.postYawDeg) <= 1e-3 && refDentalFrame) {
+    // 모델정렬 수평선에 고정한 구치는 반지름으로 다시 기울이지 않는다.
+    if (
+      !lockPosteriorHorizontal &&
+      ownFdi &&
+      ownFdi.pos >= 4 &&
+      Math.abs(params.postYawDeg) <= 1e-3 &&
+      refDentalFrame
+    ) {
       const radial = archOutwardAtPoint({
         geometry: clearedJaw,
         frame: refDentalFrame,
@@ -5550,6 +5593,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
 
     // 인접 어벗(같은 사분악)끼리 수평 회전각이 크게 어긋나지 않게 부드럽게 맞춘다(수동 postYawDeg는 보호).
     if (
+      !lockPosteriorHorizontal &&
       !mode.probePeerPlan &&
       mode.peerPlan &&
       Math.abs(mode.peerPlan.yawDeltaRad) > 1e-4 &&

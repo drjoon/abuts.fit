@@ -9,6 +9,7 @@ import {
   dentalFrameFromViewOrientation,
   estimateDentalFrame,
   isPartialArchScan,
+  occlusalViewToothDirs,
   orientAnteriorFromAbutmentFdi,
   orientAnteriorFromMesialDistalClick,
   resolveArchMdBlOrientation,
@@ -447,6 +448,20 @@ test("교합면 뷰(#26)는 화면 오른쪽이 원심이어도 같은 악궁 �
   assert.ok(frame.up.z > 0.9, "두개(+Z)");
   assert.ok(frame.anterior.y > 0.85, `전치(+Y) got ${frame.anterior.toArray().join(",")}`);
   assert.ok(frame.right.x > 0.85, `환자 우측(+X) got ${frame.right.toArray().join(",")}`);
+});
+
+test("교합면 뷰(#37)의 수평선은 근심, 수직선은 협측이다", () => {
+  const up = new THREE.Vector3(0, 0, 1);
+  const buccal = new THREE.Vector3(0, 1, 0);
+  const mesial = new THREE.Vector3(1, 0, 0);
+  // 하악: 위에서 내려다봄. 화면 위=협측, 30번대 오른쪽=근심.
+  const basis = new THREE.Matrix4().makeBasis(mesial, buccal, up);
+  const q = new THREE.Quaternion().setFromRotationMatrix(basis);
+  const frame = dentalFrameFromOcclusalToothView(q, "37", up);
+  const dirs = occlusalViewToothDirs(frame, "37");
+  assert.ok(dirs, "구치 축");
+  assert.ok(dirs.buccal.dot(buccal) > 0.98, `협측이 화면 위 got ${dirs.buccal.toArray().join(",")}`);
+  assert.ok(dirs.mesial.dot(mesial) > 0.98, `근심이 화면 가로 got ${dirs.mesial.toArray().join(",")}`);
 });
 
 test("원심 대구치가 없고 구개가 넓어도 치아 줄이 근원심이다", () => {
