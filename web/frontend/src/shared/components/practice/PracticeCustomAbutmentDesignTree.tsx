@@ -22,8 +22,8 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Crown,
-  Cylinder,
   Crosshair,
+  Hexagon,
   Eye,
   EyeOff,
   Link2,
@@ -441,7 +441,7 @@ function ScanbodyButton({
       label={`${label} 스캔바디`}
       onClick={onClick}
     >
-      <Cylinder className="h-3.5 w-3.5" />
+      <Hexagon className="h-3.5 w-3.5" />
     </VisibilityIconButton>
   );
 }
