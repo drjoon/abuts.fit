@@ -35,6 +35,7 @@
 // - 2026-11-24: 교합정렬·모델정렬은 독립. 한쪽을 바꿔도 기설정한 다른 쪽(jawPose/archFrame)은 덮지 않는다.
 // - 2026-11-24: 모델정렬 확인 후 카메라를 기본 뷰로 돌리지 않는다. 맞춘 시점의 화면을 유지한다.
 // - 2026-11-24: 바이트 정렬 확인 모달도 모델정렬과 같이 작업영역 하단 가운데에 둔다.
+// - 2026-11-24: 가로·세로 중앙선은 모눈보다 굵은 하늘색 점선으로 눈에 띄게 한다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -8744,8 +8745,8 @@ export function PracticeCustomAbutmentPreviewDialog({
                     : undefined
                 }
               >
-                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 border-t border-dashed border-slate-500/55" />
-                <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 border-l border-dashed border-slate-500/55" />
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-sky-500/90" />
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l-2 border-dashed border-sky-500/90" />
               </div>
             ) : null}
 
