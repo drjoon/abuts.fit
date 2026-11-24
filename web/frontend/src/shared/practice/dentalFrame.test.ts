@@ -7,6 +7,8 @@ import {
   dentalFrameFromStored,
   estimateDentalFrame,
   orientAnteriorFromAbutmentFdi,
+  orientAnteriorFromMesialDistalClick,
+  resolveArchMdBlOrientation,
   type DentalFrame,
   type FrameMesh,
 } from "./dentalFrame";
@@ -279,33 +281,62 @@ function axisFrame(anteriorX: number): DentalFrame {
   };
 }
 
-test("같은 사분악에서 번호가 작은 픽스처가 전치 쪽이다", () => {
+test("인접치 없이 FDI만 있으면 추정하지 않고 클릭 폴백이다", () => {
   const cloud = lineArch(-24, 24);
   const marks = [
     { toothNumber: "14", point: [10, 0, 0] as const },
     { toothNumber: "16", point: [-12, 0, 0] as const },
   ];
-  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), marks, cloud);
-  assert.ok(kept.anterior.x > 0.9, "14가 16보다 앞이면 +X를 유지한다");
-  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), marks, cloud);
-  assert.ok(flipped.anterior.x > 0.9, "뒤집힌 축은 작은 번호 쪽으로 되돌린다");
-  const right = new THREE.Vector3().crossVectors(flipped.anterior, flipped.up);
-  assert.ok(flipped.right.dot(right) > 0.9);
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), marks, cloud);
+  assert.equal(resolved.confirmed, false);
+  assert.ok(resolved.pickToothNumber);
+  assert.ok(resolved.frame.anterior.x > 0.9, "시드 축을 추정으로 바꾸지 않는다");
+
+  const single = resolveArchMdBlOrientation(
+    axisFrame(-1),
+    [{ toothNumber: "16", point: [-14, 0, 0] as const }],
+    cloud,
+  );
+  assert.equal(single.confirmed, false);
+  assert.ok(single.frame.anterior.x < -0.9, "시드(−X)를 유지한다");
 });
 
-test("치아 하나여도 악궁 장축 위 위치로 앞뒤를 고른다", () => {
-  const cloud = lineArch(-24, 24);
-  const molar = [{ toothNumber: "16", point: [-14, 0, 0] as const }];
-  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), molar, cloud);
-  assert.ok(kept.anterior.x > 0.9, "대구치는 장축의 뒤쪽에 있다");
-  const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), molar, cloud);
-  assert.ok(flipped.anterior.x > 0.9, "대구치가 앞쪽에 있으면 축을 뒤집는다");
+test("근심·원심 클릭으로 앞 축을 맞춘다", () => {
+  const seed = axisFrame(-1);
+  const fromMesial = orientAnteriorFromMesialDistalClick(
+    seed,
+    [0, 0, 0],
+    [10, 0, 0],
+    "mesial",
+  );
+  assert.ok(fromMesial.anterior.x > 0.9, "근심 클릭이 앞(+X)");
+  const fromDistal = orientAnteriorFromMesialDistalClick(
+    seed,
+    [0, 0, 0],
+    [-10, 0, 0],
+    "distal",
+  );
+  assert.ok(fromDistal.anterior.x > 0.9, "원심 클릭은 반대가 앞");
+});
 
-  const incisor = [{ toothNumber: "13", point: [16, 0, 0] as const }];
-  const incisorKept = orientAnteriorFromAbutmentFdi(axisFrame(1), incisor, cloud);
-  assert.ok(incisorKept.anterior.x > 0.9, "전치는 장축의 앞쪽에 있다");
-  const incisorFlipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), incisor, cloud);
-  assert.ok(incisorFlipped.anterior.x > 0.9, "전치가 뒤쪽에 있으면 축을 뒤집는다");
+test("인접치와 FDI 부호가 충돌하면 확정하지 않는다", () => {
+  // −X에 큰 치아(원심 후보)인데 FDI #17은 장축 앞쪽에 있어 B가 반대 부호를 낸다.
+  const pts: Array<[number, number, number]> = [];
+  const addBlob = (cx: number, cy: number, rx: number, ry: number, step: number) => {
+    for (let x = -rx; x <= rx; x += step) {
+      for (let y = -ry; y <= ry; y += step) {
+        if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
+        pts.push([cx + x, cy + y, 16]);
+      }
+    }
+  };
+  addBlob(-8, 0, 4.5, 3.8, 0.55);
+  addBlob(4, 0, 2.0, 1.8, 0.55);
+  for (let x = -12; x <= 10; x += 0.7) pts.push([x, 0.05, 15.5]);
+  const mark = [{ toothNumber: "17", point: [6, 0, 16] as const }];
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), mark, pts);
+  assert.equal(resolved.confirmed, false);
+  assert.ok(resolved.pickToothNumber);
 });
 
 test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
@@ -316,8 +347,9 @@ test("스캔바디 옆에서 큰 치아 쪽을 원심으로 잡는다", () => {
     pts.push([coords[i]!, coords[i + 1]!, coords[i + 2]!]);
   }
   const mark = [{ toothNumber: "15", point: [6.5, 0.6, 16] as const }];
-  const kept = orientAnteriorFromAbutmentFdi(axisFrame(1), mark, pts);
-  assert.ok(kept.anterior.x > 0.7, "큰 치아가 −X면 +X가 전치다");
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), mark, pts);
+  assert.equal(resolved.confirmed, true, "인접치+FDI가 맞으면 확정");
+  assert.ok(resolved.frame.anterior.x > 0.7, "큰 치아가 −X면 +X가 전치다");
   const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), mark, pts);
   assert.ok(flipped.anterior.x > 0.7, "앞이 대구치 쪽이면 뒤집는다");
 });
@@ -341,9 +373,13 @@ test("협설이 더 넓어도 근원심을 앞뒤로 잡는다", () => {
     anterior: new THREE.Vector3(0, 1, 0),
     right: new THREE.Vector3(-1, 0, 0),
   };
-  const out = orientAnteriorFromAbutmentFdi(seededBl, mark, pts);
-  assert.ok(out.anterior.x > 0.55, `협설 시드여도 전치는 +X (got ${out.anterior.toArray().join(",")})`);
-  assert.ok(Math.abs(out.anterior.y) < 0.55, "앞이 협설로 서지 않는다");
+  const resolved = resolveArchMdBlOrientation(seededBl, mark, pts);
+  assert.equal(resolved.confirmed, true);
+  assert.ok(
+    resolved.frame.anterior.x > 0.55,
+    `협설 시드여도 전치는 +X (got ${resolved.frame.anterior.toArray().join(",")})`,
+  );
+  assert.ok(Math.abs(resolved.frame.anterior.y) < 0.55, "앞이 협설로 서지 않는다");
 });
 
 test("근심에 치아가 많아도 옆 대구치 쪽을 원심으로 잡는다", () => {
@@ -366,8 +402,9 @@ test("근심에 치아가 많아도 옆 대구치 쪽을 원심으로 잡는다"
   // 장축 PCA용 얇은 줄
   for (let x = -8; x <= 26; x += 0.8) pts.push([x, 0.05, 15.5]);
   const mark = [{ toothNumber: "15", point: [6.5, 0.2, 16] as const }];
-  const out = orientAnteriorFromAbutmentFdi(axisFrame(1), mark, pts);
-  assert.ok(out.anterior.x > 0.55, `옆 대구치가 원심 (got ${out.anterior.toArray().join(",")})`);
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), mark, pts);
+  assert.equal(resolved.confirmed, true);
+  assert.ok(resolved.frame.anterior.x > 0.55, `옆 대구치가 원심 (got ${resolved.frame.anterior.toArray().join(",")})`);
   const flipped = orientAnteriorFromAbutmentFdi(axisFrame(-1), mark, pts);
   assert.ok(flipped.anterior.x > 0.55, "뒤집힌 시드도 전치(+X)로 되돌린다");
 });

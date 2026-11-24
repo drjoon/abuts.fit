@@ -81,6 +81,15 @@ export type AbutmentArchMark = {
   point: readonly [number, number, number];
 };
 
+/** 편악 근원심·협설: 인접치(A)·스캔바디/FDI/악궁(B)이 맞을 때만 확정. */
+export type ArchMdBlResolve = {
+  frame: DentalFrame;
+  /** 신호 A·B가 같은 부호로 일치해 자동 확정됨. */
+  confirmed: boolean;
+  /** 클릭 폴백 시 안내할 스캔바디 치아. */
+  pickToothNumber: string | null;
+};
+
 function fdiQuadrantPos(toothNumber: string): { quadrant: number; pos: number } | null {
   const digits = String(toothNumber || "").replace(/\D/g, "");
   if (!/^[1-4][1-8]$/.test(digits)) return null;
@@ -93,23 +102,71 @@ function percentileOf(sorted: readonly number[], p: number) {
   return sorted[idx] ?? 0;
 }
 
+function finishArchFrame(
+  frame: DentalFrame,
+  up: THREE.Vector3,
+  anterior: THREE.Vector3,
+): DentalFrame {
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-8) return frame;
+  anterior.normalize();
+  const right = new THREE.Vector3().crossVectors(anterior, up);
+  if (right.lengthSq() < 1e-8) return frame;
+  right.normalize();
+  return { up, anterior, right };
+}
+
 /**
- * 스캔바디 픽스처와 어벗 FDI로 앞(+anterior = 전치·근심)을 절대 방향으로 잡는다.
- * 추정 축을 유지/뒤집기만 하지 않는다 — 치아 줄 장축을 새로 세운 뒤
- * 픽스처 옆에서 큰 치아(대구치) 쪽을 원심으로 둔다.
+ * 근심·원심 클릭 한 점으로 앞(전치·근심) 축을 맞춘다.
+ * 구치 큐브에서 앞=근심이므로, 근심 클릭 → anterior, 원심 클릭 → −anterior.
  */
-export function orientAnteriorFromAbutmentFdi(
+export function orientAnteriorFromMesialDistalClick(
+  frame: DentalFrame,
+  origin: readonly [number, number, number],
+  click: readonly [number, number, number],
+  side: "mesial" | "distal",
+): DentalFrame {
+  const up = frame.up.clone().normalize();
+  const dir = new THREE.Vector3(
+    click[0]! - origin[0]!,
+    click[1]! - origin[1]!,
+    click[2]! - origin[2]!,
+  );
+  dir.addScaledVector(up, -dir.dot(up));
+  if (dir.lengthSq() < 1e-8) return frame;
+  dir.normalize();
+  const anterior = side === "mesial" ? dir : dir.multiplyScalar(-1);
+  return finishArchFrame(frame, up, anterior);
+}
+
+/**
+ * 스캔바디 픽스처·FDI·인접치로 앞(+anterior = 전치·근심)을 잡는다.
+ * 신호 A(인접치 크기/단면)가 있어야 자동 확정. B(스캔바디·FDI·악궁)가 있으면
+ * A와 같아야 한다. A 없음·A·B 충돌이면 시드를 유지하고 클릭 폴백.
+ */
+export function resolveArchMdBlOrientation(
   frame: DentalFrame,
   marks: readonly AbutmentArchMark[],
   archPoints: readonly (readonly [number, number, number])[],
-): DentalFrame {
+): ArchMdBlResolve {
+  const pickToothNumber =
+    marks.find((m) => fdiQuadrantPos(m.toothNumber))?.toothNumber ??
+    marks[0]?.toothNumber ??
+    null;
+  const unchanged = (): ArchMdBlResolve => ({
+    frame,
+    confirmed: false,
+    pickToothNumber,
+  });
+
   const up = frame.up.clone().normalize();
   const seedAnt = frame.anterior.clone();
   seedAnt.addScaledVector(up, -seedAnt.dot(up));
-  if (seedAnt.lengthSq() < 1e-8) return frame;
+  if (seedAnt.lengthSq() < 1e-8) return unchanged();
   seedAnt.normalize();
 
   const parsed: Array<{
+    toothNumber: string;
     quadrant: number;
     pos: number;
     point: readonly [number, number, number];
@@ -117,25 +174,15 @@ export function orientAnteriorFromAbutmentFdi(
   for (const mark of marks) {
     const fdi = fdiQuadrantPos(mark.toothNumber);
     if (!fdi || !mark.point || mark.point.length < 3) continue;
-    parsed.push({ ...fdi, point: mark.point });
+    parsed.push({ toothNumber: mark.toothNumber, ...fdi, point: mark.point });
   }
-  if (parsed.length === 0) return frame;
-
-  const finish = (anterior: THREE.Vector3): DentalFrame => {
-    anterior.addScaledVector(up, -anterior.dot(up));
-    if (anterior.lengthSq() < 1e-8) return frame;
-    anterior.normalize();
-    const right = new THREE.Vector3().crossVectors(anterior, up);
-    if (right.lengthSq() < 1e-8) return frame;
-    right.normalize();
-    return { up, anterior, right };
-  };
+  if (parsed.length === 0) return unchanged();
 
   const pts = archPoints.filter(
     (p): p is Pt3 => Boolean(p && p.length >= 3 && Number.isFinite(p[0]) && Number.isFinite(p[1])),
   );
   const mean = meanVec(pts);
-  if (!mean || pts.length < 40) return finish(seedAnt);
+  if (!mean || pts.length < 40) return unchanged();
 
   const toMm = spanUnitsToMm(pts, mean);
   const { e1, e2 } = planeBasis(up);
@@ -148,7 +195,6 @@ export function orientAnteriorFromAbutmentFdi(
   }
 
   // 교합면 후보 축 2개(PCA 장·단축). 협설을 장축으로 잡으면 큐브가 90° 돈다.
-  // 픽스처 기준 큰/작은 치아 대비가 더 큰 쪽을 근원심으로 쓴다.
   const seedAxis: [number, number] = [e1.dot(seedAnt), e2.dot(seedAnt)];
   const seedLen = Math.hypot(seedAxis[0], seedAxis[1]);
   if (seedLen > 1e-6) {
@@ -166,7 +212,7 @@ export function orientAnteriorFromAbutmentFdi(
     if (len >= 4) major = [dx / len, dy / len];
   }
   if (!major) {
-    if (seedLen < 1e-6) return finish(seedAnt);
+    if (seedLen < 1e-6) return unchanged();
     major = [seedAxis[0], seedAxis[1]];
   }
   const minor: [number, number] = [-major[1], major[0]];
@@ -183,19 +229,20 @@ export function orientAnteriorFromAbutmentFdi(
   const toothWeight = (t: ToothHit) =>
     t.cls === "M" ? t.area * 1.4 : t.cls === "P" ? t.area : t.area * 0.85;
 
+  /** 신호 A = 인접치 크기/단면. 신호 B = 스캔바디 FDI·악궁 위치. */
   const scoreMdAxis = (ax: readonly [number, number]) => {
-    let distalOnPlus = 0;
+    let signalA: 1 | -1 | 0 = 0;
     let asymmetry = 0;
     let span = 0;
-    let decided = false;
     const toothAlongs =
       teeth.length >= 2 ? teeth.map((t) => t.x * ax[0] + t.y * ax[1]) : null;
     if (toothAlongs) {
       span = Math.max(...toothAlongs) - Math.min(...toothAlongs);
       // 스캔바디 바로 옆·같은 치열 줄만: 가까운 큰 쪽=원심.
-      // 근심 합산·구개 플랩은 180°/오인 원심을 만든다.
       const rx = -ax[1];
       const ry = ax[0];
+      let distalOnPlus = 0;
+      let decided = false;
       for (const mark of parsed) {
         const origin = pointAlong(mark.point, ax);
         const markDx = (mark.point[0]! - mean.x) * toMm;
@@ -240,7 +287,7 @@ export function orientAnteriorFromAbutmentFdi(
           asymmetry += 1.2;
         }
       }
-      // 옆 치아가 약하면 줄 양 끝 크기: 큰 쪽=원심. 구개 플랩은 픽스처 줄에서 뺀다.
+      // 옆 치아가 약하면 줄 양 끝 크기: 큰 쪽=원심.
       if (!decided && span >= 10 && parsed.length > 0) {
         const mark0 = parsed[0]!;
         const mdx = (mark0.point[0]! - mean.x) * toMm;
@@ -275,10 +322,9 @@ export function orientAnteriorFromAbutmentFdi(
           else distalOnPlus -= 1;
         }
       }
+      if (decided && distalOnPlus !== 0) signalA = distalOnPlus > 0 ? 1 : -1;
     }
-    // 점구름 협설 폭은 구개·치은 플랩에 끌려 전치를 원심으로 오인한다.
-    // 치아 분할이 있을 때는 쓰지 않고, span만 보조로 본다.
-    if (!decided && (!toothAlongs || teeth.length < 2) && parsed.length > 0) {
+    if ((!toothAlongs || teeth.length < 2) && parsed.length > 0) {
       const allAlong: number[] = [];
       for (const p of pts) {
         const dx = (p[0] - mean.x) * toMm;
@@ -293,7 +339,9 @@ export function orientAnteriorFromAbutmentFdi(
         span = allAlong[Math.floor(allAlong.length * 0.92)]! - allAlong[Math.floor(allAlong.length * 0.08)]!;
       }
     }
-    // 같은 사분악 여러 픽스처: 작은 번호 = 전치.
+
+    // 신호 B: 같은 사분악 여러 픽스처(작은 번호=전치) 또는 단일 FDI 악궁 위치.
+    let signalB: 1 | -1 | 0 = 0;
     let fdiOnPlus = 0;
     let fdiHits = 0;
     const byQuad = new Map<number, typeof parsed>();
@@ -316,68 +364,96 @@ export function orientAnteriorFromAbutmentFdi(
         }
       }
     }
+    if (fdiHits > 0 && fdiOnPlus !== 0) {
+      signalB = fdiOnPlus > 0 ? 1 : -1;
+    } else if (parsed.length >= 1) {
+      const only = parsed[0]!;
+      const origin = pointAlong(only.point, ax);
+      const alongs: number[] = [];
+      if (teeth.length >= 2) {
+        for (const t of teeth) alongs.push(t.x * ax[0] + t.y * ax[1]);
+      } else {
+        for (const p of pts) {
+          const dx = (p[0] - mean.x) * toMm;
+          const dy = (p[1] - mean.y) * toMm;
+          const dz = (p[2] - mean.z) * toMm;
+          const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
+          const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
+          alongs.push(xMm * ax[0] + yMm * ax[1]);
+        }
+      }
+      alongs.sort((a, b) => a - b);
+      if (alongs.length >= 8) {
+        const lo = alongs[Math.floor(alongs.length * 0.08)]!;
+        const hi = alongs[Math.min(alongs.length - 1, Math.floor(alongs.length * 0.92))]!;
+        const archSpan = hi - lo;
+        if (archSpan >= 8) {
+          const u = (origin - lo) / archSpan;
+          const expectedU = (8.5 - only.pos) / 7;
+          const errPlusIsAnt = Math.abs(u - expectedU);
+          const errMinusIsAnt = Math.abs(1 - u - expectedU);
+          if (errMinusIsAnt + 0.1 < errPlusIsAnt) signalB = 1;
+          else if (errPlusIsAnt + 0.1 < errMinusIsAnt) signalB = -1;
+        }
+      }
+    }
+
     const seedAlign = Math.abs(ax[0] * seedAxis[0] + ax[1] * seedAxis[1]);
-    // 근원심은 치아 줄이 길고, 한쪽이 확연히 크다. 협설은 span·대비가 작다.
     const score =
-      (decided ? asymmetry * 4 + Math.min(span, 45) * 0.22 : Math.min(span, 45) * 0.05) +
-      (fdiHits > 0 ? 2.5 : 0) +
+      (signalA !== 0 ? asymmetry * 4 + Math.min(span, 45) * 0.22 : Math.min(span, 45) * 0.05) +
+      (signalB !== 0 ? 2.5 : 0) +
       seedAlign * 0.2;
-    let distalSign: 1 | -1 | 0 = 0;
-    if (decided && distalOnPlus !== 0) distalSign = distalOnPlus > 0 ? 1 : -1;
-    else if (fdiHits > 0 && fdiOnPlus !== 0) distalSign = fdiOnPlus > 0 ? 1 : -1;
-    return { score, distalSign, decided, span };
+    return { score, signalA, signalB, span };
   };
 
   const scored = [scoreMdAxis(major), scoreMdAxis(minor)];
   let bestIdx = scored[0]!.score >= scored[1]!.score ? 0 : 1;
-  // 대비가 비슷하면 시드 앞뒤(추정 근원심)에 가까운 축을 쓴다.
   if (Math.abs(scored[0]!.score - scored[1]!.score) < 0.6) {
     const a0 = Math.abs(major[0] * seedAxis[0] + major[1] * seedAxis[1]);
     const a1 = Math.abs(minor[0] * seedAxis[0] + minor[1] * seedAxis[1]);
     bestIdx = a0 >= a1 ? 0 : 1;
   }
+  // 인접치(A)가 잡힌 축을 우선한다(협설 후보가 점수만 높을 때).
+  const usable = (row: (typeof scored)[number]) =>
+    row.signalA !== 0 && (row.signalB === 0 || row.signalB === row.signalA);
+  if (usable(scored[0]!) !== usable(scored[1]!)) {
+    bestIdx = usable(scored[0]!) ? 0 : 1;
+  }
   const axis = bestIdx === 0 ? major : minor;
-  let distalSign = scored[bestIdx]!.distalSign;
-
-  if (distalSign === 0 && parsed.length >= 1) {
-    const only = parsed[0]!;
-    const origin = pointAlong(only.point, axis);
-    const alongs: number[] = [];
-    if (teeth.length >= 2) {
-      for (const t of teeth) alongs.push(t.x * axis[0] + t.y * axis[1]);
-    } else {
-      for (const p of pts) {
-        const dx = (p[0] - mean.x) * toMm;
-        const dy = (p[1] - mean.y) * toMm;
-        const dz = (p[2] - mean.z) * toMm;
-        const xMm = dx * e1.x + dy * e1.y + dz * e1.z;
-        const yMm = dx * e2.x + dy * e2.y + dz * e2.z;
-        alongs.push(xMm * axis[0] + yMm * axis[1]);
-      }
-    }
-    alongs.sort((a, b) => a - b);
-    if (alongs.length >= 8) {
-      const lo = alongs[Math.floor(alongs.length * 0.08)]!;
-      const hi = alongs[Math.min(alongs.length - 1, Math.floor(alongs.length * 0.92))]!;
-      const span = hi - lo;
-      if (span >= 8) {
-        const u = (origin - lo) / span;
-        const expectedU = (8.5 - only.pos) / 7;
-        const errPlusIsAnt = Math.abs(u - expectedU);
-        const errMinusIsAnt = Math.abs(1 - u - expectedU);
-        if (errMinusIsAnt + 0.1 < errPlusIsAnt) distalSign = 1;
-        else if (errPlusIsAnt + 0.1 < errMinusIsAnt) distalSign = -1;
-      }
-    }
+  const best = scored[bestIdx]!;
+  // 자동: 인접치(A)가 있어야 한다. B가 있으면 반드시 같은 부호.
+  // B만 있거나 A·B 충돌·둘 다 없으면 추정하지 않고 클릭 폴백.
+  const canAuto =
+    best.signalA !== 0 && (best.signalB === 0 || best.signalB === best.signalA);
+  if (!canAuto) {
+    return {
+      frame,
+      confirmed: false,
+      pickToothNumber: parsed[0]?.toothNumber ?? pickToothNumber,
+    };
   }
 
-  if (distalSign === 0) return finish(seedAnt);
-
-  // +axis가 원심이면 앞(전치)은 −axis.
+  const distalSign = best.signalA;
   const anterior = new THREE.Vector3()
     .addScaledVector(e1, axis[0] * -distalSign)
     .addScaledVector(e2, axis[1] * -distalSign);
-  return finish(anterior);
+  return {
+    frame: finishArchFrame(frame, up, anterior),
+    confirmed: true,
+    pickToothNumber: null,
+  };
+}
+
+/**
+ * 확정된 축만 적용. 신호 부족·충돌이면 입력 프레임을 그대로 둔다.
+ * UI는 `resolveArchMdBlOrientation`의 confirmed·pickToothNumber를 본다.
+ */
+export function orientAnteriorFromAbutmentFdi(
+  frame: DentalFrame,
+  marks: readonly AbutmentArchMark[],
+  archPoints: readonly (readonly [number, number, number])[],
+): DentalFrame {
+  return resolveArchMdBlOrientation(frame, marks, archPoints).frame;
 }
 
 type Pt3 = [number, number, number];
