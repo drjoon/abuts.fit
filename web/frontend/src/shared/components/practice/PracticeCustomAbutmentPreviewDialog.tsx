@@ -48,6 +48,7 @@
 // - 2026-11-24: 스캔바디 뒤 큐브는 교합면이 화면과 나란하다(위=협측). 어벗 수평각은 악궁 반지름에 붙인다.
 // - 2026-11-25: 구치 커스텀어벗은 모델정렬 수평선(근원심)에 평행하다. 접선으로 기울이지 않는다.
 // - 2026-11-25: 모델정렬 중에는 대합 악을 끈다. 확인·취소 때 이전 상·하악 표시로 되돌린다.
+// - 2026-11-25: 모델정렬 안내는 긴 문구 대신 편측 스캔 도식(위=협측, 사분면별 근심·원심).
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -319,6 +320,7 @@ import {
   type ViewCubeFace,
   type ViewCubeHandle,
 } from "@/shared/components/practice/PracticeCustomAbutmentViewCube";
+import { ModelOrientPartialArchSchematic } from "@/shared/components/practice/ModelOrientPartialArchSchematic";
 import {
   isAbutsWorkScanFileName,
   isOralScanMeshName,
@@ -10134,16 +10136,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                     const q = Number(String(tooth).replace(/\D/g, "")[0] || "1");
                     const rightMesial = q === 1 || q === 3;
                     return (
-                      <p className="text-sm leading-relaxed text-foreground">
-                        {tooth ? `#${tooth} ` : ""}
-                        모델 방향을 맞춘 뒤 확인하면 스캔바디를 잡습니다.
-                        <br />
-                        교합면에서 보세요. 위쪽은 협측, 아래쪽은 설측입니다.
-                        <br />
-                        {rightMesial
-                          ? "오른쪽이 근심, 왼쪽이 원심이 되게 하세요."
-                          : "오른쪽이 원심, 왼쪽이 근심이 되게 하세요."}
-                      </p>
+                      <>
+                        <p className="text-sm font-medium text-foreground">
+                          {tooth ? `#${tooth} ` : null}
+                          도식처럼 맞춘 뒤 확인하세요.
+                        </p>
+                        <ModelOrientPartialArchSchematic rightMesial={rightMesial} />
+                      </>
                     );
                   })()}
                   <div className="flex justify-center gap-2">
