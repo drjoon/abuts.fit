@@ -33,6 +33,8 @@ import {
   computeOptimalPostTaperDeg,
   isAnteriorTooth,
   postRetentionSurface,
+  RETENTION_MAX_POST_HEIGHT_MM,
+  RETENTION_MIN_POST_HEIGHT_MM,
   RETENTION_SINGLE_REF_TAPER_DEG,
   type CustomAbutmentDesignParams,
 } from "../../practice/customAbutmentDesignParams";
@@ -50,10 +52,31 @@ export const GUMBALL_SIZE_PX = 76;
 const SCALE_MIN = 0.65;
 const SCALE_MAX = 1.45;
 const SHIFT_MM = 2.5;
-const HEIGHT_MM = 2.5;
+/** 마진·커프가 포스트와 함께 통째로 들리지 않게, 커프에 실리는 상승만 이 값까지 둔다. */
+const CUFF_LIFT_MM = 2.5;
+/** 포스트 높이를 모르는 저장본이 패널 범위(2.2–12mm) 안에서 잘리지 않게 하는 이동 폭. */
+const MANUAL_HEIGHT_SPAN_MM = RETENTION_MAX_POST_HEIGHT_MM - RETENTION_MIN_POST_HEIGHT_MM;
 const TILT_DEG = 25;
 const YAW_DEG = 30;
 const HISTORY_LIMIT = 40;
+
+/**
+ * 검볼로 포스트 높이를 더하거나 빼는 한계.
+ * 어벗 정보 패널의 높이(2.2–12mm)와 같다. 자동 생성 높이는 이 함수를 쓰지 않는다.
+ */
+export function manualHeightLiftLimits(postHeightMm: number): { min: number; max: number } {
+  const base = Number.isFinite(postHeightMm) ? postHeightMm : RETENTION_MIN_POST_HEIGHT_MM;
+  return {
+    min: Math.min(0, RETENTION_MIN_POST_HEIGHT_MM - base),
+    max: Math.max(0, RETENTION_MAX_POST_HEIGHT_MM - base),
+  };
+}
+
+function postHeightFromZone(zone: Zone, topZ: number): number {
+  const top = zone.propTop != null && Number.isFinite(zone.propTop) ? zone.propTop : topZ;
+  const margin = zone.meanMarginZ ?? zone.marginZ;
+  return Math.max(0, top - margin);
+}
 
 export type DirectEditFixture = {
   labialDir: readonly number[];
@@ -481,7 +504,7 @@ export function normalizeAbutmentEdit(raw: unknown): AbutmentEdit | null {
     });
   }
   const parsed: AbutmentEdit = {
-    heightMm: clamp(num(r.heightMm, 0), -HEIGHT_MM, HEIGHT_MM),
+    heightMm: clamp(num(r.heightMm, 0), -MANUAL_HEIGHT_SPAN_MM, MANUAL_HEIGHT_SPAN_MM),
     shiftLabialMm: clamp(num(r.shiftLabialMm, 0), -SHIFT_MM, SHIFT_MM),
     shiftMesialMm: clamp(num(r.shiftMesialMm, 0), -SHIFT_MM, SHIFT_MM),
     yawDeg: clamp(num(r.yawDeg, 0), -YAW_DEG, YAW_DEG),
@@ -490,7 +513,11 @@ export function normalizeAbutmentEdit(raw: unknown): AbutmentEdit | null {
     scale: [
       clamp(num(rawScale[0], 1), SCALE_MIN, SCALE_MAX),
       clamp(num(rawScale[1], 1), SCALE_MIN, SCALE_MAX),
-      clamp(num(rawScale[2], 1), SCALE_MIN, SCALE_MAX),
+      clamp(
+        num(rawScale[2], 1),
+        SCALE_MIN,
+        RETENTION_MAX_POST_HEIGHT_MM / RETENTION_MIN_POST_HEIGHT_MM,
+      ),
     ],
     partial,
   };
@@ -516,8 +543,11 @@ function editsEqual(a: AbutmentEdit, b: AbutmentEdit) {
   return true;
 }
 
-/** 검볼 값을 초기 제안에서 너무 멀어지지 않게 자른다. */
-export function clampAbutmentEdit(edit: AbutmentEdit, span: number) {
+/**
+ * 이동·회전·굵기는 초기 제안 근처에 둔다.
+ * 높이는 어벗 정보 패널과 같은 절대 범위(2.2–12mm)까지 허용한다. postHeightMm은 제안 포스트 높이다.
+ */
+export function clampAbutmentEdit(edit: AbutmentEdit, span: number, postHeightMm?: number) {
   edit.shiftLabialMm = clamp(edit.shiftLabialMm, -SHIFT_MM, SHIFT_MM);
   edit.shiftMesialMm = clamp(edit.shiftMesialMm, -SHIFT_MM, SHIFT_MM);
   edit.yawDeg = clamp(edit.yawDeg, -YAW_DEG, YAW_DEG);
@@ -527,8 +557,16 @@ export function clampAbutmentEdit(edit: AbutmentEdit, span: number) {
   edit.tiltMesialDeg = clamp(edit.tiltMesialDeg, -maxTiltDeg, maxTiltDeg);
   edit.scale[0] = clamp(edit.scale[0], SCALE_MIN, SCALE_MAX);
   edit.scale[1] = clamp(edit.scale[1], SCALE_MIN, SCALE_MAX);
-  edit.scale[2] = clamp(edit.scale[2], SCALE_MIN, SCALE_MAX);
-  edit.heightMm = clamp(edit.heightMm, -HEIGHT_MM, HEIGHT_MM);
+  const axialMax =
+    postHeightMm != null && postHeightMm > 0.5
+      ? Math.max(SCALE_MAX, RETENTION_MAX_POST_HEIGHT_MM / postHeightMm)
+      : SCALE_MAX;
+  edit.scale[2] = clamp(edit.scale[2], SCALE_MIN, axialMax);
+  const heightLimits =
+    postHeightMm != null
+      ? manualHeightLiftLimits(postHeightMm)
+      : { min: -MANUAL_HEIGHT_SPAN_MM, max: MANUAL_HEIGHT_SPAN_MM };
+  edit.heightMm = clamp(edit.heightMm, heightLimits.min, heightLimits.max);
   edit.partial = edit.partial.slice(-24);
   return edit;
 }
@@ -550,23 +588,24 @@ function computeZLift(
   marginZ: number,
   propTop: number,
   edit: AbutmentEdit,
+  limits: { min: number; max: number },
 ): number {
   const t = blendAbove(z, fixedZ, marginZ);
   const cuffSpan = Math.max(marginZ - fixedZ, 0.35);
-  const cuffHeightShift = clamp(edit.heightMm, -0.42 * cuffSpan, HEIGHT_MM);
+  const cuffHeightShift = clamp(edit.heightMm, -0.42 * cuffSpan, Math.min(CUFF_LIFT_MM, Math.max(0, limits.max)));
   const remHeightShift = edit.heightMm - cuffHeightShift;
   const postSpan = Math.max(propTop - marginZ, 0.8);
   const postProgress = z > marginZ ? clamp((z - marginZ) / postSpan, 0, 1) : 0;
   const totalShiftAtTop = cuffHeightShift + remHeightShift;
   const scaleTopDelta = clamp(
     postSpan * (edit.scale[2] - 1),
-    -HEIGHT_MM - totalShiftAtTop,
-    HEIGHT_MM - totalShiftAtTop,
+    limits.min - totalShiftAtTop,
+    limits.max - totalShiftAtTop,
   );
   const rawLift =
     cuffHeightShift * t +
     (remHeightShift + scaleTopDelta) * postProgress;
-  return clamp(rawLift, -HEIGHT_MM, HEIGHT_MM);
+  return clamp(rawLift, limits.min, limits.max);
 }
 
 function angleDelta(a: number, b: number) {
@@ -825,7 +864,7 @@ function solveTiltForTargetWorldAxis(
     if (Math.hypot(errL, errM) < 1e-5) break;
     cand.tiltLabialDeg += (errL * 180) / Math.PI;
     cand.tiltMesialDeg += (errM * 180) / Math.PI;
-    clampAbutmentEdit(cand, view.zone.span);
+    clampAbutmentEdit(cand, view.zone.span, postHeightFromZone(view.zone, view.topZ));
   }
   return {
     tiltLabialDeg: cand.tiltLabialDeg,
@@ -907,9 +946,10 @@ export function refitLocalPositions(
   const pivotDm = (basePivotM - postCenterM) * (1 + (edit.scale[1] - 1));
   const pivotL = postCenterL + (pivotDl * yawCos - pivotDm * yawSin) + edit.shiftLabialMm;
   const pivotM = postCenterM + (pivotDl * yawSin + pivotDm * yawCos) + edit.shiftMesialMm;
-  const pivotZ = basePivotZ + computeZLift(basePivotZ, fixedZ, marginZ, safePropTop, edit);
-  const manualTopLift = computeZLift(safePropTop, fixedZ, marginZ, safePropTop, edit);
-  const marginLiftRef = computeZLift(zone.meanMarginZ ?? marginZ, fixedZ, marginZ, safePropTop, edit);
+  const heightLimits = manualHeightLiftLimits(Math.max(0, safePropTop - (zone.meanMarginZ ?? marginZ)));
+  const pivotZ = basePivotZ + computeZLift(basePivotZ, fixedZ, marginZ, safePropTop, edit, heightLimits);
+  const manualTopLift = computeZLift(safePropTop, fixedZ, marginZ, safePropTop, edit, heightLimits);
+  const marginLiftRef = computeZLift(zone.meanMarginZ ?? marginZ, fixedZ, marginZ, safePropTop, edit, heightLimits);
   const postHeightLift = manualTopLift - marginLiftRef;
   const basePostHeight = Math.max(2.2, safePropTop - (zone.meanMarginZ ?? marginZ));
   const nextLinkedPostHeight = Math.max(2.2, basePostHeight + postHeightLift);
@@ -932,7 +972,7 @@ export function refitLocalPositions(
     const z = proposal[i + 2]!;
     const rProp = Math.hypot(x, y);
     const t = blendAbove(z, fixedZ, marginZ);
-    const baseZLift = computeZLift(z, fixedZ, marginZ, safePropTop, edit);
+    const baseZLift = computeZLift(z, fixedZ, marginZ, safePropTop, edit, heightLimits);
     const frozenTaper = z <= fixedZ + 0.02;
     const deepBore = hole && rProp <= screwR && z < rimZ;
     if (frozenTaper || deepBore) {
@@ -984,7 +1024,7 @@ export function refitLocalPositions(
     let adjLRot = lRot;
     let adjMRot = mRot;
     if (hasTaperLinkAdjust && hAboveMargin > 0.22 && (!hole || rProp > screwR + 0.12)) {
-      const mColLift = computeZLift(mZCol, fixedZ, marginZ, safePropTop, edit);
+      const mColLift = computeZLift(mZCol, fixedZ, marginZ, safePropTop, edit, heightLimits);
       const newHAbove = Math.max(0, z2 - (mZCol + mColLift + mColCorr));
       const ramp = clamp((hAboveMargin - 0.22) / 0.28, 0, 1);
       const extraInward = (taperLinkSlopeNew * newHAbove - taperLinkSlopeOld * hAboveMargin) * ramp;
@@ -1048,7 +1088,7 @@ export function refitLocalPositions(
   }
   return {
     widthRatio: widthN > 0 ? widthSum / widthN : 1,
-    heightDeltaMm: Number.isFinite(propTop) ? clamp(manualTopLift, -HEIGHT_MM, HEIGHT_MM) : 0,
+    heightDeltaMm: Number.isFinite(propTop) ? clamp(manualTopLift, heightLimits.min, heightLimits.max) : 0,
   };
 }
 
@@ -3006,7 +3046,7 @@ export class AbutmentDirectEditSession {
           if (!solved) continue;
           mateBase.tiltLabialDeg = solved.tiltLabialDeg;
           mateBase.tiltMesialDeg = solved.tiltMesialDeg;
-          clampAbutmentEdit(mateBase, mateView.zone.span);
+          clampAbutmentEdit(mateBase, mateView.zone.span, postHeightFromZone(mateView.zone, mateView.topZ));
           this.preserveLengthOnTilt.add(mate);
           if (editsEqual(mateBase, EMPTY_EDIT)) this.edits.delete(mate);
           else this.edits.set(mate, mateBase);
@@ -3104,7 +3144,7 @@ export class AbutmentDirectEditSession {
       const nextEdit = cloneAbutmentEdit(prevEdit);
       nextEdit.tiltLabialDeg = solved.tiltLabialDeg;
       nextEdit.tiltMesialDeg = solved.tiltMesialDeg;
-      clampAbutmentEdit(nextEdit, mateView.zone.span);
+      clampAbutmentEdit(nextEdit, mateView.zone.span, postHeightFromZone(mateView.zone, mateView.topZ));
       if (editsEqual(nextEdit, prevEdit)) continue;
       this.preserveLengthOnTilt.add(mate);
       this.edits.set(mate, nextEdit);
@@ -3515,7 +3555,7 @@ export class AbutmentDirectEditSession {
       if (!mateView) continue;
       const edit = cloneAbutmentEdit(mate.start);
       this.applyGesture(edit, mate.start, mateView, gesture);
-      clampAbutmentEdit(edit, mateView.zone.span);
+      clampAbutmentEdit(edit, mateView.zone.span, postHeightFromZone(mateView.zone, mateView.topZ));
       if (mate.tooth === drag.tooth) this.preserveLengthOnTilt.delete(mate.tooth);
       this.edits.set(mate.tooth, edit);
       this.show(mate.tooth, false, false, false, mate.tooth !== drag.tooth);
@@ -3542,7 +3582,7 @@ export class AbutmentDirectEditSession {
           if (solved) {
             nextEdit.tiltLabialDeg = solved.tiltLabialDeg;
             nextEdit.tiltMesialDeg = solved.tiltMesialDeg;
-            clampAbutmentEdit(nextEdit, rxView.zone.span);
+            clampAbutmentEdit(nextEdit, rxView.zone.span, postHeightFromZone(rxView.zone, rxView.topZ));
           }
           this.preserveLengthOnTilt.add(rx.tooth);
         }
@@ -3763,7 +3803,7 @@ export class AbutmentDirectEditSession {
       return;
     }
     stamp.grow = clamp(stamp.grow, SCALE_MIN - 1, SCALE_MAX - 1);
-    clampAbutmentEdit(edit, view.zone.span);
+    clampAbutmentEdit(edit, view.zone.span, postHeightFromZone(view.zone, view.topZ));
     this.edits.set(drag.tooth, edit);
   }
 
@@ -3887,7 +3927,14 @@ export class AbutmentDirectEditSession {
             maxXYShift = Math.max(maxXYShift, Math.hypot(dx, dy));
           }
           const xyBlend = clamp(maxXYShift / 0.18, 0, 1);
-          const manualTopLift = computeZLift(view.topZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
+          const manualTopLift = computeZLift(
+            view.topZ,
+            view.zone.fixedZ,
+            view.zone.marginZ,
+            view.topZ,
+            edit,
+            manualHeightLiftLimits(postHeightFromZone(view.zone, view.topZ)),
+          );
           marginZCorr = new Float32Array(mCount);
           for (let col = 0; col < mCount; col += 1) {
             const origZ = view.proposalMargin[col * 3 + 2]!;
@@ -3930,7 +3977,14 @@ export class AbutmentDirectEditSession {
         view.topSampleVertices.length > 0 &&
         previewSrc.length === (view.proposalSolid ?? view.proposal).length
       ) {
-        const manualLift = computeZLift(view.topZ, view.zone.fixedZ, view.zone.marginZ, view.topZ, edit);
+        const manualLift = computeZLift(
+          view.topZ,
+          view.zone.fixedZ,
+          view.zone.marginZ,
+          view.topZ,
+          edit,
+          manualHeightLiftLimits(postHeightFromZone(view.zone, view.topZ)),
+        );
         const desiredClearance = Math.max(0.5, view.targetClearanceMm - manualLift);
         const axialCos = Math.max(view.oppProbe.up[2], 0.35);
         for (let pass = 0; pass < 2; pass += 1) {
@@ -4292,7 +4346,14 @@ export class AbutmentDirectEditSession {
     const l0 = zone.centerL ?? 0;
     const m0 = zone.centerM ?? 0;
     const z0 = view.midZ;
-    const zLift = computeZLift(z0, zone.fixedZ, zone.marginZ, view.topZ, edit);
+    const zLift = computeZLift(
+      z0,
+      zone.fixedZ,
+      zone.marginZ,
+      view.topZ,
+      edit,
+      manualHeightLiftLimits(postHeightFromZone(zone, view.topZ)),
+    );
     const l = l0 + edit.shiftLabialMm;
     const m = m0 + edit.shiftMesialMm;
     return new THREE.Vector3(

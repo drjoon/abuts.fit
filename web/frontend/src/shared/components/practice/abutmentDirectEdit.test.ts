@@ -100,6 +100,11 @@ assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4
 const solid = one([2, 0, 6], edit({ scale: [1, 1, 1], heightMm: 1 }));
 assert.ok(Math.abs(solid[2]! - 7) < 1e-4, "높이 이동");
 
+const raised = one([2, 0, 9], edit({ heightMm: 4 }));
+assert.ok(Math.abs(raised[2]! - 13) < 1e-3, "수동 높이는 2.5mm에서 멈추지 않고 더 올라간다");
+const capped = one([2, 0, 9], edit({ heightMm: 20 }));
+assert.ok(Math.abs(capped[2]! - 15) < 1e-3, "수동 높이는 패널 상한 12mm에서 멈춘다");
+
 const tiltDeg = 12;
 const tiltedPair = many([2, 0, 6, -2, 0, 6, 2.5, 0, 3, 0, 0, 3], edit({ tiltLabialDeg: tiltDeg }));
 assert.ok(
@@ -151,7 +156,14 @@ const limited = edit({ scale: [2, 0.1, 3], heightMm: 9, shiftLabialMm: 8, yawDeg
 clampAbutmentEdit(limited, 8);
 assert.equal(limited.scale[0], 1.45);
 assert.equal(limited.scale[1], 0.65);
-assert.ok(limited.heightMm <= 2.5 && limited.shiftLabialMm === 2.5 && limited.yawDeg === 30);
+assert.equal(limited.scale[2], 1.45);
+assert.equal(limited.shiftLabialMm, 2.5);
+assert.equal(limited.yawDeg, 30);
+assert.equal(limited.heightMm, 9, "제안 높이를 모르면 패널 범위까지 높이 이동을 남긴다");
+const fromSix = edit({ heightMm: 9, scale: [1, 1, 3] });
+clampAbutmentEdit(fromSix, 8, 6);
+assert.equal(fromSix.heightMm, 6, "포스트 6mm에서는 패널 상한 12mm까지 올린다");
+assert.equal(fromSix.scale[2], 2, "축 스케일도 같은 높이 상한까지 늘린다");
 const steep = edit({ tiltLabialDeg: 80 });
 clampAbutmentEdit(steep, 8);
 assert.ok(Math.abs(steep.tiltLabialDeg) <= 25 + 1e-6, "기울기는 허용 각도(25°) 안");
