@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { estimateDentalFrame, type FrameMesh } from "./dentalFrame";
+import { archFrameAxes, dentalFrameFromStored, estimateDentalFrame, type FrameMesh } from "./dentalFrame";
 
 function cloud(role: "upper" | "lower", coords: number[]): FrameMesh {
   const geometry = new THREE.BufferGeometry();
@@ -30,6 +30,23 @@ function horseshoe(zTooth: number, zGum: number, yaw: number): number[] {
   }
   return out;
 }
+
+test("교합 정렬 축은 앞이 전치, 오른쪽이 앞×위이고 다시 읽힌다", () => {
+  const frame = estimateDentalFrame([
+    cloud("upper", horseshoe(16, 24, 0)),
+    cloud("lower", horseshoe(6, 0, 0)),
+  ]);
+  assert.ok(frame);
+  const stored = archFrameAxes(frame!);
+  assert.ok(stored);
+  assert.ok(stored!.anterior[1]! > 0.8, "앞은 전치(+Y)");
+  assert.ok(stored!.up[2]! > 0.8, "위는 두개(+Z)");
+  assert.ok(stored!.right[0]! > 0.8, "오른쪽은 환자 우측(+X). U의 바깥이 협측이다");
+  const back = dentalFrameFromStored(stored);
+  assert.ok(back);
+  assert.ok(back!.anterior.dot(frame!.anterior) > 0.99);
+  assert.equal(dentalFrameFromStored({ ...stored!, right: stored!.up }), null);
+});
 
 test("하악만 있어도 앞은 전치, 교합은 치아 쪽이다", () => {
   const frame = estimateDentalFrame([cloud("lower", horseshoe(8, 0, Math.PI))]);

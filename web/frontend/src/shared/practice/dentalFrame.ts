@@ -17,6 +17,64 @@ export type DentalFrame = {
   right: THREE.Vector3;
 };
 
+/** 교합 정렬이 확정한 해부 축. 작업 좌표(자세를 적용한 뒤) 기준이다. */
+export type StoredArchFrame = {
+  /** 두개 쪽. */
+  up: [number, number, number];
+  /** 전치. 반대가 구치(7번·원심)다. */
+  anterior: [number, number, number];
+  /** 환자 우측. U의 좁은 오목한 쪽은 설·구개, 바깥은 협측이다. */
+  right: [number, number, number];
+};
+
+function roundAxis(v: THREE.Vector3): [number, number, number] {
+  return [
+    Math.round(v.x * 1e4) / 1e4,
+    Math.round(v.y * 1e4) / 1e4,
+    Math.round(v.z * 1e4) / 1e4,
+  ];
+}
+
+/**
+ * 교합 정렬 직후의 모델 축.
+ * 앞은 전치(그 치아의 근심), 뒤는 구치(원심), 위는 두개 쪽이다.
+ * 오른손 축에서 U자의 오목한 좁은 쪽이 설·구개, 볼록한 바깥이 협측이다.
+ */
+export function archFrameAxes(frame: DentalFrame): StoredArchFrame | null {
+  const up = frame.up.clone();
+  if (up.lengthSq() < 1e-8) return null;
+  up.normalize();
+  const anterior = frame.anterior.clone();
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-8) return null;
+  anterior.normalize();
+  const right = new THREE.Vector3().crossVectors(anterior, up);
+  if (right.lengthSq() < 1e-8) return null;
+  right.normalize();
+  return { up: roundAxis(up), anterior: roundAxis(anterior), right: roundAxis(right) };
+}
+
+/** 세션에 저장된 축. 부호가 오른손 좌표계와 맞을 때만 되돌린다. */
+export function dentalFrameFromStored(raw: StoredArchFrame | null | undefined): DentalFrame | null {
+  if (!raw) return null;
+  const read = (row: readonly number[] | undefined) => {
+    if (!row || row.length < 3) return null;
+    const v = new THREE.Vector3(Number(row[0]), Number(row[1]), Number(row[2]));
+    if (v.lengthSq() < 0.25) return null;
+    return v.normalize();
+  };
+  const up = read(raw.up);
+  const anterior = read(raw.anterior);
+  const right = read(raw.right);
+  if (!up || !anterior || !right) return null;
+  anterior.addScaledVector(up, -anterior.dot(up));
+  if (anterior.lengthSq() < 1e-8) return null;
+  anterior.normalize();
+  const expect = new THREE.Vector3().crossVectors(anterior, up).normalize();
+  if (right.dot(expect) < 0.8) return null;
+  return { up, anterior, right: expect };
+}
+
 type Pt3 = [number, number, number];
 
 export function samplePositions(geometry: THREE.BufferGeometry, cap: number): Pt3[] {

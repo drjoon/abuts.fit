@@ -126,7 +126,9 @@ import {
   type OcclusionCarry,
 } from "@/shared/practice/customAbutmentOcclusionRestore";
 import {
+  archFrameAxes,
   archPlanAxes,
+  dentalFrameFromStored,
   estimateDentalFrame,
   reseatOcclusalOrigin,
   type DentalFrame,
@@ -158,9 +160,11 @@ import {
   toArrayBuffer,
   writeCustomAbutmentChat,
   writeCustomAbutmentDesign,
+  normalizeArchFrame,
   normalizeCachedBiteCheck,
   normalizeJawPose,
   resolveCustomAbutmentReopen,
+  type CustomAbutmentArchFrame,
   type CustomAbutmentJawPose,
   type CachedAlignedScan,
   type CachedBiteCheck,
@@ -433,6 +437,7 @@ type DesignContext = {
   alignedScans: CachedAlignedScan[];
   biteCheck: CachedBiteCheck | null;
   jawPose: CustomAbutmentJawPose | null;
+  archFrame: CustomAbutmentArchFrame | null;
 };
 
 const VIEWER_PLAIN_BG = 0xe6e9ec;
@@ -1392,6 +1397,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     liveTeeth: CustomAbutmentDesignSyncTooth[];
     biteCheck: CachedBiteCheck | null;
     jawPose: CustomAbutmentJawPose | null;
+    archFrame: CustomAbutmentArchFrame | null;
     chrome: Record<string, unknown> | null;
     view: Record<string, unknown> | null;
   } | null>(null);
@@ -2577,6 +2583,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       alignedScans: ctx.alignedScans,
       biteCheck: ctx.biteCheck,
       jawPose: ctx.jawPose,
+      archFrame: ctx.archFrame,
       teeth: list.map((d) => {
         const gumballEdit =
           directEditRef.current?.editOf(d.toothNumber) ??
@@ -2658,6 +2665,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       liveTeeth: teeth,
       biteCheck: ctx.biteCheck ?? null,
       jawPose: ctx.jawPose ?? null,
+      archFrame: ctx.archFrame ?? null,
       chrome: { ...chromeStateRef.current },
       view: currentSessionView(),
     };
@@ -2695,6 +2703,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               teeth: snap.liveTeeth,
               ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
               ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
+              ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
             },
           });
           lastLocalChromeAtRef.current = performance.now();
@@ -2715,6 +2724,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               teeth: snap.teeth,
               ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
               ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
+              ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
               chrome: snap.chrome,
               view: snap.view,
             }),
@@ -2828,11 +2838,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (waiting && meta.teeth.length > 0) requestDesignReloadRef.current(meta.savedAt);
         return;
       }
-      if (designContextRef.current && (meta.biteCheck || meta.jawPose)) {
+      if (designContextRef.current && (meta.biteCheck || meta.jawPose || meta.archFrame)) {
         designContextRef.current = {
           ...designContextRef.current,
           ...(meta.biteCheck ? { biteCheck: meta.biteCheck } : {}),
           ...(meta.jawPose ? { jawPose: meta.jawPose } : {}),
+          ...(meta.archFrame ? { archFrame: meta.archFrame } : {}),
         };
         if (meta.biteCheck?.qualityOk) setOcclusionOk(true);
       }
@@ -4916,6 +4927,9 @@ export function PracticeCustomAbutmentPreviewDialog({
         // 저장 디자인이 있는데 qualityOk만 false면 다시 돌리지 않는다 — 돌리면 restored가
         // 풀리고 스캔바디·형상이 매번 처음부터라 닫고 열 때 작업이 사라진다.
         let sessionJawPose = normalizeJawPose(cached?.jawPose) ?? normalizeJawPose(remote?.jawPose);
+        let sessionArchFrame =
+          normalizeArchFrame(cached?.archFrame) ?? normalizeArchFrame(remote?.archFrame);
+        let archOriented = false;
         const hasSavedTeeth = Boolean(cached && cached.teeth.length > 0);
         const needBitePass =
           biteScans.length > 0 &&
@@ -5044,6 +5058,14 @@ export function PracticeCustomAbutmentPreviewDialog({
               restored = false;
             }
           }
+          // 교합이 확정된 모델에서 해부 축을 잡는다.
+          // 앞=전치(그 치아의 근심), 뒤=구치(원심), U의 좁은 오목한 쪽=설·구개, 바깥=협측.
+          const posedFrame = estimateDentalFrame(alignEntries);
+          const posedAxes = posedFrame ? archFrameAxes(posedFrame) : null;
+          if (posedAxes) {
+            sessionArchFrame = posedAxes;
+            archOriented = true;
+          }
           alignedScans = jawScans.map((s) => {
             const attr = s.geometry.getAttribute("position") as THREE.BufferAttribute;
             return {
@@ -5077,9 +5099,11 @@ export function PracticeCustomAbutmentPreviewDialog({
           }),
         );
 
-        const frame = estimateDentalFrame(
-          jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
-        );
+        const frame =
+          dentalFrameFromStored(sessionArchFrame) ??
+          estimateDentalFrame(
+            jawScans.map((s) => ({ role: s.role, geometry: s.geometry })),
+          );
         if (!frame) {
           for (const s of loadedScans) {
             s.geometry.dispose();
@@ -5736,7 +5760,17 @@ export function PracticeCustomAbutmentPreviewDialog({
           alignedScans,
           biteCheck,
           jawPose: sessionJawPose,
+          archFrame: sessionArchFrame,
         };
+        if (archOriented && sessionArchFrame && transferIdParam && !readOnly) {
+          const orientAt = Date.now();
+          void publishCustomAbutmentWorkSession(token, transferIdParam, {
+            savedAt: orientAt,
+            archFrame: sessionArchFrame,
+            ...(sessionJawPose ? { jawPose: sessionJawPose } : {}),
+            ...(biteCheck ? { biteCheck } : {}),
+          }).catch((err) => console.warn("[custom-abutment] arch frame save failed", err));
+        }
         designedListRef.current = builtAbutments;
 
         setVisibleTeeth(nextVisibleTeeth);
@@ -5809,6 +5843,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               alignedScans,
               biteCheck,
               jawPose: sessionJawPose,
+              archFrame: sessionArchFrame,
               teeth: [],
               chat: [],
             };
@@ -6739,6 +6774,9 @@ export function PracticeCustomAbutmentPreviewDialog({
               : {}),
             ...(designContextRef.current?.jawPose
               ? { jawPose: designContextRef.current.jawPose }
+              : {}),
+            ...(designContextRef.current?.archFrame
+              ? { archFrame: designContextRef.current.archFrame }
               : {}),
           },
         });
@@ -7815,6 +7853,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             ctx.alignedScans.length > 0 ? ctx.alignedScans : (existing?.alignedScans ?? []),
           biteCheck,
           jawPose: ctx.jawPose,
+          archFrame: ctx.archFrame,
           teeth: existing?.teeth ?? [],
           chat: existing?.chat ?? [],
         };

@@ -96,6 +96,41 @@ function poseMatrix(raw) {
   return out;
 }
 
+function unitAxis(raw) {
+  if (!Array.isArray(raw) || raw.length < 3) return null;
+  const x = Number(raw[0]);
+  const y = Number(raw[1]);
+  const z = Number(raw[2]);
+  const len = Math.hypot(x, y, z);
+  if (!(len > 0.5) || len > 1.5) return null;
+  const round = (value) => Math.round((value / len) * 1e4) / 1e4;
+  return [round(x), round(y), round(z)];
+}
+
+function dotAxis(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+/**
+ * 교합 정렬이 잡은 모델 축.
+ * 앞=전치(근심), 뒤=구치(원심), U의 좁은 쪽=설·구개, 바깥=협측.
+ */
+export function sanitizeArchFrame(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const up = unitAxis(raw.up);
+  const anterior = unitAxis(raw.anterior);
+  const right = unitAxis(raw.right);
+  if (!up || !anterior || !right) return null;
+  if (Math.abs(dotAxis(up, anterior)) > 0.25 || Math.abs(dotAxis(up, right)) > 0.25) return null;
+  const expect = [
+    anterior[1] * up[2] - anterior[2] * up[1],
+    anterior[2] * up[0] - anterior[0] * up[2],
+    anterior[0] * up[1] - anterior[1] * up[0],
+  ];
+  if (dotAxis(right, expect) < 0.8) return null;
+  return { up, anterior, right };
+}
+
 /** 악궁 자세. 스캔 파일별 정점이 아니라 의뢰 세션의 상·하악 각 하나다. */
 export function sanitizeJawPose(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -192,6 +227,7 @@ export function toDesignSyncMeta(source) {
   if (teeth.length === 0) return null;
   const biteCheck = sanitizeBiteCheck(source?.biteCheck);
   const jawPose = sanitizeJawPose(source?.jawPose);
+  const archFrame = sanitizeArchFrame(source?.archFrame);
   const mode = source?.mode === "confirmed" || source?.mode === "manual" ? source.mode : undefined;
   const choiceRaw = source?.choice;
   const choice =
@@ -216,6 +252,7 @@ export function toDesignSyncMeta(source) {
     teeth,
     ...(biteCheck ? { biteCheck } : {}),
     ...(jawPose ? { jawPose } : {}),
+    ...(archFrame ? { archFrame } : {}),
     ...(mode ? { mode } : {}),
     ...(choice ? { choice } : {}),
   };

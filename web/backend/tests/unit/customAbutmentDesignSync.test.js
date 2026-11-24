@@ -2,6 +2,7 @@ import {
   isStaleDesignWrite,
   sanitizeBiteCheck,
   sanitizeEditedInfoFields,
+  sanitizeArchFrame,
   sanitizeJawPose,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
@@ -94,6 +95,20 @@ describe("custom abutment design sync meta", () => {
     expect(pose.upper[14]).toBe(4);
     expect(pose.lower).toBeUndefined();
     expect(sanitizeJawPose(null)).toBeNull();
+    const frame = sanitizeArchFrame({
+      up: [0, 0, 1],
+      anterior: [0, 1, 0],
+      right: [1, 0, 0],
+    });
+    expect(frame.anterior).toEqual([0, 1, 0]);
+    expect(frame.right).toEqual([1, 0, 0]);
+    expect(sanitizeArchFrame({ up: [0, 0, 1], anterior: [0, 1, 0], right: [-1, 0, 0] })).toBeNull();
+    const withFrame = toDesignSyncMeta({
+      savedAt: 40,
+      archFrame: frame,
+      teeth: [{ toothNumber: "15", fixture: { jaw: "upper" }, params: {} }],
+    });
+    expect(withFrame.archFrame).toEqual(frame);
   });
 
   test("confirm choice is kept and an invalid fixture is dropped", () => {

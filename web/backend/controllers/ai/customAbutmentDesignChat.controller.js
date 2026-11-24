@@ -40,6 +40,7 @@ import { emitAppEventToUser } from "../../socket.js";
 import {
   isStaleDesignWrite,
   sanitizeBiteCheck,
+  sanitizeArchFrame,
   sanitizeJawPose,
   sanitizeSharedChrome,
   sanitizeSharedDesignView,
@@ -661,6 +662,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     const teeth = snapshotTeeth(stored?.teeth, transferId);
     const biteCheck = sanitizeBiteCheck(stored?.biteCheck);
     const jawPose = sanitizeJawPose(stored?.jawPose);
+    const archFrame = sanitizeArchFrame(stored?.archFrame);
     const rawPaint = stored?.paint && typeof stored.paint === "object" ? stored.paint : null;
     const paint = rawPaint
       ? {
@@ -685,6 +687,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
             teeth,
             ...(biteCheck ? { biteCheck } : {}),
             ...(jawPose ? { jawPose } : {}),
+            ...(archFrame ? { archFrame } : {}),
           }
         : null;
     const billedLines = Array.isArray(transfer?.billing?.lines) ? transfer.billing.lines : [];
@@ -740,6 +743,7 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
         design,
         biteCheck,
         jawPose,
+        archFrame,
         chat,
         paint,
         mode,
@@ -868,6 +872,10 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
     if (incomingPose) {
       previewSet["production.customAbutmentPreview.jawPose"] = incomingPose;
     }
+    const incomingFrame = sanitizeArchFrame(req.body?.archFrame);
+    if (incomingFrame) {
+      previewSet["production.customAbutmentPreview.archFrame"] = incomingFrame;
+    }
     const incomingView = sanitizeSharedDesignView(req.body?.view);
     const prevViewAt = Number(prev?.sharedView?.savedAt) || 0;
     if (incomingView && !(prevViewAt > savedAt)) {
@@ -895,6 +903,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         teeth: next.teeth,
         biteCheck: incomingBite && incomingBite.checkedAt >= prevBiteAt ? incomingBite : prev.biteCheck,
         jawPose: incomingPose || prev.jawPose,
+        archFrame: incomingFrame || prev.archFrame,
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
     await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });
