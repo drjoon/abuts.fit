@@ -644,7 +644,8 @@ export function parseCustomAbutmentParamOverrides(
 }
 
 /**
- * 상대가 저장한 디자인. 전체 조정값 위에 이번 수정만 덮는다.
+ * 상대가 저장한 디자인. `params`(확정 형상)를 SSOT로 쓰고, 없는 키만 overrides로 채운다.
+ * overrides가 더 오래되면(예: 테이퍼 3° vs params 2.8°) 다시 열 때 예전 값으로 되돌아간다.
  * 검볼 이동(축 이동·요)은 메시에 따로 얹으므로 여기서 빼 인접 크기 맞춤이 다시 키우지 않게 한다.
  */
 export function sharedAbutmentSyncParams(
@@ -652,8 +653,8 @@ export function sharedAbutmentSyncParams(
   overrides: unknown,
 ): Partial<CustomAbutmentDesignParams> {
   const merged: Partial<CustomAbutmentDesignParams> = {
-    ...parseCustomAbutmentParamOverrides(params),
     ...parseCustomAbutmentParamOverrides(overrides),
+    ...parseCustomAbutmentParamOverrides(params),
   };
   delete merged.axisShiftLabialMm;
   delete merged.axisShiftMesialMm;

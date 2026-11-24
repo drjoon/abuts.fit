@@ -408,11 +408,23 @@ export function preferFresherCustomAbutmentDesign<
   if (serverCount === 0 || !server || !local) return local;
   const localAt = Number(local.savedAt) || 0;
   const serverAt = Number(server.savedAt) || 0;
-  if (serverAt > localAt) return withLocalBiteMeta(server, local);
+  if (serverAt > localAt) {
+    // 서버가 더 나중이면 조정값은 서버. 정점이 없을 때만 이 브라우저 메시를 빌려 쓴다.
+    if (
+      Boolean(opts?.preferServerOnTie) &&
+      !designHasMeshes(server) &&
+      designHasMeshes(local)
+    ) {
+      return withLocalBiteMeta(mergeServerMetaOntoLocalMeshes(local, server), local);
+    }
+    return withLocalBiteMeta(server, local);
+  }
   if (serverAt < localAt) return withLocalBiteMeta(local, server);
-  // 동점: 협업은 서버, 아니면 로컬. 서버에 정점이 없으면 로컬 메시를 유지한다.
+  // 동점: 협업은 서버 조정값. 서버에 정점이 없으면 로컬 메시 위에 서버 메타를 얹는다.
   if (Boolean(opts?.preferServerOnTie)) {
-    if (!designHasMeshes(server) && designHasMeshes(local)) return withLocalBiteMeta(local, server);
+    if (!designHasMeshes(server) && designHasMeshes(local)) {
+      return withLocalBiteMeta(mergeServerMetaOntoLocalMeshes(local, server), local);
+    }
     return withLocalBiteMeta(server, local);
   }
   return withLocalBiteMeta(local, server);

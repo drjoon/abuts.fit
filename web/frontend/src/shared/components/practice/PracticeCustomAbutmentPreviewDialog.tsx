@@ -2457,11 +2457,16 @@ export function PracticeCustomAbutmentPreviewDialog({
     const baselineParams = baselineParamsRef.current[d.toothNumber];
     const baselineMetrics = baselineMetricsRef.current[d.toothNumber];
     const editedInfoFields = [...(editedInfoFieldsRef.current[d.toothNumber] ?? [])];
+    // params가 확정 형상 SSOT. overrides만 남아 있으면 다시 열 때 예전 테이퍼로 돌아간다.
+    const overrides = sharedAbutmentSyncParams(
+      d.params,
+      designContextRef.current?.overrides[d.toothNumber] ?? {},
+    );
     return {
       toothNumber: d.toothNumber,
       fileName: d.fileName,
       fixture: d.fixture,
-      overrides: designContextRef.current?.overrides[d.toothNumber] ?? {},
+      overrides,
       params: d.params,
       metrics: d.metrics,
       ...(baselineParams ? { baselineParams } : {}),
@@ -2510,7 +2515,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           toothNumber: d.toothNumber,
           fileName: d.fileName,
           fixture: d.fixture,
-          overrides: ctx.overrides[d.toothNumber] ?? {},
+          overrides: sharedAbutmentSyncParams(d.params, ctx.overrides[d.toothNumber] ?? {}),
           params: d.params,
           metrics: d.metrics,
           baselineMetrics: baselineMetricsRef.current[d.toothNumber] ?? d.metrics,
@@ -2563,7 +2568,13 @@ export function PracticeCustomAbutmentPreviewDialog({
   const scheduleDesignMetaPublish = () => {
     publishAgainRef.current = true;
     if (publishRunningRef.current) {
-      void cacheCurrentDesign(Date.now());
+      // 로컬만 Date.now()로 올리면 서버보다 새로 보여 상대 저장을 덮어쓴다. 같은 스탬프를 쓴다.
+      const stamp =
+        pendingMetaStampRef.current > 0
+          ? pendingMetaStampRef.current
+          : Math.max(designSavedAtRef.current, Date.now());
+      pendingMetaStampRef.current = stamp;
+      void cacheCurrentDesign(stamp);
       return;
     }
     publishRunningRef.current = true;
@@ -2583,7 +2594,8 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (!token || !transferId || list.length === 0) return;
           const stamped = pendingMetaStampRef.current;
           pendingMetaStampRef.current = 0;
-          const savedAtHint = stamped > 0 ? stamped : Date.now();
+          const savedAtHint =
+            stamped > 0 ? stamped : Math.max(designSavedAtRef.current + 1, Date.now());
           void cacheCurrentDesign(savedAtHint);
           const teeth = list.map(syncToothFromDesign);
           lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, savedAtHint);
@@ -5171,7 +5183,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           );
           for (const row of cached.teeth) {
             adoptStoredInsertionAxis(lockedBridgeAxisRef.current, row.toothNumber, row.insertionAxisWorld);
-            const rowOverrides = parseCustomAbutmentParamOverrides(row.overrides);
+            const rowOverrides = stripDirectEditShiftOverrides(
+              sharedAbutmentSyncParams(row.params, row.overrides),
+            );
             overrides[row.toothNumber] = rowOverrides;
             const restoredGumball = !readOnly ? normalizeAbutmentEdit(row.gumballEdit) : null;
             if (restoredGumball) {
