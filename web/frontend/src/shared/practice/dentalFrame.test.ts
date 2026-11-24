@@ -5,6 +5,7 @@ import * as THREE from "three";
 import {
   archFrameAxes,
   dentalFrameFromStored,
+  dentalFrameFromViewOrientation,
   estimateDentalFrame,
   orientAnteriorFromAbutmentFdi,
   orientAnteriorFromMesialDistalClick,
@@ -281,16 +282,15 @@ function axisFrame(anteriorX: number): DentalFrame {
   };
 }
 
-test("인접치 없이 FDI만 있으면 추정하지 않고 클릭 폴백이다", () => {
+test("인접치 없이 FDI만 있으면 FDI로 앞을 잡는다", () => {
   const cloud = lineArch(-24, 24);
   const marks = [
     { toothNumber: "14", point: [10, 0, 0] as const },
     { toothNumber: "16", point: [-12, 0, 0] as const },
   ];
   const resolved = resolveArchMdBlOrientation(axisFrame(1), marks, cloud);
-  assert.equal(resolved.confirmed, false);
-  assert.ok(resolved.pickToothNumber);
-  assert.ok(resolved.frame.anterior.x > 0.9, "시드 축을 추정으로 바꾸지 않는다");
+  assert.equal(resolved.confirmed, true);
+  assert.ok(resolved.frame.anterior.x > 0.9, "작은 번호(#14,+X)가 전치");
 
   const single = resolveArchMdBlOrientation(
     axisFrame(-1),
@@ -298,7 +298,7 @@ test("인접치 없이 FDI만 있으면 추정하지 않고 클릭 폴백이다"
     cloud,
   );
   assert.equal(single.confirmed, false);
-  assert.ok(single.frame.anterior.x < -0.9, "시드(−X)를 유지한다");
+  assert.ok(single.frame.anterior.x < -0.9, "신호 없으면 시드(−X)를 유지한다");
 });
 
 test("근심·원심 클릭으로 앞 축을 맞춘다", () => {
@@ -319,8 +319,8 @@ test("근심·원심 클릭으로 앞 축을 맞춘다", () => {
   assert.ok(fromDistal.anterior.x > 0.9, "원심 클릭은 반대가 앞");
 });
 
-test("인접치와 FDI 부호가 충돌하면 확정하지 않는다", () => {
-  // −X가 큰 치아인데, 픽스처 번호는 +X 쪽이 더 구치(#16)다.
+test("인접치 신호가 약하고 FDI만 있으면 FDI로 확정한다", () => {
+  // 픽스처 바로 위에 치아 블롭이 있어 옆 비교(A)가 안 되고, FDI(#14·#16)만 남는다.
   const pts: Array<[number, number, number]> = [];
   const addBlob = (cx: number, cy: number, rx: number, ry: number, step: number) => {
     for (let x = -rx; x <= rx; x += step) {
@@ -338,8 +338,46 @@ test("인접치와 FDI 부호가 충돌하면 확정하지 않는다", () => {
     { toothNumber: "16", point: [8, 0, 16] as const },
   ];
   const resolved = resolveArchMdBlOrientation(axisFrame(1), marks, pts);
-  assert.equal(resolved.confirmed, false);
-  assert.ok(resolved.pickToothNumber);
+  assert.equal(resolved.confirmed, true);
+  // #16(+X)이 더 구치 → 전치는 −X.
+  assert.ok(resolved.frame.anterior.x < -0.55, "FDI로 전치(−X)를 잡는다");
+});
+
+test("인접치와 FDI가 충돌하면 인접치(A)를 따른다", () => {
+  // 스캔바디(#15) 왼쪽 큰 대구치·오른쪽 작은 전치(A=+X 전치).
+  // FDI는 반대로 #14를 +X·#16을 −X에 두어 B와 충돌시킨다.
+  const pts: Array<[number, number, number]> = [];
+  const addBlob = (cx: number, cy: number, rx: number, ry: number, step: number) => {
+    for (let x = -rx; x <= rx; x += step) {
+      for (let y = -ry; y <= ry; y += step) {
+        if ((x * x) / (rx * rx) + (y * y) / (ry * ry) > 1) continue;
+        pts.push([cx + x, cy + y, 16]);
+      }
+    }
+  };
+  addBlob(-4, 0, 4.2, 3.6, 0.55);
+  addBlob(10, 0.3, 2.2, 2.0, 0.55);
+  addBlob(14, 0.2, 2.0, 1.8, 0.55);
+  for (let x = -8; x <= 18; x += 0.8) pts.push([x, 0.05, 15.5]);
+  const marks = [
+    { toothNumber: "15", point: [6.5, 0.2, 16] as const },
+    { toothNumber: "14", point: [12, 0.2, 16] as const },
+    { toothNumber: "16", point: [-4, 0.2, 16] as const },
+  ];
+  const resolved = resolveArchMdBlOrientation(axisFrame(1), marks, pts);
+  assert.equal(resolved.confirmed, true);
+  assert.ok(
+    resolved.frame.anterior.x > 0.55,
+    `A(+X 전치)가 B와 충돌해도 A (got ${resolved.frame.anterior.toArray().join(",")})`,
+  );
+});
+
+test("교합면 뷰에서 오른쪽이 전방이다", () => {
+  // 카메라: −Z를 보고, +X가 화면 오른쪽. 교합면을 내려다보면 up=+Z.
+  const q = new THREE.Quaternion();
+  const frame = dentalFrameFromViewOrientation(q, new THREE.Vector3(0, 0, 1));
+  assert.ok(frame.anterior.x > 0.9, "화면 오른쪽(+X)이 전방");
+  assert.ok(frame.up.z > 0.9, "두개(+Z) 유지");
 });
 
 test("원심 대구치가 없고 구개가 넓어도 치아 줄이 근원심이다", () => {

@@ -81,12 +81,12 @@ export type AbutmentArchMark = {
   point: readonly [number, number, number];
 };
 
-/** 편악 근원심·협설: 인접치(A)·스캔바디/FDI/악궁(B)이 맞을 때만 확정. */
+/** 편악 근원심·협설: 인접치(A) 우선, 없으면 스캔바디/FDI/악궁(B). */
 export type ArchMdBlResolve = {
   frame: DentalFrame;
-  /** 신호 A·B가 같은 부호로 일치해 자동 확정됨. */
+  /** A 또는 B로 앞뒤를 잡음. */
   confirmed: boolean;
-  /** 클릭 폴백 시 안내할 스캔바디 치아. */
+  /** 신호 없을 때 참고용 스캔바디 치아(수동 방향 도구). */
   pickToothNumber: string | null;
 };
 
@@ -417,11 +417,11 @@ export function resolveArchMdBlOrientation(
   }
   const axis = bestIdx === 0 ? major : minor;
   const best = scored[bestIdx]!;
-  // 자동: 인접치(A)가 있어야 한다. B가 있으면 반드시 같은 부호.
-  // B만 있거나 A·B 충돌·둘 다 없으면 추정하지 않고 클릭 폴백.
-  const canAuto =
-    best.signalA !== 0 && (best.signalB === 0 || best.signalB === best.signalA);
-  if (!canAuto) {
+  // 자동: 인접치(A)를 우선하고, 없으면 FDI·악궁(B). A·B가 충돌하면 A.
+  // 둘 다 없으면 시드를 유지한다(수동 방향 도구로 맞춘다).
+  const distalSign =
+    best.signalA !== 0 ? best.signalA : best.signalB !== 0 ? best.signalB : 0;
+  if (distalSign === 0) {
     return {
       frame,
       confirmed: false,
@@ -429,7 +429,6 @@ export function resolveArchMdBlOrientation(
     };
   }
 
-  const distalSign = best.signalA;
   const anterior = new THREE.Vector3()
     .addScaledVector(e1, axis[0] * -distalSign)
     .addScaledVector(e2, axis[1] * -distalSign);
@@ -441,8 +440,37 @@ export function resolveArchMdBlOrientation(
 }
 
 /**
- * 확정된 축만 적용. 신호 부족·충돌이면 입력 프레임을 그대로 둔다.
- * UI는 `resolveArchMdBlOrientation`의 confirmed·pickToothNumber를 본다.
+ * 화면에서 오른쪽=전방·왼쪽=후방·가운데(카메라 정면)=교합면일 때
+ * 카메라 자세로 해부 축을 읽는다. seedUp이 있으면 두개 쪽 부호를 맞춘다.
+ */
+export function dentalFrameFromViewOrientation(
+  cameraQuaternion: THREE.Quaternion,
+  seedUp?: THREE.Vector3 | null,
+): DentalFrame {
+  const anterior = new THREE.Vector3(1, 0, 0).applyQuaternion(cameraQuaternion);
+  if (anterior.lengthSq() < 1e-8) {
+    return {
+      up: new THREE.Vector3(0, 0, 1),
+      anterior: new THREE.Vector3(1, 0, 0),
+      right: new THREE.Vector3(0, 1, 0),
+    };
+  }
+  anterior.normalize();
+  const viewDir = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion);
+  // 교합면을 바라볼 때 viewDir는 교합→치근 쪽. 두개(+up)는 −viewDir에 가깝다.
+  let up = viewDir.clone().multiplyScalar(-1);
+  if (up.lengthSq() < 1e-8) up = new THREE.Vector3(0, 0, 1);
+  else up.normalize();
+  if (seedUp && seedUp.lengthSq() > 1e-8 && up.dot(seedUp) < 0) up.negate();
+  return finishArchFrame(
+    { up, anterior, right: new THREE.Vector3() },
+    up,
+    anterior,
+  );
+}
+
+/**
+ * 확정된 축만 적용. 신호 부족이면 입력 프레임을 그대로 둔다.
  */
 export function orientAnteriorFromAbutmentFdi(
   frame: DentalFrame,

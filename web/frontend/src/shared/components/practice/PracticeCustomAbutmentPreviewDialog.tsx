@@ -29,6 +29,7 @@
 // - 2026-11-22: 기공소는 치과 확정 전 구강 스캔을 받지 않는다. 다운로드를 기다리지 않고 안내한다.
 // - 2026-11-23: 모달을 다시 열면 이 브라우저 메시와 더 나중 카메라를 따른다. 정점 없는 서버 저장으로 직경·화면을 다시 만들지 않는다.
 // - 2026-11-24: 스캔바디를 먼저 고른다. 픽스처 위치와 어벗 FDI로 앞·뒤를 잡은 뒤 교합을 확정한다. 이미 고른 스캔바디는 교합을 다시 맞춰도 유지한다.
+// - 2026-11-24: 근심/원심 클릭 모달 제거. 앞뒤는 자동 확정하고, 헤더 「모델 방향」으로 수동 보정한다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -59,6 +60,7 @@ import {
   Axis3d,
   Check,
   Combine,
+  Compass,
   Download,
   Loader2,
   Paintbrush,
@@ -129,8 +131,8 @@ import {
   archFrameAxes,
   archPlanAxes,
   dentalFrameFromStored,
+  dentalFrameFromViewOrientation,
   estimateDentalFrame,
-  orientAnteriorFromMesialDistalClick,
   resolveArchMdBlOrientation,
   reseatOcclusalOrigin,
   samplePositions,
@@ -393,11 +395,7 @@ type PipelineStatus =
   | { kind: "loading"; percent: number; step: string }
   | { kind: "ready" }
   | { kind: "pick"; toothNumber: string; phase: "aim" | "empty" | "searching" | "designing" | "miss" }
-  | {
-      kind: "md-pick";
-      toothNumber: string;
-      side: "mesial" | "distal";
-    }
+  | { kind: "model-orient" }
   | {
       kind: "bite-confirm";
       qualityOk: boolean;
@@ -412,13 +410,6 @@ type BiteConfirmChoice = "confirm" | "retry";
 type BiteConfirmSession = {
   meshes: THREE.Mesh[];
   resolve: (choice: BiteConfirmChoice) => void;
-};
-
-type MdPickSession = {
-  toothNumber: string;
-  side: "mesial" | "distal";
-  origin: [number, number, number];
-  resolve: (ok: boolean) => void;
 };
 
 type ScanbodyPickJob = {
@@ -1142,18 +1133,6 @@ function applyAbutmentArchOrientation(
   };
 }
 
-function fixtureOriginOf(
-  fixtures: readonly MatchedScanbodyFixture[],
-  toothNumber: string | null,
-): [number, number, number] | null {
-  if (!toothNumber) return null;
-  const fx =
-    fixtures.find((row) => row.toothNumber === toothNumber) ?? fixtures[0] ?? null;
-  if (!fx) return null;
-  const o = fx.fixturePose.origin;
-  return [o[0], o[1], o[2]];
-}
-
 function flipFixtureOcclusalDirs(fx: MatchedScanbodyFixture): MatchedScanbodyFixture {
   const neg = (v: readonly number[]) => [-v[0]!, -v[1]!, -v[2]!] as typeof fx.labialDir;
   return { ...fx, labialDir: neg(fx.labialDir), mesialDir: neg(fx.mesialDir) };
@@ -1611,9 +1590,6 @@ export function PracticeCustomAbutmentPreviewDialog({
   const pivotSourceRef = useRef<"selection" | "manual" | null>(null);
   const scanbodyPickRef = useRef<ScanbodyPickSession | null>(null);
   const scanbodyPickClickRef = useRef<(clientX: number, clientY: number) => void>(() => {});
-  const mdPickRef = useRef<MdPickSession | null>(null);
-  const mdPickClickRef = useRef<(clientX: number, clientY: number) => void>(() => {});
-  const mdPickSideRef = useRef<"mesial" | "distal">("mesial");
   const biteConfirmRef = useRef<BiteConfirmSession | null>(null);
   const pickEpochRef = useRef(0);
   /** 위치 다시 지정·미매칭 픽에 쓰는 스캔바디 카탈로그. 파이프라인에서 채운다. */
@@ -2319,7 +2295,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   useEffect(() => {
     const el = rendererRef.current?.domElement;
     if (!el) return;
-    const picking = status.kind === "pick" || status.kind === "md-pick";
+    const picking = status.kind === "pick";
     const waiting =
       status.kind === "pick" &&
       (status.phase === "searching" || status.phase === "designing");
@@ -3974,147 +3950,102 @@ export function PracticeCustomAbutmentPreviewDialog({
   const endBiteConfirmSessionRef = useRef(endBiteConfirmSession);
   endBiteConfirmSessionRef.current = endBiteConfirmSession;
 
-  /** 근원심 자동 확정 실패 시 한 점 클릭으로 앞 축을 맞춘다. */
-  const startMdPick = useCallback(
-    (toothNumber: string, origin: [number, number, number]): Promise<boolean> => {
-      if (mdPickRef.current) {
-        mdPickRef.current.resolve(false);
-        mdPickRef.current = null;
-      }
-      // 클릭 대상인 악 스캔이 가려져 있으면 픽이 불가능하다. 픽 동안은 무조건 켠다.
-      const hasUpper =
-        jawMeshesRef.current.upperTrimmed.length + jawMeshesRef.current.upperScanbody.length > 0;
-      const hasLower =
-        jawMeshesRef.current.lowerTrimmed.length + jawMeshesRef.current.lowerScanbody.length > 0;
-      for (const m of [
-        ...jawMeshesRef.current.upperTrimmed,
-        ...jawMeshesRef.current.lowerTrimmed,
-      ]) {
-        m.visible = true;
-      }
-      if (hasUpper || hasLower) {
-        setVisibleJaws({ upper: hasUpper, lower: hasLower });
-      }
-      const camera = cameraRef.current;
-      const controls = controlsRef.current;
-      const host = hostRef.current;
-      const anatomical = frameRef.current;
-      if (camera && controls && host) {
-        const center = new THREE.Vector3(origin[0], origin[1], origin[2]);
-        const up = anatomical ? anatomical.up.clone() : new THREE.Vector3(0, 0, 1);
-        const viewDir = anatomical
-          ? anatomical.up.clone().multiplyScalar(0.55).addScaledVector(anatomical.anterior, 0.35).normalize()
-          : new THREE.Vector3(0, -0.4, 0.9).normalize();
-        const aspect = readHostSize(host).aspect;
-        controls.target.copy(center);
-        camera.up.copy(up);
-        camera.position.copy(center).addScaledVector(viewDir, 42);
-        applyOrthoHeight(camera, 18, aspect);
-        camera.zoom = 1;
-        camera.lookAt(center);
-        controls.syncFromCamera();
-      }
-      const side = mdPickSideRef.current;
-      const nextStatus = { kind: "md-pick" as const, toothNumber, side };
-      statusRef.current = nextStatus;
-      setStatus(nextStatus);
-      return new Promise<boolean>((resolve) => {
-        mdPickRef.current = { toothNumber, side, origin, resolve };
-      });
-    },
-    [],
-  );
-  const startMdPickRef = useRef(startMdPick);
-  startMdPickRef.current = startMdPick;
-
-  const setMdPickSide = useCallback((side: "mesial" | "distal") => {
-    mdPickSideRef.current = side;
-    const session = mdPickRef.current;
-    if (!session) return;
-    session.side = side;
-    const nextStatus = { kind: "md-pick" as const, toothNumber: session.toothNumber, side };
-    statusRef.current = nextStatus;
-    setStatus(nextStatus);
-  }, []);
-
-  const handleMdPickAt = useCallback((clientX: number, clientY: number) => {
-    const session = mdPickRef.current;
-    const host = hostRef.current;
-    const camera = cameraRef.current;
-    const frame = frameRef.current;
-    if (!session || !host || !camera || !frame) return;
-    const rect = host.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) return;
-    const ndc = new THREE.Vector2(
-      ((clientX - rect.left) / rect.width) * 2 - 1,
-      -((clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, camera);
-    const targets = [
-      ...jawMeshesRef.current.upperTrimmed,
-      ...jawMeshesRef.current.lowerTrimmed,
-      ...jawMeshesRef.current.upperScanbody,
-      ...jawMeshesRef.current.lowerScanbody,
-    ].filter((m) => m.visible && m.parent?.visible !== false);
-    const hit = ray.intersectObjects(targets, false)[0];
-    if (!hit) return;
-    const click: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z];
-    const next = orientAnteriorFromMesialDistalClick(
-      frame,
-      session.origin,
-      click,
-      session.side,
-    );
-    frameRef.current = next;
-    setFrameEpoch((n) => n + 1);
-    const axes = archFrameAxes(next);
-    if (axes && designContextRef.current) {
-      designContextRef.current = { ...designContextRef.current, archFrame: axes };
-    }
-    mdPickRef.current = null;
-    session.resolve(true);
-  }, []);
-  mdPickClickRef.current = handleMdPickAt;
-
+  /** 스캔바디·인접치로 앞뒤를 자동 확정한다. 실패해도 클릭을 묻지 않는다. */
   const ensureArchMdBlOrPick = useCallback(
     async (
       frame: DentalFrame,
       fixtures: readonly MatchedScanbodyFixture[],
       geometries: readonly THREE.BufferGeometry[],
-      opts?: { allowPick?: boolean },
+      _opts?: { allowPick?: boolean },
     ): Promise<{
       frame: DentalFrame;
       axes: ReturnType<typeof archFrameAxes>;
       flipped: boolean;
       confirmed: boolean;
-    }> => {
-      const oriented = applyAbutmentArchOrientation(frame, fixtures, geometries);
-      if (oriented.confirmed || opts?.allowPick === false || fixtures.length === 0) {
-        return oriented;
-      }
-      const tooth =
-        oriented.pickToothNumber ??
-        fixtures[0]?.toothNumber ??
-        null;
-      const origin = fixtureOriginOf(fixtures, tooth);
-      if (!tooth || !origin) return oriented;
-      frameRef.current = oriented.frame;
-      const ok = await startMdPickRef.current(tooth, origin);
-      if (!ok || !frameRef.current) return { ...oriented, confirmed: false };
-      const live = frameRef.current;
-      const flipped = anteriorSignFlipped(frame, live);
-      return {
-        frame: live,
-        axes: archFrameAxes(live),
-        flipped,
-        confirmed: true,
-      };
-    },
+    }> => applyAbutmentArchOrientation(frame, fixtures, geometries),
     [],
   );
   const ensureArchMdBlOrPickRef = useRef(ensureArchMdBlOrPick);
   ensureArchMdBlOrPickRef.current = ensureArchMdBlOrPick;
+
+  /** 수동 모델 방향: 교합면이 가운데·오른쪽이 전방이 되게 돌린 뒤 확인. */
+  const beginModelOrient = useCallback(() => {
+    if (readOnly || biteRecalcBusy) return;
+    if (statusRef.current.kind === "pick" || statusRef.current.kind === "bite-confirm") return;
+    if (statusRef.current.kind === "model-orient") return;
+    const frame = frameRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (frame && camera && controls) {
+      // 상악은 아래에서(+up 쪽을 봄), 하악·양악은 위에서(−up 쪽을 봄) 교합면을 본다.
+      const onlyUpper = prepJaws.has("upper") && !prepJaws.has("lower");
+      const preferUpper = onlyUpper || (visibleJaws.upper && !visibleJaws.lower);
+      const viewDir = preferUpper ? frame.up.clone().negate() : frame.up.clone();
+      // 화면 위=환자 우측 → 화면 오른쪽=전방.
+      const upDir = frame.right.clone();
+      const eye = controls.target.clone().addScaledVector(viewDir.normalize(), 1);
+      const m = new THREE.Matrix4().lookAt(eye, controls.target, upDir.normalize());
+      animateCameraTo(new THREE.Quaternion().setFromRotationMatrix(m));
+    }
+    const nextStatus = { kind: "model-orient" as const };
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }, [animateCameraTo, biteRecalcBusy, prepJaws, readOnly, visibleJaws.lower, visibleJaws.upper]);
+
+  const cancelModelOrient = useCallback(() => {
+    if (statusRef.current.kind !== "model-orient") return;
+    const nextStatus = { kind: "ready" as const };
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }, []);
+
+  const confirmModelOrient = useCallback(() => {
+    if (statusRef.current.kind !== "model-orient") return;
+    const camera = cameraRef.current;
+    if (!camera) return;
+    const prev = frameRef.current;
+    const next = dentalFrameFromViewOrientation(camera.quaternion, prev?.up ?? null);
+    frameRef.current = next;
+    setFrameEpoch((n) => n + 1);
+    const axes = archFrameAxes(next);
+    if (axes && designContextRef.current) {
+      designContextRef.current = { ...designContextRef.current, archFrame: axes };
+      if (designedListRef.current.length > 0) {
+        persistDesign(undefined, { publish: false });
+      } else {
+        const ctx = designContextRef.current;
+        const savedAt = Date.now();
+        if (savedAt > designSavedAtRef.current) designSavedAtRef.current = savedAt;
+        void (async () => {
+          try {
+            const existing = await readCustomAbutmentDesign(ctx.cacheKey);
+            const record = {
+              key: ctx.cacheKey,
+              version: existing?.version ?? CUSTOM_ABUTMENT_DESIGN_VERSION,
+              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+              savedAt,
+              alignedScans:
+                ctx.alignedScans.length > 0 ? ctx.alignedScans : (existing?.alignedScans ?? []),
+              biteCheck: ctx.biteCheck ?? existing?.biteCheck ?? null,
+              jawPose: ctx.jawPose,
+              archFrame: axes,
+              teeth: existing?.teeth ?? [],
+              chat: existing?.chat ?? [],
+            };
+            rememberCustomAbutmentDesign(record);
+            await writeCustomAbutmentDesign(record);
+          } catch (err) {
+            console.warn("[custom-abutment] archFrame save failed", err);
+          }
+        })();
+      }
+    }
+    const nextStatus = { kind: "ready" as const };
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+    fitDefaultCamera();
+    toast({ title: "모델 방향을 반영했습니다." });
+  }, [fitDefaultCamera, persistDesign, toast]);
 
   /** 이미 잡힌(또는 잘못된) 치아 스캔바디 위치를 다시 찍게 한다. */
   const startScanbodyRepick = useCallback(
@@ -4550,9 +4481,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     let pickDown: { x: number; y: number } | null = null;
     const onPickDown = (e: PointerEvent) => {
-      const picking =
-        (scanbodyPickRef.current != null && !scanbodyPickRef.current.busy) ||
-        mdPickRef.current != null;
+      const picking = scanbodyPickRef.current != null && !scanbodyPickRef.current.busy;
       pickDown =
         e.button === 0 && (pivotArmedRef.current || picking)
           ? { x: e.clientX, y: e.clientY }
@@ -4563,10 +4492,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       pickDown = null;
       if (!down) return;
       if (Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 4) return;
-      if (mdPickRef.current) {
-        mdPickClickRef.current(e.clientX, e.clientY);
-        return;
-      }
       const session = scanbodyPickRef.current;
       if (session && !session.busy) {
         scanbodyPickClickRef.current(e.clientX, e.clientY);
@@ -4576,7 +4501,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       pickPivotAt(e.clientX, e.clientY);
     };
     const onPickDouble = (e: MouseEvent) => {
-      if (mdPickRef.current) return;
       if (scanbodyPickRef.current && !scanbodyPickRef.current.busy) return;
       if (!pickPivotAt(e.clientX, e.clientY)) clearPivot();
     };
@@ -5948,15 +5872,14 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           const askBiteAfterScanbody = async (_keepCamera: boolean) => {
             if (!deferOcclusionConfirm || cancelled) return "skip" as const;
-            // 교합 확인 직전에 스캔바디·치아 크기로 앞뒤를 한 번 더 고정한다.
-            // 자동 불가 시 근심/원심 클릭으로 맞춘다.
+            // 교합 확인 직전에 스캔바디·치아 크기로 앞뒤를 한 번 더 자동 고정한다.
             const orientFixtures =
               (designContextRef.current?.fixtures.length
                 ? designContextRef.current.fixtures
                 : jawJobs.flatMap((job) => job.fixtures)) ?? [];
             if (orientFixtures.length > 0 && frameRef.current) {
               // rebuildJawScanMeshes는 rawJawScansRef만 본다. 이 시점(본문 6202 전)엔
-              // 비어 있을 수 있어, 근원심 픽·교합 확인 전에 스캔을 먼저 올린다.
+              // 비어 있을 수 있어, 방향 확정·교합 확인 전에 스캔을 먼저 올린다.
               if (rawJawScansRef.current.length === 0) {
                 rawJawScansRef.current = jawScans.map((scan) => ({
                   jaw: scan.role as "upper" | "lower",
@@ -6408,7 +6331,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               description: "어벗 정보에서 위치를 다시 지정하세요.",
             });
           }
-          // 저장된 디자인은 교합 확인을 건너뛰므로, 여기서 근원심이 안 잡히면 클릭을 받는다.
+          // 저장된 디자인은 교합 확인을 건너뛰므로, 여기서 앞뒤를 한 번 더 자동 확정한다.
           const readyFixtures = designContextRef.current?.fixtures ?? [];
           if (!deferOcclusionConfirm && !readOnly && frameRef.current && readyFixtures.length > 0) {
             const oriented = await ensureArchMdBlOrPickRef.current(
@@ -6588,11 +6511,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       scanbodyPickRef.current = null;
       scanbodyGateRef.current?.();
       scanbodyGateRef.current = null;
-      if (mdPickRef.current) {
-        const pending = mdPickRef.current;
-        mdPickRef.current = null;
-        pending.resolve(false);
-      }
       if (biteConfirmRef.current) endBiteConfirmSessionRef.current("confirm");
     };
   }, [
@@ -8368,7 +8286,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   const pipelineReady = status.kind === "ready";
   const ready = pipelineReady && (designedList.length > 0 || readOnly);
   const biteConfirmOn = status.kind === "bite-confirm";
-  const mdPickOn = status.kind === "md-pick";
+  const modelOrientOn = status.kind === "model-orient";
   /** 바이트 자동 정렬 확인 중 — 피니시라인·픽스쳐·디자인 완료를 숨긴다. */
   const biteAlignChrome = biteConfirmOn || biteRecalcBusy;
   const canUndoEdit = editRev >= 0 && Boolean(directEditRef.current?.canUndo());
@@ -8378,7 +8296,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   );
   const canResetAny = canUndoEdit || hasInfoFieldEdits;
   const viewerLive =
-    pipelineReady || status.kind === "pick" || biteConfirmOn || mdPickOn;
+    pipelineReady || status.kind === "pick" || biteConfirmOn || modelOrientOn;
   const needsOcclusionFix =
     pipelineReady && !readOnly && occlusionOk === false && !biteRecalcBusy;
 
@@ -8685,33 +8603,53 @@ export function PracticeCustomAbutmentPreviewDialog({
 
           <div className="flex shrink-0 items-center gap-1">
               {canEditDesign && viewerLive ? (
-                <HeaderIconButton
-                  label="교합정렬"
-                  active={biteRecalcBusy}
-                  disabled={biteRecalcBusy}
-                  tip={
-                    needsOcclusionFix ? (
-                      <>
-                        교합이 맞지 않을 수 있습니다.
-                        <br />
-                        눌러 바이트에 다시 맞춥니다.
-                      </>
+                <>
+                  <HeaderIconButton
+                    label="교합정렬"
+                    active={biteRecalcBusy}
+                    disabled={biteRecalcBusy || modelOrientOn}
+                    tip={
+                      needsOcclusionFix ? (
+                        <>
+                          교합이 맞지 않을 수 있습니다.
+                          <br />
+                          눌러 바이트에 다시 맞춥니다.
+                        </>
+                      ) : (
+                        <>
+                          상·하악 교합을 바이트에 다시 맞춥니다.
+                          <br />
+                          이미 맞으면 자동으로 건드리지 않습니다.
+                        </>
+                      )
+                    }
+                    onClick={triggerBiteRecalc}
+                  >
+                    {biteRecalcBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
+                      <Combine className="h-4 w-4" />
+                    )}
+                  </HeaderIconButton>
+                  <HeaderIconButton
+                    label="모델 방향"
+                    active={modelOrientOn}
+                    disabled={biteRecalcBusy || biteConfirmOn || status.kind === "pick"}
+                    tip={
                       <>
-                        상·하악 교합을 바이트에 다시 맞춥니다.
+                        오른쪽이 전방, 왼쪽이 후방,
                         <br />
-                        이미 맞으면 자동으로 건드리지 않습니다.
+                        가운데가 교합면이 되게 돌린 뒤 확인합니다.
                       </>
-                    )
-                  }
-                  onClick={triggerBiteRecalc}
-                >
-                  {biteRecalcBusy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Combine className="h-4 w-4" />
-                  )}
-                </HeaderIconButton>
+                    }
+                    onClick={() => {
+                      if (modelOrientOn) cancelModelOrient();
+                      else beginModelOrient();
+                    }}
+                  >
+                    <Compass className="h-4 w-4" />
+                  </HeaderIconButton>
+                </>
               ) : null}
               {ready && canEditDesign ? (
                 <>
@@ -9444,7 +9382,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               </div>
             ) : null}
 
-            {status.kind === "md-pick" ? (
+            {status.kind === "model-orient" ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center px-3">
                 <div
                   className={cn(
@@ -9453,28 +9391,27 @@ export function PracticeCustomAbutmentPreviewDialog({
                   )}
                 >
                   <p className="text-sm leading-relaxed text-foreground">
-                    #{status.toothNumber} 근원심을 자동으로 잡지 못했습니다.
+                    오른쪽이 전방, 왼쪽이 후방,
                     <br />
-                    {status.side === "mesial" ? "근심" : "원심"} 쪽 치아(또는 잇몸)를 클릭하세요.
+                    가운데가 교합면이 되도록 모델을 돌린 뒤 확인을 누르세요.
                   </p>
                   <div className="flex justify-center gap-2">
                     <Button
                       type="button"
                       size="sm"
-                      variant={status.side === "mesial" ? "default" : "outline"}
+                      variant="outline"
                       className="h-8"
-                      onClick={() => setMdPickSide("mesial")}
+                      onClick={cancelModelOrient}
                     >
-                      근심
+                      취소
                     </Button>
                     <Button
                       type="button"
                       size="sm"
-                      variant={status.side === "distal" ? "default" : "outline"}
                       className="h-8"
-                      onClick={() => setMdPickSide("distal")}
+                      onClick={confirmModelOrient}
                     >
-                      원심
+                      확인
                     </Button>
                   </div>
                 </div>
