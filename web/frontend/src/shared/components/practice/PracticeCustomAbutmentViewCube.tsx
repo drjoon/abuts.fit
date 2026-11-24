@@ -183,19 +183,20 @@ export function toothViewCube(
     return best;
   };
 
-  // 구치: 협·설 = 환자 좌·우(볼 쪽), 근·원 = 전·후(미드라인·7번).
-  // 전치: 순·설 = 전·후, 근·원 = 좌·우.
-  // FDI side 부호와 큐브 좌·우 매핑은 반대다(Q3 협측 시점에 설측·원심이 붙던 것 보정).
+  // 모델 앞(전치)·위(두개)가 잡힌 뒤의 라벨. 악궁마다 뒤집지 않는다.
+  // 구치: 바깥=협측, 안쪽=설·구개, 미드라인=근심, 7번(제2대구치)=원심.
+  // 전치: 앞=순측, 뒤=설·구개, 미드라인=근심.
+  // 위·아래: 상악은 위가 치은·아래가 교합, 하악은 위가 교합·아래가 치은.
   const side = quadrant === 1 || quadrant === 4 ? 1 : -1;
   let bucFace: ViewCubeFace;
   let mesFace: ViewCubeFace;
   if (anteriorTooth) {
-    bucFace = OPPOSITE_FACE[bestAmong(buccal, ["front", "back"])];
+    bucFace = bestAmong(buccal, ["front", "back"]);
     const remain = HORIZONTAL_FACES.filter((f) => f !== bucFace && f !== OPPOSITE_FACE[bucFace]);
     mesFace = bestAmong(mesial, remain);
   } else {
-    bucFace = side > 0 ? "left" : "right";
-    mesFace = OPPOSITE_FACE[bestAmong(mesial, ["front", "back"])];
+    bucFace = side > 0 ? "right" : "left";
+    mesFace = bestAmong(mesial, ["front", "back"]);
   }
   const linFace = OPPOSITE_FACE[bucFace];
   const distFace = OPPOSITE_FACE[mesFace];

@@ -3992,13 +3992,23 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (directEditRef.current?.bakeForSave()) designDirtyRef.current = true;
     window.clearTimeout(editCommitTimerRef.current);
     editCommitTimerRef.current = 0;
+    window.clearTimeout(viewPersistTimerRef.current);
+    viewPersistTimerRef.current = 0;
     if (!skipSnapshotFlushRef.current) persistDesign();
+    const transferId = transferIdRef.current;
     const cam = cameraRef.current;
     const controls = controlsRef.current;
-    if (viewReadyRef.current && cam && controls) {
-      writeSavedView(transferIdRef.current, cam, controls.target);
-    }
-  }, [persistDesign]);
+    if (!viewReadyRef.current || !cam || !controls) return;
+    writeSavedView(transferId, cam, controls.target);
+    const token = String(authToken || "").trim();
+    const view = currentSessionView();
+    if (!token || !transferId || !view) return;
+    void publishCustomAbutmentWorkSession(token, transferId, {
+      savedAt: Date.now(),
+      chrome: { ...chromeStateRef.current },
+      view,
+    }).catch((err) => console.warn("[custom-abutment] session flush failed", err));
+  }, [authToken, persistDesign]);
 
   useEffect(() => {
     return () => {

@@ -1,4 +1,4 @@
-// 스캔 모델 전체에서 미드라인(상악 중절치 사이)·상하(상악/하악)·교합평면을 차례로 잡아
+// 스캔 모델 전체에서 전치/구치(앞·뒤)·치아/잇몸(교합·치은)·미드라인 순으로 잡아
 // 정교한 치과 표준 3차원 좌표계(위·앞·오른쪽)를 세우고 교합면 중심을 원점으로 옮긴다.
 // 뷰어·방향 큐브·스캔바디 정합·커스텀어벗 디자인·백엔드 작업 스캔 자동 정렬이 같이 쓴다.
 // three 외에 브라우저 API를 쓰지 않는다.
@@ -382,6 +382,48 @@ function extractJawCrownCells(
 type Weighted2D = { x: number; y: number; h: number; w: number; isUpper: boolean };
 
 /**
+ * 후보 축의 플러스 끝이 전치(좁고 한 덩어리)인지, 구치(넓거나 좌우로 갈라짐)인지 본다.
+ * 구치 쪽을 앞으로 잡았으면 -1. 애매하면 후보를 유지한다.
+ */
+function incisorEndSign(samples: readonly Weighted2D[], ax: number, ay: number): 1 | -1 {
+  if (samples.length < 16) return 1;
+  const proj = samples.map((s) => ({
+    a: s.x * ax + s.y * ay,
+    r: s.x * ay - s.y * ax,
+  }));
+  const as = proj.map((p) => p.a).sort((u, v) => u - v);
+  const aHi = quantileSorted(as, 0.82);
+  const aLo = quantileSorted(as, 0.18);
+  if (aHi - aLo < 12) return 1;
+
+  const endScore = (side: "hi" | "lo") => {
+    const pts = proj.filter((p) => (side === "hi" ? p.a >= aHi : p.a <= aLo));
+    if (pts.length < 4) return -1e6;
+    const rs = pts.map((p) => p.r).sort((u, v) => u - v);
+    const rL = quantileSorted(rs, 0.12);
+    const rR = quantileSorted(rs, 0.88);
+    const width = rR - rL;
+    let hollow = 0;
+    if (width >= 16) {
+      const mid = 0.5 * (rL + rR);
+      const inner = Math.max(4, width * 0.22);
+      let midCnt = 0;
+      for (const p of pts) {
+        if (Math.abs(p.r - mid) <= inner) midCnt += 1;
+      }
+      hollow = 1 - midCnt / pts.length;
+    }
+    // 전치는 좁고 가운데가 이어져 있다. 구치는 넓거나 좌·우로 비어 있다.
+    return -width - hollow * 22;
+  };
+
+  const frontLike = endScore("hi");
+  const backLike = endScore("lo");
+  if (backLike > frontLike + 6) return -1;
+  return 1;
+}
+
+/**
  * 교합평면 위 치관 능선 격자에서 미드라인(상악 중절치 #11·#21 사이 정중시상면)과 전치 방향(+anterior)을 찾는다.
  * - 양측성 악궁(전악 · 3/4악): 말굽 전방 폐쇄 + 구치 설측/구개 빈 공간 + 좌우 치열 대칭선 드리프트 0 +
  *   상악 전치·소구치 순측 호 거울 대칭(#11↔#21, #12↔#22, #13↔#23)으로 정중선을 0.5° 단위로 정밀 고정한다.
@@ -649,11 +691,12 @@ function findMidlineAnteriorAxis(
         }
       }
 
+      const sign = incisorEndSign(samples, ax, ay);
       const anterior = new THREE.Vector3()
-        .addScaledVector(e1, ax)
-        .addScaledVector(e2, ay)
+        .addScaledVector(e1, ax * sign)
+        .addScaledVector(e2, ay * sign)
         .normalize();
-      return { anterior, midlineOffsetRightMm: refinedMid };
+      return { anterior, midlineOffsetRightMm: refinedMid * sign };
     }
   }
 
@@ -688,19 +731,20 @@ function findMidlineAnteriorAxis(
   const wHi = fullEndWidth("hi");
   const signMajor = wHi <= wLo ? 1 : -1;
   const ant2: [number, number] = [majorDir[0] * signMajor, majorDir[1] * signMajor];
+  const sign = incisorEndSign(samples, ant2[0], ant2[1]);
   const anterior = new THREE.Vector3()
-    .addScaledVector(e1, ant2[0])
-    .addScaledVector(e2, ant2[1])
+    .addScaledVector(e1, ant2[0] * sign)
+    .addScaledVector(e2, ant2[1] * sign)
     .normalize();
   return { anterior, midlineOffsetRightMm: 0 };
 }
 
 /**
  * 스캔 모델 전체를 파악해
- * 1) 상·하악 구분(상악 +up, 하악 -up)과 치관 능선을 분리하고,
- * 2) 상·하악 교합 접촉점 및 양악 치관 첨두로 정확한 교합평면을 잡은 뒤,
- * 3) 교합평면 위에서 미드라인(상악 중절치 #11·#21 사이 정중선)을 찾아
- * 오른손 직교 좌표계 { up, anterior, right }를 돌려준다. 메시 정점은 바꾸지 않는다.
+ * 1) 치아(교합)와 잇몸(치은)으로 위(+up = 두개 쪽)를 잡고,
+ * 2) 전치·구치로 앞(+anterior = 전치, 좁고 이어진 끝)과 뒤(구치, 넓거나 좌우로 갈라진 끝)를 잡은 뒤,
+ * 3) 오른손 좌표계 { up, anterior, right }를 돌려준다. 메시 정점은 바꾸지 않는다.
+ * 치아 큐브의 근심은 이 미드라인 쪽, 원심은 7번(제2대구치) 쪽이다.
  */
 export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame | null {
   const upperPts: Pt3[] = [];
