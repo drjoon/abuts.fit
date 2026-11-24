@@ -482,6 +482,63 @@ function incisorEndSign(samples: readonly Weighted2D[], ax: number, ay: number):
 }
 
 /**
+ * 편측(10·40번대 등) 치열: 치관만으로 전치 쪽 부호를 고른다.
+ * 구개·치은 넓이는 쓰지 않는다 — 정중선 절단부 구개가 넓어 전치를 구치로 오인한다.
+ * 전치·소구치 끝은 협설로 좁고 봉우리가 적고, 대구치 끝은 넓고 교합면 봉우리가 많다.
+ * 악궁 오목(설·구개) 쪽으로 더 굽은 끝이 전치다.
+ */
+function unilateralAnteriorSign(samples: readonly Weighted2D[], ax: number, ay: number): 1 | -1 {
+  if (samples.length < 10) return 1;
+  const rx = ay;
+  const ry = -ax;
+  const proj = samples.map((s) => ({
+    a: s.x * ax + s.y * ay,
+    r: s.x * rx + s.y * ry,
+    h: s.h,
+    w: s.w,
+  }));
+  const as = proj.map((p) => p.a).sort((u, v) => u - v);
+  const aSpan = quantileSorted(as, 0.97) - quantileSorted(as, 0.03);
+  if (aSpan < 10) return 1;
+  const aHi = quantileSorted(as, 0.86);
+  const aLo = quantileSorted(as, 0.14);
+  const band = Math.max(5.5, Math.min(11, aSpan * 0.22));
+
+  const endStats = (side: "hi" | "lo") => {
+    const edge = side === "hi" ? aHi : aLo;
+    const pts = proj.filter((p) =>
+      side === "hi" ? p.a >= edge - band : p.a <= edge + band,
+    );
+    if (pts.length < 3) {
+      return { width: 0, peaks: 0, area: 0, meanAbsR: 0 };
+    }
+    const rs = pts.map((p) => p.r).sort((u, v) => u - v);
+    const width = quantileSorted(rs, 0.9) - quantileSorted(rs, 0.1);
+    let peaks = 0;
+    let area = 0;
+    let absR = 0;
+    for (const p of pts) {
+      area += p.w;
+      absR += Math.abs(p.r) * p.w;
+      if (p.w >= 1.35) peaks += 1;
+    }
+    return { width, peaks, area, meanAbsR: absR / Math.max(area, 1e-6) };
+  };
+
+  const hi = endStats("hi");
+  const lo = endStats("lo");
+  // 좁고 봉우리가 적은 끝이 전치·소구치, 넓고 봉우리가 많은 끝이 대구치.
+  const widthGap = lo.width - hi.width;
+  const peakGap = lo.peaks - hi.peaks;
+  // +major(hi) 쪽이 더 전치하면 +1.
+  if (Math.abs(widthGap) >= 1.0) return widthGap > 0 ? 1 : -1;
+  if (peakGap !== 0) return peakGap > 0 ? 1 : -1;
+  if (lo.area > hi.area * 1.15) return 1;
+  if (hi.area > lo.area * 1.15) return -1;
+  return 1;
+}
+
+/**
  * 교합평면 위 치관 능선 격자에서 미드라인(상악 중절치 #11·#21 사이 정중시상면)과 전치 방향(+anterior)을 찾는다.
  * - 양측성 악궁(전악 · 3/4악): 말굽 전방 폐쇄 + 구치 설측/구개 빈 공간 + 좌우 치열 대칭선 드리프트 0 +
  *   상악 전치·소구치 순측 호 거울 대칭(#11↔#21, #12↔#22, #13↔#23)으로 정중선을 0.5° 단위로 정밀 고정한다.
@@ -695,6 +752,7 @@ function findMidlineAnteriorAxis(
   };
 
   // 1) 양측성 악궁 스캔: 6° 전역 탐색 후 최고 후보 주변 ±6°를 0.5° 단위로 정밀 수렴(상악 중절치 정중선 고정)
+  //    편측은 대칭 점수가 안 나와 best가 비고, 아래 치관 전·구치 판별로 넘어간다.
   if (spanMinor >= 27) {
     let best: ReturnType<typeof evalHorseshoe> = null;
     for (let k = 0; k < 60; k += 1) {
@@ -758,43 +816,29 @@ function findMidlineAnteriorAxis(
     }
   }
 
-  // 2) 편측 사분악 스캔(전치 정중선이 안 찍힌 반악 스캔):
-  //    전체 메쉬(구개·치은 포함)의 장축 양끝 폭 테이퍼(전방 절단·소구치 끝은 좁고, 후방 대구치·구개 끝은 넓음)로 전치 방향을 잡는다.
-  const fullProj: Array<{ m: number; n: number }> = [];
-  for (const p of fallbackPts) {
-    const dx = (p[0] - origin.x) * toMm;
-    const dy = (p[1] - origin.y) * toMm;
-    const dz = (p[2] - origin.z) * toMm;
-    const px = dx * e1.x + dy * e1.y + dz * e1.z;
-    const py = dx * e2.x + dy * e2.y + dz * e2.z;
-    fullProj.push({
-      m: px * majorDir[0] + py * majorDir[1],
-      n: px * minorDir[0] + py * minorDir[1],
-    });
-  }
-  const fullM = fullProj.map((q) => q.m).sort((a, b) => a - b);
-  const fmLo = quantileSorted(fullM, 0.14);
-  const fmHi = quantileSorted(fullM, 0.86);
-  const fullEndWidth = (side: "lo" | "hi") => {
-    const ns: number[] = [];
-    for (const q of fullProj) {
-      if (side === "lo" ? q.m > fmLo : q.m < fmHi) continue;
-      ns.push(q.n);
-    }
-    if (ns.length < 4) return spanMinor;
-    ns.sort((a, b) => a - b);
-    return quantileSorted(ns, 0.92) - quantileSorted(ns, 0.08);
+  // 2) 편측 사분악(10·40번대 등, 전치 정중선 미포함):
+  //    치관 능선만으로 전치·구치를 가른다. 구개·치은 폭은 정중선 절단에서 전치를 넓게 보여 쓰지 않는다.
+  //    소구치·견치 쪽은 협설로 좁고, 대구치 쪽은 넓으며 교합 봉우리가 많다.
+  return {
+    anterior: anteriorFromCrownTaper(samples, e1, e2, majorDir),
+    midlineOffsetRightMm: 0,
   };
-  const wLo = fullEndWidth("lo");
-  const wHi = fullEndWidth("hi");
-  const signMajor = wHi <= wLo ? 1 : -1;
-  const ant2: [number, number] = [majorDir[0] * signMajor, majorDir[1] * signMajor];
-  const sign = incisorEndSign(samples, ant2[0], ant2[1]);
-  const anterior = new THREE.Vector3()
-    .addScaledVector(e1, ant2[0] * sign)
-    .addScaledVector(e2, ant2[1] * sign)
+}
+
+/** 치관 협설 폭·교합 봉우리로 장축의 전치 쪽을 고른다. */
+function anteriorFromCrownTaper(
+  samples: readonly Weighted2D[],
+  e1: THREE.Vector3,
+  e2: THREE.Vector3,
+  majorDir: readonly [number, number],
+): THREE.Vector3 {
+  const crownOnly = samples.filter((s) => s.isUpper || s.h > 0 || s.w >= 1.1);
+  const axisPool = crownOnly.length >= 10 ? crownOnly : samples;
+  const signMajor = unilateralAnteriorSign(axisPool, majorDir[0], majorDir[1]);
+  return new THREE.Vector3()
+    .addScaledVector(e1, majorDir[0] * signMajor)
+    .addScaledVector(e2, majorDir[1] * signMajor)
     .normalize();
-  return { anterior, midlineOffsetRightMm: 0 };
 }
 
 /**
