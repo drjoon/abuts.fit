@@ -2665,8 +2665,16 @@ export function screenGumballQuaternion(
   return out.setFromRotationMatrix(gumballBasis);
 }
 
+/** 축·노란 스케일 점 반지름. 화살표 굵기도 여기에 맞춘다. */
+const GUMBALL_DOT_R = 0.07;
+/** 노란점↔스케일점·화살표 공통 중심 간격. */
+const GUMBALL_FROM_YELLOW = 0.26;
+/** 이동 화살표 샤프트 길이(절반 길이의 1.2배). */
+const GUMBALL_ARROW_SHAFT = 0.18;
+const GUMBALL_ARROW_CONE_H = 0.096;
+
 /** 축 1D 스케일 점. 노란 점 기준 화살표 반대쪽에 둔다. */
-function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, radius = 0.07) {
+function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, radius = GUMBALL_DOT_R) {
   const scaleMat = basicMat(AXIS_COLOR[axis]!);
   const dot = tagHandle(new THREE.Mesh(new THREE.SphereGeometry(radius, 14, 10), scaleMat), "scale", axis, -1, scaleMat);
   dot.position.set(x, y, 0.04);
@@ -2682,7 +2690,7 @@ function addAxisScaleDot(group: THREE.Group, axis: 0 | 1, x: number, y: number, 
   group.add(dot, scaleHit);
 }
 
-/** 노란 점 우상 쪽 평면 이동 화살표. 길이는 예전 축 화살표의 절반. */
+/** 노란 점 우상 쪽 평면 이동 화살표. 굵기는 스케일 점과 같고, 길이는 짧게. */
 function addCornerMoveArrow(
   group: THREE.Group,
   axis: 0 | 1,
@@ -2690,19 +2698,19 @@ function addCornerMoveArrow(
   gap: number,
   colorMat: THREE.MeshBasicMaterial,
 ) {
-  const shaftLen = 0.15;
-  const coneH = 0.08;
-  // 노란 점에서 gap만큼 띄운 뒤 시작한다.
-  const start = corner + gap;
+  const shaftLen = GUMBALL_ARROW_SHAFT;
+  const coneH = GUMBALL_ARROW_CONE_H;
+  // 스케일 점과 같은 가장자리 간격: 점 중심이 corner±gap일 때 점 바깥쪽과 맞춤.
+  const start = corner + gap - GUMBALL_DOT_R;
   const shaft = tagHandle(
-    new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, shaftLen, 12), colorMat),
+    new THREE.Mesh(new THREE.CylinderGeometry(GUMBALL_DOT_R, GUMBALL_DOT_R, shaftLen, 12), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
     colorMat,
   );
   const head = tagHandle(
-    new THREE.Mesh(new THREE.ConeGeometry(0.07, coneH, 14), colorMat),
+    new THREE.Mesh(new THREE.ConeGeometry(GUMBALL_DOT_R * 1.35, coneH, 14), colorMat),
     "move2",
     axis,
     axis === 0 ? 1 : 0,
@@ -2731,7 +2739,7 @@ export function makeGumball(tooth: string) {
   // 화면 정렬 검볼(X=화면 오른쪽, Y=화면 위, Z=화면 밖). 1단위 ≈ 76px.
   // 뱃지 우상 노란 2D 스케일. 화살표(+X/+Y) 반대쪽에 축 1D 스케일 점. 회전 호는 좌하.
   const scale2Corner = GUMBALL_SCALE2_CORNER;
-  const fromYellow = 0.26;
+  const fromYellow = GUMBALL_FROM_YELLOW;
 
   // 파란 화면 평면 회전 호: 3사분면(169°~281°).
   const arcColor = AXIS_COLOR[2]!;
@@ -2775,12 +2783,12 @@ export function makeGumball(tooth: string) {
   addAxisScaleDot(group, 0, scale2Corner - fromYellow, scale2Corner);
   addAxisScaleDot(group, 1, scale2Corner, scale2Corner - fromYellow);
 
-  // 평면 이동 화살표: 노란 점에서 띄운 뒤 +X/+Y (절반 길이).
+  // 평면 이동 화살표: 스케일 점과 같은 간격, 점과 같은 굵기, 짧은 길이.
   addCornerMoveArrow(group, 0, scale2Corner, fromYellow, basicMat(AXIS_COLOR[0]!));
   addCornerMoveArrow(group, 1, scale2Corner, fromYellow, basicMat(AXIS_COLOR[1]!));
-  const move2HitAt = scale2Corner + fromYellow + 0.15 * 0.55;
+  const move2HitAt = scale2Corner + fromYellow - GUMBALL_DOT_R + GUMBALL_ARROW_SHAFT * 0.55;
   const move2Hit = tagHandle(
-    new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.12), basicMat(0xffffff, 0)),
+    new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.12), basicMat(0xffffff, 0)),
     "move2",
     0,
     1,

@@ -381,7 +381,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   // 노란 점과 화살표·1D 점 사이 간격.
   checkRay(0.44, 0.36, "scale2");
   checkRay(0.36, 0.44, "scale2");
-  checkRay(0.7, 0.7, "move2");
+  checkRay(0.68, 0.68, "move2");
   checkRay(-0.51, -0.51, "rot");
 }
 
