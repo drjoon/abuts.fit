@@ -42,6 +42,7 @@
 // - 2026-11-24: 저장 뷰가 메시에서 멀면 다시 맞춘다. 편측은 fit 뒤에 모델정렬 애니를 시작해 원점 애니로 덮지 않는다.
 // - 2026-11-24: 헤더 모델정렬 제거. 초기=교합→(모델정렬)→스캔바디. 헤더 교합=스캔바디 재생성, 헤더 스캔바디=모델정렬 후 검출.
 // - 2026-11-24: 스캔바디용 모델정렬은 교합면·첫 치아 중심. 위=협측, 10/30 오른쪽=근심, 20/40 오른쪽=원심.
+// - 2026-11-24: 스캔바디 모델정렬을 확인한 뒤 카메라를 돌리지 않는다. 축·화면은 세션 메타에 남기고, 저장된 축은 다시 열 때 자동 앞뒤 확정으로 덮지 않는다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -1641,6 +1642,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   const scanbodyGateRef = useRef<(() => void) | null>(null);
   /** 스캔바디 직전 모델정렬 확인까지 파이프라인이 기다린다. null이면 취소. */
   const modelOrientGateRef = useRef<((axes: StoredArchFrame | null) => void) | null>(null);
+  /** 모델정렬을 확인한 뒤 파이프라인 끝에서 카메라를 저장 뷰·기본 뷰로 돌리지 않는다. */
+  const holdSetupViewRef = useRef(false);
   /** 부트·재검출 강제 모델정렬이면 취소 버튼을 숨긴다. */
   const [modelOrientRequired, setModelOrientRequired] = useState(false);
   const [editRev, setEditRev] = useState(0);
@@ -4145,6 +4148,65 @@ export function PracticeCustomAbutmentPreviewDialog({
     setStatus(nextStatus);
   }, []);
 
+  /** 모델정렬 축과 그 시점의 카메라를 세션 메타·이 브라우저 캐시에 남긴다. */
+  const persistModelSetupSession = useCallback((axes: StoredArchFrame) => {
+    const ctx = designContextRef.current;
+    if (ctx) designContextRef.current = { ...ctx, archFrame: axes };
+    const cam = cameraRef.current;
+    const controls = controlsRef.current;
+    const pose = currentSessionView();
+    const savedAt = Date.now();
+    if (cam && controls) writeSavedView(transferIdRef.current, cam, controls.target);
+    if (pose) {
+      const shared: CustomAbutmentSharedView = {
+        pos: pose.pos as CustomAbutmentSharedView["pos"],
+        quat: pose.quat as CustomAbutmentSharedView["quat"],
+        up: pose.up as CustomAbutmentSharedView["up"],
+        target: pose.target as CustomAbutmentSharedView["target"],
+        zoom: pose.zoom,
+        top: pose.top,
+        bottom: pose.bottom,
+        left: pose.left,
+        right: pose.right,
+        savedAt,
+        ...(authUserIdRef.current ? { updatedBy: authUserIdRef.current } : {}),
+      };
+      pendingSharedViewRef.current = shared;
+      if (savedAt > lastSharedViewAtRef.current) lastSharedViewAtRef.current = savedAt;
+    }
+    const token = String(authToken || "").trim();
+    const transferId = transferIdRef.current;
+    const live = designContextRef.current;
+    if (token && transferId) {
+      void publishCustomAbutmentWorkSession(token, transferId, {
+        savedAt,
+        archFrame: axes,
+        chrome: { ...chromeStateRef.current },
+        ...(pose ? { view: pose } : {}),
+        ...(live?.jawPose ? { jawPose: live.jawPose } : {}),
+        ...(live?.biteCheck ? { biteCheck: live.biteCheck } : {}),
+      }).catch((err) => console.warn("[custom-abutment] model setup save failed", err));
+    }
+    const cacheKey = live?.cacheKey;
+    if (!cacheKey || readOnlyRef.current) return;
+    void (async () => {
+      try {
+        // 검출이 먼저 치아를 써 두었으면 그 기록에 축만 얹는다.
+        const latest = await readCustomAbutmentDesign(cacheKey);
+        if (!latest) return;
+        const record = {
+          ...latest,
+          archFrame: axes,
+          savedAt: Math.max(Number(latest.savedAt) || 0, savedAt),
+        };
+        rememberCustomAbutmentDesign(record);
+        await writeCustomAbutmentDesign(record);
+      } catch (err) {
+        console.warn("[custom-abutment] model setup cache failed", err);
+      }
+    })();
+  }, [authToken]);
+
   /** 모델정렬 확정. 스캔바디 게이트면 교합면·협설·근원심으로 축만 넘긴다. */
   const confirmModelOrient = useCallback(() => {
     if (statusRef.current.kind !== "model-orient") return;
@@ -4162,9 +4224,13 @@ export function PracticeCustomAbutmentPreviewDialog({
     const axes = archFrameAxes(next);
     const gate = modelOrientGateRef.current;
     if (gate) {
-      // 스캔바디 직전: 축만 넘기고 검출로 이어간다.
+      // 스캔바디 직전: 맞춘 화면은 그대로 두고 축만 넘긴다.
       frameRef.current = next;
       setFrameEpoch((n) => n + 1);
+      if (axes) {
+        holdSetupViewRef.current = true;
+        persistModelSetupSession(axes);
+      }
       modelOrientGateRef.current = null;
       setModelOrientRequired(false);
       const nextStatus = {
@@ -4308,13 +4374,16 @@ export function PracticeCustomAbutmentPreviewDialog({
     statusRef.current = nextStatus;
     setStatus(nextStatus);
     toast({ title: "모델정렬을 반영했습니다." });
+    if (canonAxes) {
+      holdSetupViewRef.current = true;
+      persistModelSetupSession(canonAxes);
+    }
     persistDesign(undefined, { dirty: true });
-    fitDefaultCamera();
   }, [
     addDesignToScene,
     biteRecalcBusy,
-    fitDefaultCamera,
     persistDesign,
+    persistModelSetupSession,
     rebuildJawScanMeshes,
     removeDesignFromScene,
     toast,
@@ -5101,6 +5170,7 @@ export function PracticeCustomAbutmentPreviewDialog({
 
     const runPipeline = async () => {
       preloadMeshUnion();
+      holdSetupViewRef.current = false;
       const stashedCarry = occlusionCarryRef.current;
       occlusionCarryRef.current = null;
       // 정렬 확정 첫 진입은 픽스처를 넘기지 않는다. 바이트 자세 재시도만 carry를 쓴다.
@@ -5165,6 +5235,15 @@ export function PracticeCustomAbutmentPreviewDialog({
           after?: () => void;
         }) => {
           window.requestAnimationFrame(() => {
+            if (holdSetupViewRef.current) {
+              // 스캔바디 모델정렬에서 맞춘 화면을 유지한다. 저장 뷰·기본 뷰로 돌리지 않는다.
+              viewReadyRef.current = true;
+              const cam = cameraRef.current;
+              const controls = controlsRef.current;
+              if (cam && controls) writeSavedView(transferIdParam, cam, controls.target);
+              opts?.after?.();
+              return;
+            }
             // 모델정렬 애니가 저장 뷰·fit을 덮어 빈 원점만 남기지 않게 먼저 끊는다.
             viewAnimRef.current = null;
             viewReadyRef.current = true;
@@ -5540,8 +5619,9 @@ export function PracticeCustomAbutmentPreviewDialog({
           jawScans.map((scan) => ({ role: scan.role, geometry: scan.geometry })),
         );
         const hasSavedTeeth = Boolean(cached && cached.teeth.length > 0);
-        // 헤더 교합: 기존 축 유지. 헤더 스캔바디·초기: 모델정렬이 축을 새로 잡는다.
-        let lockedArchFrame = forceBiteRecalc ? sessionArchFrame : null;
+        // 헤더 교합·이미 저장한 모델정렬은 축을 유지한다. 헤더 스캔바디는 확인 때 새로 잡는다.
+        let lockedArchFrame =
+          forceBiteRecalc || hadSessionArchFrame ? sessionArchFrame : null;
         let archOriented = false;
         // 헤더 스캔바디만 다시 돌릴 때는 교합 패스를 열지 않는다(jawPose·biteCheck 유지).
         const needBitePass =
@@ -5797,7 +5877,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           });
           return;
         }
-        if (!forceBiteRecalc && cached && cached.teeth.length > 0) {
+        if (!hadSessionArchFrame && !forceBiteRecalc && cached && cached.teeth.length > 0) {
           const oriented = applyAbutmentArchOrientation(
             frame,
             cached.teeth.map((row) => row.fixture),
@@ -6890,9 +6970,12 @@ export function PracticeCustomAbutmentPreviewDialog({
         };
         if (archOriented && sessionArchFrame && transferIdParam && !readOnly) {
           const orientAt = Date.now();
+          const view = currentSessionView();
           void publishCustomAbutmentWorkSession(token, transferIdParam, {
             savedAt: orientAt,
             archFrame: sessionArchFrame,
+            chrome: { ...chromeStateRef.current },
+            ...(view ? { view } : {}),
             ...(sessionJawPose ? { jawPose: sessionJawPose } : {}),
             ...(biteCheck ? { biteCheck } : {}),
           }).catch((err) => console.warn("[custom-abutment] arch frame save failed", err));
