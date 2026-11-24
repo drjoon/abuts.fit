@@ -4,11 +4,13 @@
 // change-log:
 // - 2026-10-13: 숫자와 P가 카드 안에서 겹치지 않게 충전 버튼을 헤더로 옮김. 복귀 시 잔액 재조회.
 // - 2026-10-13: 팝빌 파트너 잔여포인트 부족 시 관리자 충전 안내(계좌 확인은 수동 검증으로 통과 중).
+// - 2026-11-25: 주기·포커스 재조회 제거. 대시보드를 열 때 한 번, 충전 창이 열려 있을 때만 다시 조회.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Coins } from "lucide-react";
 import { toast } from "sonner";
 import { DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
+import { ADMIN_SNAPSHOT_TTL_MS, loadOnce } from "@/pages/admin/dashboard/loadOnce";
 
 type PointData = {
   configured: boolean;
@@ -37,31 +39,31 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
   const [busy, setBusy] = useState(false);
   const chargePollRef = useRef<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!enabled) return;
-    try {
-      const res = await request<{ data?: PointData }>({
-        path: "/api/admin/popbill/point",
-        method: "GET",
-      });
-      if (res.ok) setData(res.data?.data || null);
-    } catch {
-      /* ignore */
-    }
+    const next = await loadOnce(
+      "admin:popbill-point",
+      ADMIN_SNAPSHOT_TTL_MS,
+      async () => {
+        try {
+          const res = await request<{ data?: PointData }>({
+            path: force ? "/api/admin/popbill/point?fresh=1" : "/api/admin/popbill/point",
+            method: "GET",
+          });
+          if (!res.ok) return null;
+          return res.data?.data || null;
+        } catch {
+          return null;
+        }
+      },
+      force,
+    );
+    if (next) setData(next);
   }, [enabled]);
 
   useEffect(() => {
     void load();
-    const t = window.setInterval(() => void load(), 60 * 1000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    window.addEventListener("focus", onVisible);
-    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.clearInterval(t);
-      window.removeEventListener("focus", onVisible);
-      document.removeEventListener("visibilitychange", onVisible);
       if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
     };
   }, [load]);
@@ -87,13 +89,13 @@ export function AdminPopbillPointCard({ enabled = true, className }: Props) {
       if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
       const started = Date.now();
       chargePollRef.current = window.setInterval(() => {
-        void load();
+        void load(true);
         const closed = !win || win.closed;
         const elapsed = Date.now() - started;
         if ((closed && elapsed > 12_000) || elapsed > 3 * 60 * 1000) {
           if (chargePollRef.current != null) window.clearInterval(chargePollRef.current);
           chargePollRef.current = null;
-          void load();
+          void load(true);
         }
       }, 8_000);
     } finally {

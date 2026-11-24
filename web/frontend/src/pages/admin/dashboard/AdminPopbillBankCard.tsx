@@ -5,10 +5,16 @@
 // - 2026-10-14: 상태 안내 한 줄·line-clamp — c2 타일 세로 스크롤 제거.
 // - 2026-10-14: 조회 상태 메시지를 카드에 문장 단위로 표시.
 // - 2026-10-14: 관리자 대시보드에 하나은행 잔액. 20분 자동 수집 결과를 보여주고 즉시 조회할 수 있다.
+// - 2026-11-25: 1분 재조회 제거. 수집된 잔액은 대시보드를 열 때 한 번만 읽고, 즉시 조회는 버튼.
 import { useCallback, useEffect, useState } from "react";
 import { Landmark } from "lucide-react";
 import { DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
+import {
+  ADMIN_SNAPSHOT_TTL_MS,
+  loadOnce,
+  rememberOnce,
+} from "@/pages/admin/dashboard/loadOnce";
 
 type BankData = {
   configured: boolean;
@@ -49,21 +55,23 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
 
   const load = useCallback(async () => {
     if (!enabled) return;
-    try {
-      const res = await request<{ data?: BankData }>({
-        path: "/api/admin/popbill/bank",
-        method: "GET",
-      });
-      if (res.ok) setData(res.data?.data || null);
-    } catch {
-      /* ignore */
-    }
+    const next = await loadOnce("admin:popbill-bank", ADMIN_SNAPSHOT_TTL_MS, async () => {
+      try {
+        const res = await request<{ data?: BankData }>({
+          path: "/api/admin/popbill/bank",
+          method: "GET",
+        });
+        if (!res.ok) return null;
+        return res.data?.data || null;
+      } catch {
+        return null;
+      }
+    });
+    if (next) setData(next);
   }, [enabled]);
 
   useEffect(() => {
     void load();
-    const t = window.setInterval(() => void load(), 60 * 1000);
-    return () => window.clearInterval(t);
   }, [load]);
 
   const sync = async () => {
@@ -88,7 +96,10 @@ export function AdminPopbillBankCard({ enabled = true, className }: Props) {
         }));
         return;
       }
-      if (res.data?.data) setData(res.data.data);
+      if (res.data?.data) {
+        setData(res.data.data);
+        rememberOnce("admin:popbill-bank", res.data.data);
+      }
     } finally {
       setBusy(false);
     }

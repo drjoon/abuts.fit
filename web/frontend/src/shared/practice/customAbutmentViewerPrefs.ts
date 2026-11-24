@@ -92,14 +92,40 @@ export async function loadCustomAbutmentViewerPrefs(
   return parseCustomAbutmentViewerPrefs(res.data?.data?.prefs);
 }
 
+let viewerSaveInflight: Promise<void> | null = null;
+let viewerSaveQueued: { token: string; prefs: CustomAbutmentViewerPrefs; key: string } | null = null;
+let viewerSaveLastKey = "";
+
 export async function saveCustomAbutmentViewerPrefs(
   token: string,
   prefs: CustomAbutmentViewerPrefs,
 ): Promise<void> {
-  await apiFetch({
-    path: "/api/users/custom-abutment-viewer",
-    method: "PUT",
-    token,
-    jsonBody: prefs,
+  const key = JSON.stringify(prefs);
+  if (key === viewerSaveLastKey && !viewerSaveQueued) return;
+  viewerSaveQueued = { token, prefs, key };
+  if (viewerSaveInflight) return viewerSaveInflight;
+  viewerSaveInflight = (async () => {
+    let sent = 0;
+    while (viewerSaveQueued && sent < 2) {
+      const job = viewerSaveQueued;
+      viewerSaveQueued = null;
+      if (job.key === viewerSaveLastKey) continue;
+      await apiFetch({
+        path: "/api/users/custom-abutment-viewer",
+        method: "PUT",
+        token: job.token,
+        jsonBody: job.prefs,
+      });
+      viewerSaveLastKey = job.key;
+      sent += 1;
+    }
+  })().finally(() => {
+    viewerSaveInflight = null;
+    const pending = viewerSaveQueued;
+    if (pending && pending.key !== viewerSaveLastKey) {
+      viewerSaveQueued = null;
+      void saveCustomAbutmentViewerPrefs(pending.token, pending.prefs);
+    }
   });
+  return viewerSaveInflight;
 }

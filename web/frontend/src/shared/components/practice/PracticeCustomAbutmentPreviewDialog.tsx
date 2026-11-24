@@ -1503,6 +1503,8 @@ export function PracticeCustomAbutmentPreviewDialog({
   >(async () => {});
   const publishAgainRef = useRef(false);
   const publishRunningRef = useRef(false);
+  const designPublishQuietTimerRef = useRef(0);
+  const designPublishRetriesRef = useRef(0);
   const pendingDesignPublishRef = useRef<{
     token: string;
     transferId: string;
@@ -2805,94 +2807,105 @@ export function PracticeCustomAbutmentPreviewDialog({
     void cacheCurrentDesign(savedAt);
   };
 
-  const scheduleDesignMetaPublish = () => {
+  const scheduleDesignMetaPublish = (flush = false) => {
     // 닫기·언마운트 전에 지금 메시를 잡아 둔다. await 뒤에 목록을 다시 읽지 않는다.
     captureDesignPublish();
     if (!pendingDesignPublishRef.current) return;
     publishAgainRef.current = true;
+    window.clearTimeout(designPublishQuietTimerRef.current);
+    designPublishQuietTimerRef.current = 0;
+    // 구멍 가공·브리지 형제가 저장 중에 다시 커밋해도 요청을 이어서 쌓지 않는다.
     if (publishRunningRef.current) return;
-    publishRunningRef.current = true;
-    void (async () => {
+    const start = () => {
+      void runDesignMetaPublish();
+    };
+    if (flush) start();
+    else designPublishQuietTimerRef.current = window.setTimeout(start, 700);
+
+    async function runDesignMetaPublish() {
+      if (publishRunningRef.current) return;
+      const snap = pendingDesignPublishRef.current;
+      if (!publishAgainRef.current || !snap) return;
+      publishRunningRef.current = true;
+      publishAgainRef.current = false;
+      pendingDesignPublishRef.current = null;
       let acceptedAt = 0;
-      let spins = 0;
       try {
-        while (publishAgainRef.current && spins < 5) {
-          spins += 1;
-          publishAgainRef.current = false;
-          const snap = pendingDesignPublishRef.current;
-          pendingDesignPublishRef.current = null;
-          if (!snap) return;
-          lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, snap.savedAt);
-          emitCustomAbutmentLive({
-            kind: "design",
+        lastEmittedDesignAtRef.current = Math.max(lastEmittedDesignAtRef.current, snap.savedAt);
+        emitCustomAbutmentLive({
+          kind: "design",
+          transferId: snap.transferId,
+          savedAt: snap.savedAt,
+          design: {
             transferId: snap.transferId,
             savedAt: snap.savedAt,
-            design: {
-              transferId: snap.transferId,
-              savedAt: snap.savedAt,
-              updatedBy: authUserIdRef.current,
-              version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-              teeth: snap.liveTeeth,
-              ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
-              ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
-              ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
-            },
-          });
-          lastLocalChromeAtRef.current = performance.now();
-          lastChromeAtRef.current = Math.max(lastChromeAtRef.current, snap.savedAt);
-          emitCustomAbutmentLive({
-            kind: "chrome",
-            transferId: snap.transferId,
+            updatedBy: authUserIdRef.current,
+            version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+            fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+            teeth: snap.liveTeeth,
+            ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
+            ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
+            ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
+          },
+        });
+        lastLocalChromeAtRef.current = performance.now();
+        lastChromeAtRef.current = Math.max(lastChromeAtRef.current, snap.savedAt);
+        emitCustomAbutmentLive({
+          kind: "chrome",
+          transferId: snap.transferId,
+          savedAt: snap.savedAt,
+          persist: true,
+          chrome: snap.chrome,
+        });
+        const result = classifyCustomAbutmentDesignPublish(
+          await publishCustomAbutmentDesignMeta(snap.token, snap.transferId, {
+            version: CUSTOM_ABUTMENT_DESIGN_VERSION,
+            fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
+            baseSavedAt: snap.baseSavedAt,
             savedAt: snap.savedAt,
-            persist: true,
+            teeth: snap.teeth,
+            ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
+            ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
+            ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
             chrome: snap.chrome,
+            view: snap.view,
+          }),
+        );
+        if (result.kind === "stale") {
+          publishAgainRef.current = false;
+          designEpochRef.current += 1;
+          const remoteEpoch = designEpochRef.current;
+          void applyRemoteDesignMetaRef.current(result.design, remoteEpoch).catch((err) => {
+            console.warn("[custom-abutment] remote design apply failed", err);
           });
-          const result = classifyCustomAbutmentDesignPublish(
-            await publishCustomAbutmentDesignMeta(snap.token, snap.transferId, {
-              version: CUSTOM_ABUTMENT_DESIGN_VERSION,
-              fitVersion: CUSTOM_ABUTMENT_FIT_VERSION,
-              baseSavedAt: snap.baseSavedAt,
-              savedAt: snap.savedAt,
-              teeth: snap.teeth,
-              ...(snap.biteCheck ? { biteCheck: snap.biteCheck } : {}),
-              ...(snap.jawPose ? { jawPose: snap.jawPose } : {}),
-              ...(snap.archFrame ? { archFrame: snap.archFrame } : {}),
-              chrome: snap.chrome,
-              view: snap.view,
-            }),
-          );
-          if (result.kind === "stale") {
-            publishAgainRef.current = false;
-            acceptedAt = 0;
-            designEpochRef.current += 1;
-            const remoteEpoch = designEpochRef.current;
-            void applyRemoteDesignMetaRef.current(result.design, remoteEpoch).catch((err) => {
-              console.warn("[custom-abutment] remote design apply failed", err);
-            });
-            return;
-          }
-          if (result.kind !== "ok") {
-            acceptedAt = 0;
-            continue;
-          }
-          if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
-          acceptedAt = result.savedAt;
+          return;
         }
+        if (result.kind !== "ok") {
+          if (!pendingDesignPublishRef.current) pendingDesignPublishRef.current = snap;
+          designPublishRetriesRef.current += 1;
+          publishAgainRef.current = designPublishRetriesRef.current <= 2;
+          return;
+        }
+        designPublishRetriesRef.current = 0;
+        if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
+        acceptedAt = result.savedAt;
         if (acceptedAt > 0) await cacheCurrentDesign(acceptedAt);
       } catch (err) {
         console.warn("[custom-abutment] design meta publish failed", err);
+        if (!pendingDesignPublishRef.current) pendingDesignPublishRef.current = snap;
+        designPublishRetriesRef.current += 1;
+        publishAgainRef.current = designPublishRetriesRef.current <= 2;
       } finally {
         publishRunningRef.current = false;
-        if (publishAgainRef.current && pendingDesignPublishRef.current) scheduleDesignMetaPublish();
+        if (publishAgainRef.current && pendingDesignPublishRef.current) scheduleDesignMetaPublish(false);
       }
-    })();
+    }
   };
 
   /** 지금 디자인·조정값을 서버에 올리고, 서버가 인정한 시각으로만 이 브라우저에 남긴다. */
   const persistDesign = useCallback((
     chat?: readonly ChatTurn[],
-    opts?: { publish?: boolean; savedAt?: number; dirty?: boolean },
+    opts?: { publish?: boolean; savedAt?: number; dirty?: boolean; flush?: boolean },
   ) => {
     if (opts?.dirty) designDirtyRef.current = true;
     if (readOnlyRef.current || (isLabViewerRef.current && !labCanReviseRef.current)) return;
@@ -2912,7 +2925,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       return;
     }
     if (!designDirtyRef.current) return;
-    scheduleDesignMetaPublish();
+    scheduleDesignMetaPublish(opts?.flush === true);
   }, [authToken, persistChat]);
 
   const applyGumballMetrics = useCallback((summary: AbutmentEditSummary) => {
@@ -4559,9 +4572,11 @@ export function PracticeCustomAbutmentPreviewDialog({
     if (directEditRef.current?.bakeForSave()) designDirtyRef.current = true;
     window.clearTimeout(editCommitTimerRef.current);
     editCommitTimerRef.current = 0;
+    window.clearTimeout(designPublishQuietTimerRef.current);
+    designPublishQuietTimerRef.current = 0;
     window.clearTimeout(viewPersistTimerRef.current);
     viewPersistTimerRef.current = 0;
-    if (!skipSnapshotFlushRef.current) persistDesign();
+    if (!skipSnapshotFlushRef.current) persistDesign(undefined, { flush: true });
     const transferId = transferIdRef.current;
     const cam = cameraRef.current;
     const controls = controlsRef.current;
@@ -7878,7 +7893,7 @@ export function PracticeCustomAbutmentPreviewDialog({
           view: currentSessionView(),
         }).catch((err) => console.warn("[custom-abutment] session chrome save failed", err));
       }
-    }, 120);
+    }, 800);
     return () => window.clearTimeout(chromeSyncTimerRef.current);
   }, [
     centerGuide,
@@ -8970,7 +8985,7 @@ export function PracticeCustomAbutmentPreviewDialog({
       void saveCustomAbutmentViewerPrefs(token, prefs).catch((err) =>
         console.warn("[custom-abutment] viewer prefs save failed", err),
       );
-    }, 400);
+    }, 800);
     return () => window.clearTimeout(timer);
   }, [
     authToken,

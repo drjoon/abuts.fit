@@ -24,7 +24,7 @@ import type { AbutmentEdit } from "@/shared/components/practice/abutmentDirectEd
 import type { PaintShape } from "@/shared/components/practice/viewPaintGeom";
 
 /** 디자인 형상 로직이 바뀌면 올린다. 정합(교합·스캔바디)은 두고 형상만 다시 만든다. */
-export const CUSTOM_ABUTMENT_DESIGN_VERSION = 81;
+export const CUSTOM_ABUTMENT_DESIGN_VERSION = 82;
 /** 교합 정렬·스캔바디 정합 로직이 바뀌면 올린다. 저장본 전체를 다시 만든다. */
 export const CUSTOM_ABUTMENT_FIT_VERSION = 9;
 
@@ -1688,18 +1688,55 @@ export async function publishCustomAbutmentDesignMeta(
   return { ok: true, savedAt: Number(res.data?.data?.savedAt) || Date.now() };
 }
 
+type WorkSessionRecord = {
+  savedAt: number;
+  chrome?: Record<string, unknown> | null;
+  view?: Record<string, unknown> | null;
+  biteCheck?: CachedBiteCheck | null;
+  jawPose?: CustomAbutmentJawPose | null;
+  archFrame?: CustomAbutmentArchFrame | null;
+};
+
+type WorkSessionJob = {
+  token: string;
+  transferId: string;
+  record: WorkSessionRecord;
+  key: string;
+};
+
+let workSessionInflight: Promise<void> | null = null;
+let workSessionQueued: WorkSessionJob | null = null;
+let workSessionLastKey = "";
+
+function workSessionKey(transferId: string, record: WorkSessionRecord) {
+  const { savedAt: _savedAt, ...rest } = record;
+  return JSON.stringify({ transferId, ...rest });
+}
+
+async function putWorkSession(job: WorkSessionJob) {
+  const res = await request({
+    path: "/api/ai/custom-abutment-design-snapshot",
+    method: "PUT",
+    token: job.token,
+    jsonBody: {
+      transferId: job.transferId,
+      savedAt: job.record.savedAt,
+      ...(job.record.chrome ? { chrome: job.record.chrome } : {}),
+      ...(job.record.view ? { view: job.record.view } : {}),
+      ...(job.record.biteCheck ? { biteCheck: job.record.biteCheck } : {}),
+      ...(job.record.jawPose ? { jawPose: job.record.jawPose } : {}),
+      ...(job.record.archFrame ? { archFrame: job.record.archFrame } : {}),
+    },
+  });
+  if (!res.ok) throw new Error("작업 세션을 저장하지 못했습니다.");
+  forgetCustomAbutmentSnapshot(job.transferId);
+}
+
 /** 화면·상단 옵션·카메라. 채팅은 넣지 않는다. 치아가 없어도 세션에 남긴다. */
 export async function publishCustomAbutmentWorkSession(
   token: string,
   transferId: string,
-  record: {
-    savedAt: number;
-    chrome?: Record<string, unknown> | null;
-    view?: Record<string, unknown> | null;
-    biteCheck?: CachedBiteCheck | null;
-    jawPose?: CustomAbutmentJawPose | null;
-    archFrame?: CustomAbutmentArchFrame | null;
-  },
+  record: WorkSessionRecord,
 ): Promise<void> {
   const id = transferId.trim();
   if (
@@ -1709,22 +1746,29 @@ export async function publishCustomAbutmentWorkSession(
   ) {
     return;
   }
-  const res = await request({
-    path: "/api/ai/custom-abutment-design-snapshot",
-    method: "PUT",
-    token,
-    jsonBody: {
-      transferId: id,
-      savedAt: record.savedAt,
-      ...(record.chrome ? { chrome: record.chrome } : {}),
-      ...(record.view ? { view: record.view } : {}),
-      ...(record.biteCheck ? { biteCheck: record.biteCheck } : {}),
-      ...(record.jawPose ? { jawPose: record.jawPose } : {}),
-      ...(record.archFrame ? { archFrame: record.archFrame } : {}),
-    },
+  const key = workSessionKey(id, record);
+  if (key === workSessionLastKey && !workSessionQueued) return;
+  workSessionQueued = { token, transferId: id, record, key };
+  if (workSessionInflight) return workSessionInflight;
+  workSessionInflight = (async () => {
+    let sent = 0;
+    while (workSessionQueued && sent < 2) {
+      const job = workSessionQueued;
+      workSessionQueued = null;
+      if (job.key === workSessionLastKey) continue;
+      await putWorkSession(job);
+      workSessionLastKey = job.key;
+      sent += 1;
+    }
+  })().finally(() => {
+    workSessionInflight = null;
+    const pending = workSessionQueued;
+    if (pending && pending.key !== workSessionLastKey) {
+      workSessionQueued = null;
+      void publishCustomAbutmentWorkSession(pending.token, pending.transferId, pending.record);
+    }
   });
-  if (!res.ok) throw new Error("작업 세션을 저장하지 못했습니다.");
-  forgetCustomAbutmentSnapshot(id);
+  return workSessionInflight;
 }
 
 /** 모달을 다시 열 때 방금 저장된 스냅샷을 받게 캐시를 비운다. */

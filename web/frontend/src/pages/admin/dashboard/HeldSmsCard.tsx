@@ -1,11 +1,14 @@
 // related files:
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/controllers/admin/adminHeldSms.controller.js
+// change-log:
+// - 2026-11-25: 30초 폴링 제거. 대시보드를 열 때 한 번, 카드를 열거나 보낸 뒤에만 다시 조회.
 import { useCallback, useEffect, useState } from "react";
 import { MessageSquareWarning, Send, Trash2 } from "lucide-react";
 import { DashBigNumber, DashTile } from "@/shared/ui/dashboard/DashTile";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { ADMIN_SNAPSHOT_TTL_MS, loadOnce } from "@/pages/admin/dashboard/loadOnce";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -82,23 +85,30 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!enabled) return;
-    try {
-      const res = await request<{ data?: HeldData }>({
-        path: "/api/admin/sms/held",
-        method: "GET",
-      });
-      if (res.ok) setData(res.data?.data || null);
-    } catch {
-      /* ignore */
-    }
+    const next = await loadOnce(
+      "admin:sms-held",
+      ADMIN_SNAPSHOT_TTL_MS,
+      async () => {
+        try {
+          const res = await request<{ data?: HeldData }>({
+            path: "/api/admin/sms/held",
+            method: "GET",
+          });
+          if (!res.ok) return null;
+          return res.data?.data || null;
+        } catch {
+          return null;
+        }
+      },
+      force,
+    );
+    if (next) setData(next);
   }, [enabled]);
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 30 * 1000);
-    return () => window.clearInterval(timer);
   }, [load]);
 
   const pending = data?.pendingCount || 0;
@@ -122,7 +132,7 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
       toast({
         title: kind === "send" ? "문자를 보냈습니다." : "보류를 지웠습니다.",
       });
-      await load();
+      await load(true);
     } catch {
       toast({
         title: "처리하지 못했습니다.",
@@ -141,7 +151,7 @@ export function HeldSmsCard({ enabled = true, className }: Props) {
         tone={pending > 0 ? "danger" : "default"}
         icon={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
         onClick={() => {
-          void load();
+          void load(true);
           setOpen(true);
         }}
       >
