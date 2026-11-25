@@ -40,9 +40,11 @@ test("포스트 높이·테이퍼 등유지력 연동은 기본 5mm · 2° 기�
   assert.equal(resolveCustomAbutmentParams("11").minCrownThicknessMm, 1.0);
   assert.equal(def.postTaperDeg, 2);
   assert.equal(def.postTaperLink, 1);
-  assert.equal(def.postTopPlaneCode, 0, "교합 대상 기본은 교합면(0)");
+  assert.equal(def.postTopPlaneCode, 0, "교합 사면 기본은 교합면에 평행(0)");
   assert.equal(resolveCustomAbutmentParams("36", { postTopPlaneCode: 1 }).postTopPlaneCode, 1);
+  assert.equal(resolveCustomAbutmentParams("36", { postTopPlaneCode: 2 }).postTopPlaneCode, 2);
   assert.equal(resolveCustomAbutmentParams("36", { postTopPlaneCode: 0.2 }).postTopPlaneCode, 0);
+  assert.equal(resolveCustomAbutmentParams("36", { postTopPlaneCode: 1.6 }).postTopPlaneCode, 2);
   assert.equal(resolveCustomAbutmentParams("36", { postTaperDeg: 0.8 }).postTaperDeg, 2);
   assert.equal(resolveCustomAbutmentParams("36", { occlusalClearanceMm: 0.4 }).occlusalClearanceMm, 0.7);
   assert.equal(resolveCustomAbutmentParams("36", { occlusalClearanceMm: 9.5 }).occlusalClearanceMm, 9.5);

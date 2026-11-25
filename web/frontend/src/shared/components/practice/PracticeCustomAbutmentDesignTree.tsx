@@ -50,6 +50,7 @@ import {
   isAnteriorTooth,
   minOcclusalClearanceMmForTooth,
   postRetentionSurface,
+  POST_TOP_PLANE_CODE_LABEL,
   snapMaxDiameterMm,
   teethShareBridgeSpan,
   type CustomAbutmentDesignParams,
@@ -111,10 +112,12 @@ export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = 
   postTaperLink: "높이·테이퍼 연결",
   postLingualBevelMm: "설측 사면",
   postLabialBevelMm: "순측 사면",
-  postTopPlaneCode: "교합 대상",
+  postTopPlaneCode: "교합 사면",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
+
+const POST_TOP_PLANE_ORDER = [0, 1, 2] as const;
 
 export const AXIS_SOURCE_LABEL: Record<AbutmentAxisSource, string> = {
   opposing: "대합치 중심",
@@ -299,7 +302,7 @@ export function computeParamsFromInfoFieldEdit(
       };
     }
     case "postTopPlaneCode": {
-      return { postTopPlaneCode: num >= 0.5 ? 1 : 0 };
+      return { postTopPlaneCode: Math.max(0, Math.min(2, Math.round(num))) };
     }
     case "occlusalClearanceMm": {
       if (m.occlusalClearanceMm == null) return {};
@@ -893,8 +896,8 @@ function posteriorBevelHint(side: "설측" | "협측") {
   );
 }
 
-/** 포스트 상단 교합 대상. 교합면·대합치 중 하나만 켠다. */
-function PostTopPlaneRow({
+/** 포스트 상단 교합 사면. 삽입축 기준과 같은 드롭다운. */
+function EditablePostTopPlaneRow({
   value,
   disabled,
   onCommit,
@@ -903,54 +906,128 @@ function PostTopPlaneRow({
   disabled?: boolean;
   onCommit: (next: number) => void;
 }) {
-  const useArch = value < 0.5;
-  const option = (
-    code: 0 | 1,
-    label: string,
-    hint: ReactNode,
-  ) => {
-    const on = code === 0 ? useArch : !useArch;
-    return (
-      <label className="inline-flex items-center gap-1.5">
-        <Checkbox
-          checked={on}
-          disabled={disabled}
-          aria-label={label}
-          onCheckedChange={(state) => {
-            if (disabled) return;
-            if (state === true) onCommit(code);
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="cursor-help text-foreground">{label}</span>
-          </TooltipTrigger>
-          <TooltipContent side="left" align="center" className="z-[520] max-w-[16rem] text-xs leading-relaxed">
-            {hint}
-          </TooltipContent>
-        </Tooltip>
-      </label>
-    );
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startIdx: number;
+    pending: number;
+  } | null>(null);
+  const [pending, setPending] = useState<number | null>(null);
+  const code = Math.max(0, Math.min(2, Math.round(value)));
+  const shown = pending ?? code;
+  const curIdx = Math.max(0, POST_TOP_PLANE_ORDER.indexOf(shown as 0 | 1 | 2));
+
+  useEffect(() => {
+    if (pending != null && pending === code) setPending(null);
+  }, [pending, code]);
+
+  const stepBy = (dir: 1 | -1) => {
+    if (disabled) return;
+    const nextIdx = (curIdx + dir + POST_TOP_PLANE_ORDER.length) % POST_TOP_PLANE_ORDER.length;
+    const next = POST_TOP_PLANE_ORDER[nextIdx]!;
+    if (next !== code) onCommit(next);
   };
+
   return (
     <div className="flex items-center gap-2 py-0.5 pl-2 text-[0.8125rem] leading-snug">
-      <span className="shrink-0 text-muted-foreground">교합 대상</span>
-      <div className="ml-auto flex items-center gap-3">
-        {option(
-          0,
-          "교합면",
-          <>
-            포스트 상단을 악궁 교합면에 평행하게 그립니다.
-          </>,
+      <span
+        className={cn(
+          "min-w-0 shrink truncate select-none text-muted-foreground",
+          !disabled && "cursor-ew-resize hover:text-foreground",
         )}
-        {option(
-          1,
-          "대합치",
-          <>
-            포스트 상단을 대합치 평면에 평행하게 그립니다.
-          </>,
+        title={disabled ? undefined : "좌우로 드래그해 사면 변경"}
+        onPointerDown={(e) => {
+          if (disabled || e.button !== 0) return;
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          dragRef.current = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startIdx: Math.max(0, POST_TOP_PLANE_ORDER.indexOf(code as 0 | 1 | 2)),
+            pending: code,
+          };
+        }}
+        onPointerMove={(e) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== e.pointerId) return;
+          const steps = Math.round((e.clientX - drag.startX) / 28);
+          const idx =
+            ((drag.startIdx + steps) % POST_TOP_PLANE_ORDER.length + POST_TOP_PLANE_ORDER.length) %
+            POST_TOP_PLANE_ORDER.length;
+          const next = POST_TOP_PLANE_ORDER[idx]!;
+          drag.pending = next;
+          setPending(next);
+        }}
+        onPointerUp={(e) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== e.pointerId) return;
+          dragRef.current = null;
+          setPending(null);
+          try {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          } catch {
+            // 이미 해제됨
+          }
+          if (drag.pending !== code) {
+            setPending(drag.pending);
+            onCommit(drag.pending);
+          }
+        }}
+        onPointerCancel={(e) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== e.pointerId) return;
+          dragRef.current = null;
+          if (drag.pending !== code) {
+            setPending(drag.pending);
+            onCommit(drag.pending);
+          } else {
+            setPending(null);
+          }
+        }}
+      >
+        교합 사면
+      </span>
+      <div
+        className={cn(
+          "ml-auto flex h-7 w-[9.25rem] shrink-0 items-center overflow-hidden rounded-md border bg-background pl-1 pr-0.5 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/40",
+          disabled && "opacity-60",
         )}
+      >
+        <select
+          aria-label="교합 사면"
+          disabled={disabled}
+          value={shown}
+          className="h-full w-0 min-w-0 flex-1 truncate bg-transparent pr-1 text-right text-xs font-medium text-foreground outline-none"
+          onChange={(e) => onCommit(Number(e.target.value))}
+        >
+          {POST_TOP_PLANE_ORDER.map((codeOpt) => (
+            <option key={codeOpt} value={codeOpt}>
+              {POST_TOP_PLANE_CODE_LABEL[codeOpt]}
+            </option>
+          ))}
+        </select>
+        <div className="flex h-full shrink-0 flex-col justify-center border-l pl-0.5">
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            aria-label="교합 사면 이전"
+            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            onClick={() => stepBy(-1)}
+          >
+            <ChevronUp className="h-2.5 w-2.5" />
+          </button>
+          <button
+            type="button"
+            tabIndex={-1}
+            disabled={disabled}
+            aria-label="교합 사면 다음"
+            className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            onClick={() => stepBy(1)}
+          >
+            <ChevronDown className="h-2.5 w-2.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2028,15 +2105,19 @@ export function PracticeCustomAbutmentDesignTree({
                       onCommit={(v) => onEditField?.(item, "postLabialBevelMm", v)}
                     />
                     {editable ? (
-                      <PostTopPlaneRow
+                      <EditablePostTopPlaneRow
                         value={item.params.postTopPlaneCode ?? 0}
                         disabled={rowDisabled}
                         onCommit={(v) => onEditField?.(item, "postTopPlaneCode", v)}
                       />
                     ) : (
                       <DetailRow
-                        label="교합 대상"
-                        value={(item.params.postTopPlaneCode ?? 0) >= 0.5 ? "대합치" : "교합면"}
+                        label="교합 사면"
+                        value={
+                          POST_TOP_PLANE_CODE_LABEL[
+                            Math.max(0, Math.min(2, Math.round(item.params.postTopPlaneCode ?? 0)))
+                          ] ?? "-"
+                        }
                       />
                     )}
                     {m.occlusalClearanceMm != null && editable ? (

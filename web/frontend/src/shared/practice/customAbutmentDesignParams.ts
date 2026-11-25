@@ -14,7 +14,7 @@ export type CustomAbutmentDesignParams = {
   postTaperDeg: number;
   /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
   postTaperLink: number;
-  /** 포스트 상단 교합 대상(0=악궁 교합면에 평행, 1=대합치 평면에 평행). */
+  /** 포스트 상단 교합 사면(0=교합면에 평행, 1=대합치에 평행, 2=픽스쳐에 수직). */
   postTopPlaneCode: number;
   /** 설측 사면 — 마진에서 사면이 시작되는 높이(mm). -1은 전치 자동·구치 없음, 0은 없음. */
   postLingualBevelMm: number;
@@ -72,7 +72,7 @@ export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomA
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
   postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 4.2, step: 0.1 },
   postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
-  postTopPlaneCode: { label: "교합 대상", unit: "", min: 0, max: 1, step: 1 },
+  postTopPlaneCode: { label: "교합 사면", unit: "", min: 0, max: 2, step: 1 },
   postLingualBevelMm: { label: "설측 사면", unit: "mm", min: -1, max: 11.5, step: 0.1 },
   postLabialBevelMm: { label: "순측 사면", unit: "mm", min: 0, max: 11.5, step: 0.1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
@@ -606,7 +606,7 @@ function clampDesignParam(
   let next = Math.min(max, Math.max(spec.min, raw));
   if (key === "marginFilletRadiusMm") next = Math.round(next * 10) / 10;
   if (key === "postTaperLink") next = next >= 0.5 ? 1 : 0;
-  if (key === "postTopPlaneCode") next = next >= 0.5 ? 1 : 0;
+  if (key === "postTopPlaneCode") next = Math.max(0, Math.min(2, Math.round(next)));
   return next;
 }
 
@@ -718,6 +718,12 @@ const AXIS_SOURCE_CODE_LABEL: Record<number, string> = {
   2: "인접 어벗과 평행",
 };
 
+export const POST_TOP_PLANE_CODE_LABEL: Record<number, string> = {
+  0: "교합면에 평행",
+  1: "대합치에 평행",
+  2: "픽스쳐에 수직",
+};
+
 /** 「전체: 마진 깊이 0.8mm · 구치: 크라운 두께 1.2mm」 */
 export function describeCustomAbutmentPreference(pref: CustomAbutmentDesignPreference): string {
   const parts: string[] = [];
@@ -736,6 +742,10 @@ export function describeCustomAbutmentPreference(pref: CustomAbutmentDesignPrefe
         if (key === "axisSourceCode") {
           const label = AXIS_SOURCE_CODE_LABEL[Math.round(num)];
           return label ? `삽입축 기준 ${label}` : "";
+        }
+        if (key === "postTopPlaneCode") {
+          const label = POST_TOP_PLANE_CODE_LABEL[Math.round(num)];
+          return label ? `교합 사면 ${label}` : "";
         }
         const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key as CustomAbutmentParamKey];
         if (!spec) return "";

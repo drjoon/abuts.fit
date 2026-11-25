@@ -8,7 +8,7 @@ const PARAM_LABEL = {
   occlusalClearanceMm: "대합 거리",
   postTaperDeg: "테이퍼",
   postTaperLink: "높이·테이퍼 연결",
-  postTopPlaneCode: "교합 대상",
+  postTopPlaneCode: "교합 사면",
   postLingualBevelMm: "설측 사면",
   postLabialBevelMm: "순측 사면",
   postYawDeg: "포스트 회전",
@@ -163,7 +163,10 @@ function unitOf(key) {
 function formatParam(key, value) {
   if (key === "axisSourceCode") return AXIS_SOURCE[String(Math.round(value))] || formatNum(value);
   if (key === "postTaperLink") return value >= 0.5 ? "연결" : "개별";
-  if (key === "postTopPlaneCode") return value >= 0.5 ? "대합치" : "교합면";
+  if (key === "postTopPlaneCode") {
+    const code = Math.max(0, Math.min(2, Math.round(value)));
+    return code === 2 ? "픽스쳐에 수직" : code === 1 ? "대합치에 평행" : "교합면에 평행";
+  }
   const unit = unitOf(key);
   return `${formatNum(value)}${unit}`;
 }

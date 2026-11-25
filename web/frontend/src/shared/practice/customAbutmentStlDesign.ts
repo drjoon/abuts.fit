@@ -7,7 +7,7 @@
 //    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
-//    → 윗면 라운드. 소·대구치 윗면은 교합 대상(악궁 교합면·대합치 평면)에 평행한 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    → 윗면 라운드. 소·대구치 윗면은 교합 사면(악궁 교합면·대합치 평면·픽스쳐 수직)에 맞춘 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
 //    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
@@ -9300,9 +9300,30 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
     const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
     const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
-    // postTopPlaneCode: 0=악궁 교합면 평행(기본), 1=대합치 평면 평행
-    const useOpposingTopPlane = (params.postTopPlaneCode ?? 0) >= 0.5;
-    if (posterior) {
+    // postTopPlaneCode: 0=교합면에 평행(기본), 1=대합치에 평행, 2=픽스쳐에 수직
+    const planeCode = Math.max(0, Math.min(2, Math.round(params.postTopPlaneCode ?? 0)));
+    const useOpposingTopPlane = planeCode === 1;
+    const useFixtureTopPlane = planeCode === 2;
+    // 픽스쳐 장축(+Z)에 수직 = 픽스쳐 XY에 평행한 평면.
+    const zw = frame.w[2];
+    const wFix = Math.max(0.35, Math.abs(zw));
+    const fixDenom = zw >= 0 ? wFix : -wFix;
+    const fixtureGu = -frame.uLabial[2] / fixDenom;
+    const fixtureGv = -frame.vSide[2] / fixDenom;
+    if (useFixtureTopPlane) {
+      gu = fixtureGu;
+      gv = fixtureGv;
+      if (posterior) {
+        const g = Math.hypot(gu, gv);
+        if (g > FLAT_TOP_MAX_TILT) {
+          gu *= FLAT_TOP_MAX_TILT / g;
+          gv *= FLAT_TOP_MAX_TILT / g;
+        }
+      } else {
+        gu = clamp(gu, -Math.tan(4 * DEG), Math.tan(4 * DEG));
+        gv = clamp(gv, -Math.tan(4 * DEG), Math.tan(4 * DEG));
+      }
+    } else if (posterior) {
       if (useOpposingTopPlane && oppTopPlane) {
         gu = oppTopPlane.gu;
         gv = oppTopPlane.gv;
