@@ -620,6 +620,10 @@ function cameraFramesTargets(
 }
 
 const VIEW_ANIM_MS = 280;
+/** 검볼·파라미터 연속 편집 후 스냅샷 PUT까지 기다리는 시간. 닫기 flush는 즉시. */
+const DESIGN_PUBLISH_QUIET_MS = 2000;
+/** 브리지 형제 onCommit이 한 번 persist로 모이게 한다. */
+const EDIT_COMMIT_PERSIST_MS = 280;
 
 function labDesignConfirmHint(cancelDeadlineAt: string | null): ReactNode {
   if (cancelDeadlineAt && new Date(cancelDeadlineAt).getTime() < Date.now()) {
@@ -2828,8 +2832,11 @@ export function PracticeCustomAbutmentPreviewDialog({
     const start = () => {
       void runDesignMetaPublish();
     };
+    // 검볼·파라미터를 연속으로 만질 때는 quiet가 끝날 때까지 PUT을 모은다. 닫기는 flush로 즉시.
     if (flush) start();
-    else designPublishQuietTimerRef.current = window.setTimeout(start, 700);
+    else {
+      designPublishQuietTimerRef.current = window.setTimeout(start, DESIGN_PUBLISH_QUIET_MS);
+    }
 
     async function runDesignMetaPublish() {
       if (publishRunningRef.current) return;
@@ -2882,6 +2889,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         );
         if (result.kind === "stale") {
           publishAgainRef.current = false;
+          designDirtyRef.current = false;
           designEpochRef.current += 1;
           const remoteEpoch = designEpochRef.current;
           void applyRemoteDesignMetaRef.current(result.design, remoteEpoch).catch((err) => {
@@ -2898,6 +2906,8 @@ export function PracticeCustomAbutmentPreviewDialog({
         designPublishRetriesRef.current = 0;
         if (result.savedAt > designSavedAtRef.current) designSavedAtRef.current = result.savedAt;
         acceptedAt = result.savedAt;
+        // 저장 중에 새 커밋이 없으면 dirty를 풀어 같은 메시를 바로 다시 올리지 않는다.
+        if (!publishAgainRef.current) designDirtyRef.current = false;
         if (acceptedAt > 0) await cacheCurrentDesign(acceptedAt);
       } catch (err) {
         console.warn("[custom-abutment] design meta publish failed", err);
@@ -3575,7 +3585,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         editCommitTimerRef.current = 0;
         if (ignoreEditCommitRef.current || suppressLiveEmitRef.current) return;
         persistDesign();
-      }, 30);
+      }, EDIT_COMMIT_PERSIST_MS);
     };
   }
 
