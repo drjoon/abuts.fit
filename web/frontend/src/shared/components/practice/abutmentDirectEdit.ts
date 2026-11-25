@@ -5,7 +5,8 @@
 // 파란 축은 화면 밖이다. 우상 이동 화살표는 화면 오른쪽·위인데, 포스트가 화면 아래로 길어지면 검볼을 180° 돌려 그 쪽을 가리킨다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 노란 점은 평면 2D 스케일. 화살표 반대쪽 녹·빨 점은 축 1D 스케일. 우상 화살표는 평면 이동.
-// 녹·빨 1D 스케일은 화살표(+축) 방향으로 끌면 커진다. 초록은 화면 축이 아니라 포스트 높이에 실린다.
+// 녹·빨 1D 스케일은 화살표(+축) 방향으로 끌면 커진다.
+// 초록은 옆보기처럼 화면 위≈포스트일 때만 높이에 싣고, 교합면에서는 화면 축(XY)을 쓴다.
 // 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
 // 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
 // 검볼을 움직이면 어벗 정보 수치를 다시 읽고, 손을 떼면 되돌리기 기록에 남긴다.
@@ -2553,6 +2554,7 @@ const gumballBasis = new THREE.Matrix4();
  * 화면 밖 축은 그대로라 고리는 화면에 평행하다.
  * 축 1D 스케일 점은 화살표 반대(-X/-Y)에 두고, 배율은
  * `scaleFactorFromAxisDrag`가 화살표(+축) 방향으로 키운다(상·하악 공통).
+ * 초록→높이 매핑은 `resolveAxisScaleDirection`(교합면에서는 XY).
  */
 export function orientGumballScreenAxes(
   right: THREE.Vector3,
@@ -2590,6 +2592,25 @@ export function scaleFactorFromAxisDrag(args: {
   const ref = Math.max(args.startHubDist, 0.12);
   // 짧은 드래그는 조금, 긴 드래그는 많이. 한 제스처 상한은 스케일 클램프와 같다.
   return clamp(1 + (args.along - args.startAlong) / ref, SCALE_MIN, SCALE_MAX);
+}
+
+/** 화면 위가 포스트와 이만큼 겹칠 때만 초록 1D를 높이 스케일로 쓴다. */
+const GREEN_SCALE_AS_HEIGHT_DOT = 0.45;
+
+/**
+ * 축 1D 스케일이 실제로 바꾸는 방향.
+ * 빨강은 항상 화면 축(순측·근심 투영). 초록은 옆보기에서만 포스트 높이, 교합면에서는 화면 위(XY).
+ */
+export function resolveAxisScaleDirection(
+  axisIndex: number,
+  screenAxis: THREE.Vector3,
+  postAxis: THREE.Vector3,
+  out: THREE.Vector3,
+): THREE.Vector3 {
+  if (axisIndex === 1 && Math.abs(screenAxis.dot(postAxis)) > GREEN_SCALE_AS_HEIGHT_DOT) {
+    return out.copy(postAxis);
+  }
+  return out.copy(screenAxis);
 }
 
 /**
@@ -3691,9 +3712,8 @@ export class AbutmentDirectEditSession {
         hubAlong: drag.hubAlong,
         startHubDist: drag.startHubDist,
       });
-      // 초록(세로)은 화면 Y가 아니라 포스트 높이. 교합 뷰에서도 XY 제한에 안 걸린다.
-      // 빨강은 화면 가로 축을 순측·근심에 투영한다.
-      const scaleAxis = drag.axis === 1 ? view.axes[2]!.clone() : axis.clone();
+      // 빨강은 화면 가로. 초록은 옆보기에서만 포스트 높이, 교합면에서는 화면 위(XY).
+      const scaleAxis = resolveAxisScaleDirection(drag.axis, axis, view.axes[2]!, vA).clone();
       return { kind: "scaleAxes", axes: [scaleAxis], factor };
     }
     if (drag.kind === "rot") {

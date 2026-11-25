@@ -36,6 +36,7 @@ import {
   refitLocalPositions,
   regenerateCuffToMargin,
   orientGumballScreenAxes,
+  resolveAxisScaleDirection,
   scaleFactorFromAxisDrag,
   screenGumballQuaternion,
   sculptFalloff,
@@ -333,6 +334,18 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   assert.ok(longDrag <= 3 + 1e-9, `긴 드래그도 3.0을 넘지 않는다 (${longDrag})`);
   const farShrink = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 - 2 });
   assert.equal(farShrink, 0.2, "크게 줄여도 하한 0.2");
+
+  // 교합면: 화면 위⊥포스트 → 초록 1D도 XY(화면 축). 옆보기: 화면 위≈포스트 → 높이.
+  const outDir = new THREE.Vector3();
+  const screenUp = new THREE.Vector3(0, 1, 0);
+  const postOcclusal = new THREE.Vector3(0, 0, 1);
+  resolveAxisScaleDirection(1, screenUp, postOcclusal, outDir);
+  assert.ok(outDir.distanceTo(screenUp) < 1e-6, "교합면에서 초록 1D는 화면 위(XY)");
+  resolveAxisScaleDirection(0, new THREE.Vector3(1, 0, 0), postOcclusal, outDir);
+  assert.ok(outDir.distanceTo(new THREE.Vector3(1, 0, 0)) < 1e-6, "빨강 1D는 항상 화면 축");
+  const postLateral = new THREE.Vector3(0, 0.95, 0.3).normalize();
+  resolveAxisScaleDirection(1, screenUp, postLateral, outDir);
+  assert.ok(outDir.distanceTo(postLateral) < 1e-6, "옆보기에서 초록 1D는 포스트 높이");
 }
 
 // 회전(yaw)이 이미 적용된 상태에서도 화살표 이동과 축 회전 기울기 부호가 화면 드래그 방향과 정확히 일치하는지 검증
