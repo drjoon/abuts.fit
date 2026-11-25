@@ -1833,7 +1833,9 @@ function collectScanbodyHits(args: DetectScanbodyArgs, maxHits: number): Scanbod
       const fittedTop = applyPose(fit.pose, 0, model.topMm, 0);
       if (excludedLocal.some((ex) => Math.hypot(...sub(fittedTop, ex)) < minCenterSep)) continue;
       const distFromSlot = Math.hypot(dot(fittedTop, e1), dot(fittedTop, e2));
-      if (anchored && distFromSlot > 6.5) continue;
+      // 클릭은 그 스캔바디 윗면에 있어야 한다. 6.5mm는 전치 한 칸(#32→#33)이라 옆 자연치를 가져간다.
+      const clickTopLimit = Math.max(3.2, model.radiusMm + 1.15);
+      if (anchored && distFromSlot > clickTopLimit) continue;
       const fitAxis = norm(poseColumn(fit.pose, 1));
       const iso = measureFittedIsolation(fittedTop, fitAxis, model.radiusMm);
       const proximalBridgedScanbody =
@@ -2083,8 +2085,8 @@ export function detectAndMatchScanbodiesOnJaw(args: {
 }
 
 /**
- * 사용자가 스캔 위에서 찍은 점 주변(반경 12mm, 정합 윗면은 6.5mm 안)만 다시 찾는다.
- * 자동 배정이 비었을 때 그 치아의 스캔바디 상단을 클릭하면 호출한다.
+ * 사용자가 스캔 위에서 찍은 점 주변(반경 12mm)만 다시 찾는다.
+ * 정합된 윗면은 클릭에서 반경+1.15mm(최소 3.2mm) 안이어야 한다. 그보다 멀면 옆 치아다.
  */
 export function matchScanbodyNearPoint(args: {
   jawGeometry: THREE.BufferGeometry;
@@ -2587,9 +2589,6 @@ export function splitScanByScanbodies(
   const edgeExtra = new Map<number, number[]>();
   const adj: number[][] = Array.from({ length: R }, () => []);
   const edgeCountOfTri = new Uint8Array(R);
-  let orientVote = 0;
-  const refAxis = fixtures[0]!.fixturePose.axis;
-
   for (let ri = 0; ri < R; ri += 1) {
     const t = roiTris[ri]!;
     const vi0 = vert(t, 0);
@@ -2630,8 +2629,6 @@ export function splitScanByScanbodies(
     nxArr[ri] = nx;
     nyArr[ri] = ny;
     nzArr[ri] = nz;
-    const dAx = nx * refAxis[0] + ny * refAxis[1] + nz * refAxis[2];
-    if (Math.abs(dAx) > 0.72) orientVote += dAx;
 
     if (rgbR && rgbG && rgbB) {
       if (hasVertexColor && col) {
@@ -2688,14 +2685,6 @@ export function splitScanByScanbodies(
           edgeExtra.set(ek, [ri]);
         }
       }
-    }
-  }
-
-  if (orientVote < 0) {
-    for (let ri = 0; ri < R; ri += 1) {
-      nxArr[ri] = -nxArr[ri]!;
-      nyArr[ri] = -nyArr[ri]!;
-      nzArr[ri] = -nzArr[ri]!;
     }
   }
 
@@ -2760,6 +2749,27 @@ export function splitScanByScanbodies(
     const e2 = cross(axis, e1);
     const sbR = f.scanbodyRadiusMm;
     const sbH = f.scanbodyHeightMm;
+    // 이 치아의 윗면만으로 법선 부호를 정한다. 앞선 픽스처 축이나 옆 치아 면으로 뒤집으면
+    // 찍는 순서에 따라 인접 자연치(#33 등)가 스캔바디로 잘려 나간다.
+    let capVote = 0;
+    const capR2 = (sbR + 0.55) * (sbR + 0.55);
+    for (const ri of localList) {
+      const dx = cxArr[ri]! - ox;
+      const dy = cyArr[ri]! - oy;
+      const dz = czArr[ri]! - oz;
+      const hz = dx * axis[0] + dy * axis[1] + dz * axis[2];
+      if (hz < sbH - 2.4 || hz > sbH + 0.8) continue;
+      const rx = dx - axis[0] * hz;
+      const ry = dy - axis[1] * hz;
+      const rz = dz - axis[2] * hz;
+      if (rx * rx + ry * ry + rz * rz > capR2) continue;
+      const dAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+      if (Math.abs(dAx) > 0.72) capVote += dAx;
+    }
+    const nSign = capVote < 0 ? -1 : 1;
+    const nxS = (ri: number) => nxArr[ri]! * nSign;
+    const nyS = (ri: number) => nyArr[ri]! * nSign;
+    const nzS = (ri: number) => nzArr[ri]! * nSign;
 
     // 정합·캐시 포즈에 미세 수평 편심(<=0.42mm)이 있어도 실제 3D 스캔바디 기둥 중심에 맞춰 자른다.
     const centerVotesU: number[] = [];
@@ -2778,10 +2788,10 @@ export function splitScanByScanbodies(
         const r = Math.hypot(u, v);
         if (r < sbR * 0.62 || r > sbR + 0.52) continue;
         if (isCloserOrInsideOther(cxArr[ri]!, cyArr[ri]!, czArr[ri]!, r, fi)) continue;
-        const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+        const nAx = nxS(ri) * axis[0] + nyS(ri) * axis[1] + nzS(ri) * axis[2];
         if (Math.abs(nAx) > 0.44) continue;
-        const nu = nxArr[ri]! * e1[0] + nyArr[ri]! * e1[1] + nzArr[ri]! * e1[2];
-        const nv = nxArr[ri]! * e2[0] + nyArr[ri]! * e2[1] + nzArr[ri]! * e2[2];
+        const nu = nxS(ri) * e1[0] + nyS(ri) * e1[1] + nzS(ri) * e1[2];
+        const nv = nxS(ri) * e2[0] + nyS(ri) * e2[1] + nzS(ri) * e2[2];
         const nPerp = Math.hypot(nu, nv);
         if (nPerp < 0.72) continue;
         const radialDot = (u * nu + v * nv) / (r * nPerp);
@@ -2830,8 +2840,8 @@ export function splitScanByScanbodies(
       const rx = dx - axis[0] * hz;
       const ry = dy - axis[1] * hz;
       const rz = dz - axis[2] * hz;
-      const nEr = r > 1e-4 ? (nxArr[ri]! * rx + nyArr[ri]! * ry + nzArr[ri]! * rz) / r : 0;
-      const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+      const nEr = r > 1e-4 ? (nxS(ri) * rx + nyS(ri) * ry + nzS(ri) * rz) / r : 0;
+      const nAx = nxS(ri) * axis[0] + nyS(ri) * axis[1] + nzS(ri) * axis[2];
 
       if (
         r >= sbR * 0.65 &&
@@ -3048,8 +3058,8 @@ export function splitScanByScanbodies(
       const rx = dx - axis[0] * hz;
       const ry = dy - axis[1] * hz;
       const rz = dz - axis[2] * hz;
-      const nEr = r > 1e-4 ? (nxArr[ri]! * rx + nyArr[ri]! * ry + nzArr[ri]! * rz) / r : 0;
-      const nAx = nxArr[ri]! * axis[0] + nyArr[ri]! * axis[1] + nzArr[ri]! * axis[2];
+      const nEr = r > 1e-4 ? (nxS(ri) * rx + nyS(ri) * ry + nzS(ri) * rz) / r : 0;
+      const nAx = nxS(ri) * axis[0] + nyS(ri) * axis[1] + nzS(ri) * axis[2];
       return { hz, r, b, rw: wallR[b]!, sz: sulcZ[b]!, nEr, nAx };
     };
 

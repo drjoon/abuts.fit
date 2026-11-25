@@ -288,4 +288,126 @@ describe("splitScanByScanbodies", () => {
     assert.equal(sbLeft, 0);
     assert.equal(bevelGingDeleted, 0);
   });
+
+  it("앞선 픽스처 축이 뒤집혀 있어도 옆 자연치는 스캔바디로 잘리지 않는다", () => {
+    const sbRgb: [number, number, number] = [0.22, 0.14, 0.13];
+    const sbBrightRgb: [number, number, number] = [0.4, 0.28, 0.25];
+    const gingRgb: [number, number, number] = [0.62, 0.34, 0.38];
+    const shadedToothRgb: [number, number, number] = [0.21, 0.15, 0.14];
+    const N_THETA = 36;
+    const R = 2.25;
+    const BORE_R = 1.05;
+    const SULCUS_Z = 3.2;
+    const TOP_Z = 7.0;
+    const tris: TriLabeled[] = [];
+
+    for (let i = 0; i < N_THETA; i += 1) {
+      const a0 = (i / N_THETA) * Math.PI * 2;
+      const a1 = ((i + 1) / N_THETA) * Math.PI * 2;
+      const c0 = Math.cos(a0);
+      const s0 = Math.sin(a0);
+      const c1 = Math.cos(a1);
+      const s1 = Math.sin(a1);
+      addQuad(
+        tris,
+        "sb-cap",
+        [BORE_R * c0, BORE_R * s0, TOP_Z],
+        [R * c0, R * s0, TOP_Z],
+        [R * c1, R * s1, TOP_Z],
+        [BORE_R * c1, BORE_R * s1, TOP_Z],
+        sbRgb,
+      );
+      addQuad(
+        tris,
+        "sb-bore",
+        [BORE_R * c0, BORE_R * s0, 2.0],
+        [BORE_R * c0, BORE_R * s0, TOP_Z],
+        [BORE_R * c1, BORE_R * s1, TOP_Z],
+        [BORE_R * c1, BORE_R * s1, 2.0],
+        sbRgb,
+      );
+      const zSteps = [SULCUS_Z, 4.4, 5.7, TOP_Z];
+      for (let zi = 0; zi < zSteps.length - 1; zi += 1) {
+        const z0 = zSteps[zi]!;
+        const z1 = zSteps[zi + 1]!;
+        addQuad(
+          tris,
+          "sb-wall",
+          [R * c0, R * s0, z0],
+          [R * c1, R * s1, z0],
+          [R * c1, R * s1, z1],
+          [R * c0, R * s0, z1],
+          zi === 1 ? sbBrightRgb : sbRgb,
+        );
+      }
+      const rSteps = [R, 2.65, 3.2, 4.2];
+      for (let ri = 0; ri < rSteps.length - 1; ri += 1) {
+        const r0 = rSteps[ri]!;
+        const r1 = rSteps[ri + 1]!;
+        addQuad(
+          tris,
+          ri === 0 ? "sulcus-inner" : "gingiva-floor",
+          [r0 * c0, r0 * s0, SULCUS_Z],
+          [r1 * c0, r1 * s0, SULCUS_Z],
+          [r1 * c1, r1 * s1, SULCUS_Z],
+          [r0 * c1, r0 * s1, SULCUS_Z],
+          gingRgb,
+        );
+      }
+    }
+    for (let i = -4; i < 4; i += 1) {
+      const y0 = i * 0.45;
+      const y1 = (i + 1) * 0.45;
+      for (let zi = 0; zi < 4; zi += 1) {
+        const z0 = SULCUS_Z + zi * 0.95;
+        const z1 = SULCUS_Z + (zi + 1) * 0.95;
+        addQuad(
+          tris,
+          "adj-tooth-proximal",
+          [2.68, y0, z0],
+          [2.68, y0, z1],
+          [2.68, y1, z1],
+          [2.68, y1, z0],
+          shadedToothRgb,
+        );
+      }
+    }
+    for (let i = 0; i < 14; i += 1) {
+      for (let j = 0; j < 14; j += 1) {
+        const x0 = 40 + (i - 7) * 0.24;
+        const y0 = (j - 7) * 0.24;
+        addQuad(
+          tris,
+          "other-cap",
+          [x0, y0, 1],
+          [x0 + 0.24, y0, 1],
+          [x0 + 0.24, y0 + 0.24, 1],
+          [x0, y0 + 0.24, 1],
+          sbRgb,
+        );
+      }
+    }
+
+    const geo = buildTaggedMesh(tris);
+    const good = makeFixture("32", [0, 0, 0], R, TOP_Z, SULCUS_Z);
+    const bad = makeFixture("42", [40, 0, 8], R, TOP_Z, SULCUS_Z);
+    bad.fixturePose = { ...bad.fixturePose, axis: [0, 0, -1], hexY: [0, -1, 0] };
+    bad.scanbodyTop = [40, 0, 1];
+    const split = splitScanByScanbodies(geo, [bad, good]);
+    const restIdx = split.rest.getIndex()!;
+    const keptTriSet = new Set<number>();
+    for (let k = 0; k < restIdx.count; k += 3) {
+      keptTriSet.add(Math.floor(restIdx.getX(k) / 3));
+    }
+    let sbLeft = 0;
+    let adjDeleted = 0;
+    for (let t = 0; t < tris.length; t += 1) {
+      const tag = tris[t]!.tag;
+      const kept = keptTriSet.has(t);
+      if ((tag === "sb-cap" || tag === "sb-bore" || tag === "sb-wall") && kept) sbLeft += 1;
+      if (tag === "adj-tooth-proximal" && !kept) adjDeleted += 1;
+    }
+    assert.equal(sbLeft, 0);
+    assert.equal(adjDeleted, 0);
+  });
 });
