@@ -12,6 +12,7 @@
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
 //    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
 //    설측 대합만 가까우면 순측 절단을 함께 깎지 않는다.
+//    삽입축이 대합 이 사이(근원심)를 향하면 그 교합면도 높이 상한이다. 대합 거리를 비우지 않는다.
 //    예측 크라운 두께(목표 1mm, 공간 없으면 0.65mm)와 스크류 채널 벽을 지키고, 줄이는 양은 둘레로 퍼뜨린다.
 // 5) 커프 = cuffBlend 방식(PRC 면 2° 시작 → 4° 유지 → 오목하게 벌어져 실측 각도로 피니시라인, 볼록 없음).
 // 6) 포스트 축벽은 솔리드로 두고, 화면용 메시만 임플란트 축 원통으로 스크류 홀을 뚫는다.
@@ -7201,6 +7202,24 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           maxAbsU: 8.5,
         })
       : null;
+  // 절치 삽입축이 인접 대합 사이를 향하면 축 위 좁은 복도에는 대합이 없다.
+  // 그 교합면은 높이 상한으로 남긴다. 축 근처에서 이미 잡은 대합, 설측만 가까운 딥바이트는 여기서 자르지 않는다.
+  const embrasureOppHit =
+    tpl.kind === "incisor" && opposingLocalPts.length > 0
+      ? findArchAwareOpposingHit(buildOpposingHeightField(opposingLocalPts, c0, frame, 14), {
+          halfMdMm: 9.2,
+          maxAbsU: 9.5,
+        })
+      : null;
+  const embrasureOppCeil = (() => {
+    if (!embrasureOppHit || archOppHit != null || !Number.isFinite(embrasureOppHit.h)) return null;
+    const absU = Math.abs(embrasureOppHit.u);
+    const absV = Math.abs(embrasureOppHit.v);
+    if (Math.hypot(absU, absV) < 4.5) return null;
+    // 설측으로만 가까운 딥바이트는 절단 높이를 내리지 않는다.
+    if (embrasureOppHit.u < -2.2 && absV < absU) return null;
+    return embrasureOppHit.h;
+  })();
   // 중심부(포스트 상단 면) 대합치 높이.
   // 구치는 중심 교합면(0, 0). 전치는 절단연 능선(순측 +0.45mm)을 우선하고,
   // 삽입축 바로 위가 비면(악궁 곡률·수평피개) 악궁상 대합 중심으로 찾는다.
@@ -7442,6 +7461,16 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       }
     }
   }
+  // 근원심으로 빗나간 인접 대합의 교합면보다 포스트를 올리지 않는다.
+  // 악궁 곡면만 따르면 이 사이로 솟아 대합 거리가 비어 보인다.
+  let embrasureCeilH = Infinity;
+  if (embrasureOppCeil != null) {
+    embrasureCeilH = Math.max(minSafePostHeightMm, embrasureOppCeil - clearance);
+    if (embrasureCeilH + 0.15 < postTopH) {
+      postTopH = embrasureCeilH;
+      postTopMax = embrasureCeilH;
+    }
+  }
   // 구치는 대합 거리까지 윗면이 올라가고, 전치는 이미 잡은 postTopH가 자연 높이다.
   const effClearTopH = incisorDeepBite
     ? incisorLabialClearTopH
@@ -7456,6 +7485,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       : Infinity;
   const safeTopH = Math.min(
     archSafeCapH,
+    embrasureCeilH,
     Number.isFinite(effClearTopH) ? Math.max(effClearTopH, posterior ? 0 : postTopH) : Infinity,
   );
   if (mode.probeHeight) return { kind: "height", naturalTopH, safeTopH, oppClearTopH: effClearTopH };
@@ -14126,7 +14156,14 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
             occInFix,
             archClearMeasureOpts,
           );
-  const occlusalClearanceMm = meshClearanceMm ?? axialClearanceMm;
+  let occlusalClearanceMm = meshClearanceMm ?? axialClearanceMm;
+  if (occlusalClearanceMm == null && embrasureOppCeil != null) {
+    const apexH = dot3(sub3(postApex, c0), frame.w);
+    const gap = embrasureOppCeil - apexH;
+    if (Number.isFinite(gap) && gap < 14) {
+      occlusalClearanceMm = Math.max(0, Math.round(gap * 100) / 100);
+    }
+  }
 
   let zMinLocal = Infinity;
   let zMaxLocal = -Infinity;
