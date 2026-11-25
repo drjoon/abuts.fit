@@ -371,10 +371,10 @@ export function buildPracticeSenderTransferDetailModel(
     abutmentStageLabel: transfer.hasCustomAbutment
       ? buildAbutmentStageLabel(transfer.abutmentToothStages)
       : null,
+    // 어벗 designFiles는 폴더/다운로드 대상에서 제외(플랫폼 내부 이동만).
     downloadAllFiles: [
       ...(Array.isArray(transfer.files) ? transfer.files : []),
       ...(Array.isArray(transfer.workScanFiles) ? transfer.workScanFiles : []),
-      ...(Array.isArray(transfer.designFiles) ? transfer.designFiles : []),
       ...(Array.isArray(transfer.resultFiles) ? transfer.resultFiles : []),
     ],
   };

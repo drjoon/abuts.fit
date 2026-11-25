@@ -59,6 +59,7 @@
 // - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
 // - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(01–99)·안내 복원.
+// - 2026-11-25: 어벗 디자인 STL은 프리뷰만. 폴더 열기·다운로드로 내보내지 않는다.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
@@ -2245,6 +2246,22 @@ export function PracticeTransferDetailChatDialog({
     [authToken, collectImageThumbFiles, designFiles, files, resultFiles, toast, workScanFiles],
   );
 
+  const designFileKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    for (const file of Array.isArray(designFiles) ? designFiles : []) {
+      const key = String(file.s3Key || "").trim();
+      if (key) keys.add(key);
+    }
+    return keys;
+  }, [designFiles]);
+  const isAbutmentDesignExportBlocked = useCallback(
+    (file: { s3Key?: string | null } | null | undefined) => {
+      const key = String(file?.s3Key || "").trim();
+      return Boolean(key) && designFileKeySet.has(key);
+    },
+    [designFileKeySet],
+  );
+
   const handleFileRowClick = useCallback(
     (file: PracticeTransferDialogFileItem, locked: boolean) => {
       if (locked) return;
@@ -2279,6 +2296,13 @@ export function PracticeTransferDetailChatDialog({
         void openFilePreview(file, kind);
         return;
       }
+      if (isAbutmentDesignExportBlocked(file)) {
+        toast({
+          title: "어벗 디자인은 내려받을 수 없습니다.",
+          description: "플랫폼 안에서만 확인할 수 있습니다.",
+        });
+        return;
+      }
       void onDownloadTransferFile(file);
     },
     [
@@ -2288,6 +2312,7 @@ export function PracticeTransferDetailChatDialog({
       designFiles,
       downloadingFileKeys,
       files,
+      isAbutmentDesignExportBlocked,
       onDownloadTransferFile,
       openFilePreview,
       resultFiles,
@@ -4412,7 +4437,7 @@ export function PracticeTransferDetailChatDialog({
                             <div className="space-y-1.5">
                               <p className="text-[13px] text-muted-foreground">
                                 {designFilesLabel}{" "}
-                                <span>({designFileList.length}개)</span>
+                                <span>({designFileList.length}개 · 미리보기만)</span>
                               </p>
                               <div className="grid grid-cols-4 gap-2">
                                 {designFileList.map((file, idx) =>
@@ -4764,19 +4789,33 @@ export function PracticeTransferDetailChatDialog({
             ...designFileList,
             ...resultFileList,
           ].filter((f) => keys.has(f.s3Key));
+          const exportable = originals.filter((f) => !isAbutmentDesignExportBlocked(f));
+          if (exportable.length === 0) {
+            toast({
+              title: "어벗 디자인은 내려받을 수 없습니다.",
+              description: "플랫폼 안에서만 확인할 수 있습니다.",
+            });
+            return;
+          }
+          if (exportable.length < originals.length) {
+            toast({
+              title: "어벗 디자인은 제외했습니다.",
+              description: "스캔·보철물만 저장합니다.",
+            });
+          }
           const scanKeys = new Set(
             [...requestFilesShown, ...workScanFileList].map((f) => f.s3Key),
           );
           if (onSaveFilesToCaseFolder) {
             await onSaveFilesToCaseFolder(
-              originals.map((file) => ({
+              exportable.map((file) => ({
                 ...file,
                 labFormat: scanKeys.has(file.s3Key),
               })),
             );
             return;
           }
-          for (const file of originals) await onDownloadTransferFile(file);
+          for (const file of exportable) await onDownloadTransferFile(file);
         }}
         onAttachChatFile={
           onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
@@ -4803,7 +4842,7 @@ export function PracticeTransferDetailChatDialog({
         progress={previewProgress}
         downloadBusy={previewDownloadBusy}
         onDownload={
-          previewMeta
+          previewMeta && !isAbutmentDesignExportBlocked(previewMeta)
             ? (opts) =>
                 void (onSaveFilesToCaseFolder
                   ? onSaveFilesToCaseFolder(

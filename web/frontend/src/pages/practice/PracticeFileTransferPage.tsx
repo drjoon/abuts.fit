@@ -7271,15 +7271,15 @@ export const PracticeFileTransferPage = ({
   );
 
   /**
-   * 의뢰·작업 스캔·디자인·보철 파일을 작업 폴더 안 케이스 폴더에 저장한다.
+   * 의뢰·작업 스캔·보철 파일을 작업 폴더 안 케이스 폴더에 저장한다.
+   * 어벗 디자인 STL은 내보내지 않는다(플랫폼 내부 이동만).
    * 「폴더 열기」는 이미 받은 파일은 건너뛰고 폴더만 연다.
    * DCM 종류를 안 고르면 계정 디자인 SW에 맞춘다(3Shape=DCM, ExoCAD·그외=PLY).
-   * 어벗 디자인·보철물은 올린 파일 그대로 둔다.
    */
   const handleOpenWork = useCallback(
     async (opts?: { dcmFormat?: DcmDownloadFormat; reuseSaved?: boolean }) => {
       const model = selectedTransferDetailModel;
-      if (!model?.downloadAllFiles.length || !selectedTransferCaseFolder) return;
+      if (!model || !selectedTransferCaseFolder) return;
       const sw = String(accountDesignSoftware || "").trim();
       const toTarget = (
         file: {
@@ -7297,13 +7297,15 @@ export const PracticeFileTransferPage = ({
         uploadedAt: file.uploadedAt,
         labFormat,
       });
+      // 커스텀어벗 STL은 폴더/다운로드로 내보내지 않는다(플랫폼 내부 이동만).
+      const files = [
+        ...model.files.map((file) => toTarget(file, true)),
+        ...model.workScanFiles.map((file) => toTarget(file, true)),
+        ...model.resultFiles.map((file) => toTarget(file, false)),
+      ].filter((file) => file.s3Key);
+      if (!files.length) return;
       await saveToLabWorkFolder({
-        files: [
-          ...model.files.map((file) => toTarget(file, true)),
-          ...model.workScanFiles.map((file) => toTarget(file, true)),
-          ...model.designFiles.map((file) => toTarget(file, false)),
-          ...model.resultFiles.map((file) => toTarget(file, false)),
-        ],
+        files,
         dcmFormat:
           opts?.dcmFormat || (sw ? dcmFormatForDesignSoftware(sw) : undefined),
         busy: opts?.reuseSaved === false ? "download" : "open",
