@@ -2320,7 +2320,7 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
 }
 
 // 구치: 협측 벽과 설측 악궁 중심선이 부딪혀 BL이 설측으로 길어지면
-// (1) 협측 상단 1/3 개방, (2) 협측 이동이 앞에 오고, 기존 후보는 최대 1개다.
+// 협측 이동(매끈한 포스트)이 앞에 오고, 협측 상단 개방(오목)은 제안하지 않는다.
 {
   const makeGrid = (
     xMin: number,
@@ -2405,11 +2405,13 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     params: { occlusalClearanceMm: 1.2 },
   });
   const labels = cands.map((c) => `${c.id}:${c.label}`).join(" | ");
-  assert.ok(cands.length >= 2 && cands.length <= 3, `설측 BL 과신장 후보는 2~3개다 (${labels})`);
-  assert.equal(cands[0]!.id, "buccal_top_open", `(1)은 협측 상단 1/3 개방이다 (${labels})`);
-  assert.equal(cands[0]!.label, "협측 상단 1/3 개방");
-  assert.equal(cands[1]!.id, "buccal_shift", `(2)는 협측 이동이다 (${labels})`);
-  assert.equal(cands[1]!.label, "협측으로 이동");
+  assert.ok(cands.length >= 1 && cands.length <= 3, `설측 BL 과신장 후보는 1~3개다 (${labels})`);
+  assert.equal(cands[0]!.id, "buccal_shift", `(1)은 협측 이동(매끈)이다 (${labels})`);
+  assert.equal(cands[0]!.label, "협측으로 이동");
+  assert.ok(
+    cands.every((c) => c.id !== "buccal_top_open"),
+    `협측 상단 개방(오목)은 제안하지 않는다 (${labels})`,
+  );
   const marginX = (loop: Float32Array) => {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -2424,65 +2426,19 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     }
     return { minX, maxX, span: maxX - minX, mean: n > 0 ? sum / n : 0 };
   };
-  const openMargin = marginX(cands[0]!.design.marginLoopLocal);
-  const shiftMargin = marginX(cands[1]!.design.marginLoopLocal);
+  const shiftMargin = marginX(cands[0]!.design.marginLoopLocal);
   const kept = cands.find((c) => c.id === "space_fill");
   if (kept) {
     const keptMargin = marginX(kept.design.marginLoopLocal);
     assert.ok(
-      openMargin.span < keptMargin.span - 0.6,
-      `개방 안 BL(${openMargin.span.toFixed(2)})이 설측으로 늘린 기존 안(${keptMargin.span.toFixed(2)})보다 짧다`,
-    );
-    assert.ok(
-      openMargin.mean < keptMargin.mean - 0.2,
-      `개방 안 중심(${openMargin.mean.toFixed(2)})이 악궁(설측) 쪽에 남는다`,
-    );
-    assert.ok(
       keptMargin.minX < shiftMargin.minX - 0.2,
       `기존 안 설측 끝(${keptMargin.minX.toFixed(2)})이 협측 이동(${shiftMargin.minX.toFixed(2)})보다 설측으로 길다`,
     );
+    assert.ok(
+      shiftMargin.mean > keptMargin.mean + 0.15,
+      `협측 이동 마진 중심(${shiftMargin.mean.toFixed(2)})이 기존 안(${keptMargin.mean.toFixed(2)})보다 협측이다`,
+    );
   }
-  assert.ok(
-    shiftMargin.mean > openMargin.mean + 0.15,
-    `협측 이동 마진 중심(${shiftMargin.mean.toFixed(2)})이 개방 안(${openMargin.mean.toFixed(2)})보다 협측이다`,
-  );
-  const bandMaxX = (pos: Float32Array, zLo: number, zHi: number) => {
-    let maxX = -Infinity;
-    for (let i = 0; i < pos.length; i += 3) {
-      const x = pos[i]!;
-      const y = pos[i + 1]!;
-      const z = pos[i + 2]!;
-      if (z < zLo || z >= zHi || Math.abs(y) > 1.15) continue;
-      if (x > maxX) maxX = x;
-    }
-    return maxX;
-  };
-  const openPos = cands[0]!.design.localPositions;
-  let zMin = Infinity;
-  let zMax = -Infinity;
-  for (let i = 2; i < openPos.length; i += 3) {
-    zMin = Math.min(zMin, openPos[i]!);
-    zMax = Math.max(zMax, openPos[i]!);
-  }
-  const zSpan = Math.max(0.5, zMax - zMin);
-  const midX = bandMaxX(openPos, zMin + zSpan * 0.4, zMin + zSpan * 0.62);
-  const topX = bandMaxX(openPos, zMin + zSpan * 0.82, zMax + 0.01);
-  assert.ok(
-    Number.isFinite(midX) && Number.isFinite(topX) && topX < midX - 0.3,
-    `협측 상단(${topX.toFixed(2)})이 중간 벽(${midX.toFixed(2)})보다 안쪽으로 열린다`,
-  );
-  let minMidBuccalR = Infinity;
-  for (let i = 0; i < openPos.length; i += 3) {
-    const x = openPos[i]!;
-    const y = openPos[i + 1]!;
-    const z = openPos[i + 2]!;
-    if (z < zMin + zSpan * 0.4 || z >= zMin + zSpan * 0.62 || Math.abs(y) > 1.15 || x <= 0.4) continue;
-    minMidBuccalR = Math.min(minMidBuccalR, Math.hypot(x, y));
-  }
-  assert.ok(
-    minMidBuccalR > 1.45,
-    `개방 안의 치은측 협측 벽(${minMidBuccalR.toFixed(2)}mm)은 스크류를 감싼다`,
-  );
   const flatJaw = makeGrid(-12, 12, -12, 12, 28, () => 3.1);
   const flatOpp = makeGrid(-8, 8, -8, 8, 20, () => 12.2);
   const plain = await designCustomAbutmentCandidates({
@@ -2544,8 +2500,11 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
     params: { occlusalClearanceMm: 1.2 },
   });
   const pairLabels = pairCands.map((c) => `${c.id}:${c.label}`).join(" | ");
-  assert.equal(pairCands[0]?.id, "buccal_top_open", `인접 어벗만 있어도 (1)이 뜬다 (${pairLabels})`);
-  assert.equal(pairCands[1]?.id, "buccal_shift", `인접 어벗만 있어도 (2)가 뜬다 (${pairLabels})`);
+  assert.equal(pairCands[0]?.id, "buccal_shift", `인접 어벗만 있어도 (1)이 협측 이동이다 (${pairLabels})`);
+  assert.ok(
+    pairCands.every((c) => c.id !== "buccal_top_open"),
+    `인접 어벗만 있어도 오목 상단은 제안하지 않는다 (${pairLabels})`,
+  );
 
   for (const cand of [...cands, ...plain, ...pairCands]) {
     cand.design.worldGeometry.dispose();

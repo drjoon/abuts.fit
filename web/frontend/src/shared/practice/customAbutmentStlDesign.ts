@@ -4712,8 +4712,8 @@ export async function designCustomAbutmentStl(args: DesignArgs): Promise<Designe
 /**
  * 인접 공간·치은 연하·포스트 강도·삽입축 등 조건이 서로 충돌하는 케이스에서
  * 우선순위가 높은 디자인 후보를 최대 3개까지 돌려준다(충돌이 없으면 길이 1).
- * 구치에서 협측 벽 때문에 설측 BL이 늘어나면 (1) 협측 상단 1/3 개방, (2) 협측 이동을 앞에 두고
- * 기존 후보는 남는 자리 하나에만 붙인다.
+ * 구치에서 협측 벽 때문에 설측 BL이 늘어나면 협측 이동(매끈한 포스트)을 앞에 두고
+ * 기존 후보는 남는 자리에 붙인다. 협측 상단 1/3 개방(오목 상단)은 제안하지 않는다.
  */
 export async function designCustomAbutmentCandidates(
   args: DesignArgs,
@@ -4766,7 +4766,6 @@ export async function designCustomAbutmentCandidates(
   };
 
   if (lingualBlConflict) {
-    await tryPush("buccal_top_open", "협측 상단 1/3 개방");
     await tryPush("buccal_shift", "협측으로 이동");
   }
 
