@@ -99,14 +99,13 @@ const planar = one([2, 1, 6], edit({ scale: [1.1, 1.2, 1] }));
 assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4, "평면은 두 축");
 
 {
-  // 픽스처가 원심으로 치우쳐 포스트 중심이 근심에 있다. 노란 XY 스케일로 줄이면
-  // 직선 원심 벽이 스크류 축을 넘고, 원점 원호 보정은 그 벽 가운데만 패이게 만든다.
+  // 픽스처가 원심으로 치우쳐도 XY 스케일 소프트 제한 없이 요청 배율을 그대로 쓴다.
   const eccentric = {
     ...zone,
     centerL: 0,
     centerM: 1.8,
     boreTopR: 1.05,
-    screwR: 1.25,
+    screwR: 0,
   };
   const src = new Float32Array([
     -1.6, -1.7, 6,
@@ -116,20 +115,17 @@ assert.ok(Math.abs(planar[0]! - 2.2) < 1e-4 && Math.abs(planar[1]! - 1.2) < 1e-4
   ]);
   const shrunk = new Float32Array(src.length);
   refitLocalPositions(src, edit({ scale: [0.7, 0.7, 1] }), eccentric, shrunk);
-  const distalY = [shrunk[1]!, shrunk[4]!, shrunk[7]!];
+  // 중심 M=1.8, 원심 y=-1.7 → 1.8 + (-1.7-1.8)*0.7 = -0.65
   assert.ok(
-    Math.abs(distalY[0]! - distalY[1]!) < 0.04 && Math.abs(distalY[2]! - distalY[1]!) < 0.04,
-    `XY 축소 후에도 원심 벽이 직선이다(${distalY.map((y) => y.toFixed(3)).join(", ")})`,
-  );
-  assert.ok(
-    distalY.every((y) => y < -1.25),
-    `원심 벽이 스크류 축 밖으로 남는다(${distalY.map((y) => y.toFixed(3)).join(", ")})`,
+    Math.abs(shrunk[4]! - -0.65) < 1e-3,
+    `XY 축소는 요청 배율 전부 적용한다(${shrunk[4]})`,
   );
   const grown = new Float32Array(src.length);
   refitLocalPositions(src, edit({ scale: [1.3, 1.3, 1] }), eccentric, grown);
+  // 1.8 + (-1.7-1.8)*1.3 = -2.75
   assert.ok(
-    grown[4]! < shrunk[4]! && grown[4]! < -1.7,
-    `XY 확대는 원심 벽을 축 반대쪽으로 밀고 접지 않는다(${grown[4]})`,
+    Math.abs(grown[4]! - -2.75) < 1e-3,
+    `XY 확대도 요청 배율 전부 적용한다(${grown[4]})`,
   );
 }
 
@@ -188,18 +184,18 @@ const far = one(
 );
 assert.ok(Math.abs(far[0]! - 2) < 1e-4, "범위 밖 포스트는 그대로");
 
-const limited = edit({ scale: [2, 0.1, 3], heightMm: 9, shiftLabialMm: 8, yawDeg: 90 });
+const limited = edit({ scale: [4, 0.05, 5], heightMm: 9, shiftLabialMm: 8, yawDeg: 90 });
 clampAbutmentEdit(limited, 8);
-assert.equal(limited.scale[0], 1.45);
-assert.equal(limited.scale[1], 0.65);
-assert.equal(limited.scale[2], 1.45);
+assert.equal(limited.scale[0], 3);
+assert.equal(limited.scale[1], 0.2);
+assert.equal(limited.scale[2], 3);
 assert.equal(limited.shiftLabialMm, 2.5);
 assert.equal(limited.yawDeg, 30);
 assert.equal(limited.heightMm, 9, "제안 높이를 모르면 패널 범위까지 높이 이동을 남긴다");
 const fromSix = edit({ heightMm: 9, scale: [1, 1, 3] });
 clampAbutmentEdit(fromSix, 8, 6);
 assert.equal(fromSix.heightMm, 6, "포스트 6mm에서는 패널 상한 12mm까지 올린다");
-assert.equal(fromSix.scale[2], 2, "축 스케일도 같은 높이 상한까지 늘린다");
+assert.equal(fromSix.scale[2], 3, "축 스케일은 0.2–3.0 클램프를 쓴다");
 const steep = edit({ tiltLabialDeg: 80 });
 clampAbutmentEdit(steep, 8);
 assert.ok(Math.abs(steep.tiltLabialDeg) <= 25 + 1e-6, "기울기는 허용 각도(25°) 안");
@@ -329,6 +325,14 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   });
   assert.ok(wideAlongArrow > 1, `가로 스케일 화살표(+X) 방향 → 커짐 (${wideAlongArrow})`);
   assert.ok(wideAgainstArrow < 1, `가로 스케일 화살표 반대 → 작아짐 (${wideAgainstArrow})`);
+
+  // 짧은 드래그는 조금, 긴 드래그는 많이(거리 비례). 상한은 0.2–3.0.
+  const shortDrag = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 + 0.05 });
+  const longDrag = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 + 0.5 });
+  assert.ok(shortDrag > 1 && shortDrag < longDrag, `짧은 드래그 < 긴 드래그 (${shortDrag} < ${longDrag})`);
+  assert.ok(longDrag <= 3 + 1e-9, `긴 드래그도 3.0을 넘지 않는다 (${longDrag})`);
+  const farShrink = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 - 2 });
+  assert.equal(farShrink, 0.2, "크게 줄여도 하한 0.2");
 }
 
 // 회전(yaw)이 이미 적용된 상태에서도 화살표 이동과 축 회전 기울기 부호가 화면 드래그 방향과 정확히 일치하는지 검증

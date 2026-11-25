@@ -52,8 +52,8 @@ const AXIS_COLOR = [0xef4444, 0x22c55e, 0x3b82f6] as const;
 /** 노란 2D 스케일 점의 검볼 로컬 좌표(우상). 1D 스케일 허브 기준으로도 쓴다. */
 const GUMBALL_SCALE2_CORNER = 0.36;
 export const GUMBALL_SIZE_PX = 76;
-const SCALE_MIN = 0.65;
-const SCALE_MAX = 1.45;
+const SCALE_MIN = 0.2;
+const SCALE_MAX = 3;
 const SHIFT_MM = 2.5;
 /** 마진·커프가 포스트와 함께 통째로 들리지 않게, 커프에 실리는 상승만 이 값까지 둔다. */
 const CUFF_LIFT_MM = 2.5;
@@ -528,11 +528,7 @@ export function normalizeAbutmentEdit(raw: unknown): AbutmentEdit | null {
     scale: [
       clamp(num(rawScale[0], 1), SCALE_MIN, SCALE_MAX),
       clamp(num(rawScale[1], 1), SCALE_MIN, SCALE_MAX),
-      clamp(
-        num(rawScale[2], 1),
-        SCALE_MIN,
-        RETENTION_MAX_POST_HEIGHT_MM / RETENTION_MIN_POST_HEIGHT_MM,
-      ),
+      clamp(num(rawScale[2], 1), SCALE_MIN, SCALE_MAX),
     ],
     partial,
   };
@@ -559,8 +555,9 @@ function editsEqual(a: AbutmentEdit, b: AbutmentEdit) {
 }
 
 /**
- * 이동·회전·굵기는 초기 제안 근처에 둔다.
- * 높이는 어벗 정보 패널과 같은 절대 범위(2.2–12mm)까지 허용한다. postHeightMm은 제안 포스트 높이다.
+ * 이동·회전은 초기 제안 근처에 둔다.
+ * 스케일은 0.2–3.0. 높이는 어벗 정보 패널과 같은 절대 범위(2.2–12mm)까지 허용한다.
+ * postHeightMm은 제안 포스트 높이다.
  */
 export function clampAbutmentEdit(edit: AbutmentEdit, span: number, postHeightMm?: number) {
   edit.shiftLabialMm = clamp(edit.shiftLabialMm, -SHIFT_MM, SHIFT_MM);
@@ -572,11 +569,7 @@ export function clampAbutmentEdit(edit: AbutmentEdit, span: number, postHeightMm
   edit.tiltMesialDeg = clamp(edit.tiltMesialDeg, -maxTiltDeg, maxTiltDeg);
   edit.scale[0] = clamp(edit.scale[0], SCALE_MIN, SCALE_MAX);
   edit.scale[1] = clamp(edit.scale[1], SCALE_MIN, SCALE_MAX);
-  const axialMax =
-    postHeightMm != null && postHeightMm > 0.5
-      ? Math.max(SCALE_MAX, RETENTION_MAX_POST_HEIGHT_MM / postHeightMm)
-      : SCALE_MAX;
-  edit.scale[2] = clamp(edit.scale[2], SCALE_MIN, axialMax);
+  edit.scale[2] = clamp(edit.scale[2], SCALE_MIN, SCALE_MAX);
   const heightLimits =
     postHeightMm != null
       ? manualHeightLiftLimits(postHeightMm)
@@ -594,84 +587,15 @@ function blendAbove(z: number, coneZ: number, marginZ: number) {
 }
 
 /**
- * 노란 XY 스케일은 포스트 중심 기준이다. 픽스처가 원심으로 치우치면 그 중심이 임플란트 축에서 근심으로 밀려 있고,
- * 배율을 줄이거나 한 축만 키우면 원심 벽이 축을 넘어 접힌다.
- * 접힌 정점을 원점 원호로 다시 밀면 직선 원심 벽 한가운데만 패여 모델이 깨지므로, 배율 적용량 자체를 낮춘다.
- * 반환값 1은 요청 배율 전부, 0은 가로 배율을 적용하지 않는다.
+ * 예전에는 원심 벽이 스크류 축을 넘지 않게 XY 배율을 줄였다, 지금은 요청 배율을 그대로 쓴다.
+ * 호출부 호환용으로 남겨 두었고 항상 1을 반환한다.
  */
-export function abutmentShellScaleBlend(proposal: Float32Array, edit: AbutmentEdit, zone: Zone): number {
-  const s0 = edit.scale[0];
-  const s1 = edit.scale[1];
-  if (Math.abs(s0 - 1) < 1e-4 && Math.abs(s1 - 1) < 1e-4) return 1;
-  const { fixedZ, marginZ, screwR, labial, mesial } = zone;
-  const bore = Math.max(0, zone.boreTopR ?? Math.max(0, screwR - 0.2));
-  const axisR = Math.max(screwR, bore);
-  // 스크류 채널·윗면 중심은 빼고, 그 바로 바깥 필렛과 외벽은 축을 넘지 않게 본다.
-  const shellMin = axisR + 0.08;
-  const minKeep = Math.max(screwR + 0.14, bore + 0.34);
-  let postCenterL = zone.centerL ?? Number.NaN;
-  let postCenterM = zone.centerM ?? Number.NaN;
-  if (!Number.isFinite(postCenterL) || !Number.isFinite(postCenterM)) {
-    postCenterL = 0;
-    postCenterM = 0;
-    let n = 0;
-    const hole = screwR > 0.15;
-    for (let i = 0; i < proposal.length; i += 3) {
-      const z = proposal[i + 2]!;
-      if (z <= marginZ) continue;
-      const x = proposal[i]!;
-      const y = proposal[i + 1]!;
-      if (hole && Math.hypot(x, y) <= screwR + 0.12) continue;
-      postCenterL += x * labial[0] + y * labial[1];
-      postCenterM += x * mesial[0] + y * mesial[1];
-      n += 1;
-    }
-    if (n > 0) {
-      postCenterL /= n;
-      postCenterM /= n;
-    }
-  }
-  const yawRad = (edit.yawDeg * Math.PI) / 180;
-  const place = (x: number, y: number, z: number, u: number) => {
-    const t = blendAbove(z, fixedZ, marginZ);
-    const l = x * labial[0] + y * labial[1];
-    const m = x * mesial[0] + y * mesial[1];
-    const dl = (l - postCenterL * t) * (1 + (s0 - 1) * t * u);
-    const dm = (m - postCenterM * t) * (1 + (s1 - 1) * t * u);
-    const c = Math.cos(yawRad * t);
-    const s = Math.sin(yawRad * t);
-    const ly = postCenterL * t + (dl * c - dm * s) + edit.shiftLabialMm * t;
-    const my = postCenterM * t + (dl * s + dm * c) + edit.shiftMesialMm * t;
-    return {
-      nx: ly * labial[0] + my * mesial[0],
-      ny: ly * labial[1] + my * mesial[1],
-    };
-  };
-  const ok = (u: number) => {
-    for (let i = 0; i < proposal.length; i += 3) {
-      const x = proposal[i]!;
-      const y = proposal[i + 1]!;
-      const z = proposal[i + 2]!;
-      if (z <= fixedZ + 0.02) continue;
-      const r0 = Math.hypot(x, y);
-      if (r0 <= shellMin) continue;
-      const p = place(x, y, z, u);
-      if (x * p.nx + y * p.ny <= 1e-4) return false;
-      const r1 = Math.hypot(p.nx, p.ny);
-      if (r0 >= minKeep - 0.02 && r1 < minKeep - 1e-3 && r1 < r0 - 1e-3) return false;
-    }
-    return true;
-  };
-  if (ok(1)) return 1;
-  if (!ok(0)) return 0;
-  let lo = 0;
-  let hi = 1;
-  for (let k = 0; k < 10; k += 1) {
-    const mid = (lo + hi) * 0.5;
-    if (ok(mid)) lo = mid;
-    else hi = mid;
-  }
-  return lo;
+export function abutmentShellScaleBlend(
+  _proposal: Float32Array,
+  _edit: AbutmentEdit,
+  _zone: Zone,
+): number {
+  return 1;
 }
 
 /**
@@ -1039,11 +963,7 @@ export function refitLocalPositions(
     : null;
   const yawCos = Math.cos(yawRad);
   const yawSin = Math.sin(yawRad);
-  const shellBlend = clamp(
-    scaleBlend ?? abutmentShellScaleBlend(proposal, edit, zone),
-    0,
-    1,
-  );
+  const shellBlend = scaleBlend ?? 1;
   const pivotDl = (basePivotL - postCenterL) * (1 + (edit.scale[0] - 1) * shellBlend);
   const pivotDm = (basePivotM - postCenterM) * (1 + (edit.scale[1] - 1) * shellBlend);
   const pivotL = postCenterL + (pivotDl * yawCos - pivotDm * yawSin) + edit.shiftLabialMm;
@@ -1107,7 +1027,7 @@ export function refitLocalPositions(
     const yaw = yawRad * t;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
-    // 포스트 중심 기준 스케일. shellBlend < 1 이면 원심 벽이 스크류 축을 넘지 않도록 요청 배율의 일부만 쓴다.
+    // 포스트 중심 기준 스케일. 요청 배율을 그대로 쓴다.
     const dl = (l - postCenterL * t) * (1 + (edit.scale[0] - 1) * t * shellBlend);
     const dm = (m - postCenterM * t) * (1 + (edit.scale[1] - 1) * t * shellBlend);
     const lRot = dl * c - dm * s;
@@ -2668,7 +2588,8 @@ export function scaleFactorFromAxisDrag(args: {
   axisDotScreenUp?: number;
 }): number {
   const ref = Math.max(args.startHubDist, 0.12);
-  return clamp(1 + (args.along - args.startAlong) / ref, 0.4, 2.2);
+  // 짧은 드래그는 조금, 긴 드래그는 많이. 한 제스처 상한은 스케일 클램프와 같다.
+  return clamp(1 + (args.along - args.startAlong) / ref, SCALE_MIN, SCALE_MAX);
 }
 
 /**
@@ -3805,7 +3726,11 @@ export class AbutmentDirectEditSession {
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
       // 중심에서 멀어지는 거리 비. 대각·가로·세로 어느 쪽으로 끌어도 XY가 변한다.
-      const factor = clamp(hit.distanceTo(center) / Math.max(drag.startRadialLen, 0.2), 0.4, 2.2);
+      const factor = clamp(
+        hit.distanceTo(center) / Math.max(drag.startRadialLen, 0.2),
+        SCALE_MIN,
+        SCALE_MAX,
+      );
       if (drag.kind === "scale3") return { kind: "scaleUniform", factor };
       // 포스트 단면 XY(순측·근심). 화면 축 투영은 옆보기에서 높이까지 섞인다.
       return {
@@ -4045,10 +3970,7 @@ export class AbutmentDirectEditSession {
 
     const cached = Boolean(bake && view.proposalSolid && sameDrilled);
     const local = cached ? new Float32Array(view.lastDrilledLocal) : this.take("local", previewSrc.length);
-    // 마진 선·포스트·크라운이 서로 다른 배율로 줄어 원심 벽만 어긋나지 않게, 편집 전 본체로 한 번만 정한다.
-    const shellSrc = view.proposalSolid ?? view.proposal;
-    const shellZone = view.proposalSolid ? { ...view.zone, screwR: 0 } : view.zone;
-    const shellBlend = abutmentShellScaleBlend(shellSrc, edit, shellZone);
+    const shellBlend = 1;
     let marginLocal: Float32Array | null = null;
     let marginZCorr: Float32Array | null = cached ? view.lastMarginZCorr : null;
     let hasMarginZCorr = false;
@@ -4573,7 +4495,7 @@ export class AbutmentDirectEditSession {
     axes: readonly THREE.Vector3[],
     factor: number,
   ) {
-    const clampedFactor = clamp(factor, 0.4, 2.2);
+    const clampedFactor = clamp(factor, SCALE_MIN, SCALE_MAX);
     for (let i = 0; i < 3; i += 1) {
       let weight = 0;
       for (const axis of axes) weight += axis.dot(view.axes[i]!) ** 2;
