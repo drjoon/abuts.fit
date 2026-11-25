@@ -5,7 +5,7 @@
 // 파란 축은 화면 밖이다. 우상 이동 화살표는 화면 오른쪽·위인데, 포스트가 화면 아래로 길어지면 검볼을 180° 돌려 그 쪽을 가리킨다.
 // 고리(XY)가 화면에 평행하고 파란 축이 화면에 수직이다. 뷰가 바뀌면 검볼도 따라 돈다.
 // 노란 점은 평면 2D 스케일. 화살표 반대쪽 녹·빨 점은 축 1D 스케일. 우상 화살표는 평면 이동.
-// 초록(세로) 1D 스케일은 화면 위로 끌면 커진다(상악 10/20·하악 30/40 공통).
+// 녹·빨 1D 스케일은 화살표(+축) 방향으로 끌면 커진다. 초록은 화면 축이 아니라 포스트 높이에 실린다.
 // 커넥션과 11° 콘은 고정이다. 커프는 지금 마진 라인까지 오목한 단면으로 다시 깔고, 그 위 포스트만 움직인다.
 // 스크류 홀은 임플란트 축에 남기고, 윗면이 움직이면 입구 높이만 따라간다.
 // 검볼을 움직이면 어벗 정보 수치를 다시 읽고, 손을 떼면 되돌리기 기록에 남긴다.
@@ -2631,8 +2631,8 @@ const gumballBasis = new THREE.Matrix4();
  * 우상 이동 화살표가 포스트가 길어지는 쪽을 가리키게 화면 축을 고른다.
  * 포스트 +축이 화면 아래를 보면 오른쪽·위를 함께 뒤집어 검볼을 180° 돌린다.
  * 화면 밖 축은 그대로라 고리는 화면에 평행하다.
- * 축 1D 스케일 점은 화살표 반대(-X/-Y)에 두고, 세로 스케일 배율은
- * `scaleFactorFromAxisDrag`가 화면 위 방향으로 키운다(상·하악 공통).
+ * 축 1D 스케일 점은 화살표 반대(-X/-Y)에 두고, 배율은
+ * `scaleFactorFromAxisDrag`가 화살표(+축) 방향으로 키운다(상·하악 공통).
  */
 export function orientGumballScreenAxes(
   right: THREE.Vector3,
@@ -2656,25 +2656,19 @@ export function orientGumballScreenAxes(
 
 /**
  * 축 1D 스케일 배율.
- * 세로에 가까운 축(화면 위와 정렬)은 화면 위로 끌면 커진다 — 상악(10/20)·하악(30/40) 공통.
- * 가로는 노란 허브에서 멀어질수록 커진다.
+ * 화살표(+축) 쪽으로 끌면 커지고, 반대로 끌면 작아진다 — 상악(10/20)·하악(30/40) 공통.
+ * 녹·빨 모두 같은 부호다. hubAlong은 호출 호환용이며 배율에 쓰지 않는다.
  */
 export function scaleFactorFromAxisDrag(args: {
   along: number;
   startAlong: number;
   hubAlong: number;
   startHubDist: number;
-  /** 스케일 축 · 화면 위 내적. |값|이 크면 세로로 본다. */
-  axisDotScreenUp: number;
+  /** @deprecated 화살표 부호만 쓴다. 남겨 둔 호출 호환 인자. */
+  axisDotScreenUp?: number;
 }): number {
   const ref = Math.max(args.startHubDist, 0.12);
-  const upAlign = args.axisDotScreenUp;
-  if (Math.abs(upAlign) > 0.35) {
-    const sense = upAlign >= 0 ? 1 : -1;
-    return clamp(1 + ((args.along - args.startAlong) * sense) / ref, 0.4, 2.2);
-  }
-  const hubDist = Math.max(Math.abs(args.along - args.hubAlong), 0.04);
-  return clamp(hubDist / ref, 0.4, 2.2);
+  return clamp(1 + (args.along - args.startAlong) / ref, 0.4, 2.2);
 }
 
 /**
@@ -3770,15 +3764,16 @@ export class AbutmentDirectEditSession {
       const hit = this.rayOnPlane(event);
       if (!hit) return null;
       const along = hit.sub(center).dot(axis);
-      this.cameraBasis();
       const factor = scaleFactorFromAxisDrag({
         along,
         startAlong: drag.startAlong,
         hubAlong: drag.hubAlong,
         startHubDist: drag.startHubDist,
-        axisDotScreenUp: axis.dot(this.camUp),
       });
-      return { kind: "scaleAxes", axes: [axis.clone()], factor };
+      // 초록(세로)은 화면 Y가 아니라 포스트 높이. 교합 뷰에서도 XY 제한에 안 걸린다.
+      // 빨강은 화면 가로 축을 순측·근심에 투영한다.
+      const scaleAxis = drag.axis === 1 ? view.axes[2]!.clone() : axis.clone();
+      return { kind: "scaleAxes", axes: [scaleAxis], factor };
     }
     if (drag.kind === "rot") {
       const center = drag.pivotWorld;
