@@ -381,7 +381,8 @@ function parseExocadEntry(configName, files, fileName, notes) {
         notes.push(`${systemName}: ${marker} — 암호화된 형상이라 읽을 수 없습니다.`);
         continue;
       }
-      // 모델 +X = −AxisAsymmetric. GeoMedi 같은 스캔바디를 3Shape `.dme`와 비교하면 이 방향에서 겹친다.
+      // 모델 +X = −AxisAsymmetric = 헥스 평면 법선 = D컷·베벨(지오메디 실측: D컷∥헥스 평면).
+      // 3Shape `.dme`와 비교해도 이 방향에서 겹친다. 원점·높이 SSOT: customAbutmentScanbodyMatch.ts.
       const asym = vec(sub.AxisAsymmetric) ?? entryRef;
       const part = loadMarker(marker, [-asym[0], -asym[1], -asym[2]]);
       if (!part) continue;

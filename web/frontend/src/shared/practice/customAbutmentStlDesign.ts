@@ -17,7 +17,9 @@
 // 6) 포스트 축벽은 솔리드로 두고, 화면용 메시만 임플란트 축 원통으로 스크류 홀을 뚫는다.
 //    저장·다운로드 STL은 홀을 메운 솔리드다. 가공에서 그 홀을 다시 메운다.
 //    원통이 옆면으로 나오지 않게 축벽이 채널을 윗면까지 감싼 뒤 뺀다(manifold).
-// 로컬 좌표계(제조사 STL SSOT): 플랫폼 원점(0,0,0), +Z 임플란트 장축, +X 헥스 평면 법선.
+// 로컬 좌표계(제조사 STL SSOT): 플랫폼 원점(0,0,0)=픽스쳐 최정상, +Z 임플란트 장축,
+// +X = 헥스 평면 법선 = 스캔바디 D컷·베벨(지오메디 실측: D컷∥헥스 평면, 모서리 아님).
+// 스캔바디 의뢰 높이 H = 원점→상단. 지오메디 원점 하방 커넥션·헥스는 2.5mm(H와 무관). SSOT: customAbutmentScanbodyMatch.ts.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentDesignParams.ts
 // - web/frontend/src/shared/practice/customAbutmentDesignCache.ts
@@ -1163,7 +1165,7 @@ export async function openScrewChannelForView(
   }
 }
 
-/** 6각 헥스 단면 반경(모서리 라운드 포함). +X가 평면 법선(0°, 60°, ...). */
+/** 6각 헥스 단면 반경(모서리 라운드 포함). +X(θ=0)가 평면 법선 — D컷과 같은 면(0°, 60°, ...). */
 function hexOuterRadiusAt(theta: number, hexSizeMm: number): number {
   const flatR = hexSizeMm / 2;
   const cornerMaxR = (flatR / Math.cos(Math.PI / 6)) * 0.982;

@@ -1,4 +1,11 @@
 // 구강스캔에서 스캔바디를 인식하고 스캔바디 라이브러리를 정합(ICP)해 픽스쳐 위치·축·인덱스를 구한다.
+//
+// 스캔바디·픽스쳐 원점 SSOT (지오메디 D4.5×H5.0 실측 2026-11-25, H7·H9도 동일):
+// - 플랫폼 원점 = 픽스쳐 최정상 = 스캔바디 금색 몸통·은색 커넥션 경계.
+// - 의뢰 기재 높이 H(5·7·9…) = 원점→스캔바디 상단. 픽스쳐 높이·정합 `topMm`은 이 값을 그대로 쓴다.
+// - 원점 하방(커넥션·헥스)은 2.5mm로 고정(전체 길이 = H+2.5). 임플란트 체결 깊이 `l2Mm`와는 별개다.
+// - D컷(윗면 평면)은 헥스 **평면**과 같은 방향(+X). 모서리(꼭짓점)가 아니다.
+//   모델 +X = 헥스 평면 법선 = 스캔바디 D컷·베벨 바깥 법선. exocad는 +X=−AxisAsymmetric.
 // related files:
 // - web/frontend/src/shared/practice/scanbodyRegistration.ts
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
@@ -53,11 +60,13 @@ export type CustomAbutmentConnectionSpec = {
 };
 
 export type FixtureWorldPose = {
-  /** 픽스쳐 플랫폼 원점(월드 mm). */
+  /** 픽스쳐 플랫폼 원점(월드 mm). 스캔바디 금색·은색 경계(픽스쳐 최정상). */
   origin: Vec3;
   /** 임플란트 장축(+Z_implant, 치관·교합 방향 단위벡터). */
   axis: Vec3;
-  /** 헥스 평면·스캔바디 베벨 기준축(+X_implant). */
+  /**
+   * +X_implant: 헥스 평면 법선 = 스캔바디 D컷·베벨 바깥 법선(지오메디 실측: D컷∥헥스 평면, 모서리 아님).
+   */
   hexX: Vec3;
   /** +Y_implant = axis × hexX. */
   hexY: Vec3;
@@ -69,6 +78,7 @@ export type MatchedScanbodyFixture = {
   fixturePose: FixtureWorldPose;
   scanbodyTop: Vec3;
   scanbodyRadiusMm: number;
+  /** 원점→스캔바디 상단(mm). 의뢰 기재 H와 같다(하방 커넥션 제외). */
   scanbodyHeightMm: number;
   /** 플랫폼 기준 스캔바디가 잇몸 위로 드러나기 시작하는 높이(mm). */
   gingivaFloorMm: number;
@@ -331,8 +341,10 @@ export function parseFdiTooth(raw: string): {
 }
 
 /**
- * 의뢰 규격(직경·높이)에 대응하는 표준 스캔바디 형상(플랫폼 원점, +Y 축, +X 평면 베벨).
- * 서버에 해당 제조사 .dme가 아직 등록되지 않은 경우에도 정확한 높이(플랫폼 거리)와 원기둥·베벨을 맞춘다.
+ * 의뢰 규격(직경·높이)에 대응하는 표준 스캔바디 형상.
+ * 좌표: 플랫폼 원점, +Y 임플란트 축, +X = D컷·베벨 = 헥스 평면 법선(SSOT 파일 머리 주석).
+ * `heightMm` = 의뢰 H = 원점→상단. 하방 커넥션은 넣지 않는다(지오메디도 하방 2.5mm는 체결부라 정합 높이에서 제외).
+ * 서버에 해당 제조사 .dme가 아직 없으면 이 파라메트릭으로 높이·원기둥·베벨을 맞춘다.
  */
 export function buildParametricScanbodyLibraryMesh(
   diameterMm: number,
