@@ -36,6 +36,7 @@ import {
   refitLocalPositions,
   regenerateCuffToMargin,
   orientGumballScreenAxes,
+  scaleFactorFromAxisDrag,
   screenGumballQuaternion,
   sculptFalloff,
   writeAttribute,
@@ -284,17 +285,53 @@ assert.ok(localZ.distanceTo(outOfScreen) < 1e-6, "파란 축은 화면 밖, 고�
   screenGumballQuaternion(oR, oU, oF, q);
   const downY = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
   const stillZ = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-  assert.ok(downY.distanceTo(up.clone().negate()) < 1e-6, "초록 점은 포스트가 길어지는 화면 아래");
+  assert.ok(downY.distanceTo(up.clone().negate()) < 1e-6, "우상(+Y) 화살표는 포스트가 길어지는 화면 아래");
   assert.ok(stillZ.distanceTo(outOfScreen) < 1e-6, "180° 뒤에도 파란 축은 화면 밖");
   const postUp = new THREE.Vector3(0, 0, 1);
   assert.equal(orientGumballScreenAxes(right, up, outOfScreen, postUp, oR, oU, oF), false);
-  assert.ok(oU.distanceTo(up) < 1e-6, "포스트가 화면 위면 초록 점은 위에 둔다");
+  assert.ok(oU.distanceTo(up) < 1e-6, "포스트가 화면 위면 우상(+Y) 화살표는 위에 둔다");
   const almostLevel = new THREE.Vector3(0, 0.98, -0.1).normalize();
   assert.equal(
     orientGumballScreenAxes(right, up, outOfScreen, almostLevel, oR, oU, oF),
     false,
     "화면과 거의 나란한 포스트는 뒤집지 않는다",
   );
+}
+
+// 초록(세로) 1D 스케일: 화면 위로 끌면 커진다. 상악(10/20)·하악(30/40) 공통.
+{
+  // 하악(30/40): 포스트 +축이 화면 위 → 검볼 미반전. 초록 점은 노란점 -Y(화면 아래쪽).
+  // 예전 허브 거리비는 위로 끌면(허브로 접근) 짧아졌고, 지금은 화면 위 = 길어짐.
+  const lowerStart = { along: -0.26, startAlong: -0.26, hubAlong: 0, startHubDist: 0.26 };
+  const lowerUp = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 + 0.2, axisDotScreenUp: 1 });
+  const lowerDown = scaleFactorFromAxisDrag({ ...lowerStart, along: -0.26 - 0.2, axisDotScreenUp: 1 });
+  assert.ok(lowerUp > 1, `하악(30/40) 화면 위 → 커짐 (${lowerUp})`);
+  assert.ok(lowerDown < 1, `하악(30/40) 화면 아래 → 작아짐 (${lowerDown})`);
+
+  // 상악(10/20): 포스트 +축이 화면 아래 → 검볼 180° 반전. 스케일 축(+Y)은 화면 아래를 가리킴.
+  const upperStart = { along: -0.26, startAlong: -0.26, hubAlong: 0, startHubDist: 0.26 };
+  const upperUp = scaleFactorFromAxisDrag({ ...upperStart, along: -0.26 - 0.2, axisDotScreenUp: -1 });
+  const upperDown = scaleFactorFromAxisDrag({ ...upperStart, along: -0.26 + 0.2, axisDotScreenUp: -1 });
+  assert.ok(upperUp > 1, `상악(10/20) 화면 위 → 커짐 (${upperUp})`);
+  assert.ok(upperDown < 1, `상악(10/20) 화면 아래 → 작아짐 (${upperDown})`);
+
+  // 가로(빨강)는 허브에서 멀어질수록 커진다.
+  const wideAway = scaleFactorFromAxisDrag({
+    along: 0.4,
+    startAlong: 0.26,
+    hubAlong: 0,
+    startHubDist: 0.26,
+    axisDotScreenUp: 0.05,
+  });
+  const wideToward = scaleFactorFromAxisDrag({
+    along: 0.1,
+    startAlong: 0.26,
+    hubAlong: 0,
+    startHubDist: 0.26,
+    axisDotScreenUp: 0.05,
+  });
+  assert.ok(wideAway > 1, `가로 스케일 허브에서 멀어지면 커짐 (${wideAway})`);
+  assert.ok(wideToward < 1, `가로 스케일 허브로 다가가면 작아짐 (${wideToward})`);
 }
 
 // 회전(yaw)이 이미 적용된 상태에서도 화살표 이동과 축 회전 기울기 부호가 화면 드래그 방향과 정확히 일치하는지 검증
