@@ -285,6 +285,7 @@ import {
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { parseWorkScanAlignment } from "@/shared/practice/workScanAlignment";
+import { filterExportableAbutmentDesignFiles } from "@/shared/practice/abutmentDesignExportPolicy";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8895,7 +8896,7 @@ export function RequestorPracticeReceivePage({
     [selectedTransfer, selectedTransferPatientName],
   );
 
-  /** 의뢰·보철 파일을 작업 폴더 안 케이스 폴더에 저장(작업열기·다운로드 공통). 어벗 STL 제외. */
+  /** 의뢰·기공소 어벗·보철 파일을 작업 폴더에 저장. 어벗츠 플랫폼 어벗 STL은 제외. */
   const saveSelectedTransferToWorkFolder = useCallback(
     async (opts: {
       dcmFormat?: DcmDownloadFormat;
@@ -8918,11 +8919,15 @@ export function RequestorPracticeReceivePage({
         uploadedAt: file.uploadedAt,
         labFormat,
       });
-      // 커스텀어벗 STL은 폴더/다운로드로 내보내지 않는다(플랫폼 내부 이동만).
       const files = [
         ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []).map((file) =>
           toTarget(file, true),
         ),
+        ...filterExportableAbutmentDesignFiles(
+          Array.isArray(selectedTransfer?.production?.designFiles)
+            ? selectedTransfer.production.designFiles
+            : [],
+        ).map((file) => toTarget(file, false)),
         ...(Array.isArray(selectedTransfer?.resultFiles) ? selectedTransfer.resultFiles : []).map(
           (file) => toTarget(file, false),
         ),
@@ -9004,7 +9009,7 @@ export function RequestorPracticeReceivePage({
   /**
    * 「폴더 열기」는 이미 받은 파일은 받지 않고 폴더만 연다.
    * 포맷을 안 고르면 설정 디자인 SW에 맞춘다(3Shape=DCM, 그 외=PLY). 미설정이면 마지막 선택.
-   * 어벗 디자인 STL은 내보내지 않는다. 보철물은 올린 파일 그대로 둔다.
+   * 어벗츠 플랫폼 어벗 STL은 제외. 기공소 업로드·보철물은 그대로.
    */
   const handleOpenWork = useCallback(
     (opts?: { dcmFormat?: DcmDownloadFormat }) => {
@@ -9019,7 +9024,7 @@ export function RequestorPracticeReceivePage({
     [designSoftwareValue, saveSelectedTransferToWorkFolder],
   );
 
-  /** 작업 파일(작업 스캔·보철물)만 같은 케이스 폴더에 받고 연다. 어벗 STL은 내보내지 않는다. */
+  /** 작업 파일(작업 스캔·기공소 어벗·보철물). 어벗츠 플랫폼 어벗 STL은 제외. */
   const handleOpenWorkFilesFolder = useCallback(
     async (opts?: { dcmFormat?: DcmDownloadFormat }) => {
       const production = selectedTransfer?.production;
@@ -9032,6 +9037,9 @@ export function RequestorPracticeReceivePage({
               isAbutsWorkScanFileName(file.originalName),
             )
           : []),
+        ...filterExportableAbutmentDesignFiles(
+          Array.isArray(production?.designFiles) ? production.designFiles : [],
+        ),
         ...(Array.isArray(selectedTransfer?.resultFiles)
           ? selectedTransfer.resultFiles
           : []),

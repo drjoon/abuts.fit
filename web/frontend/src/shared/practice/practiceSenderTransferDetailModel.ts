@@ -32,6 +32,7 @@ import {
 } from "@/shared/shipping/hanjinTrackingLabel";
 import { resolvePracticeTransferLabDisplayLabel } from "@/shared/practice/practiceLabRating";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
+import { filterExportableAbutmentDesignFiles } from "@/shared/practice/abutmentDesignExportPolicy";
 import {
   collectCertainLinkedOrderYmds,
   collectProsthesisFollowUpArrivalYmds,
@@ -371,10 +372,13 @@ export function buildPracticeSenderTransferDetailModel(
     abutmentStageLabel: transfer.hasCustomAbutment
       ? buildAbutmentStageLabel(transfer.abutmentToothStages)
       : null,
-    // 어벗 designFiles는 폴더/다운로드 대상에서 제외(플랫폼 내부 이동만).
+    // 어벗츠 플랫폼 어벗 STL만 제외. 기공소 업로드 designFiles는 포함.
     downloadAllFiles: [
       ...(Array.isArray(transfer.files) ? transfer.files : []),
       ...(Array.isArray(transfer.workScanFiles) ? transfer.workScanFiles : []),
+      ...filterExportableAbutmentDesignFiles(
+        Array.isArray(transfer.designFiles) ? transfer.designFiles : [],
+      ),
       ...(Array.isArray(transfer.resultFiles) ? transfer.resultFiles : []),
     ],
   };

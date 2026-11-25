@@ -59,7 +59,7 @@
 // - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
 // - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(01–99)·안내 복원.
-// - 2026-11-25: 어벗 디자인 STL은 프리뷰만. 폴더 열기·다운로드로 내보내지 않는다.
+// - 2026-11-25: 어벗츠 플랫폼 어벗 STL만 다운로드 금지. 기공소 업로드 STL은 받는다.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
@@ -365,6 +365,7 @@ import {
   LAB_WORK_START_AWAITING_PRACTICE_ABUTMENT_HINT,
   PRACTICE_ABUTMENT_DESIGN_AWAITING_ATTENTION_CLASS,
 } from "@/shared/practice/practiceAbutmentDesignAwaiting";
+import { isPlatformAbutmentDesignExportBlocked } from "@/shared/practice/abutmentDesignExportPolicy";
 import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import { AbutmentDesignGraceControl } from "@/shared/practice/AbutmentDesignGraceControl";
 import {
@@ -2246,20 +2247,10 @@ export function PracticeTransferDetailChatDialog({
     [authToken, collectImageThumbFiles, designFiles, files, resultFiles, toast, workScanFiles],
   );
 
-  const designFileKeySet = useMemo(() => {
-    const keys = new Set<string>();
-    for (const file of Array.isArray(designFiles) ? designFiles : []) {
-      const key = String(file.s3Key || "").trim();
-      if (key) keys.add(key);
-    }
-    return keys;
-  }, [designFiles]);
   const isAbutmentDesignExportBlocked = useCallback(
-    (file: { s3Key?: string | null } | null | undefined) => {
-      const key = String(file?.s3Key || "").trim();
-      return Boolean(key) && designFileKeySet.has(key);
-    },
-    [designFileKeySet],
+    (file: { s3Key?: string | null } | null | undefined) =>
+      isPlatformAbutmentDesignExportBlocked(file?.s3Key),
+    [],
   );
 
   const handleFileRowClick = useCallback(
@@ -2298,7 +2289,7 @@ export function PracticeTransferDetailChatDialog({
       }
       if (isAbutmentDesignExportBlocked(file)) {
         toast({
-          title: "어벗 디자인은 내려받을 수 없습니다.",
+          title: "어벗츠 디자인은 내려받을 수 없습니다.",
           description: "플랫폼 안에서만 확인할 수 있습니다.",
         });
         return;
@@ -4437,7 +4428,7 @@ export function PracticeTransferDetailChatDialog({
                             <div className="space-y-1.5">
                               <p className="text-[13px] text-muted-foreground">
                                 {designFilesLabel}{" "}
-                                <span>({designFileList.length}개 · 미리보기만)</span>
+                                <span>({designFileList.length}개)</span>
                               </p>
                               <div className="grid grid-cols-4 gap-2">
                                 {designFileList.map((file, idx) =>
@@ -4792,15 +4783,15 @@ export function PracticeTransferDetailChatDialog({
           const exportable = originals.filter((f) => !isAbutmentDesignExportBlocked(f));
           if (exportable.length === 0) {
             toast({
-              title: "어벗 디자인은 내려받을 수 없습니다.",
+              title: "어벗츠 디자인은 내려받을 수 없습니다.",
               description: "플랫폼 안에서만 확인할 수 있습니다.",
             });
             return;
           }
           if (exportable.length < originals.length) {
             toast({
-              title: "어벗 디자인은 제외했습니다.",
-              description: "스캔·보철물만 저장합니다.",
+              title: "어벗츠 디자인은 제외했습니다.",
+              description: "기공소 업로드·스캔·보철물만 저장합니다.",
             });
           }
           const scanKeys = new Set(
