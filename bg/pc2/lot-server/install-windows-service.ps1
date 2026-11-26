@@ -1,8 +1,8 @@
 param(
   [ValidateSet("install", "remove", "restart", "status")]
   [string]$Action = "install",
-  [string]$ServiceName = "AbutsLotCaptureServer",
-  [string]$NssmPath = "C:\\tools\\nssm\\nssm.exe",
+  [string]$ServiceName = "AbutsLotServer",
+  [string]$NssmPath = "",
   [string]$NodePath = "C:\\Program Files\\nodejs\\node.exe"
 )
 
@@ -17,10 +17,14 @@ function Assert-Executable {
 }
 
 function Get-NssmPath {
-  param([string]$Current)
-  if (Test-Path $Current) { return $Current }
+  param(
+    [string]$Current,
+    [string]$ScriptDir
+  )
+  if ($Current -and (Test-Path $Current)) { return $Current }
 
   $candidates = @(
+    (Join-Path $ScriptDir "nssm.exe"),
     "C:\\tools\\nssm\\nssm.exe",
     "C:\\Program Files\\nssm\\nssm.exe",
     "C:\\Program Files\\nssm-2.24\\win64\\nssm.exe",
@@ -69,9 +73,13 @@ function Install-Node {
   } catch {}
 }
 
-if (-not (Test-Path $NssmPath)) {
-  $NssmPath = Get-NssmPath -Current $NssmPath
+$scriptDir = Split-Path -Parent $PSCommandPath
+$logDir = Join-Path $scriptDir "logs"
+if (-not (Test-Path $logDir)) {
+  New-Item -ItemType Directory -Path $logDir | Out-Null
 }
+
+$NssmPath = Get-NssmPath -Current $NssmPath -ScriptDir $scriptDir
 Assert-Executable -Path $NssmPath -Label "NSSM"
 
 if (-not (Test-Path $NodePath)) {
@@ -82,12 +90,6 @@ if (-not (Test-Path $NodePath)) {
   $NodePath = Get-NodePath -Current $NodePath
 }
 Assert-Executable -Path $NodePath -Label "Node.js"
-
-$scriptDir = Split-Path -Parent $PSCommandPath
-$logDir = Join-Path $scriptDir "logs"
-if (-not (Test-Path $logDir)) {
-  New-Item -ItemType Directory -Path $logDir | Out-Null
-}
 
 $npmPath = Join-Path (Split-Path $NodePath -Parent) "npm.cmd"
 if (-not (Test-Path $npmPath)) { $npmPath = "npm" }
@@ -136,31 +138,41 @@ switch ($Action) {
       }
     }
 
-    # lot-server uses ESM entry at src/index.js
-    try { & $NssmPath stop $ServiceName 2>$null | Out-Null } catch {}
-    try { & $NssmPath remove $ServiceName confirm 2>$null | Out-Null } catch {}
-    & $NssmPath install $ServiceName $NodePath "src/index.js" | Out-Null
+    # lot-server HTTP(8012) + 로컬 OCR. Windows 부팅 시 자동 시작.
+    foreach ($legacyName in @("AbutsLotCaptureServer", $ServiceName)) {
+      try { & $NssmPath stop $legacyName 2>$null | Out-Null } catch {}
+      try { & $NssmPath remove $legacyName confirm 2>$null | Out-Null } catch {}
+    }
+    & $NssmPath install $ServiceName $NodePath "src\index.js" | Out-Null
     & $NssmPath set $ServiceName AppDirectory $scriptDir | Out-Null
-    # 로그 파일을 남기지 않도록 표준 출력/에러 리디렉션 설정 제거
-    & $NssmPath reset $ServiceName AppStdout | Out-Null
-    & $NssmPath reset $ServiceName AppStderr | Out-Null
-    & $NssmPath reset $ServiceName AppRotateFiles | Out-Null
-    & $NssmPath reset $ServiceName AppRotateOnline | Out-Null
-    & $NssmPath reset $ServiceName AppRotateBytes | Out-Null
+    & $NssmPath set $ServiceName AppEnvironmentExtra `
+      "PORT=8012" `
+      "HOST=127.0.0.1" `
+      "TZ=Asia/Seoul" `
+      "LOT_AUTO_WATCH=0" | Out-Null
+    & $NssmPath set $ServiceName AppStdout (Join-Path $logDir "stdout.log") | Out-Null
+    & $NssmPath set $ServiceName AppStderr (Join-Path $logDir "stderr.log") | Out-Null
+    & $NssmPath set $ServiceName AppRotateFiles 1 | Out-Null
+    & $NssmPath set $ServiceName AppRotateBytes 1048576 | Out-Null
     & $NssmPath set $ServiceName AppExit Default Restart | Out-Null
     & $NssmPath set $ServiceName AppThrottle 2000 | Out-Null
     & $NssmPath set $ServiceName Start SERVICE_AUTO_START | Out-Null
     & $NssmPath set $ServiceName AppRestartDelay 5000 | Out-Null
+    & $NssmPath set $ServiceName DisplayName "Abuts lot-server (microscope OCR)" | Out-Null
+    & $NssmPath set $ServiceName Description "PC2 microscope live/OCR HTTP on 8012. Starts with Windows." | Out-Null
     & $NssmPath start $ServiceName | Out-Null
     $status = & $NssmPath status $ServiceName
-    Write-Host "Service '$ServiceName' installed. Status: $status"
+    Write-Host "Service '$ServiceName' installed (auto-start). Status: $status"
+    Write-Host "HTTP: http://127.0.0.1:8012/  logs: $logDir"
     if ($status -notmatch "SERVICE_RUNNING") {
       Write-Warning "Service is not running. Check logs under: $logDir"
     }
   }
   "remove" {
-    & $NssmPath stop $ServiceName | Out-Null
-    & $NssmPath remove $ServiceName confirm | Out-Null
+    foreach ($name in @($ServiceName, "AbutsLotCaptureServer")) {
+      try { & $NssmPath stop $name 2>$null | Out-Null } catch {}
+      try { & $NssmPath remove $name confirm 2>$null | Out-Null } catch {}
+    }
     Write-Host "Service '$ServiceName' removed."
   }
   "restart" {

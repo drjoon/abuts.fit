@@ -62,7 +62,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 const CAPTURE_DIR =
   process.env.LOT_CAPTURE_DIR ||
   (process.platform === "win32"
-    ? "D:\\bg\\lot-server2\\images"
+    ? "D:\\bg\\lot-server\\images"
     : path.join(ROOT, "captures"));
 // 기본은 수동 시작. 자동 감시+Continuity면 Cursor/머신이 버거울 수 있다.
 const AUTO_WATCH = String(process.env.LOT_AUTO_WATCH || "0") === "1";

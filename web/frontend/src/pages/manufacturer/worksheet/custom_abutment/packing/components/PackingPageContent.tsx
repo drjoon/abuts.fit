@@ -1306,7 +1306,7 @@ export const PackingPageContent = ({
 
   return (
     <div
-      className="relative flex w-full flex-col items-stretch text-gray-800"
+      className="relative flex h-full min-h-0 w-full flex-col items-stretch overflow-hidden text-gray-800"
       onWheelCapture={() => {
         userScrolledRef.current = true;
       }}
@@ -1314,7 +1314,7 @@ export const PackingPageContent = ({
         userScrolledRef.current = true;
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3 pt-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 pb-3 pt-2">
         {showQueueBar ? (
           <WorksheetQueueSummary
             total={
@@ -1428,7 +1428,7 @@ export const PackingPageContent = ({
           </div>
         ) : null}
 
-        <div className="mt-auto space-y-1.5">
+        <div className="mt-auto shrink-0 space-y-1.5 pt-1">
           <div className="flex items-center justify-between px-0.5 text-[11px] text-stone-500">
             <span>
               대기 {stripRequests.length}건

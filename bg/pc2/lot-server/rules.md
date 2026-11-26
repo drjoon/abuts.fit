@@ -9,6 +9,7 @@
 - 어벗츠 세척·패킹 FE가 `GET /live`·`GET /watch`·`POST /watch/*`·`POST /recognize`·`POST /focus`를 폴링/호출하고, 인식된 코드만 백엔드 `lot-capture/packing`으로 보냅니다.
 - 페달은 쓰지 않습니다. 정지·선명 게이트 후 OCR합니다.
 - 구 폴더 감시 브리지(S3 업로드)는 `bg/pc2/lot-server-backup`에 있습니다.
+- Windows PC2: `setup-windows-service.cmd` → Install. NSSM 서비스 `AbutsLotServer`가 **부팅 자동 시작**(`SERVICE_AUTO_START`). 번들 `nssm.exe` 우선.
 
 ## 1) 역할/흐름
 

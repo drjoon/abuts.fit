@@ -62,9 +62,10 @@ if defined NSSM_EXE if not exist "%NSSM_EXE" (
 
 :menu
 echo ============================================
-echo   Abuts Lot Capture - Windows Service Tool
+echo   Abuts lot-server - Windows Service (NSSM)
+echo   Boot auto-start · HTTP 127.0.0.1:8012
 echo ============================================
-echo   1) Install service
+echo   1) Install service (auto-start)
 echo   2) Show status
 echo   3) Restart service
 echo   4) Remove service
@@ -85,13 +86,16 @@ goto :menu
 :run
 echo.
 echo Running PowerShell script... (Action=%ACTION%)
-set "PSARGS=-Action %ACTION% -ServiceName AbutsLotCaptureServer"
+REM Prefer bundled nssm.exe next to this script
+if exist "%BASEDIR%nssm.exe" set "NSSM_EXE=%BASEDIR%nssm.exe"
+set "PSARGS=-Action %ACTION% -ServiceName AbutsLotServer"
 if defined NSSM_EXE set "PSARGS=%PSARGS% -NssmPath \"%NSSM_EXE%\""
 if defined NODE_EXE set "PSARGS=%PSARGS% -NodePath \"%NODE_EXE%\""
 powershell -NoProfile -ExecutionPolicy Bypass -File "%BASEDIR%install-windows-service.ps1" %PSARGS%
 set EXITCODE=%errorlevel%
 echo.
 echo Done. (exitcode=%EXITCODE%)
+echo HTTP: http://127.0.0.1:8012/
 echo Logs: "%BASEDIR%logs"
 echo.
 pause
