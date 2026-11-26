@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: LED+AF 전에 ffmpeg 스트림을 잠시 놓아 ComInitial(init-failed)을 피한다.
 // - 2026-11-26: 현미경 제어 실패 시 exception detail을 로그·UI에 남긴다.
 // - 2026-11-26: 감시 시작·흐림/어두움 시 LED+AF(횟수·간격 상한). 선명 전에 AF를 건다.
 // - 2026-11-24: 스트림 프로파일 재시도·null readFrame 방지.
@@ -23,7 +24,7 @@ import {
   resolveDevice,
 } from "./camera.js";
 import { analyzeImage, grabFrames, scoreFile } from "./capture.js";
-import { focusConfirmed, prepareMicroscope, tryFocus } from "./focus.js";
+import { focusConfirmed, prepareMicroscope } from "./focus.js";
 import { lotFileName } from "./names.js";
 import { recognizeLot } from "./ocr/index.js";
 import { meanAbsDiff, selectBest as pickSharpest } from "./sharpness.js";
@@ -119,7 +120,24 @@ export function createWatcher({
       return { ok: false, reason: "not-windows" };
     }
     phase = PHASE.FOCUSING;
-    const focus = await prepareMicroscope();
+    // dshow ffmpeg가 장치를 잡고 있으면 ComInitial이 init-failed 한다. 제어 전에 놓는다.
+    const resumeStream = Boolean(stream?.running) && running;
+    if (stream?.running) {
+      await stopStream();
+      await sleep(350);
+    }
+    let focus;
+    try {
+      focus = await prepareMicroscope();
+    } finally {
+      if (resumeStream) {
+        try {
+          await ensureStream();
+        } catch (err) {
+          log(`microscope stream resume failed ${err?.message || err}`);
+        }
+      }
+    }
     lastFocus = focus;
     lastAfAt = Date.now();
     const led = focus?.ledOn
@@ -212,13 +230,13 @@ export function createWatcher({
   }
 
   async function captureForOcr() {
-    phase = PHASE.FOCUSING;
-    const focus = await tryFocus({ action: "prepare" });
-    lastFocus = focus;
-    lastAfAt = Date.now();
+    const focus = await runMicroscopePrepare("ocr");
     const focused = focusConfirmed(focus);
 
     // 스트림에서 몇 장 모아 선명한 것을 고른다(추가 ffmpeg 없음).
+    if (!stream?.running && running) {
+      await ensureStream().catch(() => {});
+    }
     const scored = [];
     for (let i = 0; i < burstFrames; i += 1) {
       const buffer = (await stream?.readFrame()) || liveFrame;
@@ -416,12 +434,12 @@ export function createWatcher({
       phase = PHASE.IDLE;
       afAttemptsThisArm = 0;
       lastAfAt = 0;
-      // 스트림 연 뒤 LED+AF를 한 번 건다(상한 1회는 start 준비).
+      // LED+AF는 스트림보다 먼저(장치가 비어 있을 때 ComInitial).
       loopPromise = (async () => {
         try {
-          await ensureStream();
           afAttemptsThisArm = 1;
           await runMicroscopePrepare("start");
+          await ensureStream();
         } catch (err) {
           phase = PHASE.ERROR;
           lastError = err?.message || String(err);
@@ -457,8 +475,7 @@ export function createWatcher({
       afAttemptsThisArm = 0;
       stableCount = stableNeeded;
       if (!running) this.start();
-      await ensureStream();
-      await runMicroscopePrepare("force");
+      // recognizeOnce → captureForOcr가 스트림을 잠시 놓고 LED+AF 후 다시 연다.
       return recognizeOnce();
     },
   };

@@ -216,13 +216,21 @@ public static class MltcCtl {
 
   public static string Run(string dllDir, string action) {
     SetDllDirectory(dllDir);
+    try { System.IO.Directory.SetCurrentDirectory(dllDir); } catch { }
     string et = System.IO.Path.Combine(dllDir, "etLib2.dll");
     string emx = System.IO.Path.Combine(dllDir, "emxunit.dll");
     string com = System.IO.Path.Combine(dllDir, "mltcCom.dll");
     if (LoadLibrary(et) == IntPtr.Zero) return Json(false, 0, "", "none", 0, 0, 0, false, "etlib-load-failed");
     LoadLibrary(emx);
     if (LoadLibrary(com) == IntPtr.Zero) return Json(false, 0, "", "none", 0, 0, 0, false, "dll-load-failed");
-    if (ComInitial() == 0) return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
+    // ffmpeg/dshow may hold the device briefly; retry a few times (hard cap).
+    int initOk = 0;
+    for (int attempt = 0; attempt < 4; attempt++) {
+      initOk = ComInitial();
+      if (initOk != 0) break;
+      Thread.Sleep(250);
+    }
+    if (initOk == 0) return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
     try {
       short[] modes = new short[] { 20, 12, 6 };
       string lastReason = "probe-failed";
