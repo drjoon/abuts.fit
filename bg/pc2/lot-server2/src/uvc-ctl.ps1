@@ -26,12 +26,12 @@ public static class UvcCtl {
   [DllImport("ole32.dll")]
   static extern int CreateBindCtx(int reserved, out IntPtr ppbc);
 
-  [DllImport("ole32.dll")]
+  [DllImport("ole32.dll", ExactSpelling = true)]
   static extern int CoCreateInstance(
-    ref Guid clsid,
+    [In, MarshalAs(UnmanagedType.LPStruct)] Guid clsid,
     IntPtr outer,
     uint context,
-    ref Guid iid,
+    [In, MarshalAs(UnmanagedType.LPStruct)] Guid iid,
     [MarshalAs(UnmanagedType.Interface)] out ICreateDevEnum created);
 
   [ComImport, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -132,7 +132,7 @@ public static class UvcCtl {
     Guid clsidEnum = new Guid("62BE5D10-60EB-11d0-BD3B-00A0C9118956");
     Guid iidEnum = new Guid("29840822-5B84-11D0-BD3B-00A0C911CE86");
     ICreateDevEnum devenum;
-    int created = CoCreateInstance(ref clsidEnum, IntPtr.Zero, 1, ref iidEnum, out devenum);
+    int created = CoCreateInstance(clsidEnum, IntPtr.Zero, 1, iidEnum, out devenum);
     if (created != 0 || devenum == null) {
       return "{\"ok\":false,\"af\":\"none\",\"reason\":\"cocreate-" + created.ToString("X8") + "\"}";
     }

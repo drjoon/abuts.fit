@@ -174,9 +174,9 @@ export function createWatcher({
   }
 
   function isFatalMicroscopeReason(reason) {
-    return ["exception", "powershell-missing", "script-missing", "not-windows"].includes(
-      String(reason || ""),
-    );
+    const text = String(reason || "");
+    if (text.startsWith("cocreate-")) return true;
+    return ["exception", "powershell-missing", "script-missing", "not-windows"].includes(text);
   }
 
   async function maybeAssistFocus(frame) {
