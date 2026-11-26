@@ -424,9 +424,10 @@ const requestSchema = new mongoose.Schema(
           filePath: String,
           s3Key: String,
           s3Url: String,
+          // lot-server(PC2 각인 매칭)가 source=lot-server 로 저장한다.
           source: {
             type: String,
-            enum: ["worker", "manual"],
+            enum: ["worker", "manual", "lot-server"],
             default: "manual",
           },
           uploadedBy: {
