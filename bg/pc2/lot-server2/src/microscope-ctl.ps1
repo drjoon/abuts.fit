@@ -99,29 +99,29 @@ public static class MltcCtl {
   }
 
   static uint ReadPosition(short mode) {
-    uint hi;
-    uint lo;
+    uint hi = 0;
+    uint lo = 0;
     if (!TryRead(OPOSIH, mode, out hi)) return 0;
     if (!TryRead(OPOSIL, mode, out lo)) return 0;
     return (hi << 8) | (lo & 0xFF);
   }
 
+  // CodeDom/C#5: do not chain out params with && (unassigned local error).
   static bool Probe(short mode, out string firmware) {
     firmware = "";
-    uint major;
-    uint sub1;
-    uint sub2;
-    bool version = TryRead(FWVER0, mode, out major)
-      && TryRead(FWVER1, mode, out sub1)
-      && TryRead(FWVER2, mode, out sub2);
+    uint major = 0;
+    uint sub1 = 0;
+    uint sub2 = 0;
+    bool version = TryRead(FWVER0, mode, out major);
+    if (version) version = TryRead(FWVER1, mode, out sub1);
+    if (version) version = TryRead(FWVER2, mode, out sub2);
     if (version) firmware = major + "." + sub1 + "." + sub2;
     if (version && (major != 0 || sub1 != 0 || sub2 != 0)) return true;
-    uint status;
-    uint ledMax;
-    if (TryRead(STAFLAG, mode, out status) && TryRead(LEDMAX, mode, out ledMax)) {
-      return status != 0 || ledMax != 0;
-    }
-    return false;
+    uint status = 0;
+    uint ledMax = 0;
+    if (!TryRead(STAFLAG, mode, out status)) return false;
+    if (!TryRead(LEDMAX, mode, out ledMax)) return false;
+    return status != 0 || ledMax != 0;
   }
 
   static bool EnableRemote(short mode) {

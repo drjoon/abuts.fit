@@ -105,6 +105,23 @@ test("초점 응답은 마지막 JSON만 읽는다", () => {
   assert.equal(focusConfirmed({ ok: false, af: "none" }), false);
 });
 
+test("microscope-ctl C#은 out을 &&에 묶지 않는다", async () => {
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const { fileURLToPath } = await import("url");
+  const root = path.dirname(fileURLToPath(import.meta.url));
+  const ps1 = await fs.readFile(
+    path.join(root, "../src/microscope-ctl.ps1"),
+    "utf8",
+  );
+  const start = ps1.indexOf("$source = @'");
+  const end = ps1.indexOf("'@", start + 1);
+  assert.ok(start >= 0 && end > start);
+  const csharp = ps1.slice(start, end);
+  assert.equal(/\bout\s+\w+\s*\)\s*\n\s*&&/.test(csharp), false);
+  assert.equal(/TryRead\([^)]+\)\s*&&\s*TryRead/.test(csharp), false);
+});
+
 test("analyzeImage는 평균 밝기를 같이 돌려준다", async () => {
   const { analyzeImage } = await import("../src/capture.js");
   // 1x1 회색 JPEG를 sharp로 만들기 어렵다면 raw PNG 버퍼 대신 단색 raw를 우회하지 않고
