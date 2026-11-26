@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: Windows에서 `/`·`/index.html`이 path.normalize 후 `\…`가 되어 정적 파일 경로 가드에 걸리던 버그 수정.
 // - 2026-11-26: 공병·패킹 라벨을 같은 PC pack-server(8004)로 프록시 출력.
 // - 2026-11-26: 작업자 UI(8012)·백엔드 큐/매칭/스크류 로트 프록시. 어벗츠 FE는 lot-server를 호출하지 않는다.
 // - 2026-11-26: SIGINT/SIGTERM/exit 때 감시가 켠 UM LED를 끈다(watcher.shutdownSync).
@@ -179,12 +180,16 @@ async function packFetch(pathname, { method = "GET", body } = {}) {
 }
 
 function servePublic(res, urlPath) {
-  const safe = path
-    .normalize(String(urlPath || "/"))
-    .replace(/^(\.\.[/\\])+/, "");
-  const rel = safe === "/" || safe === "" ? "index.html" : safe.replace(/^\//, "");
-  const full = path.resolve(PUBLIC_DIR, rel);
-  if (!full.startsWith(PUBLIC_DIR + path.sep) && full !== PUBLIC_DIR) {
+  // Windows: path.normalize("/index.html") → "\index.html". Leading "\" is drive-root
+  // absolute, so resolve ignores PUBLIC_DIR and the path guard rejects with 400.
+  const normalized = path.normalize(String(urlPath || "/"));
+  let rel = normalized.replace(/^[/\\]+/, "").replace(/^(\.\.[/\\])+/, "");
+  if (!rel || rel === "." ) rel = "index.html";
+  const root = path.resolve(PUBLIC_DIR);
+  const full = path.resolve(root, rel);
+  const outside =
+    full !== root && !full.startsWith(root + path.sep);
+  if (outside || rel.split(/[/\\]/).includes("..")) {
     json(res, 400, { success: false, message: "잘못된 경로입니다." });
     return true;
   }
