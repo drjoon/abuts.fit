@@ -9486,10 +9486,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         incomingFiles: req.body?.files,
       });
       if (resolvedScan.attachedByLab) {
-        doc.files = resolvedScan.files;
+        // 레거시 lab body.files 첨부 — 기존 쉐이드 포토 등과 s3Key merge(전체 교체 금지)
+        const nextFiles = mergePracticeTransferFilesByS3Key(
+          doc.files,
+          resolvedScan.files,
+        );
+        doc.files = nextFiles;
         await PracticeTransfer.updateOne(
           { _id: doc._id },
-          { $set: { files: resolvedScan.files } },
+          { $set: { files: nextFiles } },
         );
         queueWorkScanAutoAlign(doc._id);
       }

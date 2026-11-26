@@ -853,6 +853,27 @@ function labTransferHasDesignScan(transfer: ReceivedPracticeTransfer) {
   );
 }
 
+/** 캘린더 INDEX(빈 files)와 hydrate·작업시작 응답을 s3Key로 합친다. 로컬만 있던 쉐이드 포토를 버리지 않는다. */
+function mergeLabReceiveFilesByS3Key(
+  local: ReceivedPracticeFile[] | null | undefined,
+  server: ReceivedPracticeFile[] | null | undefined,
+): ReceivedPracticeFile[] {
+  const s3Of = (row: ReceivedPracticeFile | null | undefined) =>
+    String(row?.s3Key || "").trim();
+  const byKey = new Map<string, ReceivedPracticeFile>();
+  for (const file of local || []) {
+    const key = s3Of(file);
+    if (key) byKey.set(key, file);
+  }
+  for (const file of server || []) {
+    const key = s3Of(file);
+    if (!key) continue;
+    const prev = byKey.get(key);
+    byKey.set(key, prev ? { ...prev, ...file } : file);
+  }
+  return Array.from(byKey.values());
+}
+
 function LabAbutmentDesignReviewDialog({
   open,
   items,
@@ -2128,7 +2149,7 @@ export function RequestorPracticeReceivePage({
   /**
    * 목록 재조회 시 서버 designFiles가 아직 덜 미러된 경우,
    * 로컬 낙관 패치(미러 전 s3Key)를 버리지 않아 취소선·썸네일 플리커를 막는다.
-   * 캘린더 INDEX는 구강스캔 s3Key를 안 주므로, 이미 hydrate한 스캔도 유지한다.
+   * 캘린더 INDEX는 구강스캔·쉐이드 포토 s3Key를 안 주므로, 이미 hydrate한 첨부는 s3Key union으로 유지한다.
    */
   const mergeTransferPreserveOptimisticDesigns = useCallback(
     (
@@ -2137,23 +2158,21 @@ export function RequestorPracticeReceivePage({
     ): ReceivedPracticeTransfer => {
       const s3Of = (row: ReceivedPracticeFile) =>
         String(row?.s3Key || "").trim();
-      const hasScanKey = (files: ReceivedPracticeFile[] | null | undefined) =>
-        (files || []).some((file) => Boolean(s3Of(file)));
 
-      const keepOralFiles =
-        hasScanKey(local.files) && !hasScanKey(server.files)
-          ? local.files
-          : server.files;
+      const keepOralFiles = mergeLabReceiveFilesByS3Key(
+        local.files,
+        server.files,
+      );
       const localWorkScans = Array.isArray(local.production?.labWorkScanFiles)
         ? local.production.labWorkScanFiles
         : [];
       const serverWorkScans = Array.isArray(server.production?.labWorkScanFiles)
         ? server.production.labWorkScanFiles
         : [];
-      const keepWorkScans =
-        hasScanKey(localWorkScans) && !hasScanKey(serverWorkScans)
-          ? localWorkScans
-          : serverWorkScans;
+      const keepWorkScans = mergeLabReceiveFilesByS3Key(
+        localWorkScans,
+        serverWorkScans,
+      );
       const keepAlignment =
         local.production?.workScanAlignment &&
         !server.production?.workScanAlignment
@@ -4516,9 +4535,18 @@ export function RequestorPracticeReceivePage({
                       ).trim(),
                       size: Number(fileObj.size || item.size || 0),
                       s3Key,
+                      uploadBatchId:
+                        String(item.uploadBatchId || "").trim() || null,
+                      uploadedAt: String(item.uploadedAt || "").trim() || null,
+                      scanRole: String(item.scanRole || "").trim() || null,
+                      scanRoleSetBy:
+                        String(item.scanRoleSetBy || "").trim() || null,
                     } satisfies ReceivedPracticeFile;
                   })
                   .filter(Boolean) as ReceivedPracticeFile[])
+              : undefined;
+            const mergedAcceptFiles = responseFiles
+              ? mergeLabReceiveFilesByS3Key(transfer.files, responseFiles)
               : undefined;
 
             const relatedFromAccept = pickRelatedRequestIdsFromPayload(data);
@@ -4560,8 +4588,11 @@ export function RequestorPracticeReceivePage({
               targetLabName: data.targetLabName
                 ? String(data.targetLabName)
                 : transfer.targetLabName,
-              ...(responseFiles
-                ? { files: responseFiles, fileCount: responseFiles.length }
+              ...(mergedAcceptFiles
+                ? {
+                    files: mergedAcceptFiles,
+                    fileCount: mergedAcceptFiles.length,
+                  }
                 : {}),
               ...(productionPatch ? { production: productionPatch } : {}),
             });
@@ -9840,18 +9871,14 @@ export function RequestorPracticeReceivePage({
     [applyHydratedLabTransfer, hydrateLabTransferForDesign],
   );
 
-  /** 채팅이 열린 어벗 의뢰는 디자인 클릭 전에 스캔 키를 미리 채운다. */
+  /** 채팅이 열린 의뢰는 스캔·쉐이드 포토 s3Key를 미리 채운다(캘린더 INDEX는 비움). */
   const selectedTransferRef = useRef(selectedTransfer);
   selectedTransferRef.current = selectedTransfer;
   const labDesignPrefetchId = useMemo(() => {
     if (!dialogOpen || !selectedTransfer) return "";
     if (labTransferHasDesignScan(selectedTransfer)) return "";
-    const hasCa =
-      Boolean(selectedTransfer.hasCustomAbutment) ||
-      practiceTransferHasCustomAbutment(selectedTransfer, implantCatalog);
-    if (!hasCa) return "";
     return String(selectedTransfer.transferId || selectedTransfer._id || "").trim();
-  }, [dialogOpen, implantCatalog, selectedTransfer]);
+  }, [dialogOpen, selectedTransfer]);
 
   useEffect(() => {
     if (!labDesignPrefetchId || !token) return;
