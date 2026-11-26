@@ -18,7 +18,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
-import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -123,6 +122,9 @@ export const PackingPageContent = ({
   const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
   const [vialStickerOpen, setVialStickerOpen] = useState(false);
   const [packingLabelOpen, setPackingLabelOpen] = useState(false);
+  const [packingLabelInitialIds, setPackingLabelInitialIds] = useState<
+    string[] | null
+  >(null);
   const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
   const [screwLotLoading, setScrewLotLoading] = useState(false);
   const [screwLotSaving, setScrewLotSaving] = useState(false);
@@ -1163,6 +1165,7 @@ export const PackingPageContent = ({
     (lot: string, meta: { from: "auto" | "manual" }) => {
       const suffix = extractLotSuffix3(lot);
       if (suffix.length !== 3 || matchingBusyRef.current) return;
+      setSelectedRequestId("");
       setSuffixInput(suffix);
       setMatchNote("");
       void matchBySuffix(suffix, {
@@ -1170,6 +1173,7 @@ export const PackingPageContent = ({
       }).then((result) => {
         if (result.ok && result.matched) {
           setSuffixInput("");
+          setSelectedRequestId("");
         }
       });
     },
@@ -1203,14 +1207,6 @@ export const PackingPageContent = ({
     [suffixInput],
   );
 
-  const stripRequests = useMemo(() => {
-    if (!normalizedManualSuffix) return filteredAndSorted;
-    return filteredAndSorted.filter((req) => {
-      const suffix = extractLotSuffix3(req.lotNumber?.value);
-      return suffix.startsWith(normalizedManualSuffix);
-    });
-  }, [filteredAndSorted, normalizedManualSuffix]);
-
   const selectedRequest = useMemo(
     () =>
       filteredAndSorted.find(
@@ -1218,6 +1214,13 @@ export const PackingPageContent = ({
       ) || null,
     [filteredAndSorted, selectedRequestId],
   );
+
+  const clearSuffixSelection = useCallback(() => {
+    setSuffixInput("");
+    setSelectedRequestId("");
+    setMatchNote("");
+    resetLotDedupe();
+  }, [resetLotDedupe, setMatchNote]);
 
   const submitSuffix = useCallback(() => {
     if (matchingBusy) return;
@@ -1251,6 +1254,49 @@ export const PackingPageContent = ({
     resetLotDedupe,
     selectedRequest,
   ]);
+
+  const handlePrintSingleFromCode = useCallback(() => {
+    const target =
+      selectedRequest ||
+      (() => {
+        const suffix = extractLotSuffix3(normalizedManualSuffix);
+        if (suffix.length !== 3) return null;
+        const matches = filteredAndSorted.filter(
+          (req) => extractLotSuffix3(req.lotNumber?.value) === suffix,
+        );
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) {
+          toast({
+            title: "프린트",
+            description:
+              "같은 코드가 여러 건입니다. 오른쪽 카드를 눌러 지정하세요.",
+            variant: "destructive",
+          });
+          return null;
+        }
+        toast({
+          title: "프린트",
+          description: "대기 목록에서 해당 각인 코드를 찾지 못했습니다.",
+          variant: "destructive",
+        });
+        return null;
+      })();
+    if (!target?._id) {
+      if (
+        !selectedRequest &&
+        extractLotSuffix3(normalizedManualSuffix).length !== 3
+      ) {
+        toast({
+          title: "프린트",
+          description: "각인 코드가 선택된 의뢰가 없습니다.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    setPackingLabelInitialIds([String(target._id)]);
+    setPackingLabelOpen(true);
+  }, [filteredAndSorted, normalizedManualSuffix, selectedRequest, toast]);
 
   const handlePrintPackingLabels = useCallback(
     async (selectedRequests: ManufacturerRequest[]) => {
@@ -1336,7 +1382,7 @@ export const PackingPageContent = ({
         userScrolledRef.current = true;
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 pb-3 pt-2">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-3 pb-2 pt-1.5">
         {showQueueBar ? (
           <WorksheetQueueSummary
             total={
@@ -1358,7 +1404,10 @@ export const PackingPageContent = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPackingLabelOpen(true)}
+                  onClick={() => {
+                    setPackingLabelInitialIds(null);
+                    setPackingLabelOpen(true);
+                  }}
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-semibold text-stone-800 shadow-sm transition-colors hover:text-stone-950"
                 >
                   패킹 라벨
@@ -1380,78 +1429,90 @@ export const PackingPageContent = ({
           />
         ) : null}
 
-        {isLoading ? <WorksheetLoading /> : null}
-
-        <PackingLotStation
-          liveUrl={liveUrl}
-          running={running}
-          reachable={reachable}
-          busy={lotBusy}
-          phase={phase}
-          lastLot={lastLot}
-          error={lotError}
-          suffix={suffixInput}
-          matchNote={matchNote}
-          matchingBusy={matchingBusy}
-          onStartWatch={() => {
-            void startWatch().catch(() => undefined);
-          }}
-          onStopWatch={() => {
-            void stopWatch().catch(() => undefined);
-          }}
-          onFocus={() => {
-            void runFocus().catch(() => undefined);
-          }}
-          onRecognize={() => {
-            void runRecognize().catch(() => undefined);
-          }}
-          onSubmitSuffix={submitSuffix}
-          hasSelectedCard={Boolean(selectedRequest)}
-        />
-
-        {captureHistory.length > 0 ? (
-          <div className="flex items-center gap-2 overflow-x-auto text-[11px] text-stone-500">
-            <span className="shrink-0 font-semibold">최근</span>
-            {captureHistory.map((item, idx) => (
-              <span
-                key={`${item.requestId}-${idx}`}
-                className="shrink-0 rounded-md border border-primary-muted bg-primary-soft px-2 py-0.5 font-mono tracking-widest text-primary-strong"
-              >
-                {item.recognizedSuffix || "—"}
-              </span>
-            ))}
+        {isLoading ? (
+          <div className="pointer-events-none absolute inset-x-3 top-1.5 z-10 flex justify-center">
+            <span className="rounded-md bg-white/90 px-2 py-0.5 text-xs text-slate-500 shadow-sm">
+              Loading...
+            </span>
           </div>
         ) : null}
 
-        <div className="mt-auto shrink-0 space-y-1.5 pt-1">
-          <div className="flex items-center justify-between px-0.5 text-[11px] text-stone-500">
-            <span>
-              대기 {stripRequests.length}건
-              {normalizedManualSuffix
-                ? ` · 필터 ${normalizedManualSuffix}`
-                : ""}
-            </span>
-            <span ref={sentinelRef} className="tabular-nums">
-              {visibleCount < filteredAndSorted.length
-                ? "스크롤 더보기"
-                : ""}
-            </span>
+        <div className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden">
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              <PackingLotStation
+                liveUrl={liveUrl}
+                running={running}
+                reachable={reachable}
+                busy={lotBusy}
+                phase={phase}
+                lastLot={lastLot}
+                error={lotError}
+                suffix={suffixInput}
+                matchNote={matchNote}
+                matchingBusy={matchingBusy}
+                onStartWatch={() => {
+                  void startWatch().catch(() => undefined);
+                }}
+                onStopWatch={() => {
+                  void stopWatch().catch(() => undefined);
+                }}
+                onFocus={() => {
+                  void runFocus().catch(() => undefined);
+                }}
+                onRecognize={() => {
+                  void runRecognize().catch(() => undefined);
+                }}
+                onSubmitSuffix={submitSuffix}
+                onPrintSingle={handlePrintSingleFromCode}
+                printingBusy={isPrintingPackingLabels}
+                hasSelectedCard={Boolean(selectedRequest)}
+              />
+            </div>
+
+            {captureHistory.length > 0 ? (
+              <div className="flex shrink-0 items-center gap-2 overflow-x-auto text-[11px] text-stone-500">
+                <span className="shrink-0 font-semibold">최근</span>
+                {captureHistory.map((item, idx) => (
+                  <span
+                    key={`${item.requestId}-${idx}`}
+                    className="shrink-0 rounded-md border border-primary-muted bg-primary-soft px-2 py-0.5 font-mono tracking-widest text-primary-strong"
+                  >
+                    {item.recognizedSuffix || "—"}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
-          <PackingRequestStrip
-            requests={stripRequests}
-            highlightSuffix={normalizedManualSuffix}
-            selectedId={selectedRequestId}
-            onSelect={(req) => {
-              setSelectedRequestId(String(req._id || ""));
-              const suffix = extractLotSuffix3(req.lotNumber?.value);
-              if (suffix) setSuffixInput(suffix);
-              setMatchNote("");
-            }}
-          />
+
+          <aside className="flex h-full min-h-0 w-[11.5rem] shrink-0 flex-col overflow-hidden">
+            <span ref={sentinelRef} className="sr-only">
+              {visibleCount < filteredAndSorted.length ? "더보기" : ""}
+            </span>
+            <PackingRequestStrip
+              requests={filteredAndSorted}
+              highlightSuffix={normalizedManualSuffix}
+              selectedId={selectedRequestId}
+              onSelect={(req) => {
+                const id = String(req._id || "");
+                if (id && id === selectedRequestId) {
+                  clearSuffixSelection();
+                  return;
+                }
+                setSelectedRequestId(id);
+                const suffix = extractLotSuffix3(req.lotNumber?.value);
+                setSuffixInput(suffix);
+                setMatchNote("");
+              }}
+            />
+          </aside>
         </div>
         <PackingLabelPrintDialog
           open={packingLabelOpen}
-          onOpenChange={setPackingLabelOpen}
+          onOpenChange={(open) => {
+            setPackingLabelOpen(open);
+            if (!open) setPackingLabelInitialIds(null);
+          }}
           requests={filteredAndSorted}
           printer={printerProfile}
           onPrinterChange={setPrinterProfile}
@@ -1464,6 +1525,7 @@ export const PackingPageContent = ({
           branding={packLabelBranding}
           printing={isPrintingPackingLabels}
           onPrint={handlePrintPackingLabels}
+          initialSelectedIds={packingLabelInitialIds}
         />
 
         <VialStickerPrintDialog

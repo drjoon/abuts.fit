@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingLabelPrintDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // change-log:
+// - 2026-11-26: 우측 세로 목록 + 많을 때 overflow-y 스크롤(안쪽 여백).
 // - 2026-11-26: 클릭은 선택만(미리보기 자동 오픈 제거). 각인코드는 카드로 고름.
 // - 2026-11-26: 세척.패킹 대기 의뢰를 패킹 라벨 모달식 작은 카드 1행(가로 스크롤).
 import { cn } from "@/shared/ui/cn";
@@ -21,24 +22,36 @@ export function PackingRequestStrip({
   highlightSuffix,
   selectedId,
   onSelect,
+  className,
 }: {
   requests: ManufacturerRequest[];
   highlightSuffix?: string;
   selectedId?: string;
   onSelect?: (req: ManufacturerRequest) => void;
+  className?: string;
 }) {
   const hint = extractLotSuffix3(highlightSuffix);
 
   if (!requests.length) {
     return (
-      <div className="rounded-xl border border-stone-200 bg-stone-100 px-3 py-3 text-center text-sm text-stone-500">
+      <div
+        className={cn(
+          "rounded-xl border border-stone-200 bg-stone-100 px-3 py-3 text-center text-sm text-stone-500",
+          className,
+        )}
+      >
         세척·패킹 대기 의뢰가 없습니다.
       </div>
     );
   }
 
   return (
-    <ul className="flex gap-1.5 overflow-x-auto rounded-xl border border-stone-200 bg-stone-100 px-1.5 py-1.5">
+    <ul
+      className={cn(
+        "flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto rounded-xl border border-stone-200 bg-stone-100 px-1.5 py-1.5",
+        className,
+      )}
+    >
       {requests.map((req) => {
         const id = String(req._id || "");
         const suffix = extractLotSuffix3(req.lotNumber?.value);
@@ -48,9 +61,7 @@ export function PackingRequestStrip({
         const selected = Boolean(selectedId && selectedId === id);
         const hinted =
           Boolean(hint) &&
-          (hint.length < 3
-            ? suffix.startsWith(hint)
-            : suffix === hint);
+          (hint.length < 3 ? suffix.startsWith(hint) : suffix === hint);
         return (
           <li key={id || req.requestId} className="shrink-0">
             <button
@@ -59,7 +70,7 @@ export function PackingRequestStrip({
                 onSelect?.(req);
               }}
               className={cn(
-                "min-w-[9.5rem] max-w-[11rem] rounded-xl border bg-white px-2 py-1.5 text-left transition",
+                "w-full rounded-xl border bg-white px-2 py-1.5 text-left transition",
                 selected
                   ? "border-stone-900 shadow-sm"
                   : hinted

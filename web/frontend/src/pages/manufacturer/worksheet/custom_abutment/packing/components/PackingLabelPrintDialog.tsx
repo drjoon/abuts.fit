@@ -52,6 +52,7 @@ export function PackingLabelPrintDialog({
   branding,
   printing,
   onPrint,
+  initialSelectedIds = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,6 +68,8 @@ export function PackingLabelPrintDialog({
   branding?: PackLabelBranding | null;
   printing: boolean;
   onPrint: (requests: ManufacturerRequest[]) => Promise<boolean>;
+  /** 열릴 때 이 id만 선택·미리보기(프린트). null이면 미출력 전체. */
+  initialSelectedIds?: string[] | null;
 }) {
   const [scope, setScope] = useState<Scope>("unprinted");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -105,13 +108,23 @@ export function PackingLabelPrintDialog({
   useEffect(() => {
     if (!open) return;
     const current = requestsRef.current;
+    const valid = new Set(current.map(requestIdOf).filter(Boolean));
+    const seeded = (initialSelectedIds || [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => valid.has(id));
+    if (seeded.length > 0) {
+      setScope("all");
+      setSelectedIds(seeded);
+      setFocusId(seeded[0] || "");
+      return;
+    }
     const ids = current
       .filter((req) => requestIdOf(req) && !isPrintedRequest(req))
       .map(requestIdOf);
     setScope("unprinted");
     setSelectedIds(ids);
     setFocusId(ids[0] || "");
-  }, [open]);
+  }, [open, initialSelectedIds]);
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedRequests = useMemo(
