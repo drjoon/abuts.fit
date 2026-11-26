@@ -1617,11 +1617,6 @@ export const useMachiningBoard = ({
     };
   }, []);
 
-  const queueMapRef = useRef<QueueMap>({});
-  useEffect(() => {
-    queueMapRef.current = queueMap;
-  }, [queueMap]);
-
   // stage-changed 소켓만 빠지고 NC는 DB에 있을 때 「CAM 생성중」고스트를 폴링으로 푼다.
   // 시간·틱 상한으로 무한 refetch를 막는다(no-infinite-loop).
   useEffect(() => {
