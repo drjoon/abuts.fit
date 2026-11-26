@@ -95,10 +95,35 @@ test("darwin Grab 프로파일은 후보가 적고 30fps를 포함한다", () =>
 });
 
 test("초점 응답은 마지막 JSON만 읽는다", () => {
-  const parsed = parseFocusStdout('log\n{"ok":true,"af":"done","devMode":12}\n');
+  const parsed = parseFocusStdout(
+    'log\n{"ok":true,"af":"done","devMode":20,"ledOn":true,"ledLevel":12,"ledMax":12}\n',
+  );
   assert.equal(focusConfirmed(parsed), true);
+  assert.equal(parsed.ledOn, true);
+  assert.equal(parsed.devMode, 20);
   assert.equal(focusConfirmed({ ok: true, af: "timeout" }), false);
   assert.equal(focusConfirmed({ ok: false, af: "none" }), false);
+});
+
+test("analyzeImage는 평균 밝기를 같이 돌려준다", async () => {
+  const { analyzeImage } = await import("../src/capture.js");
+  // 1x1 회색 JPEG를 sharp로 만들기 어렵다면 raw PNG 버퍼 대신 단색 raw를 우회하지 않고
+  // 작은 JPEG를 직접 만든다.
+  const sharp = (await import("sharp")).default;
+  const dark = await sharp({
+    create: { width: 32, height: 32, channels: 3, background: { r: 10, g: 10, b: 10 } },
+  })
+    .jpeg()
+    .toBuffer();
+  const bright = await sharp({
+    create: { width: 32, height: 32, channels: 3, background: { r: 200, g: 200, b: 200 } },
+  })
+    .jpeg()
+    .toBuffer();
+  const darkA = await analyzeImage(dark);
+  const brightA = await analyzeImage(bright);
+  assert.ok(darkA.mean < 40);
+  assert.ok(brightA.mean > 150);
 });
 
 test("파일명은 KST와 로트 3글자를 담는다", () => {

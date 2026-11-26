@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 프레임 평균 밝기(mean)를 같이 돌려 LED 재점등 판단에 쓴다.
 // - 2026-11-23: Grab을 camera 모듈 프로파일로 돌린다.
 // - 2026-11-23: 감시 루프용 프레임 Grab을 분리한다.
 // - 2026-11-21: 초점 제어 뒤 한 장을 저장한다. 제어가 안 되면 짧은 연속 촬영에서 선명한 장을 고른다.
@@ -119,7 +120,10 @@ export async function analyzeImage(input) {
     .raw()
     .toBuffer({ resolveWithObject: true });
   const score = scoreGray(data, info.width, info.height);
-  return { score, gray: data, width: info.width, height: info.height };
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 1) sum += data[i];
+  const mean = data.length ? sum / data.length : 0;
+  return { score, mean, gray: data, width: info.width, height: info.height };
 }
 
 export function successMessage(mode, focus) {

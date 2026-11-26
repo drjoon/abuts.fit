@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 감시 시작·흐림/어두움 시 LED+AF(횟수·간격 상한). 선명 전에 AF를 건다.
 // - 2026-11-24: 스트림 프로파일 재시도·null readFrame 방지.
 // - 2026-11-23: 상주 ffmpeg 스트림으로 감시. 프레임마다 프로세스 생성 금지.
 // - 2026-11-23: 감시 프레임을 라이브 뷰(/live)로 제공한다.
@@ -8,6 +9,7 @@
 // - bg/pc2/lot-server2/src/camera.js
 // - bg/pc2/lot-server2/src/ocr/index.js
 // - bg/pc2/lot-server2/src/capture.js
+// - bg/pc2/lot-server2/src/focus.js
 // - bg/pc2/lot-server2/public/index.html
 
 import fs from "fs/promises";
@@ -20,7 +22,7 @@ import {
   resolveDevice,
 } from "./camera.js";
 import { analyzeImage, grabFrames, scoreFile } from "./capture.js";
-import { focusConfirmed, tryFocus } from "./focus.js";
+import { focusConfirmed, prepareMicroscope, tryFocus } from "./focus.js";
 import { lotFileName } from "./names.js";
 import { recognizeLot } from "./ocr/index.js";
 import { meanAbsDiff, selectBest as pickSharpest } from "./sharpness.js";
@@ -57,6 +59,11 @@ export function createWatcher({
   const holdMs = Math.max(500, Math.floor(numEnv("LOT_HOLD_MS", 2500)));
   const burstFrames = Math.max(2, Math.floor(numEnv("LOT_OCR_FRAMES", 3)));
   const streamFps = Math.max(1, Math.min(5, Number(process.env.LOT_STREAM_FPS || 2)));
+  // 어두우면 LED+AF를 다시 건다(0–255 평균).
+  const darkMean = Math.max(1, numEnv("LOT_DARK_MEAN", 28));
+  // 흐림/어두움 재시도: 쿨다운·아밍당 횟수 상한(무한 루프 금지).
+  const afCooldownMs = Math.max(3000, Math.floor(numEnv("LOT_AF_COOLDOWN_MS", 8000)));
+  const afMaxPerArm = Math.max(1, Math.min(5, Math.floor(numEnv("LOT_AF_MAX_PER_ARM", 3))));
 
   let running = false;
   let loopPromise = null;
@@ -68,6 +75,10 @@ export function createWatcher({
   let phase = PHASE.IDLE;
   let latest = null;
   let deviceLabel = "";
+  /** @type {object | null} */
+  let lastFocus = null;
+  let lastAfAt = 0;
+  let afAttemptsThisArm = 0;
   /** @type {Buffer | null} */
   let liveFrame = null;
   let liveAt = 0;
@@ -94,9 +105,47 @@ export function createWatcher({
       stream: Boolean(stream?.running),
       motionThreshold,
       sharpThreshold,
+      darkMean,
       stableNeeded,
       pollMs,
+      lastFocus,
+      afAttemptsThisArm,
     };
+  }
+
+  async function runMicroscopePrepare(reason) {
+    if (process.platform !== "win32") {
+      return { ok: false, reason: "not-windows" };
+    }
+    phase = PHASE.FOCUSING;
+    const focus = await prepareMicroscope();
+    lastFocus = focus;
+    lastAfAt = Date.now();
+    const led = focus?.ledOn
+      ? `led=${focus.ledLevel}/${focus.ledMax}`
+      : `ledOff reason=${focus?.reason || ""}`;
+    log(
+      `microscope ${reason} af=${focus?.af || "none"} mode=${focus?.devMode || 0} ${led}`,
+    );
+    if (!focusConfirmed(focus) && focus?.reason) {
+      lastError = `현미경 제어: ${focus.reason}`;
+    }
+    return focus;
+  }
+
+  function needsMicroscopeAssist(frame) {
+    return frame.score < sharpThreshold || frame.mean < darkMean;
+  }
+
+  async function maybeAssistFocus(frame) {
+    if (!needsMicroscopeAssist(frame)) return false;
+    if (afAttemptsThisArm >= afMaxPerArm) return false;
+    if (Date.now() - lastAfAt < afCooldownMs) return false;
+    afAttemptsThisArm += 1;
+    await runMicroscopePrepare(`assist ${afAttemptsThisArm}/${afMaxPerArm}`);
+    // AF 직후 스트림이 새 장을 받을 시간을 준다.
+    await sleep(Math.max(400, Math.floor(1000 / streamFps)));
+    return true;
   }
 
   async function ensureStream() {
@@ -159,9 +208,11 @@ export function createWatcher({
   }
 
   async function captureForOcr() {
-    const focus = await tryFocus();
-    const focused = focusConfirmed(focus);
     phase = PHASE.FOCUSING;
+    const focus = await tryFocus({ action: "prepare" });
+    lastFocus = focus;
+    lastAfAt = Date.now();
+    const focused = focusConfirmed(focus);
 
     // 스트림에서 몇 장 모아 선명한 것을 고른다(추가 ffmpeg 없음).
     const scored = [];
@@ -296,6 +347,7 @@ export function createWatcher({
       if (motion >= motionThreshold) {
         phase = PHASE.MOVING;
         armed = true;
+        afAttemptsThisArm = 0;
         stableCount = 0;
         lastLot = "";
       }
@@ -305,19 +357,25 @@ export function createWatcher({
     if (motion >= motionThreshold) {
       phase = PHASE.MOVING;
       armed = true;
+      afAttemptsThisArm = 0;
       stableCount = 0;
       return;
     }
 
     if (!armed) {
+      // 대기 중에도 너무 어둡거나 흐리면 LED+AF를 한도 내에서 건다.
+      if (needsMicroscopeAssist(frame)) {
+        await maybeAssistFocus(frame);
+      }
       phase = PHASE.IDLE;
       stableCount = 0;
       return;
     }
 
-    if (frame.score < sharpThreshold) {
+    if (needsMicroscopeAssist(frame)) {
       phase = PHASE.STABLE;
       stableCount = 0;
+      await maybeAssistFocus(frame);
       return;
     }
 
@@ -352,7 +410,21 @@ export function createWatcher({
       if (running) return snapshot();
       running = true;
       phase = PHASE.IDLE;
-      loopPromise = loop();
+      afAttemptsThisArm = 0;
+      lastAfAt = 0;
+      // 스트림 연 뒤 LED+AF를 한 번 건다(상한 1회는 start 준비).
+      loopPromise = (async () => {
+        try {
+          await ensureStream();
+          afAttemptsThisArm = 1;
+          await runMicroscopePrepare("start");
+        } catch (err) {
+          phase = PHASE.ERROR;
+          lastError = err?.message || String(err);
+          log(`watch start prepare failed ${lastError}`);
+        }
+        await loop();
+      })();
       log("watch started");
       return snapshot();
     },
@@ -378,9 +450,11 @@ export function createWatcher({
     async forceRecognize() {
       lastLot = "";
       armed = true;
+      afAttemptsThisArm = 0;
       stableCount = stableNeeded;
       if (!running) this.start();
       await ensureStream();
+      await runMicroscopePrepare("force");
       return recognizeOnce();
     },
   };

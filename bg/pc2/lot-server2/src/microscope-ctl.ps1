@@ -1,5 +1,7 @@
 param(
-  [Parameter(Mandatory = $true)][string]$DllDir
+  [Parameter(Mandatory = $true)][string]$DllDir,
+  # prepare = LED 켠 뒤 AF. af = AF만(하위 호환, 동일 경로).
+  [ValidateSet("prepare", "af")][string]$Action = "prepare"
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,19 +45,24 @@ public static class MltcCtl {
   [DllImport("mltcCom.dll", EntryPoint = "@rGetSendData_I2C$qqsuls", CallingConvention = CallingConvention.StdCall)]
   static extern uint RGet(uint cmd, short mode);
 
+  // UM06/UM12/UM20 공통 레지스터(ViTiny mltcComCtrl.h).
   const uint STAFLAG = 0x00;
   const uint KEYCO = 0x01;
   const uint KEYCH = 0x02;
+  const uint LEDMAX = 0x05;
+  const uint LEDLV = 0x06;
   const uint OPOSIH = 0x09;
   const uint OPOSIL = 0x0A;
   const uint AFAREA = 0x0E;
-  const uint LEDMAX = 0x05;
+  const uint LEDMOD = 0x10;
   const uint FWVER2 = 0x2D;
   const uint FWVER1 = 0x2E;
   const uint FWVER0 = 0x2F;
   const uint KEY_DOWN = 0x40;
   const uint KEY_REMOTE = 0x0F;
   const uint KEY_AF_SINGLE = 0x15;
+  const uint KEY_LED_ONOFF = 0x19;
+  const uint KEY_LED_INC = 0x1A;
 
   static bool TryRead(uint addr, short mode, out uint value) {
     value = 0;
@@ -125,6 +132,48 @@ public static class MltcCtl {
     return (status & 0x08) != 0;
   }
 
+  // STAFLAG bit1 = LED on. 꺼져 있으면 켠다.
+  static bool EnsureLedOn(short mode, out bool wasOn) {
+    wasOn = false;
+    uint status;
+    if (!TryRead(STAFLAG, mode, out status)) return false;
+    wasOn = (status & 0x02) != 0;
+    if (wasOn) return true;
+    if (!WriteKey(KEY_DOWN | KEY_LED_ONOFF, mode)) return false;
+    Thread.Sleep(40);
+    if (!TryRead(STAFLAG, mode, out status)) return false;
+    return (status & 0x02) != 0;
+  }
+
+  // LED를 최대로. WriteData 실패 시 INC를 상한 횟수만 누른다.
+  static bool BrightenLed(short mode, out uint ledMax, out uint ledLevel) {
+    ledMax = 0;
+    ledLevel = 0;
+    WriteData(LEDMOD, 0, mode); // ALL
+    if (!TryRead(LEDMAX, mode, out ledMax)) ledMax = 12;
+    if (ledMax == 0) ledMax = 12;
+    if (WriteData(LEDLV, ledMax, mode)) {
+      ledLevel = ledMax;
+      return true;
+    }
+    if (!TryRead(LEDLV, mode, out ledLevel)) ledLevel = 0;
+    int guard = 0;
+    while (ledLevel < ledMax && guard < 16) {
+      if (!WriteKey(KEY_DOWN | KEY_LED_INC, mode)) break;
+      Thread.Sleep(30);
+      WriteKey(0x80 | KEY_LED_INC, mode); // KEY_UP
+      Thread.Sleep(20);
+      if (!TryRead(LEDLV, mode, out ledLevel)) break;
+      guard++;
+    }
+    return ledLevel > 0;
+  }
+
+  static uint AfAreaForMode(short mode) {
+    if (mode == 6) return 0x0F; // UM06 ALL
+    return 0x1A; // UM12/UM20 ALL
+  }
+
   static string WaitAf(short mode, uint startPos) {
     bool sawBusy = false;
     for (int i = 0; i < 40; i++) {
@@ -141,26 +190,40 @@ public static class MltcCtl {
     return "accepted";
   }
 
-  static string Json(bool ok, short mode, string firmware, string af, uint position, string reason) {
+  static string Json(
+    bool ok,
+    short mode,
+    string firmware,
+    string af,
+    uint position,
+    uint ledMax,
+    uint ledLevel,
+    bool ledOn,
+    string reason
+  ) {
     return "{\"ok\":" + (ok ? "true" : "false")
       + ",\"devMode\":" + mode
       + ",\"firmware\":\"" + firmware + "\""
       + ",\"af\":\"" + af + "\""
       + ",\"position\":" + position
+      + ",\"ledMax\":" + ledMax
+      + ",\"ledLevel\":" + ledLevel
+      + ",\"ledOn\":" + (ledOn ? "true" : "false")
       + ",\"reason\":\"" + reason + "\"}";
   }
 
-  public static string Run(string dllDir) {
+  public static string Run(string dllDir, string action) {
     SetDllDirectory(dllDir);
     string et = System.IO.Path.Combine(dllDir, "etLib2.dll");
     string emx = System.IO.Path.Combine(dllDir, "emxunit.dll");
     string com = System.IO.Path.Combine(dllDir, "mltcCom.dll");
-    if (LoadLibrary(et) == IntPtr.Zero) return Json(false, 0, "", "none", 0, "etlib-load-failed");
+    if (LoadLibrary(et) == IntPtr.Zero) return Json(false, 0, "", "none", 0, 0, 0, false, "etlib-load-failed");
     LoadLibrary(emx);
-    if (LoadLibrary(com) == IntPtr.Zero) return Json(false, 0, "", "none", 0, "dll-load-failed");
-    if (ComInitial() == 0) return Json(false, 0, "", "none", 0, "init-failed");
+    if (LoadLibrary(com) == IntPtr.Zero) return Json(false, 0, "", "none", 0, 0, 0, false, "dll-load-failed");
+    if (ComInitial() == 0) return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
     try {
-      short[] modes = new short[] { 12, 6 };
+      // UM20 우선. UM12/UM06 순.
+      short[] modes = new short[] { 20, 12, 6 };
       string lastReason = "probe-failed";
       for (int i = 0; i < modes.Length; i++) {
         short mode = modes[i];
@@ -173,8 +236,25 @@ public static class MltcCtl {
           lastReason = "remote-failed";
           continue;
         }
-        uint area = mode == 6 ? (uint)0x0F : (uint)0x1A;
-        WriteData(AFAREA, area, mode);
+
+        uint ledMax = 0;
+        uint ledLevel = 0;
+        bool ledOn = false;
+        bool doLed = action == "prepare" || action == "af";
+        if (doLed) {
+          bool wasOn;
+          if (!EnsureLedOn(mode, out wasOn)) {
+            lastReason = "led-on-failed";
+            // LED 실패해도 AF는 시도한다.
+          } else {
+            ledOn = true;
+          }
+          BrightenLed(mode, out ledMax, out ledLevel);
+          uint stAfter;
+          if (TryRead(STAFLAG, mode, out stAfter)) ledOn = (stAfter & 0x02) != 0;
+        }
+
+        WriteData(AFAREA, AfAreaForMode(mode), mode);
         uint start = ReadPosition(mode);
         if (!WriteKey(KEY_DOWN | KEY_AF_SINGLE, mode)) {
           lastReason = "af-rejected";
@@ -183,9 +263,9 @@ public static class MltcCtl {
         string af = WaitAf(mode, start);
         uint position = ReadPosition(mode);
         bool ok = af == "done" || af == "accepted";
-        return Json(ok, mode, firmware, af, position, ok ? "" : af);
+        return Json(ok, mode, firmware, af, position, ledMax, ledLevel, ledOn, ok ? "" : af);
       }
-      return Json(false, 0, "", "none", 0, lastReason);
+      return Json(false, 0, "", "none", 0, 0, 0, false, lastReason);
     } finally {
       ComUnInitial();
     }
@@ -195,7 +275,7 @@ public static class MltcCtl {
 
 try {
   Add-Type -TypeDefinition $source -Language CSharp -ErrorAction Stop
-  Write-Output ([MltcCtl]::Run($DllDir))
+  Write-Output ([MltcCtl]::Run($DllDir, $Action))
 } catch {
   $detail = $_.Exception.Message
   if ($detail) { $detail = $detail.Replace('"', "'").Replace("`r", " ").Replace("`n", " ") }

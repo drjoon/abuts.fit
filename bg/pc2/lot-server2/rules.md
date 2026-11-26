@@ -10,7 +10,7 @@
 
 ## 1) 역할/흐름
 
-- Windows에서 ViTiny UM12/UM06 SDK(`vendor/vitiny`, 32비트)로 AF를 시도합니다.
+- Windows에서 ViTiny SDK(`vendor/vitiny`, 32비트)로 LED 점등·밝기 후 단일 AF를 시도합니다(mode 20/12/6 프로브). 감시 시작·흐림/어두움·OCR 직전에 걸며, 재시도는 쿨다운·아밍당 횟수 상한이 있습니다.
 - 카메라 연동: `src/camera.js`(목록·선택·Grab 프로파일·상주 스트림). Continuity/화면캡처는 자동 선택에서 뒤로 민다.
 - 감시 중 ffmpeg는 **상주 1개**만 돌리고 JPEG를 덮어씁니다. 프레임마다 프로세스를 만들지 않습니다.
 - 움직임이 줄고 선명도가 임계 이상이면 `src/ocr`로 인식합니다. 라이브는 `GET /live`.
