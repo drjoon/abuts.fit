@@ -162,6 +162,15 @@ export const PackingPageContent = ({
     toast,
   });
 
+  const printedPackingRequestIds = useMemo(
+    () =>
+      filteredAndSorted
+        .filter((req) => Boolean((req as any)?.shippingLabelPrinted?.printed))
+        .map((req) => String(req._id || ""))
+        .filter(Boolean),
+    [filteredAndSorted],
+  );
+
   const unprintedPackingRequestIds = useMemo(
     () =>
       filteredAndSorted
