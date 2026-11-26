@@ -51,6 +51,7 @@
 // - 2026-11-25: 구치 커스텀어벗은 모델정렬 수평선(근원심)에 평행하다. 접선으로 기울이지 않는다.
 // - 2026-11-25: 모델정렬 중에는 대합 악을 끈다. 확인·취소 때 이전 상·하악 표시로 되돌린다.
 // - 2026-11-25: 모델정렬 안내는 긴 문구 대신 편측 스캔 도식(위=협측, 사분면별 근심·원심).
+// - 2026-11-26: 모달 오픈 직후 저장 뷰 lookAt·프러스텀 검사·더블 rAF fit으로 빈 모눈을 막는다.
 // - 2026-11-22: 헤더는 로고·의뢰·도구를 한 줄 flex. 의뢰 문구는 truncate.
 // related files:
 // - web/frontend/src/shared/practice/customAbutmentScanbodyMatch.ts
@@ -576,7 +577,6 @@ function applySavedView(
   aspect: number,
 ) {
   camera.position.fromArray(saved.pos);
-  camera.quaternion.fromArray(saved.quat);
   camera.up.fromArray(saved.up);
   controls.target.fromArray(saved.target);
   camera.zoom = THREE.MathUtils.clamp(saved.zoom, 0.2, VIEW_MAX_ZOOM);
@@ -584,11 +584,13 @@ function applySavedView(
   // 세로 크기는 유지하고, 지금 칸 비율로 가로만 다시 잡아 창 밖은 잘리게 한다.
   const halfH = Math.max(Math.abs(saved.top - saved.bottom) / 2, 1e-4);
   applyOrthoHeight(camera, halfH, Math.max(aspect, 1e-4));
+  // quat만 복원하면 target과 시선이 어긋나 빈 모눈만 보인다. pan/rotate의 lookAt과 같이 맞춘다.
+  camera.lookAt(controls.target);
   camera.updateMatrixWorld();
   controls.syncFromCamera();
 }
 
-/** 저장·공유 뷰가 메시 AABB에서 멀면 빈 모눈만 보이다가 돌려야 들어온다. */
+/** 저장·공유 뷰가 메시 AABB에서 멀거나 시선이 비끼면 빈 모눈만 보이다가 돌려야 들어온다. */
 function cameraFramesTargets(
   camera: THREE.OrthographicCamera,
   controls: ScreenSpaceOrbitControls,
@@ -616,6 +618,12 @@ function cameraFramesTargets(
   const halfW = Math.abs(camera.right - camera.left) / (2 * Math.max(camera.zoom, 1e-4));
   const viewSpan = Math.hypot(halfW, halfH) * 2;
   if (viewSpan < span * 0.08) return false;
+  // 타깃이 근처에 있어도 카메라가 다른 곳을 보면 빈 화면이다. 중심이 프러스텀 안에 있는지 본다.
+  camera.updateMatrixWorld();
+  const ndc = center.clone().project(camera);
+  if (!Number.isFinite(ndc.x) || !Number.isFinite(ndc.y) || !Number.isFinite(ndc.z)) return false;
+  if (Math.abs(ndc.x) > 1.15 || Math.abs(ndc.y) > 1.15) return false;
+  if (ndc.z < -1.05 || ndc.z > 1.05) return false;
   return true;
 }
 
@@ -4813,10 +4821,11 @@ export function PracticeCustomAbutmentPreviewDialog({
     scene.background = new THREE.Color(SCAN_COLOR_PREVIEW_BACKGROUND);
     sceneRef.current = scene;
 
-    const { width, height, aspect } = readHostSize(host);
+    const { aspect } = readHostSize(host);
     const camera = new THREE.OrthographicCamera(-20 * aspect, 20 * aspect, 20, -20, 0.1, 4000);
     camera.position.set(0, 90, 20);
     camera.up.set(0, 0, 1);
+    camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -4824,15 +4833,16 @@ export function PracticeCustomAbutmentPreviewDialog({
       preserveDrawingBuffer: true,
       powerPreference: "high-performance",
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(width, height, false);
     applyScanColorToneMapping(renderer);
+    // Dialog 레이아웃 직후 1px 버퍼가 남지 않게 CSS·버퍼를 호스트에 맞춘다.
+    const sized = resizeWebglToHost(renderer, host);
+    applyOrthoHeight(camera, 20, sized.aspect);
     renderer.domElement.className = "block h-full w-full touch-none select-none";
     host.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     const labelRenderer = new CSS2DRenderer();
-    labelRenderer.setSize(width, height);
+    labelRenderer.setSize(sized.width, sized.height);
     labelRenderer.domElement.style.cssText =
       "position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:4;";
     host.appendChild(labelRenderer.domElement);
@@ -5011,6 +5021,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     };
     const ro = new ResizeObserver(onResize);
     ro.observe(host);
+    // 포털 마운트 직후 한 번 더 맞춰 1px·잘못된 aspect로 빈 화면이 남지 않게 한다.
+    onResize();
 
     return () => {
       window.clearTimeout(viewSyncTimerRef.current);
@@ -5303,14 +5315,30 @@ export function PracticeCustomAbutmentPreviewDialog({
           preferFit?: boolean;
           after?: () => void;
         }) => {
-          window.requestAnimationFrame(() => {
+          // Dialog 레이아웃·메시 추가가 한 프레임에 안 끝날 수 있어 두 번 맞춘다.
+          const runFrame = (pass: 0 | 1) => {
+            const hostNow = hostRef.current;
+            const rendererNow = rendererRef.current;
+            if (hostNow && rendererNow) {
+              const next = resizeWebglToHost(rendererNow, hostNow);
+              labelRendererRef.current?.setSize(next.width, next.height);
+              const camResize = cameraRef.current;
+              if (camResize) {
+                const halfH = Math.abs(camResize.top - camResize.bottom) / 2;
+                applyOrthoHeight(camResize, Math.max(halfH, 1e-4), next.aspect);
+              }
+            }
             if (holdSetupViewRef.current) {
               // 스캔바디 모델정렬에서 맞춘 화면을 유지한다. 저장 뷰·기본 뷰로 돌리지 않는다.
               viewReadyRef.current = true;
               const cam = cameraRef.current;
               const controls = controlsRef.current;
               if (cam && controls) writeSavedView(transferIdParam, cam, controls.target);
-              opts?.after?.();
+              if (pass === 0) {
+                window.requestAnimationFrame(() => runFrame(1));
+              } else {
+                opts?.after?.();
+              }
               return;
             }
             // 모델정렬 애니가 저장 뷰·fit을 덮어 빈 원점만 남기지 않게 먼저 끊는다.
@@ -5370,6 +5398,7 @@ export function PracticeCustomAbutmentPreviewDialog({
               fitDefaultCamera();
             }
             if (
+              pass === 0 &&
               pendingRemotePaintRef.current?.shapes?.length &&
               paintStateRef.current.paintRef.current
             ) {
@@ -5379,6 +5408,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             }
             const arrived = pendingSharedViewRef.current;
             if (
+              pass === 0 &&
               arrived &&
               arrived !== shared &&
               arrived.savedAt > lastSharedViewAtRef.current
@@ -5394,8 +5424,13 @@ export function PracticeCustomAbutmentPreviewDialog({
                 writeSavedView(transferIdParam, cam, controls.target);
               }
             }
-            opts?.after?.();
-          });
+            if (pass === 0) {
+              window.requestAnimationFrame(() => runFrame(1));
+            } else {
+              opts?.after?.();
+            }
+          };
+          window.requestAnimationFrame(() => runFrame(0));
         };
 
         // 기공소도 편집 중에는 로컬 메시 캐시를 읽는다. 쓰지 않으면 저장은 되고

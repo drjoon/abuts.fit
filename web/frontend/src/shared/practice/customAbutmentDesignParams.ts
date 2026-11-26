@@ -14,7 +14,7 @@ export type CustomAbutmentDesignParams = {
   postTaperDeg: number;
   /** 포스트 높이와 테이퍼 연결 여부(1=최적 접착력 자동 연동, 0=개별 조절). */
   postTaperLink: number;
-  /** 포스트 상단 교합 사면(0=교합면에 평행, 1=대합치에 평행, 2=픽스쳐에 수직). */
+  /** 포스트 상단 교합 사면(0=교합면에 평행=인접치 교합면 연장, 1=대합치에 평행, 2=픽스쳐에 수직). */
   postTopPlaneCode: number;
   /** 설측 사면 — 마진에서 사면이 시작되는 높이(mm). -1은 전치 자동·구치 없음, 0은 없음. */
   postLingualBevelMm: number;

@@ -7,7 +7,7 @@
 //    같은 브리지의 지대치 포스트 높이는 맞춘다. 대합 공간이 가장 긴 쪽까지 못 가면, 짧은 포스트 높이로 맞춘다.
 // 3) 예측 크라운 = 포스트 + 축벽 두께. 인접치·이웃 크라운과는 접촉량만 겹치고 대합치와는 접촉만 한다.
 // 4) 포스트 = 오목 챔퍼(실측: 45° 시작, 폭 0.5mm, 곡률 ≥ 공구 R) → 편측 테이퍼 축벽(언더컷 없음)
-//    → 윗면 라운드. 소·대구치 윗면은 교합 사면(악궁 교합면·대합치 평면·픽스쳐 수직)에 맞춘 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
+//    → 윗면 라운드. 소·대구치 윗면은 교합 사면(인접치 교합면 연장·대합치 평면·픽스쳐 수직)에 맞춘 평면, 최정점은 대합치에서 occlusalClearance만큼 아래.
 //    절치는 인접 자연치 절단부처럼 순설로 좁은 삽형이다. 설측은 치경 싱귤럼 위부터 설면와가 들어가게 사선으로 깎는다.
 //    절치 포스트 높이는 대합보다 인접 자연치 절단연 길이(순측으로 기운 끝 포함)를 따르고, 도재 두께만 뺀다.
 //    바로 옆 완성 자연치가 비면 악궁 교합 곡면(전치 절단연·구치 중심구)을 기준으로 한다.
@@ -2355,6 +2355,100 @@ function adjacentOcclusalHeight(
     if (top >= ADJACENT_TOOTH_MIN_H_MM) tops.push(top);
   }
   return tops.length ? tops.reduce((s, v) => s + v, 0) / tops.length : Number.NaN;
+}
+
+/**
+ * 양옆 인접 자연치 교합면(첨두·절단연 상단 띠)을 연장한 평면의 기울기(gu, gv).
+ * 포스트 상단 「교합면에 평행」은 악궁 전역 법선이 아니라 이 평면에 맞춘다.
+ * 샘플이 부족하면 null.
+ */
+function estimateAdjacentOcclusalPlane(
+  pts: Float32Array,
+  c0: Vec3,
+  frame: InsertionFrame,
+  halfMdMm: number,
+  ownScanbody: { radius: number; height: number },
+  opts?: {
+    mesialSignOnV?: 1 | -1;
+    isWisdom?: boolean;
+    skipPos?: boolean;
+    skipNeg?: boolean;
+    maxTilt?: number;
+  },
+): { gu: number; gv: number } | null {
+  type Sample = { u: number; v: number; h: number };
+  const sides: Sample[][] = [[], []];
+  const stride = pts.length > 360000 ? Math.ceil(pts.length / 360000) : 1;
+  for (let i = 0; i < pts.length; i += 3 * stride) {
+    const p: Vec3 = [pts[i]!, pts[i + 1]!, pts[i + 2]!];
+    if (Math.hypot(p[0], p[1]) < ownScanbody.radius + 0.7 && p[2] < ownScanbody.height + 1) continue;
+    const rel = sub3(p, c0);
+    const h = dot3(rel, frame.w);
+    if (h < 0 || h > 11.5) continue;
+    const u = dot3(rel, frame.uLabial);
+    if (Math.abs(u) > 4.8) continue;
+    const v = dot3(rel, frame.vSide);
+    if (v > 0 && opts?.skipPos) continue;
+    if (v < 0 && opts?.skipNeg) continue;
+    if (opts?.isWisdom && v * (opts.mesialSignOnV ?? 1) < 0) continue;
+    const av = Math.abs(v);
+    if (av < halfMdMm + 0.4 || av > halfMdMm + 8) continue;
+    sides[v > 0 ? 0 : 1]!.push({ u, v, h });
+  }
+  const band: Sample[] = [];
+  for (const list of sides) {
+    if (list.length < 40) continue;
+    list.sort((a, b) => a.h - b.h);
+    const top = list[Math.floor(list.length * 0.97)]!.h;
+    if (top < ADJACENT_TOOTH_MIN_H_MM) continue;
+    // 교합면·절단연 상단 띠만 모아 연장 평면을 잡는다.
+    const floor = top - 1.35;
+    for (let i = Math.floor(list.length * 0.72); i < list.length; i += 1) {
+      const s = list[i]!;
+      if (s.h >= floor) band.push(s);
+    }
+  }
+  if (band.length < 18) return null;
+
+  let s1 = 0;
+  let su = 0;
+  let sv = 0;
+  let suu = 0;
+  let svv = 0;
+  let suv = 0;
+  let sh = 0;
+  let suh = 0;
+  let svh = 0;
+  for (const s of band) {
+    s1 += 1;
+    su += s.u;
+    sv += s.v;
+    suu += s.u * s.u;
+    svv += s.v * s.v;
+    suv += s.u * s.v;
+    sh += s.h;
+    suh += s.u * s.h;
+    svh += s.v * s.h;
+  }
+  const mu = su / s1;
+  const mv = sv / s1;
+  const mh = sh / s1;
+  const cuu = suu / s1 - mu * mu;
+  const cvv = svv / s1 - mv * mv;
+  const cuv = suv / s1 - mu * mv;
+  const cuh = suh / s1 - mu * mh;
+  const cvh = svh / s1 - mv * mh;
+  const det = cuu * cvv - cuv * cuv;
+  if (det <= 1e-9) return null;
+  let gu = (cuh * cvv - cvh * cuv) / det;
+  let gv = (cvh * cuu - cuh * cuv) / det;
+  const maxTilt = opts?.maxTilt ?? FLAT_TOP_MAX_TILT;
+  const g = Math.hypot(gu, gv);
+  if (g > maxTilt) {
+    gu *= maxTilt / g;
+    gv *= maxTilt / g;
+  }
+  return { gu, gv };
 }
 
 const archOcclusalHeightCache = new WeakMap<Float32Array, Map<string, number>>();
@@ -9303,10 +9397,28 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
           maxTilt: posterior ? FLAT_TOP_MAX_TILT : Math.tan(13 * DEG),
         })
       : null;
+  // 「교합면에 평행」= 인접 자연치 교합면을 연장한 평면. 인접이 없으면 악궁 교합 법선으로 대체.
+  const adjTopPlane =
+    posHasFinishedNeighbor || negHasFinishedNeighbor
+      ? estimateAdjacentOcclusalPlane(
+          jawLocalPts,
+          c0,
+          frame,
+          marginB,
+          { radius: sbR, height: sbH },
+          {
+            mesialSignOnV,
+            isWisdom: hasDistalRetromolarPad,
+            skipPos: !posHasFinishedNeighbor,
+            skipNeg: !negHasFinishedNeighbor,
+            maxTilt: posterior ? FLAT_TOP_MAX_TILT : Math.tan(13 * DEG),
+          },
+        )
+      : null;
 
   /**
    * 윗면 높이. 구치 교합면과 전치 절단연 모두 하나의 평면이다.
-   * 구치는 대합치 교합면과 수평이다. 대합이 없으면 악궁 교합 방향에 수직인 평면이다.
+   * 교합면에 평행 = 인접치 교합면 연장 평면. 대합치에 평행·픽스쳐 수직은 옵션.
    * 삽입축에 수직으로 두면 협측이 낮아진다.
    */
   const fitTopSurface = (opts?: {
@@ -9329,7 +9441,7 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
     const wOcc = Math.max(0.35, dot3(frame.w, occInFix));
     const levelGu = -dot3(frame.uLabial, occInFix) / wOcc;
     const levelGv = -dot3(frame.vSide, occInFix) / wOcc;
-    // postTopPlaneCode: 0=교합면에 평행(기본), 1=대합치에 평행, 2=픽스쳐에 수직
+    // postTopPlaneCode: 0=교합면에 평행(인접치 연장, 기본), 1=대합치에 평행, 2=픽스쳐에 수직
     const planeCode = Math.max(0, Math.min(2, Math.round(params.postTopPlaneCode ?? 0)));
     const useOpposingTopPlane = planeCode === 1;
     const useFixtureTopPlane = planeCode === 2;
@@ -9356,7 +9468,12 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       if (useOpposingTopPlane && oppTopPlane) {
         gu = oppTopPlane.gu;
         gv = oppTopPlane.gv;
+      } else if (adjTopPlane) {
+        // 인접 자연치 교합면을 연장한 평면.
+        gu = adjTopPlane.gu;
+        gv = adjTopPlane.gv;
       } else {
+        // 인접이 없으면 악궁 교합 방향에 수직인 평면으로 대체.
         gu = levelGu;
         gv = levelGv;
       }
@@ -9391,9 +9508,13 @@ async function designImpl(args: DesignArgs, mode: DesignMode): Promise<DesignRes
       gu = 0;
       gv = clamp(gv, -Math.tan(4 * DEG), Math.tan(4 * DEG));
     } else {
-      // 교합면: 악궁 교합 방향에 수직인 평면. 순설 경사(gu)는 두지 않는다.
+      // 교합면: 인접치 교합면 연장. 없으면 악궁 교합 법선. 순설 경사(gu)는 두지 않는다.
       gu = 0;
-      gv = clamp(levelGv, -Math.tan(4 * DEG), Math.tan(4 * DEG));
+      gv = clamp(
+        adjTopPlane ? adjTopPlane.gv : levelGv,
+        -Math.tan(4 * DEG),
+        Math.tan(4 * DEG),
+      );
     }
 
     const effClearance =
