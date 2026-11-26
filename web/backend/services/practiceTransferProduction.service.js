@@ -1686,6 +1686,26 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         }),
       );
     }
+    // export에서 생산비를 이미 깎았으면 Request hold/가공 차감액 0.
+    if (
+      !isPtxRemake &&
+      transferDoc?.production?.abutmentExportPaidAt &&
+      quotedPrice &&
+      typeof quotedPrice === "object"
+    ) {
+      quotedPrice = {
+        ...quotedPrice,
+        amount: 0,
+        rule: "ptx_abuts_production_export_prepaid",
+        discountMeta: {
+          ...(quotedPrice.discountMeta &&
+          typeof quotedPrice.discountMeta === "object"
+            ? quotedPrice.discountMeta
+            : {}),
+          exportPrepaid: true,
+        },
+      };
+    }
 
     let productionSchedule = await calculateInitialProductionSchedule({
       shippingMode,
@@ -3780,6 +3800,25 @@ export async function repriceAndReschedulePtxAbutmentRequest({
         configuredMultiplier: creditSettingsForQuote?.practiceRushFeeMultiplier,
       }),
     );
+  }
+  if (
+    !isPtxRemake &&
+    transferDoc?.production?.abutmentExportPaidAt &&
+    quotedPrice &&
+    typeof quotedPrice === "object"
+  ) {
+    quotedPrice = {
+      ...quotedPrice,
+      amount: 0,
+      rule: "ptx_abuts_production_export_prepaid",
+      discountMeta: {
+        ...(quotedPrice.discountMeta &&
+        typeof quotedPrice.discountMeta === "object"
+          ? quotedPrice.discountMeta
+          : {}),
+        exportPrepaid: true,
+      },
+    };
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);

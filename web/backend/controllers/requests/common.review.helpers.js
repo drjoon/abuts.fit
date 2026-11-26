@@ -368,7 +368,7 @@ export async function postDealerParcelShippingDeduction({
   });
 }
 
-async function postSpendCommitGeneralLedger({
+export async function postSpendCommitGeneralLedger({
   eventType,
   spendUniqueKey,
   request,
@@ -1214,6 +1214,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const productMode = String(caseInfos?.productMode || "").trim();
 
   // PTX 기공소 디자인: 생산만(디자인비 0). 플랫폼 고시 단가.
+  // 크라운 export에서 이미 생산비를 깎았으면 가공 진입에서 다시 깎지 않는다.
   let computedPrice;
   let machiningAmount;
   let withDesign;
@@ -1227,22 +1228,63 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     );
     const qty = Math.max(1, abutmentQty || 1);
     expressQty = qty;
+    let exportAlreadyPaid = false;
+    const relatedPtxId = String(
+      partnerBilling.relatedPracticeTransferId || "",
+    ).trim();
+    if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
+      try {
+        const { hasPracticeTransferAbutmentProductionPaid } = await import(
+          "../../services/practiceTransferAbutmentExportSpend.service.js"
+        );
+        const PracticeTransfer = (
+          await import("../../models/practiceTransfer.model.js")
+        ).default;
+        const ptx = await PracticeTransfer.findById(relatedPtxId)
+          .select({
+            production: 1,
+            billing: 1,
+            toothWorks: 1,
+            targetLabAnchorId: 1,
+            assigneeLabAnchorId: 1,
+            matchingMode: 1,
+          })
+          .session(session || null);
+        if (ptx) {
+          exportAlreadyPaid = await hasPracticeTransferAbutmentProductionPaid({
+            transfer: ptx,
+            session,
+          });
+        }
+      } catch (exportPaidErr) {
+        console.warn(
+          "[CREDIT_SPEND] export-paid check failed",
+          exportPaidErr?.message || exportPaidErr,
+        );
+      }
+    }
+    const productionAmount = exportAlreadyPaid ? 0 : unit * qty;
     computedPrice = {
       baseAmount: unit,
       discountAmount: 0,
-      amount: unit * qty,
+      amount: productionAmount,
       currency: "KRW",
-      rule: "ptx_abuts_production_membership",
+      rule: exportAlreadyPaid
+        ? "ptx_abuts_production_export_prepaid"
+        : "ptx_abuts_production_membership",
       designFee: null,
       abutmentQty: qty,
       quotedAt: new Date(),
-      discountMeta: { pricingTier: "membership" },
+      discountMeta: {
+        pricingTier: "membership",
+        ...(exportAlreadyPaid ? { exportPrepaid: true } : {}),
+      },
     };
     withDesign = {
       ...computedPrice,
       designFee: null,
     };
-    machiningAmount = unit * qty;
+    machiningAmount = productionAmount;
   } else {
     computedPrice = await computePriceForRequest({
       requestorId: request?.requestor,

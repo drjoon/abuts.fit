@@ -35,6 +35,8 @@ import {
   closeSubcontractPracticeTransfer,
   markReceivedPracticeTransferDownloaded,
   confirmPracticeTransferAbutmentDesign,
+  quotePracticeTransferAbutmentDesignExport,
+  chargePracticeTransferAbutmentDesignExport,
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
   chargeReceivedPracticeTransferRemake,
@@ -470,6 +472,20 @@ router.post(
   authenticate,
   receiveAuth,
   appendReceivedPracticeTransferResultFiles,
+);
+
+router.get(
+  "/:transferId/abutment-design-export-quote",
+  authenticate,
+  receiveAuth,
+  quotePracticeTransferAbutmentDesignExport,
+);
+
+router.post(
+  "/:transferId/abutment-design-export-charge",
+  authenticate,
+  receiveAuth,
+  chargePracticeTransferAbutmentDesignExport,
 );
 
 router.post(

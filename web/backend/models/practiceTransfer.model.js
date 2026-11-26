@@ -341,6 +341,18 @@ const practiceTransferSchema = new mongoose.Schema(
       abutmentGracePromoteAt: { type: Date, default: null, index: true },
       abutmentProductionStartedAt: { type: Date, default: null },
       /**
+       * 크라운 export 시 어벗츠 어벗 생산비 확정 차감 시각.
+       * 한 번 찍히면 취소·재export로 환불/재차감하지 않는다.
+       * 가공 진입 생산비와 이중 차감하지 않는다.
+       */
+      abutmentExportPaidAt: { type: Date, default: null },
+      abutmentExportPaidAmount: { type: Number, default: null },
+      abutmentExportPaidBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      /**
        * 기공소가 지정한 어벗 출고일(KST YMD).
        * 미설정 시 치과도착일 − 3영업일(기본). CA Request estimatedShipYmd 목표로 사용.
        */

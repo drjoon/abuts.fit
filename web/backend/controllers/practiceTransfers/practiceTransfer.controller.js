@@ -12069,6 +12069,167 @@ export async function setPracticeTransferLabTechnician(req, res) {
   }
 }
 
+/**
+ * GET 크라운 export 생산비 견적(모달 표시용).
+ * POST와 동일 권한·면제·이미결제 판정.
+ */
+export async function quotePracticeTransferAbutmentDesignExport(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 export할 수 없습니다.",
+      });
+    }
+    if (!hasCustomAbutmentToothWorks(doc.toothWorks)) {
+      return res.status(400).json({
+        success: false,
+        message: "커스텀 어벗먼트가 없는 의뢰입니다.",
+      });
+    }
+    if (role !== "admin") {
+      const denied = labWorkOperationDeniedMessage(
+        doc,
+        labAnchorId,
+        "작업을 시작한 기공소만 export할 수 있습니다.",
+      );
+      if (denied) {
+        return res.status(403).json({ success: false, message: denied });
+      }
+    }
+
+    const {
+      quotePracticeTransferAbutmentExportSpend,
+    } = await import(
+      "../../services/practiceTransferAbutmentExportSpend.service.js"
+    );
+    const quote = await quotePracticeTransferAbutmentExportSpend({ transfer: doc });
+    return res.status(200).json({ success: true, data: quote });
+  } catch (error) {
+    console.error("quotePracticeTransferAbutmentDesignExport error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "export 견적을 불러오지 못했습니다.",
+    });
+  }
+}
+
+/**
+ * POST 크라운 export 생산비 확정 차감.
+ * 한 번 차감되면 취소·재export로 환불하지 않는다.
+ */
+export async function chargePracticeTransferAbutmentDesignExport(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 export할 수 없습니다.",
+      });
+    }
+    if (!hasCustomAbutmentToothWorks(doc.toothWorks)) {
+      return res.status(400).json({
+        success: false,
+        message: "커스텀 어벗먼트가 없는 의뢰입니다.",
+      });
+    }
+    if (role !== "admin") {
+      const denied = labWorkOperationDeniedMessage(
+        doc,
+        labAnchorId,
+        "작업을 시작한 기공소만 export할 수 있습니다.",
+      );
+      if (denied) {
+        return res.status(403).json({ success: false, message: denied });
+      }
+    }
+
+    const {
+      ensurePracticeTransferAbutmentExportSpend,
+    } = await import(
+      "../../services/practiceTransferAbutmentExportSpend.service.js"
+    );
+    const result = await ensurePracticeTransferAbutmentExportSpend({
+      transfer: doc,
+      actorUserId: req.user?._id || null,
+    });
+    return res.status(200).json({
+      success: true,
+      data: {
+        charged: Boolean(result?.charged),
+        reason: result?.reason || null,
+        quote: result?.quote || null,
+        abutmentExportPaidAt: doc.production?.abutmentExportPaidAt || null,
+        abutmentExportPaidAmount:
+          doc.production?.abutmentExportPaidAmount ?? null,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    if (status === 402) {
+      return res.status(402).json({
+        success: false,
+        message: error?.message || "크레딧이 부족합니다.",
+        data: error?.payload || null,
+      });
+    }
+    console.error("chargePracticeTransferAbutmentDesignExport error:", error);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "export 크레딧 차감에 실패했습니다.",
+    });
+  }
+}
+
 export async function confirmPracticeTransferAbutmentDesign(req, res) {
   try {
     const role = String(req.user?.role || "").trim();

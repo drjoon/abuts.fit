@@ -333,6 +333,11 @@ import {
   resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { apiFetch } from "@/shared/api/apiClient";
+import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
+import {
+  AbutmentDesignExportConfirmDialog,
+  type AbutmentDesignExportQuote,
+} from "@/shared/components/practice/AbutmentDesignExportConfirmDialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { type ScanbodyCatalog } from "@/shared/practice/scanbodyLibraryApi";
 import {
@@ -830,6 +835,29 @@ function HeaderIconButton({
 function crownScanStem(patientName: string | undefined, role: string) {
   const safe = (patientName || "스캔").replace(/[\\/:*?"<>|]+/g, " ").trim() || "스캔";
   return `${safe}_${role}`;
+}
+
+/** 월드 좌표 삼각형(비색인). 메쉬 matrixWorld를 적용한다. */
+function worldMeshStlPositions(mesh: THREE.Mesh): Float32Array {
+  const geometry = mesh.geometry as THREE.BufferGeometry;
+  const pos = geometry.getAttribute("position");
+  if (!pos) return new Float32Array(0);
+  const index = geometry.getIndex();
+  const count = index ? index.count : pos.count;
+  const out = new Float32Array(count * 3);
+  const point = new THREE.Vector3();
+  const mirrored = mesh.matrixWorld.determinant() < 0;
+  for (let i = 0; i < count; i += 1) {
+    point
+      .fromBufferAttribute(pos, index ? index.getX(i) : i)
+      .applyMatrix4(mesh.matrixWorld);
+    const corner = i % 3;
+    const at = mirrored && corner > 0 ? i + (corner === 1 ? 1 : -1) : i;
+    out[at * 3] = point.x;
+    out[at * 3 + 1] = point.y;
+    out[at * 3 + 2] = point.z;
+  }
+  return out;
 }
 
 /** 바이트처럼 씬에 없는 스캔. 캐시·동반 텍스처를 쓰고, 복사본은 호출부가 버린다. */
@@ -1464,6 +1492,11 @@ export function PracticeCustomAbutmentPreviewDialog({
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>([]);
   const [redesigning, setRedesigning] = useState<string[]>([]);
   const [crownDownloadBusy, setCrownDownloadBusy] = useState(false);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [exportQuote, setExportQuote] = useState<AbutmentDesignExportQuote | null>(
+    null,
+  );
+  const [exportChargeBusy, setExportChargeBusy] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
   const logicRulesRef = useRef<AbutmentGenerationRule[]>([]);
   const transferIdParam = String(transferId || "").trim();
@@ -9299,6 +9332,64 @@ export function PracticeCustomAbutmentPreviewDialog({
   }, [canEditDesign, open]);
 
   const crownDownloadLockRef = useRef(false);
+
+  const openCrownExportConfirm = useCallback(async () => {
+    if (crownDownloadLockRef.current || crownDownloadBusy || exportChargeBusy) return;
+    const token = String(authToken || "").trim();
+    if (!token) {
+      toast({ title: "로그인이 필요합니다." });
+      return;
+    }
+    if (designedListRef.current.length === 0) return;
+    const tid = String(transferIdRef.current || "").trim();
+    if (!tid) {
+      toast({
+        title: "의뢰를 찾을 수 없습니다.",
+        description: "저장 후 다시 export해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCrownDownloadBusy(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: AbutmentDesignExportQuote;
+        message?: string;
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(tid)}/abutment-design-export-quote`,
+        method: "GET",
+        token,
+      });
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as {
+              success?: boolean;
+              data?: AbutmentDesignExportQuote;
+              message?: string;
+            })
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "export 견적을 불러오지 못했습니다.",
+          description: String(body.message || "잠시 후 다시 시도해 주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+      setExportQuote(body.data || null);
+      setExportConfirmOpen(true);
+    } catch (err) {
+      console.warn("[custom-abutment] export quote failed", err);
+      toast({
+        title: "export 견적을 불러오지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setCrownDownloadBusy(false);
+    }
+  }, [authToken, crownDownloadBusy, exportChargeBusy, toast]);
+
   const downloadCrownWorkScans = useCallback(async () => {
     if (crownDownloadLockRef.current) return;
     const token = String(authToken || "").trim();
@@ -9312,8 +9403,8 @@ export function PracticeCustomAbutmentPreviewDialog({
     const tempAbutMats: THREE.Material[] = [];
     const tempGeos: THREE.BufferGeometry[] = [];
     try {
-      // 스캔바디는 빼고, 마진 상방 치은을 지운 악궁에 그 악 어벗을 전부 붙여 한 메시로 쓴다.
-      // 어벗 단독 파일은 넣지 않는다.
+      // 스캔: 마진 상방 치은 제거 후 해당 악 어벗을 합친 PLY.
+      // 어벗: 치아별 월드 좌표 STL(다른 CAD에 앉히기용).
       const jawMeshes = (jaw: "upper" | "lower") => {
         const key = jaw === "upper" ? "upperTrimmed" : "lowerTrimmed";
         const designs = designedListRef.current.filter((d) => d.jaw === jaw);
@@ -9386,6 +9477,33 @@ export function PracticeCustomAbutmentPreviewDialog({
           for (const mesh of bites) disposeExportMesh(mesh);
         }
       }
+
+      const designs = designedListRef.current;
+      for (const design of designs) {
+        const tooth = String(design.toothNumber || "").trim() || "tooth";
+        let mesh = abutmentMeshesRef.current.get(design.toothNumber) || null;
+        let owned = false;
+        if (!mesh) {
+          const mat = new THREE.MeshStandardMaterial({ color: 0xd4c59e });
+          tempAbutMats.push(mat);
+          mesh = new THREE.Mesh(design.worldGeometry, mat);
+          mesh.updateMatrixWorld(true);
+          owned = true;
+        } else {
+          mesh.updateMatrixWorld(true);
+        }
+        const positions = worldMeshStlPositions(mesh);
+        if (owned) {
+          // worldGeometry는 디자인 소유 — dispose 하지 않음
+        }
+        if (positions.length >= 9) {
+          packed.push({
+            name: `${crownScanStem(patientName, `어벗${tooth}`)}.stl`,
+            blob: encodeBinaryStl(positions, `abuts.fit abutment #${tooth}`),
+          });
+        }
+      }
+
       if (packed.length === 0) {
         toast({ title: "받을 스캔이 없습니다." });
         return;
@@ -9406,7 +9524,62 @@ export function PracticeCustomAbutmentPreviewDialog({
     }
   }, [authToken, patientName, scanSources.companions, scanSources.meshes, toast, workScanFiles]);
 
+  const confirmCrownExport = useCallback(async () => {
+    if (exportChargeBusy || crownDownloadLockRef.current) return;
+    const token = String(authToken || "").trim();
+    const tid = String(transferIdRef.current || "").trim();
+    if (!token || !tid) {
+      toast({ title: "로그인이 필요합니다." });
+      return;
+    }
+    setExportChargeBusy(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: unknown;
+        message?: string;
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(tid)}/abutment-design-export-charge`,
+        method: "POST",
+        token,
+      });
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { success?: boolean; message?: string; data?: unknown })
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "크레딧 차감에 실패했습니다.",
+          description: String(body.message || "잠시 후 다시 시도해 주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+      setExportConfirmOpen(false);
+      await downloadCrownWorkScans();
+    } catch (err) {
+      console.warn("[custom-abutment] export charge failed", err);
+      toast({
+        title: "크레딧 차감에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportChargeBusy(false);
+    }
+  }, [authToken, downloadCrownWorkScans, exportChargeBusy, toast]);
+
   return (
+    <>
+      <AbutmentDesignExportConfirmDialog
+        open={exportConfirmOpen}
+        onOpenChange={(next) => {
+          if (exportChargeBusy) return;
+          setExportConfirmOpen(next);
+        }}
+        quote={exportQuote}
+        busy={exportChargeBusy}
+        onConfirm={() => void confirmCrownExport()}
+      />
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
@@ -9522,17 +9695,22 @@ export function PracticeCustomAbutmentPreviewDialog({
               ) : null}
               <HeaderIconButton
                 label="크라운 스캔"
-                disabled={crownDownloadBusy || designedList.length === 0 || redesigning.length > 0}
+                disabled={
+                  crownDownloadBusy ||
+                  exportChargeBusy ||
+                  designedList.length === 0 ||
+                  redesigning.length > 0
+                }
                 tip={
                   <>
-                    상·하악·바이트와 어벗 치아별 PLY입니다.
+                    상·하악·바이트 PLY와 어벗 치아별 STL입니다.
                     <br />
-                    어벗은 지금 월드 좌표 그대로입니다.
+                    어벗은 월드 좌표이며, 생산비 차감 확인 후 받습니다.
                   </>
                 }
-                onClick={() => void downloadCrownWorkScans()}
+                onClick={() => void openCrownExportConfirm()}
               >
-                {crownDownloadBusy ? (
+                {crownDownloadBusy || exportChargeBusy ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Download className="h-4 w-4" />
@@ -10362,6 +10540,6 @@ export function PracticeCustomAbutmentPreviewDialog({
         </div>
       </DialogContent>
     </Dialog>
-
+    </>
   );
 }

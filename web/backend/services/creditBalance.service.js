@@ -496,22 +496,24 @@ async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
   };
 }
 
-export async function spendRequestCreditAtomic({
-  request,
+/**
+ * 임의 spendUniqueKey로 크레딧 차감 준비(잔액 검증·배분).
+ * GL COMMIT은 호출부가 postSpendCommitGeneralLedger 등으로 적재한다.
+ */
+export async function spendCreditByUniqueKey({
   businessAnchorId,
-  actorUserId,
   session,
-  computedPrice,
-  spendKeySuffix = "machining_spend",
+  amount,
+  spendUniqueKey,
+  insufficientMessage = "잔액이 부족합니다.",
+  insufficientReason = "insufficient_credit",
+  refId = null,
 }) {
-  if (!request?._id) return { didSpend: false };
-
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
-  if (!anchorObjectId) return { didSpend: false };
-
-  const requestIdStr = String(request?._id || "").trim();
-  const suffix = String(spendKeySuffix || "machining_spend").trim() || "machining_spend";
-  const uniqueKey = `request:${requestIdStr}:${suffix}`;
+  const uniqueKey = String(spendUniqueKey || "").trim();
+  if (!anchorObjectId || !uniqueKey) {
+    return { didSpend: false, reason: "invalid_input" };
+  }
 
   const existingJournal = await findCommitJournalBySpendKey({
     spendUniqueKey: uniqueKey,
@@ -526,52 +528,44 @@ export async function spendRequestCreditAtomic({
     };
   }
 
-  const resolvedAmount = Number(computedPrice?.amount || 0);
+  const resolvedAmount = Math.max(0, Math.round(Number(amount || 0)));
   if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
     return { didSpend: false, reason: "free_request", uniqueKey };
   }
 
-  // 동시 차감 경합 직렬화:
-  // - 동일 businessAnchorId 기준으로 guard 문서를 갱신해 write-conflict를 유도한다.
-  // - 트랜잭션 재시도 시 최신 GL 스냅샷으로 재평가되어 overspend를 방지한다.
   await lockCreditBalanceGuardByAnchor({
     businessAnchorId: anchorObjectId,
     session,
   });
 
-  // SSOT 변경:
-  // - 잔액 검증은 BusinessCreditBalance 스냅샷이 아니라 GL 직접 집계값으로 처리한다.
-  // - 실제 차감은 GL COMMIT 저널 적재로 반영되므로, 여기서는 선차감 update를 수행하지 않는다.
   const glBalance = await computeBusinessCreditBalanceFromLedger({
     businessAnchorId: anchorObjectId,
     session,
   });
 
-  const spendable = glBalance;
-
   const split = allocateSpendFromCreditBuckets({
     amount: resolvedAmount,
-    paidCredit: Number(spendable?.paidCredit || 0),
-    freeRequestCredit: Number(spendable?.freeRequestCredit || 0),
-    freeShippingCredit: Number(spendable?.freeShippingCredit || 0),
-    settlementCredit: Number(spendable?.settlementCredit || 0),
+    paidCredit: Number(glBalance?.paidCredit || 0),
+    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
+    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    settlementCredit: Number(glBalance?.settlementCredit || 0),
     freeOrder: ["freeRequest", "freeShipping"],
     allowFreeRequestOverdraft: false,
   });
 
   if (!split.ok) {
-    const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
+    const err = new Error(insufficientMessage);
     err.statusCode = 402;
     err.payload = {
-      reason: "insufficient_credit_for_machining",
+      reason: insufficientReason,
       paidCredit: split.paidCredit,
       freeRequestCredit: split.freeRequestCredit,
       freeShippingCredit: split.freeShippingCredit,
       freeCredit: split.freeCredit,
       settlementCredit: split.settlementCredit,
-      availableForMachining: split.available,
+      available: split.available,
       required: resolvedAmount,
-      requestId: request?._id ? String(request._id) : null,
+      refId: refId ? String(refId) : null,
     };
     throw err;
   }
@@ -587,6 +581,41 @@ export async function spendRequestCreditAtomic({
     fromSettlement: split.fromSettlement,
     uniqueKey,
   };
+}
+
+export async function spendRequestCreditAtomic({
+  request,
+  businessAnchorId,
+  actorUserId,
+  session,
+  computedPrice,
+  spendKeySuffix = "machining_spend",
+}) {
+  if (!request?._id) return { didSpend: false };
+
+  const requestIdStr = String(request?._id || "").trim();
+  const suffix = String(spendKeySuffix || "machining_spend").trim() || "machining_spend";
+  const uniqueKey = `request:${requestIdStr}:${suffix}`;
+
+  try {
+    return await spendCreditByUniqueKey({
+      businessAnchorId,
+      session,
+      amount: Number(computedPrice?.amount || 0),
+      spendUniqueKey: uniqueKey,
+      insufficientMessage: "의뢰자 잔액 부족으로 가공 진입 불가",
+      insufficientReason: "insufficient_credit_for_machining",
+      refId: request?._id || null,
+    });
+  } catch (err) {
+    if (err?.statusCode === 402 && err.payload) {
+      err.payload.requestId = request?._id ? String(request._id) : null;
+      err.payload.availableForMachining = err.payload.available;
+      delete err.payload.available;
+      delete err.payload.refId;
+    }
+    throw err;
+  }
 }
 
 export async function spendShippingCreditAtomic({
