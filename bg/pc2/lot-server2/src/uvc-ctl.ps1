@@ -29,6 +29,21 @@ public static class UvcCtl {
   [DllImport("ole32.dll")]
   static extern int CoInitializeEx(IntPtr reserved, uint coinit);
 
+  [DllImport("ole32.dll")]
+  static extern void CoTaskMemFree(IntPtr ptr);
+
+  [DllImport("mfplat.dll", ExactSpelling = true)]
+  static extern int MFStartup(uint version, uint flags);
+
+  [DllImport("mfplat.dll", ExactSpelling = true)]
+  static extern int MFShutdown();
+
+  [DllImport("mfplat.dll", ExactSpelling = true)]
+  static extern int MFCreateAttributes(out IMFAttributes attributes, uint initialSize);
+
+  [DllImport("mf.dll", ExactSpelling = true)]
+  static extern int MFEnumDeviceSources(IMFAttributes attributes, out IntPtr activates, out int count);
+
   [DllImport("ole32.dll", ExactSpelling = true)]
   static extern int CoCreateInstance(
     IntPtr clsid,
@@ -45,6 +60,25 @@ public static class UvcCtl {
 
   [UnmanagedFunctionPointer(CallingConvention.StdCall)]
   delegate int DllGetClassObjectFn(ref Guid clsid, ref Guid iid, out IntPtr factory);
+
+  [ComImport, Guid("2CD2D921-C447-44A7-A13C-4ADABFC247E3"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMFAttributes {
+    int A0(); int A1(); int A2(); int A3(); int A4();
+    int A5(); int A6(); int A7(); int A8(); int A9();
+    [PreserveSig] int GetAllocatedString(ref Guid key, out IntPtr str, out int length);
+    int A11(); int A12(); int A13(); int A14(); int A15();
+    int A16(); int A17(); int A18(); int A19(); int A20();
+    [PreserveSig] int SetGUID(ref Guid key, ref Guid value);
+    int A22(); int A23(); int A24(); int A25(); int A26();
+    int A27(); int A28(); int A29();
+  }
+
+  [ComImport, Guid("7FEE9E9A-4A89-47a6-899C-B6A53A70FB67"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IMFActivate : IMFAttributes {
+    [PreserveSig] int ActivateObject(ref Guid iid, out IntPtr ppv);
+    [PreserveSig] int ShutdownObject();
+    [PreserveSig] int DetachObject();
+  }
 
   [ComImport, Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface IClassFactory {
@@ -219,7 +253,134 @@ public static class UvcCtl {
     }
   }
 
+  static string ApplyControls(object source, string deviceName) {
+    IAMCameraControl cam = source as IAMCameraControl;
+    IAMVideoProcAmp amp = source as IAMVideoProcAmp;
+    string focusHow;
+    string exposureHow;
+    string brightHow;
+    string gainHow;
+    string backHow;
+    int brightLevel;
+    int brightMax;
+    int gainLevel;
+    int gainMax;
+    int unusedL;
+    int unusedM;
+    bool focusOk = SetAutoOrMax(cam, Focus, out focusHow);
+    bool exposureOk = SetAutoOrMax(cam, Exposure, out exposureHow);
+    bool brightOk = SetAutoOrMaxAmp(amp, Brightness, out brightHow, out brightLevel, out brightMax);
+    bool gainOk = SetAutoOrMaxAmp(amp, Gain, out gainHow, out gainLevel, out gainMax);
+    SetAutoOrMaxAmp(amp, Backlight, out backHow, out unusedL, out unusedM);
+    bool ok = focusOk || exposureOk || brightOk || gainOk;
+    if (!ok) return null;
+    string af = focusOk ? "done" : "accepted";
+    return "{\"ok\":true,\"af\":\"" + af + "\",\"reason\":\"\",\"path\":\"mf\""
+      + ",\"device\":\"" + Esc(deviceName) + "\""
+      + ",\"focus\":\"" + focusHow + "\""
+      + ",\"exposure\":\"" + exposureHow + "\""
+      + ",\"brightness\":\"" + brightHow + "\""
+      + ",\"brightLevel\":" + brightLevel
+      + ",\"brightMax\":" + brightMax
+      + ",\"gain\":\"" + gainHow + "\""
+      + ",\"gainLevel\":" + gainLevel
+      + ",\"gainMax\":" + gainMax + "}";
+  }
+
+  static string TryMf(string preferred, out string how) {
+    how = "";
+    int started = MFStartup(0x00020070, 1);
+    if (started != 0) {
+      how = "startup-" + started.ToString("X8");
+      return null;
+    }
+    IMFAttributes attrs = null;
+    IntPtr list = IntPtr.Zero;
+    int count = 0;
+    string result = null;
+    try {
+      int created = MFCreateAttributes(out attrs, 1);
+      if (created != 0 || attrs == null) {
+        how = "attr-" + created.ToString("X8");
+        return null;
+      }
+      Guid key = new Guid("c60ac5fe-252a-478f-a0ef-bc8fa5f7cad3");
+      Guid vid = new Guid("8ac3587a-4ae7-42d8-99e0-0a6013eef90f");
+      int set = attrs.SetGUID(ref key, ref vid);
+      if (set != 0) {
+        how = "setguid-" + set.ToString("X8");
+        return null;
+      }
+      int enumerated = MFEnumDeviceSources(attrs, out list, out count);
+      if (enumerated != 0) {
+        how = "enum-" + enumerated.ToString("X8");
+        return null;
+      }
+      if (count <= 0 || list == IntPtr.Zero) {
+        how = "none";
+        return null;
+      }
+      string want = preferred == null ? "" : preferred.Trim();
+      Guid nameKey = new Guid("60d0e559-52f8-4fa2-bbce-acdb34a8ec01");
+      Guid unknown = new Guid("00000000-0000-0000-C000-000000000046");
+      int limit = count > 16 ? 16 : count;
+      for (int i = 0; i < limit; i++) {
+        IntPtr activatePtr = Marshal.ReadIntPtr(list, i * IntPtr.Size);
+        if (activatePtr == IntPtr.Zero) continue;
+        IMFActivate activate = null;
+        object source = null;
+        try {
+          activate = (IMFActivate)Marshal.GetObjectForIUnknown(activatePtr);
+          string name = "";
+          IntPtr wide;
+          int length;
+          if (activate.GetAllocatedString(ref nameKey, out wide, out length) == 0 && wide != IntPtr.Zero) {
+            name = Marshal.PtrToStringUni(wide);
+            CoTaskMemFree(wide);
+          }
+          bool match = want.Length == 0 || (name != null && name.IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0);
+          if (!match) continue;
+          IntPtr sourcePtr;
+          int activated = activate.ActivateObject(ref unknown, out sourcePtr);
+          if (activated != 0 || sourcePtr == IntPtr.Zero) {
+            how = "activate-" + activated.ToString("X8");
+            continue;
+          }
+          source = Marshal.GetObjectForIUnknown(sourcePtr);
+          Marshal.Release(sourcePtr);
+          result = ApplyControls(source, name);
+          try { activate.ShutdownObject(); } catch { }
+          if (result != null) {
+            how = "ok";
+            return result;
+          }
+          how = "no-control";
+        } finally {
+          if (source != null) {
+            try { Marshal.ReleaseComObject(source); } catch { }
+          }
+          if (activate != null) {
+            try { Marshal.ReleaseComObject(activate); } catch { }
+          }
+          Marshal.Release(activatePtr);
+          activatePtr = IntPtr.Zero;
+        }
+      }
+      if (how.Length == 0) how = "no-match";
+      return null;
+    } finally {
+      if (list != IntPtr.Zero) CoTaskMemFree(list);
+      if (attrs != null) {
+        try { Marshal.ReleaseComObject(attrs); } catch { }
+      }
+      MFShutdown();
+    }
+  }
+
   public static string Run(string preferred) {
+    string mfTrace;
+    string mfJson = TryMf(preferred, out mfTrace);
+    if (mfJson != null) return mfJson;
     Guid video = new Guid("860BB310-5D01-11d0-BD3B-00A0C911CE86");
     Guid iidFilter = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770");
     Guid iidBag = new Guid("55272A00-42CB-11CE-8135-00AA004BB851");
@@ -270,6 +431,7 @@ public static class UvcCtl {
       string detail = "bits=" + bits
         + " coinit=" + coinit.ToString("X8")
         + " direct=" + directHow
+        + " mf=" + mfTrace
         + " activator=" + activator
         + " guid=" + clsidHex + "/" + iidHex
         + " reg=" + reg;
