@@ -4,12 +4,12 @@
 // - bg/pc2/lot-server/public/index.html
 // - bg/pc2/lot-server/src/camera.js
 // change-log:
+// - 2026-11-26: 라이브 확대(비율 유지). 각인코드는 카드 선택만. 오인식 대응 제거.
 // - 2026-11-26: 라이브를 실제 카메라 비율(기본 4:3·프레임 natural size)로. 가로 1fr 검은 박스 제거.
 // - 2026-11-26: 라이브를 우측 패널에 늘리지 않고 h-36~40으로 맞춤.
 // - 2026-11-26: 라이브 높이 축소·우측 패널 구역 정리. 대기 카드가 한 화면에 보이게.
 // - 2026-11-26: 라이브 뷰·3글자 입력·감시/초점/수동인식·오인식 대응 버튼.
 import { useEffect, useState, type ReactNode } from "react";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/shared/ui/cn";
 
 /** lot-server 기본 캡처 프로필(640×480). 라이브 로드 전·미연결 placeholder. */
@@ -40,7 +40,6 @@ export function PackingLotStation({
   lastLot,
   error,
   suffix,
-  onSuffixChange,
   matchNote,
   matchingBusy,
   onStartWatch,
@@ -48,9 +47,6 @@ export function PackingLotStation({
   onFocus,
   onRecognize,
   onSubmitSuffix,
-  onRetryRecognize,
-  onClearSuffix,
-  onBindSelected,
   hasSelectedCard,
 }: {
   liveUrl: string;
@@ -61,7 +57,6 @@ export function PackingLotStation({
   lastLot: string;
   error: string;
   suffix: string;
-  onSuffixChange: (value: string) => void;
   matchNote: "" | "miss" | "ambiguous" | "error" | "ok";
   matchingBusy: boolean;
   onStartWatch: () => void;
@@ -69,14 +64,12 @@ export function PackingLotStation({
   onFocus: () => void;
   onRecognize: () => void;
   onSubmitSuffix: () => void;
-  onRetryRecognize: () => void;
-  onClearSuffix: () => void;
-  onBindSelected?: () => void;
   hasSelectedCard?: boolean;
 }) {
   const [liveAspect, setLiveAspect] = useState(DEFAULT_LIVE_ASPECT);
   const phaseLabel = PHASE_KO[phase] || phase || "—";
   const controlsDisabled = busy || matchingBusy;
+  const canMatch = suffix.length === 3 || Boolean(hasSelectedCard);
   const statusLine = !reachable
     ? "lot-server 미연결"
     : [
@@ -108,7 +101,7 @@ export function PackingLotStation({
       <>
         대기 목록에 없습니다.
         <br />
-        코드를 고치거나 다시 인식하세요.
+        아래 카드를 눌러 선택하세요.
       </>
     );
   else if (matchNote === "ambiguous")
@@ -122,11 +115,19 @@ export function PackingLotStation({
   else if (matchNote === "error") note = "매칭에 실패했습니다.";
   else if (matchNote === "ok") note = "포장.발송으로 이동했습니다.";
   else if (error) note = error;
+  else if (!suffix)
+    note = (
+      <>
+        자동 인식되거나,
+        <br />
+        아래 카드를 눌러 선택하세요.
+      </>
+    );
 
   return (
     <div className="flex shrink-0 flex-wrap items-stretch gap-3">
       <div
-        className="flex h-44 max-h-[36vh] max-w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-48"
+        className="flex h-[min(22rem,52vh)] max-h-[56vh] max-w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-[min(26rem,58vh)]"
         style={{ aspectRatio: liveAspect, width: "auto" }}
       >
         {liveUrl ? (
@@ -202,39 +203,22 @@ export function PackingLotStation({
         </section>
 
         <section className="space-y-1.5 border-t border-stone-200/80 pt-2">
-          <label
-            htmlFor="packing-lot-suffix"
-            className="text-[11px] font-semibold text-stone-600"
-          >
+          <span className="text-[11px] font-semibold text-stone-600">
             각인 코드
-          </label>
+          </span>
           <div className="flex items-center gap-2">
-            <Input
-              id="packing-lot-suffix"
-              value={suffix}
-              onChange={(e) => {
-                const next = String(e.target.value || "")
-                  .toUpperCase()
-                  .replace(/[^A-Z]/g, "")
-                  .slice(0, 3);
-                onSuffixChange(next);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && suffix.length === 3) {
-                  e.preventDefault();
-                  onSubmitSuffix();
-                }
-              }}
-              placeholder="ABC"
-              maxLength={3}
-              autoComplete="off"
-              spellCheck={false}
-              className="h-10 max-w-[9rem] font-mono text-lg tracking-[0.28em] uppercase"
-              aria-label="각인 코드 3글자"
-            />
+            <div
+              className={cn(
+                "flex h-10 min-w-[9rem] flex-1 items-center rounded-md border border-stone-300 bg-white px-3 font-mono text-lg tracking-[0.28em] uppercase",
+                suffix ? "text-stone-900" : "text-stone-400",
+              )}
+              aria-label="선택된 각인 코드"
+            >
+              {suffix || "—"}
+            </div>
             <button
               type="button"
-              disabled={controlsDisabled || suffix.length !== 3}
+              disabled={controlsDisabled || !canMatch}
               onClick={onSubmitSuffix}
               className={cn(btnPrimary, "min-w-[4.75rem] flex-1")}
             >
@@ -242,40 +226,6 @@ export function PackingLotStation({
             </button>
           </div>
           <p className={cn(noteClass, "min-h-[1.25rem]")}>{note}</p>
-        </section>
-
-        <section className="space-y-1.5 border-t border-stone-200/80 pt-2">
-          <span className="text-[11px] font-semibold text-stone-600">
-            오인식 대응
-          </span>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              disabled={controlsDisabled}
-              onClick={onRetryRecognize}
-              className={btnGhost}
-            >
-              다시 인식
-            </button>
-            <button
-              type="button"
-              disabled={controlsDisabled || !suffix}
-              onClick={onClearSuffix}
-              className={btnGhost}
-            >
-              입력 지우기
-            </button>
-            {hasSelectedCard && onBindSelected ? (
-              <button
-                type="button"
-                disabled={controlsDisabled}
-                onClick={onBindSelected}
-                className={cn(btnGhost, "col-span-2 border-stone-900 text-stone-900")}
-              >
-                선택 카드로 확정
-              </button>
-            ) : null}
-          </div>
         </section>
       </div>
     </div>

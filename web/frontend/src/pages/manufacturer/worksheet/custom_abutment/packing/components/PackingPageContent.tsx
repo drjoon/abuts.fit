@@ -1220,15 +1220,37 @@ export const PackingPageContent = ({
   );
 
   const submitSuffix = useCallback(() => {
+    if (matchingBusy) return;
+    if (selectedRequest?._id) {
+      void bindToRequest(
+        String(selectedRequest._id),
+        normalizedManualSuffix ||
+          extractLotSuffix3(selectedRequest.lotNumber?.value),
+      ).then((ok) => {
+        if (ok) {
+          setSuffixInput("");
+          setSelectedRequestId("");
+          resetLotDedupe();
+        }
+      });
+      return;
+    }
     const suffix = extractLotSuffix3(normalizedManualSuffix);
-    if (suffix.length !== 3 || matchingBusy) return;
+    if (suffix.length !== 3) return;
     void matchBySuffix(suffix, { source: "manual" }).then((result) => {
       if (result.ok && result.matched) {
         setSuffixInput("");
         resetLotDedupe();
       }
     });
-  }, [matchBySuffix, matchingBusy, normalizedManualSuffix, resetLotDedupe]);
+  }, [
+    bindToRequest,
+    matchBySuffix,
+    matchingBusy,
+    normalizedManualSuffix,
+    resetLotDedupe,
+    selectedRequest,
+  ]);
 
   const handlePrintPackingLabels = useCallback(
     async (selectedRequests: ManufacturerRequest[]) => {
@@ -1369,10 +1391,6 @@ export const PackingPageContent = ({
           lastLot={lastLot}
           error={lotError}
           suffix={suffixInput}
-          onSuffixChange={(value) => {
-            setSuffixInput(value);
-            setMatchNote("");
-          }}
           matchNote={matchNote}
           matchingBusy={matchingBusy}
           onStartWatch={() => {
@@ -1388,30 +1406,7 @@ export const PackingPageContent = ({
             void runRecognize().catch(() => undefined);
           }}
           onSubmitSuffix={submitSuffix}
-          onRetryRecognize={() => {
-            resetLotDedupe();
-            void runRecognize().catch(() => undefined);
-          }}
-          onClearSuffix={() => {
-            setSuffixInput("");
-            setMatchNote("");
-            resetLotDedupe();
-          }}
           hasSelectedCard={Boolean(selectedRequest)}
-          onBindSelected={() => {
-            if (!selectedRequest?._id) return;
-            void bindToRequest(
-              String(selectedRequest._id),
-              normalizedManualSuffix ||
-                extractLotSuffix3(selectedRequest.lotNumber?.value),
-            ).then((ok) => {
-              if (ok) {
-                setSuffixInput("");
-                setSelectedRequestId("");
-                resetLotDedupe();
-              }
-            });
-          }}
         />
 
         {captureHistory.length > 0 ? (
@@ -1450,9 +1445,7 @@ export const PackingPageContent = ({
               setSelectedRequestId(String(req._id || ""));
               const suffix = extractLotSuffix3(req.lotNumber?.value);
               if (suffix) setSuffixInput(suffix);
-            }}
-            onOpen={(req) => {
-              void handleOpenPreview(req);
+              setMatchNote("");
             }}
           />
         </div>

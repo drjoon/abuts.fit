@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingLabelPrintDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // change-log:
+// - 2026-11-26: 클릭은 선택만(미리보기 자동 오픈 제거). 각인코드는 카드로 고름.
 // - 2026-11-26: 세척.패킹 대기 의뢰를 패킹 라벨 모달식 작은 카드 1행(가로 스크롤).
 import { cn } from "@/shared/ui/cn";
 import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
@@ -20,13 +21,11 @@ export function PackingRequestStrip({
   highlightSuffix,
   selectedId,
   onSelect,
-  onOpen,
 }: {
   requests: ManufacturerRequest[];
   highlightSuffix?: string;
   selectedId?: string;
   onSelect?: (req: ManufacturerRequest) => void;
-  onOpen?: (req: ManufacturerRequest) => void;
 }) {
   const hint = extractLotSuffix3(highlightSuffix);
 
@@ -58,7 +57,6 @@ export function PackingRequestStrip({
               type="button"
               onClick={() => {
                 onSelect?.(req);
-                onOpen?.(req);
               }}
               className={cn(
                 "min-w-[9.5rem] max-w-[11rem] rounded-xl border bg-white px-2 py-1.5 text-left transition",
