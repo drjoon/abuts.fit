@@ -14,9 +14,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(__dirname, "uvc-ctl.ps1");
 const TIMEOUT_MS = 12000;
 
-function powershellAt(folder) {
+function powershellHosts() {
   const root = process.env.SystemRoot || "C:\\Windows";
-  return path.join(root, folder, "WindowsPowerShell", "v1.0", "powershell.exe");
+  // Sysnative is the real 64-bit System32 when this node is 32-bit.
+  const folders = ["Sysnative", "System32", "SysWOW64"];
+  const hosts = [];
+  for (const folder of folders) {
+    const file = path.join(root, folder, "WindowsPowerShell", "v1.0", "powershell.exe");
+    if (fs.existsSync(file) && !hosts.includes(file)) hosts.push(file);
+  }
+  return hosts;
 }
 
 function runFile(file, args, timeoutMs) {
@@ -54,9 +61,7 @@ export async function tryUvc(deviceName = "") {
     "-DeviceName",
     String(deviceName || ""),
   ];
-  const hosts = [powershellAt("System32"), powershellAt("SysWOW64")].filter((file) =>
-    fs.existsSync(file),
-  );
+  const hosts = powershellHosts();
   if (!hosts.length) {
     return { ok: false, af: "none", reason: "powershell-missing", path: "uvc" };
   }

@@ -232,7 +232,11 @@ public static class MltcCtl {
     }
     if (initOk == 0) {
       try { ComUnInitial(); } catch { }
-      return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
+      string sizes = "bits=" + (IntPtr.Size * 8)
+        + " et=" + new System.IO.FileInfo(et).Length
+        + " emx=" + new System.IO.FileInfo(emx).Length
+        + " com=" + new System.IO.FileInfo(com).Length;
+      return "{\"ok\":false,\"af\":\"none\",\"devMode\":0,\"firmware\":\"\",\"position\":0,\"ledMax\":0,\"ledLevel\":0,\"ledOn\":false,\"reason\":\"init-failed\",\"detail\":\"" + sizes + "\"}";
     }
     try {
       short[] modes = new short[] { 20, 12, 6 };

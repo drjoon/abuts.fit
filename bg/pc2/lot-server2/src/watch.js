@@ -155,9 +155,14 @@ export function createWatcher({
     }
     lastFocus = focus;
     lastAfAt = Date.now();
-    const detail = focus?.detail ? ` detail=${String(focus.detail).slice(0, 240)}` : "";
+    const detail = [
+      focus?.detail ? `detail=${String(focus.detail).slice(0, 280)}` : "",
+      dll?.detail ? `dllDetail=${String(dll.detail).slice(0, 180)}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     log(
-      `uvc ${reason} path=${focus?.path || "-"} af=${focus?.af || "none"} dll=${dll?.reason || dll?.af || "-"} focus=${focus?.focus || "-"} exposure=${focus?.exposure || "-"} brightness=${focus?.brightness || "-"} gain=${focus?.gain || "-"} reason=${focus?.reason || ""}${detail}`,
+      `uvc ${reason} path=${focus?.path || "-"} af=${focus?.af || "none"} dll=${dll?.reason || dll?.af || "-"} focus=${focus?.focus || "-"} exposure=${focus?.exposure || "-"} brightness=${focus?.brightness || "-"} gain=${focus?.gain || "-"} reason=${focus?.reason || ""} ${detail}`,
     );
     if (!focusConfirmed(focus) && focus?.reason) {
       lastError = focus.detail

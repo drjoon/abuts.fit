@@ -28,11 +28,11 @@ public static class UvcCtl {
 
   [DllImport("ole32.dll", ExactSpelling = true)]
   static extern int CoCreateInstance(
-    [In, MarshalAs(UnmanagedType.LPStruct)] Guid clsid,
+    IntPtr clsid,
     IntPtr outer,
     uint context,
-    [In, MarshalAs(UnmanagedType.LPStruct)] Guid iid,
-    [MarshalAs(UnmanagedType.Interface)] out ICreateDevEnum created);
+    IntPtr iid,
+    out IntPtr created);
 
   [ComImport, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ICreateDevEnum {
@@ -125,16 +125,73 @@ public static class UvcCtl {
     return true;
   }
 
+  static IntPtr GuidAlloc(string text, out string hex) {
+    Guid guid = new Guid(text);
+    IntPtr ptr = Marshal.AllocCoTaskMem(16);
+    Marshal.StructureToPtr(guid, ptr, false);
+    byte[] raw = new byte[16];
+    Marshal.Copy(ptr, raw, 0, 16);
+    hex = BitConverter.ToString(raw);
+    return ptr;
+  }
+
+  static string RegProbe() {
+    string id = "{62BE5D10-60EB-11d0-BD3B-00A0C911CE86}";
+    string[] keys = new string[] {
+      @"SOFTWARE\Classes\CLSID\" + id + @"\InprocServer32",
+      @"SOFTWARE\Classes\Wow6432Node\CLSID\" + id + @"\InprocServer32",
+      @"SOFTWARE\WOW6432Node\Classes\CLSID\" + id + @"\InprocServer32"
+    };
+    string hit = "";
+    for (int i = 0; i < keys.Length; i++) {
+      try {
+        Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(keys[i]);
+        if (key == null) continue;
+        object value = key.GetValue("");
+        if (hit.Length > 0) hit += ";";
+        hit += i + ":" + (value == null ? "key" : value.ToString());
+        key.Close();
+      } catch {
+        // diagnostic only
+      }
+    }
+    if (hit.Length == 0) return "none";
+    return hit.Replace("\\", "/").Replace("\"", "'");
+  }
+
   public static string Run(string preferred) {
     Guid video = new Guid("860BB310-5D01-11d0-BD3B-00A0C911CE86");
     Guid iidFilter = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770");
     Guid iidBag = new Guid("55272A00-42CB-11CE-8135-00AA004BB851");
     Guid clsidEnum = new Guid("62BE5D10-60EB-11d0-BD3B-00A0C9118956");
     Guid iidEnum = new Guid("29840822-5B84-11D0-BD3B-00A0C911CE86");
-    ICreateDevEnum devenum;
-    int created = CoCreateInstance(clsidEnum, IntPtr.Zero, 1, iidEnum, out devenum);
-    if (created != 0 || devenum == null) {
-      return "{\"ok\":false,\"af\":\"none\",\"reason\":\"cocreate-" + created.ToString("X8") + "\"}";
+    string clsidHex;
+    string iidHex;
+    IntPtr clsidPtr = GuidAlloc(clsidEnum.ToString(), out clsidHex);
+    IntPtr iidPtr = GuidAlloc(iidEnum.ToString(), out iidHex);
+    ICreateDevEnum devenum = null;
+    int created = unchecked((int)0x80040154);
+    try {
+      uint[] contexts = new uint[] { 1, 23 };
+      for (int n = 0; n < contexts.Length; n++) {
+        IntPtr punk;
+        created = CoCreateInstance(clsidPtr, IntPtr.Zero, contexts[n], iidPtr, out punk);
+        if (created == 0 && punk != IntPtr.Zero) {
+          devenum = (ICreateDevEnum)Marshal.GetObjectForIUnknown(punk);
+          Marshal.Release(punk);
+          break;
+        }
+      }
+    } finally {
+      Marshal.FreeCoTaskMem(clsidPtr);
+      Marshal.FreeCoTaskMem(iidPtr);
+    }
+    if (devenum == null) {
+      int bits = IntPtr.Size * 8;
+      string reg = RegProbe();
+      string detail = "bits=" + bits + " guid=" + clsidHex + "/" + iidHex + " reg=" + reg;
+      return "{\"ok\":false,\"af\":\"none\",\"reason\":\"cocreate-" + created.ToString("X8")
+        + "\",\"bits\":" + bits + ",\"detail\":\"" + detail + "\"}";
     }
     IEnumMoniker monikers;
     int hr = devenum.CreateClassEnumerator(ref video, out monikers, 0);

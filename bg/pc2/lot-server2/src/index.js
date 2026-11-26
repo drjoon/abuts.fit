@@ -341,7 +341,9 @@ async function main() {
     process.exit(1);
   });
   server.listen(PORT, HOST, () => {
-    log(`lot-server2 v${APP_VERSION} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`);
+    log(
+      `lot-server2 v${APP_VERSION} node=${process.arch} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`,
+    );
     if (AUTO_WATCH) watcher.start();
   });
 }
