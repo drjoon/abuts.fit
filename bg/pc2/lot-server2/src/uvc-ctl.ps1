@@ -37,6 +37,23 @@ public static class UvcCtl {
     IntPtr iid,
     out IntPtr created);
 
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern IntPtr LoadLibrary(string path);
+
+  [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+  static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+  [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+  delegate int DllGetClassObjectFn(ref Guid clsid, ref Guid iid, out IntPtr factory);
+
+  [ComImport, Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IClassFactory {
+    [PreserveSig]
+    int CreateInstance(IntPtr outer, ref Guid iid, out IntPtr ppv);
+    [PreserveSig]
+    int LockServer(int lockIt);
+  }
+
   [ComImport, Guid("29840822-5B84-11D0-BD3B-00A0C911CE86"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
   interface ICreateDevEnum {
     [PreserveSig]
@@ -162,6 +179,46 @@ public static class UvcCtl {
     return hit.Replace("\\", "/").Replace("\"", "'");
   }
 
+  static ICreateDevEnum CreateFromDevenum(Guid clsid, Guid iidEnum, out string how) {
+    how = "";
+    IntPtr module = LoadLibrary(@"C:\Windows\System32\devenum.dll");
+    if (module == IntPtr.Zero) {
+      how = "load-" + Marshal.GetLastWin32Error().ToString();
+      return null;
+    }
+    IntPtr proc = GetProcAddress(module, "DllGetClassObject");
+    if (proc == IntPtr.Zero) {
+      how = "proc-" + Marshal.GetLastWin32Error().ToString();
+      return null;
+    }
+    DllGetClassObjectFn getClass = (DllGetClassObjectFn)Marshal.GetDelegateForFunctionPointer(
+      proc, typeof(DllGetClassObjectFn));
+    Guid factoryIid = new Guid("00000001-0000-0000-C000-000000000046");
+    IntPtr factoryPtr;
+    int hr = getClass(ref clsid, ref factoryIid, out factoryPtr);
+    if (hr != 0 || factoryPtr == IntPtr.Zero) {
+      how = "dgco-" + hr.ToString("X8");
+      return null;
+    }
+    try {
+      IClassFactory factory = (IClassFactory)Marshal.GetObjectForIUnknown(factoryPtr);
+      IntPtr objPtr;
+      int created = factory.CreateInstance(IntPtr.Zero, ref iidEnum, out objPtr);
+      if (created != 0 || objPtr == IntPtr.Zero) {
+        how = "factory-" + created.ToString("X8");
+        return null;
+      }
+      try {
+        how = "devenum";
+        return (ICreateDevEnum)Marshal.GetObjectForIUnknown(objPtr);
+      } finally {
+        Marshal.Release(objPtr);
+      }
+    } finally {
+      Marshal.Release(factoryPtr);
+    }
+  }
+
   public static string Run(string preferred) {
     Guid video = new Guid("860BB310-5D01-11d0-BD3B-00A0C911CE86");
     Guid iidFilter = new Guid("56A86895-0AD4-11CE-B03A-0020AF0BA770");
@@ -176,7 +233,11 @@ public static class UvcCtl {
     int created = unchecked((int)0x80040154);
     int coinit = CoInitializeEx(IntPtr.Zero, 2);
     string activator = "";
+    string directHow;
+    devenum = CreateFromDevenum(clsidEnum, iidEnum, out directHow);
+    if (devenum != null) created = 0;
     try {
+      if (devenum == null) {
       uint[] contexts = new uint[] { 1, 23 };
       for (int n = 0; n < contexts.Length; n++) {
         IntPtr punk;
@@ -186,6 +247,7 @@ public static class UvcCtl {
           Marshal.Release(punk);
           break;
         }
+      }
       }
       if (devenum == null) {
         try {
@@ -207,6 +269,7 @@ public static class UvcCtl {
       string reg = RegProbe();
       string detail = "bits=" + bits
         + " coinit=" + coinit.ToString("X8")
+        + " direct=" + directHow
         + " activator=" + activator
         + " guid=" + clsidHex + "/" + iidHex
         + " reg=" + reg;
