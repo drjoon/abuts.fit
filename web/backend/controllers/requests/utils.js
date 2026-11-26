@@ -519,6 +519,7 @@ export const REQUEST_STAGE_ORDER = {
   "포장.발송": 3,
   tracking: 4,
   추적관리: 4,
+  "R&D": 5,
 };
 
 export function getRequestStageOrder(requestLike) {
@@ -1374,6 +1375,7 @@ export function applyStatusMapping(request, status) {
     "세척.패킹",
     "포장.발송",
     "추적관리",
+    "R&D",
     "취소",
   ];
 

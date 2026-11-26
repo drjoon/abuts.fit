@@ -815,7 +815,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 우편함 **점유 집계**에도 작업용 샘플을 포함한다(`loadActiveMailboxOccupancy` — order만 보면 샘플 점유 칸이 비어 합류/충돌이 깨짐).
   - `stageProgressionWorker` 세척.패킹→포장.발송 자동 진행에서도 샘플을 제외하지 않는다.
   - 포장.발송 우편함 상세에서 **샘플만 완전 삭제** 가능(`DELETE /api/requests/:id`).
-  - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 운영 정책으로 분리합니다.
+  - R&D 보관 샘플(`rnd.doneAt!=null`)은 `manufacturerStage=R&D`로 두고, 원래 공정은 `rnd.doneFromStage`에 남긴다. R&D 탭 전용(공정 큐·lot 매칭 제외).
   - 샘플은 크레딧/정산 장부에 무기록(무자료/무상) 처리합니다.
   - 관련 구현: `controllers/ai/lotCapture.controller.js`, `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`, `shipping/components/MailboxContentsModal.tsx`
 - 단일 SSOT 장부(General Ledger) 정책:

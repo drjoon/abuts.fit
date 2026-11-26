@@ -965,6 +965,7 @@ const requestSchema = new mongoose.Schema(
         "세척.패킹",
         "포장.발송",
         "추적관리",
+        "R&D",
         "취소",
       ],
       default: "준비",

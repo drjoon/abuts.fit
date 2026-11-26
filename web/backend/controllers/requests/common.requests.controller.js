@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: R&D Done 시 manufacturerStage=R&D, 원래 공정은 rnd.doneFromStage.
 // - 2026-11-07: worksheet·monitoring select에 ptxDesignUploadMissingVisible·designCompletedAt. STL 누락 뱃지.
 // - 2026-11-09: 제조사 헥스 변경은 계정 default에 심지 않음. 재제작 복사는 관리자·디자인SW 시드를 다시 넣음.
 // - 2026-10-22: STL/30° 헥스 변경은 의뢰 1건만. 계정 defaultManufacturerHexRotation 심기 금지.
@@ -2845,6 +2846,7 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
   const done = Boolean(req.body?.done);
   const allowedStagesForRestore = [
     "의뢰",
+    "준비",
     "CAM",
     "가공",
     "세척.패킹",
@@ -2889,24 +2891,38 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
   }
 
   const currentStage = String(request.manufacturerStage || "").trim();
+  const existingFromStage = String(request.rnd?.doneFromStage || "").trim();
+  // 이미 R&D면 doneFromStage를 덮어쓰지 않는다(원래 공정 메모 유지).
+  const nextFromStage = done
+    ? currentStage === "R&D"
+      ? existingFromStage || null
+      : currentStage || null
+    : existingFromStage || null;
+
   request.rnd = {
     ...(request.rnd || {}),
     doneAt: done ? new Date() : null,
     doneBy: done ? req.user._id : null,
-    doneFromStage: done
-      ? currentStage || null
-      : String(request.rnd?.doneFromStage || "").trim() || null,
+    doneFromStage: nextFromStage,
   };
   request.requestCategory = done
     ? REQUEST_CATEGORY.RND_SAMPLE
     : REQUEST_CATEGORY.COPIED_SAMPLE;
 
   let restoredStage = null;
-  if (!done) {
-    const restoreStage = String(request.rnd?.doneFromStage || "").trim();
+  if (done) {
+    applyStatusMapping(request, "R&D");
+  } else {
+    const restoreStage = existingFromStage;
     if (restoreStage && allowedStagesForRestore.includes(restoreStage)) {
-      request.manufacturerStage = restoreStage;
-      restoredStage = restoreStage;
+      const mapped =
+        restoreStage === "의뢰" || restoreStage === "CAM"
+          ? restoreStage === "의뢰"
+            ? "준비"
+            : "가공"
+          : restoreStage;
+      applyStatusMapping(request, mapped);
+      restoredStage = String(request.manufacturerStage || mapped);
     }
     request.rnd.doneFromStage = null;
   }
@@ -2919,6 +2935,8 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       doneAt: request.rnd?.doneAt || null,
       requestCategory: request.requestCategory,
+      manufacturerStage: request.manufacturerStage,
+      doneFromStage: request.rnd?.doneFromStage || null,
       restoredStage,
     },
   });

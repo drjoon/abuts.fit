@@ -645,7 +645,7 @@ Notes:
   - **직경별 요약 카드**(`useDiameterQueue`): 작업용 샘플도 6/8/10/12에 카운트한다.
     (헤더「진행중인 의뢰 N건」과 직경 카드 합이 일치해야 한다. R&D 보관은 목록 필터에서 이미 제외.)
   - 포장.발송 우편함 상세(`MailboxContentsModal`)에서 **샘플만 삭제** 버튼을 노출합니다.
-  - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 전용으로 분리합니다.
+  - R&D 보관 샘플(`rnd.doneAt!=null`)은 `manufacturerStage=R&D`, 원래 공정은 `rnd.doneFromStage`. R&D 탭 전용(공정 큐·lot 매칭 제외).
   - 샘플(`rnd_sample`, `copied_sample`)은 크레딧/정산 장부에 **무기록(무자료/무상)** 처리합니다.
   - `requestId`/의뢰 메타가 없는 제조사 직접 NC 수동 작업(장비 큐 전용)은 UI에서도 과금/정산과 분리된 무상 작업으로 취급합니다.
   - 프론트는 `source+rnd.doneAt` 조합 추정 대신 `utils/request.ts`의 `isAnySampleRequest`, `isRndSampleRequest`를 사용합니다.

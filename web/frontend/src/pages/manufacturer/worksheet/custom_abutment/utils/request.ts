@@ -551,6 +551,11 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
     return "추적관리";
   }
 
+  // R&D 보관(공정 큐 밖). 원래 단계는 rnd.doneFromStage.
+  if (saved === "R&D") {
+    return "R&D";
+  }
+
   return saved;
 };
 
@@ -561,6 +566,7 @@ export const stageOrder: Record<string, number> = {
   "세척.패킹": 2,
   "포장.발송": 3,
   추적관리: 4,
+  "R&D": 5,
 };
 
 export const getAcceptByStage = (stage: string) => {

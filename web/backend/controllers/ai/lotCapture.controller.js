@@ -4,6 +4,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // change-log:
+// - 2026-11-26: 매칭 후보에서 R&D 보관 샘플·더미를 빼 워크시트와 맞춘다.
 // - 2026-11-26: 이미지→Gemini AI 제거. lot-server/수동 3글자 코드만 매칭·포장.발송. s3Key 선택.
 // - 2026-11-11: confirmBySuffix 로 세척.패킹 유일 매칭 시 바로 포장.발송.
 import Request from "../../models/request.model.js";
@@ -19,6 +20,7 @@ import {
 } from "../../controllers/requests/utils.js";
 import { normalizeBusinessAnchorId } from "../requests/mailbox.utils.js";
 import { enterManufacturerShippingStage } from "../requests/common.review.helpers.js";
+import { buildActivePackingMatchFilter } from "./packingStation.controller.js";
 import mongoose from "mongoose";
 
 function toBool(value) {
@@ -90,10 +92,7 @@ async function listPackingRequestsBySuffix(recognizedSuffix) {
   const suffix = extractLotSuffix3(recognizedSuffix);
   if (!suffix) return [];
 
-  const candidates = await Request.find({
-    status: { $ne: "취소" },
-    manufacturerStage: { $in: ["세척.패킹"] },
-  })
+  const candidates = await Request.find(buildActivePackingMatchFilter())
     .populate("businessAnchorId", "name metadata")
     .populate("requestor", "businessAnchorId")
     .sort({ createdAt: 1 });
@@ -112,10 +111,7 @@ async function findPackingRequestForManualBind({
   const businessId = String(requestId || "").trim();
   if (!mongoId && !businessId) return null;
 
-  const query = {
-    status: { $ne: "취소" },
-    manufacturerStage: "세척.패킹",
-  };
+  const query = { ...buildActivePackingMatchFilter() };
   if (mongoId) {
     if (!mongoose.Types.ObjectId.isValid(mongoId)) return null;
     query._id = mongoId;

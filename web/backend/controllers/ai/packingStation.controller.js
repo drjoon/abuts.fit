@@ -4,6 +4,7 @@
 // - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // change-log:
+// - 2026-11-26: 대기 큐에서 R&D 보관 샘플·더미를 빼 워크시트와 맞춘다.
 // - 2026-11-26: PC2 lot-server(8012) 작업자용 세척.패킹 대기 큐·스크류 로트 BG API.
 import Request from "../../models/request.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
@@ -16,6 +17,25 @@ function extractLotSuffix3(value) {
   const s = String(value || "").toUpperCase();
   const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
   return match ? match[0] : "";
+}
+
+/**
+ * 세척.패킹 작업·각인 매칭 후보.
+ * 워크시트 패킹 탭과 같이 R&D 보관 샘플·더미는 제외한다.
+ */
+export function buildActivePackingMatchFilter() {
+  return {
+    status: { $ne: "취소" },
+    manufacturerStage: "세척.패킹",
+    source: { $nin: ["dummy_sample"] },
+    requestCategory: { $nin: ["rnd_sample", "dummy_sample"] },
+    $nor: [
+      {
+        source: "manufacturer_sample",
+        "rnd.doneAt": { $ne: null },
+      },
+    ],
+  };
 }
 
 function getDiameterBucketIndex(diameter) {
@@ -98,10 +118,7 @@ function summarizeRequest(doc) {
  * 세척.패킹 대기 목록 + 직경(6/8/10/12) 건수.
  */
 export const listPackingQueue = asyncHandler(async (_req, res) => {
-  const rows = await Request.find({
-    status: { $ne: "취소" },
-    manufacturerStage: "세척.패킹",
-  })
+  const rows = await Request.find(buildActivePackingMatchFilter())
     .select({
       requestId: 1,
       lotNumber: 1,
