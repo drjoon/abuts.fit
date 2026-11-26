@@ -4,7 +4,7 @@
 
 `npm install`은 그 Windows PC에서 합니다. ffmpeg·sharp·tesseract.js는 설치하는 OS용 자산을 받습니다.
 
-UMViewer를 끄고, 현미경은 PC CAM 모드로 둡니다. Windows에서는 제어 DLL이 **LED를 켠 뒤 단일 AF**를 걸고(감시 시작·흐림/어두움·OCR 직전), 그다음 로컬 OCR합니다. AF가 안 되면 선명도만으로 고른 장으로 OCR합니다.
+UMViewer를 끄고, 현미경은 PC CAM 모드로 둡니다. Windows에서는 감시 시작 시 **UVC 노출·밝기·게인·포커스**를 건 뒤 라이브 스트림을 연다. ViTiny `mltcCom`은 이 UM20에서 `ComInitial`이 실패해 쓰지 않는다.
 
 카메라 연동은 `src/camera.js`입니다. 장치 목록·선택·fps/해상도 프로파일(Grab)을 담당합니다. Mac에서 Continuity(iPhone)는 자동 선택에서 뒤로 밀리고, 화면에서 직접 고를 수 있습니다.
 

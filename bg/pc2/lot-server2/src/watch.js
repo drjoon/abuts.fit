@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-11-26: UM Viewer mltcCom + init-failed 시 AF 재시도로 스트림을 안 끊는다.
+// - 2026-11-26: UM20 제어는 mltcCom 대신 UVC 노출·밝기·포커스. DLL init-failed는 쓰지 않는다.
 // - 2026-11-26: LED+AF 전에 ffmpeg 스트림을 잠시 놓아 ComInitial(init-failed)을 피한다.
 // - 2026-11-26: 현미경 제어 실패 시 exception detail을 로그·UI에 남긴다.
 // - 2026-11-26: 감시 시작·흐림/어두움 시 LED+AF(횟수·간격 상한). 선명 전에 AF를 건다.
@@ -26,6 +26,7 @@ import {
 } from "./camera.js";
 import { analyzeImage, grabFrames, scoreFile } from "./capture.js";
 import { focusConfirmed, prepareMicroscope } from "./focus.js";
+import { tryUvc } from "./uvc.js";
 import { lotFileName } from "./names.js";
 import { recognizeLot } from "./ocr/index.js";
 import { meanAbsDiff, selectBest as pickSharpest } from "./sharpness.js";
@@ -80,6 +81,7 @@ export function createWatcher({
   let deviceLabel = "";
   /** @type {object | null} */
   let lastFocus = null;
+  let dllDead = false;
   let lastAfAt = 0;
   let afAttemptsThisArm = 0;
   /** @type {Buffer | null} */
@@ -118,40 +120,51 @@ export function createWatcher({
 
   async function runMicroscopePrepare(reason) {
     if (process.platform !== "win32") {
-      return { ok: false, reason: "not-windows" };
+      return { ok: false, reason: "not-windows", path: "uvc" };
     }
     phase = PHASE.FOCUSING;
-    // dshow ffmpeg가 장치를 잡고 있으면 ComInitial이 init-failed 한다. 제어 전에 놓는다.
+    // UVC 제어는 장치를 독점한다. ffmpeg를 잠시 놓고, 끝나면 반드시 놓는다.
     const resumeStream = Boolean(stream?.running) && running;
     if (stream?.running) {
       await stopStream();
-      await sleep(350);
+      await sleep(400);
     }
     let focus;
+    let dll = null;
     try {
-      focus = await prepareMicroscope();
+      // 설치본 mltcCom(vendor/vitiny)을 먼저. 실패하면 UVC.
+      if (!dllDead) {
+        dll = await prepareMicroscope();
+        if (dll?.reason === "init-failed" || dll?.reason === "exception") dllDead = true;
+      }
+      if (focusConfirmed(dll)) {
+        focus = { ...dll, path: "dll" };
+      } else {
+        const uvc = await tryUvc(currentDeviceName());
+        focus = focusConfirmed(uvc) || uvc?.ok ? { ...uvc, dll } : { ...(dll || {}), ...uvc, dll };
+      }
     } finally {
       if (resumeStream) {
+        await sleep(300);
         try {
           await ensureStream();
         } catch (err) {
-          log(`microscope stream resume failed ${err?.message || err}`);
+          log(`uvc stream resume failed ${err?.message || err}`);
         }
       }
     }
     lastFocus = focus;
     lastAfAt = Date.now();
-    const led = focus?.ledOn
-      ? `led=${focus.ledLevel}/${focus.ledMax}`
-      : `ledOff reason=${focus?.reason || ""}`;
     const detail = focus?.detail ? ` detail=${String(focus.detail).slice(0, 240)}` : "";
     log(
-      `microscope ${reason} af=${focus?.af || "none"} mode=${focus?.devMode || 0} ${led}${detail}`,
+      `uvc ${reason} path=${focus?.path || "-"} af=${focus?.af || "none"} dll=${dll?.reason || dll?.af || "-"} focus=${focus?.focus || "-"} exposure=${focus?.exposure || "-"} brightness=${focus?.brightness || "-"} gain=${focus?.gain || "-"} reason=${focus?.reason || ""}${detail}`,
     );
     if (!focusConfirmed(focus) && focus?.reason) {
       lastError = focus.detail
-        ? `현미경 제어: ${focus.reason} (${String(focus.detail).slice(0, 120)})`
-        : `현미경 제어: ${focus.reason}`;
+        ? `카메라 제어: ${focus.reason} (${String(focus.detail).slice(0, 120)})`
+        : `카메라 제어: ${focus.reason}`;
+    } else if (focusConfirmed(focus)) {
+      lastError = "";
     }
     return focus;
   }
@@ -161,20 +174,14 @@ export function createWatcher({
   }
 
   function isFatalMicroscopeReason(reason) {
-    return [
-      "init-failed",
-      "dll-missing",
-      "etlib-load-failed",
-      "dll-load-failed",
-      "powershell-missing",
-      "need-32bit",
-      "not-windows",
-    ].includes(String(reason || ""));
+    return ["exception", "powershell-missing", "script-missing", "not-windows"].includes(
+      String(reason || ""),
+    );
   }
 
   async function maybeAssistFocus(frame) {
     if (!needsMicroscopeAssist(frame)) return false;
-    // ComInitial 실패 등은 스트림을 반복해서 끊지 않는다(카메라 busy 폭풍).
+    // 컴파일/PowerShell 실패면 스트림을 반복해서 끊지 않는다.
     if (isFatalMicroscopeReason(lastFocus?.reason)) return false;
     if (afAttemptsThisArm >= afMaxPerArm) return false;
     if (Date.now() - lastAfAt < afCooldownMs) return false;
@@ -245,7 +252,7 @@ export function createWatcher({
   }
 
   async function captureForOcr() {
-    // init-failed면 DLL을 다시 건드리지 않고 스트림 프레임만 쓴다.
+    // UVC 스크립트 자체가 깨지면 장치를 다시 잡지 않는다.
     let focus = lastFocus;
     if (!isFatalMicroscopeReason(focus?.reason)) {
       focus = await runMicroscopePrepare("ocr");
@@ -453,7 +460,7 @@ export function createWatcher({
       phase = PHASE.IDLE;
       afAttemptsThisArm = 0;
       lastAfAt = 0;
-      // LED+AF는 스트림보다 먼저(장치가 비어 있을 때 ComInitial).
+      // UVC 노출·밝기·포커스를 스트림보다 먼저 건다. mltcCom은 이 UM20에서 init-failed.
       loopPromise = (async () => {
         try {
           afAttemptsThisArm = 1;

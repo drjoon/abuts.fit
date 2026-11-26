@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 저장 전 제어는 UVC(노출·밝기·포커스). mltcCom은 호출하지 않는다.
 // - 2026-11-26: 프레임 평균 밝기(mean)를 같이 돌려 LED 재점등 판단에 쓴다.
 // - 2026-11-23: Grab을 camera 모듈 프로파일로 돌린다.
 // - 2026-11-23: 감시 루프용 프레임 Grab을 분리한다.
@@ -20,7 +21,8 @@ import {
   resolveFfmpeg,
   runCaptureProfiles,
 } from "./camera.js";
-import { focusConfirmed, tryFocus } from "./focus.js";
+import { focusConfirmed } from "./focus.js";
+import { tryUvc } from "./uvc.js";
 import { captureFileName } from "./names.js";
 import { meanAbsDiff, scoreGray, selectBest } from "./sharpness.js";
 
@@ -141,7 +143,7 @@ export async function captureAndSave({
   deviceName = getSelectedDeviceName(),
   ffmpeg = resolveFfmpeg(),
 } = {}) {
-  const focus = await tryFocus();
+  const focus = await tryUvc(deviceName);
   const focused = focusConfirmed(focus);
   const count = focused ? FRAMES_AFTER_FOCUS : FRAMES_CAPTURE_ONLY;
   const grabbed = await grabFrames({

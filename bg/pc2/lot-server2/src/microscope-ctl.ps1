@@ -230,7 +230,10 @@ public static class MltcCtl {
       if (initOk != 0) break;
       Thread.Sleep(250);
     }
-    if (initOk == 0) return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
+    if (initOk == 0) {
+      try { ComUnInitial(); } catch { }
+      return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
+    }
     try {
       short[] modes = new short[] { 20, 12, 6 };
       string lastReason = "probe-failed";
