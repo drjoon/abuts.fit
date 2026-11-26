@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-11-26: 자동 승인(auto-machining-gate)은 준비→가공만. 이미 가공이면 세척.패킹으로 넘기지 않는다.
 // - 2026-10-13: 더미 가공 승인·세척.패킹 승인은 다음 단계로 넘기지 않고 대기열에서 뺀다.
 // - 2026-10-14: 자동 승인에서 뺀 의뢰자는 게이트만 거절. 작업자 수동 승인은 가공으로 넘긴다.
 // - 2026-10-09: 테스트 계정은 자동 승인만 거절. 작업자 수동 승인은 가공·NC를 허용한다.
@@ -1503,6 +1504,21 @@ export async function updateReviewStatusByStage(req, res) {
         status === "APPROVED" &&
         effectiveStage === "cam" &&
         previousManufacturerStage === "준비";
+
+      // 자동 승인 레이스: 이미 가공인 건에 stage=machining을 다시 치면 세척.패킹으로 간다.
+      // 게이트는 준비→가공만 허용한다.
+      if (
+        isAutoGateTrigger(approvalTriggerSource) &&
+        status === "APPROVED" &&
+        effectiveStage === "machining" &&
+        !isMachiningEntryApproval
+      ) {
+        const err = new Error(
+          "자동 승인은 준비→가공만 처리합니다. 이미 가공 단계인 의뢰는 건너뜁니다.",
+        );
+        err.statusCode = 409;
+        throw err;
+      }
 
       if (isMachiningEntryApproval || isLegacyCamMachiningEntry) {
         await assertAutoGateSkipsTestAccount(request, approvalTriggerSource);

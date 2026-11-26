@@ -3,6 +3,7 @@
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-11-26: 켤 때 게이트 pass는 worker와 같은 job lock으로 돌려 중복 승인을 막는다.
 // - 2026-11-26: 켤 때 장비 자동 가공은 건드리지 않는다. 준비→가공 승인만 바로 돌린다.
 // - 2026-10-14: 제외 의뢰자 목록 조회·저장. 이름은 BusinessAnchor에서 붙인다.
 // - 2026-10-10: 자동 승인을 켜면 30초 뒤에 승인·자동 가공을 시작한다.
@@ -18,10 +19,23 @@ import {
   getAutoGateConfig,
   runAutoMachiningGatePass,
 } from "../../services/autoMachiningGate.service.js";
+import { runWithJobLock } from "../../utils/distributedJobLock.js";
+
+const ENABLE_KICK_LOCK_OWNER = `auto-gate-enable-${process.pid}`;
 
 async function kickPrepGatePass() {
   try {
-    await runAutoMachiningGatePass({ limit: 10 });
+    const locked = await runWithJobLock({
+      name: "worker:auto-machining-gate",
+      ownerId: ENABLE_KICK_LOCK_OWNER,
+      leaseMs: 120000,
+      heartbeatMs: 30000,
+      onLockMiss: (reason) => {
+        console.log("[autoMachiningGate] enable pass skipped (lock busy)", reason);
+      },
+      task: async () => runAutoMachiningGatePass({ limit: 10 }),
+    });
+    if (locked?.acquired === false) return;
   } catch (error) {
     console.error("[autoMachiningGate] enable pass failed", error?.message || error);
   }

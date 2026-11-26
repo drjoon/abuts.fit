@@ -6,6 +6,7 @@
 // - web/backend/controllers/requests/common.review.controller.js (updateReviewStatusByStage)
 // change-log:
 // - 2026-11-08: 포스트 다듬기 누락(skipped/failed)은 보류. 이미 다듬은 면과 기록 없는 예전 건은 통과.
+// - 2026-11-26: 승인 직전 stage를 다시 읽어, 이미 가공이면 호출하지 않는다(중복→패킹 레이스 방지).
 // - 2026-10-14: 제외 의뢰자(excludedRequestorAnchorIds)는 자동 승인하지 않는다. 작업자 수동 승인은 그대로다.
 // - 2026-10-10: 자동 승인을 켠 뒤 30초 유예 동안은 준비→가공 승인을 하지 않는다.
 // - 2026-10-09: 섀도 모드 제거. 스위치가 켜지면 통과 건을 바로 승인한다(장비별 자동 가공 OFF는 그 장비만 제외).
@@ -376,6 +377,14 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
     if (grace) continue;
 
     try {
+      // lean 스냅샷 이후 다른 pass가 먼저 승인했을 수 있다. 준비일 때만 호출한다.
+      const live = await Request.findById(request._id)
+        .select({ manufacturerStage: 1, "autoMachiningReview.verdict": 1 })
+        .lean();
+      const liveStage = String(live?.manufacturerStage || "").trim();
+      if (liveStage !== "준비") continue;
+      if (live?.autoMachiningReview?.verdict === "approved") continue;
+
       await invokeMachiningApproval(request._id);
       await recordReview(request._id, {
         verdict: "approved",
@@ -389,6 +398,8 @@ export async function runAutoMachiningGatePass({ limit = 10 } = {}) {
       out.approved += 1;
       approvedThisPass += 1;
     } catch (error) {
+      // 다른 pass가 먼저 가공으로 넘긴 뒤의 409는 실패로 덮지 않는다.
+      if (Number(error?.statusCode) === 409) continue;
       await recordReview(request._id, {
         verdict: "error",
         reasons: ["approve_failed"],
