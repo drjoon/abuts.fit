@@ -2,13 +2,18 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/useLotServerWatch.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - bg/pc2/lot-server/public/index.html
+// - bg/pc2/lot-server/src/camera.js
 // change-log:
+// - 2026-11-26: 라이브를 실제 카메라 비율(기본 4:3·프레임 natural size)로. 가로 1fr 검은 박스 제거.
 // - 2026-11-26: 라이브를 우측 패널에 늘리지 않고 h-36~40으로 맞춤.
 // - 2026-11-26: 라이브 높이 축소·우측 패널 구역 정리. 대기 카드가 한 화면에 보이게.
 // - 2026-11-26: 라이브 뷰·3글자 입력·감시/초점/수동인식·오인식 대응 버튼.
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/shared/ui/cn";
+
+/** lot-server 기본 캡처 프로필(640×480). 라이브 로드 전·미연결 placeholder. */
+const DEFAULT_LIVE_ASPECT = "4 / 3";
 
 const PHASE_KO: Record<string, string> = {
   idle: "대기",
@@ -69,6 +74,7 @@ export function PackingLotStation({
   onBindSelected?: () => void;
   hasSelectedCard?: boolean;
 }) {
+  const [liveAspect, setLiveAspect] = useState(DEFAULT_LIVE_ASPECT);
   const phaseLabel = PHASE_KO[phase] || phase || "—";
   const controlsDisabled = busy || matchingBusy;
   const statusLine = !reachable
@@ -80,6 +86,10 @@ export function PackingLotStation({
       ]
         .filter(Boolean)
         .join(" · ");
+
+  useEffect(() => {
+    if (!liveUrl) setLiveAspect(DEFAULT_LIVE_ASPECT);
+  }, [liveUrl]);
 
   const noteClass = cn(
     "text-[11px] leading-snug text-stone-600",
@@ -114,13 +124,20 @@ export function PackingLotStation({
   else if (error) note = error;
 
   return (
-    <div className="grid shrink-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(16.5rem,17.5rem)] lg:items-start">
-      <div className="flex h-36 max-h-[40vh] w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-40">
+    <div className="flex shrink-0 flex-wrap items-stretch gap-3">
+      <div
+        className="flex h-44 max-h-[36vh] max-w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-48"
+        style={{ aspectRatio: liveAspect, width: "auto" }}
+      >
         {liveUrl ? (
           <img
             src={liveUrl}
             alt="현미경 라이브"
             className="h-full w-full object-contain"
+            onLoad={(e) => {
+              const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+              if (w > 0 && h > 0) setLiveAspect(`${w} / ${h}`);
+            }}
           />
         ) : (
           <p className="px-4 text-center text-sm text-stone-400">
@@ -131,8 +148,8 @@ export function PackingLotStation({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
-        <section className="space-y-1">
+      <div className="flex min-h-0 min-w-[16.5rem] flex-1 flex-col justify-between gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 sm:max-w-[20rem] sm:flex-none">
+        <section className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold text-stone-600">감시</span>
             <span
@@ -184,7 +201,7 @@ export function PackingLotStation({
           </div>
         </section>
 
-        <section className="space-y-1 border-t border-stone-200/80 pt-1.5">
+        <section className="space-y-1.5 border-t border-stone-200/80 pt-2">
           <label
             htmlFor="packing-lot-suffix"
             className="text-[11px] font-semibold text-stone-600"
@@ -227,7 +244,7 @@ export function PackingLotStation({
           <p className={cn(noteClass, "min-h-[1.25rem]")}>{note}</p>
         </section>
 
-        <section className="space-y-1 border-t border-stone-200/80 pt-1.5">
+        <section className="space-y-1.5 border-t border-stone-200/80 pt-2">
           <span className="text-[11px] font-semibold text-stone-600">
             오인식 대응
           </span>
