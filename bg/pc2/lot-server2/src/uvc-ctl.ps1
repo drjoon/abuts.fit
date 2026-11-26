@@ -26,6 +26,9 @@ public static class UvcCtl {
   [DllImport("ole32.dll")]
   static extern int CreateBindCtx(int reserved, out IntPtr ppbc);
 
+  [DllImport("ole32.dll")]
+  static extern int CoInitializeEx(IntPtr reserved, uint coinit);
+
   [DllImport("ole32.dll", ExactSpelling = true)]
   static extern int CoCreateInstance(
     IntPtr clsid,
@@ -171,6 +174,8 @@ public static class UvcCtl {
     IntPtr iidPtr = GuidAlloc(iidEnum.ToString(), out iidHex);
     ICreateDevEnum devenum = null;
     int created = unchecked((int)0x80040154);
+    int coinit = CoInitializeEx(IntPtr.Zero, 2);
+    string activator = "";
     try {
       uint[] contexts = new uint[] { 1, 23 };
       for (int n = 0; n < contexts.Length; n++) {
@@ -182,6 +187,17 @@ public static class UvcCtl {
           break;
         }
       }
+      if (devenum == null) {
+        try {
+          Type enumType = Type.GetTypeFromCLSID(clsidEnum, true);
+          object createdObj = Activator.CreateInstance(enumType);
+          devenum = createdObj as ICreateDevEnum;
+          activator = devenum == null ? "cast-failed" : "ok";
+          if (devenum != null) created = 0;
+        } catch (Exception ex) {
+          activator = ex.GetType().Name;
+        }
+      }
     } finally {
       Marshal.FreeCoTaskMem(clsidPtr);
       Marshal.FreeCoTaskMem(iidPtr);
@@ -189,7 +205,11 @@ public static class UvcCtl {
     if (devenum == null) {
       int bits = IntPtr.Size * 8;
       string reg = RegProbe();
-      string detail = "bits=" + bits + " guid=" + clsidHex + "/" + iidHex + " reg=" + reg;
+      string detail = "bits=" + bits
+        + " coinit=" + coinit.ToString("X8")
+        + " activator=" + activator
+        + " guid=" + clsidHex + "/" + iidHex
+        + " reg=" + reg;
       return "{\"ok\":false,\"af\":\"none\",\"reason\":\"cocreate-" + created.ToString("X8")
         + "\",\"bits\":" + bits + ",\"detail\":\"" + detail + "\"}";
     }

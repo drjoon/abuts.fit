@@ -16,14 +16,16 @@ const TIMEOUT_MS = 12000;
 
 function powershellHosts() {
   const root = process.env.SystemRoot || "C:\\Windows";
-  // Sysnative is the real 64-bit System32 when this node is 32-bit.
-  const folders = ["Sysnative", "System32", "SysWOW64"];
-  const hosts = [];
-  for (const folder of folders) {
-    const file = path.join(root, folder, "WindowsPowerShell", "v1.0", "powershell.exe");
-    if (fs.existsSync(file) && !hosts.includes(file)) hosts.push(file);
+  const exe = (folder) =>
+    path.join(root, folder, "WindowsPowerShell", "v1.0", "powershell.exe");
+  // DirectShow devenum is 64-bit on this PC. 32-bit PowerShell only sees SysWOW64 and returns 80040154.
+  if (process.arch === "x64") {
+    const file = exe("System32");
+    return fs.existsSync(file) ? [file] : [];
   }
-  return hosts;
+  return ["Sysnative", "System32"]
+    .map(exe)
+    .filter((file, index, all) => fs.existsSync(file) && all.indexOf(file) === index);
 }
 
 function runFile(file, args, timeoutMs) {
@@ -52,6 +54,7 @@ export async function tryUvc(deviceName = "") {
     return { ok: false, af: "none", reason: "script-missing", path: "uvc" };
   }
   const args = [
+    "-Sta",
     "-NoProfile",
     "-NonInteractive",
     "-ExecutionPolicy",
