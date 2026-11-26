@@ -1,5 +1,7 @@
 // change-log:
-// - 2026-11-26: Windows에서 `/`·`/index.html`이 path.normalize 후 `\…`가 되어 정적 파일 경로 가드에 걸리던 버그 수정.
+// - 2026-11-26: /api/queue는 우편함이 배정된 세척.패킹 건만 돌려준다(packing-queue.js, LOT_QUEUE_REQUIRE_MAILBOX=0이면 끔).
+// - 2026-11-26: Windows에서 `/`·`/index.html`이 path.normalize 후 `\…`가 되어 정적 파일 경로 가드에 걸리던(400) 버그 수정(static-path.js).
+// - 2026-11-26: GET /api/branding → pack-server /branding (패킹 라벨 미리보기용).
 // - 2026-11-26: 공병·패킹 라벨을 같은 PC pack-server(8004)로 프록시 출력.
 // - 2026-11-26: 작업자 UI(8012)·백엔드 큐/매칭/스크류 로트 프록시. 어벗츠 FE는 lot-server를 호출하지 않는다.
 // - 2026-11-26: SIGINT/SIGTERM/exit 때 감시가 켠 UM LED를 끈다(watcher.shutdownSync).
@@ -10,6 +12,8 @@
 // - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
 // - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
 // related files:
+// - bg/pc2/lot-server/src/packing-queue.js
+// - bg/pc2/lot-server/src/static-path.js
 // - bg/pc2/lot-server/rules.md
 // - bg/pc2/lot-server/public/index.html
 // - web/backend/controllers/ai/lotCapture.controller.js
@@ -37,6 +41,8 @@ import { DLL_DIR } from "./focus.js";
 import { IMAGE_NAME } from "./names.js";
 import { disposeOcrWorker } from "./ocr/index.js";
 import { createWatcher } from "./watch.js";
+import { resolvePublicPath } from "./static-path.js";
+import { filterPackingQueueBody, queueFilterOptionsFromEnv } from "./packing-queue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -180,19 +186,12 @@ async function packFetch(pathname, { method = "GET", body } = {}) {
 }
 
 function servePublic(res, urlPath) {
-  // Windows: path.normalize("/index.html") → "\index.html". Leading "\" is drive-root
-  // absolute, so resolve ignores PUBLIC_DIR and the path guard rejects with 400.
-  const normalized = path.normalize(String(urlPath || "/"));
-  let rel = normalized.replace(/^[/\\]+/, "").replace(/^(\.\.[/\\])+/, "");
-  if (!rel || rel === "." ) rel = "index.html";
-  const root = path.resolve(PUBLIC_DIR);
-  const full = path.resolve(root, rel);
-  const outside =
-    full !== root && !full.startsWith(root + path.sep);
-  if (outside || rel.split(/[/\\]/).includes("..")) {
+  const resolved = resolvePublicPath(PUBLIC_DIR, urlPath);
+  if (!resolved.ok) {
     json(res, 400, { success: false, message: "잘못된 경로입니다." });
     return true;
   }
+  const { full } = resolved;
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) return false;
   const ext = path.extname(full).toLowerCase();
   res.writeHead(200, {
@@ -278,7 +277,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/queue") {
       const upstream = await backendFetch("/api/bg/packing/queue");
-      json(res, upstream.status, upstream.body || { success: false });
+      // 지금 세척.패킹에 들어와 있는 건(우편함 배정)만 카드로 보낸다.
+      const body = upstream.status >= 200 && upstream.status < 300
+        ? filterPackingQueueBody(upstream.body, queueFilterOptionsFromEnv())
+        : upstream.body;
+      json(res, upstream.status, body || { success: false });
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/match") {
@@ -306,6 +309,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/api/printers") {
       const upstream = await packFetch("/printers");
+      json(res, upstream.status, upstream.body || { success: false });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/branding") {
+      const upstream = await packFetch("/branding");
       json(res, upstream.status, upstream.body || { success: false });
       return;
     }

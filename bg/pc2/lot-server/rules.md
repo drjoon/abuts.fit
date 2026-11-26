@@ -40,9 +40,10 @@
 - 하드웨어 AF·LED(시리얼): `bg/pc2/lot-server/src/um-serial.js`, `src/um-serial.ps1`
 - 카메라 제어(UVC): `bg/pc2/lot-server/src/uvc.js` → `src/UvcTool.exe`(`UvcTool.cs`), 대체 `src/uvc-ctl.ps1`
 - ViTiny DLL(기본 꺼짐, `LOT_VITINY_DLL=1`): `bg/pc2/lot-server/src/focus.js`, `src/microscope-ctl.ps1`
-- 화면: `bg/pc2/lot-server/public/index.html` · `station.css` · `station.js` · `vialLabel.js`
+- 화면: `bg/pc2/lot-server/public/index.html` · `station.css` · `station.js` · `vialLabel.js` · `packLabel.js` · `vendor/qrcode.js`
 - 백엔드: `GET /api/bg/packing/queue`, `POST /api/bg/lot-capture/packing`, `GET|PUT /api/bg/packing/screw-lot-settings`
-- 같은 PC pack-server(`PACK_SERVER_BASE`, 기본 `http://127.0.0.1:8004`): `GET /api/printers`, `POST /api/print-packing-label`, `POST /api/print-zpl`(공병 TSPL)
+- 같은 PC pack-server(`PACK_SERVER_BASE`, 기본 `http://127.0.0.1:8004`): `GET /api/printers`, `GET /api/branding`, `POST /api/print-packing-label`, `POST /api/print-zpl`(공병 TSPL·패킹 bitmap ZPL)
+- 패킹 라벨 미리보기·출력은 FE와 같은 캔버스 레이아웃(`packLabel.js`). 매칭 옆 「프린트」는 선택·최근 매칭 1건.
 
 ## 3) 로컬 변경 체크
 
@@ -50,3 +51,5 @@
 - [ ] 저장 파일을 lot-server 감시 폴더에 넣지 않았는지
 - [ ] 외부 AI 호출이 새로 생기지 않았는지
 - [ ] 루트 rules와 충돌 여부 점검
+
+- 작업 화면 의뢰 카드(`/api/queue`)는 우편함이 배정된 세척.패킹 건만 보낸다(`src/packing-queue.js`, `LOT_QUEUE_REQUIRE_MAILBOX`).

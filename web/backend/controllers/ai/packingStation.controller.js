@@ -80,15 +80,38 @@ function toPackingScrewLotMap(itemsRaw) {
   return lots;
 }
 
+function toKstYmd(input) {
+  if (input == null || input === "") return "";
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.trim())) {
+    return input.trim();
+  }
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 function summarizeRequest(doc) {
   const caseInfos = doc?.caseInfos || {};
   const maxDiameter = Number(caseInfos.maxDiameter);
+  const totalLength = Number(caseInfos.totalLength);
+  const taperAngle = Number(caseInfos.taperAngle);
+  const connectionDiameter = Number(caseInfos.connectionDiameter);
   const labName = String(
     doc?.businessAnchorId?.name ||
       doc?.requestor?.business ||
       doc?.requestor?.name ||
       "",
   ).trim();
+  const manufacturingDate =
+    toKstYmd(doc?.productionSchedule?.actualMachiningComplete) ||
+    toKstYmd(caseInfos?.reviewByStage?.machining?.updatedAt) ||
+    toKstYmd(doc?.timeline?.actualCompletion) ||
+    "";
   return {
     _id: String(doc._id || ""),
     requestId: String(doc.requestId || ""),
@@ -98,6 +121,11 @@ function summarizeRequest(doc) {
     clinicName: String(caseInfos.clinicName || ""),
     tooth: String(caseInfos.tooth || ""),
     maxDiameter: Number.isFinite(maxDiameter) ? maxDiameter : null,
+    totalLength: Number.isFinite(totalLength) ? totalLength : null,
+    taperAngle: Number.isFinite(taperAngle) ? taperAngle : null,
+    connectionDiameter: Number.isFinite(connectionDiameter)
+      ? connectionDiameter
+      : null,
     material: String(caseInfos.material || ""),
     screwType: String(
       doc?.screwTracking?.type || caseInfos.screwType || "",
@@ -108,6 +136,8 @@ function summarizeRequest(doc) {
     implantBrand: String(caseInfos.implantBrand || "").trim(),
     implantFamily: String(caseInfos.implantFamily || "").trim(),
     implantType: String(caseInfos.implantType || "").trim(),
+    manufacturingDate,
+    hexVerificationSample: Boolean(caseInfos.hexVerificationSample),
     printed: Boolean(doc?.shippingLabelPrinted?.printed),
     createdAt: doc?.createdAt || null,
   };
@@ -129,6 +159,8 @@ export const listPackingQueue = asyncHandler(async (_req, res) => {
       createdAt: 1,
       businessAnchorId: 1,
       requestor: 1,
+      productionSchedule: 1,
+      timeline: 1,
     })
     .populate("businessAnchorId", "name")
     .populate("requestor", "name business")

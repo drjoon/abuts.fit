@@ -105,3 +105,8 @@ ViTiny `mltcCom`(32비트, `vendor/vitiny`, `microscope-ctl.ps1`)은 이 UM20에
 - `LOT_OCR_LANG_PATH` 학습 데이터 경로(오프라인용). 기본 비움(jsDelivr에서 1회 받아 `ocr-cache/`)
 - `LOT_VITINY_DLL` 1이면 mltcCom DLL을 먼저 시도. 기본 0
 - `LOT_AUTO_WATCH` 기동 시 자동 감시. 기본 0
+
+### 작업 화면 의뢰 카드(세척.패킹)
+
+- `/api/queue`는 백엔드 `/api/bg/packing/queue`(manufacturerStage=세척.패킹)에서 **우편함이 배정된 건만** 남긴다(`src/packing-queue.js`). 우편함 배정 규칙 이전에 남은 옛 건(우편함 없음)이 섞여 카드가 너무 많던 문제. `total`·직경 건수(`counts`)도 다시 세고, 숨긴 건수는 `hidden`.
+- `LOT_QUEUE_REQUIRE_MAILBOX=0`이면 거르지 않고 백엔드 목록을 그대로 쓴다.
