@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)][string]$DllDir,
-  # prepare = LED 켠 뒤 AF. af = AF만(하위 호환, 동일 경로).
+  # prepare = LED on then AF. af = same path (compat).
   [ValidateSet("prepare", "af")][string]$Action = "prepare"
 )
 
@@ -21,6 +21,7 @@ if (-not (Test-Path -LiteralPath $dll)) {
   exit 0
 }
 
+# C# source must stay ASCII-only: PS 5.1 encoding can break non-ASCII in Add-Type.
 $source = @'
 using System;
 using System.Runtime.InteropServices;
@@ -45,7 +46,7 @@ public static class MltcCtl {
   [DllImport("mltcCom.dll", EntryPoint = "@rGetSendData_I2C$qqsuls", CallingConvention = CallingConvention.StdCall)]
   static extern uint RGet(uint cmd, short mode);
 
-  // UM06/UM12/UM20 공통 레지스터(ViTiny mltcComCtrl.h).
+  // Shared UM06/UM12/UM20 registers (ViTiny mltcComCtrl.h).
   const uint STAFLAG = 0x00;
   const uint KEYCO = 0x01;
   const uint KEYCH = 0x02;
@@ -59,6 +60,7 @@ public static class MltcCtl {
   const uint FWVER1 = 0x2E;
   const uint FWVER0 = 0x2F;
   const uint KEY_DOWN = 0x40;
+  const uint KEY_UP = 0x80;
   const uint KEY_REMOTE = 0x0F;
   const uint KEY_AF_SINGLE = 0x15;
   const uint KEY_LED_ONOFF = 0x19;
@@ -132,7 +134,7 @@ public static class MltcCtl {
     return (status & 0x08) != 0;
   }
 
-  // STAFLAG bit1 = LED on. 꺼져 있으면 켠다.
+  // STAFLAG bit1 = LED on.
   static bool EnsureLedOn(short mode, out bool wasOn) {
     wasOn = false;
     uint status;
@@ -145,11 +147,11 @@ public static class MltcCtl {
     return (status & 0x02) != 0;
   }
 
-  // LED를 최대로. WriteData 실패 시 INC를 상한 횟수만 누른다.
+  // Raise LED to max. Prefer WriteData; else KEY_LED_INC with a hard cap.
   static bool BrightenLed(short mode, out uint ledMax, out uint ledLevel) {
     ledMax = 0;
     ledLevel = 0;
-    WriteData(LEDMOD, 0, mode); // ALL
+    WriteData(LEDMOD, 0, mode);
     if (!TryRead(LEDMAX, mode, out ledMax)) ledMax = 12;
     if (ledMax == 0) ledMax = 12;
     if (WriteData(LEDLV, ledMax, mode)) {
@@ -161,7 +163,7 @@ public static class MltcCtl {
     while (ledLevel < ledMax && guard < 16) {
       if (!WriteKey(KEY_DOWN | KEY_LED_INC, mode)) break;
       Thread.Sleep(30);
-      WriteKey(0x80 | KEY_LED_INC, mode); // KEY_UP
+      WriteKey(KEY_UP | KEY_LED_INC, mode);
       Thread.Sleep(20);
       if (!TryRead(LEDLV, mode, out ledLevel)) break;
       guard++;
@@ -170,8 +172,8 @@ public static class MltcCtl {
   }
 
   static uint AfAreaForMode(short mode) {
-    if (mode == 6) return 0x0F; // UM06 ALL
-    return 0x1A; // UM12/UM20 ALL
+    if (mode == 6) return 0x0F;
+    return 0x1A;
   }
 
   static string WaitAf(short mode, uint startPos) {
@@ -222,7 +224,6 @@ public static class MltcCtl {
     if (LoadLibrary(com) == IntPtr.Zero) return Json(false, 0, "", "none", 0, 0, 0, false, "dll-load-failed");
     if (ComInitial() == 0) return Json(false, 0, "", "none", 0, 0, 0, false, "init-failed");
     try {
-      // UM20 우선. UM12/UM06 순.
       short[] modes = new short[] { 20, 12, 6 };
       string lastReason = "probe-failed";
       for (int i = 0; i < modes.Length; i++) {
@@ -240,12 +241,10 @@ public static class MltcCtl {
         uint ledMax = 0;
         uint ledLevel = 0;
         bool ledOn = false;
-        bool doLed = action == "prepare" || action == "af";
-        if (doLed) {
+        if (action == "prepare" || action == "af") {
           bool wasOn;
           if (!EnsureLedOn(mode, out wasOn)) {
             lastReason = "led-on-failed";
-            // LED 실패해도 AF는 시도한다.
           } else {
             ledOn = true;
           }
@@ -278,7 +277,11 @@ try {
   Write-Output ([MltcCtl]::Run($DllDir, $Action))
 } catch {
   $detail = $_.Exception.Message
+  if ($_.Exception.InnerException) {
+    $detail = $detail + " | " + $_.Exception.InnerException.Message
+  }
   if ($detail) { $detail = $detail.Replace('"', "'").Replace("`r", " ").Replace("`n", " ") }
+  if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
   Emit-Result @{ ok = $false; reason = "exception"; detail = $detail }
   exit 0
 }

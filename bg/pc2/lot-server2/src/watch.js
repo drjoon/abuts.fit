@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 현미경 제어 실패 시 exception detail을 로그·UI에 남긴다.
 // - 2026-11-26: 감시 시작·흐림/어두움 시 LED+AF(횟수·간격 상한). 선명 전에 AF를 건다.
 // - 2026-11-24: 스트림 프로파일 재시도·null readFrame 방지.
 // - 2026-11-23: 상주 ffmpeg 스트림으로 감시. 프레임마다 프로세스 생성 금지.
@@ -124,11 +125,14 @@ export function createWatcher({
     const led = focus?.ledOn
       ? `led=${focus.ledLevel}/${focus.ledMax}`
       : `ledOff reason=${focus?.reason || ""}`;
+    const detail = focus?.detail ? ` detail=${String(focus.detail).slice(0, 240)}` : "";
     log(
-      `microscope ${reason} af=${focus?.af || "none"} mode=${focus?.devMode || 0} ${led}`,
+      `microscope ${reason} af=${focus?.af || "none"} mode=${focus?.devMode || 0} ${led}${detail}`,
     );
     if (!focusConfirmed(focus) && focus?.reason) {
-      lastError = `현미경 제어: ${focus.reason}`;
+      lastError = focus.detail
+        ? `현미경 제어: ${focus.reason} (${String(focus.detail).slice(0, 120)})`
+        : `현미경 제어: ${focus.reason}`;
     }
     return focus;
   }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: exception detail을 그대로 넘긴다(PS Add-Type 진단).
 // - 2026-11-26: LED 점등·최대 밝기 후 AF. UM20(mode 20) 프로브 추가.
 // - 2026-11-21: UM12/UM06 DLL로 1회 AF를 시도한다. 실패하면 호출자가 촬영만 한다.
 // related files:
