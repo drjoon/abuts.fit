@@ -6,6 +6,11 @@ import { Router } from "express";
 import * as bgController from "../../controllers/bg/bg.controller.js";
 import * as abutmentStlShadowController from "../../controllers/bg/abutmentStlShadow.controller.js";
 import { handlePackingCapture } from "../../controllers/ai/lotCapture.controller.js";
+import {
+  getPackingScrewLotSettingsBg,
+  listPackingQueue,
+  savePackingScrewLotSettingsBg,
+} from "../../controllers/ai/packingStation.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   requireBgWorkerSecret,
@@ -86,6 +91,24 @@ router.post(
   "/lot-capture/packing",
   allowPackingCaptureAccess,
   handlePackingCapture,
+);
+router.get(
+  "/packing/queue",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  listPackingQueue,
+);
+router.get(
+  "/packing/screw-lot-settings",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  getPackingScrewLotSettingsBg,
+);
+router.put(
+  "/packing/screw-lot-settings",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  savePackingScrewLotSettingsBg,
 );
 router.get(
   "/file-status",

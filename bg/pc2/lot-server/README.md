@@ -1,6 +1,6 @@
 # lot-server
 
-패킹 PC(원격 Windows)에서 UM20 영상을 보다가, **움직임이 멈추고 초점이 맞으면** 로컬 OCR로 **영문 대문자 3글자** 로트를 읽습니다. 페달은 쓰지 않습니다. Gemini 등 외부 AI는 호출하지 않습니다.
+패킹 PC(원격 Windows) **작업자 화면**입니다. 브라우저 `http://127.0.0.1:8012/` 에서 세척·패킹(라이브·대기 카드·상단 건수/직경/라벨 메뉴)을 합니다. UM20 영상이 **멈추고 초점이 맞으면** 로컬 OCR로 **영문 대문자 3글자**를 읽고, lot-server가 어벗츠 백엔드로 매칭합니다. 페달·Gemini는 쓰지 않습니다. 어벗츠 FE는 lot-server를 직접 호출하지 않습니다.
 
 `npm install`은 그 Windows PC에서 합니다. ffmpeg·sharp·tesseract.js는 설치하는 OS용 자산을 받습니다.
 
@@ -17,6 +17,8 @@ node src/index.js
 ```
 
 브라우저에서 `http://127.0.0.1:8012/` 를 엽니다. 기본은 **감시 수동 시작**입니다(`LOT_AUTO_WATCH=1`이면 자동).
+
+공병·패킹 라벨은 같은 PC의 **pack-server**(기본 `http://127.0.0.1:8004`)로 보냅니다. `local.env`의 `PACK_SERVER_BASE` · `PACK_PRINT_SERVER_SHARED_SECRET`을 pack-server와 맞춥니다.
 
 감시 중에는 ffmpeg **한 프로세스**가 라이브 JPEG를 덮어씁니다. 예전처럼 프레임마다 ffmpeg를 새로 띄우지 않습니다(Cursor/머신 부하 원인).
 

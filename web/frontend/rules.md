@@ -391,7 +391,7 @@ Notes:
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - 카드 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - 상세 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
-  - **각인 매칭 (lot-server)**: PC2 `lot-server`(8012) 라이브·감시·로컬 OCR. 어벗을 대면 자동 인식된 3글자로 `POST /api/bg/lot-capture/packing`(`confirmBySuffix`) → 세척.패킹 1건이면 바로 포장.발송. 오인식은 live 뷰 보고 3글자 타이핑·다시 인식·선택 카드 확정. 대기 의뢰는 하단 작은 카드 1행. 서버 Gemini 이미지 OCR·pending 확인 UI는 쓰지 않는다. `VITE_LOT_SERVER_URL`(기본 `http://127.0.0.1:8012`).
+  - **각인 매칭 (lot-server 로컬)**: 작업자는 PC2 `lot-server` `http://127.0.0.1:8012/` 만 본다(라이브·감시·로컬 OCR·대기 카드·상단 건수/직경/라벨 메뉴). 인식·수동 매칭은 lot-server가 백엔드 `POST /api/bg/lot-capture/packing`(`confirmBySuffix`)로 보낸다. 어벗츠 세척·패킹 FE는 **큰 의뢰 카드**로 처리 결과만 확인한다(lot-server 라이브/작업 UI·직접 호출 없음). 서버 Gemini 이미지 OCR·pending 확인 UI는 쓰지 않는다.
 
 - 제조사 워크시트 의뢰 정보 표시 SSOT (`RequestInfoSummary`):
   - 카드/프리뷰 본문의 환자·임플란트·생산 정보는 개별 JSX로 흩뿌리지 말고

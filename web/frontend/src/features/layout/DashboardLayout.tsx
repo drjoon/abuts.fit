@@ -1695,10 +1695,8 @@ export const DashboardLayout = () => {
   const worksheetStage = worksheetStageRaw === "cam" ? "machining" : worksheetStageRaw;
   const isWorksheetTrackingStage =
     isWorksheetRoute && worksheetStage === "tracking";
-  const isWorksheetPackingStage =
-    isWorksheetRoute && worksheetStage === "packing";
-  // 충전·정산·기공의뢰수신·치과 구강스캔 캘린더·추적관리·세척.패킹 —
-  // 래퍼를 뷰포트 높이에 고정(중첩 스크롤). 세척.패킹은 의뢰카드만 세로 스크롤.
+  // 충전·정산·기공의뢰수신·치과 구강스캔 캘린더·추적관리 —
+  // 래퍼를 뷰포트 높이에 고정(중첩 스크롤).
   // 그 외(설정 등)는 문서 흐름으로 키워 하단 pb가 스크롤 끝에 보이게 함.
   const isFillHeightWorkArea =
     location.pathname.startsWith("/dashboard/credits") ||
@@ -1707,8 +1705,7 @@ export const DashboardLayout = () => {
     location.pathname.startsWith("/dashboard/channels") ||
     isLabReceiveWorkArea ||
     isPracticeOralScanWorkArea ||
-    isWorksheetTrackingStage ||
-    isWorksheetPackingStage;
+    isWorksheetTrackingStage;
 
   // Worksheet summary data for header bar.
   // Stage tab counts are current queue sizes — 추적관리만 PeriodFilter 기간 SSOT(TrackingPage와 동일).

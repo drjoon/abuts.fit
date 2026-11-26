@@ -4,9 +4,11 @@
 
 ## 0) 문서 목적
 
-- 이 문서는 `bg/pc2/lot-server`(lot-server3 기반)의 영상 감시·로컬 OCR·저장을 적습니다.
+- 이 문서는 `bg/pc2/lot-server`(lot-server3 기반)의 영상 감시·로컬 OCR·저장·**작업자 UI(8012)** 를 적습니다.
 - 로트는 **영문 대문자 3글자**입니다. 외부 AI(Gemini 등)는 호출하지 않습니다.
-- 어벗츠 세척·패킹 FE가 `GET /live`·`GET /watch`·`POST /watch/*`·`POST /recognize`·`POST /focus`를 폴링/호출하고, 인식된 코드만 백엔드 `lot-capture/packing`으로 보냅니다.
+- 작업자는 `http://127.0.0.1:8012/` 로컬 화면만 본다(상단 건수·직경·라벨 메뉴 + 라이브 + 대기 카드).
+- 로컬 UI가 같은 출처로 `/watch`·`/live`·`/recognize`·`/focus`를 쓰고, 매칭·대기 큐·스크류 로트는 lot-server가 백엔드(`/api/bg/...`, `X-Bridge-Secret`)로 프록시한다.
+- 어벗츠 FE는 lot-server를 직접 호출하지 않는다. 어벗츠 세척·패킹은 관리자용 큰 의뢰 카드만.
 - 페달은 쓰지 않습니다. 정지·선명 게이트 후 OCR합니다.
 - 구 폴더 감시 브리지(S3 업로드)는 `bg/pc2/lot-server-backup`에 있습니다.
 - Windows PC2: `setup-windows-service.cmd` → Install. NSSM 서비스 `AbutsLotServer`가 **부팅 자동 시작**(`SERVICE_AUTO_START`). 번들 `nssm.exe` 우선.
@@ -26,7 +28,7 @@
 - 시리얼 AF를 못 쓰면(장치 없음·`LOT_UM_SERIAL=0`) 흐림 때 스트림을 끊지 않고 화면에 초점 안내만 띄웁니다.
 - 드라이버·시스템 소프트웨어를 새로 설치하지 않습니다(CP210x VCP는 Windows 기본/기존 설치본).
 - 저장 폴더는 lot-server 감시 폴더와 분리합니다. 기본값 `D:\bg\lot-server\images`. 성공 파일 `lot-…-ABC.jpg`.
-- 이 프로세스는 백엔드/Gemini를 호출하지 않습니다. 코드 매칭은 어벗츠 FE가 합니다.
+- OCR·카메라는 로컬만. 코드 매칭·대기 큐·스크류 로트는 `BACKEND_BASE` + `LOT_SHARED_SECRET`으로 백엔드를 호출한다(Gemini 없음).
 - 프로세스 TZ: 엔트리 `src/index.js`에서 `process.env.TZ = "Asia/Seoul"`.
 
 ## 2) 연결 진입 파일
@@ -38,7 +40,9 @@
 - 하드웨어 AF·LED(시리얼): `bg/pc2/lot-server/src/um-serial.js`, `src/um-serial.ps1`
 - 카메라 제어(UVC): `bg/pc2/lot-server/src/uvc.js` → `src/UvcTool.exe`(`UvcTool.cs`), 대체 `src/uvc-ctl.ps1`
 - ViTiny DLL(기본 꺼짐, `LOT_VITINY_DLL=1`): `bg/pc2/lot-server/src/focus.js`, `src/microscope-ctl.ps1`
-- 화면: `bg/pc2/lot-server/public/index.html`
+- 화면: `bg/pc2/lot-server/public/index.html` · `station.css` · `station.js` · `vialLabel.js`
+- 백엔드: `GET /api/bg/packing/queue`, `POST /api/bg/lot-capture/packing`, `GET|PUT /api/bg/packing/screw-lot-settings`
+- 같은 PC pack-server(`PACK_SERVER_BASE`, 기본 `http://127.0.0.1:8004`): `GET /api/printers`, `POST /api/print-packing-label`, `POST /api/print-zpl`(공병 TSPL)
 
 ## 3) 로컬 변경 체크
 

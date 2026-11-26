@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 작업 UI는 lot-server 8012로 이전. 어벗츠는 관리자용 큰 의뢰 카드.
 // - 2026-11-26: lot-server 라이브·자동 OCR·3글자 수동 입력. 대기 카드는 하단 1행. 이미지 AI·pending UI 제거.
 // - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호.
 import {
@@ -18,6 +19,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
+import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -26,6 +28,7 @@ import {
   isUnmachinableShipGone,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
+import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import {
@@ -35,16 +38,12 @@ import {
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { PackingLabelPrintDialog } from "../components/PackingLabelPrintDialog";
 import { VialStickerPrintDialog } from "../components/VialStickerPrintDialog";
-import { PackingLotStation } from "../components/PackingLotStation";
-import { PackingRequestStrip } from "../components/PackingRequestStrip";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import {
   usePackingCapture,
-  extractLotSuffix3,
   type CaptureResult,
 } from "../hooks/usePackingCapture";
-import { useLotServerWatch } from "../hooks/useLotServerWatch";
 import {
   buildPackLabelBitmapZpl,
   renderPackLabelToCanvas,
@@ -59,9 +58,9 @@ import {
 } from "@/shared/practice/screwSupply";
 
 // related files:
-// - bg/pc2/lot-server/src/index.js
+// - bg/pc2/lot-server/public/index.html
 // - web/backend/controllers/ai/lotCapture.controller.js
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/useLotServerWatch.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 import { Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
@@ -1148,157 +1147,17 @@ export const PackingPageContent = ({
     setCaptureHistory((prev) => [result, ...prev].slice(0, 8));
   }, []);
 
-  const { matchingBusy, matchNote, setMatchNote, matchBySuffix, bindToRequest } =
-    usePackingCapture({
-      token,
-      toast,
-      setRequests,
-      onCaptureResult: handleCaptureResult,
-    });
-
-  const [suffixInput, setSuffixInput] = useState("");
-  const [selectedRequestId, setSelectedRequestId] = useState("");
-  const matchingBusyRef = useRef(matchingBusy);
-  matchingBusyRef.current = matchingBusy;
-
-  const handleLotFromServer = useCallback(
-    (lot: string, meta: { from: "auto" | "manual" }) => {
-      const suffix = extractLotSuffix3(lot);
-      if (suffix.length !== 3 || matchingBusyRef.current) return;
-      setSelectedRequestId("");
-      setSuffixInput(suffix);
-      setMatchNote("");
-      void matchBySuffix(suffix, {
-        source: meta.from === "manual" ? "manual" : "lot-server",
-      }).then((result) => {
-        if (result.ok && result.matched) {
-          setSuffixInput("");
-          setSelectedRequestId("");
-        }
-      });
-    },
-    [matchBySuffix, setMatchNote],
-  );
-
-  const {
-    liveUrl,
-    busy: lotBusy,
-    error: lotError,
-    reachable,
-    running,
-    phase,
-    lastLot,
-    startWatch,
-    stopWatch,
-    runFocus,
-    runRecognize,
-    resetLotDedupe,
-  } = useLotServerWatch({
-    enabled: true,
-    onLot: handleLotFromServer,
+  // 작업자 매칭은 PC2 lot-server(8012). 어벗츠는 소켓 결과만 반영한다.
+  usePackingCapture({
+    token,
+    toast,
+    setRequests,
+    onCaptureResult: handleCaptureResult,
   });
 
-  const normalizedManualSuffix = useMemo(
-    () =>
-      String(suffixInput || "")
-        .toUpperCase()
-        .replace(/[^A-Z]/g, "")
-        .slice(0, 3),
-    [suffixInput],
-  );
+  const isEmpty = !isLoading && paginatedRequests.length === 0;
 
-  const selectedRequest = useMemo(
-    () =>
-      filteredAndSorted.find(
-        (req) => String(req._id || "") === selectedRequestId,
-      ) || null,
-    [filteredAndSorted, selectedRequestId],
-  );
-
-  const clearSuffixSelection = useCallback(() => {
-    setSuffixInput("");
-    setSelectedRequestId("");
-    setMatchNote("");
-    resetLotDedupe();
-  }, [resetLotDedupe, setMatchNote]);
-
-  const submitSuffix = useCallback(() => {
-    if (matchingBusy) return;
-    if (selectedRequest?._id) {
-      void bindToRequest(
-        String(selectedRequest._id),
-        normalizedManualSuffix ||
-          extractLotSuffix3(selectedRequest.lotNumber?.value),
-      ).then((ok) => {
-        if (ok) {
-          setSuffixInput("");
-          setSelectedRequestId("");
-          resetLotDedupe();
-        }
-      });
-      return;
-    }
-    const suffix = extractLotSuffix3(normalizedManualSuffix);
-    if (suffix.length !== 3) return;
-    void matchBySuffix(suffix, { source: "manual" }).then((result) => {
-      if (result.ok && result.matched) {
-        setSuffixInput("");
-        resetLotDedupe();
-      }
-    });
-  }, [
-    bindToRequest,
-    matchBySuffix,
-    matchingBusy,
-    normalizedManualSuffix,
-    resetLotDedupe,
-    selectedRequest,
-  ]);
-
-  const handlePrintSingleFromCode = useCallback(() => {
-    const target =
-      selectedRequest ||
-      (() => {
-        const suffix = extractLotSuffix3(normalizedManualSuffix);
-        if (suffix.length !== 3) return null;
-        const matches = filteredAndSorted.filter(
-          (req) => extractLotSuffix3(req.lotNumber?.value) === suffix,
-        );
-        if (matches.length === 1) return matches[0];
-        if (matches.length > 1) {
-          toast({
-            title: "프린트",
-            description:
-              "같은 코드가 여러 건입니다. 오른쪽 카드를 눌러 지정하세요.",
-            variant: "destructive",
-          });
-          return null;
-        }
-        toast({
-          title: "프린트",
-          description: "대기 목록에서 해당 각인 코드를 찾지 못했습니다.",
-          variant: "destructive",
-        });
-        return null;
-      })();
-    if (!target?._id) {
-      if (
-        !selectedRequest &&
-        extractLotSuffix3(normalizedManualSuffix).length !== 3
-      ) {
-        toast({
-          title: "프린트",
-          description: "각인 코드가 선택된 의뢰가 없습니다.",
-          variant: "destructive",
-        });
-      }
-      return;
-    }
-    setPackingLabelInitialIds([String(target._id)]);
-    setPackingLabelOpen(true);
-  }, [filteredAndSorted, normalizedManualSuffix, selectedRequest, toast]);
-
-  const handlePrintPackingLabels = useCallback(
+    const handlePrintPackingLabels = useCallback(
     async (selectedRequests: ManufacturerRequest[]) => {
       if (!selectedRequests.length) {
         toast({
@@ -1374,7 +1233,7 @@ export const PackingPageContent = ({
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-col items-stretch overflow-hidden text-gray-800"
+      className="relative w-full text-gray-800 flex flex-col items-stretch"
       onWheelCapture={() => {
         userScrolledRef.current = true;
       }}
@@ -1382,7 +1241,7 @@ export const PackingPageContent = ({
         userScrolledRef.current = true;
       }}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-3 pb-2 pt-1.5">
+      <div className="flex-1">
         {showQueueBar ? (
           <WorksheetQueueSummary
             total={
@@ -1393,6 +1252,7 @@ export const PackingPageContent = ({
             labels={diameterQueueForPacking.labels}
             counts={diameterQueueForPacking.counts}
             variant="compact"
+            className="px-4 pt-2"
             toolbar={
               <div className="inline-flex items-center gap-1 rounded-xl bg-stone-100/90 p-1">
                 <button
@@ -1429,84 +1289,101 @@ export const PackingPageContent = ({
           />
         ) : null}
 
-        {isLoading ? (
-          <div className="pointer-events-none absolute inset-x-3 top-1.5 z-10 flex justify-center">
-            <span className="rounded-md bg-white/90 px-2 py-0.5 text-xs text-slate-500 shadow-sm">
-              Loading...
-            </span>
+        {isLoading ? <WorksheetLoading /> : null}
+
+        {captureHistory.length > 0 ? (
+          <div className="w-full px-4 pt-2 pb-1">
+            <div className="mb-1.5 flex items-center justify-between px-1">
+              <span className="text-xs font-semibold text-slate-500">
+                최근 각인 매칭
+              </span>
+              <button
+                type="button"
+                onClick={() => setCaptureHistory([])}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                전체 지우기
+              </button>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {captureHistory.map((item, idx) => {
+                const caseInfos = item.request?.caseInfos || {};
+                const clinicName = String((caseInfos as any)?.clinicName || "");
+                const patientName = String(
+                  (caseInfos as any)?.patientName || "",
+                );
+                const tooth = String((caseInfos as any)?.tooth || "");
+                const lotSuffix = item.recognizedSuffix || "—";
+                const timeStr = item.capturedAt.toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                });
+                return (
+                  <div
+                    key={`${item.requestId}-${idx}`}
+                    className="min-w-[160px] max-w-[220px] rounded-lg border border-primary-muted bg-primary-soft px-4 py-2 text-sm shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-lg font-bold tracking-widest text-primary-strong">
+                        {lotSuffix}
+                      </span>
+                      <span className="text-xs text-slate-400">{timeStr}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-slate-600">
+                      {item.requestId}
+                      {clinicName ? ` · ${clinicName}` : ""}
+                      {patientName ? ` · ${patientName}` : ""}
+                      {tooth ? ` · ${tooth}` : ""}
+                    </div>
+                    <div className="mt-0.5 text-xs text-primary">
+                      → 포장.발송 이동
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 items-stretch gap-2 overflow-hidden">
-          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden">
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              <PackingLotStation
-                liveUrl={liveUrl}
-                running={running}
-                reachable={reachable}
-                busy={lotBusy}
-                phase={phase}
-                lastLot={lastLot}
-                error={lotError}
-                suffix={suffixInput}
-                matchNote={matchNote}
-                matchingBusy={matchingBusy}
-                onStartWatch={() => {
-                  void startWatch().catch(() => undefined);
-                }}
-                onStopWatch={() => {
-                  void stopWatch().catch(() => undefined);
-                }}
-                onFocus={() => {
-                  void runFocus().catch(() => undefined);
-                }}
-                onRecognize={() => {
-                  void runRecognize().catch(() => undefined);
-                }}
-                onSubmitSuffix={submitSuffix}
-                onPrintSingle={handlePrintSingleFromCode}
-                printingBusy={isPrintingPackingLabels}
-                hasSelectedCard={Boolean(selectedRequest)}
-              />
-            </div>
-
-            {captureHistory.length > 0 ? (
-              <div className="flex shrink-0 items-center gap-2 overflow-x-auto text-[11px] text-stone-500">
-                <span className="shrink-0 font-semibold">최근</span>
-                {captureHistory.map((item, idx) => (
-                  <span
-                    key={`${item.requestId}-${idx}`}
-                    className="shrink-0 rounded-md border border-primary-muted bg-primary-soft px-2 py-0.5 font-mono tracking-widest text-primary-strong"
-                  >
-                    {item.recognizedSuffix || "—"}
-                  </span>
-                ))}
-              </div>
-            ) : null}
+        {isEmpty ? (
+          <div className="flex justify-center py-8">
+            <div className="text-gray-500">의뢰가 없습니다.</div>
           </div>
-
-          <aside className="flex h-full min-h-0 w-[11.5rem] shrink-0 flex-col overflow-hidden">
-            <span ref={sentinelRef} className="sr-only">
-              {visibleCount < filteredAndSorted.length ? "더보기" : ""}
-            </span>
-            <PackingRequestStrip
-              requests={filteredAndSorted}
-              highlightSuffix={normalizedManualSuffix}
-              selectedId={selectedRequestId}
-              onSelect={(req) => {
-                const id = String(req._id || "");
-                if (id && id === selectedRequestId) {
-                  clearSuffixSelection();
-                  return;
-                }
-                setSelectedRequestId(id);
-                const suffix = extractLotSuffix3(req.lotNumber?.value);
-                setSuffixInput(suffix);
-                setMatchNote("");
-              }}
+        ) : !isLoading ? (
+          <>
+            <WorksheetCardGrid
+              requests={paginatedRequests}
+              printedRequestIds={new Set(printedPackingRequestIds)}
+              onDownload={handleDownloadOriginalStl}
+              onOpenPreview={handleOpenPreview}
+              onDeleteCam={() => {}}
+              onDeleteNc={handleDeleteNc}
+              onCloneSample={handleCloneSampleForProduction}
+              onSaveToRnd={handleSaveToRnd}
+              onRollback={handleCardRollback}
+              onApprove={handleCardApprove}
+              onDelete={handleCardDelete}
+              onDone={handleCardDone}
+              onUploadNc={handleUploadByStage}
+              uploadProgress={uploadProgress}
+              isCamStage={false}
+              isMachiningStage={false}
+              uploading={uploading}
+              downloading={downloading}
+              deletingCam={{}}
+              deletingNc={deletingNc}
+              currentStageOrder={currentStageOrder}
+              tabStage="packing"
             />
-          </aside>
-        </div>
+            <div ref={sentinelRef} className="py-4 text-center text-gray-500">
+              {visibleCount >= filteredAndSorted.length
+                ? "모든 의뢰를 표시했습니다."
+                : "스크롤하여 더보기"}
+            </div>
+          </>
+        ) : null}
+
         <PackingLabelPrintDialog
           open={packingLabelOpen}
           onOpenChange={(open) => {
