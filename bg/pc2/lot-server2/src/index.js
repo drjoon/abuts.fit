@@ -1,10 +1,12 @@
 // change-log:
+// - 2026-11-26: 기동 시 package.json 버전을 로그·/health에 남긴다.
 // - 2026-11-23: 기본 자동 감시 off. 상주 스트림으로 부하 완화.
 // - 2026-11-23: 카메라 연동(장치 선택·Grab 프로파일)과 /live.
 // - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
 // - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
 // related files:
 // - bg/pc2/lot-server2/rules.md
+// - bg/pc2/lot-server2/package.json
 // - bg/pc2/lot-server2/src/camera.js
 // - bg/pc2/lot-server2/src/watch.js
 // - bg/pc2/lot-server2/src/ocr/index.js
@@ -15,6 +17,7 @@ process.env.TZ = "Asia/Seoul";
 import http from "http";
 import fs from "fs";
 import path from "path";
+import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import {
   getSelectedDeviceName,
@@ -30,6 +33,8 @@ import { createWatcher } from "./watch.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const APP_VERSION = String(require("../package.json").version || "0.0.0");
 const PAGE = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 
 function loadLocalEnv() {
@@ -177,6 +182,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/health") {
       json(res, 200, {
         ok: true,
+        version: APP_VERSION,
         captureDir: CAPTURE_DIR,
         ffmpeg: resolveFfmpeg(),
         dll: fs.existsSync(path.join(DLL_DIR, "mltcCom.dll")),
@@ -335,7 +341,7 @@ async function main() {
     process.exit(1);
   });
   server.listen(PORT, HOST, () => {
-    log(`listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`);
+    log(`lot-server2 v${APP_VERSION} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`);
     if (AUTO_WATCH) watcher.start();
   });
 }

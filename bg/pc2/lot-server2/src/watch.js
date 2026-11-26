@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: UM Viewer mltcCom + init-failed 시 AF 재시도로 스트림을 안 끊는다.
 // - 2026-11-26: LED+AF 전에 ffmpeg 스트림을 잠시 놓아 ComInitial(init-failed)을 피한다.
 // - 2026-11-26: 현미경 제어 실패 시 exception detail을 로그·UI에 남긴다.
 // - 2026-11-26: 감시 시작·흐림/어두움 시 LED+AF(횟수·간격 상한). 선명 전에 AF를 건다.
@@ -159,8 +160,22 @@ export function createWatcher({
     return frame.score < sharpThreshold || frame.mean < darkMean;
   }
 
+  function isFatalMicroscopeReason(reason) {
+    return [
+      "init-failed",
+      "dll-missing",
+      "etlib-load-failed",
+      "dll-load-failed",
+      "powershell-missing",
+      "need-32bit",
+      "not-windows",
+    ].includes(String(reason || ""));
+  }
+
   async function maybeAssistFocus(frame) {
     if (!needsMicroscopeAssist(frame)) return false;
+    // ComInitial 실패 등은 스트림을 반복해서 끊지 않는다(카메라 busy 폭풍).
+    if (isFatalMicroscopeReason(lastFocus?.reason)) return false;
     if (afAttemptsThisArm >= afMaxPerArm) return false;
     if (Date.now() - lastAfAt < afCooldownMs) return false;
     afAttemptsThisArm += 1;
@@ -230,7 +245,11 @@ export function createWatcher({
   }
 
   async function captureForOcr() {
-    const focus = await runMicroscopePrepare("ocr");
+    // init-failed면 DLL을 다시 건드리지 않고 스트림 프레임만 쓴다.
+    let focus = lastFocus;
+    if (!isFatalMicroscopeReason(focus?.reason)) {
+      focus = await runMicroscopePrepare("ocr");
+    }
     const focused = focusConfirmed(focus);
 
     // 스트림에서 몇 장 모아 선명한 것을 고른다(추가 ffmpeg 없음).

@@ -46,7 +46,7 @@ node src/index.js
 
 ## Windows
 
-초점·LED 제어는 32비트 DLL이라 `SysWOW64` PowerShell이 `vendor/vitiny`의 SDK를 부릅니다. `microscope-ctl.ps1`이 mode 20→12→6을 프로브하고, LED on + 최대 밝기 후 `AF_SINGLE`을 보냅니다. DLL은 ViTiny UM12 SDK와 같고 UM06 SDK와 바이트가 같습니다.
+초점·LED 제어는 32비트 DLL이라 `SysWOW64` PowerShell이 `vendor/vitiny`의 SDK를 부릅니다. `microscope-ctl.ps1`이 mode 20→12→6을 프로브하고, LED on + 최대 밝기 후 `AF_SINGLE`을 보냅니다. `mltcCom.dll`은 **UM Viewer 1.070**(UM10/UM20) 패키지 것이고, `etLib2.dll`/`emxunit.dll`은 UM12 SDK와 동일합니다. `ComInitial`이 `init-failed`면 스트림을 반복 끊지 않습니다.
 
 ## 임계값 (`local.env`)
 
