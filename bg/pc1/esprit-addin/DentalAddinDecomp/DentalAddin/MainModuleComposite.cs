@@ -1002,10 +1002,11 @@ namespace DentalAddin
             // Finish는 Front/Back만. safe split의 Xk는 Turn/Rough 전용이라 Finish 경계를 자르지 않는다.
             double finishOverlapMm = GetFinishSeamOverlapMm();
             double finishHalfOverlapMm = finishOverlapMm / 2.0;
-            // 기계 X는 팁(Front) < 헥스(Back). +offset은 헥스 쪽으로 늘어난다.
-            // Finish_Back 커넥션 끝은 BackPointX(헥스). 예전 -0.20은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
-            // 이 값은 기계 X다. 원뿔 복합체(원뿔 형상 · prcConeTopMm · 헥스 · 시리얼 · 컷오프 · 페이스 드릴 · Face Hole)와 별개. rules.md §7.
-            const double compositeEndOffsetFromBackPointMm = 0.00;
+            // 기계 X는 팁(Front) < 헥스(Back). +offset은 헥스(커넥션) 쪽으로 늘어난다.
+            // Finish_Back 커넥션 끝 = BackPointX + 0.3. ReverseStepOver 첫 패스.
+            // 커프 러프 잔삭이 있어도 커넥션쪽 겹침에서 진입해 D1.0이 미황삭 벽에 바로 안 부딪히게 한다.
+            // 이 값은 기계 X다. 원뿔 복합체와 별개. rules.md §7.
+            const double compositeEndOffsetFromBackPointMm = 0.30;
 
             double finishFrontEndX = splitX;
             string finishFrontEndSource = "Splitline_2-fallback";
@@ -1056,7 +1057,7 @@ namespace DentalAddin
             }
             DentalLogger.Log($"Composite2SplitLine2 - Finish seam 확정: Front.end%={opA.LastPassPercent:F2} (X={finishFrontEndX:F3}, {finishFrontEndSource}), Back.start%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")} (X={finishBackStartX:F3}, {finishBackStartSource}), overlapMm={finishOverlapMm:F3}, guardWarn={startEndBFirstGuardApplied}");
 
-            // 정책: Finish_Back 종료 기준점은 BackPointX (헥스). 0.20mm 헥스 쪽으로 내려 커넥션까지 붙인다.
+            // 정책: Finish_Back 종료(커넥션쪽 시작) = BackPointX + 0.3mm (헥스 안쪽).
             double compositeEndTargetX = finishBackEndX;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -1854,7 +1855,7 @@ namespace DentalAddin
         //   Back   (region BACK2) : Back_Turn [Xk ~ xMax+exit] (기존 Back_Turn 끝 형상 유지)
         //                           Back_Rough [Xk-roughR ~ BackPointX]
         //   Finish                : none/deep Front [팁+0.1 ~ Splitline_2−0.5+0.07]
-        //                           none/deep Back [Splitline_2−0.5−0.07 ~ BackPointX], 스텝은 커넥션 → 포스트 팁
+        //                           none/deep Back [Splitline_2−0.5−0.07 ~ BackPointX+0.3], 스텝은 커넥션 → 포스트 팁
         //   Xk = (BackPointX - FL min_z) + 0.2  (Turn/Rough 경계. Finish seam은 피니시라인)
         // Middle_Turn 끝이 BackPointX + 1.5를 넘으면(커프가 짧음) Xk를 마진 쪽으로 당기지 않고 분할을 포기한다.
         private const string SafeSplitEnableEnv = "ABUTS_SAFE_SPLIT_ENABLE";
@@ -1866,7 +1867,7 @@ namespace DentalAddin
         //   none/deep 경계 = Splitline_2 − 0.5 (팁, X-)
         //   none/deep Front_Finish 끝 = 경계 + 0.07 (헥스)
         //   none/deep Back_Finish 팁쪽 끝 = 경계 − 0.07. 스텝은 커넥션 → 팁
-        //   Back_Finish   커넥션쪽 = BackPointX (헥스. 예전 -0.20은 팁 쪽 1피치)
+        //   Back_Finish   커넥션쪽 = BackPointX + 0.3 (헥스 안. 커프 러프 잔삭 진입 완충)
         //   스텝오버: 커넥션(끝) → 포스트 팁(시작). ReverseStepOverDirection.
         private const double FinishFrontFromTipMm = 0.1;
         private const double FinishPastSplitline2TowardTipMm = 0.5;

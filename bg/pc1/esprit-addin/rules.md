@@ -109,7 +109,7 @@
   - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
   - Middle_Rough 끝 `Xk+0.5`, Middle_Turn 끝 = Rough 끝 + R + 0.2 = `Xk + 0.5 + R + 0.2` (D4 → 2.7). short-cuff extra 없음.
   - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`)
-  - none/deep Back_Finish `[Splitline_2−0.5−0.07 ~ BackPointX]`, Front 끝 = Splitline_2−0.5+0.07. 양쪽 1피치씩 중첩. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 예전 `-0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다.
+  - none/deep Back_Finish `[Splitline_2−0.5−0.07 ~ BackPointX+0.3]`, Front 끝 = Splitline_2−0.5+0.07. 양쪽 1피치씩 중첩. 스텝오버는 커넥션에서 포스트 팁 쪽 (`ReverseStepOverDirection`). 기계 X는 팁 < 헥스. 커넥션쪽 끝 +0.3은 헥스 안쪽 겹침으로, 커프 러프 잔삭이 있어도 D1.0 진입이 미황삭 벽에 바로 안 걸리게 한다.
 - Middle_Turn 끝(`Xk+0.5+R+0.2`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
 - 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5`. 로그 `SafeSplit[...]`.
 - 원칙: Turn은 Rough 끝보다 R+0.2(D4 → 2.2) 더 깎는다. 선행 3D 황삭은 Finish seam보다 0.5mm 더 깎아 D1.0이 미황삭을 물지 않게 한다.
@@ -287,7 +287,7 @@
 - 구간별 끝점 (R = 황삭 공구 반경, D4 → 2.0 / ROUGH_20 D2 → 1.0):
   - Front: Rough 끝 = `Splitline_2 + 0.5`, Turn 끝 = Rough 끝 + R + 0.2 = `Splitline_2 + 0.5 + R + 0.2` (D4 → 2.7). short-cuff extra 없음
   - Middle: Rough 끝 = `Xk + 0.5`. 툴패스 45° 퇴출 = Rough 끝 + R + 0.2 (D4 → 2.2). 프로파일에서 바로 45°로 빠지면 `Turning.prc` XStock+ZStock(0.2+0.2=0.4)만큼 모서리가 팁으로 당겨지므로 체인만 +0.4 (`ExtendMiddleTurnExitForCornerPull`). Back 러프 끝까지의 `ExtendBackTurnFlatPastRough`는 쓰지 않는다. **체인 기준 Turn 끝이 `BackPointX+1.5`를 넘으면 Middle 제거 → Front/Back 2단** (`TryResolveSafeSplitBackZoneX`)
-  - Back: Finish 끝 = `BackPointX`(헥스). Rough 끝 = `BackPointX`(+`3−minZ` if minZ≤2, 또는 §4.12.3 liftEnd). Turn 체인 수평 끝 = 그 러프 끝(또는 45° 뒤 평탄 시작 중 큰 쪽) + R + 0.2 + XStock + ZStock
+  - Back: Finish 끝 = `BackPointX + 0.3`(헥스 안, 커프 러프 잔삭 진입 완충). Rough 끝 = `BackPointX`(+`3−minZ` if minZ≤2, 또는 §4.12.3 liftEnd). Turn 체인 수평 끝 = 그 러프 끝(또는 45° 뒤 평탄 시작 중 큰 쪽) + R + 0.2 + XStock + ZStock
     - 체인은 트림된 프로파일 끝(`EndXValue`, `LowerY`)까지만 쓰고 `ExtendTurning` 꼬리(EndX+Extend 수평, Exit angle 80 상승)는 버린다.
     - 하강 제한 전 클립은 `BackPointX + R + 0.5`(+short-cuff)로 두어 `liftEndX`와 Back_Rough 끝을 바꾸지 않는다. 45°가 이 평탄을 먹으면 제한 뒤에 같은 반지름으로 다시 연장한다 (`ExtendBackTurnFlatPastRough`).
     - `Turning.prc` XStock+ZStock(0.2+0.2)만큼 툴패스 45도 모서리가 tip 쪽으로 당겨지므로 체인에만 더한다(`ResolveTurningExitStockPullMm`). liftEnd≈러프 끝인 가파른 커프는 평탄이 짧아 Middle과 같이 XStock도 당긴다. ZStock만 보정하면 툴패스가 R(=2.0)에서 끝나 D4가 원소재 어깨를 문다. 툴패스에 남는 수평은 R+0.2.
@@ -444,14 +444,14 @@
 
 - **원뿔 복합체**: 원뿔 형상 · `prcConeTopMm` · 헥스(1st·Deburr·Deburr2) · 시리얼 · 컷오프 · 페이스 드릴(Connection G83, Face Hole G83과 동일) · Face Hole 스텝 드릴
 - **금지**: 원뿔 상단만 올리거나 11° `W` 구간만 끼워 헥스 Z를 남기기. 원뿔만 올리면 헥스가 픽스쳐에 걸린다. 2026-10-29 0.203mm만 맞춘 단축은 스크류홀이 어긋나 되돌렸다(`89f47c532`).
-- **원뿔 복합체 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음). T41=`D6.0*A90`. 이 깊이만 쓴다. 더 넣으면 90° 콘 때문에 베벨 폭이 같이 커진다. Front Face용 가산(`#524`) 금지. 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX`). 백터닝 시작 11° 리드인(아래). Connection Rough(T0202).
+- **원뿔 복합체 밖**: Face Hole 센터드릴 `Z[#523+1.33]`(#520 없음). T41=`D6.0*A90`. 이 깊이만 쓴다. 더 넣으면 90° 콘 때문에 베벨 폭이 같이 커진다. Front Face용 가산(`#524`) 금지. 퇴피 `Z[#520-0.4]`. Finish_Back X(`BackPointX+0.3`). 백터닝 시작 11° 리드인(아래). Connection Rough(T0202).
 - **11° 면**: 원점 직경(`originDiameter`, STL Z=0) 직상방. 덴티움 0.33, 덴티스 SQ·One-Q·메가젠 AnyOne 0.4, 그 외 Regular RH 0.3. STL `prcConeHeightMm`과 같다.
 - **Finish 시작 (Regular RH 선삭)**: 11° 원뿔 진입은 원점−`prcConeTopMm`. DIO·오스템 TS·네오 `−0.3`, 덴티움 `−0.33`, 덴티스·메가젠 `−0.4`. 예전 시작(−0.038/−0.067/−0.137/−0.138)은 11° 면을 비워 턱이 남았다. 2026-10-30 일괄: DIO·오스템·네오·메가젠 Δ=−0.262, 덴티움·덴티스 Δ=−0.263. 끼워 넣었던 11° `W0.262`는 뺐다.
 - **백터닝 시작 11° 리드인 (2026-10-30)**: T0303/T0404 B-Turn(Rough U0.1·Finish·Final Deburr)은 팁→헥스(+W). 시작만 원점−`prcConeTopMm`−0.2(팁)로 올리고 11°는 유지. 원뿔 복합체는 그대로. **편측 11°**(축 기준, 양측 22° 아님). X는 직경. `ΔX=2×ΔZ×tan(11°)`, `ΔZ=0.2` → `ΔX≈0.078`. `G1 X{면+0.078}` 뒤 `G1 X{면} W0.2`. Face Hole PRC에는 11° 백터닝이 없다(페이스 선삭·센터드릴·스텝 드릴만). 미니·내로우도 같은 Δ.
 - **경로**: 고치는 파일은 `bg/pc1/esprit-addin/AcroDent/` 만. `.archive/cam/Acrodent/타사 커스텀 nc 참고용` 은 참고 자료라 수정하지 않는다.
 - **복사**: Esprit은 운영 PC 애드인 `AcroDent`만 읽는다. git을 바꿔도 이 폴더를 운영 PC에 복사하기 전에는 NC에 안 들어간다.
 - **NC 주석**: 장비로 나가는 주석은 한 쌍의 `()` 안, ASCII, 한 줄 80자 이내. FANUC i는 한 블록 약 128자라 긴 NOTE가 BG10900 FORMAT이 된다.
-- **Finish_Back**: 커넥션 끝 = `BackPointX`(헥스). 예전 `−0.20`은 헥스에서 팁 쪽 1피치라 커넥션 직전에서 끊겼다. 이건 기계 X이고 원뿔 복합체와 별개다.
+- **Finish_Back**: 커넥션 끝 = `BackPointX + 0.3`(헥스 안). 커프 러프 잔삭 시 D1.0 진입 완충. `compositeEndOffsetFromBackPointMm = 0.30`. 기계 X이고 원뿔 복합체와 별개다.
 - **임플란트 추가**: `web/backend/services/abutmentStl/cuffConnectionSpecs.js`에 `originDiameter`·`taperHeightMm`·`prcConeTopMm`을 등록하고, 이 PRC의 11° 상단이 그 높이와 같은지 확인한다. Regular RH는 덴티움 0.33, 덴티스·메가젠 0.4, 그 외 0.3. Z를 바꾸면 원뿔 복합체를 같이 검증한다.
 - **미니·내로우**: 11° 면은 아직 Regular처럼 안 맞췄다. 스펙이 있으면 임시로 Z_a+0.1. 샘플이 들어와 spec-pending으로 처리할 때 준비 카드에 「PRC와 STL 11° 콘 설정을 다시 하세요」가 뜬다. 그때 Finish 상단과 STL `prcConeTopMm`을 같이 맞추고, 맞추면 원뿔 복합체 Z도 같은 Δ로 옮긴다.
 
