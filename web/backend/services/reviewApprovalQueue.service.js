@@ -24,7 +24,10 @@
  *   - BG 앱 트리거:         Esprit(request 단계), CAM 후처리(cam 단계) 등
  *
  * 주의:
- *   - 큐 워커는 단일 프로세스 내에서 직렬로 실행된다.
+ *   - 큐 워커는 단일 프로세스 내에서 직렬로 실행된다
+ *     (`processNextItem` 체인 + 워커 tick 잠금).
+ *   - CAM 배정/재배치/lot 은 문서 전체 save 가 아니라 필드 $set 만 쓴다
+ *     (병렬 REQUEST Esprit ncBind 를 덮어쓰지 않기 위함).
  *   - 다중 인스턴스 환경을 대비해 MongoDB 원자적 findOneAndUpdate로 잠금(lock)한다.
  */
 
@@ -276,12 +279,31 @@ export async function enqueueApproval({
 }
 
 /**
+ * 프로세스 내 직렬화.
+ * enqueue 직후 `void processNextItem()` 와 워커 tick 이 동시에 돌면
+ * REQUEST(Esprit ncBind $set) 와 CAM(request.save) 이 같은 의뢰에서 레이스한다.
+ * EBS: GDVRSCJK — CAM save 가 ncBind 를 지워 NC 콜백이 Ignored 됨.
+ */
+let _processChain = Promise.resolve();
+
+/**
  * 큐에서 다음 PENDING 항목을 하나 꺼내 처리한다.
  *
  * 원자적 findOneAndUpdate로 잠금(PROCESSING)을 획득하여 중복 처리를 방지한다.
  * 처리 중 오류 시 FAILED로 기록하고 워크시트에 app-event를 발행한다.
+ * 같은 Node 프로세스에서는 한 번에 하나만 실행한다(설계상 직렬).
  */
 export async function processNextItem() {
+  const run = _processChain.then(() => processNextItemUnlocked());
+  // 실패해도 체인을 끊지 않는다.
+  _processChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function processNextItemUnlocked() {
   const now = new Date();
   const lockExpiry = new Date(now.getTime() + LOCK_TIMEOUT_MS);
 
@@ -510,6 +532,8 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
 
   let selectedMachineId = existingIsActive ? existingMachineId : "";
 
+  // 문서 전체 save() 금지: REQUEST_STAGE 가 넣은 productionSchedule.ncBind 를
+  // stale in-memory 문서로 덮어쓰면 NC 콜백이 Ignored 된다. 필드만 $set.
   if (!selectedMachineId) {
     const selected = await chooseMachineForCamMachining({
       request,
@@ -526,26 +550,34 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
       requestMongoId,
       request,
     });
-    request.productionSchedule.queuePosition =
+    const queuePosition =
       Number.isFinite(Number(policyQueuePosition)) &&
       Number(policyQueuePosition) > 0
         ? Number(policyQueuePosition)
         : selected.queuePosition;
-
+    request.productionSchedule.queuePosition = queuePosition;
     request.assignedMachine = selected.machineId;
+
+    const $set = {
+      assignedMachine: selected.machineId,
+      "productionSchedule.assignedMachine": selected.machineId,
+      "productionSchedule.queuePosition": queuePosition,
+    };
     if (selected.diameterGroup) {
       request.productionSchedule.diameterGroup = selected.diameterGroup;
+      $set["productionSchedule.diameterGroup"] = selected.diameterGroup;
     }
     if (Number.isFinite(selected.diameter) && selected.diameter > 0) {
       request.productionSchedule.diameter = selected.diameter;
+      $set["productionSchedule.diameter"] = selected.diameter;
     }
-    await request.save();
+    await Request.updateOne({ _id: request._id }, { $set });
     selectedMachineId = selected.machineId;
 
     console.log("[ReviewApprovalQueue] CAM task: assigned machine", {
       requestId,
       machineId: selected.machineId,
-      queuePosition: request.productionSchedule.queuePosition,
+      queuePosition,
       diameterGroup: selected.diameterGroup || null,
       replacedGhost: Boolean(existingMachineId && !existingIsActive),
       previousMachineId: existingMachineId || null,
@@ -563,7 +595,14 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     ) {
       request.productionSchedule = request.productionSchedule || {};
       request.productionSchedule.queuePosition = Number(policyQueuePosition);
-      await request.save();
+      await Request.updateOne(
+        { _id: request._id },
+        {
+          $set: {
+            "productionSchedule.queuePosition": Number(policyQueuePosition),
+          },
+        },
+      );
       console.log("[ReviewApprovalQueue] CAM task: reordered by policy", {
         requestId,
         machineId: selectedMachineId,
@@ -586,7 +625,10 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     const heatNo = String(cncMachine?.currentMaterial?.heatNo || "").trim();
     if (heatNo) {
       request.lotNumber.material = heatNo;
-      await request.save();
+      await Request.updateOne(
+        { _id: request._id },
+        { $set: { "lotNumber.material": heatNo } },
+      );
       console.log("[ReviewApprovalQueue] CAM task: set lot material", {
         requestId,
         heatNo,

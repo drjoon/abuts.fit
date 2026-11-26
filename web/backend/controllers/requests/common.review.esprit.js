@@ -219,6 +219,11 @@ export async function triggerEspritForNc({
     request.productionSchedule.ncBind = ncBind;
     const { default: Request } = await import("../../models/request.model.js");
     await Request.updateOne({ _id: request._id }, { $set: { "productionSchedule.ncBind": ncBind } });
+    console.log("[ESPRIT] ncBind set", {
+      requestId: request?.requestId,
+      generation: ncBind.generation,
+      filledS3Key: ncBind.filledS3Key,
+    });
   }
   const hexRotationMode = resolveCaseInfosHexRotationMode(request);
   const frontPoint = await ensureFiniteFrontPoint(request);

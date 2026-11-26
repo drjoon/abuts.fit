@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // change-log:
+// - 2026-11-26: 큐 응답에서 NC 있는데 ncPreload=GENERATING이면 NONE으로 치유(완료 콜백 레이스).
 // - 2026-08-21: Next Up 수동 장비 이동 API(moveProductionQueueRequest) — NC $unset 후 항상 CAM/NC 재생성.
 // - 2026-08-26: 재배정 시 소재 직경 불일치 NC는 $unset 후 Esprit force 재생성.
 // - 2026-08-07: 재배정을 소재≥maxDiameter 커버 + 최소 소재 우선으로 통일 (D6 exact-group skip 수정).
@@ -58,6 +59,7 @@ import {
   isDummySampleExcludedFromDiameterRetrigger,
   shouldRetriggerEspritForMaterialDiameter,
 } from "../requests/espritDiameterRetrigger.utils.js";
+import { resolveQueueNcPreload } from "../../utils/queueNcPreload.js";
 
 function isMachineOnlineStatus(status) {
   const s = String(status || "")
@@ -476,6 +478,7 @@ export async function getProductionQueues(req, res) {
       (Array.isArray(requests) ? requests : []).map((r) => r?.businessAnchorId),
     );
 
+    const stuckNcPreloadHealIds = [];
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
         requestMongoId: reqItem?._id ? String(reqItem._id) : null,
@@ -505,14 +508,7 @@ export async function getProductionQueues(req, res) {
               s3Bucket: reqItem.caseInfos.ncFile.s3Bucket,
             }
           : null,
-        ncPreload: reqItem.productionSchedule?.ncPreload
-          ? {
-              status: reqItem.productionSchedule.ncPreload.status,
-              machineId: reqItem.productionSchedule.ncPreload.machineId,
-              updatedAt: reqItem.productionSchedule.ncPreload.updatedAt,
-              error: reqItem.productionSchedule.ncPreload.error,
-            }
-          : null,
+        ncPreload: resolveQueueNcPreload(reqItem, stuckNcPreloadHealIds),
         machiningRecord: reqItem.productionSchedule?.machiningRecord
           ? {
               status: reqItem.productionSchedule.machiningRecord.status,
@@ -560,6 +556,33 @@ export async function getProductionQueues(req, res) {
     }
 
     const expressRebalanceAlert = await getLastExpressDeadlineRebalanceAlert();
+
+    if (stuckNcPreloadHealIds.length > 0) {
+      const uniqueIds = [
+        ...new Set(stuckNcPreloadHealIds.map((id) => String(id || "").trim()).filter(Boolean)),
+      ];
+      void Request.updateMany(
+        {
+          _id: { $in: uniqueIds },
+          "caseInfos.ncFile.s3Key": { $exists: true, $nin: [null, ""] },
+          "productionSchedule.ncPreload.status": {
+            $in: ["GENERATING", "UPLOADING"],
+          },
+        },
+        {
+          $set: {
+            "productionSchedule.ncPreload.status": "NONE",
+            "productionSchedule.ncPreload.updatedAt": new Date(),
+            "productionSchedule.ncPreload.error": null,
+          },
+        },
+      ).catch((err) => {
+        console.warn(
+          "[getProductionQueues] stuck ncPreload heal failed:",
+          err?.message || err,
+        );
+      });
+    }
 
     return res.status(200).json({
       success: true,

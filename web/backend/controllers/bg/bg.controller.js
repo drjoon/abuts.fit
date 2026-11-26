@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-26: 무시된 3-nc(세대 불일치)도 ncPreload GENERATING을 풀어「CAM 생성중」고착을 막는다.
 // - 2026-10-22: 중단된 filled STL(stlPreload CANCELLED)의 늦은 2-filled는 저장하지 않는다.
 // - 2026-10-22: 더미 filled STL 재생성 성공 시 예약된 CAM을 더미 의뢰에 잇는다. 실패하면 CAM은 시작하지 않는다.
 // - 2026-10-21: 피니시라인 1mm 미만은 짧은 커프 명단에 남긴다(응답 후).
@@ -972,6 +973,65 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       designGeneration: request?.caseInfos?.designGeneration || null,
       ncBind: request?.productionSchedule?.ncBind || null,
     });
+    // NC는 저장하지 않지만 GENERATING 블러는 반드시 푼다(PC는 HTTP 200을 성공으로 본다).
+    const ignoreNow = new Date();
+    const ignoreError = "다른 디자인 세대의 NC는 저장하지 않습니다.";
+    try {
+      await Request.updateOne(
+        {
+          _id: request._id,
+          "productionSchedule.ncPreload.status": {
+            $in: ["GENERATING", "UPLOADING"],
+          },
+        },
+        {
+          $set: {
+            "productionSchedule.ncPreload.status": "FAILED",
+            "productionSchedule.ncPreload.updatedAt": ignoreNow,
+            "productionSchedule.ncPreload.error": ignoreError,
+          },
+        },
+      );
+    } catch (healErr) {
+      console.warn(
+        "[BG-Callback] ignored NC GENERATING heal failed:",
+        healErr?.message || healErr,
+      );
+    }
+    try {
+      emitAppEventToRoles(["manufacturer", "admin"], "request:cam-regeneration-cancelled", {
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+        status: "FAILED",
+        error: ignoreError,
+        reason: "design_generation_mismatch",
+        request: {
+          requestId: request?.requestId || null,
+          _id: request?._id || null,
+          caseInfos: { ncFile: request?.caseInfos?.ncFile || null },
+          productionSchedule: {
+            ncPreload: {
+              status: "FAILED",
+              updatedAt: ignoreNow,
+              error: ignoreError,
+            },
+          },
+        },
+      });
+      emitBgRuntimeStatus({
+        requestId: request?.requestId || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+        source: "3-nc",
+        stage: "cam",
+        status: "failed",
+        label: "NC 세대 불일치",
+        tone: "rose",
+        clear: true,
+        metadata: { error: ignoreError, ignored: true },
+      });
+    } catch {
+      // ignore emit failures
+    }
     return res.status(200).json(
       new ApiResponse(
         200,

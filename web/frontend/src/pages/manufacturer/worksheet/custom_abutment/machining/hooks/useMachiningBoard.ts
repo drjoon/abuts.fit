@@ -7,6 +7,8 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // change-log:
+// - 2026-11-26: CAM GENERATING 폴링에 10분·틱 상한(무한 refetch 금지).
+// - 2026-11-26: CAM 완료 알림(bg-file-processed)·GENERATING 폴링 — stage-changed 유실 시 「CAM 생성중」고착 해제.
 // - 2026-10-31: 자동가공 ON + Now Playing 비면 Next Up 가능 건을 바로 시작한다.
 // - 2026-10-20: 예약 관리 목록에서 Now Playing(가공중) 건을 제외해 Next Up과 맞춘다.
 // - 2026-10-13: 장비 알람 지우기는 같은 가공 오류의 재표시를 막는다.
@@ -38,6 +40,7 @@ import {
   onCncMachiningTick,
   onCncMachiningStarted,
   onCncMachineSettingsChanged,
+  onNotification,
 } from "@/shared/realtime/socket";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -80,7 +83,36 @@ import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hoo
 import {
   markNcRegenerationPending,
   consumeNcRegenerationPending,
+  reconcileNcRegenerationPending,
+  isNcRegenerationPending,
 } from "../../utils/regenerationPending";
+
+const CAM_PENDING_POLL_MS = 4000;
+/** GENERATING 폴링 시간 상한 — 넘으면 refetch 중단(오버레이는 유지, 중지로 해제) */
+const CAM_PENDING_POLL_MAX_MS = 10 * 60_000;
+const CAM_PENDING_POLL_MAX_TICKS = Math.ceil(
+  CAM_PENDING_POLL_MAX_MS / CAM_PENDING_POLL_MS,
+);
+
+function shouldPollCamQueueItem(item: any, now = Date.now()) {
+  const requestId = String(item?.requestId || "").trim();
+  // in-memory pending은 NC_WORK_PENDING_TIMEOUT_MS에서 끊김
+  if (requestId && isNcRegenerationPending(requestId, now)) return true;
+  const preload =
+    item?.ncPreload && typeof item.ncPreload === "object"
+      ? item.ncPreload
+      : item?.productionSchedule?.ncPreload &&
+          typeof item.productionSchedule.ncPreload === "object"
+        ? item.productionSchedule.ncPreload
+        : null;
+  const status = String(preload?.status || "")
+    .trim()
+    .toUpperCase();
+  if (status !== "GENERATING" && status !== "UPLOADING") return false;
+  const updatedMs = new Date(preload?.updatedAt || 0).getTime();
+  if (!Number.isFinite(updatedMs) || updatedMs <= 0) return true;
+  return now - updatedMs <= CAM_PENDING_POLL_MAX_MS;
+}
 
 const isMachiningStatus = (status?: string) => {
   const s = String(status || "").trim();
@@ -1002,9 +1034,11 @@ export const useMachiningBoard = ({
       applyExpressRebalanceAlert(body?.meta?.expressRebalanceAlert);
 
       const normalized: QueueMap = {};
+      const flatRows: any[] = [];
       Object.entries(map || {}).forEach(([mid, list]) => {
         const arr = Array.isArray(list) ? list : [];
         normalized[mid] = arr.map((item: any) => {
+          flatRows.push(item);
           const lotPart = String(
             item?.lotNumber?.value ||
               item?.lotPart ||
@@ -1027,6 +1061,7 @@ export const useMachiningBoard = ({
           };
         });
       });
+      reconcileNcRegenerationPending(flatRows);
       setQueueMap(normalized);
       syncQueueErrorAlerts(normalized);
       reconcileMachiningTimersFromQueues(normalized);
@@ -1581,6 +1616,128 @@ export const useMachiningBoard = ({
       }
     };
   }, []);
+
+  const queueMapRef = useRef<QueueMap>({});
+  useEffect(() => {
+    queueMapRef.current = queueMap;
+  }, [queueMap]);
+
+  // stage-changed 소켓만 빠지고 NC는 DB에 있을 때 「CAM 생성중」고스트를 폴링으로 푼다.
+  // 시간·틱 상한으로 무한 refetch를 막는다(no-infinite-loop).
+  useEffect(() => {
+    if (!token) return;
+    let inFlight = false;
+    let consecutiveTicks = 0;
+    const id = window.setInterval(() => {
+      if (inFlight) return;
+      const now = Date.now();
+      const map = queueMapRef.current || {};
+      const needsCamPoll = Object.values(map).some((list) =>
+        (Array.isArray(list) ? list : []).some((item: any) =>
+          shouldPollCamQueueItem(item, now),
+        ),
+      );
+      if (!needsCamPoll) {
+        consecutiveTicks = 0;
+        return;
+      }
+      if (consecutiveTicks >= CAM_PENDING_POLL_MAX_TICKS) return;
+      consecutiveTicks += 1;
+      inFlight = true;
+      void Promise.resolve(refreshProductionQueues()).finally(() => {
+        inFlight = false;
+      });
+    }, CAM_PENDING_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [token, refreshProductionQueues]);
+
+  // notification 경로(알림) — app-event stage-changed와 별채널. 한쪽만 와도 큐 블러를 푼다.
+  useEffect(() => {
+    if (!token) return;
+    const unsub = onNotification((notification: any) => {
+      const type = String(notification?.type || "").trim();
+      if (type !== "bg-file-processed") return;
+      const sourceStep = String(notification?.data?.sourceStep || "").trim();
+      if (sourceStep !== "3-nc") return;
+      const status = String(notification?.data?.status || "")
+        .trim()
+        .toLowerCase();
+      if (status !== "success") return;
+      const requestId = String(notification?.data?.requestId || "").trim();
+      const requestMongoId = String(
+        notification?.data?.requestMongoId || "",
+      ).trim();
+      if (!requestId && !requestMongoId) return;
+
+      const incomingS3Key = String(notification?.data?.s3Key || "").trim();
+      const incomingFileName = String(notification?.data?.fileName || "").trim();
+      const incomingUploadedAt = notification?.data?.uploadedAt || null;
+      const incomingFileSize = notification?.data?.fileSize;
+      const nowIso = new Date().toISOString();
+
+      if (requestId) consumeNcRegenerationPending(requestId);
+
+      if (incomingS3Key) {
+        const normalizedFilePath = incomingFileName
+          ? incomingFileName.replace(/^3-nc\//i, "")
+          : "";
+        patchQueueNcMetaFromRequest({
+          requestId,
+          _id: requestMongoId,
+          caseInfos: {
+            ncFile: {
+              s3Key: incomingS3Key,
+              ...(normalizedFilePath ? { filePath: normalizedFilePath } : {}),
+              uploadedAt: incomingUploadedAt || nowIso,
+              ...(incomingFileSize != null ? { fileSize: incomingFileSize } : {}),
+            },
+          },
+          productionSchedule: {
+            ncPreload: { status: "NONE", updatedAt: nowIso },
+          },
+        });
+      } else {
+        // s3Key 없는 성공 통지도 GENERATING만 먼저 풀고, 곧 이은 큐 refetch로 NC를 맞춘다.
+        setQueueMap((prev) => {
+          let changed = false;
+          const next: QueueMap = {};
+          Object.entries(prev || {}).forEach(([machineId, list]) => {
+            const arr = Array.isArray(list) ? list : [];
+            const patched = arr.map((item: any) => {
+              const itemRequestId = String(item?.requestId || "").trim();
+              const itemMongoId = String(item?.requestMongoId || "").trim();
+              const isTarget =
+                (requestId && itemRequestId === requestId) ||
+                (requestMongoId && itemMongoId === requestMongoId);
+              if (!isTarget) return item;
+              changed = true;
+              return {
+                ...item,
+                ncPreload: {
+                  ...(item?.ncPreload && typeof item.ncPreload === "object"
+                    ? item.ncPreload
+                    : {}),
+                  status: "NONE",
+                  updatedAt: nowIso,
+                  error: null,
+                },
+              };
+            });
+            next[machineId] = changed ? patched : arr;
+          });
+          return changed ? next : prev;
+        });
+      }
+      scheduleNcQueueVerifyRefresh();
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [
+    token,
+    patchQueueNcMetaFromRequest,
+    scheduleNcQueueVerifyRefresh,
+  ]);
 
   useAppEventListener({
     enabled: Boolean(token),
