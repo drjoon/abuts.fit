@@ -1,593 +1,381 @@
 // change-log:
-// - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
+// - 2026-11-26: SIGINT/SIGTERM/exit 때 감시가 켠 UM LED를 끈다(watcher.shutdownSync).
+// - 2026-11-26: POST /focus(하드웨어 AF, UM 시리얼). /health에 시리얼 AF 상태.
+// - 2026-11-26: 기동 시 package.json 버전을 로그·/health에 남긴다.
+// - 2026-11-23: 기본 자동 감시 off. 상주 스트림으로 부하 완화.
+// - 2026-11-23: 카메라 연동(장치 선택·Grab 프로파일)과 /live.
+// - 2026-11-23: 페달 없이 영상 감시 → 정지·선명 시 로컬 OCR(영문 3글자).
+// - 2026-11-21: 현미경 촬영 저장 서버. 인식 API는 호출하지 않는다.
 // related files:
-// - bg/pc2/lot-server/rules.md
-// - web/backend/controllers/ai/lotCapture.controller.js
-import chokidar from "chokidar";
-import dotenv from "dotenv";
-import sharp from "sharp";
-import path from "path";
-import fs from "fs/promises";
-import { createWriteStream } from "fs";
-import { fileURLToPath } from "url";
-import os from "os";
+// - bg/pc2/lot-server2/rules.md
+// - bg/pc2/lot-server2/package.json
+// - bg/pc2/lot-server2/src/camera.js
+// - bg/pc2/lot-server2/src/watch.js
+// - bg/pc2/lot-server2/src/um-serial.js
+// - bg/pc2/lot-server2/src/ocr/index.js
+// - bg/pc2/lot-server2/public/index.html
 
 process.env.TZ = "Asia/Seoul";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
-const LOGS_DIR = path.resolve(__dirname, "logs");
-let LOG_FILE = path.resolve(LOGS_DIR, "latest.txt");
-let logStream = null;
+import http from "http";
+import fs from "fs";
+import path from "path";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import {
+  getSelectedDeviceName,
+  resolveDevice,
+  resolveFfmpeg,
+  setSelectedDeviceName,
+} from "./camera.js";
+import { captureAndSave } from "./capture.js";
+import { DLL_DIR } from "./focus.js";
+import { IMAGE_NAME } from "./names.js";
+import { disposeOcrWorker } from "./ocr/index.js";
+import { createWatcher } from "./watch.js";
 
-async function initLogStream() {
-  try {
-    await fs.mkdir(LOGS_DIR, { recursive: true });
-  } catch {}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const APP_VERSION = String(require("../package.json").version || "0.0.0");
+const PAGE = fs.readFileSync(path.join(ROOT, "public", "index.html"));
 
-  if (logStream && logStream.writable) {
-    logStream.end();
+function loadLocalEnv() {
+  const envPath = path.join(ROOT, "local.env");
+  if (!fs.existsSync(envPath)) return;
+  const text = fs.readFileSync(envPath, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (key && process.env[key] === undefined) process.env[key] = value;
   }
-
-  logStream = createWriteStream(LOG_FILE, { flags: "a" });
-  logStream.on("error", (err) => {
-    console.error("[lot-server] log stream error", err);
-  });
 }
 
-async function rotateLogFile() {
-  if (!logStream || !logStream.writable) return;
+loadLocalEnv();
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const archivedLog = path.resolve(LOGS_DIR, `${timestamp}.txt`);
+const PORT = Number(process.env.PORT || 8012);
+const HOST = process.env.HOST || "127.0.0.1";
+const CAPTURE_DIR =
+  process.env.LOT_CAPTURE_DIR ||
+  (process.platform === "win32"
+    ? "D:\\bg\\lot-server2\\images"
+    : path.join(ROOT, "captures"));
+// 기본은 수동 시작. 자동 감시+Continuity면 Cursor/머신이 버거울 수 있다.
+const AUTO_WATCH = String(process.env.LOT_AUTO_WATCH || "0") === "1";
 
-  logStream.end();
+const LOGS_DIR = path.join(ROOT, "logs");
+const LOG_FILE = path.join(LOGS_DIR, "latest.txt");
+fs.mkdirSync(LOGS_DIR, { recursive: true });
+const logStream = fs.createWriteStream(LOG_FILE, { flags: "a" });
 
-  try {
-    const exists = await fs
-      .access(LOG_FILE)
-      .then(() => true)
-      .catch(() => false);
-    if (exists) {
-      await fs.rename(LOG_FILE, archivedLog);
-      console.log(`[lot-server] log rotated: ${archivedLog}`);
-    }
-  } catch (err) {
-    console.error("[lot-server] log rotation failed", err);
-  }
-
-  await initLogStream();
-  logLine("[lot-server] log file rotated and reset");
-}
-
-dotenv.config({
-  path: path.resolve(process.cwd(), "local.env"),
-  override: true,
-});
-
-const WATCH_DIR = process.env.LOT_WATCH_DIR || "C:/abuts.fit/images";
-const PROCESSED_DIR =
-  process.env.LOT_PROCESSED_DIR || path.join(WATCH_DIR, "_processed");
-const FAILED_DIR =
-  process.env.LOT_FAILED_DIR || path.join(WATCH_DIR, "_failed");
-
-const BACKEND_BASE = (
-  process.env.BACKEND_BASE || "http://localhost:8080"
-).replace(/\/+$/, "");
-
-const LOT_SHARED_SECRET = String(process.env.LOT_SHARED_SECRET || "").trim();
-
-const IP_DISCOVERY_URL = String(
-  process.env.LOT_IP_DISCOVERY_URL || "https://api.ipify.org",
-).trim();
-const IP_DISCOVERY_TIMEOUT_MS = Number(
-  process.env.LOT_IP_DISCOVERY_TIMEOUT_MS || 3000,
-);
-const ALLOW_IPS = String(
-  process.env.ALLOW_IPS || process.env.LOT_ALLOW_IPS || "",
-)
-  .split(",")
-  .map((ip) => ip.trim())
-  .filter(Boolean);
-
-const WAIT_STABLE_MS = Number(process.env.LOT_WAIT_STABLE_MS || 800);
-
-const TTL_DAYS = Number(process.env.LOT_LOCAL_TTL_DAYS || 15);
-const PROCESS_ATTEMPTS = Math.max(
-  1,
-  Number(process.env.LOT_PROCESS_ATTEMPTS || 2),
-);
-const PROCESS_RETRY_DELAY_MS = Math.max(
-  0,
-  Number(process.env.LOT_PROCESS_RETRY_DELAY_MS || 1000),
-);
-const RESCAN_INTERVAL_MS = Math.max(
-  0,
-  Number(process.env.LOT_RESCAN_INTERVAL_MS || 0),
-);
-
-const inflightFiles = new Set();
-
-async function ensureDir(p) {
-  await fs.mkdir(p, { recursive: true });
-}
-
-function logLine(message) {
+function log(message) {
   const line = `${new Date().toISOString()} ${message}`;
   console.log(line);
-  if (logStream.writable) {
-    logStream.write(`${line}\n`, (err) => {
-      if (err) {
-        console.error("[lot-server] failed to write log line", err);
+  if (logStream.writable) logStream.write(`${line}\n`);
+}
+
+function json(res, status, body) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store",
+  });
+  res.end(payload);
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > 64_000) {
+        reject(new Error("payload"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8").trim();
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch (err) {
+        reject(err);
       }
     });
-  }
-}
-
-function isImageFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  return [".jpg", ".jpeg", ".png"].includes(ext);
-}
-
-function formatError(err) {
-  if (!err) return "unknown error";
-  const parts = [];
-  if (err?.message) parts.push(err.message);
-  if (err?.cause?.message) parts.push(`cause=${err.cause.message}`);
-  if (err?.code) parts.push(`code=${err.code}`);
-  return parts.length ? parts.join(" ") : String(err);
-}
-
-function extractRecognizedSuffixFromFileName(fileName) {
-  const base = path.basename(
-    String(fileName || ""),
-    path.extname(String(fileName || "")),
-  );
-  const upper = base.toUpperCase();
-  const matches = upper.match(/[A-Z]{3}/g) || [];
-  for (let i = matches.length - 1; i >= 0; i -= 1) {
-    const token = String(matches[i] || "").trim();
-    if (token && token !== "CAP") {
-      return token;
-    }
-  }
-  return "";
-}
-
-async function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function waitForStableFile(filePath, { timeoutMs = 15000 } = {}) {
-  const start = Date.now();
-  let lastSize = -1;
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const stat = await fs.stat(filePath);
-      const size = stat.size;
-      if (size > 0 && size === lastSize) {
-        return true;
-      }
-      lastSize = size;
-    } catch {
-      // ignore
-    }
-    await sleep(WAIT_STABLE_MS);
-  }
-  return false;
-}
-
-async function resizeToOneFifth(inputPath) {
-  const buf = await fs.readFile(inputPath);
-  const img = sharp(buf);
-  const meta = await img.metadata();
-  const width = meta.width || null;
-  const height = meta.height || null;
-  if (!width || !height) {
-    return { buffer: buf, mimeType: "application/octet-stream" };
-  }
-
-  const resized = await img
-    .resize({
-      width: 1280,
-      height: 1280,
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .jpeg({ quality: 85 })
-    .toBuffer();
-
-  return { buffer: resized, mimeType: "image/jpeg" };
-}
-
-async function apiPostJson(url, json) {
-  const headers = { "Content-Type": "application/json" };
-  if (LOT_SHARED_SECRET) headers["X-Bridge-Secret"] = LOT_SHARED_SECRET;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(json),
+    req.on("error", reject);
   });
+}
 
-  const text = await res.text().catch(() => "");
-  let body = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = null;
+let busy = false;
+
+if (process.env.MICROSCOPE_DEVICE) {
+  setSelectedDeviceName(process.env.MICROSCOPE_DEVICE);
+}
+
+const watcher = createWatcher({
+  captureDir: CAPTURE_DIR,
+  deviceName: getSelectedDeviceName(),
+  log,
+});
+
+async function shoot(deviceName) {
+  if (busy) {
+    const err = new Error("다른 작업이 진행 중입니다.");
+    err.code = "busy";
+    throw err;
   }
-
-  return { ok: res.ok, status: res.status, body, text };
-}
-
-async function uploadToPresignedUrl({ uploadUrl, mimeType, buffer }) {
-  const res = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": mimeType || "application/octet-stream" },
-    body: buffer,
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`S3 PUT failed (${res.status}): ${t || ""}`.trim());
-  }
-}
-
-async function purgeOldFilesInDir(dirPath, days) {
+  busy = true;
   try {
-    const ttlMs = Math.abs(Number(days) || 0) * 24 * 60 * 60 * 1000;
-    if (!ttlMs) return;
-    const now = Date.now();
-    const entries = await fs
-      .readdir(dirPath, { withFileTypes: true })
-      .catch(() => []);
-    for (const ent of entries) {
-      try {
-        if (!ent.isFile()) continue;
-        const full = path.join(dirPath, ent.name);
-        const st = await fs.stat(full);
-        if (now - st.mtimeMs > ttlMs) {
-          await fs.unlink(full).catch(() => {});
-        }
-      } catch {}
-    }
-  } catch {}
-}
-
-async function moveFileSafely(src, destDir) {
-  await ensureDir(destDir);
-  const base = path.basename(src);
-  const dest = path.join(destDir, base);
-  try {
-    await fs.rename(src, dest);
-  } catch {
-    const buf = await fs.readFile(src);
-    await fs.writeFile(dest, buf);
-    await fs.unlink(src);
-  }
-}
-
-function getLocalIpv4Addresses() {
-  const nets = os.networkInterfaces() || {};
-  const ips = new Set();
-  for (const list of Object.values(nets)) {
-    for (const info of list || []) {
-      if (!info || info.internal) continue;
-      const family = typeof info.family === "string" ? info.family : "";
-      if (family === "IPv4" || info.family === 4) {
-        ips.add(info.address);
-      }
-    }
-  }
-  return ips;
-}
-
-async function fetchPublicIp() {
-  if (!IP_DISCOVERY_URL) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), IP_DISCOVERY_TIMEOUT_MS);
-  try {
-    const res = await fetch(IP_DISCOVERY_URL, { signal: controller.signal });
-    if (!res.ok) return null;
-    const text = (await res.text())?.trim();
-    if (!text) return null;
-    return text.split(/\s+/)[0];
-  } catch (err) {
-    console.warn(
-      `[lot-server] public IP discovery failed: ${err?.message || err}`,
-    );
-    return null;
+    return await captureAndSave({
+      captureDir: CAPTURE_DIR,
+      deviceName: deviceName || getSelectedDeviceName(),
+    });
   } finally {
-    clearTimeout(timer);
+    busy = false;
   }
 }
 
-async function enforceIpAllowlist() {
-  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) {
+function statusFor(err) {
+  if (err?.code === "busy") return 409;
+  if (err?.code === "no-camera" || err?.code === "no-ffmpeg") return 503;
+  return 500;
+}
+
+async function devicePayload() {
+  const { cameras, device } = await resolveDevice(getSelectedDeviceName());
+  return {
+    devices: cameras.map((cam) => ({
+      name: cam.name,
+      preferred: Boolean(cam.preferred),
+      continuity: Boolean(cam.continuity),
+      screen: Boolean(cam.screen),
+    })),
+    selected: device?.name || "",
+  };
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url || "/", "http://localhost");
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    });
+    res.end();
     return;
   }
 
-  const localIps = getLocalIpv4Addresses();
-  localIps.add("127.0.0.1");
-  localIps.add("::1");
-
-  let publicIp = null;
   try {
-    publicIp = await fetchPublicIp();
-    if (publicIp) {
-      localIps.add(publicIp);
-    }
-  } catch {
-    // 이미 fetchPublicIp 내에서 로그 남김
-  }
-
-  const localList = Array.from(localIps);
-  const allowedMatch = ALLOW_IPS.find((ip) => localIps.has(ip));
-
-  if (!allowedMatch) {
-    logLine(
-      `[lot-server] IP allowlist blocked start. Allowed=${ALLOW_IPS.join(", ")} local/public=${localList.join(", ") || "(none)"}`,
-    );
-    process.exit(1);
-  }
-
-  logLine(
-    `[lot-server] IP allowlist passed (match=${allowedMatch}). Local/Public IPs: ${localList.join(", ")}`,
-  );
-}
-
-async function processImageOnce(filePath) {
-  const startTime = Date.now();
-  const originalName = path.basename(filePath);
-  const recognizedSuffix = extractRecognizedSuffixFromFileName(originalName);
-
-  logLine(`[lot-server] step 1/5: preparing image ${originalName}`);
-  const resizeStart = Date.now();
-  const { buffer, mimeType } = await resizeToOneFifth(filePath);
-  const fileSize = buffer.length;
-  logLine(
-    `[lot-server] step 1/5 done: resized to ${fileSize} bytes (${Date.now() - resizeStart}ms)`,
-  );
-
-  logLine(
-    `[lot-server] step 2/5: requesting presign URL from ${BACKEND_BASE}/api/bg/presign-upload`,
-  );
-  const presignStart = Date.now();
-  const presign = await apiPostJson(`${BACKEND_BASE}/api/bg/presign-upload`, {
-    sourceStep: "packing-capture",
-    fileName: originalName.replace(/\s+/g, "_"),
-  });
-  logLine(
-    `[lot-server] step 2/5 done: presign response (${Date.now() - presignStart}ms, status=${presign?.status})`,
-  );
-
-  if (!presign?.ok) {
-    throw new Error(
-      `presign failed (${presign?.status}): ${presign?.body?.message || presign?.text || ""}`.trim(),
-    );
-  }
-
-  const presignData = presign.body?.data || presign.body;
-  const uploadUrl = presignData?.url;
-  const s3Key = presignData?.key;
-  const bucket = presignData?.bucket;
-  const s3Url = presignData?.s3Url;
-
-  if (!uploadUrl || !s3Key || !bucket || !s3Url) {
-    throw new Error("presign response missing fields");
-  }
-
-  logLine(`[lot-server] step 3/5: uploading to S3 (${fileSize} bytes)`);
-  const uploadStart = Date.now();
-  await uploadToPresignedUrl({ uploadUrl, mimeType, buffer });
-  logLine(
-    `[lot-server] step 3/5 done: S3 upload complete (${Date.now() - uploadStart}ms)`,
-  );
-
-  logLine(
-    `[lot-server] step 4/5: registering lot-capture to ${BACKEND_BASE}/api/bg/lot-capture/packing`,
-  );
-  const captureStart = Date.now();
-  const done = await apiPostJson(`${BACKEND_BASE}/api/bg/lot-capture/packing`, {
-    s3Key,
-    s3Url,
-    originalName,
-    fileSize,
-    recognizedSuffix,
-  });
-  logLine(
-    `[lot-server] step 4/5 done: lot-capture response (${Date.now() - captureStart}ms, status=${done?.status})`,
-  );
-
-  if (!done?.ok) {
-    throw new Error(
-      `capture register failed (${done?.status}): ${done?.body?.message || done?.text || ""}`.trim(),
-    );
-  }
-
-  logLine(
-    `[lot-server] step 5/5: process complete (total ${Date.now() - startTime}ms)`,
-  );
-  return { originalName, fileSize };
-}
-
-async function handleNewImage(filePath) {
-  if (!isImageFile(filePath)) return;
-  if (inflightFiles.has(filePath)) {
-    logLine(`[lot-server] skip duplicate in-flight file: ${filePath}`);
-    return;
-  }
-
-  inflightFiles.add(filePath);
-
-  try {
-    logLine(`[lot-server] detected new image: ${filePath}`);
-
-    const waitStart = Date.now();
-    const stable = await waitForStableFile(filePath);
-    logLine(
-      `[lot-server] file stability check: ${stable ? "stable" : "unstable"} (${Date.now() - waitStart}ms)`,
-    );
-    if (!stable) {
-      await moveFileSafely(filePath, FAILED_DIR);
-      logLine(
-        `[lot-server] failed (unstable file) -> ${FAILED_DIR}: ${filePath}`,
-      );
+    if (req.method === "GET" && url.pathname === "/") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(PAGE);
       return;
     }
-
-    let lastError = null;
-    for (let attempt = 1; attempt <= PROCESS_ATTEMPTS; attempt += 1) {
-      try {
-        const { originalName, fileSize } = await processImageOnce(filePath);
-        await moveFileSafely(filePath, PROCESSED_DIR);
-        logLine(
-          `[lot-server] processed -> ${PROCESSED_DIR}: ${originalName} (${fileSize} bytes, attempts=${attempt})`,
-        );
-        return;
-      } catch (err) {
-        lastError = err;
-        logLine(
-          `[lot-server] attempt ${attempt}/${PROCESS_ATTEMPTS} failed for ${filePath}: ${formatError(err)}`,
-        );
-        if (attempt < PROCESS_ATTEMPTS && PROCESS_RETRY_DELAY_MS) {
-          await sleep(PROCESS_RETRY_DELAY_MS * attempt);
-        }
-      }
+    if (req.method === "GET" && url.pathname === "/health") {
+      json(res, 200, {
+        ok: true,
+        version: APP_VERSION,
+        captureDir: CAPTURE_DIR,
+        ffmpeg: resolveFfmpeg(),
+        dll: fs.existsSync(path.join(DLL_DIR, "mltcCom.dll")),
+        platform: process.platform,
+        watch: watcher.status(),
+      });
+      return;
     }
-
-    await moveFileSafely(filePath, FAILED_DIR);
-    logLine(
-      `[lot-server] failed -> ${FAILED_DIR}: ${filePath} (${formatError(lastError)})`,
+    if (req.method === "GET" && url.pathname === "/devices") {
+      json(res, 200, await devicePayload());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/devices") {
+      const body = await readBody(req);
+      const name = String(body.device || body.name || "").trim();
+      const { cameras, device } = await resolveDevice(name);
+      if (name && !device) {
+        json(res, 404, {
+          success: false,
+          message: "설정한 카메라를 찾지 못했습니다.",
+          devices: cameras.map((cam) => cam.name),
+        });
+        return;
+      }
+      const selected = setSelectedDeviceName(device?.name || name);
+      watcher.setDeviceName(selected);
+      log(`device selected ${selected || "(auto)"}`);
+      json(res, 200, {
+        success: true,
+        selected,
+        ...(await devicePayload()),
+      });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/watch") {
+      json(res, 200, { success: true, ...watcher.status() });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/latest") {
+      const status = watcher.status();
+      json(res, 200, {
+        success: true,
+        latest: status.latest,
+        phase: status.phase,
+        lastLot: status.lastLot,
+        lastError: status.lastError,
+      });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/live") {
+      const frame = watcher.getLiveFrame();
+      if (!frame) {
+        json(res, 404, {
+          success: false,
+          message: "아직 라이브 프레임이 없습니다. 감시를 시작하세요.",
+        });
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Content-Length": frame.length,
+      });
+      res.end(frame);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/image") {
+      const name = path.basename(url.searchParams.get("name") || "");
+      if (!IMAGE_NAME.test(name)) {
+        json(res, 400, { success: false, message: "파일 이름이 올바르지 않습니다." });
+        return;
+      }
+      const full = path.resolve(CAPTURE_DIR, name);
+      if (!full.startsWith(path.resolve(CAPTURE_DIR) + path.sep)) {
+        json(res, 400, { success: false, message: "파일 이름이 올바르지 않습니다." });
+        return;
+      }
+      if (!fs.existsSync(full)) {
+        json(res, 404, { success: false, message: "파일이 없습니다." });
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store",
+      });
+      fs.createReadStream(full).pipe(res);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/watch/start") {
+      json(res, 200, { success: true, ...watcher.start() });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/focus") {
+      const body = await readBody(req);
+      const af = await watcher.autoFocus(body.area === "local" ? "local" : "whole");
+      json(res, af?.ok ? 200 : 422, { success: Boolean(af?.ok), ...af, watch: watcher.status() });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/watch/stop") {
+      json(res, 200, { success: true, ...(await watcher.stop()) });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/recognize") {
+      const result = await watcher.forceRecognize();
+      if (!result) {
+        const status = watcher.status();
+        json(res, 422, {
+          success: false,
+          message: status.lastError || "로트를 읽지 못했습니다.",
+          ...status,
+        });
+        return;
+      }
+      json(res, 200, result);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/capture") {
+      const body = await readBody(req);
+      const saved = await shoot(body.device);
+      log(
+        `saved ${saved.fileName} mode=${saved.mode} device=${saved.device} focus=${saved.focus?.reason || saved.focus?.af || ""}`,
+      );
+      json(res, 200, saved);
+      return;
+    }
+    json(res, 404, { success: false, message: "없는 경로입니다." });
+  } catch (err) {
+    log(
+      `error ${err?.code || ""} ${err?.message || err}${err?.detail ? ` ${err.detail}` : ""}`,
     );
-  } finally {
-    inflightFiles.delete(filePath);
+    json(res, statusFor(err), {
+      success: false,
+      message: err?.message || "요청에 실패했습니다.",
+      detail: err?.detail || "",
+      code: err?.code || "",
+    });
   }
+});
+
+let shuttingDown = false;
+/** 종료 신호: 감시가 켠 LED를 끄고 나간다(Stop-Process -Force 같은 강제 종료에는 불리지 않는다). */
+function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    watcher.shutdownSync();
+  } catch {}
+  process.exit(code);
 }
+for (const sig of ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"]) {
+  process.on(sig, () => shutdown(0));
+}
+process.on("exit", () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    watcher.shutdownSync();
+  } catch {}
+});
 
 async function main() {
-  await initLogStream();
-
-  logLine(`[lot-server] service starting (watchDir=${WATCH_DIR})`);
-  await enforceIpAllowlist();
-  // Ensure base watch directory exists to avoid early exit on some environments
-  try {
-    await ensureDir(WATCH_DIR);
-  } catch {}
-  await ensureDir(PROCESSED_DIR);
-  await ensureDir(FAILED_DIR);
-
-  await purgeOldFilesInDir(PROCESSED_DIR, TTL_DAYS);
-  await purgeOldFilesInDir(FAILED_DIR, TTL_DAYS);
-  setInterval(
-    () => {
-      purgeOldFilesInDir(PROCESSED_DIR, TTL_DAYS).catch(() => {});
-      purgeOldFilesInDir(FAILED_DIR, TTL_DAYS).catch(() => {});
-    },
-    6 * 60 * 60 * 1000,
-  );
-
-  // 1시간마다 로그 파일 로테이션
-  setInterval(
-    () => {
-      rotateLogFile().catch((err) => {
-        console.error("[lot-server] log rotation error", err);
-      });
-    },
-    60 * 60 * 1000,
-  );
-  logLine("[lot-server] log rotation scheduled (every 1 hour)");
-
-  try {
-    const entries = await fs
-      .readdir(WATCH_DIR, { withFileTypes: true })
-      .catch(() => []);
-    for (const ent of entries) {
-      if (!ent.isFile()) continue;
-      const full = path.join(WATCH_DIR, ent.name);
-      if (!isImageFile(full)) continue;
-      try {
-        await handleNewImage(full);
-      } catch (err) {
-        logLine(
-          `[lot-server] initial scan error for ${full}: ${err?.message || err}`,
-        );
+  fs.mkdirSync(CAPTURE_DIR, { recursive: true });
+  if (process.argv.includes("--once")) {
+    try {
+      const result = await watcher.forceRecognize();
+      if (!result) {
+        const status = watcher.status();
+        throw new Error(status.lastError || "로트를 읽지 못했습니다.");
       }
+      console.log(JSON.stringify(result));
+      await disposeOcrWorker();
+      process.exit(0);
+    } catch (err) {
+      log(`error ${err?.message || err}`);
+      console.error(err?.message || err);
+      await disposeOcrWorker();
+      process.exit(1);
     }
-  } catch {}
-
-  const watcher = chokidar.watch(WATCH_DIR, {
-    ignored: (p) =>
-      p.includes("_processed") ||
-      p.includes("_failed") ||
-      p.endsWith(".tmp") ||
-      p.endsWith(".crdownload"),
-    ignoreInitial: true,
-    awaitWriteFinish: {
-      stabilityThreshold: WAIT_STABLE_MS,
-      pollInterval: 100,
-    },
-  });
-
-  watcher.on("add", (p) => {
-    handleNewImage(p).catch((err) => {
-      logLine(
-        `[lot-server] watcher add error for ${p}: ${err?.message || err}`,
-      );
-    });
-  });
-
-  watcher.on("change", (p) => {
-    handleNewImage(p).catch((err) => {
-      logLine(
-        `[lot-server] watcher change error for ${p}: ${err?.message || err}`,
-      );
-    });
-  });
-
-  watcher.on("error", (err) => {
-    logLine(`[lot-server] watcher error: ${err?.message || err}`);
-  });
-
-  watcher.on("ready", () => {
-    logLine(`[lot-server] watcher ready (${WATCH_DIR})`);
-  });
-
-  // 운영 기본 경로는 watcher + startup scan이다.
-  // 전체 디렉토리 재스캔은 네트워크 드라이브/특수 환경에서만 쓰는 진단용 fallback이라
-  // 기본값은 비활성화하고, 필요할 때만 env로 켠다.
-  if (RESCAN_INTERVAL_MS > 0) {
-    setInterval(() => {
-      fs.readdir(WATCH_DIR, { withFileTypes: true })
-        .then((entries) => {
-          for (const ent of entries) {
-            if (!ent.isFile()) continue;
-            const full = path.join(WATCH_DIR, ent.name);
-            handleNewImage(full).catch(() => {});
-          }
-        })
-        .catch((err) => {
-          logLine(`[lot-server] rescan failed: ${err?.message || err}`);
-        });
-    }, RESCAN_INTERVAL_MS);
-    logLine(`[lot-server] fallback rescan enabled: ${RESCAN_INTERVAL_MS}ms`);
   }
 
-  logLine(`[lot-server] watching: ${WATCH_DIR}`);
-  logLine(`[lot-server] backend: ${BACKEND_BASE}`);
+  server.on("error", (err) => {
+    log(`listen error ${err.message}`);
+    process.exit(1);
+  });
+  server.listen(PORT, HOST, () => {
+    log(
+      `lot-server2 v${APP_VERSION} node=${process.arch} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR}`,
+    );
+    if (AUTO_WATCH) watcher.start();
+  });
 }
 
-process.on("uncaughtException", (err) => {
-  logLine(`[lot-server] uncaughtException: ${formatError(err)}`);
-  process.exit(1);
-});
-
-process.on("unhandledRejection", (reason) => {
-  logLine(`[lot-server] unhandledRejection: ${formatError(reason)}`);
-  process.exit(1);
-});
-
-main().catch((e) => {
-  logLine(`[lot-server] fatal: ${formatError(e)}`);
-  process.exit(1);
-});
+main();

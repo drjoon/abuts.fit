@@ -41,11 +41,6 @@ router.post(
   aiController.parseBankbook
 );
 router.post(
-  "/recognize-lot-number",
-  authenticate,
-  aiController.recognizeLotNumber
-);
-router.post(
   "/custom-abutment-design-chat",
   authenticate,
   customAbutmentDesignChat

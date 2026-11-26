@@ -1,12 +1,6 @@
 // change-log:
-// - 2026-11-11: 각인 확인 창은 의뢰 카드 위에 겹치지 않는다. 이미지는 카드로 끌어 놓는다.
-// - 2026-11-11: 인식 실패 이미지를 고르고 3글자를 입력하면 그 이미지로 바로 매칭한다.
-// - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호. 프린터와 선택은 각 모달에서 출력한다.
-// - 2026-11-10: 세척.패킹 공병 스티커. 타입별 장수를 TTP-345 50×20mm TSPL로 출력한다.
-// - 2026-11-09: 인식 실패 수기 입력은 프리뷰 위 창으로 연다.
-// - 2026-09-04: AI 미매칭 시 각인 이미지 수동 매칭(3글자 필터·카드 드롭) 패널. 자동 인식은 확인 후 확정.
-// - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
-// - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
+// - 2026-11-26: lot-server 라이브·자동 OCR·3글자 수동 입력. 대기 카드는 하단 1행. 이미지 AI·pending UI 제거.
+// - 2026-11-10: 세척.패킹 툴바는 공병 라벨·패킹 라벨·스크류 로트번호.
 import {
   useCallback,
   useEffect,
@@ -25,7 +19,6 @@ import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
-import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -34,7 +27,6 @@ import {
   isUnmachinableShipGone,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
-import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
 import { PreviewModal } from "../../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
 import {
@@ -44,14 +36,16 @@ import {
 import { useWorksheetRealtimeStatus } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus";
 import { PackingLabelPrintDialog } from "../components/PackingLabelPrintDialog";
 import { VialStickerPrintDialog } from "../components/VialStickerPrintDialog";
+import { PackingLotStation } from "../components/PackingLotStation";
+import { PackingRequestStrip } from "../components/PackingRequestStrip";
 import { usePackingPrintSettings } from "../hooks/usePackingPrintSettings";
 import { usePackingWorksheetData } from "../hooks/usePackingWorksheetData";
 import {
   usePackingCapture,
   extractLotSuffix3,
-  PACKING_PENDING_DRAG_MIME,
   type CaptureResult,
 } from "../hooks/usePackingCapture";
+import { useLotServerWatch } from "../hooks/useLotServerWatch";
 import {
   buildPackLabelBitmapZpl,
   renderPackLabelToCanvas,
@@ -66,15 +60,10 @@ import {
 } from "@/shared/practice/screwSupply";
 
 // related files:
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
-// - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
-// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - bg/pc2/lot-server/src/index.js
 // - web/backend/controllers/ai/lotCapture.controller.js
-import { Plus, Trash2, X } from "lucide-react";
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/useLotServerWatch.ts
+import { Plus, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -88,44 +77,6 @@ type ScrewLotSettingItem = {
   type: string;
   lotNumber: string;
 };
-
-// related files (screw lot tracking):
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
-// - web/backend/controllers/requests/common.requests.controller.js
-// - web/backend/models/systemSettings.model.js
-// - web/backend/models/request.model.js
-
-function EngravingConfirmFrame({
-  previewOpen,
-  children,
-}: {
-  previewOpen: boolean;
-  children: ReactNode;
-}) {
-  const card = (
-    <div
-      className={
-        previewOpen
-          ? "pointer-events-auto w-full max-w-3xl rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-lg"
-          : "w-full rounded-xl border border-accent-muted bg-accent-soft/95 p-3 shadow-sm"
-      }
-    >
-      {children}
-    </div>
-  );
-  // 프리뷰가 열려 있을 때만 포탈. 그 외에는 카드 목록 위에 두어 이미지가 카드에 닿게 한다.
-  if (previewOpen) {
-    return (
-      <BodyPortal>
-        <div className="pointer-events-none fixed inset-x-0 top-3 z-[140] flex justify-center px-3">
-          {card}
-        </div>
-      </BodyPortal>
-    );
-  }
-  return <div className="px-4 pt-2">{card}</div>;
-}
 
 export const PackingPageContent = ({
   showQueueBar = true,
@@ -209,15 +160,6 @@ export const PackingPageContent = ({
     worksheetSearch,
     toast,
   });
-
-  const printedPackingRequestIds = useMemo(
-    () =>
-      filteredAndSorted
-        .filter((req) => Boolean((req as any)?.shippingLabelPrinted?.printed))
-        .map((req) => String(req._id || ""))
-        .filter(Boolean),
-    [filteredAndSorted],
-  );
 
   const unprintedPackingRequestIds = useMemo(
     () =>
@@ -1201,176 +1143,92 @@ export const PackingPageContent = ({
   );
 
   const handleCaptureResult = useCallback((result: CaptureResult) => {
-    setCaptureHistory((prev) => [result, ...prev].slice(0, 20));
+    setCaptureHistory((prev) => [result, ...prev].slice(0, 8));
   }, []);
 
-  const {
-    isDraggingOver,
-    ocrProcessing,
-    ocrStage,
-    handlePageDrop,
-    handlePageDragOver,
-    handlePageDragLeave,
-    handlePackingImageDropOnRequest,
-    pendingMatches,
-    activePending,
-    setActivePendingId,
-    manualSuffixQuery,
-    setManualSuffixQuery,
-    clearPendingMatch,
-    clearAllPendingMatches,
-    matchPendingBySuffix,
-    confirmSuggestedMatch,
-    matchingBusy,
-    suffixCommitNote,
-  } = usePackingCapture({
-    token,
-    requests,
-    toast,
-    setRequests,
-    previewOpen,
-    previewFiles,
-    handleOpenPreview,
-    onCaptureResult: handleCaptureResult,
-  });
+  const { matchingBusy, matchNote, setMatchNote, matchBySuffix, bindToRequest } =
+    usePackingCapture({
+      token,
+      toast,
+      setRequests,
+      onCaptureResult: handleCaptureResult,
+    });
 
-  // 확인 창은 프리뷰(모달) 밖에 뜬다. 모달이 열려 있으면 바깥 클릭에 닫히고 포커스도 갇혀 입력이 안 된다.
-  const hadPendingRef = useRef(false);
-  useEffect(() => {
-    const hasPending = pendingMatches.length > 0;
-    if (hasPending && !hadPendingRef.current && previewOpen) {
-      releasePreviewBinaries({
-        setPreviewFiles,
-        setPreviewNcText,
-        setPreviewStageUrl,
+  const [suffixInput, setSuffixInput] = useState("");
+  const [selectedRequestId, setSelectedRequestId] = useState("");
+  const matchingBusyRef = useRef(matchingBusy);
+  matchingBusyRef.current = matchingBusy;
+
+  const handleLotFromServer = useCallback(
+    (lot: string, meta: { from: "auto" | "manual" }) => {
+      const suffix = extractLotSuffix3(lot);
+      if (suffix.length !== 3 || matchingBusyRef.current) return;
+      setSuffixInput(suffix);
+      setMatchNote("");
+      void matchBySuffix(suffix, {
+        source: meta.from === "manual" ? "manual" : "lot-server",
+      }).then((result) => {
+        if (result.ok && result.matched) {
+          setSuffixInput("");
+        }
       });
-      setPreviewOpen(false);
-    }
-    hadPendingRef.current = hasPending;
-  }, [pendingMatches.length, previewOpen]);
+    },
+    [matchBySuffix, setMatchNote],
+  );
+
+  const {
+    liveUrl,
+    busy: lotBusy,
+    error: lotError,
+    reachable,
+    running,
+    phase,
+    lastLot,
+    startWatch,
+    stopWatch,
+    runFocus,
+    runRecognize,
+    resetLotDedupe,
+  } = useLotServerWatch({
+    enabled: true,
+    onLot: handleLotFromServer,
+  });
 
   const normalizedManualSuffix = useMemo(
     () =>
-      String(manualSuffixQuery || "")
+      String(suffixInput || "")
         .toUpperCase()
         .replace(/[^A-Z]/g, "")
         .slice(0, 3),
-    [manualSuffixQuery],
+    [suffixInput],
   );
 
-  const displayRequests = useMemo(() => {
-    if (!normalizedManualSuffix) return paginatedRequests;
+  const stripRequests = useMemo(() => {
+    if (!normalizedManualSuffix) return filteredAndSorted;
     return filteredAndSorted.filter((req) => {
       const suffix = extractLotSuffix3(req.lotNumber?.value);
       return suffix.startsWith(normalizedManualSuffix);
     });
-  }, [filteredAndSorted, normalizedManualSuffix, paginatedRequests]);
-
-  const packingMatchHintIds = useMemo(() => {
-    if (!normalizedManualSuffix || !pendingMatches.length) return undefined;
-    return new Set(
-      displayRequests
-        .filter((req) => {
-          const suffix = extractLotSuffix3(req.lotNumber?.value);
-          return (
-            suffix.startsWith(normalizedManualSuffix) &&
-            (normalizedManualSuffix.length < 3 ||
-              suffix === normalizedManualSuffix)
-          );
-        })
-        .map((req) => String(req._id || ""))
-        .filter(Boolean),
-    );
-  }, [displayRequests, normalizedManualSuffix, pendingMatches.length]);
-
-  const exactManualMatchRequest = useMemo(() => {
-    if (normalizedManualSuffix.length !== 3) return null;
-    const matches = filteredAndSorted.filter(
-      (req) =>
-        extractLotSuffix3(req.lotNumber?.value) === normalizedManualSuffix,
-    );
-    return matches.length === 1 ? matches[0] : null;
   }, [filteredAndSorted, normalizedManualSuffix]);
 
-  const suffixAttemptRef = useRef("");
-  const suffixInFlightRef = useRef(false);
-  useEffect(() => {
-    if (normalizedManualSuffix.length < 3) suffixAttemptRef.current = "";
-  }, [normalizedManualSuffix]);
-
-  const commitTypedSuffix = useCallback(
-    (suffix: string, pendingId: string, force = false) => {
-      if (!pendingId || suffix.length !== 3 || suffixInFlightRef.current) return;
-      const key = `${pendingId}:${suffix}`;
-      if (!force && suffixAttemptRef.current === key) return;
-      suffixAttemptRef.current = key;
-      suffixInFlightRef.current = true;
-      void matchPendingBySuffix(suffix, pendingId).finally(() => {
-        suffixInFlightRef.current = false;
-      });
-    },
-    [matchPendingBySuffix],
+  const selectedRequest = useMemo(
+    () =>
+      filteredAndSorted.find(
+        (req) => String(req._id || "") === selectedRequestId,
+      ) || null,
+    [filteredAndSorted, selectedRequestId],
   );
 
-  useEffect(() => {
-    if (!activePending || matchingBusy) return;
-    if (normalizedManualSuffix.length !== 3) return;
-    const aiSuffix = extractLotSuffix3(activePending.aiSuffix);
-    if (
-      aiSuffix &&
-      normalizedManualSuffix === aiSuffix &&
-      (activePending.candidateMatched ||
-        activePending.reason === "no_suffix_match")
-    ) {
-      return;
-    }
-    const pendingId = activePending.id;
-    const suffix = normalizedManualSuffix;
-    const timer = window.setTimeout(() => {
-      commitTypedSuffix(suffix, pendingId);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [activePending, commitTypedSuffix, matchingBusy, normalizedManualSuffix]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Enter") return;
-      if (!activePending || matchingBusy) return;
-      const tag = String(
-        (e.target as HTMLElement | null)?.tagName || "",
-      ).toLowerCase();
-      if (tag === "textarea") return;
-      if (normalizedManualSuffix.length === 3) {
-        const aiSuffix = extractLotSuffix3(activePending.aiSuffix);
-        const unchangedAiCandidate =
-          activePending.candidateMatched &&
-          Boolean(aiSuffix) &&
-          normalizedManualSuffix === aiSuffix;
-        if (!unchangedAiCandidate) {
-          e.preventDefault();
-          commitTypedSuffix(normalizedManualSuffix, activePending.id, true);
-          return;
-        }
+  const submitSuffix = useCallback(() => {
+    const suffix = extractLotSuffix3(normalizedManualSuffix);
+    if (suffix.length !== 3 || matchingBusy) return;
+    void matchBySuffix(suffix, { source: "manual" }).then((result) => {
+      if (result.ok && result.matched) {
+        setSuffixInput("");
+        resetLotDedupe();
       }
-      e.preventDefault();
-      if (
-        activePending.candidateMatched &&
-        activePending.suggestedRequestMongoId &&
-        (!normalizedManualSuffix ||
-          normalizedManualSuffix === activePending.aiSuffix)
-      ) {
-        void confirmSuggestedMatch(activePending.id);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    activePending,
-    commitTypedSuffix,
-    confirmSuggestedMatch,
-    matchingBusy,
-    normalizedManualSuffix,
-  ]);
+    });
+  }, [matchBySuffix, matchingBusy, normalizedManualSuffix, resetLotDedupe]);
 
   const handlePrintPackingLabels = useCallback(
     async (selectedRequests: ManufacturerRequest[]) => {
@@ -1446,42 +1304,17 @@ export const PackingPageContent = ({
     [handlePrintSinglePackingLabel, printerProfile, toast],
   );
 
-  const awaitingSuffixMatch = Boolean(
-    activePending &&
-      normalizedManualSuffix.length === 3 &&
-      suffixCommitNote !== "miss" &&
-      suffixCommitNote !== "ambiguous" &&
-      suffixCommitNote !== "error" &&
-      !(
-        extractLotSuffix3(activePending.aiSuffix) === normalizedManualSuffix &&
-        activePending.aiSuffix &&
-        (activePending.candidateMatched ||
-          activePending.reason === "no_suffix_match")
-      ),
-  );
-  const isEmpty = !isLoading && displayRequests.length === 0;
-  const overlayText = useMemo(() => {
-    if (!ocrProcessing && !matchingBusy) return "세척.패킹 이미지를 드롭하세요";
-    if (ocrStage === "upload") return "이미지 업로드 중...";
-    if (ocrStage === "recognize") return "LOT 인식 중...";
-    if (ocrStage === "match" || matchingBusy) return "카드에 매칭 중...";
-    return "처리 중...";
-  }, [matchingBusy, ocrProcessing, ocrStage]);
-
   return (
     <div
-      className="relative w-full text-gray-800 flex flex-col items-stretch"
+      className="relative flex w-full flex-col items-stretch text-gray-800"
       onWheelCapture={() => {
         userScrolledRef.current = true;
       }}
       onScrollCapture={() => {
         userScrolledRef.current = true;
       }}
-      onDrop={handlePageDrop}
-      onDragOver={handlePageDragOver}
-      onDragLeave={handlePageDragLeave}
     >
-      <div className="flex-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3 pt-2">
         {showQueueBar ? (
           <WorksheetQueueSummary
             total={
@@ -1492,7 +1325,6 @@ export const PackingPageContent = ({
             labels={diameterQueueForPacking.labels}
             counts={diameterQueueForPacking.counts}
             variant="compact"
-            className="px-4 pt-2"
             toolbar={
               <div className="inline-flex items-center gap-1 rounded-xl bg-stone-100/90 p-1">
                 <button
@@ -1526,312 +1358,104 @@ export const PackingPageContent = ({
           />
         ) : null}
 
-        {isLoading && <WorksheetLoading />}
+        {isLoading ? <WorksheetLoading /> : null}
 
-        {pendingMatches.length > 0 && (
-          <EngravingConfirmFrame previewOpen={previewOpen}>
-              <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
-                <div>
-                  <div className="text-xs font-semibold text-accent-strong">
-                    각인 인식 확인
-                  </div>
-                  <div className="text-[11px] text-slate-600">
-                    인식이 맞으면 다음 촬영으로 확정됩니다.
-                    <br />
-                    인식이 안 되면 이미지를 카드에 놓거나 3글자를 입력하세요.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => clearAllPendingMatches()}
-                  className="text-xs text-slate-500 hover:text-slate-700"
-                >
-                  전체 지우기
-                </button>
-              </div>
+        <PackingLotStation
+          liveUrl={liveUrl}
+          running={running}
+          reachable={reachable}
+          busy={lotBusy}
+          phase={phase}
+          lastLot={lastLot}
+          error={lotError}
+          suffix={suffixInput}
+          onSuffixChange={(value) => {
+            setSuffixInput(value);
+            setMatchNote("");
+          }}
+          matchNote={matchNote}
+          matchingBusy={matchingBusy}
+          onStartWatch={() => {
+            void startWatch().catch(() => undefined);
+          }}
+          onStopWatch={() => {
+            void stopWatch().catch(() => undefined);
+          }}
+          onFocus={() => {
+            void runFocus().catch(() => undefined);
+          }}
+          onRecognize={() => {
+            void runRecognize().catch(() => undefined);
+          }}
+          onSubmitSuffix={submitSuffix}
+          onRetryRecognize={() => {
+            resetLotDedupe();
+            void runRecognize().catch(() => undefined);
+          }}
+          onClearSuffix={() => {
+            setSuffixInput("");
+            setMatchNote("");
+            resetLotDedupe();
+          }}
+          hasSelectedCard={Boolean(selectedRequest)}
+          onBindSelected={() => {
+            if (!selectedRequest?._id) return;
+            void bindToRequest(
+              String(selectedRequest._id),
+              normalizedManualSuffix ||
+                extractLotSuffix3(selectedRequest.lotNumber?.value),
+            ).then((ok) => {
+              if (ok) {
+                setSuffixInput("");
+                setSelectedRequestId("");
+                resetLotDedupe();
+              }
+            });
+          }}
+        />
 
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {pendingMatches.map((item) => {
-                    const selected = item.id === activePending?.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          if (item.id === activePending?.id) return;
-                          setActivePendingId(item.id);
-                          setManualSuffixQuery(
-                            item.aiSuffix
-                              ? extractLotSuffix3(item.aiSuffix)
-                              : "",
-                          );
-                        }}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData(
-                            PACKING_PENDING_DRAG_MIME,
-                            item.id,
-                          );
-                          e.dataTransfer.setData("text/plain", item.id);
-                          e.dataTransfer.effectAllowed = "copy";
-                          setActivePendingId(item.id);
-                        }}
-                        className={`relative shrink-0 overflow-hidden rounded-lg border bg-white text-left ${
-                          selected
-                            ? "border-primary ring-2 ring-primary/40"
-                            : "border-slate-200 opacity-80 hover:opacity-100"
-                        }`}
-                        title="드래그하여 의뢰 카드에 드롭"
-                      >
-                        <img
-                          src={item.previewUrl}
-                          alt={item.originalName}
-                          className="h-28 w-40 object-cover"
-                          draggable={false}
-                        />
-                        <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold tracking-widest text-white">
-                          {item.aiSuffix
-                            ? `AI ${item.aiSuffix}`
-                            : "인식 실패"}
-                          {item.candidateMatched ? " · 후보" : ""}
-                        </div>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-slate-600 hover:bg-white"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            clearPendingMatch(item.id);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              clearPendingMatch(item.id);
-                            }
-                          }}
-                          aria-label="이 이미지 대기 목록에서 제거"
-                        >
-                          <X className="h-3 w-3" />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-2">
-                  {activePending ? (
-                    <div className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-2 text-[11px] text-slate-600">
-                      <div>
-                        AI 인식:{" "}
-                        <span className="font-mono text-sm font-bold tracking-widest text-slate-900">
-                          {activePending.aiSuffix || "—"}
-                        </span>
-                        {activePending.confidence
-                          ? ` · ${activePending.confidence}`
-                          : ""}
-                      </div>
-                      <div className="mt-0.5 truncate">
-                        {activePending.candidateMatched
-                          ? `제안 의뢰: ${activePending.suggestedRequestId || activePending.suggestedLotValue || "—"}`
-                          : activePending.reason === "no_suffix_match"
-                            ? "인식값은 있으나 세척.패킹 후보 없음"
-                            : activePending.reason === "recognition_failed"
-                              ? "인식 실패. 3글자를 입력하세요."
-                              : activePending.reason === "manual_bind_failed"
-                                ? "카드 매칭에 실패했습니다. 다시 놓으세요."
-                                : "자동 후보 없음. 3글자를 입력하세요."}
-                      </div>
-                    </div>
-                  ) : null}
-                  <label className="text-[11px] font-semibold text-slate-600">
-                    각인 코드 정정 (A–Z 3자리)
-                  </label>
-                  <Input
-                    value={manualSuffixQuery}
-                    onChange={(e) => {
-                      const next = String(e.target.value || "")
-                        .toUpperCase()
-                        .replace(/[^A-Z]/g, "")
-                        .slice(0, 3);
-                      setManualSuffixQuery(next);
-                    }}
-                    placeholder="예: QJK"
-                    maxLength={3}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="h-11 max-w-[160px] font-mono text-lg tracking-[0.35em] uppercase"
-                    aria-label="각인 코드 검색"
-                  />
-                  <div className="text-[11px] text-slate-500">
-                    {matchingBusy || awaitingSuffixMatch ? (
-                      "매칭 중…"
-                    ) : suffixCommitNote === "ambiguous" ? (
-                      <>
-                        같은 코드가 여러 건입니다.
-                        <br />
-                        카드에 이미지를 놓으세요.
-                      </>
-                    ) : suffixCommitNote === "error" ? (
-                      <>
-                        매칭에 실패했습니다.
-                        <br />
-                        코드를 다시 입력하세요.
-                      </>
-                    ) : normalizedManualSuffix ? (
-                      `필터: ${displayRequests.length}건`
-                    ) : (
-                      "3글자를 입력하면 선택한 이미지에 매칭됩니다."
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {exactManualMatchRequest && activePending ? (
-                      <button
-                        type="button"
-                        disabled={matchingBusy}
-                        onClick={() =>
-                          activePending &&
-                          commitTypedSuffix(
-                            normalizedManualSuffix,
-                            activePending.id,
-                            true,
-                          )
-                        }
-                        className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {matchingBusy
-                          ? "매칭 중…"
-                          : `정정 매칭: ${extractLotSuffix3(exactManualMatchRequest.lotNumber?.value)}`}
-                      </button>
-                    ) : activePending?.candidateMatched ? (
-                      <button
-                        type="button"
-                        disabled={matchingBusy}
-                        onClick={() =>
-                          void confirmSuggestedMatch(activePending.id)
-                        }
-                        className="inline-flex w-fit items-center rounded-lg border border-primary bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
-                      >
-                        {matchingBusy
-                          ? "매칭 중…"
-                          : `지금 확정 (${activePending.aiSuffix || ""})`}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-          </EngravingConfirmFrame>
-        )}
-
-        {captureHistory.length > 0 && (
-          <div className="w-full px-4 pt-2 pb-1">
-            <div className="flex items-center justify-between mb-1.5 px-1">
-              <span className="text-xs font-semibold text-slate-500">
-                각인 인식 결과
-              </span>
-              <button
-                type="button"
-                onClick={() => setCaptureHistory([])}
-                className="text-xs text-slate-400 hover:text-slate-600"
+        {captureHistory.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto text-[11px] text-stone-500">
+            <span className="shrink-0 font-semibold">최근</span>
+            {captureHistory.map((item, idx) => (
+              <span
+                key={`${item.requestId}-${idx}`}
+                className="shrink-0 rounded-md border border-primary-muted bg-primary-soft px-2 py-0.5 font-mono tracking-widest text-primary-strong"
               >
-                전체 지우기
-              </button>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {captureHistory.map((item, idx) => {
-                const caseInfos = item.request?.caseInfos || {};
-                const clinicName = String((caseInfos as any)?.clinicName || "");
-                const patientName = String(
-                  (caseInfos as any)?.patientName || "",
-                );
-                const tooth = String((caseInfos as any)?.tooth || "");
-                const lotSuffix = item.recognizedSuffix || "—";
-                const timeStr = item.capturedAt.toLocaleTimeString("ko-KR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                });
-                return (
-                  <div
-                    key={`${item.requestId}-${idx}`}
-                    className="rounded-lg border border-primary-muted bg-primary-soft shadow-sm px-4 py-2 text-sm min-w-[160px] max-w-[220px]"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-primary-strong tracking-widest text-lg">
-                        {lotSuffix}
-                      </span>
-                      <span className="text-xs text-slate-400">{timeStr}</span>
-                    </div>
-                    <div className="text-slate-600 text-xs mt-0.5 truncate">
-                      {item.requestId}
-                      {clinicName && ` · ${clinicName}`}
-                      {patientName && ` · ${patientName}`}
-                      {tooth && ` · ${tooth}`}
-                    </div>
-                    <div className="text-xs text-primary mt-0.5">
-                      → 포장.발송 이동
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                {item.recognizedSuffix || "—"}
+              </span>
+            ))}
           </div>
-        )}
-
-        {isEmpty ? (
-          <div className="flex justify-center py-8">
-            <div className="text-gray-500">
-              {awaitingSuffixMatch || matchingBusy
-                ? "매칭 중…"
-                : suffixCommitNote === "ambiguous"
-                  ? "같은 각인 코드가 여러 건입니다."
-                  : suffixCommitNote === "error"
-                    ? "매칭에 실패했습니다."
-                    : normalizedManualSuffix
-                      ? `각인 코드 "${normalizedManualSuffix}"에 맞는 의뢰가 없습니다.`
-                      : "의뢰가 없습니다."}
-            </div>
-          </div>
-        ) : !isLoading ? (
-          <>
-            <WorksheetCardGrid
-              requests={displayRequests}
-              printedRequestIds={new Set(printedPackingRequestIds)}
-              onDownload={handleDownloadOriginalStl}
-              onOpenPreview={handleOpenPreview}
-              onDeleteCam={() => {}}
-              onDeleteNc={handleDeleteNc}
-              onCloneSample={handleCloneSampleForProduction}
-              onSaveToRnd={handleSaveToRnd}
-              onRollback={handleCardRollback}
-              onApprove={handleCardApprove}
-              onDelete={handleCardDelete}
-              onDone={handleCardDone}
-              onUploadNc={handleUploadByStage}
-              onPackingImageDrop={handlePackingImageDropOnRequest}
-              packingDropEnabled
-              packingMatchHintIds={packingMatchHintIds}
-              uploadProgress={uploadProgress}
-              isCamStage={false}
-              isMachiningStage={false}
-              uploading={uploading}
-              downloading={downloading}
-              deletingCam={{}}
-              deletingNc={deletingNc}
-              currentStageOrder={currentStageOrder}
-              tabStage="packing"
-            />
-            <div ref={sentinelRef} className="py-4 text-center text-gray-500">
-              {normalizedManualSuffix
-                ? `필터 결과 ${displayRequests.length}건`
-                : visibleCount >= filteredAndSorted.length
-                  ? "모든 의뢰를 표시했습니다."
-                  : "스크롤하여 더보기"}
-            </div>
-          </>
         ) : null}
+
+        <div className="mt-auto space-y-1.5">
+          <div className="flex items-center justify-between px-0.5 text-[11px] text-stone-500">
+            <span>
+              대기 {stripRequests.length}건
+              {normalizedManualSuffix
+                ? ` · 필터 ${normalizedManualSuffix}`
+                : ""}
+            </span>
+            <span ref={sentinelRef} className="tabular-nums">
+              {visibleCount < filteredAndSorted.length
+                ? "스크롤 더보기"
+                : ""}
+            </span>
+          </div>
+          <PackingRequestStrip
+            requests={stripRequests}
+            highlightSuffix={normalizedManualSuffix}
+            selectedId={selectedRequestId}
+            onSelect={(req) => {
+              setSelectedRequestId(String(req._id || ""));
+              const suffix = extractLotSuffix3(req.lotNumber?.value);
+              if (suffix) setSuffixInput(suffix);
+            }}
+            onOpen={(req) => {
+              void handleOpenPreview(req);
+            }}
+          />
+        </div>
         <PackingLabelPrintDialog
           open={packingLabelOpen}
           onOpenChange={setPackingLabelOpen}
@@ -2033,18 +1657,6 @@ export const PackingPageContent = ({
           }}
         />
 
-        {(isDraggingOver || ocrProcessing) && (
-          <BodyPortal>
-          <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20">
-            <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
-              {ocrProcessing && (
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-primary" />
-              )}
-              <span>{overlayText}</span>
-            </div>
-          </div>
-          </BodyPortal>
-        )}
       </div>
     </div>
   );

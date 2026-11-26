@@ -1,29 +1,47 @@
-# Lot Server Rules
+# Lot Server Rules (PC2)
 
 루트 `rules.md`가 최종 기준입니다.
 
 ## 0) 문서 목적
 
-- 이 문서는 `bg/pc2/lot-server` 단위 프로그램의 로컬 정책/트러블슈팅만 기록합니다.
-- 루트 rules 축약으로 제거된 상세 맥락은 아래 보존본을 참조합니다.
-  - `.archive/rules.legacy-2026-07-29.md`
-  - `rules.legacy-full.md` (로컬 전체 상세 미러)
+- 이 문서는 `bg/pc2/lot-server`(lot-server3 기반)의 영상 감시·로컬 OCR·저장을 적습니다.
+- 로트는 **영문 대문자 3글자**입니다. 외부 AI(Gemini 등)는 호출하지 않습니다.
+- 어벗츠 세척·패킹 FE가 `GET /live`·`GET /watch`·`POST /watch/*`·`POST /recognize`·`POST /focus`를 폴링/호출하고, 인식된 코드만 백엔드 `lot-capture/packing`으로 보냅니다.
+- 페달은 쓰지 않습니다. 정지·선명 게이트 후 OCR합니다.
+- 구 폴더 감시 브리지(S3 업로드)는 `bg/pc2/lot-server-backup`에 있습니다.
 
 ## 1) 역할/흐름
 
-- lot-server는 각인/캡처 결과를 백엔드로 전달하는 보조 서비스입니다.
-- 캡처 처리 결과 SSOT 반영은 백엔드에서 수행합니다.
-- 패킹 라벨 출력 트리거는 lot 흐름에서 자동 실행하지 않습니다(단계 전환/이벤트 전파 중심).
-- 프로세스 TZ: 엔트리 `src/index.js`에서 `process.env.TZ = "Asia/Seoul"` (루트 §1.4).
+- Windows 감시 시작 때는 UVC(`src/uvc.js` → `UvcTool.exe`, 대체 `uvc-ctl.ps1`)로 밝기를 건다. 이 UM20은 UVC 포커스가 없다.
+- 초점은 UM 시리얼 AF(`src/um-serial.js` → `um-serial.ps1`, CP210x COM 115200 8N2, UM Viewer와 같은 키)로 정지·흐림일 때 건다. 스트림을 끊지 않는다. AF 뒤에는 리모컨 원격 제어를 다시 끈다.
+- LED는 감시 시작 때 켜고(`LOT_LED_LEVEL`이 있으면 그 단계), 감시 중지 때는 항상, 서버 종료(SIGINT/SIGTERM/exit) 때는 감시 중이었으면 끈다. 단계는 키(0x1A/0x1B)로 맞춘다(fw 1.4.0은 0x06 직접 쓰기가 밝기에 반영되지 않음).
+- 시리얼 작업(AF·LED·상태)은 `um-serial.js` 큐로 한 번에 하나만. LED가 꺼져 있으면 AF하지 않는다(`led-off`). 감시 중지 때 라이브 프레임을 비운다.
+- `mltcCom` `ComInitial`은 이 UM20에서 `init-failed`라 핫패스에서 부르지 않는다.
+- 카메라 연동: `src/camera.js`(목록·선택·Grab 프로파일·상주 스트림). Continuity/화면캡처는 자동 선택에서 뒤로 민다.
+- 감시 중 ffmpeg는 **상주 1개**만 돌리고 JPEG를 덮어씁니다. 프레임마다 프로세스를 만들지 않습니다.
+- 움직임이 줄고 선명도가 임계 이상이면 `src/ocr`로 인식합니다. 라이브는 `GET /live`.
+- 기본 `LOT_AUTO_WATCH=0`. Continuity+자동감시는 IDE/머신 부하가 커서 수동 시작을 권장합니다.
+- OCR은 tesseract.js를 `src/ocr`에 감싼 내부 모듈입니다. 화이트리스트 A–Z, 결과는 3글자만 확정합니다. 최소 신뢰도 `LOT_OCR_MIN_CONF` 미만은 버립니다. 학습 데이터는 `ocr-cache/`에 둡니다(외부 AI 아님).
+- 시리얼 AF를 못 쓰면(장치 없음·`LOT_UM_SERIAL=0`) 흐림 때 스트림을 끊지 않고 화면에 초점 안내만 띄웁니다.
+- 드라이버·시스템 소프트웨어를 새로 설치하지 않습니다(CP210x VCP는 Windows 기본/기존 설치본).
+- 저장 폴더는 lot-server 감시 폴더와 분리합니다. 기본값 `D:\bg\lot-server\images`. 성공 파일 `lot-…-ABC.jpg`.
+- 이 프로세스는 백엔드/Gemini를 호출하지 않습니다. 코드 매칭은 어벗츠 FE가 합니다.
+- 프로세스 TZ: 엔트리 `src/index.js`에서 `process.env.TZ = "Asia/Seoul"`.
 
 ## 2) 연결 진입 파일
 
 - 서비스 엔트리: `bg/pc2/lot-server/src/index.js`
-- 백엔드 처리: `web/backend/controllers/ai/lotCapture.controller.js`
-- 워크시트 연계: `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+- 카메라: `bg/pc2/lot-server/src/camera.js`
+- 감시: `bg/pc2/lot-server/src/watch.js`
+- OCR: `bg/pc2/lot-server/src/ocr/index.js`(글자 영역 `ocr/locate.js`, 글자 단위 `ocr/chars.js`, 전처리 `ocr/preprocess.js`)
+- 하드웨어 AF·LED(시리얼): `bg/pc2/lot-server/src/um-serial.js`, `src/um-serial.ps1`
+- 카메라 제어(UVC): `bg/pc2/lot-server/src/uvc.js` → `src/UvcTool.exe`(`UvcTool.cs`), 대체 `src/uvc-ctl.ps1`
+- ViTiny DLL(기본 꺼짐, `LOT_VITINY_DLL=1`): `bg/pc2/lot-server/src/focus.js`, `src/microscope-ctl.ps1`
+- 화면: `bg/pc2/lot-server/public/index.html`
 
 ## 3) 로컬 변경 체크
 
 - [ ] 소스 상단 `related files` 주석 갱신
-- [ ] 백엔드 이벤트/상태 전이 영향 검토
+- [ ] 저장 파일을 lot-server 감시 폴더에 넣지 않았는지
+- [ ] 외부 AI 호출이 새로 생기지 않았는지
 - [ ] 루트 rules와 충돌 여부 점검

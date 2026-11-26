@@ -1,0 +1,15 @@
+{
+  "name": "abuts-lot-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "sharp": "^0.33.5"
+  }
+}

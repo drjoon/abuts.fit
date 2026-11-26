@@ -1,61 +1,31 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
-// - web/backend/server.js
 // - bg/pc2/lot-server/src/index.js
-// - web/backend/controllers/requests/mailbox.utils.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // change-log:
-// - 2026-11-11: 작업자가 고른 이미지에 3글자를 확정하면(confirmBySuffix) 그 코드가 세척.패킹에 하나일 때 바로 포장.발송.
-// - 2026-11-09: 카드 매칭으로 옮긴 각인 파일은 원래 의뢰 메타만 떼고 S3 객체는 남긴다.
-// - 2026-11-09: 각인 인식 실패·차단은 예외로 끊지 않고 수동 매칭 응답으로 돌린다. 이미지는 jpeg로 정규화.
-// - 2026-09-04: 자동 인식은 제안만 — requestMongoId 수동 확정 시에만 포장.발송 적용.
-// - 2026-09-04: 미매칭 시 packing:capture-unmatched 발행 + previewUrl. requestMongoId 수동 바인딩.
-// - 2026-08-20: 샘플도 각인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
-// - 2026-08-17: 포장.발송 진입 시 세척.패킹 우편함을 유지(없으면 1회 보정).
+// - 2026-11-26: 이미지→Gemini AI 제거. lot-server/수동 3글자 코드만 매칭·포장.발송. s3Key 선택.
+// - 2026-11-11: confirmBySuffix 로 세척.패킹 유일 매칭 시 바로 포장.발송.
 import Request from "../../models/request.model.js";
-import s3Utils, { getObjectBufferFromS3, getSignedUrl } from "../../utils/s3.utils.js";
-import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
+import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { emitAppEventGlobal } from "../../socket.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 import {
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
-import {
-  normalizeBusinessAnchorId,
-} from "../requests/mailbox.utils.js";
+import { normalizeBusinessAnchorId } from "../requests/mailbox.utils.js";
 import { enterManufacturerShippingStage } from "../requests/common.review.helpers.js";
-import sharp from "sharp";
 import mongoose from "mongoose";
-
-let _apiKey = null;
-let _genAI = null;
-let _initialized = false;
 
 function toBool(value) {
   const s = String(value || "")
     .trim()
     .toLowerCase();
   return ["1", "true", "yes", "y", "on"].includes(s);
-}
-
-function getGenAI() {
-  if (!_initialized) {
-    _initialized = true;
-    _apiKey = process.env.GOOGLE_API_KEY;
-    if (_apiKey) {
-      try {
-        _genAI = new GoogleGenerativeAI(_apiKey);
-      } catch {
-        _genAI = null;
-      }
-    }
-  }
-  return _genAI;
 }
 
 function extractLotSuffix3(value) {
@@ -90,7 +60,9 @@ function parseManufacturerHexRotationModeOrNull(value) {
 function normalizeLegacyManufacturerHexRotationOnRequest(requestDoc) {
   if (!requestDoc) return false;
 
-  const caseRaw = String(requestDoc?.caseInfos?.manufacturerHexRotation || "").trim();
+  const caseRaw = String(
+    requestDoc?.caseInfos?.manufacturerHexRotation || "",
+  ).trim();
   const rndRaw = String(requestDoc?.rnd?.manufacturerHexRotation || "").trim();
   const caseParsed = parseManufacturerHexRotationModeOrNull(caseRaw);
   const rndParsed = parseManufacturerHexRotationModeOrNull(rndRaw);
@@ -132,171 +104,6 @@ async function listPackingRequestsBySuffix(recognizedSuffix) {
   );
 }
 
-async function findPackingRequestBySuffix(recognizedSuffix) {
-  const matches = await listPackingRequestsBySuffix(recognizedSuffix);
-  return matches[0] || null;
-}
-
-async function recognizeLotNumberFromS3({ s3Key, originalName }) {
-  const genAI = getGenAI();
-  if (!genAI) {
-    return { lotNumber: "", confidence: "low", provider: "none" };
-  }
-
-  const buffer = await getObjectBufferFromS3(s3Key);
-  if (!buffer || buffer.length === 0) {
-    throw new ApiError(404, "S3에서 파일을 찾을 수 없습니다.");
-  }
-
-  const originalSizeKB = (buffer.length / 1024).toFixed(2);
-  console.log("[lot-capture] original image size", {
-    s3Key,
-    sizeKB: originalSizeKB,
-    sizeBytes: buffer.length,
-  });
-
-  // 현미경 bmp/tiff/작은 jpeg도 Gemini가 읽도록 항상 jpeg·긴 변 800 이하로 맞춘다.
-  let processedBuffer = buffer;
-  let mimeType = "image/jpeg";
-  try {
-    const metadata = await sharp(buffer, { failOn: "none" }).metadata();
-    console.log("[lot-capture] original image dimensions", {
-      width: metadata.width,
-      height: metadata.height,
-      format: metadata.format,
-    });
-
-    processedBuffer = await sharp(buffer, { failOn: "none" })
-      .rotate()
-      .resize(800, 800, {
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .jpeg({ quality: 85 })
-      .toBuffer();
-
-    const resizedSizeKB = (processedBuffer.length / 1024).toFixed(2);
-    console.log("[lot-capture] image normalized for recognition", {
-      originalSizeKB,
-      resizedSizeKB,
-      format: metadata.format || null,
-    });
-  } catch (resizeError) {
-    console.warn("[lot-capture] image normalize failed, using original", {
-      error: resizeError?.message || String(resizeError),
-    });
-    processedBuffer = buffer;
-    mimeType = String(originalName || "")
-      .toLowerCase()
-      .endsWith(".png")
-      ? "image/png"
-      : "image/jpeg";
-  }
-
-  const guardKey = `gemini-recognizeLotNumber:bg`;
-  const guard = shouldBlockExternalCall(guardKey);
-  if (guard?.blocked) {
-    throw new ApiError(
-      429,
-      "AI 외부 API가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
-    );
-  }
-
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.1,
-    },
-  });
-
-  const imageBase64 = processedBuffer.toString("base64");
-
-  const prompt =
-    "너는 치과 임플란트 어벗먼트(또는 유사한 금속 부품) 생산 이미지에서 각인된 시리얼 코드를 읽어 JSON으로 추출하는 도우미야.\n" +
-    "이 시리얼 코드는 보통 영문 대문자 3글자로 구성된 코드이며,\n" +
-    "앞뒤에 다른 문자나 숫자가 섞여 있을 수도 있고, 오직 3글자만 보일 수도 있어.\n" +
-    "이미지 안에서 금속 표면에 가장 뚜렷하게 각인된 3글자 영문 대문자 코드를 그대로 lotNumber 로 반환해줘.\n" +
-    "흐리거나 저해상도여도 추측/예시 코드로 채우지 말고, 글자 형태를 읽어라.\n" +
-    "읽기 어렵거나 확신이 없으면 confidence 를 low 로 두고, 도저히 읽을 수 없으면 lotNumber 는 빈 문자열로 둬.\n" +
-    "만약 여러 개가 보이면 가장 중요한(가장 크게, 중앙에, 선명하게 보이는) 코드를 1개만 선택해.\n" +
-    "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
-    "스키마:\n" +
-    "{\n" +
-    '  "lotNumber": string,\n' +
-    '  "confidence": "high" | "medium" | "low"\n' +
-    "}";
-
-  const result = await model.generateContent([
-    { text: prompt },
-    {
-      inlineData: {
-        data: imageBase64,
-        mimeType,
-      },
-    },
-  ]);
-
-  const text = result?.response?.text?.() || "";
-
-  let cleaned = String(text || "").trim();
-  if (cleaned.startsWith("```")) {
-    const firstNewline = cleaned.indexOf("\n");
-    const lastFence = cleaned.lastIndexOf("```");
-    if (firstNewline !== -1 && lastFence !== -1 && lastFence > firstNewline) {
-      cleaned = cleaned.slice(firstNewline + 1, lastFence).trim();
-    }
-  }
-
-  const tryParseJsonObject = (input) => {
-    if (!input) return null;
-    const s = String(input).trim();
-    try {
-      return JSON.parse(s);
-    } catch {}
-
-    const firstBrace = s.indexOf("{");
-    const lastBrace = s.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      return null;
-    }
-    const slice = s.slice(firstBrace, lastBrace + 1);
-    try {
-      return JSON.parse(slice);
-    } catch {
-      return null;
-    }
-  };
-
-  const parsed = tryParseJsonObject(cleaned);
-  const parseOk =
-    !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
-
-  if (!parseOk) {
-    return { lotNumber: "", confidence: "low", provider: "gemini" };
-  }
-
-  return {
-    lotNumber: String(parsed.lotNumber || "").trim(),
-    confidence: String(parsed.confidence || "low").trim(),
-    provider: "gemini",
-  };
-}
-
-async function resolvePackingPreviewUrl({ s3Key, s3Url }) {
-  const fallback = String(s3Url || "").trim();
-  try {
-    const signed = await getSignedUrl(s3Key, 60 * 30);
-    return String(signed || "").trim() || fallback;
-  } catch (err) {
-    console.warn("[lot-capture] preview signed URL failed", {
-      s3Key,
-      error: err?.message || String(err),
-    });
-    return fallback;
-  }
-}
-
 async function findPackingRequestForManualBind({
   requestMongoId,
   requestId,
@@ -321,6 +128,13 @@ async function findPackingRequestForManualBind({
     .populate("requestor", "businessAnchorId");
 }
 
+/**
+ * 세척.패킹 각인 매칭.
+ * - recognizedSuffix(3글자) + confirmBySuffix → 유일 건이면 포장.발송
+ * - requestMongoId 수동 지정 → 그 건으로 포장.발송
+ * - s3Key는 선택(이미지 기록용). 코드만으로도 진행한다.
+ * - 서버 Gemini 이미지 OCR은 쓰지 않는다(lot-server 로컬 OCR / 수동 입력).
+ */
 export const handlePackingCapture = asyncHandler(async (req, res) => {
   const {
     s3Key,
@@ -332,80 +146,27 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     source,
     requestMongoId,
     requestId: bodyRequestId,
-    detachFromRequestMongoId,
     confirmBySuffix: confirmBySuffixRaw,
   } = req.body || {};
 
   const key = String(s3Key || "").trim();
-  if (!key) {
-    throw new ApiError(400, "s3Key가 필요합니다.");
-  }
-
-  const name = String(originalName || "").trim() || "capture.jpg";
+  const name = String(originalName || "").trim() || "lot-code.txt";
   const manualRequestMongoId = String(requestMongoId || "").trim();
   const manualRequestId = String(bodyRequestId || "").trim();
   const isManualBind = Boolean(manualRequestMongoId || manualRequestId);
-  // 작업자가 선택한 이미지에 3글자를 직접 넣은 확정. 현미경 자동 인식과 구분한다.
-  const confirmBySuffix = toBool(confirmBySuffixRaw);
+  const confirmBySuffix = toBool(confirmBySuffixRaw) || !isManualBind;
 
   const providedLotNumber = String(lotNumber || "").trim();
-  const providedSuffix = extractLotSuffix3(
+  let matchedSuffix = extractLotSuffix3(
     String(recognizedSuffix || "").trim() || providedLotNumber,
   );
-  let recognized = {
-    lotNumber: providedLotNumber || providedSuffix,
-    confidence: providedSuffix ? "provided" : "missing",
-    provider: providedSuffix
-      ? isManualBind || confirmBySuffix
-        ? "manual"
-        : "lot-server"
-      : "none",
-  };
 
-  const packAiRecogEnabled = toBool(process.env.PACK_AI_RECOG);
-  let recognitionFailed = false;
-  if (!isManualBind && !providedSuffix && packAiRecogEnabled) {
-    try {
-      recognized = await recognizeLotNumberFromS3({
-        s3Key: key,
-        originalName: name,
-      });
-    } catch (recognizeError) {
-      // 인식 실패·과호출 차단이어도 이미지는 수동 매칭으로 남긴다.
-      recognitionFailed = true;
-      console.warn("[lot-capture] recognition failed, defer to manual match", {
-        s3Key: key,
-        originalName: name,
-        error: recognizeError?.message || String(recognizeError),
-      });
-      recognized = {
-        lotNumber: "",
-        confidence: "low",
-        provider: "gemini",
-      };
-    }
-  }
-
-  const finalRecognizedSuffix = extractLotSuffix3(
-    String(recognized?.lotNumber || ""),
-  );
-  if (confirmBySuffix && !finalRecognizedSuffix) {
+  if (!isManualBind && !matchedSuffix) {
     throw new ApiError(400, "각인 코드 3글자가 필요합니다.");
   }
-  console.log("[lot-capture] recognition result", {
-    originalName: name,
-    s3Key: key,
-    recognizedLotNumber: String(recognized?.lotNumber || "").trim(),
-    recognizedSuffix: finalRecognizedSuffix,
-    confidence: String(recognized?.confidence || "").trim() || "unknown",
-    provider: String(recognized?.provider || "").trim() || "unknown",
-    packAiRecogEnabled,
-    manualBind: isManualBind,
-  });
 
   let request = null;
   let reason = "";
-  let matchedSuffix = finalRecognizedSuffix;
 
   if (isManualBind) {
     request = await findPackingRequestForManualBind({
@@ -420,155 +181,48 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       );
       if (!matchedSuffix && requestSuffix) {
         matchedSuffix = requestSuffix;
-        recognized = {
-          lotNumber: requestSuffix,
-          confidence: "manual",
-          provider: "manual",
-        };
       }
     }
-  } else if (confirmBySuffix) {
-    const matches = await listPackingRequestsBySuffix(finalRecognizedSuffix);
+  } else {
+    const matches = await listPackingRequestsBySuffix(matchedSuffix);
     if (matches.length === 1) {
       request = matches[0];
     } else {
       reason = matches.length > 1 ? "ambiguous_suffix" : "no_suffix_match";
     }
-  } else if (finalRecognizedSuffix) {
-    request = await findPackingRequestBySuffix(finalRecognizedSuffix);
-    if (!request) {
-      reason = "no_suffix_match";
-    }
-  } else {
-    // 자동 경로는 인식 제안만 하고 저장하지 않는다. (확정은 requestMongoId 수동 바인딩)
-    reason = recognitionFailed ? "recognition_failed" : "no_recognized_suffix";
   }
 
-  // 자동 인식(현미경/드롭)은 작업자 확인 전 확정하지 않는다.
-  // 작업자가 고른 이미지에 코드를 넣은 경우(confirmBySuffix)는 아래에서 바로 적용한다.
-  if (!isManualBind && !confirmBySuffix) {
-    const previewUrl = await resolvePackingPreviewUrl({
-      s3Key: key,
-      s3Url,
-    });
-    const confirmPayload = {
-      ok: true,
-      matched: false,
-      needsConfirm: true,
-      candidateMatched: Boolean(request),
-      recognized: recognized || null,
-      suffix: matchedSuffix || null,
-      reason: request ? "" : reason || "no_packing_request",
-      suggestedRequestId: request?.requestId || null,
-      suggestedRequestMongoId: request?._id ? String(request._id) : null,
-      suggestedLotValue: String(request?.lotNumber?.value || "").trim() || null,
-      s3Key: key,
-      s3Url: String(s3Url || "").trim() || "",
-      previewUrl,
-      originalName: name,
-      fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : null,
-      source: String(source || "").trim() || "worker",
-    };
-
-    console.log("[lot-capture] needs worker confirm", {
-      recognizedSuffix: matchedSuffix || null,
-      candidateMatched: confirmPayload.candidateMatched,
-      suggestedRequestId: confirmPayload.suggestedRequestId,
-      reason: confirmPayload.reason || null,
-      s3Key: key,
-    });
-
-    emitAppEventGlobal("packing:capture-needs-confirm", {
-      source: "bg-lot-capture",
-      capturedBy:
-        String(source || "").trim() === "manual" ? "frontend" : "worker",
-      ...confirmPayload,
-    });
-
-    // 구 FE 호환: 후보 없을 때만 unmatched도 발행
-    if (!request) {
-      emitAppEventGlobal("packing:capture-unmatched", {
-        source: "bg-lot-capture",
-        capturedBy:
-          String(source || "").trim() === "manual" ? "frontend" : "worker",
-        ...confirmPayload,
-      });
-    }
-
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        confirmPayload,
-        request
-          ? "각인 인식 후보가 있습니다. 화면에서 확인 후 매칭하세요."
-          : "일치하는 세척.패킹 의뢰를 찾지 못했습니다. 화면에서 수동 매칭하세요.",
-      ),
-    );
-  }
+  const recognized = {
+    lotNumber: matchedSuffix || providedLotNumber,
+    confidence: "provided",
+    provider:
+      String(source || "").trim() === "manual" || isManualBind
+        ? "manual"
+        : "lot-server",
+  };
 
   if (!request) {
-    if (confirmBySuffix) {
-      return res.status(200).json(
-        new ApiResponse(
-          200,
-          {
-            ok: true,
-            matched: false,
-            needsConfirm: false,
-            candidateMatched: false,
-            suffix: finalRecognizedSuffix || null,
-            reason: reason || "no_suffix_match",
-          },
-          reason === "ambiguous_suffix"
-            ? "같은 각인 코드가 여러 건입니다."
-            : "일치하는 세척.패킹 의뢰를 찾지 못했습니다.",
-        ),
-      );
-    }
-
-    console.warn("[lot-capture] no matching request found", {
+    console.warn("[lot-capture] no matching request", {
       recognizedSuffix: matchedSuffix || null,
-      originalName: name,
-      s3Key: key,
       reason,
       manualBind: isManualBind,
     });
-
-    const previewUrl = await resolvePackingPreviewUrl({
-      s3Key: key,
-      s3Url,
-    });
-    const unmatchedPayload = {
-      ok: true,
-      recognized: recognized || null,
-      matched: false,
-      needsConfirm: true,
-      candidateMatched: false,
-      suffix: matchedSuffix || null,
-      reason: reason || "no_packing_request",
-      suggestedRequestId: null,
-      suggestedRequestMongoId: null,
-      suggestedLotValue: null,
-      s3Key: key,
-      s3Url: String(s3Url || "").trim() || "",
-      previewUrl,
-      originalName: name,
-      fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : null,
-      source: String(source || "").trim() || "worker",
-    };
-
-    emitAppEventGlobal("packing:capture-unmatched", {
-      source: "bg-lot-capture",
-      capturedBy:
-        String(source || "").trim() === "manual" ? "frontend" : "worker",
-      ...unmatchedPayload,
-    });
-
     return res.status(200).json(
       new ApiResponse(
         200,
-        unmatchedPayload,
-        "일치하는 세척.패킹 의뢰를 찾지 못했습니다. 화면에서 수동 매칭하세요.",
+        {
+          ok: true,
+          matched: false,
+          needsConfirm: false,
+          candidateMatched: false,
+          suffix: matchedSuffix || null,
+          reason: reason || "no_suffix_match",
+        },
+        reason === "ambiguous_suffix"
+          ? "같은 각인 코드가 여러 건입니다."
+          : reason === "manual_request_not_found"
+            ? "지정한 세척.패킹 의뢰를 찾지 못했습니다."
+            : "일치하는 세척.패킹 의뢰를 찾지 못했습니다.",
       ),
     );
   }
@@ -577,20 +231,31 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   request.caseInfos.stageFiles = request.caseInfos.stageFiles || {};
   request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
 
-  request.caseInfos.stageFiles.packing = {
-    fileName: name,
-    fileType:
-      s3Utils.getFileType(name) === "image"
-        ? "image/jpeg"
-        : "application/octet-stream",
-    fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : undefined,
-    filePath: name,
-    s3Key: key,
-    s3Url: String(s3Url || "").trim() || "",
-    source: String(source || "").trim() || "worker",
-    uploadedBy: null,
-    uploadedAt: new Date(),
-  };
+  if (key) {
+    request.caseInfos.stageFiles.packing = {
+      fileName: name,
+      fileType:
+        s3Utils.getFileType(name) === "image"
+          ? "image/jpeg"
+          : "application/octet-stream",
+      fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : undefined,
+      filePath: name,
+      s3Key: key,
+      s3Url: String(s3Url || "").trim() || "",
+      source: String(source || "").trim() || "lot-server",
+      uploadedBy: null,
+      uploadedAt: new Date(),
+    };
+  } else {
+    const prev = request.caseInfos.stageFiles.packing || {};
+    request.caseInfos.stageFiles.packing = {
+      ...prev,
+      source: String(source || "").trim() || "lot-server",
+      lotSuffix: matchedSuffix || "",
+      codeOnly: true,
+      uploadedAt: new Date(),
+    };
+  }
 
   request.caseInfos.reviewByStage.packing = {
     status: "APPROVED",
@@ -604,15 +269,13 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     lotPart: String(request?.lotNumber?.value || "").trim() || null,
-    stage: String(request?.manufacturerStage || "").trim() || null,
-    imageName: name,
+    hasImage: Boolean(key),
     manualBind: isManualBind,
+    confirmBySuffix,
   });
 
   await ensureFinishedLotNumberForPacking(request);
 
-  // populate된 businessAnchorId를 String()하면 "[object Object]"가 되어
-  // 동일 업체 우편함 재사용이 깨진다. _id까지 정규화한 값만 사용한다.
   const requestAnchorIdStr = normalizeBusinessAnchorId(
     request.businessAnchorId,
   );
@@ -625,76 +288,20 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request.businessAnchorId = request.requestor.businessAnchorId;
   }
 
-  // 세척.패킹 각인 후 포장.발송 전환. SSOT: enterManufacturerShippingStage.
   await enterManufacturerShippingStage({
     request,
     requestorOrgId: effectiveAnchorIdStr,
     source: "lot_capture",
   });
 
-  const legacyHexRotationNormalized =
-    normalizeLegacyManufacturerHexRotationOnRequest(request);
-  if (legacyHexRotationNormalized) {
-    console.warn("[lot-capture] normalized legacy manufacturerHexRotation", {
-      requestId: request.requestId,
-      requestMongoId: String(request._id || ""),
-      caseInfosManufacturerHexRotation:
-        String(request?.caseInfos?.manufacturerHexRotation || "").trim() || null,
-      rndManufacturerHexRotation:
-        String(request?.rnd?.manufacturerHexRotation || "").trim() || null,
-    });
-  }
-
-  console.log("[lot-capture] before save - businessAnchorId state", {
-    requestId: request.requestId,
-    hasName: !!request?.businessAnchorId?.name,
-    nameValue: request?.businessAnchorId?.name || null,
-    mailboxAddress: request?.mailboxAddress || null,
-  });
+  normalizeLegacyManufacturerHexRotationOnRequest(request);
 
   await request.save();
 
-  let detachedFromRequestMongoId = "";
-  const detachFrom = String(detachFromRequestMongoId || "").trim();
-  if (
-    detachFrom &&
-    detachFrom !== String(request._id) &&
-    mongoose.Types.ObjectId.isValid(detachFrom)
-  ) {
-    // 같은 S3 객체를 다른 의뢰에 붙인 뒤다. 파일을 지우면 대상도 깨진다.
-    const detached = await Request.updateOne(
-      {
-        _id: detachFrom,
-        "caseInfos.stageFiles.packing.s3Key": key,
-      },
-      {
-        $set: {
-          "caseInfos.stageFiles.packing.fileName": "",
-          "caseInfos.stageFiles.packing.filePath": "",
-          "caseInfos.stageFiles.packing.s3Key": "",
-          "caseInfos.stageFiles.packing.s3Url": "",
-          "caseInfos.stageFiles.packing.fileType": "",
-          "caseInfos.stageFiles.packing.fileSize": 0,
-          "caseInfos.reviewByStage.packing.status": "PENDING",
-          "caseInfos.reviewByStage.packing.reason": "",
-          "caseInfos.reviewByStage.packing.updatedAt": new Date(),
-        },
-      },
-    );
-    if (detached?.modifiedCount > 0) {
-      detachedFromRequestMongoId = detachFrom;
-    }
-  }
-
-  console.log("[lot-capture] after save - businessAnchorId state", {
-    requestId: request.requestId,
-    hasName: !!request?.businessAnchorId?.name,
-    nameValue: request?.businessAnchorId?.name || null,
-  });
-
   const normalizedRequest = await normalizeRequestForResponse(request);
-
   const capturedByFrontend = String(source || "").trim() === "manual";
+  const movedToStage =
+    String(normalizedRequest?.manufacturerStage || "").trim() || "포장.발송";
 
   emitBgRuntimeStatus({
     requestId: request.requestId,
@@ -707,19 +314,15 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     clear: true,
     metadata: {
       recognizedSuffix: matchedSuffix || null,
-      temporaryFallback: !packAiRecogEnabled && !matchedSuffix,
       manualBind: isManualBind,
     },
   });
-
-  const movedToStage = String(normalizedRequest?.manufacturerStage || "").trim() || "포장.발송";
 
   emitAppEventGlobal("packing:capture-processed", {
     source: "bg-lot-capture",
     capturedBy: capturedByFrontend ? "frontend" : "worker",
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
-    detachedFromRequestMongoId: detachedFromRequestMongoId || null,
     recognizedSuffix: matchedSuffix || null,
     recognized: recognized || null,
     movedToStage,
@@ -729,12 +332,12 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       fileType: request.caseInfos?.stageFiles?.packing?.fileType || null,
       fileSize: request.caseInfos?.stageFiles?.packing?.fileSize || null,
       filePath: request.caseInfos?.stageFiles?.packing?.filePath || name,
-      s3Key: request.caseInfos?.stageFiles?.packing?.s3Key || key,
+      s3Key: request.caseInfos?.stageFiles?.packing?.s3Key || key || "",
       s3Url:
         request.caseInfos?.stageFiles?.packing?.s3Url ||
         String(s3Url || "").trim() ||
         "",
-      source: request.caseInfos?.stageFiles?.packing?.source || "worker",
+      source: request.caseInfos?.stageFiles?.packing?.source || "lot-server",
       uploadedAt:
         request.caseInfos?.stageFiles?.packing?.uploadedAt || new Date(),
     },
@@ -759,16 +362,16 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
         matched: true,
         requestId: request.requestId,
         requestMongoId: String(request._id || ""),
-        detachedFromRequestMongoId: detachedFromRequestMongoId || null,
         suffix: matchedSuffix || null,
         recognized: recognized || null,
         manualBind: isManualBind || confirmBySuffix,
+        request: normalizedRequest,
       },
-      isManualBind || confirmBySuffix
-        ? "수동 매칭 포장 캡쳐 처리 완료"
-        : "포장 캡쳐 처리 완료",
+      "각인 매칭 포장 처리 완료",
     ),
   );
 });
+
+export { extractLotSuffix3 };
 
 export default { handlePackingCapture };
