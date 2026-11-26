@@ -2366,7 +2366,8 @@ function filterFloatingScanConfettiIndices(
   }
   if (maxCompTris < 8_000) return triVertIds as number[];
 
-  const maxScrapTris = Math.min(400, Math.max(24, Math.floor(maxCompTris * 0.004)));
+  // 인접면·치은 조각이 구멍과 끊겨도 버리지 않도록 아주 작은 confetti만 제거한다.
+  const maxScrapTris = Math.min(48, Math.max(12, Math.floor(maxCompTris * 0.0008)));
   let dropCount = 0;
   for (let t = 0; t < restTriCount; t += 1) {
     if (compTris[find(triW0[t]!)]! <= maxScrapTris) dropCount += 1;
@@ -3125,22 +3126,23 @@ export function splitScanByScanbodies(
         }
 
         // 스캔바디 축 안쪽을 바라보는 수직 인접치 인접면·출현 커프 내벽은 절대 넘지 않는다.
-        // 벽 바로 밖 암적색 어깨(선반)만 nEr 음수 허용. 바깥 치간 암부는 수평막(nAx>=0.72)일 때만.
+        // 벽 바로 밖 암적색은 수평 선반·막만 허용(인접면 nEr 음수·낮은 nAx는 보존).
         if (g.nEr < -0.06) {
+          const sbColored = looksLikeScanbodyColor(nb);
           const nearDarkShelf =
-            isDarkBite &&
-            g.r <= maxCoreR + 0.78 &&
-            g.hz >= g.sz - 0.45 &&
+            (isDarkBite || sbColored) &&
+            g.r <= maxCoreR + 0.65 &&
+            g.hz >= g.sz - 0.35 &&
             g.hz <= sbH - 0.35 &&
-            g.nAx >= 0.55 &&
-            g.nEr >= -0.72;
+            g.nAx >= 0.68 &&
+            g.nEr >= -0.35;
           const outerDarkFilm =
-            isDarkBite &&
-            g.r <= maxCoreR + 1.05 &&
-            g.hz >= g.sz - 0.45 &&
+            (isDarkBite || sbColored) &&
+            g.r <= maxCoreR + 0.95 &&
+            g.hz >= g.sz - 0.35 &&
             g.hz <= sbH - 0.35 &&
-            g.nAx >= 0.72 &&
-            g.nEr >= -0.62;
+            g.nAx >= 0.78 &&
+            g.nEr >= -0.28;
           if (nearDarkShelf || outerDarkFilm) {
             claimed[nb] = 1;
             queue.push(nb);
@@ -3186,27 +3188,28 @@ export function splitScanByScanbodies(
           continue;
         }
 
-        // Zone 1.5: 벽 바로 밖 암적색 어깨·선반 (원심 잔여가 주로 여기, r <= maxCoreR + 0.78)
+        // Zone 1.5: 벽 바로 밖 암적색 수평 어깨·선반 (수직 인접면 nEr 음수는 위에서 이미 차단)
         if (
           isDarkBite &&
-          g.r <= maxCoreR + 0.78 &&
-          g.hz >= g.sz - 0.45 &&
+          g.r <= maxCoreR + 0.65 &&
+          g.hz >= g.sz - 0.35 &&
           g.hz <= sbH - 0.25 &&
-          g.nAx >= 0.55 &&
-          g.nEr >= -0.72
+          g.nAx >= 0.68 &&
+          g.nEr >= -0.12
         ) {
           claimed[nb] = 1;
           queue.push(nb);
           continue;
         }
 
-        // Zone 2A: 칼라 밖 검붉은 수평 바이트 막 (r <= maxCoreR + 1.05, 강한 상향만)
+        // Zone 2A: 칼라 밖 검붉은 수평 바이트 막 (강한 상향만, 인접면 제외)
         if (
           isDarkBite &&
-          g.r <= maxCoreR + 1.05 &&
-          g.hz >= g.sz - 0.45 &&
+          g.r <= maxCoreR + 0.95 &&
+          g.hz >= g.sz - 0.35 &&
           g.hz <= sbH - 0.3 &&
-          g.nAx >= 0.70
+          g.nAx >= 0.78 &&
+          g.nEr >= -0.08
         ) {
           claimed[nb] = 1;
           queue.push(nb);
@@ -3290,18 +3293,29 @@ export function splitScanByScanbodies(
       }
     }
 
-    // 절단 경계 톱니·외톨이 혀(dangling ear/sliver) 정리: 열린 절단선에 매달린 뾰족한 잔여 삼각형 반복 제거
+    // 절단 경계 톱니·외톨이 혀 정리. 내향 인접면·치은은 peel 하지 않는다.
     for (let pass = 0; pass < 8; pass += 1) {
       let changed = false;
       for (const ri of localList) {
         if (claimed[ri] || owner[ri]! >= 0) continue;
         const g = triGeom(ri);
         const maxCoreR = Math.max(g.rw, sbR);
-        const darkOrSb = looksLikeDarkBiteCollarArtifact(ri) || looksLikeScanbodyColor(ri);
+        const sbColored = looksLikeScanbodyColor(ri);
+        const darkOrSb = looksLikeDarkBiteCollarArtifact(ri) || sbColored;
+        // 축을 향한 인접면은 스캔바디색이 아니면 절대 peel 하지 않는다.
+        if (g.nEr < -0.06 && !sbColored) continue;
         const nearDarkShelf =
-          darkOrSb && g.r <= maxCoreR + 0.78 && g.nAx >= 0.55 && g.hz >= g.sz - 0.4;
-        const maxPeelR = maxCoreR + (nearDarkShelf ? 0.80 : darkOrSb ? 1.08 : 0.88);
-        if (g.r > maxPeelR || g.hz < g.sz - 0.5 || g.nEr < (nearDarkShelf ? -0.72 : darkOrSb ? -0.58 : -0.35)) {
+          darkOrSb &&
+          g.r <= maxCoreR + 0.65 &&
+          g.nAx >= 0.68 &&
+          g.nEr >= -0.28 &&
+          g.hz >= g.sz - 0.35;
+        const maxPeelR = maxCoreR + (nearDarkShelf ? 0.70 : sbColored ? 0.88 : 0.55);
+        if (
+          g.r > maxPeelR ||
+          g.hz < g.sz - 0.5 ||
+          g.nEr < (nearDarkShelf ? -0.28 : sbColored ? -0.2 : -0.12)
+        ) {
           continue;
         }
         // 상향 비암적 치은 바닥은 peel 로 잠식하지 않는다.
@@ -3314,10 +3328,11 @@ export function splitScanByScanbodies(
         }
         if (cCnt === 0) continue;
         const healthy = looksClearlyHealthyTissue(ri);
+        if (healthy && !sbColored) continue;
         if (
-          (nearDarkShelf && cCnt >= 1 && !healthy) ||
-          (cCnt >= 2 && (g.r <= maxCoreR + 0.24 ? g.nAx < 0.74 || !healthy : darkOrSb || !healthy)) ||
-          (uCnt <= 1 && !healthy)
+          (nearDarkShelf && cCnt >= 1) ||
+          (cCnt >= 2 && (g.r <= maxCoreR + 0.24 ? g.nAx < 0.74 : darkOrSb)) ||
+          (uCnt <= 1 && darkOrSb)
         ) {
           claimed[ri] = 1;
           changed = true;

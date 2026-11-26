@@ -1,7 +1,7 @@
-// 크라운 작업용 export: 구강 스캔에서 마진 상방을 덮는 치은을 지운 뒤
-// 커스텀어벗을 같은 파일에 합친다. 어벗 단독 파일은 만들지 않는다.
+// 마진 상방 치은 제거 헬퍼(단위 테스트용).
+// 외부 저장(downloadCrownWorkScans)에서는 인접면 보존을 위해 호출하지 않는다.
 // related: docs/intent/crown-export-scan-abutment-merge.md
-// - PracticeCustomAbutmentPreviewDialog.downloadCrownWorkScans
+// related: docs/intent/abutment-design-export-stl-credit.md
 
 import * as THREE from "three";
 import type { DesignedCustomAbutment } from "@/shared/practice/customAbutmentStlDesign";

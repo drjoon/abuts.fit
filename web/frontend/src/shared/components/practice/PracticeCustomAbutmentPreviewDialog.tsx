@@ -1,7 +1,7 @@
 // 치과 채팅의 작업 스캔 → 전체 화면 커스텀어벗 디자인 모달.
-// 헤더 다운로드는 기공소 보철 작업용 구강스캔이다.
-// 기존 악궁에서 스캔바디를 빼고, 마진 상방 치은을 지운 뒤 디자인된 커스텀어벗을 붙인
-// 악궁 단위 칼라 PLY만 저장한다. 어벗 단독 파일은 넣지 않는다(자체 밀링 방지).
+// 헤더 외부 저장은 기공소 보철 작업용 구강스캔(+치아별 어벗 STL)이다.
+// 스캔바디만 뺀 악궁에 어벗을 합친 PLY와, 월드 좌표 어벗 STL을 함께 받는다.
+// 치은·인접면은 지우지 않는다. 생산비 차감으로 자체 밀링을 막는다.
 // 좌표는 씬 월드(원점 이동 없음).
 // 치과 스캔에서 스캔바디를 인식·라이브러리 정합해 픽스쳐 위치를 잡고, 그 상방에 커스텀어벗 STL을 디자인하여
 // 스캔 치아 데이터 위에 올라간 모습으로 확인한다.
@@ -25,6 +25,7 @@
 // - 2026-11-21: 치과·기공소 모두 디자인을 열고 완료한다. 5분 뒤 제조사 준비.
 // - 2026-11-20: 디자인 확정 뒤 스냅샷을 다시 올리지 않는다. 확정 저장이 프리뷰를 이미 남긴다.
 // - 2026-11-20: 기공소 열기 — 확정 JSON만 먼저 보고, 스캔과 프리뷰 STL은 같이 받는다.
+// - 2026-11-26: 외부 저장 — 치은 컷 제거(인접면 보존). 스캔∪어벗 PLY + 치아별 월드 STL.
 // - 2026-11-25: 크라운 작업 ZIP — 마진 상방 치은 제거 후 스캔∪어벗 합본만. 어벗 단독 PLY 없음.
 // - 2026-11-21: 보철 작업 스캔은 스캔바디를 뺀 악궁에 어벗을 붙인 칼라 PLY.
 // - 2026-11-19: filesPending — 캘린더 hydrate 전에 모달을 먼저 열고 스캔 키를 기다린다.
@@ -251,7 +252,6 @@ import {
   type CustomAbutmentDesignMetrics,
   type DesignedCustomAbutment,
 } from "@/shared/practice/customAbutmentStlDesign";
-import { removeGingivaCoveringAboveMargin } from "@/shared/practice/crownExportScanMerge";
 import {
   finiteNumberMap,
   isAbutmentVariantId,
@@ -9401,27 +9401,13 @@ export function PracticeCustomAbutmentPreviewDialog({
     crownDownloadLockRef.current = true;
     setCrownDownloadBusy(true);
     const tempAbutMats: THREE.Material[] = [];
-    const tempGeos: THREE.BufferGeometry[] = [];
     try {
-      // 스캔: 마진 상방 치은 제거 후 해당 악 어벗을 합친 PLY.
+      // 스캔: 치은·인접면 그대로(치은 컷 없음). 해당 악 어벗을 합친 PLY.
       // 어벗: 치아별 월드 좌표 STL(다른 CAD에 앉히기용).
       const jawMeshes = (jaw: "upper" | "lower") => {
         const key = jaw === "upper" ? "upperTrimmed" : "lowerTrimmed";
         const designs = designedListRef.current.filter((d) => d.jaw === jaw);
-        const parts: THREE.Mesh[] = [];
-        for (const src of jawMeshesRef.current[key]) {
-          const cut = removeGingivaCoveringAboveMargin(src.geometry, designs);
-          if (cut !== src.geometry) {
-            tempGeos.push(cut);
-            const temp = new THREE.Mesh(cut, src.material);
-            temp.matrixAutoUpdate = false;
-            temp.matrix.copy(src.matrix);
-            temp.matrixWorld.copy(src.matrixWorld);
-            parts.push(temp);
-          } else {
-            parts.push(src);
-          }
-        }
+        const parts: THREE.Mesh[] = [...jawMeshesRef.current[key]];
         for (const design of designs) {
           const mesh = abutmentMeshesRef.current.get(design.toothNumber);
           if (mesh) {
@@ -9518,7 +9504,6 @@ export function PracticeCustomAbutmentPreviewDialog({
       toast({ title: "크라운 작업 스캔을 만들지 못했습니다." });
     } finally {
       for (const mat of tempAbutMats) mat.dispose();
-      for (const geo of tempGeos) geo.dispose();
       crownDownloadLockRef.current = false;
       setCrownDownloadBusy(false);
     }
