@@ -28,7 +28,7 @@ const systemSettingsSchema = new mongoose.Schema(
     // related: web/backend/services/autoMachiningGate.service.js
     autoMachiningGate: {
       enabled: { type: Boolean, default: false },
-      // 자동 승인을 켠 시각+30초. 이 시각 전에는 준비→가공 승인과 자동 시작을 하지 않는다.
+      // 레거시 유예 시각. 자동 승인은 준비→가공만 하므로 켤 때 null로 둔다.
       autoStartAt: { type: Date, default: null },
       maxDiameterMm: { type: Number, default: 10 },
       minFinishLineZ: { type: Number, default: 0.6 },

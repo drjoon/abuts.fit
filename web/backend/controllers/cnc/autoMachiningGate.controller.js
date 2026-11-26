@@ -3,6 +3,7 @@
 // - web/backend/modules/cnc/cncMachine.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shared/autoApproval/AutoApprovalGateSwitch.tsx
 // change-log:
+// - 2026-11-26: 켤 때 장비 자동 가공은 건드리지 않는다. 준비→가공 승인만 바로 돌린다.
 // - 2026-10-14: 제외 의뢰자 목록 조회·저장. 이름은 BusinessAnchor에서 붙인다.
 // - 2026-10-10: 자동 승인을 켜면 30초 뒤에 승인·자동 가공을 시작한다.
 // - 2026-10-10: 가공 HOLD 목록 제거. holdCount는 준비에 남겨 둔 문제 건 수.
@@ -11,56 +12,19 @@
 import mongoose from "mongoose";
 import SystemSettings from "../../models/systemSettings.model.js";
 import Request from "../../models/request.model.js";
-import Machine from "../../models/machine.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   activePrepCreatedAtFilter,
   getAutoGateConfig,
   runAutoMachiningGatePass,
 } from "../../services/autoMachiningGate.service.js";
-import {
-  AUTO_START_GRACE_MS,
-  isAutoStartGraceActive,
-} from "../../services/autoStartGrace.js";
-import { triggerNextAutoMachiningAfterComplete } from "./machiningBridge.js";
 
-let graceKickTimer = null;
-
-async function kickAutoStartAfterGrace() {
-  if (await isAutoStartGraceActive()) return;
+async function kickPrepGatePass() {
   try {
     await runAutoMachiningGatePass({ limit: 10 });
   } catch (error) {
-    console.error("[autoMachiningGate] grace pass failed", error?.message || error);
+    console.error("[autoMachiningGate] enable pass failed", error?.message || error);
   }
-  const machines = await Machine.find({ allowAutoMachining: true })
-    .select("uid")
-    .lean();
-  for (const machine of machines) {
-    const uid = String(machine?.uid || "").trim();
-    if (!uid) continue;
-    try {
-      await triggerNextAutoMachiningAfterComplete({
-        machineId: uid,
-        completedRequestId: null,
-      });
-    } catch (error) {
-      console.warn(
-        "[autoMachiningGate] grace auto-start failed",
-        uid,
-        error?.message || error,
-      );
-    }
-  }
-}
-
-function scheduleGraceKick() {
-  if (graceKickTimer) clearTimeout(graceKickTimer);
-  graceKickTimer = setTimeout(() => {
-    graceKickTimer = null;
-    void kickAutoStartAfterGrace();
-  }, AUTO_START_GRACE_MS + 500);
-  graceKickTimer.unref?.();
 }
 
 /** 준비에 남겨 둔 문제 건. 작업자가 확인한 뒤 가공으로 넘긴다. */
@@ -138,9 +102,8 @@ export async function updateAutoMachiningGate(req, res) {
     const $set = {};
     if (typeof body.enabled === "boolean") {
       $set["autoMachiningGate.enabled"] = body.enabled;
-      $set["autoMachiningGate.autoStartAt"] = body.enabled
-        ? new Date(Date.now() + AUTO_START_GRACE_MS)
-        : null;
+      // 장비 자동 가공과 무관. 유예(autoStartAt)는 두지 않고 준비→가공만 바로 돌린다.
+      $set["autoMachiningGate.autoStartAt"] = null;
     }
     if (Object.prototype.hasOwnProperty.call(body, "excludedRequestorAnchorIds")) {
       const normalized = normalizeExcludedIds(body.excludedRequestorAnchorIds);
@@ -166,11 +129,7 @@ export async function updateAutoMachiningGate(req, res) {
       by: req.user?._id ? String(req.user._id) : null,
       ...body,
     });
-    if (body.enabled === true) scheduleGraceKick();
-    if (body.enabled === false && graceKickTimer) {
-      clearTimeout(graceKickTimer);
-      graceKickTimer = null;
-    }
+    if (body.enabled === true) void kickPrepGatePass();
     return res.status(200).json({ success: true, data: await buildPayload() });
   } catch (error) {
     return res.status(500).json({

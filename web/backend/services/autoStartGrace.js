@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/services/autoMachiningGate.service.js
 // change-log:
+// - 2026-11-26: 자동 승인은 준비→가공만 한다. 켤 때 autoStartAt을 두지 않아 유예는 사실상 꺼진다.
 // - 2026-10-10: 자동 승인을 켜면 30초 동안 준비→가공 승인과 자동 가공 시작을 미룬다.
 import SystemSettings from "../models/systemSettings.model.js";
 
@@ -18,7 +19,7 @@ export async function readAutoStartAt() {
   return Number.isFinite(at) ? at : null;
 }
 
-/** 자동 승인 직후 유예. 작업자가 장비 자동 스위치를 끌 시간이다. */
+/** 레거시 유예. 자동 승인 켤 때는 autoStartAt을 비우므로 보통 false다. */
 export async function isAutoStartGraceActive(now = Date.now()) {
   const at = await readAutoStartAt();
   return at != null && now < at;
