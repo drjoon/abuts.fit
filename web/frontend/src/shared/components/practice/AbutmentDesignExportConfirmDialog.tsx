@@ -58,7 +58,7 @@ export function AbutmentDesignExportConfirmDialog({
             </span>
             <div className="min-w-0 space-y-1">
               <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
-                크라운 스캔 export
+                외부 저장
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 구강 스캔과 커스텀어벗 STL을 받습니다.
@@ -98,13 +98,13 @@ export function AbutmentDesignExportConfirmDialog({
               <>
                 추가 차감 없이 파일을 받습니다.
                 <br />
-                한 번 결제한 생산비는 취소해도 돌려주지 않습니다.
+                한 번 결제한 생산비는 어벗 생산 주문 취소해도 환불되지 않습니다.
               </>
             ) : (
               <>
                 어벗츠 어벗 생산비를 크레딧에서 차감합니다.
                 <br />
-                한 번 차감하면 취소·재export로 돌려주지 않습니다.
+                한 번 차감하면 어벗 생산 주문 취소해도 크레딧이 환불되지 않습니다.
               </>
             )}
           </p>
