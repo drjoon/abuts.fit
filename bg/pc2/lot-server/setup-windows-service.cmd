@@ -63,7 +63,7 @@ if defined NSSM_EXE if not exist "%NSSM_EXE" (
 :menu
 echo ============================================
 echo   Abuts lot-server - Windows Service (NSSM)
-echo   Boot auto-start · HTTP 127.0.0.1:8012
+echo   Boot auto-start - HTTP 127.0.0.1:8012
 echo ============================================
 echo   1) Install service (auto-start)
 echo   2) Show status

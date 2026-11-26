@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - bg/pc2/lot-server/public/index.html
 // change-log:
+// - 2026-11-26: 라이브를 우측 패널에 늘리지 않고 h-36~40으로 맞춤.
 // - 2026-11-26: 라이브 높이 축소·우측 패널 구역 정리. 대기 카드가 한 화면에 보이게.
 // - 2026-11-26: 라이브 뷰·3글자 입력·감시/초점/수동인식·오인식 대응 버튼.
 import type { ReactNode } from "react";
@@ -113,8 +114,8 @@ export function PackingLotStation({
   else if (error) note = error;
 
   return (
-    <div className="grid shrink-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,18.5rem)] lg:items-stretch">
-      <div className="flex h-44 items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-52">
+    <div className="grid shrink-0 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(16.5rem,17.5rem)] lg:items-start">
+      <div className="flex h-36 max-h-[40vh] w-full items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-950 sm:h-40">
         {liveUrl ? (
           <img
             src={liveUrl}
@@ -130,8 +131,8 @@ export function PackingLotStation({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-col gap-2.5 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5">
-        <section className="space-y-1.5">
+      <div className="flex min-h-0 flex-col gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
+        <section className="space-y-1">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold text-stone-600">감시</span>
             <span
@@ -183,7 +184,7 @@ export function PackingLotStation({
           </div>
         </section>
 
-        <section className="space-y-1.5 border-t border-stone-200/80 pt-2">
+        <section className="space-y-1 border-t border-stone-200/80 pt-1.5">
           <label
             htmlFor="packing-lot-suffix"
             className="text-[11px] font-semibold text-stone-600"
@@ -211,22 +212,22 @@ export function PackingLotStation({
               maxLength={3}
               autoComplete="off"
               spellCheck={false}
-              className="h-11 max-w-[9.5rem] font-mono text-xl tracking-[0.3em] uppercase"
+              className="h-10 max-w-[9rem] font-mono text-lg tracking-[0.28em] uppercase"
               aria-label="각인 코드 3글자"
             />
             <button
               type="button"
               disabled={controlsDisabled || suffix.length !== 3}
               onClick={onSubmitSuffix}
-              className={cn(btnPrimary, "min-w-[5.5rem] flex-1")}
+              className={cn(btnPrimary, "min-w-[4.75rem] flex-1")}
             >
               매칭
             </button>
           </div>
-          <p className={noteClass}>{note}</p>
+          <p className={cn(noteClass, "min-h-[1.25rem]")}>{note}</p>
         </section>
 
-        <section className="mt-auto space-y-1.5 border-t border-stone-200/80 pt-2">
+        <section className="space-y-1 border-t border-stone-200/80 pt-1.5">
           <span className="text-[11px] font-semibold text-stone-600">
             오인식 대응
           </span>
