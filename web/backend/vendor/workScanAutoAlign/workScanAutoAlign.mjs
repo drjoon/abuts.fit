@@ -15542,6 +15542,86 @@ function extractJawCrownCells(pts, origin, up, e1, e2, toMm, occSign) {
     peakCells: peakCells.length >= 10 ? peakCells : crownCells.length >= 12 ? crownCells : all
   };
 }
+function incisorEndSign(samples, ax, ay) {
+  if (samples.length < 16) return 1;
+  const proj = samples.map((s2) => ({
+    a: s2.x * ax + s2.y * ay,
+    r: s2.x * ay - s2.y * ax
+  }));
+  const as = proj.map((p) => p.a).sort((u2, v) => u2 - v);
+  const aHi = quantileSorted(as, 0.82);
+  const aLo = quantileSorted(as, 0.18);
+  if (aHi - aLo < 12) return 1;
+  const endScore = (side) => {
+    const pts = proj.filter((p) => side === "hi" ? p.a >= aHi : p.a <= aLo);
+    if (pts.length < 4) return -1e6;
+    const rs = pts.map((p) => p.r).sort((u2, v) => u2 - v);
+    const rL = quantileSorted(rs, 0.12);
+    const rR = quantileSorted(rs, 0.88);
+    const width = rR - rL;
+    let hollow = 0;
+    if (width >= 16) {
+      const mid = 0.5 * (rL + rR);
+      const inner = Math.max(4, width * 0.22);
+      let midCnt = 0;
+      for (const p of pts) {
+        if (Math.abs(p.r - mid) <= inner) midCnt += 1;
+      }
+      hollow = 1 - midCnt / pts.length;
+    }
+    return -width - hollow * 22;
+  };
+  const frontLike = endScore("hi");
+  const backLike = endScore("lo");
+  if (backLike > frontLike + 6) return -1;
+  return 1;
+}
+function unilateralAnteriorSign(samples, ax, ay) {
+  if (samples.length < 10) return 1;
+  const rx = ay;
+  const ry = -ax;
+  const proj = samples.map((s2) => ({
+    a: s2.x * ax + s2.y * ay,
+    r: s2.x * rx + s2.y * ry,
+    h: s2.h,
+    w: s2.w
+  }));
+  const as = proj.map((p) => p.a).sort((u2, v) => u2 - v);
+  const aSpan = quantileSorted(as, 0.97) - quantileSorted(as, 0.03);
+  if (aSpan < 10) return 1;
+  const aHi = quantileSorted(as, 0.86);
+  const aLo = quantileSorted(as, 0.14);
+  const band = Math.max(5.5, Math.min(11, aSpan * 0.22));
+  const endStats = (side) => {
+    const edge = side === "hi" ? aHi : aLo;
+    const pts = proj.filter(
+      (p) => side === "hi" ? p.a >= edge - band : p.a <= edge + band
+    );
+    if (pts.length < 3) {
+      return { width: 0, peaks: 0, area: 0, meanAbsR: 0 };
+    }
+    const rs = pts.map((p) => p.r).sort((u2, v) => u2 - v);
+    const width = quantileSorted(rs, 0.9) - quantileSorted(rs, 0.1);
+    let peaks = 0;
+    let area = 0;
+    let absR = 0;
+    for (const p of pts) {
+      area += p.w;
+      absR += Math.abs(p.r) * p.w;
+      if (p.w >= 1.35) peaks += 1;
+    }
+    return { width, peaks, area, meanAbsR: absR / Math.max(area, 1e-6) };
+  };
+  const hi = endStats("hi");
+  const lo = endStats("lo");
+  const widthGap = lo.width - hi.width;
+  const peakGap = lo.peaks - hi.peaks;
+  if (Math.abs(widthGap) >= 1) return widthGap > 0 ? 1 : -1;
+  if (peakGap !== 0) return peakGap > 0 ? 1 : -1;
+  if (lo.area > hi.area * 1.15) return 1;
+  if (hi.area > lo.area * 1.15) return -1;
+  return 1;
+}
 function findMidlineAnteriorAxis(upperCrowns, lowerCrowns, fallbackPts, origin, up, e1, e2, toMm) {
   const samples = [];
   for (const c2 of upperCrowns) {
@@ -15565,7 +15645,7 @@ function findMidlineAnteriorAxis(upperCrowns, lowerCrowns, fallbackPts, origin, 
     }
   }
   if (samples.length < 6) {
-    return { anterior: e1.clone(), midlineOffsetRightMm: 0 };
+    return { anterior: e1.clone(), midlineOffsetRightMm: 0, archExtent: "partial" };
   }
   let sw = 0;
   let mx = 0;
@@ -15765,43 +15845,503 @@ function findMidlineAnteriorAxis(upperCrowns, lowerCrowns, fallbackPts, origin, 
           refinedMid = candMid;
         }
       }
-      const anterior2 = new Vector3().addScaledVector(e1, ax).addScaledVector(e2, ay).normalize();
-      return { anterior: anterior2, midlineOffsetRightMm: refinedMid };
+      const sign = incisorEndSign(samples, ax, ay);
+      const anterior = new Vector3().addScaledVector(e1, ax * sign).addScaledVector(e2, ay * sign).normalize();
+      return { anterior, midlineOffsetRightMm: refinedMid * sign, archExtent: "full" };
     }
   }
-  const fullProj = [];
-  for (const p of fallbackPts) {
-    const dx = (p[0] - origin.x) * toMm;
-    const dy = (p[1] - origin.y) * toMm;
-    const dz = (p[2] - origin.z) * toMm;
-    const px = dx * e1.x + dy * e1.y + dz * e1.z;
-    const py = dx * e2.x + dy * e2.y + dz * e2.z;
-    fullProj.push({
-      m: px * majorDir[0] + py * majorDir[1],
-      n: px * minorDir[0] + py * minorDir[1]
+  const byToothSize = anteriorFromToothSizes(upperCrowns, lowerCrowns, e1, e2);
+  if (byToothSize) {
+    return { anterior: byToothSize, midlineOffsetRightMm: 0, archExtent: "partial" };
+  }
+  return {
+    anterior: anteriorFromCrownTaper(samples, e1, e2, majorDir),
+    midlineOffsetRightMm: 0,
+    archExtent: "partial"
+  };
+}
+const QUADRANT_TOOTH_TEMPLATE = ["M", "M", "P", "P", "A", "A", "A"];
+function heightBuckets(cells) {
+  const map = /* @__PURE__ */ new Map();
+  for (const c2 of cells) {
+    const key = `${Math.round(c2.xMm / 1.5)},${Math.round(c2.yMm / 1.5)}`;
+    const list = map.get(key);
+    if (list) list.push(c2);
+    else map.set(key, [c2]);
+  }
+  return map;
+}
+function heightNear(map, x, y, radiusMm) {
+  const gx = Math.round(x / 1.5);
+  const gy = Math.round(y / 1.5);
+  const r2 = radiusMm * radiusMm;
+  let best = -Infinity;
+  let found = false;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const list = map.get(`${gx + dx},${gy + dy}`);
+      if (!list) continue;
+      for (const c2 of list) {
+        const ddx = c2.xMm - x;
+        const ddy = c2.yMm - y;
+        if (ddx * ddx + ddy * ddy > r2) continue;
+        found = true;
+        if (c2.hOccMm > best) best = c2.hOccMm;
+      }
+    }
+  }
+  return found ? best : null;
+}
+function ridgeHolds(a2, b2, map) {
+  const dist = Math.hypot(a2.xMm - b2.xMm, a2.yMm - b2.yMm);
+  if (dist > 9) return false;
+  const steps = Math.max(1, Math.round(dist / 1.15));
+  let minH = Infinity;
+  for (let s2 = 1; s2 <= steps; s2 += 1) {
+    const t2 = s2 / (steps + 1);
+    const h2 = heightNear(map, a2.xMm + (b2.xMm - a2.xMm) * t2, a2.yMm + (b2.yMm - a2.yMm) * t2, 0.9);
+    if (h2 == null) return false;
+    if (h2 < minH) minH = h2;
+  }
+  return Math.min(a2.hOccMm, b2.hOccMm) - minH < 1.45;
+}
+function localMaxima(cells) {
+  const heights = cells.map((c2) => c2.hOccMm).sort((a2, b2) => a2 - b2);
+  const floor = quantileSorted(heights, 0.4);
+  const band = cells.filter((c2) => c2.hOccMm >= floor);
+  const maxima = [];
+  for (const c2 of band) {
+    let taller = false;
+    for (const o2 of band) {
+      if (o2 === c2) continue;
+      if (Math.hypot(o2.xMm - c2.xMm, o2.yMm - c2.yMm) <= 3.3 && o2.hOccMm > c2.hOccMm + 0.18) {
+        taller = true;
+        break;
+      }
+    }
+    if (!taller) maxima.push(c2);
+  }
+  maxima.sort((a2, b2) => b2.hOccMm - a2.hOccMm);
+  const kept = [];
+  for (const c2 of maxima) {
+    if (kept.some((k) => Math.hypot(k.xMm - c2.xMm, k.yMm - c2.yMm) < 2.35)) continue;
+    kept.push(c2);
+    if (kept.length >= 48) break;
+  }
+  return kept;
+}
+function spanOnAxis(pts, ax, ay) {
+  if (pts.length === 0) return 0;
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  const vals = pts.map((p) => (p.xMm - mx) * ax + (p.yMm - my) * ay).sort((a2, b2) => a2 - b2);
+  return quantileSorted(vals, 0.9) - quantileSorted(vals, 0.1);
+}
+function toothAxes(pts) {
+  if (pts.length < 3) return { minor: 0, major: 0 };
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const p of pts) {
+    const dx = p.xMm - mx;
+    const dy = p.yMm - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c2 = Math.cos(theta);
+  const s2 = Math.sin(theta);
+  const a2 = spanOnAxis(pts, c2, s2);
+  const b2 = spanOnAxis(pts, -s2, c2);
+  return { minor: Math.min(a2, b2), major: Math.max(a2, b2) };
+}
+function countCusps(pts) {
+  const candidates = [];
+  for (const c2 of pts) {
+    const near = [];
+    for (const o2 of pts) {
+      if (Math.hypot(o2.xMm - c2.xMm, o2.yMm - c2.yMm) <= 4.2) near.push(o2.hOccMm);
+    }
+    if (near.length < 3) continue;
+    near.sort((a2, b2) => a2 - b2);
+    const base = quantileSorted(near, 0.45);
+    if (c2.hOccMm >= base + 0.28) candidates.push(c2);
+  }
+  candidates.sort((a2, b2) => b2.hOccMm - a2.hOccMm);
+  const kept = [];
+  for (const c2 of candidates) {
+    if (kept.some((k) => Math.hypot(k.xMm - c2.xMm, k.yMm - c2.yMm) < 2.7)) continue;
+    kept.push(c2);
+    if (kept.length >= 6) break;
+  }
+  return kept.length;
+}
+function occlusalRelief(pts) {
+  if (pts.length === 0) return 0;
+  let top = -Infinity;
+  const hs = [];
+  for (const p of pts) {
+    hs.push(p.hOccMm);
+    if (p.hOccMm > top) top = p.hOccMm;
+  }
+  hs.sort((a2, b2) => a2 - b2);
+  return top - quantileSorted(hs, 0.5);
+}
+function splitWideTooth(pts, depth) {
+  if (depth > 6 || pts.length < 10) return [{ pts: [...pts] }];
+  let mx = 0;
+  let my = 0;
+  for (const p of pts) {
+    mx += p.xMm;
+    my += p.yMm;
+  }
+  mx /= pts.length;
+  my /= pts.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const p of pts) {
+    const dx = p.xMm - mx;
+    const dy = p.yMm - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c2 = Math.cos(theta);
+  const s2 = Math.sin(theta);
+  const spanA = spanOnAxis(pts, c2, s2);
+  const spanB = spanOnAxis(pts, -s2, c2);
+  const majorIsA = spanA >= spanB;
+  const ax = majorIsA ? c2 : -s2;
+  const ay = majorIsA ? s2 : c2;
+  const major = Math.max(spanA, spanB);
+  if (major < 12.8) return [{ pts: [...pts] }];
+  const proj = pts.map((p) => (p.xMm - mx) * ax + (p.yMm - my) * ay);
+  let minS = Infinity;
+  let maxS = -Infinity;
+  for (const v of proj) {
+    if (v < minS) minS = v;
+    if (v > maxS) maxS = v;
+  }
+  const binW = 1.5;
+  const nBins = Math.ceil((maxS - minS) / binW);
+  if (nBins < 4) return [{ pts: [...pts] }];
+  const counts = new Array(nBins).fill(0);
+  for (const v of proj) {
+    const bin = Math.min(nBins - 1, Math.max(0, Math.floor((v - minS) / binW)));
+    counts[bin] = (counts[bin] ?? 0) + 1;
+  }
+  let bestAt = -1;
+  let bestScore = 0;
+  for (let i = 1; i < nBins - 1; i += 1) {
+    let leftPeak = 0;
+    let rightPeak = 0;
+    for (let k = 0; k < i; k += 1) leftPeak = Math.max(leftPeak, counts[k] ?? 0);
+    for (let k = i + 1; k < nBins; k += 1) rightPeak = Math.max(rightPeak, counts[k] ?? 0);
+    if (leftPeak < 3 || rightPeak < 3) continue;
+    if ((counts[i] ?? 0) > 0) continue;
+    const score = Math.min(leftPeak, rightPeak) - (counts[i] ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestAt = i;
+    }
+  }
+  if (bestAt < 0) return [{ pts: [...pts] }];
+  const cut = minS + (bestAt + 0.5) * binW;
+  const left = [];
+  const right = [];
+  for (let i = 0; i < pts.length; i += 1) {
+    if ((proj[i] ?? 0) < cut) left.push(pts[i]);
+    else right.push(pts[i]);
+  }
+  if (left.length < 3 || right.length < 3) return [{ pts: [...pts] }];
+  return [...splitWideTooth(left, depth + 1), ...splitWideTooth(right, depth + 1)];
+}
+function segmentJawTeeth(cells) {
+  if (cells.length < 8) return { teeth: [], connectedSheet: false };
+  const map = heightBuckets(cells);
+  const seeds = localMaxima(cells);
+  if (seeds.length === 0) return { teeth: [], connectedSheet: false };
+  const parent = seeds.map((_, i) => i);
+  const find = (i) => {
+    let p = i;
+    for (let guard = parent.length; guard > 0 && parent[p] !== p; guard -= 1) p = parent[p];
+    return p;
+  };
+  for (let i = 0; i < seeds.length; i += 1) {
+    for (let j = i + 1; j < seeds.length; j += 1) {
+      if (!ridgeHolds(seeds[i], seeds[j], map)) continue;
+      const a2 = find(i);
+      const b2 = find(j);
+      if (a2 !== b2) parent[a2] = b2;
+    }
+  }
+  const groups = /* @__PURE__ */ new Map();
+  for (let i = 0; i < seeds.length; i += 1) {
+    const root = find(i);
+    const list = groups.get(root);
+    if (list) list.push(seeds[i]);
+    else groups.set(root, [seeds[i]]);
+  }
+  const groupList = [...groups.values()];
+  const buckets = groupList.map(() => []);
+  for (const c2 of cells) {
+    let best = -1;
+    let bestD = 6.4;
+    for (let g = 0; g < groupList.length; g += 1) {
+      for (const seed of groupList[g]) {
+        const d2 = Math.hypot(c2.xMm - seed.xMm, c2.yMm - seed.yMm);
+        if (d2 < bestD) {
+          bestD = d2;
+          best = g;
+        }
+      }
+    }
+    if (best >= 0) buckets[best].push(c2);
+  }
+  let blobs = [];
+  for (let g = 0; g < groupList.length; g += 1) {
+    const pts = buckets[g];
+    if (pts.length < 3) continue;
+    blobs.push({ pts });
+  }
+  blobs = blobs.flatMap((blob2) => splitWideTooth(blob2.pts, 0));
+  const centroid = (pts) => {
+    let x = 0;
+    let y = 0;
+    for (const p of pts) {
+      x += p.xMm;
+      y += p.yMm;
+    }
+    return { x: x / pts.length, y: y / pts.length };
+  };
+  const surfacesTouch = (a2, b2) => {
+    const step = a2.length > 80 ? 3 : 1;
+    for (let i = 0; i < a2.length; i += step) {
+      const p = a2[i];
+      for (const q of b2) {
+        if (Math.hypot(p.xMm - q.xMm, p.yMm - q.yMm) < 1.5) return true;
+      }
+    }
+    return false;
+  };
+  for (let guard = blobs.length; guard > 0; guard -= 1) {
+    let merged = false;
+    outer: for (let i = 0; i < blobs.length; i += 1) {
+      const ci = centroid(blobs[i].pts);
+      for (let j = i + 1; j < blobs.length; j += 1) {
+        const cj = centroid(blobs[j].pts);
+        const close = Math.hypot(ci.x - cj.x, ci.y - cj.y) <= 6.2;
+        if (!close && !surfacesTouch(blobs[i].pts, blobs[j].pts)) continue;
+        blobs[i] = { pts: blobs[i].pts.concat(blobs[j].pts) };
+        blobs.splice(j, 1);
+        merged = true;
+        break outer;
+      }
+    }
+    if (!merged) break;
+  }
+  const out2 = [];
+  let connectedSheet = false;
+  for (const blob2 of blobs) {
+    const c2 = centroid(blob2.pts);
+    const axes = toothAxes(blob2.pts);
+    const area = blob2.pts.length * 4;
+    const relief = occlusalRelief(blob2.pts);
+    if (area < 14 || area > 155) continue;
+    if (axes.minor < 2.4) continue;
+    if (axes.major > 16.8) {
+      connectedSheet = true;
+      continue;
+    }
+    if (relief < 0.2) continue;
+    out2.push({
+      x: c2.x,
+      y: c2.y,
+      area,
+      minor: axes.minor,
+      major: axes.major,
+      cusps: countCusps(blob2.pts)
     });
   }
-  const fullM = fullProj.map((q) => q.m).sort((a2, b2) => a2 - b2);
-  const fmLo = quantileSorted(fullM, 0.14);
-  const fmHi = quantileSorted(fullM, 0.86);
-  const fullEndWidth = (side) => {
-    const ns = [];
-    for (const q of fullProj) {
-      if (side === "lo" ? q.m > fmLo : q.m < fmHi) continue;
-      ns.push(q.n);
+  return { teeth: out2, connectedSheet };
+}
+function classifyTeeth(raw) {
+  if (raw.length === 0) return [];
+  let maxArea = 0;
+  let maxMinor = 0;
+  for (const t2 of raw) {
+    if (t2.area > maxArea) maxArea = t2.area;
+    if (t2.minor > maxMinor) maxMinor = t2.minor;
+  }
+  return raw.map((t2) => {
+    const rel = 0.55 * (t2.area / maxArea) + 0.45 * (t2.minor / Math.max(maxMinor, 1e-3));
+    let cls;
+    if (t2.cusps >= 3 && rel >= 0.7 || rel >= 0.82 && t2.minor >= maxMinor * 0.75) cls = "M";
+    else if (rel <= 0.52 || t2.cusps <= 1 && t2.area <= maxArea * 0.5 && t2.minor <= maxMinor * 0.72) cls = "A";
+    else cls = "P";
+    return { ...t2, cls };
+  });
+}
+function classCost(obs, slot) {
+  if (obs === slot) return 0;
+  if (obs === "M" && slot === "A" || obs === "A" && slot === "M") return 2.5;
+  return 1.05;
+}
+function templateCost(order) {
+  const n2 = order.length;
+  const m = QUADRANT_TOOTH_TEMPLATE.length;
+  const inf = 1e6;
+  const dp = Array.from({ length: n2 + 1 }, () => Array(m + 1).fill(inf));
+  for (let j = 0; j <= m; j += 1) dp[0][j] = 0;
+  for (let i = 1; i <= n2; i += 1) {
+    for (let j = 1; j <= m; j += 1) {
+      let best2 = inf;
+      for (let k = 0; k < j; k += 1) {
+        const prev = dp[i - 1][k];
+        if (prev >= inf) continue;
+        const gaps = j - 1 - k;
+        const cost = prev + gaps * 0.4 + classCost(order[i - 1], QUADRANT_TOOTH_TEMPLATE[j - 1]);
+        if (cost < best2) best2 = cost;
+      }
+      dp[i][j] = best2;
     }
-    if (ns.length < 4) return spanMinor;
-    ns.sort((a2, b2) => a2 - b2);
-    return quantileSorted(ns, 0.92) - quantileSorted(ns, 0.08);
-  };
-  const wLo = fullEndWidth("lo");
-  const wHi = fullEndWidth("hi");
-  const signMajor = wHi <= wLo ? 1 : -1;
-  const ant2 = [majorDir[0] * signMajor, majorDir[1] * signMajor];
-  const anterior = new Vector3().addScaledVector(e1, ant2[0]).addScaledVector(e2, ant2[1]).normalize();
-  return { anterior, midlineOffsetRightMm: 0 };
+  }
+  let best = inf;
+  for (let j = 1; j <= m; j += 1) best = Math.min(best, dp[n2][j]);
+  return best;
+}
+function sizeDisorder(order) {
+  let pen = 0;
+  for (let i = 0; i < order.length; i += 1) {
+    for (let j = i + 1; j < order.length; j += 1) {
+      const growth = order[j].area / Math.max(order[i].area, 1);
+      if (growth > 1.22) pen += Math.min(1.6, (growth - 1.22) * 2.2);
+    }
+  }
+  return pen;
+}
+function toothMajorAxis(teeth) {
+  if (teeth.length < 2) return null;
+  let mx = 0;
+  let my = 0;
+  for (const t2 of teeth) {
+    mx += t2.x;
+    my += t2.y;
+  }
+  mx /= teeth.length;
+  my /= teeth.length;
+  let xx = 0;
+  let xy = 0;
+  let yy = 0;
+  for (const t2 of teeth) {
+    const dx = t2.x - mx;
+    const dy = t2.y - my;
+    xx += dx * dx;
+    xy += dx * dy;
+    yy += dy * dy;
+  }
+  if (xx + yy < 16) return null;
+  const theta = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const c2 = Math.cos(theta);
+  const s2 = Math.sin(theta);
+  const along = xx * c2 * c2 + 2 * xy * c2 * s2 + yy * s2 * s2;
+  const across = xx * s2 * s2 - 2 * xy * c2 * s2 + yy * c2 * c2;
+  return along >= across ? [c2, s2] : [-s2, c2];
+}
+function projectTeeth(teeth, ax, ay) {
+  return [...teeth].sort((a2, b2) => a2.x * ax + a2.y * ay - (b2.x * ax + b2.y * ay));
+}
+function bothEndsPosterior(sorted) {
+  if (sorted.length < 4) return false;
+  const mid = sorted[Math.floor(sorted.length / 2)];
+  return sorted[0].area > mid.area * 1.22 && sorted[sorted.length - 1].area > mid.area * 1.22;
+}
+function absorbOpposing(teeth) {
+  const used = new Array(teeth.length).fill(false);
+  const order = teeth.map((t2, i) => ({ t: t2, i })).sort((a2, b2) => b2.t.area - a2.t.area);
+  const out2 = [];
+  for (const row of order) {
+    if (used[row.i]) continue;
+    used[row.i] = true;
+    for (const other of order) {
+      if (used[other.i]) continue;
+      if (Math.hypot(other.t.x - row.t.x, other.t.y - row.t.y) <= 4.2) used[other.i] = true;
+    }
+    out2.push(row.t);
+  }
+  return out2;
+}
+function dropInternalSpecks(sorted) {
+  return sorted.filter((t2, i) => {
+    if (i === 0 || i === sorted.length - 1) return true;
+    const prev = sorted[i - 1];
+    const next = sorted[i + 1];
+    const ref = Math.min(prev.area, next.area);
+    return !(t2.cusps <= 1 && t2.area < ref * 0.48 && t2.minor < 4.6);
+  });
+}
+function anteriorFromToothSizes(upper, lower, e1, e2) {
+  const upperSeg = segmentJawTeeth(upper);
+  const lowerSeg = segmentJawTeeth(lower);
+  if (upperSeg.connectedSheet || lowerSeg.connectedSheet) return null;
+  const pooled = absorbOpposing([
+    ...classifyTeeth(upperSeg.teeth),
+    ...classifyTeeth(lowerSeg.teeth)
+  ]);
+  const axis = toothMajorAxis(pooled);
+  if (!axis) return null;
+  let sorted = dropInternalSpecks(projectTeeth(pooled, axis[0], axis[1]));
+  if (sorted.length < 2 || bothEndsPosterior(sorted)) return null;
+  const refined = toothMajorAxis(sorted);
+  if (refined) sorted = dropInternalSpecks(projectTeeth(sorted, refined[0], refined[1]));
+  const dir = refined ?? axis;
+  if (sorted.length < 2 || bothEndsPosterior(sorted)) return null;
+  let maxArea = 0;
+  let minArea = Infinity;
+  for (const t2 of sorted) {
+    if (t2.area > maxArea) maxArea = t2.area;
+    if (t2.area < minArea) minArea = t2.area;
+  }
+  if (!(maxArea / Math.max(minArea, 1) >= 1.3)) return null;
+  const forward = sorted;
+  const backward = [...sorted].reverse();
+  const score = (order) => templateCost(order.map((t2) => t2.cls)) + sizeDisorder(order);
+  const forwardScore = score(forward);
+  const backwardScore = score(backward);
+  if (!Number.isFinite(forwardScore) || !Number.isFinite(backwardScore)) return null;
+  let sign = 0;
+  if (forwardScore + 0.75 <= backwardScore) sign = 1;
+  else if (backwardScore + 0.75 <= forwardScore) sign = -1;
+  if (sign === 0) return null;
+  return new Vector3().addScaledVector(e1, dir[0] * sign).addScaledVector(e2, dir[1] * sign).normalize();
+}
+function anteriorFromCrownTaper(samples, e1, e2, majorDir) {
+  const crownOnly = samples.filter((s2) => s2.isUpper || s2.h > 0 || s2.w >= 1.1);
+  const axisPool = crownOnly.length >= 10 ? crownOnly : samples;
+  const signMajor = unilateralAnteriorSign(axisPool, majorDir[0], majorDir[1]);
+  return new Vector3().addScaledVector(e1, majorDir[0] * signMajor).addScaledVector(e2, majorDir[1] * signMajor).normalize();
 }
 function estimateDentalFrame(loaded) {
+  return estimateDentalFrameDetailed(loaded)?.frame ?? null;
+}
+function estimateDentalFrameDetailed(loaded) {
   const upperPts = [];
   const lowerPts = [];
   const archPts = [];
@@ -15957,7 +16497,7 @@ function estimateDentalFrame(loaded) {
     const occSign = upperMesh && !lowerMesh ? -1 : 1;
     singleGrid = extractJawCrownCells(archPts, mean, up, e1, e2, toMm, occSign);
   }
-  const { anterior } = findMidlineAnteriorAxis(
+  const { anterior, archExtent } = findMidlineAnteriorAxis(
     upperGrid?.crownCells ?? (upperMesh && !lowerMesh ? singleGrid?.crownCells ?? [] : []),
     lowerGrid?.crownCells ?? (!upperMesh && singleGrid ? singleGrid.crownCells : []),
     archPts,
@@ -15972,7 +16512,7 @@ function estimateDentalFrame(loaded) {
   anterior.normalize();
   const right = new Vector3().crossVectors(anterior, up).normalize();
   if (right.lengthSq() < 1e-8) return null;
-  return { up, anterior, right };
+  return { frame: { up, anterior, right }, archExtent };
 }
 function archPlanAxes(points) {
   if (points.length < 30) return null;
@@ -19939,6 +20479,7 @@ function translationSeeds(source, rot, center, samples, sampleNormals, unitToMm,
 }
 async function sweepArchPoses(source, target, unitToMm, options, emit, accept) {
   if (source.count < 80 || target.count < 80) return null;
+  const poseRank = Math.max(0, Math.floor(options?.poseRank ?? 0));
   const center = cloudCentroid(source);
   const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
   const sampleIds = strideIds(target.count, 110);
@@ -19982,8 +20523,9 @@ async function sweepArchPoses(source, target, unitToMm, options, emit, accept) {
   }
   const rank2 = (fit) => fit.sideMean * unitToMm - fit.coverage * 4;
   screened.sort((a2, b2) => rank2(a2.fit) - rank2(b2.fit));
-  let best = null;
-  for (const row of screened.slice(0, 2)) {
+  const refineCount = Math.min(screened.length, Math.max(2, poseRank + 2));
+  const hits = [];
+  for (const row of screened.slice(0, refineCount)) {
     const cloud = cloneCloud(source);
     applyRigid(cloud, rigidFromMatrix(row.matrix));
     const matrix = row.matrix.clone();
@@ -20001,12 +20543,24 @@ async function sweepArchPoses(source, target, unitToMm, options, emit, accept) {
     );
     const fit = overlapFitness(cloud, target, grid, unitToMm);
     if (!seatedFit(fit, unitToMm) || !ok(matrix)) continue;
-    if (!best || fit.coverage > best.fit.coverage + 0.03 || fit.coverage >= best.fit.coverage - 0.01 && fit.sideMean < best.fit.sideMean) {
-      best = { cloud, matrix, fit };
-    }
+    hits.push({ cloud, matrix, fit });
   }
-  emit?.(best ? best.matrix : new Matrix4());
-  return best;
+  hits.sort((a2, b2) => rank2(a2.fit) - rank2(b2.fit));
+  const distinct = [];
+  const nearMm = mmToUnits(2.5, unitToMm);
+  for (const hit of hits) {
+    const dup = distinct.some((other) => {
+      const dx = (hit.matrix.elements[12] ?? 0) - (other.matrix.elements[12] ?? 0);
+      const dy = (hit.matrix.elements[13] ?? 0) - (other.matrix.elements[13] ?? 0);
+      const dz = (hit.matrix.elements[14] ?? 0) - (other.matrix.elements[14] ?? 0);
+      if (dx * dx + dy * dy + dz * dz >= nearMm * nearMm) return false;
+      return rotationAngle(hit.matrix.clone().multiply(other.matrix.clone().invert())) < 0.35;
+    });
+    if (!dup) distinct.push(hit);
+  }
+  const chosen = distinct[poseRank] ?? null;
+  emit?.(chosen ? chosen.matrix : new Matrix4());
+  return chosen;
 }
 function mergeGeometries(geometries) {
   const xyz = [];
@@ -20175,11 +20729,23 @@ async function registerJawsToBiteWork(entries, fitted, options) {
     row.seated = true;
     sinkFor(row.geometry)?.(row.matrix);
   };
+  const poseRank = Math.max(0, Math.floor(options?.poseRank ?? 0));
+  const identityPose = new Matrix4();
+  if (poseRank > 0) {
+    for (const row of fitted) {
+      if (!row.seated || row.matrix.equals(identityPose)) continue;
+      row.seated = false;
+      row.matrix.identity();
+      row.aligned = row.original;
+      sinkFor(row.geometry)?.(row.matrix);
+    }
+  }
   const swept = /* @__PURE__ */ new Set();
   for (; ; ) {
     let progress = false;
     for (const row of fitted) {
       if (row.seated) continue;
+      if (poseRank > 0) continue;
       const remain = remainFor(row);
       if (remain.count >= row.targetCount) continue;
       row.targetCount = remain.count;
@@ -20368,6 +20934,13 @@ async function registerJawsToBiteWork(entries, fitted, options) {
   await pause(options);
   let seated = false;
   let moved = false;
+  const jawPose = {};
+  for (const role of ["upper", "lower"]) {
+    const rows = fitted.filter((row) => row.role === role);
+    const pick = rows.find((row) => row.seated && !row.matrix.equals(new Matrix4())) ?? rows.find((row) => !row.matrix.equals(new Matrix4()));
+    if (!pick) continue;
+    jawPose[role] = pick.matrix.toArray().map((value) => Math.round(value * 1e6) / 1e6);
+  }
   const quality = [];
   const expected = new Set(
     arches.map((entry) => entry.role).filter((role) => role === "upper" || role === "lower")
@@ -20413,7 +20986,15 @@ async function registerJawsToBiteWork(entries, fitted, options) {
     const row = quality.find((entry) => entry.role === role);
     return row ? biteFitArchQualityOk(row) : false;
   });
-  return { seated, moved, stopped: false, partial: [], quality, qualityOk };
+  return {
+    seated,
+    moved,
+    stopped: false,
+    partial: [],
+    quality,
+    qualityOk,
+    ...jawPose.upper || jawPose.lower ? { jawPose } : {}
+  };
 }
 function geometryUnits(bite, arches) {
   let radius = cloudRadius(bite);
