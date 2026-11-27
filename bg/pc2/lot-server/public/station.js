@@ -7,6 +7,7 @@
 // - 2026-11-27: 설정 모달에 ‘각인 인식 · 지그’: 프로필 선택·복제·이름, ROI(X/Y/폭/높이 %, 미리보기 드래그), 글자 높이 범위, 판독 시험(저장·매칭 없음).
 // - 2026-11-27: 툴바의 카메라 선택·목록 버튼을 설정(톱니) 버튼으로. 모달에서 카메라·밝기·대비·채도·LED·EV·미리보기·권장값·저장(서버 저장).
 //   Esc·바깥 클릭으로 닫는다.
+// - 2026-11-27: 공병·패킹 라벨 모달을 어벗츠 FE(VialSticker/PackingLabelPrintDialog)와 같은 레이아웃으로.
 // - 2026-11-26: 매칭 옆 프린트 + 패킹 라벨 미리보기(어벗츠 FE와 동일 캔버스).
 // - 2026-11-26: 세척·패킹 작업자 로컬 UI(큐·라이브·매칭·스크류 로트).
 (() => {
@@ -951,9 +952,10 @@
     });
     saveBtn.addEventListener("click", () => void save("/api/camera-settings", { settings: readForm(), apply: true }));
 
-    openModal("카메라 · 화질 · 각인 인식 설정", wrap);
-    const shell = els.modal?.querySelector(".modal");
-    if (shell) shell.classList.add("modal-wide", "modal-settings");
+    openModal("카메라 · 화질 · 각인 인식 설정", wrap, {
+      wide: true,
+      settings: true,
+    });
     loadDevices(deviceSel).catch(() => undefined);
     load().catch((err) => {
       status.className = "note settings-status bad";
@@ -966,18 +968,32 @@
     void refreshPreview();
   }
 
-  function openModal(title, bodyNode) {
-    els.modalTitle.textContent = title;
+  function openModal(title, bodyNode, opts = {}) {
+    els.modalTitle.replaceChildren();
+    els.modalTitle.appendChild(document.createTextNode(title));
+    if (opts.size) {
+      const size = document.createElement("span");
+      size.className = "modal-size";
+      size.textContent = opts.size;
+      els.modalTitle.appendChild(size);
+    }
     els.modalBody.replaceChildren(bodyNode);
     const shell = els.modal?.querySelector(".modal");
-    if (shell) shell.classList.remove("modal-wide", "modal-settings");
+    if (shell) {
+      shell.classList.remove("modal-wide", "modal-settings", "modal-label");
+      if (opts.wide) shell.classList.add("modal-wide");
+      if (opts.label) shell.classList.add("modal-label");
+      if (opts.settings) shell.classList.add("modal-settings");
+    }
     els.modal.classList.add("open");
   }
 
   function closeModal() {
     els.modal.classList.remove("open");
     const shell = els.modal?.querySelector(".modal");
-    if (shell) shell.classList.remove("modal-wide", "modal-settings");
+    if (shell) {
+      shell.classList.remove("modal-wide", "modal-settings", "modal-label");
+    }
   }
 
   async function openScrewModal() {
@@ -1063,8 +1079,35 @@
     return Math.min(99, n);
   }
 
-  async function loadPrinters(selectEl, storageKey) {
+  function buildPrinterBar() {
+    const bar = document.createElement("div");
+    bar.className = "label-printer";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "프린터");
+    const err = document.createElement("p");
+    err.className = "label-printer-err";
+    err.hidden = true;
+    bar.append(select, err);
+    return { bar, select, err };
+  }
+
+  function buildLabelFooter(printerBar, cancelBtn, printBtn) {
+    const footer = document.createElement("div");
+    footer.className = "label-footer";
+    const actions = document.createElement("div");
+    actions.className = "label-footer-actions";
+    actions.append(cancelBtn, printBtn);
+    footer.append(printerBar, actions);
+    return footer;
+  }
+
+  async function loadPrinters(selectEl, storageKey, errEl) {
     selectEl.replaceChildren();
+    selectEl.disabled = true;
+    if (errEl) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
     const loading = document.createElement("option");
     loading.value = "";
     loading.textContent = "불러오는 중…";
@@ -1075,28 +1118,44 @@
       const saved = String(localStorage.getItem(storageKey) || "").trim();
       const fallback = String(data.defaultPrinter || "").trim();
       selectEl.replaceChildren();
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "프린터";
+      selectEl.appendChild(blank);
       if (!printers.length) {
-        const empty = document.createElement("option");
-        empty.value = "";
-        empty.textContent = "프린터 없음";
-        selectEl.appendChild(empty);
-        return;
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = "프린터 없음";
+          errEl.classList.remove("bad");
+        }
+        selectEl.disabled = false;
+        return false;
       }
       printers.forEach((name) => {
         const opt = document.createElement("option");
         opt.value = name;
         opt.textContent = name;
+        opt.title = name;
         selectEl.appendChild(opt);
       });
       if (saved && printers.includes(saved)) selectEl.value = saved;
       else if (fallback && printers.includes(fallback)) selectEl.value = fallback;
       else selectEl.value = printers[0];
-    } catch (err) {
+      selectEl.disabled = false;
+      return true;
+    } catch (_err) {
       selectEl.replaceChildren();
       const fail = document.createElement("option");
       fail.value = "";
-      fail.textContent = err.message || "프린터 목록 실패";
+      fail.textContent = "프린터";
       selectEl.appendChild(fail);
+      selectEl.disabled = false;
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "프린터 조회 불가";
+        errEl.classList.add("bad");
+      }
+      return false;
     }
   }
 
@@ -1105,15 +1164,24 @@
     if (next) localStorage.setItem(storageKey, next);
   }
 
+  function syncPrintBtn(printBtn, total, printing) {
+    printBtn.disabled = printing || total <= 0;
+    printBtn.className =
+      printing || total <= 0 ? "btn btn-label-muted" : "btn btn-dark";
+    printBtn.textContent = printing
+      ? "출력 중..."
+      : total > 0
+        ? `출력 ${total}장`
+        : "출력";
+  }
+
   async function openVialModal() {
     if (!window.AbutsVialLabel) {
       setNote("공병 라벨 모듈을 불러오지 못했습니다.", "bad");
       return;
     }
     const wrap = document.createElement("div");
-    const help = document.createElement("p");
-    help.innerHTML = "50 × 20 mm · TTP-345(TSPL)<br />타입별 장수를 넣고 출력합니다.";
-    wrap.appendChild(help);
+    wrap.className = "label-modal vial-modal";
 
     const previewBox = document.createElement("div");
     previewBox.className = "vial-preview";
@@ -1122,10 +1190,16 @@
     wrap.appendChild(previewBox);
 
     let previewType = SCREW_TYPES[0];
+    let printing = false;
     const qty = {};
     const grid = document.createElement("div");
     grid.className = "vial-grid";
     const cells = {};
+    const inputs = {};
+    const printBtn = document.createElement("button");
+    printBtn.type = "button";
+    printBtn.className = "btn btn-label-muted";
+    printBtn.textContent = "출력";
 
     const paintPreview = () => {
       window.AbutsVialLabel.paintVialSticker(canvas, {
@@ -1134,6 +1208,9 @@
       });
     };
 
+    const totalQty = () =>
+      SCREW_TYPES.reduce((sum, type) => sum + parseQty(qty[type]), 0);
+
     const refreshCells = () => {
       SCREW_TYPES.forEach((type) => {
         const cell = cells[type];
@@ -1141,6 +1218,16 @@
         if (type === previewType) cell.classList.add("active");
         else if (parseQty(qty[type]) > 0) cell.classList.add("has-qty");
       });
+      syncPrintBtn(printBtn, totalQty(), printing);
+    };
+
+    const setQty = (type, next) => {
+      const n = Math.max(0, Math.min(99, next));
+      qty[type] = n === 0 ? "" : String(n);
+      inputs[type].value = qty[type];
+      previewType = type;
+      refreshCells();
+      paintPreview();
     };
 
     SCREW_TYPES.forEach((type) => {
@@ -1149,12 +1236,16 @@
       const typeBtn = document.createElement("button");
       typeBtn.type = "button";
       typeBtn.className = "type";
+      typeBtn.tabIndex = -1;
       typeBtn.textContent = type;
       typeBtn.addEventListener("click", () => {
         previewType = type;
         refreshCells();
         paintPreview();
       });
+
+      const qtyBox = document.createElement("div");
+      qtyBox.className = "vial-qty";
       const input = document.createElement("input");
       input.inputMode = "numeric";
       input.maxLength = 2;
@@ -1172,37 +1263,45 @@
         refreshCells();
         paintPreview();
       });
-      cell.append(typeBtn, input);
+      const steppers = document.createElement("div");
+      steppers.className = "vial-step";
+      const up = document.createElement("button");
+      up.type = "button";
+      up.tabIndex = -1;
+      up.setAttribute("aria-label", `${type} 장수 올리기`);
+      up.innerHTML =
+        '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      up.addEventListener("click", () => setQty(type, parseQty(qty[type]) + 1));
+      const down = document.createElement("button");
+      down.type = "button";
+      down.tabIndex = -1;
+      down.setAttribute("aria-label", `${type} 장수 내리기`);
+      down.innerHTML =
+        '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      down.addEventListener("click", () => setQty(type, parseQty(qty[type]) - 1));
+      steppers.append(up, down);
+      qtyBox.append(input, steppers);
+      cell.append(typeBtn, qtyBox);
       grid.appendChild(cell);
       cells[type] = cell;
+      inputs[type] = input;
     });
     wrap.appendChild(grid);
 
-    const printerField = document.createElement("div");
-    printerField.className = "field";
-    const printerLabel = document.createElement("label");
-    printerLabel.textContent = "프린터";
-    const printerSel = document.createElement("select");
-    printerField.append(printerLabel, printerSel);
-    wrap.appendChild(printerField);
-
+    const { bar: printerBar, select: printerSel, err: printerErr } =
+      buildPrinterBar();
     const status = document.createElement("p");
-    status.className = "note";
-    wrap.appendChild(status);
+    status.className = "label-status";
+    status.hidden = true;
 
-    const actions = document.createElement("div");
-    actions.className = "modal-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.className = "btn";
-    cancel.textContent = "닫기";
+    cancel.className = "btn btn-ghost-text";
+    cancel.textContent = "취소";
     cancel.addEventListener("click", closeModal);
-    const printBtn = document.createElement("button");
-    printBtn.type = "button";
-    printBtn.className = "btn btn-primary";
-    printBtn.textContent = "출력";
-    actions.append(cancel, printBtn);
-    wrap.appendChild(actions);
+
+    wrap.appendChild(buildLabelFooter(printerBar, cancel, printBtn));
+    wrap.appendChild(status);
 
     printBtn.addEventListener("click", async () => {
       const jobs = SCREW_TYPES.map((type) => ({
@@ -1210,20 +1309,23 @@
         count: parseQty(qty[type]),
       })).filter((job) => job.count > 0);
       if (!jobs.length) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = "장수를 입력하세요.";
         return;
       }
       const printer = String(printerSel.value || "").trim();
       if (!printer) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = "프린터를 고르세요.";
         return;
       }
       rememberPrinter(PRINTER_VIAL_KEY, printer);
-      printBtn.disabled = true;
-      status.className = "note";
-      status.textContent = "출력 중…";
+      printing = true;
+      cancel.disabled = true;
+      syncPrintBtn(printBtn, totalQty(), true);
+      status.hidden = true;
       try {
         for (const job of jobs) {
           const jobCanvas = document.createElement("canvas");
@@ -1251,17 +1353,22 @@
           "ok",
         );
       } catch (err) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = err.message || "출력에 실패했습니다.";
       } finally {
-        printBtn.disabled = false;
+        printing = false;
+        cancel.disabled = false;
+        syncPrintBtn(printBtn, totalQty(), false);
       }
     });
 
     refreshCells();
     paintPreview();
-    openModal("공병 라벨", wrap);
-    void loadPrinters(printerSel, PRINTER_VIAL_KEY);
+    openModal("공병 라벨", wrap, { size: "50 × 20 mm", label: true });
+    void loadPrinters(printerSel, PRINTER_VIAL_KEY, printerErr).then(() => {
+      syncPrintBtn(printBtn, totalQty(), false);
+    });
   }
 
   function paintPackPreview(imgEl, placeholderEl, item, branding) {
@@ -1299,14 +1406,23 @@
   function buildPackPreviewShell() {
     const preview = document.createElement("div");
     preview.className = "pack-preview";
+    const stage = document.createElement("div");
+    stage.className = "pack-preview-stage";
     const img = document.createElement("img");
     img.alt = "패킹 라벨 미리보기";
     img.hidden = true;
     const placeholder = document.createElement("div");
     placeholder.className = "pack-preview-empty";
     placeholder.textContent = "의뢰를 고르면 라벨이 보입니다.";
-    preview.append(img, placeholder);
-    return { preview, img, placeholder };
+    stage.append(img, placeholder);
+    preview.appendChild(stage);
+    return { preview, stage, img, placeholder };
+  }
+
+  function packCaption(item) {
+    if (!item) return "";
+    const tooth = item.tooth ? `#${item.tooth}` : "";
+    return [item.patientName || "", tooth].filter(Boolean).join(" · ");
   }
 
   async function openMatchedPrintModal() {
@@ -1324,59 +1440,49 @@
     }
 
     const wrap = document.createElement("div");
-    wrap.className = "pack-modal";
-    const caption = document.createElement("p");
-    caption.className = "pack-caption";
-    caption.textContent = [
-      item.lotSuffix || "—",
-      item.patientName || "",
-      item.clinicName || "",
-      item.requestId ? `#${String(item.requestId).slice(-4)}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    wrap.appendChild(caption);
+    wrap.className = "label-modal pack-modal";
 
     const { preview, img, placeholder } = buildPackPreviewShell();
+    const nav = document.createElement("div");
+    nav.className = "pack-nav";
+    const navLabel = document.createElement("p");
+    navLabel.className = "pack-nav-label";
+    navLabel.textContent = `1 / 1${packCaption(item) ? ` · ${packCaption(item)}` : ""}`;
+    nav.appendChild(navLabel);
+    preview.appendChild(nav);
     wrap.appendChild(preview);
 
-    const printerField = document.createElement("div");
-    printerField.className = "field";
-    const printerLabel = document.createElement("label");
-    printerLabel.textContent = "프린터";
-    const printerSel = document.createElement("select");
-    printerField.append(printerLabel, printerSel);
-    wrap.appendChild(printerField);
-
+    const { bar: printerBar, select: printerSel, err: printerErr } =
+      buildPrinterBar();
     const status = document.createElement("p");
-    status.className = "note";
-    wrap.appendChild(status);
+    status.className = "label-status";
+    status.hidden = true;
 
-    const actions = document.createElement("div");
-    actions.className = "modal-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.className = "btn";
+    cancel.className = "btn btn-ghost-text";
     cancel.textContent = "취소";
     cancel.addEventListener("click", closeModal);
     const printBtn = document.createElement("button");
     printBtn.type = "button";
     printBtn.className = "btn btn-dark";
     printBtn.textContent = "출력 1장";
-    actions.append(cancel, printBtn);
-    wrap.appendChild(actions);
+    wrap.appendChild(buildLabelFooter(printerBar, cancel, printBtn));
+    wrap.appendChild(status);
 
     printBtn.addEventListener("click", async () => {
       const printer = String(printerSel.value || "").trim();
       if (!printer) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = "프린터를 고르세요.";
         return;
       }
       rememberPrinter(PRINTER_PACK_KEY, printer);
       printBtn.disabled = true;
-      status.className = "note";
-      status.textContent = "출력 중…";
+      cancel.disabled = true;
+      printBtn.textContent = "출력 중...";
+      status.hidden = true;
       try {
         const result = await printPackingItems([item], printer);
         if (result.ok === 1 && result.fail === 0) {
@@ -1387,21 +1493,26 @@
           );
           return;
         }
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = result.firstError || "출력에 실패했습니다.";
       } catch (err) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = err.message || "출력에 실패했습니다.";
       } finally {
         printBtn.disabled = false;
+        cancel.disabled = false;
+        printBtn.textContent = "출력 1장";
       }
     });
 
-    openModal("패킹 라벨 80 × 65 mm", wrap);
-    if (els.modal?.querySelector(".modal")) {
-      els.modal.querySelector(".modal").classList.add("modal-wide");
-    }
-    void loadPrinters(printerSel, PRINTER_PACK_KEY);
+    openModal("패킹 라벨", wrap, {
+      size: "80 × 65 mm",
+      wide: true,
+      label: true,
+    });
+    void loadPrinters(printerSel, PRINTER_PACK_KEY, printerErr);
     const branding = await ensureBranding();
     void paintPackPreview(img, placeholder, item, branding);
   }
@@ -1412,36 +1523,44 @@
       return;
     }
     const wrap = document.createElement("div");
-    wrap.className = "pack-modal";
+    wrap.className = "label-modal pack-modal";
 
     const { preview, img, placeholder } = buildPackPreviewShell();
-    wrap.appendChild(preview);
-
     const nav = document.createElement("div");
     nav.className = "pack-nav";
     const prevBtn = document.createElement("button");
     prevBtn.type = "button";
-    prevBtn.className = "btn pack-nav-btn";
-    prevBtn.textContent = "‹";
+    prevBtn.className = "pack-nav-btn";
     prevBtn.setAttribute("aria-label", "이전 라벨");
+    prevBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const navLabel = document.createElement("p");
     navLabel.className = "pack-nav-label";
     const nextBtn = document.createElement("button");
     nextBtn.type = "button";
-    nextBtn.className = "btn pack-nav-btn";
-    nextBtn.textContent = "›";
+    nextBtn.className = "pack-nav-btn";
     nextBtn.setAttribute("aria-label", "다음 라벨");
+    nextBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 18l6-6-6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     nav.append(prevBtn, navLabel, nextBtn);
-    wrap.appendChild(nav);
+    preview.appendChild(nav);
+    wrap.appendChild(preview);
 
+    const toolbar = document.createElement("div");
+    toolbar.className = "pack-toolbar";
     const tabs = document.createElement("div");
     tabs.className = "scope-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "패킹 라벨 선택");
     let scope = "unprinted";
     let focusId = "";
+    let printing = false;
+
     const makeTab = (key, label) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.dataset.scope = key;
+      btn.setAttribute("role", "tab");
       btn.addEventListener("click", () => {
         scope = key;
         const visible = visibleItems();
@@ -1458,7 +1577,18 @@
     const tabUnprinted = makeTab("unprinted", "미출력");
     const tabPrinted = makeTab("printed", "기출력");
     const tabAll = makeTab("all", "전체");
-    wrap.appendChild(tabs);
+
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "btn pack-clear";
+    clearBtn.textContent = "해제";
+    clearBtn.addEventListener("click", () => {
+      selected.clear();
+      renderList();
+      syncFocus();
+    });
+    toolbar.append(tabs, clearBtn);
+    wrap.appendChild(toolbar);
 
     const selected = new Set(
       state.queue.filter((item) => !item.printed).map((item) => item._id),
@@ -1477,22 +1607,28 @@
         printed: state.queue.filter((item) => item.printed).length,
         all: state.queue.length,
       };
-      tabUnprinted.textContent = `미출력 ${counts.unprinted}`;
-      tabPrinted.textContent = `기출력 ${counts.printed}`;
-      tabAll.textContent = `전체 ${counts.all}`;
-      [tabUnprinted, tabPrinted, tabAll].forEach((btn) =>
-        btn.classList.toggle("active", btn.dataset.scope === scope),
-      );
+      const fill = (btn, label, count) => {
+        btn.replaceChildren();
+        btn.appendChild(document.createTextNode(label));
+        const n = document.createElement("span");
+        n.className = "scope-count";
+        n.textContent = String(count);
+        btn.appendChild(n);
+        btn.classList.toggle("active", btn.dataset.scope === scope);
+        btn.setAttribute("aria-selected", btn.dataset.scope === scope ? "true" : "false");
+      };
+      fill(tabUnprinted, "미출력", counts.unprinted);
+      fill(tabPrinted, "기출력", counts.printed);
+      fill(tabAll, "전체", counts.all);
     };
 
-    const list = document.createElement("div");
+    const list = document.createElement("ul");
     list.className = "print-grid";
     wrap.appendChild(list);
 
     const printBtn = document.createElement("button");
     printBtn.type = "button";
     printBtn.className = "btn btn-dark";
-    printBtn.textContent = selected.size ? `출력 ${selected.size}장` : "출력";
 
     const syncFocus = () => {
       const visible = visibleItems();
@@ -1502,23 +1638,31 @@
       );
       const focusItem = visible[idx] || null;
       focusId = focusItem?._id || "";
+      const caption = packCaption(focusItem);
       navLabel.textContent = focusItem
-        ? `${idx + 1} / ${visible.length} · ${focusItem.patientName || focusItem.lotSuffix || "—"}`
+        ? `${idx + 1} / ${visible.length}${caption ? ` · ${caption}` : ""}`
         : "0 / 0";
       prevBtn.disabled = visible.length < 2 || idx <= 0;
       nextBtn.disabled = visible.length < 2 || idx >= visible.length - 1;
+      clearBtn.disabled = printing || selected.size === 0;
       void paintPackPreview(img, placeholder, focusItem, state.branding);
-      printBtn.textContent = selected.size
-        ? `출력 ${selected.size}장`
-        : "출력";
+      syncPrintBtn(printBtn, selected.size, printing);
+    };
+
+    const toggleId = (id) => {
+      focusId = id;
+      if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      renderList();
+      syncFocus();
     };
 
     const renderList = () => {
       list.replaceChildren();
       const items = visibleItems();
       if (!items.length) {
-        const empty = document.createElement("div");
-        empty.className = "strip-empty";
+        const empty = document.createElement("li");
+        empty.className = "print-empty";
         empty.textContent =
           scope === "unprinted"
             ? "미출력 의뢰가 없습니다."
@@ -1529,35 +1673,67 @@
         return;
       }
       items.forEach((item) => {
-        const row = document.createElement("label");
-        row.className = "print-card";
-        if (item._id === focusId) row.classList.add("focus");
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.checked = selected.has(item._id);
-        check.addEventListener("click", (ev) => ev.stopPropagation());
-        check.addEventListener("change", () => {
-          if (check.checked) selected.add(item._id);
-          else selected.delete(item._id);
-          printBtn.textContent = selected.size
-            ? `출력 ${selected.size}장`
-            : "출력";
+        const row = document.createElement("li");
+        const card = document.createElement("div");
+        card.className = "print-card";
+        if (item._id === focusId) card.classList.add("focus");
+
+        const check = document.createElement("button");
+        check.type = "button";
+        check.className = "print-check";
+        check.setAttribute("role", "checkbox");
+        check.setAttribute(
+          "aria-checked",
+          selected.has(item._id) ? "true" : "false",
+        );
+        check.setAttribute(
+          "aria-label",
+          `${item.patientName || "의뢰"} 선택`,
+        );
+        if (selected.has(item._id)) check.classList.add("on");
+        check.innerHTML =
+          '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        check.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          toggleId(item._id);
         });
-        const body = document.createElement("div");
+
+        const body = document.createElement("button");
+        body.type = "button";
         body.className = "print-card-body";
-        const title = document.createElement("strong");
-        title.textContent = `${item.patientName || "—"} · ${item.lotSuffix || "—"}`;
-        const meta = document.createElement("span");
-        meta.textContent = [item.clinicName || "", item.printed ? "출력됨" : ""]
-          .filter(Boolean)
-          .join(" · ");
-        body.append(title, meta);
-        row.append(check, body);
-        row.addEventListener("click", () => {
+        const top = document.createElement("div");
+        top.className = "print-card-top";
+        const title = document.createElement("span");
+        title.className = "print-card-title";
+        title.textContent = `${item.patientName || "환자 없음"}${item.tooth ? ` · #${item.tooth}` : ""}`;
+        top.appendChild(title);
+        if (item.lotSuffix) {
+          const suffix = document.createElement("span");
+          suffix.className = "print-card-suffix";
+          suffix.textContent = item.lotSuffix;
+          top.appendChild(suffix);
+        }
+        body.appendChild(top);
+        if (item.clinicName) {
+          const clinic = document.createElement("div");
+          clinic.className = "print-card-clinic";
+          clinic.textContent = item.clinicName;
+          body.appendChild(clinic);
+        }
+        body.addEventListener("click", () => {
           focusId = item._id;
           renderList();
           syncFocus();
         });
+
+        card.append(check, body);
+        if (item.printed) {
+          const badge = document.createElement("span");
+          badge.className = "print-card-printed";
+          badge.textContent = "출력됨";
+          card.appendChild(badge);
+        }
+        row.appendChild(card);
         list.appendChild(row);
       });
     };
@@ -1581,59 +1757,40 @@
       }
     });
 
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.className = "btn";
-    clearBtn.textContent = "해제";
-    clearBtn.addEventListener("click", () => {
-      selected.clear();
-      renderList();
-      syncFocus();
-    });
-
-    const printerField = document.createElement("div");
-    printerField.className = "field";
-    const printerLabel = document.createElement("label");
-    printerLabel.textContent = "프린터";
-    const printerSel = document.createElement("select");
-    printerField.append(printerLabel, printerSel);
-
-    const footer = document.createElement("div");
-    footer.className = "pack-footer";
-    footer.append(clearBtn, printerField);
-    wrap.appendChild(footer);
-
+    const { bar: printerBar, select: printerSel, err: printerErr } =
+      buildPrinterBar();
     const status = document.createElement("p");
-    status.className = "note";
-    wrap.appendChild(status);
+    status.className = "label-status";
+    status.hidden = true;
 
-    const actions = document.createElement("div");
-    actions.className = "modal-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.className = "btn";
+    cancel.className = "btn btn-ghost-text";
     cancel.textContent = "취소";
     cancel.addEventListener("click", closeModal);
-    actions.append(cancel, printBtn);
-    wrap.appendChild(actions);
+    wrap.appendChild(buildLabelFooter(printerBar, cancel, printBtn));
+    wrap.appendChild(status);
 
     printBtn.addEventListener("click", async () => {
       const targets = state.queue.filter((item) => selected.has(item._id));
       if (!targets.length) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = "출력할 의뢰를 고르세요.";
         return;
       }
       const printer = String(printerSel.value || "").trim();
       if (!printer) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = "프린터를 고르세요.";
         return;
       }
       rememberPrinter(PRINTER_PACK_KEY, printer);
-      printBtn.disabled = true;
-      status.className = "note";
-      status.textContent = "출력 중…";
+      printing = true;
+      cancel.disabled = true;
+      syncFocus();
+      status.hidden = true;
       try {
         const result = await printPackingItems(targets, printer);
         if (result.ok > 0 && result.fail === 0) {
@@ -1642,26 +1799,31 @@
           await refreshQueue();
           return;
         }
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent =
           result.ok > 0
             ? `${result.ok}건 성공 / ${result.fail}건 실패`
             : result.firstError || "출력에 실패했습니다.";
       } catch (err) {
-        status.className = "note bad";
+        status.hidden = false;
+        status.className = "label-status bad";
         status.textContent = err.message || "출력에 실패했습니다.";
       } finally {
-        printBtn.disabled = false;
+        printing = false;
+        cancel.disabled = false;
+        syncFocus();
       }
     });
 
     syncTabs();
     renderList();
-    openModal("패킹 라벨 80 × 65 mm", wrap);
-    if (els.modal?.querySelector(".modal")) {
-      els.modal.querySelector(".modal").classList.add("modal-wide");
-    }
-    void loadPrinters(printerSel, PRINTER_PACK_KEY);
+    openModal("패킹 라벨", wrap, {
+      size: "80 × 65 mm",
+      wide: true,
+      label: true,
+    });
+    void loadPrinters(printerSel, PRINTER_PACK_KEY, printerErr);
     void ensureBranding().then(() => syncFocus());
   }
 
