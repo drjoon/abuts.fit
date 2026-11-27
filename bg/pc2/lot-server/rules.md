@@ -41,7 +41,8 @@
 - 카메라 제어(UVC): `bg/pc2/lot-server/src/uvc.js` → `src/UvcTool.exe`(`UvcTool.cs`), 대체 `src/uvc-ctl.ps1`
 - ViTiny DLL(기본 꺼짐, `LOT_VITINY_DLL=1`): `bg/pc2/lot-server/src/focus.js`, `src/microscope-ctl.ps1`
 - 화면: `bg/pc2/lot-server/public/index.html` · `station.css` · `station.js` · `vialLabel.js` · `packLabel.js` · `vendor/qrcode.js`
-- 백엔드: `GET /api/bg/packing/queue`, `POST /api/bg/lot-capture/packing`, `GET|PUT /api/bg/packing/screw-lot-settings`
+- 작업대 설정: `bg/pc2/lot-server/src/station-settings.js` → `data/station-settings.json`
+- 백엔드: `GET /api/bg/packing/queue`, `POST /api/bg/lot-capture/packing`, `POST /api/bg/presign-upload`, `GET|PUT /api/bg/packing/screw-lot-settings`
 - 같은 PC pack-server(`PACK_SERVER_BASE`, 기본 `http://127.0.0.1:8004`): `GET /api/printers`, `GET /api/branding`, `POST /api/print-packing-label`, `POST /api/print-zpl`(공병 TSPL·패킹 bitmap ZPL)
 - 패킹 라벨 미리보기·출력은 FE와 같은 캔버스 레이아웃(`packLabel.js`). 매칭 옆 「프린트」는 선택·최근 매칭 1건.
 
@@ -55,5 +56,8 @@
 - 작업 화면 의뢰 카드(`/api/queue`)는 우편함이 배정된 세척.패킹 건만 보낸다(`src/packing-queue.js`, `LOT_QUEUE_REQUIRE_MAILBOX`).
 - 화질(2026-11-27): UVC 밝기를 255로 고정하지 않는다(금속면이 하얗게 날아가 각인을 못 읽었다). 권장 밝기·대비·채도 128, 색조 0, EV Auto. 작업 화면 톱니(설정) 모달에서 바꾸고 `data/camera-settings.json`에 저장(`src/camera-settings.js`). 감시 시작·수동 촬영 때 저장값을 건다.
 - 인식 안전(2026-11-27): 감시·수동 인식 결과는 지금 세척.패킹 대기 목록(우편함 배정)에 있는 코드일 때만 낸다. 목록을 못 받으면 결과 없음. 같은 코드를 `LOT_OCR_CONFIRM`(기본 2)번 연속 읽어야 확정. 1위가 목록 밖이면 버린다(목록 안 2위로 바꾸지 않는다). 끄기 `LOT_OCR_QUEUE_ONLY=0`(권장하지 않음).
-- 테스트 중에는 감시를 멈추고 `/api/match`를 부르지 않는다(작업 화면은 인식되면 자동으로 매칭해 포장.발송으로 넘긴다).
-- 각인 인식(2026-11-27): 기본 `LOT_RECOGNIZER=engrave` — `src/engrave`(ROI→회전→칸 특징→MLP, 로컬). 지그별 ROI는 `data/jig-profiles.json`, 학습 데이터 `data/engrave-dataset`, 모델 버전 `data/engrave-models`(current.json, 이전 버전 보존). `data/`는 배포로 덮지 않는다. 매칭 성공 때 표본 저장(`LOT_ENGRAVE_COLLECT`), 재학습 `npm run train:engrave`.
+- 패킹 작업대 SSOT(2026-11-27, `docs/intent/lot-server-packing-station.md`): 꽂기 → 인식·표시·매칭 → (설정 시) 라벨 출력·이미지 S3 첨부·포장.발송 → 다음. 작업 영역은 현미경 시작/정지·설정·각인코드·매칭·프린트(예외)·라이브·인식 히스토리·대기열·에러(클릭→히스토리 모달+복사)만. 초점·한 번 인식은 설정 모달「점검」.
+- 설정 `data/station-settings.json`(`GET|PUT /api/station-settings`): `autoCommit`(기본 true=자동 프린트·포장.발송, false=연습·인식만), `collectSamples`(매칭 성공 표본 수집). 재학습(`train:engrave`)은 UI에 넣지 않는다.
+- `/api/match`는 촬영본을 `presign-upload`(packing-capture)로 S3에 올린 뒤 `s3Key`와 함께 lot-capture로 보낸다. 업로드 실패해도 코드 매칭은 진행한다.
+- 테스트 중에는 감시를 멈추고 `/api/match`를 부르지 않는다. 실작업(autoCommit)에서는 인식되면 자동 매칭·라벨·포장.발송한다.
+- 각인 인식(2026-11-27): 기본 `LOT_RECOGNIZER=engrave` — `src/engrave`(ROI→회전→칸 특징→MLP, 로컬). 지그별 ROI는 `data/jig-profiles.json`, 학습 데이터 `data/engrave-dataset`, 모델 버전 `data/engrave-models`(current.json, 이전 버전 보존). `data/`는 배포로 덮지 않는다. 매칭 성공 때 표본 저장(`collectSamples`·`LOT_ENGRAVE_COLLECT`), 재학습 `npm run train:engrave`.

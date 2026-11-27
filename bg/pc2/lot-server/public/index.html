@@ -21,35 +21,34 @@
       <section class="station">
         <div class="station-top">
           <div class="row">
-            <span class="label">감시</span>
+            <span class="label">현미경</span>
             <span class="muted" id="watchStatus">중지</span>
             <button type="button" class="btn btn-dark" id="startWatch">시작</button>
-            <button type="button" class="btn" id="stopWatch" hidden>종료</button>
-            <button type="button" class="btn" id="focusBtn">초점</button>
-            <button type="button" class="btn" id="recognizeBtn">수동 인식</button>
-            <button type="button" class="btn btn-icon" id="settingsBtn" title="카메라·화질 설정" aria-label="카메라·화질 설정">
+            <button type="button" class="btn" id="stopWatch" hidden>정지</button>
+            <button type="button" class="btn btn-icon" id="settingsBtn" title="설정" aria-label="설정">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
               <span>설정</span>
             </button>
+            <button type="button" class="error-chip" id="errorChip" hidden title="에러 히스토리">에러</button>
           </div>
           <div class="row">
             <span class="label">각인 코드</span>
             <div class="suffix" id="suffix" aria-label="선택된 각인 코드">—</div>
             <button type="button" class="btn btn-primary" id="matchBtn">매칭</button>
-            <button type="button" class="btn" id="printMatchedBtn">프린트</button>
+            <button type="button" class="btn" id="printMatchedBtn" title="실패·재출력용">프린트</button>
             <p class="note" id="matchNote"></p>
           </div>
         </div>
         <div class="live-wrap">
           <div class="live-box">
             <img id="live" alt="현미경 라이브" hidden />
-            <p id="liveEmpty">감시 시작을 누르면 라이브가 표시됩니다.</p>
+            <p id="liveEmpty">감시를 시작하면 라이브가 표시됩니다.</p>
           </div>
         </div>
-        <div class="ocr-log" id="ocrLog" aria-label="촬영·인식 로그"></div>
+        <div class="ocr-log" id="ocrLog" aria-label="인식 히스토리"></div>
       </section>
 
       <aside class="strip" id="requestStrip" aria-label="세척·패킹 대기 의뢰"></aside>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-27: 패킹 작업대 SSOT — station-settings(자동 커밋·표본 수집), /api/match 시 촬영본 S3 업로드(presign)+s3Key 전달.
 // - 2026-11-27: 각인 인식 지그 프로필 API(GET/PUT /api/jig-profiles, POST /api/jig-profiles/select·duplicate),
 //   GET /api/engrave/status, POST /api/engrave/test(미리보기 한 장으로 판독만, 저장·매칭 없음).
 //   /api/match 성공 뒤 그 코드로 각인 학습 표본을 data/engrave-dataset에 저장(LOT_ENGRAVE_COLLECT=0이면 끔).
@@ -49,6 +50,12 @@ import { createWatcher } from "./watch.js";
 import { resolvePublicPath } from "./static-path.js";
 import { activeLotSuffixes, filterPackingQueueBody, queueFilterOptionsFromEnv } from "./packing-queue.js";
 import { EV_LABELS, LIMITS, loadSettings, recommendedSettings, saveSettings, settingsFile } from "./camera-settings.js";
+import {
+  loadStationSettings,
+  recommendedStationSettings,
+  saveStationSettings,
+  stationSettingsFile,
+} from "./station-settings.js";
 import { activeProfile, duplicateProfile, loadProfiles, normalizeProfile, profilesFile, selectProfile, upsertProfile } from "./jig-profiles.js";
 import { datasetSummary, saveSample } from "./engrave/dataset.js";
 import { listModelVersions, loadModel, modelsDir } from "./engrave/model-store.js";
@@ -281,9 +288,58 @@ async function frameForSample(code) {
   return live ? { buffer: Buffer.from(live), from: "live" } : null;
 }
 
+/** 매칭 직전 촬영본을 S3에 올리고 lot-capture용 메타를 돌려준다. 실패해도 매칭은 코드만으로 진행. */
+async function uploadCaptureForMatch(code, requestId) {
+  const frame = await frameForSample(code);
+  if (!frame?.buffer?.length) {
+    return { ok: false, reason: "no-frame" };
+  }
+  const originalName = String(frame.fileName || `lot-${code || "xxx"}.jpg`).replace(/\s+/g, "_");
+  const mimeType = "image/jpeg";
+  const presign = await backendFetch("/api/bg/presign-upload", {
+    method: "POST",
+    body: {
+      sourceStep: "packing-capture",
+      fileName: originalName,
+      requestId: requestId || undefined,
+    },
+  });
+  if (presign.status < 200 || presign.status >= 300) {
+    return {
+      ok: false,
+      reason: `presign-${presign.status}`,
+      message: presign.body?.message || "",
+    };
+  }
+  const data = presign.body?.data || presign.body || {};
+  const uploadUrl = data.url;
+  const s3Key = data.key;
+  const s3Url = data.s3Url;
+  if (!uploadUrl || !s3Key) {
+    return { ok: false, reason: "presign-fields" };
+  }
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": data.contentType || mimeType },
+    body: frame.buffer,
+  });
+  if (!put.ok) {
+    const t = await put.text().catch(() => "");
+    return { ok: false, reason: `s3-${put.status}`, message: t.slice(0, 160) };
+  }
+  return {
+    ok: true,
+    s3Key,
+    s3Url: s3Url || "",
+    originalName,
+    fileSize: frame.buffer.length,
+  };
+}
+
 /** 매칭이 된 코드로 학습 표본 저장(비동기, 실패해도 매칭에는 영향 없음). */
 async function collectSample(code, source, requestId) {
   if (String(process.env.LOT_ENGRAVE_COLLECT ?? "1") === "0") return;
+  if (!loadStationSettings().collectSamples) return;
   if (!/^[A-Z]{3}$/.test(code)) return;
   const frame = await frameForSample(code);
   if (!frame) {
@@ -463,18 +519,60 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/match") {
       const body = await readBody(req);
+      const codeHint = String(body.recognizedSuffix || body.lotNumber || "")
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "")
+        .slice(-3);
+      let imageMeta = null;
+      if (!String(body.s3Key || "").trim() && codeHint.length === 3) {
+        imageMeta = await uploadCaptureForMatch(
+          codeHint,
+          String(body.requestId || body.requestMongoId || ""),
+        );
+        if (imageMeta.ok) {
+          body.s3Key = imageMeta.s3Key;
+          body.s3Url = imageMeta.s3Url || "";
+          body.originalName = imageMeta.originalName;
+          body.fileSize = imageMeta.fileSize;
+          log(`match image uploaded ${imageMeta.s3Key} (${imageMeta.fileSize}b)`);
+        } else {
+          log(`match image skipped ${imageMeta.reason || "?"} ${imageMeta.message || ""}`.trim());
+        }
+      }
       const upstream = await backendFetch("/api/bg/lot-capture/packing", {
         method: "POST",
         body,
       });
-      json(res, upstream.status, upstream.body || { success: false });
-      const result = upstream.body?.data || {};
+      const out = upstream.body || { success: false };
+      if (imageMeta && !imageMeta.ok) {
+        out.imageUpload = { ok: false, reason: imageMeta.reason || "failed" };
+      } else if (imageMeta?.ok || body.s3Key) {
+        out.imageUpload = { ok: true, s3Key: String(body.s3Key || imageMeta?.s3Key || "") };
+      }
+      json(res, upstream.status, out);
+      const result = out.data || {};
       if (upstream.status >= 200 && upstream.status < 300 && result.matched) {
         const code = String(result.suffix || body.recognizedSuffix || "").toUpperCase();
         collectSample(code, String(body.source || "manual"), String(result.requestId || body.requestMongoId || "")).catch((e) =>
           log(`engrave sample error ${e?.message || e}`),
         );
       }
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/station-settings") {
+      json(res, 200, {
+        success: true,
+        settings: loadStationSettings(),
+        recommended: recommendedStationSettings(),
+        file: stationSettingsFile(),
+      });
+      return;
+    }
+    if ((req.method === "PUT" || req.method === "POST") && url.pathname === "/api/station-settings") {
+      const body = await readBody(req);
+      const saved = saveStationSettings(body.settings || body);
+      log(`station settings saved ${JSON.stringify(saved)}`);
+      json(res, 200, { success: true, settings: saved, file: stationSettingsFile() });
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/screw-lot-settings") {

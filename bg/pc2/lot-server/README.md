@@ -111,6 +111,18 @@ ViTiny `mltcCom`(32비트, `vendor/vitiny`, `microscope-ctl.ps1`)은 이 UM20에
 - `/api/queue`는 백엔드 `/api/bg/packing/queue`(manufacturerStage=세척.패킹)에서 **우편함이 배정된 건만** 남긴다(`src/packing-queue.js`). 우편함 배정 규칙 이전에 남은 옛 건(우편함 없음)이 섞여 카드가 너무 많던 문제. `total`·직경 건수(`counts`)도 다시 세고, 숨긴 건수는 `hidden`.
 - `LOT_QUEUE_REQUIRE_MAILBOX=0`이면 거르지 않고 백엔드 목록을 그대로 쓴다.
 
+## 패킹 작업대 SSOT (2026-11-27)
+
+꽂기 → 각인 인식·표시·대기열 매칭 → (설정 시) 패킹 라벨 출력·촬영 이미지 S3 첨부·포장.발송 → 다음 대기.
+
+- 설정(`data/station-settings.json`, `GET|PUT /api/station-settings`):
+  - `autoCommit` 기본 true — 인식 후 자동 매칭·라벨·포장.발송. false면 **연습 모드**(인식만).
+  - `collectSamples` — 매칭 성공 때 각인 표본 수집(`LOT_ENGRAVE_COLLECT=0`이면 항상 끔).
+- `/api/match`가 촬영본을 백엔드 `presign-upload`(packing-capture)로 S3에 올린 뒤 `s3Key`와 함께 lot-capture로 보낸다.
+- 작업 화면: 현미경 시작/정지·설정·각인 코드·매칭·프린트(실패·재출력)·라이브·인식 히스토리·대기열·에러(클릭 → 히스토리 모달 + 복사).
+- 초점·한 번 인식은 설정 모달「점검」. 재학습(`train:engrave`)은 터미널/문서만.
+- 자동 출력은 패킹 라벨에서 한 번 고른 프린터(`localStorage`)를 쓴다.
+
 ## 카메라·화질 설정 (2026-11-27)
 
 - 작업 화면 「감시」 줄의 톱니(설정) 버튼 → 모달: 카메라 선택·목록 새로고침, 밝기·대비·채도·색조(UVC), LED 단계·노출 EV(UM20 시리얼), 미리보기, 권장값으로, 저장하고 적용. Esc·바깥 클릭으로 닫는다.
@@ -188,7 +200,7 @@ D:\bg\lot-server\nssm.exe restart AbutsLotServer   # 모델 파일은 바뀌면 
 
 ### 백업·복원
 
-- `data/`(engrave-dataset, engrave-models, jig-profiles.json, camera-settings.json)는 코드 배포·덮어쓰기 대상이 아니다. 코드를 새로 풀 때 `data/`를 지우거나 덮지 않는다.
+- `data/`(engrave-dataset, engrave-models, jig-profiles.json, camera-settings.json, station-settings.json)는 코드 배포·덮어쓰기 대상이 아니다. 코드를 새로 풀 때 `data/`를 지우거나 덮지 않는다.
 - 백업(예시):
 
 ```powershell

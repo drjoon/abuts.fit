@@ -1,7 +1,10 @@
 // related files:
 // - bg/pc2/lot-server/public/index.html
 // - bg/pc2/lot-server/src/index.js
+// - bg/pc2/lot-server/src/station-settings.js
+// - docs/intent/lot-server-packing-station.md
 // change-log:
+// - 2026-11-27: 패킹 작업대 SSOT — 연습/자동 커밋 토글, 인식→(설정 시)매칭·S3 이미지·라벨·포장.발송, 에러 히스토리 모달+복사, 작업 영역에서 초점·수동인식 제거(설정으로).
 // - 2026-11-27: 촬영·인식 ocrLog를 라이브 아래 가로 스크롤 카드로 표시(한 줄).
 // - 2026-11-27: 감시 중 OCR 거부·실패(lastError)를 각인 코드 옆 안내(note)에 표시. 코드 칸이 —로만 남아 원인을 모르게 두지 않는다.
 // - 2026-11-27: 설정 모달에 ‘각인 인식 · 지그’: 프로필 선택·복제·이름, ROI(X/Y/폭/높이 %, 미리보기 드래그), 글자 높이 범위, 판독 시험(저장·매칭 없음).
@@ -34,11 +37,10 @@
     history: document.querySelector("#history"),
     start: document.querySelector("#startWatch"),
     stop: document.querySelector("#stopWatch"),
-    focus: document.querySelector("#focusBtn"),
-    recognize: document.querySelector("#recognizeBtn"),
     match: document.querySelector("#matchBtn"),
     printMatched: document.querySelector("#printMatchedBtn"),
     settingsBtn: document.querySelector("#settingsBtn"),
+    errorChip: document.querySelector("#errorChip"),
     vialBtn: document.querySelector("#vialBtn"),
     packingBtn: document.querySelector("#packingBtn"),
     screwBtn: document.querySelector("#screwBtn"),
@@ -47,6 +49,9 @@
     modalBody: document.querySelector("#modalBody"),
     modalClose: document.querySelector("#modalClose"),
   };
+
+  const ERROR_HISTORY_MAX = 80;
+  const PRINTER_PACK_KEY = "abuts.lot.printer.packing";
 
   const state = {
     running: false,
@@ -65,6 +70,11 @@
     pollTimer: 0,
     liveTimer: 0,
     queueTimer: 0,
+    /** @type {{ autoCommit: boolean, collectSamples: boolean }} */
+    station: { autoCommit: true, collectSamples: true },
+    stationLoaded: false,
+    errors: [],
+    lastErrorSig: "",
   };
 
   function extractLotSuffix3(value) {
@@ -87,18 +97,127 @@
   function setBusy(next) {
     state.busy = Boolean(next);
     const disabled = state.busy || state.matching;
-    [
-      els.start,
-      els.stop,
-      els.focus,
-      els.recognize,
-      els.match,
-      els.printMatched,
-    ].forEach((el) => {
+    [els.start, els.stop, els.match, els.printMatched].forEach((el) => {
       if (el) el.disabled = disabled;
     });
     if (els.stop) els.stop.hidden = !state.running;
     if (els.start) els.start.hidden = state.running;
+  }
+
+  function pushError(message, source) {
+    const text = String(message || "").trim();
+    if (!text) return;
+    const row = {
+      at: new Date().toISOString(),
+      source: String(source || "station"),
+      message: text,
+    };
+    state.errors = [row, ...state.errors].slice(0, ERROR_HISTORY_MAX);
+    renderErrorChip();
+  }
+
+  function renderErrorChip() {
+    if (!els.errorChip) return;
+    const n = state.errors.length;
+    if (!n) {
+      els.errorChip.hidden = true;
+      els.errorChip.textContent = "에러";
+      return;
+    }
+    els.errorChip.hidden = false;
+    els.errorChip.textContent = n === 1 ? "에러" : `에러 ${n}`;
+  }
+
+  function formatErrorHistoryText() {
+    return state.errors
+      .map((row) => {
+        const t = formatLogTime(row.at);
+        return `[${t}] (${row.source}) ${row.message}`;
+      })
+      .join("\n");
+  }
+
+  function openErrorHistoryModal() {
+    const wrap = el("div", { class: "error-history" });
+    const list = el("pre", { class: "error-history-list" });
+    list.textContent = state.errors.length
+      ? formatErrorHistoryText()
+      : "에러가 없습니다.";
+    const copyBtn = el("button", {
+      type: "button",
+      class: "btn btn-dark",
+      text: "복사",
+    });
+    const clearBtn = el("button", {
+      type: "button",
+      class: "btn",
+      text: "비우기",
+    });
+    const status = el("p", { class: "note" });
+    copyBtn.addEventListener("click", async () => {
+      const text = formatErrorHistoryText();
+      if (!text) {
+        status.className = "note bad";
+        status.textContent = "복사할 내용이 없습니다.";
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        status.className = "note ok";
+        status.textContent = "클립보드에 복사했습니다.";
+      } catch {
+        status.className = "note bad";
+        status.textContent = "복사에 실패했습니다.";
+      }
+    });
+    clearBtn.addEventListener("click", () => {
+      state.errors = [];
+      state.lastErrorSig = "";
+      renderErrorChip();
+      list.textContent = "에러가 없습니다.";
+      status.className = "note";
+      status.textContent = "비웠습니다.";
+    });
+    wrap.appendChild(list);
+    wrap.appendChild(
+      el("div", { class: "error-history-actions" }, [clearBtn, copyBtn]),
+    );
+    wrap.appendChild(status);
+    openModal("에러 히스토리", wrap);
+  }
+
+  async function loadStationSettings() {
+    try {
+      const data = await api("/api/station-settings");
+      const s = data.settings || {};
+      state.station = {
+        autoCommit: s.autoCommit !== false,
+        collectSamples: s.collectSamples !== false,
+      };
+      state.stationLoaded = true;
+    } catch (err) {
+      pushError(err.message || "작업대 설정을 불러오지 못했습니다.", "settings");
+      state.stationLoaded = true;
+    }
+  }
+
+  function rememberedPackPrinter() {
+    return String(localStorage.getItem(PRINTER_PACK_KEY) || "").trim();
+  }
+
+  async function autoPrintAfterMatch(item) {
+    if (!item) return { ok: false, reason: "no-item" };
+    const printer = rememberedPackPrinter();
+    if (!printer) {
+      return { ok: false, reason: "no-printer" };
+    }
+    try {
+      const result = await printPackingItems([item], printer);
+      if (result.ok > 0 && result.fail === 0) return { ok: true };
+      return { ok: false, reason: result.firstError || "print-failed" };
+    } catch (err) {
+      return { ok: false, reason: err.message || "print-failed" };
+    }
   }
 
   async function api(path, options = {}) {
@@ -230,9 +349,11 @@
     const phase = PHASE_KO[data.phase] || data.phase || "—";
     const recent = extractLotSuffix3(data.lastLot || data.latest?.lot);
     const rejected = extractLotSuffix3(data.lastRejected?.lot || data.lastRejected);
+    const modeHint = state.station.autoCommit ? "" : "연습";
     els.status.textContent = [
-      state.running ? "감시 중" : "중지",
+      state.running ? "감시 중" : "정지",
       phase,
+      modeHint,
       recent ? `최근 ${recent}` : "",
       !recent && rejected ? `거부 ${rejected}` : "",
     ]
@@ -244,12 +365,21 @@
     if (state.running) {
       refreshLive();
       // 확정 전 거부·실패 이유를 각인 코드 칸이 —인 채로만 두지 않고 안내에 보여 준다.
-      if (!state.matching && data.lastError) setNote(data.lastError, "bad");
+      if (!state.matching && data.lastError) {
+        const errText = String(data.lastError || "").trim();
+        if (errText && errText !== state.lastErrorSig) {
+          state.lastErrorSig = errText;
+          pushError(errText, "watch");
+        }
+        if (errText) setNote(errText, "bad");
+      } else if (!data.lastError) {
+        state.lastErrorSig = "";
+      }
     } else {
       els.live.removeAttribute("src");
       els.live.hidden = true;
       els.liveEmpty.hidden = false;
-      els.liveEmpty.textContent = "감시 시작을 누르면 라이브가 표시됩니다.";
+      els.liveEmpty.textContent = "감시를 시작하면 라이브가 표시됩니다.";
     }
 
     renderOcrLog(data.ocrLog);
@@ -263,6 +393,12 @@
     state.selectedId = "";
     state.suffix = lot;
     els.suffix.textContent = lot;
+    pushHistory(lot);
+    renderStrip();
+    if (!state.station.autoCommit) {
+      setNote("연습 모드 · 인식만 했습니다.", "ok");
+      return;
+    }
     setNote("");
     void matchSuffix(lot, "auto");
   }
@@ -452,24 +588,45 @@
       const result = data.data || {};
       if (!result.matched) {
         const reason = String(result.reason || "");
+        let msg = data.message || "매칭에 실패했습니다.";
         if (reason === "ambiguous_suffix") {
-          setNote("같은 코드가 여러 건입니다.\n오른쪽 카드를 눌러 지정하세요.", "bad");
+          msg = "같은 코드가 여러 건입니다.\n오른쪽 카드를 눌러 지정하세요.";
         } else if (reason === "no_suffix_match") {
-          setNote("대기 목록에 없습니다.\n오른쪽 카드를 눌러 선택하세요.", "bad");
-        } else {
-          setNote(data.message || "매칭에 실패했습니다.", "bad");
+          msg = "대기 목록에 없습니다.\n오른쪽 카드를 눌러 선택하세요.";
         }
+        setNote(msg, "bad");
+        pushError(msg.replace(/\n/g, " "), "match");
         return;
       }
       state.lastMatched = itemFromMatchResult(result, pendingItem);
-      setNote("포장.발송으로 이동했습니다.", "ok");
       pushHistory(result.suffix || suffix);
+      const imageOk = data.imageUpload?.ok !== false;
+      let note = "포장.발송으로 이동했습니다.";
+      if (!imageOk) {
+        note += "\n이미지는 첨부되지 않았습니다.";
+        pushError("매칭 이미지 S3 업로드 실패", "image");
+      }
+      if (state.station.autoCommit) {
+        const printed = await autoPrintAfterMatch(state.lastMatched);
+        if (printed.ok) {
+          note += "\n패킹 라벨을 출력했습니다.";
+        } else if (printed.reason === "no-printer") {
+          note += "\n프린터를 패킹 라벨에서 한 번 고르세요.";
+          pushError("자동 출력: 저장된 프린터 없음", "print");
+        } else if (printed.reason) {
+          note += "\n라벨 출력 실패 · 프린트 버튼으로 재출력하세요.";
+          pushError(`자동 출력 실패: ${printed.reason}`, "print");
+        }
+      }
+      setNote(note, "ok");
       state.suffix = "";
       state.selectedId = "";
       els.suffix.textContent = "—";
       await refreshQueue();
     } catch (err) {
-      setNote(err.message || "매칭에 실패했습니다.", "bad");
+      const msg = err.message || "매칭에 실패했습니다.";
+      setNote(msg, "bad");
+      pushError(msg, "match");
     } finally {
       state.matching = false;
       setBusy(false);
@@ -634,7 +791,70 @@
       engraveInfo,
     ]);
 
-    const right = el("div", { class: "settings-col settings-controls" }, [cameraSection, imageSection, jigSection]);
+    const autoCommitChk = el("input", {
+      type: "checkbox",
+      id: "stationAutoCommit",
+    });
+    autoCommitChk.checked = state.station.autoCommit !== false;
+    const collectChk = el("input", {
+      type: "checkbox",
+      id: "stationCollectSamples",
+    });
+    collectChk.checked = state.station.collectSamples !== false;
+    const workflowStatus = el("p", { class: "settings-hint" });
+    const workflowSaveBtn = el("button", {
+      type: "button",
+      class: "btn btn-primary",
+      text: "작업 흐름 저장",
+    });
+    const workflowSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "작업 흐름" }),
+      el("label", { class: "settings-check" }, [
+        autoCommitChk,
+        el("span", {
+          text: "자동 프린트 · 포장.발송 (끄면 연습: 인식만)",
+        }),
+      ]),
+      el("label", { class: "settings-check" }, [
+        collectChk,
+        el("span", { text: "매칭 성공 때 각인 표본 수집" }),
+      ]),
+      el("p", {
+        class: "settings-hint",
+        text: "재학습(train:engrave)은 운영 PC 터미널에서 합니다.",
+      }),
+      el("div", { class: "settings-inline" }, [workflowSaveBtn]),
+      workflowStatus,
+    ]);
+
+    const checkFocusBtn = el("button", {
+      type: "button",
+      class: "btn",
+      text: "초점",
+    });
+    const checkRecognizeBtn = el("button", {
+      type: "button",
+      class: "btn",
+      text: "한 번 인식",
+    });
+    const checkStatus = el("p", { class: "settings-hint" });
+    const checkSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "점검" }),
+      el("div", { class: "settings-inline" }, [checkFocusBtn, checkRecognizeBtn]),
+      el("p", {
+        class: "settings-hint",
+        text: "작업 화면에는 두지 않습니다. 초점·수동 인식이 필요할 때만 씁니다.",
+      }),
+      checkStatus,
+    ]);
+
+    const right = el("div", { class: "settings-col settings-controls" }, [
+      workflowSection,
+      cameraSection,
+      imageSection,
+      jigSection,
+      checkSection,
+    ]);
     const body = el("div", { class: "settings-body" }, [left, right]);
 
     const status = el("p", { class: "note settings-status" });
@@ -952,7 +1172,95 @@
     });
     saveBtn.addEventListener("click", () => void save("/api/camera-settings", { settings: readForm(), apply: true }));
 
-    openModal("카메라 · 화질 · 각인 인식 설정", wrap, {
+    workflowSaveBtn.addEventListener("click", async () => {
+      workflowSaveBtn.disabled = true;
+      workflowStatus.className = "settings-hint";
+      workflowStatus.textContent = "저장 중…";
+      try {
+        const data = await api("/api/station-settings", {
+          method: "PUT",
+          body: JSON.stringify({
+            settings: {
+              autoCommit: Boolean(autoCommitChk.checked),
+              collectSamples: Boolean(collectChk.checked),
+            },
+          }),
+        });
+        const s = data.settings || {};
+        state.station = {
+          autoCommit: s.autoCommit !== false,
+          collectSamples: s.collectSamples !== false,
+        };
+        workflowStatus.className = "settings-hint ok";
+        workflowStatus.textContent = state.station.autoCommit
+          ? "저장했습니다. 인식 후 자동으로 프린트·포장.발송합니다."
+          : "저장했습니다. 연습 모드(인식만)입니다.";
+      } catch (err) {
+        workflowStatus.className = "settings-hint bad";
+        workflowStatus.textContent = err.message || "작업 흐름 저장 실패";
+      } finally {
+        workflowSaveBtn.disabled = false;
+      }
+    });
+
+    checkFocusBtn.addEventListener("click", async () => {
+      checkFocusBtn.disabled = true;
+      checkStatus.className = "settings-hint";
+      checkStatus.textContent = "초점 중…";
+      try {
+        await api("/focus", {
+          method: "POST",
+          body: JSON.stringify({ area: "whole" }),
+        });
+        checkStatus.className = "settings-hint ok";
+        checkStatus.textContent = "초점을 맞췄습니다.";
+        void refreshPreview();
+        refreshLive();
+      } catch (err) {
+        checkStatus.className = "settings-hint bad";
+        checkStatus.textContent = err.message || "초점 실패";
+      } finally {
+        checkFocusBtn.disabled = false;
+      }
+    });
+
+    checkRecognizeBtn.addEventListener("click", async () => {
+      checkRecognizeBtn.disabled = true;
+      checkStatus.className = "settings-hint";
+      checkStatus.textContent = "인식 중…";
+      try {
+        const data = await api("/recognize", { method: "POST", body: "{}" });
+        const lot = extractLotSuffix3(data.lot);
+        if (!lot) {
+          checkStatus.className = "settings-hint bad";
+          checkStatus.textContent = data.message || "코드를 읽지 못했습니다.";
+          return;
+        }
+        state.lastLotKey = `manual:${lot}:${Date.now()}`;
+        state.selectedId = "";
+        state.suffix = lot;
+        els.suffix.textContent = lot;
+        pushHistory(lot);
+        renderStrip();
+        if (!state.station.autoCommit) {
+          checkStatus.className = "settings-hint ok";
+          checkStatus.textContent = `연습 · ${lot}`;
+          setNote("연습 모드 · 인식만 했습니다.", "ok");
+          return;
+        }
+        checkStatus.className = "settings-hint ok";
+        checkStatus.textContent = `${lot} · 매칭 중…`;
+        closeModal();
+        await matchSuffix(lot, "manual");
+      } catch (err) {
+        checkStatus.className = "settings-hint bad";
+        checkStatus.textContent = err.message || "인식 실패";
+      } finally {
+        checkRecognizeBtn.disabled = false;
+      }
+    });
+
+    openModal("설정", wrap, {
       wide: true,
       settings: true,
     });
@@ -1068,7 +1376,6 @@
   }
 
   const SCREW_TYPES = ["A", "B", "C", "D", "E"];
-  const PRINTER_PACK_KEY = "abuts.lot.printer.packing";
   const PRINTER_VIAL_KEY = "abuts.lot.printer.vial";
 
   function parseQty(value) {
@@ -1852,42 +2159,6 @@
     }
   });
 
-  els.focus.addEventListener("click", async () => {
-    setBusy(true);
-    try {
-      await api("/focus", {
-        method: "POST",
-        body: JSON.stringify({ area: "whole" }),
-      });
-      refreshLive();
-    } catch (err) {
-      setNote(err.message || "초점 실패", "bad");
-    } finally {
-      setBusy(false);
-    }
-  });
-
-  els.recognize.addEventListener("click", async () => {
-    setBusy(true);
-    try {
-      const data = await api("/recognize", { method: "POST", body: "{}" });
-      const lot = extractLotSuffix3(data.lot);
-      if (!lot) {
-        setNote(data.message || "코드를 읽지 못했습니다.", "bad");
-        return;
-      }
-      state.lastLotKey = `manual:${lot}:${Date.now()}`;
-      state.selectedId = "";
-      state.suffix = lot;
-      els.suffix.textContent = lot;
-      await matchSuffix(lot, "manual");
-    } catch (err) {
-      setNote(err.message || "인식 실패", "bad");
-    } finally {
-      setBusy(false);
-    }
-  });
-
   els.match.addEventListener("click", () => {
     void matchSuffix(state.suffix, "manual");
   });
@@ -1897,6 +2168,9 @@
 
   els.settingsBtn?.addEventListener("click", () => {
     void openSettingsModal();
+  });
+  els.errorChip?.addEventListener("click", () => {
+    openErrorHistoryModal();
   });
 
   els.vialBtn.addEventListener("click", () => {
@@ -1942,8 +2216,11 @@
   setBusy(false);
   els.suffix.textContent = "—";
   renderOcrLog([]);
-  tickWatch();
-  tickQueue();
+  renderErrorChip();
+  void loadStationSettings().finally(() => {
+    tickWatch();
+    tickQueue();
+  });
   state.liveTimer = window.setInterval(() => {
     if (state.running) refreshLive();
   }, 1000);

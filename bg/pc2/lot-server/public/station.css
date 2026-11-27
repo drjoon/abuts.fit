@@ -203,6 +203,64 @@ button:disabled {
   color: var(--danger);
 }
 
+.error-chip {
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--stone-300));
+  background: color-mix(in srgb, var(--danger) 8%, #fff);
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.65rem;
+}
+
+.error-chip:hover {
+  background: color-mix(in srgb, var(--danger) 14%, #fff);
+}
+
+.error-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: min(100%, 36rem);
+}
+
+.error-history-list {
+  margin: 0;
+  max-height: 20rem;
+  overflow: auto;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--stone-200);
+  border-radius: 0.6rem;
+  background: var(--stone-50);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-history-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--stone-800);
+  cursor: pointer;
+}
+
+.settings-check input {
+  margin-top: 0.15rem;
+}
+
 .live-wrap {
   flex: 1;
   min-height: 12rem;
