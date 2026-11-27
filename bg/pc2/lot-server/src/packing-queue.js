@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-27: activeLotSuffixes: 거른 대기 목록의 각인 3글자 집합(OCR 결과는 이 안에 있을 때만 쓴다).
 // - 2026-11-26: 작업 화면 의뢰 카드는 지금 세척.패킹에 들어와 있는 건만. 백엔드 큐(manufacturerStage=세척.패킹)에는
 //   우편함 배정 규칙 이전에 남은 옛 건(우편함 없음, 6–11월)이 섞여 있어 우편함이 배정된 건만 남긴다.
 //   가공→세척.패킹 진입 때 우편함이 항상 배정된다(web/backend/rules.md 우편함 배정 SSOT).
@@ -55,4 +56,20 @@ export function filterPackingQueueBody(body, opts = {}) {
 /** LOT_QUEUE_REQUIRE_MAILBOX=0이면 거르지 않는다(백엔드 목록 그대로). */
 export function queueFilterOptionsFromEnv(env = process.env) {
   return { requireMailbox: String(env.LOT_QUEUE_REQUIRE_MAILBOX ?? "1").trim() !== "0" };
+}
+
+/**
+ * 거른 대기 목록(filterPackingQueueBody 결과)의 각인 3글자 집합. 형식이 틀리면 null.
+ * lotSuffix가 없으면 lotNumber 끝 3글자.
+ */
+export function activeLotSuffixes(body) {
+  if (!body || typeof body !== "object" || !body.data || !Array.isArray(body.data.items)) return null;
+  const out = new Set();
+  for (const item of body.data.items) {
+    const raw = String(item?.lotSuffix || "").trim().toUpperCase();
+    const fromNumber = (String(item?.lotNumber || "").toUpperCase().match(/([A-Z]{3})$/) || [])[1] || "";
+    const suffix = /^[A-Z]{3}$/.test(raw) ? raw : fromNumber;
+    if (suffix) out.add(suffix);
+  }
+  return out;
 }

@@ -1,4 +1,12 @@
 // change-log:
+// - 2026-11-27: 목록 밖 코드도 confirm(기본 2)회 연속 같은 판독이면 ‘대기열 없음’으로 확정·ocrLog 카드에 남기고 HOLD(움직임 전까지 재시도 안 함).
+// - 2026-11-27: 첫 인식·지그 교체 체감 단축: 시작 시 바로 armed, LED/EV는 스트림 뒤 비동기,
+//   폴링·안정·버스트·홀드 기본값 하향, 2번째 확정은 quick 촬영. ocrLog(한 줄)를 상태에 실어 UI 카드 스트립용.
+// - 2026-11-27: not_in_queue 안내에 대기 목록·카드 선택 유도. UI(station.js)가 lastError를 note에 표시.
+// - 2026-11-27: 인식은 각인 전용 인식기(ocr/index.js → src/engrave)가 먼저. latest에 method·engrave(회전·글자 상자·지그 프로필).
+// - 2026-11-27: 인식 안전장치: allowedLots(지금 세척.패킹 대기 목록)에 있는 코드만 결과로 낸다(목록을 못 받으면 결과 없음).
+//   한 정지 구간에서 같은 코드를 LOT_OCR_CONFIRM(기본 2)번 연속 읽어야 확정. 다른 코드가 섞이면 버린다.
+// - 2026-11-27: 화질 설정(camera-settings.js): 감시 시작 때 UVC 밝기 128 등 저장값, LED 단계, EV를 건다. applyCameraSettings()·previewFrame().
 // - 2026-11-26: LED가 꺼져 있으면(시리얼 상태 bit1) 자동 초점을 건너뛰고 안내한다. 감시 중지 때 라이브 프레임을 비운다(옛 프레임이 켜진 LED처럼 보이던 문제).
 // - 2026-11-26: 감시 시작 때 UM LED 켬(LOT_LED_LEVEL 단계), 중지·종료 때 끔(시리얼, 원격 제어는 풀어 둔다). 상태에 led.
 // - 2026-11-26: 하드웨어 AF: UM 시리얼(um-serial.js, CP210x COM). 흐림이면 스트림을 끊지 않고 AF(1회째 현재 구간, 이후 전체). 수동 AF autoFocus()/POST /focus.
@@ -36,8 +44,9 @@ import {
 } from "./camera.js";
 import { analyzeImage, grabFrames, scoreFile } from "./capture.js";
 import { focusConfirmed, prepareMicroscope } from "./focus.js";
-import { tryUvc } from "./uvc.js";
-import { runUmSerial, umAutoFocus, umLed, umLedOffSync, umSerialEnabled } from "./um-serial.js";
+import { tryUvc, uvcSet } from "./uvc.js";
+import { runUmSerial, umAutoFocus, umLed, umLedOffSync, umSerialEnabled, umSetEv, ledLevelFromEnv } from "./um-serial.js";
+import { EV_AUTO, loadSettings } from "./camera-settings.js";
 import { lotFileName } from "./names.js";
 import { recognizeLot } from "./ocr/index.js";
 import { meanAbsDiff, selectBest as pickSharpest } from "./sharpness.js";
@@ -62,18 +71,20 @@ export function createWatcher({
   deviceName = "",
   log = () => {},
   onRecognize = () => {},
+  /** () => Promise<Set<string> | null>. 주면 그 코드만 인식 결과로 낸다. null이면(목록 실패) 결과를 내지 않는다. */
+  allowedLots = null,
 } = {}) {
   let deviceNameOverride = String(deviceName || "").trim();
   const currentDeviceName = () =>
     deviceNameOverride || getSelectedDeviceName() || "";
   const motionThreshold = numEnv("LOT_MOTION_THRESHOLD", 6);
   const sharpThreshold = numEnv("LOT_SHARP_THRESHOLD", 8);
-  const stableNeeded = Math.max(2, Math.floor(numEnv("LOT_STABLE_FRAMES", 3)));
-  // 기본 1.2초. Continuity/ffmpeg 한 방마다 띄우면 Cursor·머신 전체가 죽는다.
-  const pollMs = Math.max(400, Math.floor(numEnv("LOT_WATCH_POLL_MS", 1200)));
-  const holdMs = Math.max(500, Math.floor(numEnv("LOT_HOLD_MS", 2500)));
-  const burstFrames = Math.max(2, Math.floor(numEnv("LOT_OCR_FRAMES", 3)));
-  const streamFps = Math.max(1, Math.min(5, Number(process.env.LOT_STREAM_FPS || 2)));
+  const stableNeeded = Math.max(1, Math.floor(numEnv("LOT_STABLE_FRAMES", 2)));
+  // 폴링·버스트를 너무 조이면 CPU·카메라가 버벅인다. 기본은 체감 빠르게.
+  const pollMs = Math.max(350, Math.floor(numEnv("LOT_WATCH_POLL_MS", 700)));
+  const holdMs = Math.max(400, Math.floor(numEnv("LOT_HOLD_MS", 900)));
+  const burstFrames = Math.max(1, Math.floor(numEnv("LOT_OCR_FRAMES", 2)));
+  const streamFps = Math.max(1, Math.min(5, Number(process.env.LOT_STREAM_FPS || 3)));
   // 어두우면 LED+AF를 다시 건다(0–255 평균).
   const darkMean = Math.max(1, numEnv("LOT_DARK_MEAN", 28));
   // 흐림/어두움 재시도: 쿨다운·아밍당 횟수 상한(무한 루프 금지).
@@ -81,6 +92,25 @@ export function createWatcher({
   const afMaxPerArm = Math.max(1, Math.min(5, Math.floor(numEnv("LOT_AF_MAX_PER_ARM", 3))));
   // OCR 실패 시 같은 아밍에서 다시 읽는 횟수(움직임 없이).
   const ocrRetry = Math.max(0, Math.min(5, Math.floor(numEnv("LOT_OCR_RETRY", 2))));
+  // 같은 코드를 연속 몇 번 읽어야 확정하는지(1–4).
+  const confirmNeeded = Math.max(1, Math.min(4, Math.floor(numEnv("LOT_OCR_CONFIRM", 2))));
+  /** 목록 밖이라 버린 마지막 판독. */
+  let lastRejected = null;
+  /** 마지막으로 건 화질 설정 결과. */
+  let lastSettings = null;
+  /** 촬영·인식 한 줄 로그(최신 앞). UI 가로 카드 스트립. */
+  const ocrLog = [];
+  const OCR_LOG_MAX = 40;
+  function pushOcrLog(entry) {
+    const row = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      at: new Date().toISOString(),
+      ...entry,
+    };
+    ocrLog.unshift(row);
+    if (ocrLog.length > OCR_LOG_MAX) ocrLog.length = OCR_LOG_MAX;
+    return row;
+  }
   // mltcCom은 이 UM20에서 ComInitial init-failed(최대 22초). 명시적으로 켤 때만 부른다.
   const useVitinyDll = String(process.env.LOT_VITINY_DLL || "0") === "1";
 
@@ -159,6 +189,10 @@ export function createWatcher({
       led: lastLed,
       ledOff,
       lastAf,
+      confirmNeeded,
+      lastRejected,
+      lastSettings,
+      ocrLog: ocrLog.slice(0, 24),
     };
   }
 
@@ -246,7 +280,8 @@ export function createWatcher({
   /** LED 켜기/끄기(시리얼). 끝나면 원격 제어를 풀어 리모컨이 다시 듣는다. */
   async function setLed(on, reason) {
     if (!ledControl || !serialAvailable) return null;
-    const r = await umLed(on).catch((e) => ({ ok: false, reason: String(e?.message || e) }));
+    const level = on ? loadSettings().ledLevel || ledLevelFromEnv() : 0;
+    const r = await umLed(on, level).catch((e) => ({ ok: false, reason: String(e?.message || e) }));
     lastLed = { ok: Boolean(r?.ok), on: r?.ledOn ?? null, level: r?.led ?? null, reason: r?.reason || "", why: reason, at: new Date().toISOString() };
     if (r?.ok) {
       ledOnByWatch = on;
@@ -274,7 +309,7 @@ export function createWatcher({
       return lastAf;
     }
     if (af?.ok) ledOff = false;
-    afSettleUntil = Date.now() + 3000;
+    afSettleUntil = Date.now() + 1500;
     if (af?.sn) serialAvailable = true;
     else if (af?.reason === "no-um-serial" || af?.reason === "disabled") serialAvailable = false;
     // AF 뒤 새 장이 들어올 시간.
@@ -439,22 +474,24 @@ export function createWatcher({
     return { ...analysis, buffer, tempDir: "" };
   }
 
-  async function captureForOcr() {
+  async function captureForOcr({ quick = false } = {}) {
     // UVC 스크립트 자체가 깨지면 장치를 다시 잡지 않는다.
     // 하드웨어 AF가 없으면(UVC focus=skip, DLL 없음) 다시 걸어도 초점은 그대로다. 스트림을 끊지 않는다.
     let focus = lastFocus;
-    if (!isFatalMicroscopeReason(focus?.reason) && !noHardwareAf() && !serialAvailable) {
+    if (!quick && !isFatalMicroscopeReason(focus?.reason) && !noHardwareAf() && !serialAvailable) {
       focus = await runMicroscopePrepare("ocr");
     }
     const focused = focusConfirmed(focus);
 
     // 스트림에서 몇 장 모아 선명한 것을 고른다(추가 ffmpeg 없음).
     // 1회 인식(감시 꺼짐)에서도 스트림을 다시 연다. 닫는 건 호출측.
+    // quick: 2번째 확정용 — 라이브 1장만(버스트·대기 생략).
     if (!stream?.running) {
       await ensureStream().catch(() => {});
     }
+    const nFrames = quick ? 1 : burstFrames;
     const scored = [];
-    for (let i = 0; i < burstFrames; i += 1) {
+    for (let i = 0; i < nFrames; i += 1) {
       const buffer = (await stream?.readFrame()) || liveFrame;
       if (!buffer) continue;
       const analysis = await analyzeImage(buffer).catch(() => null);
@@ -464,7 +501,7 @@ export function createWatcher({
         score: analysis.score,
         buffer,
       });
-      await sleep(Math.max(150, Math.floor(1000 / streamFps)));
+      if (i + 1 < nFrames) await sleep(Math.max(80, Math.floor(800 / streamFps)));
     }
 
     let best = pickSharpest(scored);
@@ -524,61 +561,239 @@ export function createWatcher({
     };
   }
 
-  async function recognizeOnce({ hold = true } = {}) {
+  /** 한 장 찍어 읽는다. 저장·확정은 하지 않는다. */
+  async function readCandidate(allowed, { quick = false } = {}) {
     phase = PHASE.OCR;
-    const shot = await captureForOcr();
+    const t0 = Date.now();
+    const shot = await captureForOcr({ quick });
     try {
       if (!shot.ok) {
-        phase = PHASE.STABLE;
-        lastError = "초점이 부족해 OCR을 건너뜁니다.";
-        return null;
+        pushOcrLog({
+          kind: "blur",
+          line: `흐림·초점 부족 · ${(Date.now() - t0) / 1000}초`,
+          ms: Date.now() - t0,
+          score: shot.score || 0,
+        });
+        return { shot: null, ocr: null, unfocused: true };
       }
-      const ocr = await recognizeLot(shot.buffer);
+      const ocr = await recognizeLot(shot.buffer, allowedLots ? { allowed } : {});
+      const ms = Date.now() - t0;
+      const sec = (ms / 1000).toFixed(1);
       if (!ocr.success) {
-        phase = PHASE.STABLE;
-        lastError = "로트 3글자를 읽지 못했습니다.";
-        ocrFailsThisArm += 1;
-        log(`ocr miss score=${shot.score.toFixed(2)} tries=${ocrFailsThisArm}`);
-        return null;
+        if (ocr.reason === "not_in_queue") {
+          // 최종 ‘대기열 없음’ 카드는 recognizeOnce에서 confirm 후 한 장만 남긴다.
+          pushOcrLog({
+            kind: "read",
+            lot: ocr.rejected || "",
+            line: `${ocr.rejected || "?"} 판독 · ${sec}초`,
+            ms,
+            score: shot.score,
+            reason: ocr.reason,
+          });
+        } else {
+          pushOcrLog({
+            kind: "miss",
+            lot: ocr.top || "",
+            line: `미확정 ${ocr.top || "-"} (${ocr.reason || "miss"}) · ${sec}초`,
+            ms,
+            score: shot.score,
+            reason: ocr.reason || "",
+          });
+        }
+      } else {
+        pushOcrLog({
+          kind: "read",
+          lot: ocr.lot,
+          line: `${ocr.lot} 판독 conf${Math.round(ocr.confidence || 0)} · ${sec}초`,
+          ms,
+          score: shot.score,
+          confidence: ocr.confidence,
+        });
       }
-      if (ocr.lot === lastLot) {
-        phase = PHASE.HOLD;
-        return null;
-      }
-
-      const fileName = lotFileName(new Date(), ocr.lot);
-      const dest = path.join(captureDir, fileName);
-      await fs.mkdir(captureDir, { recursive: true });
-      await fs.writeFile(dest, shot.buffer);
-      const meta = await sharp(dest).metadata();
-      lastLot = ocr.lot;
-      lastError = "";
-      latest = {
-        success: true,
-        lot: ocr.lot,
-        confidence: ocr.confidence,
-        fileName,
-        filePath: dest,
-        score: Number(shot.score.toFixed(3)),
-        focus: shot.focus,
-        device: deviceLabel,
-        width: meta.width || 0,
-        height: meta.height || 0,
-        provider: ocr.provider,
-        at: new Date().toISOString(),
-      };
-      phase = PHASE.HOLD;
-      log(
-        `lot ${ocr.lot} conf=${ocr.confidence.toFixed(1)} file=${fileName} score=${latest.score}`,
-      );
-      onRecognize(latest);
-      if (hold) await sleep(holdMs);
-      return latest;
+      return { shot: { buffer: shot.buffer, score: shot.score, focus: shot.focus }, ocr };
     } finally {
       if (shot.tempDir) {
         await fs.rm(shot.tempDir, { recursive: true, force: true }).catch(() => {});
       }
     }
+  }
+
+  async function recognizeOnce({ hold = true, confirm = confirmNeeded } = {}) {
+    phase = PHASE.OCR;
+    let allowed;
+    if (allowedLots) {
+      allowed = await Promise.resolve()
+        .then(() => allowedLots())
+        .catch(() => null);
+      if (!allowed) {
+        phase = PHASE.STABLE;
+        lastError = "세척·패킹 대기 목록을 불러오지 못해 인식 결과를 쓰지 않습니다.";
+        ocrFailsThisArm += 1;
+        log("ocr skipped: queue unavailable");
+        return null;
+      }
+    }
+    // 같은 코드를 confirm번 연속으로 읽어야 확정. 시도는 confirm+1번까지.
+    // 목록 밖(not_in_queue)도 같은 규칙: 2번 같은 코드면 ‘대기열 없음’으로 확정하고 HOLD(재시도 안 함).
+    // 2번째부터는 quick 촬영(라이브 1장)으로 확정 대기 시간을 줄인다.
+    let agreed = null;
+    let count = 0;
+    let lastShot = null;
+    let rejectedLot = "";
+    let rejectedCount = 0;
+    const tAll = Date.now();
+    for (let attempt = 0; attempt < confirm + 1 && count < confirm && rejectedCount < confirm; attempt += 1) {
+      const { shot, ocr, unfocused } = await readCandidate(allowed, { quick: count > 0 || rejectedCount > 0 });
+      if (unfocused) {
+        phase = PHASE.STABLE;
+        lastError = "초점이 부족해 OCR을 건너뜁니다.";
+        return null;
+      }
+      if (!ocr.success) {
+        if (ocr.reason === "not_in_queue") {
+          const code = String(ocr.rejected || "").toUpperCase();
+          if (agreed) {
+            // 목록 안 확정 도중 목록 밖이 끼면 버린다.
+            phase = PHASE.STABLE;
+            lastError = `판독이 엇갈립니다(${agreed.lot}/${code || "?"}). 다시 읽습니다.`;
+            ocrFailsThisArm += 1;
+            return null;
+          }
+          if (rejectedLot && code && rejectedLot !== code) {
+            log(`ocr reject disagree ${rejectedLot} vs ${code}`);
+            pushOcrLog({
+              kind: "disagree",
+              lot: code,
+              line: `엇갈림 ${rejectedLot}/${code} · ${((Date.now() - tAll) / 1000).toFixed(1)}초`,
+              ms: Date.now() - tAll,
+            });
+            phase = PHASE.STABLE;
+            lastError = `판독이 엇갈립니다(${rejectedLot}/${code}). 다시 읽습니다.`;
+            ocrFailsThisArm += 1;
+            return null;
+          }
+          rejectedLot = code || rejectedLot;
+          rejectedCount += 1;
+          lastRejected = { lot: rejectedLot, at: new Date().toISOString() };
+          if (rejectedCount >= confirm) {
+            const totalSec = ((Date.now() - tAll) / 1000).toFixed(1);
+            pushOcrLog({
+              kind: "reject",
+              lot: rejectedLot,
+              line: `${rejectedLot || "?"} 대기열 없음 ×${confirm} · ${totalSec}초`,
+              ms: Date.now() - tAll,
+              confirmed: confirm,
+            });
+            log(`ocr rejected ${rejectedLot || "-"} (not in queue ×${confirm})`);
+            lastError = `${rejectedLot || "?"}는 대기 목록에 없습니다.`;
+            // 같은 부품으로 반복 OCR하지 않음. 지그에서 빼거나 새 부품이 들어올 때까지 HOLD.
+            lastLot = rejectedLot || lastLot;
+            phase = PHASE.HOLD;
+            if (hold) await sleep(holdMs);
+            return null;
+          }
+          continue;
+        }
+        continue;
+      }
+      if (rejectedLot) {
+        phase = PHASE.STABLE;
+        lastError = `판독이 엇갈립니다(${rejectedLot}/${ocr.lot}). 다시 읽습니다.`;
+        ocrFailsThisArm += 1;
+        return null;
+      }
+      if (agreed && ocr.lot !== agreed.lot) {
+        log(`ocr disagree ${agreed.lot} vs ${ocr.lot}`);
+        pushOcrLog({
+          kind: "disagree",
+          lot: ocr.lot,
+          line: `엇갈림 ${agreed.lot}/${ocr.lot} · ${((Date.now() - tAll) / 1000).toFixed(1)}초`,
+          ms: Date.now() - tAll,
+        });
+        phase = PHASE.STABLE;
+        lastError = `판독이 엇갈립니다(${agreed.lot}/${ocr.lot}). 다시 읽습니다.`;
+        ocrFailsThisArm += 1;
+        return null;
+      }
+      agreed = agreed ? { ...agreed, confidence: Math.min(agreed.confidence, ocr.confidence) } : { ...ocr };
+      count += 1;
+      lastShot = shot;
+    }
+    if (rejectedCount > 0 && rejectedCount < confirm) {
+      phase = PHASE.STABLE;
+      lastError = `${rejectedLot || "코드"}를 한 번만 읽었습니다. 다시 읽습니다.`;
+      ocrFailsThisArm += 1;
+      log(`ocr reject partial ${rejectedLot} ${rejectedCount}/${confirm}`);
+      return null;
+    }
+    if (!agreed || count < confirm) {
+      phase = PHASE.STABLE;
+      lastError = agreed ? `${agreed.lot}을(를) 한 번만 읽었습니다. 다시 읽습니다.` : "로트 3글자를 읽지 못했습니다.";
+      ocrFailsThisArm += 1;
+      log(`ocr miss ${agreed ? `partial ${agreed.lot} ${count}/${confirm}` : ""} tries=${ocrFailsThisArm}`);
+      return null;
+    }
+    const ocr = agreed;
+    const shot = lastShot;
+    if (ocr.lot === lastLot) {
+      phase = PHASE.HOLD;
+      return null;
+    }
+
+    const fileName = lotFileName(new Date(), ocr.lot);
+    const dest = path.join(captureDir, fileName);
+    await fs.mkdir(captureDir, { recursive: true });
+    await fs.writeFile(dest, shot.buffer);
+    const meta = await sharp(dest).metadata();
+    lastLot = ocr.lot;
+    lastError = "";
+    latest = {
+      success: true,
+      lot: ocr.lot,
+      confidence: ocr.confidence,
+      fileName,
+      filePath: dest,
+      score: Number(shot.score.toFixed(3)),
+      focus: shot.focus,
+      device: deviceLabel,
+      width: meta.width || 0,
+      height: meta.height || 0,
+      provider: ocr.provider,
+      method: ocr.method || "",
+      engrave:
+        ocr.method === "engrave"
+          ? { rotation: ocr.rotation, boxes: ocr.boxes, profileId: ocr.profileId, margin: ocr.margin, model: ocr.model || "" }
+          : null,
+      confirmed: count,
+      at: new Date().toISOString(),
+    };
+    phase = PHASE.HOLD;
+    const totalSec = ((Date.now() - tAll) / 1000).toFixed(1);
+    pushOcrLog({
+      kind: "ok",
+      lot: ocr.lot,
+      line: `${ocr.lot} 확정 conf${Math.round(ocr.confidence || 0)} ×${count} · ${totalSec}초`,
+      ms: Date.now() - tAll,
+      score: latest.score,
+      confidence: ocr.confidence,
+      confirmed: count,
+      fileName,
+    });
+    log(
+      `lot ${ocr.lot} conf=${Number(ocr.confidence).toFixed(1)} x${count} file=${fileName} score=${latest.score}`,
+    );
+    onRecognize(latest);
+    if (hold) await sleep(holdMs);
+    return latest;
+  }
+
+  /** 저장된 EV를 건다(Auto면 Auto로). */
+  async function applyEv(settings, reason) {
+    if (!serialAvailable) return null;
+    const ev = Number.isFinite(settings?.ev) ? settings.ev : EV_AUTO;
+    const r = await umSetEv(ev).catch((e) => ({ ok: false, reason: String(e?.message || e) }));
+    log(`ev ${ev} (${reason}) ok=${Boolean(r?.ok)} now=${r?.ev ?? "-"} reason=${r?.reason || ""}`);
+    return r;
   }
 
   async function tick() {
@@ -674,20 +889,32 @@ export function createWatcher({
       if (running) return snapshot();
       running = true;
       phase = PHASE.IDLE;
+      // 시작 때 부품이 이미 지그에 있어도, 움직임 없이 바로 안정→OCR로 들어가게 한다.
+      armed = true;
+      stableCount = 0;
       afAttemptsThisArm = 0;
       ocrFailsThisArm = 0;
       lastAfAt = 0;
+      lastLot = "";
+      pushOcrLog({ kind: "start", line: "감시 시작" });
       // UVC 노출·밝기·포커스를 스트림보다 먼저 건다. mltcCom은 이 UM20에서 init-failed.
+      // LED/EV는 수 초 걸릴 수 있어 스트림을 연 뒤 루프와 겹친다(첫 인식 대기 단축).
       loopPromise = (async () => {
         try {
           afAttemptsThisArm = 1;
           await withLock(async () => {
             await runMicroscopePrepare("start");
             await ensureStream();
-            // 시리얼 AF 가능 여부만 확인. 실제 AF는 정지·흐림일 때.
-            if (serialAvailable !== false) await probeSerial().catch(() => null);
-            await setLed(true, "watch-start");
           });
+          void (async () => {
+            try {
+              if (serialAvailable !== false) await probeSerial().catch(() => null);
+              await setLed(true, "watch-start");
+              await applyEv(loadSettings(), "watch-start");
+            } catch (err) {
+              log(`watch start led/ev ${err?.message || err}`);
+            }
+          })();
         } catch (err) {
           phase = PHASE.ERROR;
           lastError = err?.message || String(err);
@@ -729,6 +956,59 @@ export function createWatcher({
     },
     getLiveFrame() {
       return liveFrame;
+    },
+    /**
+     * 화질 설정을 지금 건다. UVC(밝기·대비·채도·색조)는 스트림을 잠시 놓고 건다.
+     * LED 단계는 감시 중(LED 켜짐)일 때만, EV는 시리얼이 있으면 바로.
+     */
+    async applyCameraSettings(settings = loadSettings()) {
+      return withLock(async () => {
+        const resume = Boolean(stream?.running) && running;
+        if (stream?.running) {
+          await stopStream();
+          await sleep(900);
+        }
+        let uvc;
+        try {
+          uvc = await uvcSet(currentDeviceName(), settings);
+        } finally {
+          if (resume) {
+            await sleep(600);
+            await ensureStream().catch((err) => log(`settings stream resume failed ${err?.message || err}`));
+          }
+        }
+        if (serialAvailable === null) await probeSerial().catch(() => null);
+        let led = null;
+        if (running && settings.ledLevel > 0) led = await setLed(true, "settings");
+        const ev = await applyEv(settings, "settings");
+        lastSettings = {
+          at: new Date().toISOString(),
+          uvc: { ok: Boolean(uvc?.ok), reason: uvc?.reason || "", props: uvc?.props || null },
+          led: led ? { ok: Boolean(led.ok), level: led.led ?? null } : null,
+          ev: ev ? { ok: Boolean(ev.ok), value: ev.ev ?? null, reason: ev.reason || "" } : null,
+        };
+        log(`settings applied uvc=${Boolean(uvc?.ok)} ${uvc?.reason || ""} led=${led ? led.led : "-"} ev=${ev ? ev.ev : "-"}`);
+        return lastSettings;
+      });
+    },
+    /** 미리보기 한 장. 감시 중이면 라이브, 아니면 스트림을 잠깐 연다. */
+    async previewFrame() {
+      if (running && liveFrame) return liveFrame;
+      return withLock(async () => {
+        const opened = !stream?.running;
+        try {
+          if (opened) await ensureStream();
+          await sleep(Math.max(500, Math.floor(1000 / streamFps)));
+          let buf = null;
+          for (let i = 0; i < 3 && !buf; i += 1) buf = await stream?.readFrame();
+          return buf || null;
+        } finally {
+          if (opened && !running) {
+            await stopStream();
+            liveFrame = null;
+          }
+        }
+      });
     },
     /** 수동 AF(화면 버튼·POST /focus). 감시 중이 아니면 스트림을 잠깐 열어 전후 선명도를 잰다. */
     async autoFocus(area = "whole") {

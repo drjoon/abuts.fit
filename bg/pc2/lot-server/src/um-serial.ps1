@@ -8,16 +8,19 @@
 #   only works on newer MCU firmware (UM20 >= x.5), so levels are set with key steps.
 # - 2026-11-26: AF refuses with reason "led-off" when the LED is off (dark frame is not blur).
 #   A port held by another process is retried for up to 4 s, then reason "port-busy".
+# - 2026-11-27: EV (exposure) level. Reg 0x16 (UM20: 0..19, 10 = Auto, 7 = FLK). Key 0x26 = EV +, 0x27 = EV -.
+#   Action "ev" -Ev n steps to n. Status reports ev.
 # related files:
 # - bg/pc2/lot-server2/src/um-serial.js
 # - bg/pc2/lot-server2/src/watch.js
 # ASCII only (PowerShell 5.1 reads scripts as ANSI).
 param(
   [string]$Port = "",
-  [ValidateSet("status", "af", "afc", "manual", "release", "ledon", "ledoff")][string]$Action = "status",
+  [ValidateSet("status", "af", "afc", "manual", "release", "ledon", "ledoff", "ev")][string]$Action = "status",
   [ValidateSet("whole", "local")][string]$Area = "whole",
   [int]$TimeoutMs = 25000,
   [int]$Level = 0,
+  [int]$Ev = -1,
   [switch]$KeepRemote
 )
 
@@ -166,6 +169,22 @@ function Set-LedLevel([int]$target) {
   return (ReadHex 6)
 }
 
+# Move EV (reg 0x16) to $target with +/- key steps (same key down/up as the LED). FLK (7) is skipped by the device.
+function Set-EvLevel([int]$target) {
+  $target = [Math]::Max(0, [Math]::Min(19, $target))
+  for ($i = 0; $i -lt 30; $i++) {
+    $cur = ReadHex 22
+    if ($cur -lt 0) { return -1 }
+    if ($cur -eq $target) { return $cur }
+    if ($cur -lt $target) { Step-Led 0x26 } else { Step-Led 0x27 }
+    $now = ReadHex 22
+    if ($now -eq $cur) { return $cur }
+    # stepping over FLK can jump past the target; stop when we cross it
+    if (($cur -lt $target -and $now -gt $target) -or ($cur -gt $target -and $now -lt $target)) { return $now }
+  }
+  return (ReadHex 22)
+}
+
 $t0 = Get-Date
 $found = $null
 try {
@@ -181,7 +200,7 @@ try {
   $result = @{
     ok = $true; port = $found.port; sn = $found.sn; firmware = $fw; action = $Action
     status = $status; startPosition = $pos0; position = $pos0; af = "none"; reason = ""
-    led = (ReadHex 6); afArea = (ReadHex 14)
+    led = (ReadHex 6); afArea = (ReadHex 14); ev = (ReadHex 22); ledOn = (Led-IsOn)
   }
   if ($Action -eq "status") { Emit $result; exit 0 }
   if ($Action -eq "release") {
@@ -212,6 +231,14 @@ try {
     $result.ledOn = Led-IsOn
     $result.led = ReadHex 6
     if (-not $ok) { $result.ok = $false; $result.reason = "led-failed" }
+  }
+  elseif ($Action -eq "ev") {
+    if ($Ev -lt 0) { $result.ok = $false; $result.reason = "ev-missing" }
+    else {
+      $result.evBefore = ReadHex 22
+      $result.ev = Set-EvLevel $Ev
+      if ($result.ev -ne $Ev) { $result.ok = $false; $result.reason = "ev-not-reached" }
+    }
   }
   elseif ($Action -eq "manual") { Send "W0154" }
   elseif ($Action -eq "afc") {

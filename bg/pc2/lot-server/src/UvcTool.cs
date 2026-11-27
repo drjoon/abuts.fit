@@ -1,5 +1,12 @@
 // Standalone UVC control probe/tool for Digital Microscope Camera.
 // Compile: csc /nologo /platform:x64 /out:UvcTool.exe UvcTool.cs
+// Usage: UvcTool.exe [device] [apply|get|set] [name=value,...]
+//   apply (default): focus/exposure as before; brightness/gain/backlight from the spec when given,
+//                    otherwise the old behaviour (max). A value "keep" leaves that property untouched.
+//   get: print every VideoProcAmp property (range, default, current) without changing anything.
+//   set: set only the named properties (manual), then print them all.
+// change-log:
+// - 2026-11-27: get/set modes and explicit values. Forcing brightness 255 washed out the UM20 image.
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -12,6 +19,78 @@ public static class UvcTool {
   const int Backlight = 8;
   const int FlagAuto = 0x1;
   const int FlagManual = 0x2;
+
+  static string Mode = "apply";
+  static System.Collections.Generic.Dictionary<string, string> Spec =
+    new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+  static readonly string[] AmpNames = {
+    "brightness", "contrast", "hue", "saturation", "sharpness", "gamma",
+    "colorenable", "whitebalance", "backlight", "gain"
+  };
+
+  static int AmpIndex(string name) {
+    for (int i = 0; i < AmpNames.Length; i++) if (AmpNames[i] == name.ToLowerInvariant()) return i;
+    return -1;
+  }
+
+  static void ParseSpec(string text) {
+    if (string.IsNullOrEmpty(text)) return;
+    foreach (string part in text.Split(',')) {
+      int eq = part.IndexOf('=');
+      if (eq <= 0) continue;
+      Spec[part.Substring(0, eq).Trim()] = part.Substring(eq + 1).Trim();
+    }
+  }
+
+  // Set one VideoProcAmp property to an explicit value (clamped to range). Returns how.
+  static string SetAmp(IAMVideoProcAmp amp, int prop, string value, out int level, out int maxOut) {
+    level = 0; maxOut = 0;
+    if (amp == null) return "skip";
+    int min, max, step, def, caps;
+    if (amp.GetRange(prop, out min, out max, out step, out def, out caps) != 0) return "skip";
+    maxOut = max;
+    int cur, flags;
+    if (value == "keep") {
+      if (amp.Get(prop, out cur, out flags) == 0) level = cur;
+      return "keep-" + level;
+    }
+    if (value == "auto") {
+      if ((caps & FlagAuto) != 0 && amp.Set(prop, def, FlagAuto) == 0) return "auto";
+      return "auto-unsupported";
+    }
+    int v;
+    if (value == "default") v = def;
+    else if (value == "max") v = max;
+    else if (value == "min") v = min;
+    else if (!int.TryParse(value, out v)) return "bad-value";
+    if (v < min) v = min;
+    if (v > max) v = max;
+    if (amp.Set(prop, v, FlagManual) != 0) return "set-failed";
+    level = v;
+    return "manual-" + v;
+  }
+
+  static string DumpAmp(IAMVideoProcAmp amp) {
+    StringBuilder sb = new StringBuilder();
+    sb.Append("{");
+    bool first = true;
+    for (int i = 0; i < AmpNames.Length; i++) {
+      if (amp == null) break;
+      int min, max, step, def, caps, cur, flags;
+      if (amp.GetRange(i, out min, out max, out step, out def, out caps) != 0) continue;
+      int got = amp.Get(i, out cur, out flags);
+      if (!first) sb.Append(",");
+      first = false;
+      sb.Append("\"").Append(AmpNames[i]).Append("\":{\"min\":").Append(min)
+        .Append(",\"max\":").Append(max).Append(",\"step\":").Append(step)
+        .Append(",\"def\":").Append(def).Append(",\"caps\":").Append(caps)
+        .Append(",\"cur\":").Append(got == 0 ? cur.ToString() : "null")
+        .Append(",\"auto\":").Append(got == 0 && (flags & FlagAuto) != 0 ? "true" : "false").Append("}");
+    }
+    sb.Append("}");
+    return sb.ToString();
+  }
 
   [DllImport("ole32.dll")]
   static extern int CoInitializeEx(IntPtr reserved, uint coinit);
@@ -161,13 +240,54 @@ public static class UvcTool {
   static string Apply(object source, string deviceName, string path) {
     IAMCameraControl cam = source as IAMCameraControl;
     IAMVideoProcAmp amp = source as IAMVideoProcAmp;
+    if (Mode == "get" || Mode == "set") {
+      StringBuilder applied = new StringBuilder();
+      bool setOk = true;
+      if (Mode == "set") {
+        foreach (System.Collections.Generic.KeyValuePair<string, string> kv in Spec) {
+          int idx = AmpIndex(kv.Key);
+          if (idx < 0) continue;
+          int lv, mx;
+          string how = SetAmp(amp, idx, kv.Value, out lv, out mx);
+          if (how.StartsWith("set-failed") || how == "bad-value" || how == "skip") setOk = false;
+          if (applied.Length > 0) applied.Append(",");
+          applied.Append("\"").Append(AmpNames[idx]).Append("\":\"").Append(how).Append("\"");
+        }
+      }
+      return "{\"ok\":" + (amp != null && setOk ? "true" : "false")
+        + ",\"mode\":\"" + Mode + "\",\"path\":\"" + path + "\",\"device\":\"" + Esc(deviceName) + "\""
+        + ",\"amp\":" + (amp != null ? "true" : "false")
+        + ",\"applied\":{" + applied.ToString() + "},\"props\":" + DumpAmp(amp) + "}";
+    }
     string focusHow, exposureHow, brightHow, gainHow, backHow;
     int brightLevel, brightMax, gainLevel, gainMax, unusedL, unusedM;
     bool focusOk = AutoFocus(cam, out focusHow);
     bool exposureOk = LongExposure(cam, out exposureHow);
-    bool brightOk = MaxAmp(amp, Brightness, out brightHow, out brightLevel, out brightMax);
-    bool gainOk = MaxAmp(amp, Gain, out gainHow, out gainLevel, out gainMax);
-    MaxAmp(amp, Backlight, out backHow, out unusedL, out unusedM);
+    bool brightOk, gainOk;
+    if (Spec.ContainsKey("brightness")) {
+      brightHow = SetAmp(amp, Brightness, Spec["brightness"], out brightLevel, out brightMax);
+      brightOk = brightHow.StartsWith("manual") || brightHow.StartsWith("keep") || brightHow == "auto";
+    } else {
+      brightOk = MaxAmp(amp, Brightness, out brightHow, out brightLevel, out brightMax);
+    }
+    if (Spec.ContainsKey("gain")) {
+      gainHow = SetAmp(amp, Gain, Spec["gain"], out gainLevel, out gainMax);
+      gainOk = gainHow.StartsWith("manual") || gainHow.StartsWith("keep") || gainHow == "auto";
+    } else {
+      gainOk = MaxAmp(amp, Gain, out gainHow, out gainLevel, out gainMax);
+    }
+    if (Spec.ContainsKey("backlight")) {
+      backHow = SetAmp(amp, Backlight, Spec["backlight"], out unusedL, out unusedM);
+    } else {
+      MaxAmp(amp, Backlight, out backHow, out unusedL, out unusedM);
+    }
+    // Other properties (contrast, gamma, sharpness, saturation, ...) only when named.
+    foreach (System.Collections.Generic.KeyValuePair<string, string> kv in Spec) {
+      int idx = AmpIndex(kv.Key);
+      if (idx < 0 || idx == Brightness || idx == Gain || idx == Backlight) continue;
+      int lv, mx;
+      SetAmp(amp, idx, kv.Value, out lv, out mx);
+    }
     bool ok = focusOk || exposureOk || brightOk || gainOk;
     return "{\"ok\":" + (ok ? "true" : "false")
       + ",\"af\":\"" + (focusOk ? "done" : (ok ? "accepted" : "none")) + "\""
@@ -342,6 +462,9 @@ public static class UvcTool {
 
   public static int Main(string[] args) {
     string preferred = args.Length > 0 ? args[0] : "Digital Microscope";
+    if (args.Length > 1) Mode = args[1].Trim().ToLowerInvariant();
+    if (Mode != "apply" && Mode != "get" && Mode != "set") Mode = "apply";
+    if (args.Length > 2) ParseSpec(args[2]);
     CoInitializeEx(IntPtr.Zero, 2);
     string mf = TryMf(preferred);
     if (mf.IndexOf("\"ok\":true") >= 0) {

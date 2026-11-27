@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-27: BDZ 방향 시험은 각인 인식(지그 ROI를 같이 돌림)으로. Tesseract는 흐린 화면 거절만 본다.
 // - 2026-11-26: UM20 실측 프레임(AF 전 흐림 / AF 후 "BDZ")으로 선명도·글자 단위 OCR, 시리얼 스크립트 점검.
 // related files:
 // - bg/pc2/lot-server2/src/sharpness.js
@@ -65,15 +66,28 @@ test("um-serial.ps1은 ASCII이고 UM Viewer 프로토콜 키를 쓴다", () => 
 const hasTrainedData =
   fs.existsSync(path.join(OCR_CACHE_DIR, "eng.traineddata")) || Boolean(process.env.LOT_OCR_LANG_PATH);
 
-test("UM20 실측 각인 BDZ를 어느 방향이든 읽는다", { skip: !hasTrainedData && "ocr-cache/eng.traineddata 없음" }, async () => {
-  const { recognizeLot, disposeOcrWorker } = await import("../src/ocr/index.js");
+test("UM20 실측 각인 BDZ를 어느 방향이든 읽는다(각인 인식, ROI는 회전한 각인 면)", { timeout: 120000 }, async () => {
+  const { recognizeLot } = await import("../src/ocr/index.js");
+  const { normalizeProfile } = await import("../src/jig-profiles.js");
+  // 2026-11-26 배치의 각인 면(회전 전 프레임 비율).
+  const face = { x: 0.6875, y: 0.32, w: 0.18, h: 0.375 };
+  const rotRoi = (r, a) =>
+    a === 0 ? r : a === 90 ? { x: 1 - r.y - r.h, y: r.x, w: r.h, h: r.w } : a === 180 ? { x: 1 - r.x - r.w, y: 1 - r.y - r.h, w: r.w, h: r.h } : { x: r.y, y: 1 - r.x - r.w, w: r.h, h: r.w };
+  for (const angle of [0, 90, 180, 270]) {
+    const img = await sharp(FOCUSED).rotate(angle).jpeg({ quality: 92 }).toBuffer();
+    const { height } = await sharp(img).metadata();
+    const lh = 78 / height;
+    const profile = normalizeProfile({ id: "t", roi: rotRoi(face, angle), letterH: { min: lh * 0.75, max: lh * 1.35 } });
+    const r = await recognizeLot(img, { allowed: ["BDZ", "BYU", "BYK"], profile });
+    assert.equal(r.lot, "BDZ", `angle=${angle} ${JSON.stringify({ top: r.top, reason: r.reason, margin: r.margin })}`);
+  }
+  assert.equal((await recognizeLot(BLURRY, { allowed: ["BDZ", "BYU", "BYK"] })).success, false);
+});
+
+test("Tesseract 경로: 흐린 화면은 읽지 않는다", { skip: !hasTrainedData && "ocr-cache/eng.traineddata 없음" }, async () => {
+  const { recognizeLotTesseract, disposeOcrWorker } = await import("../src/ocr/index.js");
   try {
-    for (const angle of [0, 90, 180, 270]) {
-      const img = await sharp(FOCUSED).rotate(angle).jpeg({ quality: 92 }).toBuffer();
-      const r = await recognizeLot(img);
-      assert.equal(r.lot, "BDZ", `angle=${angle} ${JSON.stringify(r)}`);
-    }
-    assert.equal((await recognizeLot(BLURRY)).success, false);
+    assert.equal((await recognizeLotTesseract(BLURRY)).success, false);
   } finally {
     await disposeOcrWorker();
   }

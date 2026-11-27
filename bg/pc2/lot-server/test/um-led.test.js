@@ -67,8 +67,10 @@ test("AF는 LED가 꺼져 있으면 건너뛰고, 시리얼 작업은 줄을 세
   assert.match(watch, /af\?\.reason === "led-off"/);
   assert.match(watch, /liveFrame = null;/);
   const html = fs.readFileSync(path.join(here, "../public/index.html"), "utf8");
+  const station = fs.readFileSync(path.join(here, "../public/station.js"), "utf8");
   assert.ok(!html.includes('live.classList.toggle("dim"'), "dim 토글이 refreshLive와 싸우지 않는다");
-  assert.match(html, /clearLive\(\)/);
+  // 감시 중지 때 라이브 src를 비운다(예전 clearLive() → applyWatch에서 removeAttribute).
+  assert.match(station, /els\.live\.removeAttribute\("src"\)/);
 });
 
 test("시리얼 작업은 겹치지 않고 순서대로 돈다", async () => {

@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-11-27: 각인 인식 지그 프로필 API(GET/PUT /api/jig-profiles, POST /api/jig-profiles/select·duplicate),
+//   GET /api/engrave/status, POST /api/engrave/test(미리보기 한 장으로 판독만, 저장·매칭 없음).
+//   /api/match 성공 뒤 그 코드로 각인 학습 표본을 data/engrave-dataset에 저장(LOT_ENGRAVE_COLLECT=0이면 끔).
+// - 2026-11-27: 화질 설정 API(GET/PUT /api/camera-settings, POST /api/camera-settings/reset, GET /api/camera-preview). data/camera-settings.json에 저장.
+// - 2026-11-27: 감시 OCR은 지금 세척.패킹 대기 목록(우편함 배정)에 있는 코드만 결과로 낸다(watcher allowedLots).
 // - 2026-11-26: /api/queue는 우편함이 배정된 세척.패킹 건만 돌려준다(packing-queue.js, LOT_QUEUE_REQUIRE_MAILBOX=0이면 끔).
 // - 2026-11-26: Windows에서 `/`·`/index.html`이 path.normalize 후 `\…`가 되어 정적 파일 경로 가드에 걸리던(400) 버그 수정(static-path.js).
 // - 2026-11-26: GET /api/branding → pack-server /branding (패킹 라벨 미리보기용).
@@ -42,7 +47,12 @@ import { IMAGE_NAME } from "./names.js";
 import { disposeOcrWorker } from "./ocr/index.js";
 import { createWatcher } from "./watch.js";
 import { resolvePublicPath } from "./static-path.js";
-import { filterPackingQueueBody, queueFilterOptionsFromEnv } from "./packing-queue.js";
+import { activeLotSuffixes, filterPackingQueueBody, queueFilterOptionsFromEnv } from "./packing-queue.js";
+import { EV_LABELS, LIMITS, loadSettings, recommendedSettings, saveSettings, settingsFile } from "./camera-settings.js";
+import { activeProfile, duplicateProfile, loadProfiles, normalizeProfile, profilesFile, selectProfile, upsertProfile } from "./jig-profiles.js";
+import { datasetSummary, saveSample } from "./engrave/dataset.js";
+import { listModelVersions, loadModel, modelsDir } from "./engrave/model-store.js";
+import { locateCode, locationTrusted, recognizeEngraving } from "./engrave/recognize.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -208,11 +218,100 @@ if (process.env.MICROSCOPE_DEVICE) {
   setSelectedDeviceName(process.env.MICROSCOPE_DEVICE);
 }
 
+/** 대기 목록 코드 집합(5초 캐시). 실패하면 null → 감시는 인식 결과를 내지 않는다. */
+let lotCache = { at: 0, set: null };
+async function fetchAllowedLots() {
+  if (lotCache.set && Date.now() - lotCache.at < 5000) return lotCache.set;
+  const upstream = await backendFetch("/api/bg/packing/queue");
+  if (upstream.status < 200 || upstream.status >= 300) return null;
+  const set = activeLotSuffixes(filterPackingQueueBody(upstream.body, queueFilterOptionsFromEnv()));
+  if (set) lotCache = { at: Date.now(), set };
+  return set;
+}
+
 const watcher = createWatcher({
   captureDir: CAPTURE_DIR,
   deviceName: getSelectedDeviceName(),
   log,
+  allowedLots: String(process.env.LOT_OCR_QUEUE_ONLY ?? "1") === "0" ? null : fetchAllowedLots,
 });
+
+function cameraSettingsPayload() {
+  const status = watcher.status();
+  return {
+    success: true,
+    settings: loadSettings(),
+    recommended: recommendedSettings(),
+    limits: LIMITS,
+    evLabels: EV_LABELS,
+    file: settingsFile(),
+    lastSettings: status.lastSettings || null,
+    led: status.led || null,
+    running: Boolean(status.running),
+    serial: status.serialAf ?? null,
+  };
+}
+
+function jigPayload() {
+  const s = loadProfiles();
+  return { success: true, active: s.active, profiles: Object.values(s.profiles), file: profilesFile() };
+}
+
+function engraveStatus() {
+  let model = null;
+  try {
+    const m = loadModel();
+    if (m) model = { file: path.basename(m.file), meta: m.meta };
+  } catch (e) {
+    model = { error: String(e?.message || e) };
+  }
+  return { success: true, model, versions: listModelVersions(), modelsDir: modelsDir(), dataset: datasetSummary() };
+}
+
+/** 이 프레임이 언제 찍혔는지 모르면 쓰지 않는다. 마지막 확정 촬영(같은 코드, 10분 안) → 감시 중 라이브. */
+async function frameForSample(code) {
+  const st = watcher.status();
+  const latest = st.latest;
+  if (latest?.lot === code && latest.filePath && Date.now() - Date.parse(latest.at || 0) < 10 * 60 * 1000) {
+    try {
+      return { buffer: fs.readFileSync(latest.filePath), from: "capture", fileName: latest.fileName };
+    } catch {}
+  }
+  const live = st.running ? watcher.getLiveFrame() : null;
+  return live ? { buffer: Buffer.from(live), from: "live" } : null;
+}
+
+/** 매칭이 된 코드로 학습 표본 저장(비동기, 실패해도 매칭에는 영향 없음). */
+async function collectSample(code, source, requestId) {
+  if (String(process.env.LOT_ENGRAVE_COLLECT ?? "1") === "0") return;
+  if (!/^[A-Z]{3}$/.test(code)) return;
+  const frame = await frameForSample(code);
+  if (!frame) {
+    log(`engrave sample skipped ${code}: no frame`);
+    return;
+  }
+  const profile = activeProfile();
+  const loc = await locateCode(frame.buffer, code, { profile }).catch(() => null);
+  // 위치가 약하면 상자 없이(ROI만) 저장한다. 학습은 상자 있는 표본만 쓴다.
+  const boxed = locationTrusted(loc);
+  const { dir } = await saveSample({
+    frame: frame.buffer,
+    code,
+    profile,
+    rotation: boxed ? loc.rotation : 0,
+    boxes: boxed ? loc.boxes : null,
+    settings: loadSettings(),
+    source,
+    requestId,
+    extra: {
+      frameFrom: frame.from,
+      fileName: frame.fileName || null,
+      locateMeanP: loc ? Number(loc.meanP.toFixed(3)) : null,
+      letterness: loc ? Number(loc.letterness.toFixed(3)) : null,
+    },
+  });
+  log(`engrave sample ${code} boxed=${Boolean(boxed)} p=${loc ? loc.meanP.toFixed(2) : "-"} → ${dir}`);
+}
 
 async function shoot(deviceName) {
   if (busy) {
@@ -275,6 +374,84 @@ const server = http.createServer(async (req, res) => {
         return;
       }
     }
+    if (req.method === "GET" && url.pathname === "/api/camera-settings") {
+      json(res, 200, cameraSettingsPayload());
+      return;
+    }
+    if ((req.method === "PUT" || req.method === "POST") && url.pathname === "/api/camera-settings") {
+      const body = await readBody(req);
+      const saved = saveSettings(body.settings || body);
+      log(`settings saved ${JSON.stringify(saved)}`);
+      let applied = null;
+      if (body.apply !== false) applied = await watcher.applyCameraSettings(saved);
+      json(res, 200, { ...cameraSettingsPayload(), applied });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/camera-settings/reset") {
+      const saved = saveSettings(recommendedSettings());
+      log(`settings reset ${JSON.stringify(saved)}`);
+      const applied = await watcher.applyCameraSettings(saved);
+      json(res, 200, { ...cameraSettingsPayload(), applied });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/camera-preview") {
+      const frame = await watcher.previewFrame();
+      if (!frame) {
+        json(res, 503, { success: false, message: "미리보기 프레임을 받지 못했습니다." });
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Content-Length": frame.length,
+      });
+      res.end(frame);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/jig-profiles") {
+      json(res, 200, jigPayload());
+      return;
+    }
+    if ((req.method === "PUT" || req.method === "POST") && url.pathname === "/api/jig-profiles") {
+      const body = await readBody(req);
+      const { profile } = upsertProfile(body.profile || body, { activate: body.activate !== false });
+      log(`jig profile saved ${JSON.stringify(profile)}`);
+      json(res, 200, { ...jigPayload(), saved: profile });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/jig-profiles/select") {
+      const body = await readBody(req);
+      selectProfile(String(body.id || ""));
+      log(`jig profile selected ${body.id}`);
+      json(res, 200, jigPayload());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/jig-profiles/duplicate") {
+      const body = await readBody(req);
+      const { profile } = duplicateProfile(String(body.id || ""), String(body.name || "").trim());
+      log(`jig profile duplicated ${body.id} → ${profile.id}`);
+      json(res, 200, { ...jigPayload(), saved: profile });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/engrave/status") {
+      json(res, 200, engraveStatus());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/engrave/test") {
+      // 판독만 한다. 저장·매칭·백엔드 변경 없음.
+      const body = await readBody(req);
+      const profile = body.profile ? normalizeProfile(body.profile, activeProfile()) : activeProfile();
+      const frame = await watcher.previewFrame();
+      if (!frame) {
+        json(res, 503, { success: false, message: "미리보기 프레임을 받지 못했습니다." });
+        return;
+      }
+      const allowed = body.queueOnly === false ? null : await fetchAllowedLots().catch(() => null);
+      const t = Date.now();
+      const result = await recognizeEngraving(frame, { profile, allowed });
+      json(res, 200, { success: true, result, ms: Date.now() - t, queue: allowed ? [...allowed] : null });
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/api/queue") {
       const upstream = await backendFetch("/api/bg/packing/queue");
       // 지금 세척.패킹에 들어와 있는 건(우편함 배정)만 카드로 보낸다.
@@ -291,6 +468,13 @@ const server = http.createServer(async (req, res) => {
         body,
       });
       json(res, upstream.status, upstream.body || { success: false });
+      const result = upstream.body?.data || {};
+      if (upstream.status >= 200 && upstream.status < 300 && result.matched) {
+        const code = String(result.suffix || body.recognizedSuffix || "").toUpperCase();
+        collectSample(code, String(body.source || "manual"), String(result.requestId || body.requestMongoId || "")).catch((e) =>
+          log(`engrave sample error ${e?.message || e}`),
+        );
+      }
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/screw-lot-settings") {

@@ -3,6 +3,7 @@
 //   UM Viewer 1.100(NewUMControl)의 프로토콜. mltcCom/UVC로는 이 UM20 포커스를 못 바꾼다.
 // - 2026-11-26: 시리얼 작업은 한 줄로 줄 세운다(AF·LED·상태가 포트를 동시에 열지 않게).
 // - 2026-11-26: LED 켜기/끄기(umLed, 종료 시 umLedOffSync). LOT_LED_LEVEL(1–12)이면 켤 때 그 단계로 맞춘다.
+// - 2026-11-27: EV 단계(umSetEv). LED 단계는 저장된 화질 설정(camera-settings.js)이 우선, 없으면 LOT_LED_LEVEL.
 // related files:
 // - bg/pc2/lot-server2/src/um-serial.ps1
 // - bg/pc2/lot-server2/src/watch.js
@@ -36,7 +37,7 @@ function powershell() {
  * @param {{ action?: "status" | "af" | "afc" | "manual" | "release" | "ledon" | "ledoff", area?: "whole" | "local", timeoutMs?: number, level?: number }} [opts]
  * @returns {Promise<object>} um-serial.ps1의 JSON. ok·af(done/timeout/...)·position·startPosition·port·sn
  */
-function buildArgs({ action, area, timeoutMs, level }) {
+function buildArgs({ action, area, timeoutMs, level, ev = -1 }) {
   const port = String(process.env.LOT_UM_PORT || knownPort || "");
   const args = [
     "-NoProfile",
@@ -54,6 +55,7 @@ function buildArgs({ action, area, timeoutMs, level }) {
   ];
   if (port) args.push("-Port", port);
   if (level > 0) args.push("-Level", String(level));
+  if (ev >= 0) args.push("-Ev", String(ev));
   return args;
 }
 
@@ -72,10 +74,10 @@ export function runUmSerial(opts = {}) {
   return job;
 }
 
-async function runUmSerialNow({ action = "status", area = "whole", timeoutMs = 25000, level = 0 } = {}) {
+async function runUmSerialNow({ action = "status", area = "whole", timeoutMs = 25000, level = 0, ev = -1 } = {}) {
   if (!umSerialEnabled()) return { ok: false, reason: "disabled", path: "serial" };
   if (!fs.existsSync(SCRIPT)) return { ok: false, reason: "script-missing", path: "serial" };
-  const args = buildArgs({ action, area, timeoutMs, level });
+  const args = buildArgs({ action, area, timeoutMs, level, ev });
   const run = await new Promise((resolve) => {
     execFile(
       powershell(),
@@ -105,6 +107,13 @@ export function umAutoFocus(area = "whole") {
 /** LED 켜기/끄기. 켤 때 LOT_LED_LEVEL이 있으면 그 단계로. 끝나면 원격 제어를 풀어 리모컨이 다시 듣는다. */
 export function umLed(on, level = ledLevelFromEnv()) {
   return runUmSerial({ action: on ? "ledon" : "ledoff", level: on ? level : 0, timeoutMs: 8000 });
+}
+
+/** EV 단계(0–19, 10=Auto). 끝나면 원격 제어를 푼다. */
+export function umSetEv(ev) {
+  const n = Math.round(Number(ev));
+  if (!Number.isFinite(n) || n < 0 || n > 19) return Promise.resolve({ ok: false, reason: "ev-range" });
+  return runUmSerial({ action: "ev", ev: n, timeoutMs: 12000 });
 }
 
 /** 프로세스 종료 직전용 동기 LED 끄기(SIGINT/exit). 실패해도 던지지 않는다. */

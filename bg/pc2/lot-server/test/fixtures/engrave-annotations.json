@@ -1,0 +1,696 @@
+{
+  "about": "실측 각인 프레임 라벨(2026-11-27). boxesRotated: 프레임을 rotation(시계 방향)만큼 돌린 뒤의 픽셀 글자 상자 [x0,y0,x1,y1]. profile: 그 프레임을 찍은 지그 프로필. batch a: UM20 lot-server 프레임·BYU UM Viewer, batch b: 대기 건 UM Viewer 캡처(2026-11-27 14:54–15:03, 위치는 모델로 찾고 눈으로 확인).",
+  "profiles": {
+    "jig-1": {
+      "id": "jig-1",
+      "name": "지그 1 (2026-11)",
+      "roi": {
+        "x": 0.33,
+        "y": 0.12,
+        "w": 0.25,
+        "h": 0.56
+      },
+      "letterH": {
+        "min": 0.085,
+        "max": 0.165
+      },
+      "rotations": [
+        0,
+        90,
+        180,
+        270
+      ]
+    },
+    "jig-0": {
+      "id": "jig-0",
+      "name": "이전 배치 (2026-11-26)",
+      "roi": {
+        "x": 0.6875,
+        "y": 0.32,
+        "w": 0.18,
+        "h": 0.375
+      },
+      "letterH": {
+        "min": 0.085,
+        "max": 0.165
+      },
+      "rotations": [
+        0,
+        90,
+        180,
+        270
+      ]
+    }
+  },
+  "frames": [
+    {
+      "file": "um20-byu-b128-a.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byu-b128-b.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byu-b128-c.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byu-b160.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byu-b96.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "umviewer-byu-a.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "umviewer-byu-b.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byu-b255-washed.jpg",
+      "code": "BYU",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          335,
+          540,
+          400,
+          622
+        ],
+        [
+          405,
+          540,
+          467,
+          622
+        ],
+        [
+          470,
+          540,
+          532,
+          622
+        ]
+      ],
+      "evalOnly": true,
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byk-a.jpg",
+      "code": "BYK",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          320,
+          530,
+          385,
+          625
+        ],
+        [
+          390,
+          530,
+          452,
+          625
+        ],
+        [
+          455,
+          530,
+          522,
+          625
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byk-b.jpg",
+      "code": "BYK",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          320,
+          530,
+          385,
+          625
+        ],
+        [
+          390,
+          530,
+          452,
+          625
+        ],
+        [
+          455,
+          530,
+          522,
+          625
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-byk-c.jpg",
+      "code": "BYK",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          320,
+          530,
+          385,
+          625
+        ],
+        [
+          390,
+          530,
+          452,
+          625
+        ],
+        [
+          455,
+          530,
+          522,
+          625
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "um20-bdz-focused.jpg",
+      "code": "BDZ",
+      "profile": "jig-0",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          282,
+          952,
+          331,
+          1030
+        ],
+        [
+          335,
+          952,
+          380,
+          1030
+        ],
+        [
+          387,
+          952,
+          429,
+          1030
+        ]
+      ],
+      "batch": "2026-11-27a"
+    },
+    {
+      "file": "umviewer-byk.jpg",
+      "code": "BYK",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          326,
+          526,
+          385,
+          627
+        ],
+        [
+          392,
+          526,
+          452,
+          627
+        ],
+        [
+          458,
+          526,
+          518,
+          627
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byx.jpg",
+      "code": "BYX",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          351,
+          543,
+          411,
+          628
+        ],
+        [
+          417,
+          543,
+          477,
+          628
+        ],
+        [
+          484,
+          543,
+          544,
+          628
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-bzb.jpg",
+      "code": "BZB",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          353,
+          535,
+          404,
+          620
+        ],
+        [
+          410,
+          535,
+          460,
+          620
+        ],
+        [
+          466,
+          535,
+          517,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byw.jpg",
+      "code": "BYW",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          342,
+          535,
+          402,
+          620
+        ],
+        [
+          409,
+          535,
+          469,
+          620
+        ],
+        [
+          475,
+          535,
+          535,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byt-a.jpg",
+      "code": "BYT",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          340,
+          538,
+          398,
+          610
+        ],
+        [
+          405,
+          538,
+          463,
+          610
+        ],
+        [
+          470,
+          538,
+          528,
+          610
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byt-b.jpg",
+      "code": "BYT",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          334,
+          535,
+          394,
+          620
+        ],
+        [
+          401,
+          535,
+          460,
+          620
+        ],
+        [
+          467,
+          535,
+          527,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byv.jpg",
+      "code": "BYV",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          342,
+          536,
+          402,
+          636
+        ],
+        [
+          409,
+          536,
+          468,
+          636
+        ],
+        [
+          475,
+          536,
+          535,
+          636
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-bza.jpg",
+      "code": "BZA",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          334,
+          526,
+          394,
+          627
+        ],
+        [
+          400,
+          526,
+          460,
+          627
+        ],
+        [
+          467,
+          526,
+          527,
+          627
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byy.jpg",
+      "code": "BYY",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          342,
+          543,
+          402,
+          628
+        ],
+        [
+          409,
+          543,
+          469,
+          628
+        ],
+        [
+          475,
+          543,
+          535,
+          628
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byz-a.jpg",
+      "code": "BYZ",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          326,
+          535,
+          386,
+          620
+        ],
+        [
+          392,
+          535,
+          452,
+          620
+        ],
+        [
+          459,
+          535,
+          519,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-byz-b.jpg",
+      "code": "BYZ",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          326,
+          535,
+          386,
+          620
+        ],
+        [
+          392,
+          535,
+          452,
+          620
+        ],
+        [
+          459,
+          535,
+          519,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    },
+    {
+      "file": "umviewer-bzc.jpg",
+      "code": "BZC",
+      "profile": "jig-1",
+      "rotation": 90,
+      "boxesRotated": [
+        [
+          326,
+          535,
+          386,
+          620
+        ],
+        [
+          392,
+          535,
+          452,
+          620
+        ],
+        [
+          459,
+          535,
+          519,
+          620
+        ]
+      ],
+      "batch": "2026-11-27b"
+    }
+  ]
+}

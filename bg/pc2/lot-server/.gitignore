@@ -1,3 +1,6 @@
 captures/
 local.env
 ocr-cache/
+images/
+data/engrave-dataset/
+data/engrave-models/

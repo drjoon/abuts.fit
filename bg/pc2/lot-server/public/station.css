@@ -240,6 +240,80 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.ocr-log {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem 0.1rem 0.25rem;
+  min-height: 3.1rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ocr-log-empty {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.75rem;
+  color: var(--stone-500);
+  font-size: 0.8rem;
+}
+
+.ocr-log-card {
+  flex: 0 0 auto;
+  max-width: 22rem;
+  border: 1px solid var(--stone-200);
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.4rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 4%);
+}
+
+.ocr-log-time {
+  font-size: 0.68rem;
+  color: var(--stone-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-log-line {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--stone-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+
+.ocr-log-card.kind-ok {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--stone-200));
+  background: color-mix(in srgb, var(--primary-soft) 55%, #fff);
+}
+
+.ocr-log-card.kind-ok .ocr-log-line {
+  color: var(--primary);
+}
+
+.ocr-log-card.kind-reject,
+.ocr-log-card.kind-disagree {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--stone-200));
+}
+
+.ocr-log-card.kind-reject .ocr-log-line,
+.ocr-log-card.kind-disagree .ocr-log-line {
+  color: var(--danger);
+}
+
+.ocr-log-card.kind-miss,
+.ocr-log-card.kind-blur {
+  border-color: var(--stone-300);
+  background: var(--stone-50);
+}
+
 .strip {
   min-height: 0;
   display: flex;
@@ -701,4 +775,298 @@ button:disabled {
     width: 15rem;
     flex: 0 0 auto;
   }
+}
+
+/* ---- 2026-11-27: 카메라·화질 설정 (톱니 버튼 + 모달) ---- */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--stone-600);
+}
+
+.btn-icon svg {
+  transition: transform 0.35s ease;
+}
+
+.btn-icon:hover:not(:disabled) {
+  border-color: var(--stone-500);
+  color: var(--stone-900);
+}
+
+.btn-icon:hover:not(:disabled) svg {
+  transform: rotate(60deg);
+}
+
+.btn-ghost {
+  background: var(--stone-100);
+  border-color: var(--stone-200);
+  color: var(--stone-700, var(--stone-600));
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--stone-200);
+}
+
+.btn-square {
+  width: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.btn:focus-visible,
+.field:focus-visible,
+.range:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.modal.modal-settings {
+  width: min(58rem, 100%);
+  max-height: min(92vh, 46rem);
+  padding: 1.1rem 1.2rem 1rem;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.settings-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 760px) {
+  .settings-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.settings-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #292524, #0c0a09);
+  border: 1px solid var(--stone-200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.settings-preview p {
+  margin: 0;
+  padding: 1rem;
+  color: #a8a29e;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.settings-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.settings-controls {
+  gap: 0.75rem;
+}
+
+.settings-section {
+  border: 1px solid var(--stone-200);
+  border-radius: 0.75rem;
+  background: var(--stone-50);
+  padding: 0.7rem 0.8rem 0.75rem;
+}
+
+.settings-section h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--stone-500);
+  text-transform: uppercase;
+}
+
+.settings-inline {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.field {
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--stone-300);
+  background: #fff;
+  color: var(--stone-800);
+  font-size: 0.8rem;
+  padding: 0 0.6rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.field-num {
+  flex: 0 0 4.25rem;
+  height: 1.85rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.settings-slider + .settings-slider {
+  margin-top: 0.55rem;
+}
+
+.settings-slider-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.settings-slider-top label,
+.settings-field span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--stone-800);
+}
+
+.range {
+  width: 100%;
+  accent-color: var(--primary);
+  height: 1.1rem;
+  margin: 0;
+}
+
+.modal .settings-hint,
+.settings-hint {
+  margin: 0.15rem 0 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--stone-500);
+}
+
+.settings-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.settings-field .field {
+  flex: 0 0 auto;
+}
+
+.settings-footer {
+  position: sticky;
+  bottom: -1rem;
+  margin: 0 -1.2rem -1rem;
+  padding: 0.75rem 1.2rem 0.9rem;
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(4px);
+  border-radius: 0 0 0.9rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--stone-200);
+}
+
+.modal .settings-status,
+.settings-status {
+  margin: 0;
+  max-width: none;
+  flex: 1;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+/* 2026-11-27: 각인 인식 · 지그 (ROI 영역 표시·드래그, 판독 상자) */
+.roi-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.roi-layer.drawing {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.roi-rect {
+  position: absolute;
+  border: 2px dashed #fbbf24;
+  border-radius: 4px;
+  box-shadow: 0 0 0 9999px rgba(12, 10, 9, 0.35);
+}
+
+.roi-layer.drawing .roi-rect {
+  border-style: solid;
+}
+
+.roi-hits {
+  position: absolute;
+  inset: 0;
+}
+
+.roi-hit {
+  position: absolute;
+  border: 2px solid #f87171;
+  border-radius: 3px;
+}
+
+.roi-hit.ok {
+  border-color: #34d399;
+}
+
+.settings-grid4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.settings-jig-actions {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.settings-hint.ok {
+  color: var(--primary);
+}
+
+.settings-hint.bad {
+  color: var(--danger);
 }

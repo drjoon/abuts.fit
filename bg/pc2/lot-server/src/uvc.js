@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-11-27: 밝기를 255로 고정하지 않는다. 저장된 화질 설정(camera-settings.js)을 UvcTool.exe apply로 건다.
+//   uvcGet/uvcSet(get/set 모드)로 모달에서 읽고 바꾼다. uvc-ctl.ps1 대체 경로는 LOT_UVC_SCRIPT=1일 때만(밝기 최대로 올린다).
 // - 2026-11-26: UvcTool.exe(MF IUnknown)로 밝기 제어. PS Add-Type COM은 이 PC에서 Activate 실패.
 // - 2026-11-26: UM20은 mltcCom ComInitial이 안 되므로 UVC 노출·밝기·포커스를 건다.
 // related files:
@@ -12,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { parseFocusStdout } from "./focus.js";
+import { loadSettings, uvcSpec } from "./camera-settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOOL = path.resolve(__dirname, "UvcTool.exe");
@@ -48,9 +51,11 @@ function runFile(file, args, timeoutMs) {
   });
 }
 
-async function tryUvcTool(deviceName) {
+async function tryUvcTool(deviceName, spec) {
   if (!fs.existsSync(TOOL)) return null;
-  const run = await runFile(TOOL, [String(deviceName || "Digital Microscope")], TIMEOUT_MS);
+  const args = [String(deviceName || "Digital Microscope")];
+  if (spec) args.push("apply", spec);
+  const run = await runFile(TOOL, args, TIMEOUT_MS);
   const parsed = parseFocusStdout(run.stdout);
   if (parsed) {
     return {
@@ -108,14 +113,47 @@ async function tryUvcScript(deviceName) {
   return last;
 }
 
-/** UVC 밝기(최대)·가능하면 노출/포커스. 우선 UvcTool.exe. */
-export async function tryUvc(deviceName = "") {
+/** UVC 노출·포커스 + 저장된 화질(밝기 128 등). 우선 UvcTool.exe. */
+export async function tryUvc(deviceName = "", settings = loadSettings()) {
   if (process.platform !== "win32") {
     return { ok: false, af: "none", reason: "not-windows", path: "uvc" };
   }
-  const tool = await tryUvcTool(deviceName);
+  const tool = await tryUvcTool(deviceName, uvcSpec(settings));
   if (tool?.ok) return tool;
+  if (String(process.env.LOT_UVC_SCRIPT || "0") !== "1") return tool || { ok: false, af: "none", reason: "uvc-tool-missing", path: "uvc" };
   const script = await tryUvcScript(deviceName);
   if (script?.ok) return script;
   return tool?.reason ? tool : script;
+}
+
+function parseJsonLine(text) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (!lines[i].startsWith("{")) continue;
+    try {
+      return JSON.parse(lines[i]);
+    } catch {}
+  }
+  return null;
+}
+
+async function runToolMode(deviceName, mode, spec = "") {
+  if (process.platform !== "win32") return { ok: false, reason: "not-windows" };
+  if (!fs.existsSync(TOOL)) return { ok: false, reason: "uvc-tool-missing" };
+  const args = [String(deviceName || "Digital Microscope"), mode];
+  if (spec) args.push(spec);
+  const run = await runFile(TOOL, args, TIMEOUT_MS);
+  const parsed = parseJsonLine(run.stdout);
+  if (parsed) return parsed;
+  return { ok: false, reason: "uvc-tool-failed", detail: `${run.stderr || run.err?.message || run.stdout || ""}`.trim().slice(0, 300) };
+}
+
+/** 지금 카메라 값(범위·기본·현재). 장치를 잠깐 연다(스트림 중이면 실패할 수 있다). */
+export function uvcGet(deviceName = "") {
+  return runToolMode(deviceName, "get");
+}
+
+/** 화질만 건다(포커스·노출은 건드리지 않는다). */
+export function uvcSet(deviceName = "", settings = loadSettings()) {
+  return runToolMode(deviceName, "set", uvcSpec(settings));
 }

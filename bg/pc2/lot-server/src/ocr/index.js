@@ -1,4 +1,9 @@
 // change-log:
+// - 2026-11-27: 각인 전용 인식(src/engrave)을 먼저 쓴다. LOT_RECOGNIZER=engrave(기본)|tesseract|both.
+//   engrave: 각인 모델만(모델 파일이 없을 때만 Tesseract). both: 각인이 못 읽으면(실패·모호) Tesseract로 다시(목록 밖 판독이면 거기서 멈춤).
+//   profile(지그 프로필)은 opts.profile, 없으면 활성 프로필.
+// - 2026-11-27: allowed(지금 세척.패킹 대기 목록의 3글자 코드)를 주면 1위 판독이 목록에 있을 때만 성공. 후보를 미리 거르지 않는다
+//   (목록 밖 1위를 지우면 목록 안의 약한 2위가 올라와 엉뚱한 의뢰가 넘어갈 수 있다).
 // - 2026-11-26: 1단계 글자 단위 판독(chars.js, 자리별 투표, 한 줄 판독 일치 가점, 180도 모호하면 미확정). 못 읽으면 2단계 한 줄 판독.
 // - 2026-11-26: 후보 지연 생성. 같은 로트 2회(각 60↑) 또는 1회 90↑이면 조기 종료. 2위보다 확실히 앞설 때만 확정.
 // - 2026-11-26: 후보별 결과를 신뢰도 합으로 투표. 최소 신뢰도(LOT_OCR_MIN_CONF) 미만은 버린다. 85 이상이면 조기 종료.
@@ -16,6 +21,9 @@ import { runOcr } from "./engine.js";
 import { isValidLot, pickLotFromOcrText } from "./extract.js";
 import { readLotByChars } from "./chars.js";
 import { cropVariantsFor, ocrVariants, textCrops } from "./preprocess.js";
+import { recognizeEngraving } from "../engrave/recognize.js";
+import { loadModel } from "../engrave/model-store.js";
+import { activeProfile } from "../jig-profiles.js";
 
 const EARLY_STOP_CONF = 90;
 // 한 줄 판독이 같은 로트를 내면 신뢰도×이 값을 투표 점수에 더한다(글자 단위 점수는 8회×3자리 합).
@@ -82,7 +90,54 @@ export function pickCharCandidate(cands) {
  *   provider: "local-ocr",
  * }>}
  */
-export async function recognizeLot(input) {
+export function recognizerMode() {
+  const m = String(process.env.LOT_RECOGNIZER || "engrave").toLowerCase();
+  return ["engrave", "tesseract", "both"].includes(m) ? m : "engrave";
+}
+
+/**
+ * @param {Buffer | string} input
+ * @param {{ allowed?: Set<string> | string[] | null, profile?: object }} [opts] allowed가 있으면 1위가 목록에 있어야 성공(reason not_in_queue).
+ */
+export async function recognizeLot(input, { allowed = null, profile = null } = {}) {
+  const buffer = typeof input === "string" ? await fs.readFile(input) : Buffer.from(input);
+  const mode = recognizerMode();
+  let engraved = null;
+  if (mode !== "tesseract") {
+    const loaded = (() => {
+      try {
+        return loadModel();
+      } catch {
+        return null;
+      }
+    })();
+    if (loaded?.model) {
+      engraved = await recognizeEngraving(buffer, { profile: profile || activeProfile(), allowed, model: loaded.model }).catch((e) => ({
+        success: false,
+        reason: `engrave-error: ${e.message}`,
+        method: "engrave",
+      }));
+      const out = {
+        ...engraved,
+        lot: engraved.success ? engraved.lot : "",
+        confidence: engraved.success ? engraved.confidence : 0,
+        rawText: engraved.top || "",
+        provider: "engrave-mlp",
+        model: loaded.file ? loaded.file.split(/[\\/]/).pop() : "",
+      };
+      if (engraved.success || engraved.reason === "not_in_queue" || mode === "engrave") return out;
+    }
+  }
+  const t = await recognizeLotTesseract(buffer, { allowed });
+  return engraved ? { ...t, engrave: { top: engraved.top, reason: engraved.reason, confidence: engraved.confidence } } : t;
+}
+
+/**
+ * 이전 방식(Tesseract). 각인 모델이 없거나 LOT_RECOGNIZER=tesseract|both일 때.
+ */
+export async function recognizeLotTesseract(input, { allowed = null } = {}) {
+  const allow = allowed ? new Set([...allowed].map((v) => String(v).toUpperCase())) : null;
+  const permitted = (lot) => isValidLot(lot) && (!allow || allow.has(lot));
   const buffer =
     typeof input === "string" ? await fs.readFile(input) : Buffer.from(input);
   // 1단계: 글자 단위. 방향(0/180/90/270)별 크롭을 모두 읽고 투표 점수로 고른다.
@@ -106,6 +161,9 @@ export async function recognizeLot(input) {
     delete cand.crop;
   }
   const charBest = pickCharCandidate(charCands);
+  if (charBest && charBest !== AMBIGUOUS && charBest.confidence >= minConfidence() && !permitted(charBest.lot)) {
+    return { success: false, lot: "", confidence: 0, rawText: charBest.lot, provider: "local-ocr", method: "chars", reason: "not_in_queue", rejected: charBest.lot };
+  }
   if (charBest && charBest.confidence >= minConfidence()) {
     return {
       success: true,
@@ -135,6 +193,9 @@ export async function recognizeLot(input) {
   }
 
   const best = pickBestRead(reads);
+  if (best && !permitted(best.lot)) {
+    return { success: false, lot: "", confidence: 0, rawText: String(best.rawText || "").trim(), provider: "local-ocr", method: "line", reason: "not_in_queue", rejected: best.lot };
+  }
   return {
     success: Boolean(best),
     lot: best?.lot || "",

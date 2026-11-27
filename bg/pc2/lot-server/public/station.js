@@ -2,6 +2,11 @@
 // - bg/pc2/lot-server/public/index.html
 // - bg/pc2/lot-server/src/index.js
 // change-log:
+// - 2026-11-27: 촬영·인식 ocrLog를 라이브 아래 가로 스크롤 카드로 표시(한 줄).
+// - 2026-11-27: 감시 중 OCR 거부·실패(lastError)를 각인 코드 옆 안내(note)에 표시. 코드 칸이 —로만 남아 원인을 모르게 두지 않는다.
+// - 2026-11-27: 설정 모달에 ‘각인 인식 · 지그’: 프로필 선택·복제·이름, ROI(X/Y/폭/높이 %, 미리보기 드래그), 글자 높이 범위, 판독 시험(저장·매칭 없음).
+// - 2026-11-27: 툴바의 카메라 선택·목록 버튼을 설정(톱니) 버튼으로. 모달에서 카메라·밝기·대비·채도·LED·EV·미리보기·권장값·저장(서버 저장).
+//   Esc·바깥 클릭으로 닫는다.
 // - 2026-11-26: 매칭 옆 프린트 + 패킹 라벨 미리보기(어벗츠 FE와 동일 캔버스).
 // - 2026-11-26: 세척·패킹 작업자 로컬 UI(큐·라이브·매칭·스크류 로트).
 (() => {
@@ -24,6 +29,7 @@
     live: document.querySelector("#live"),
     liveEmpty: document.querySelector("#liveEmpty"),
     strip: document.querySelector("#requestStrip"),
+    ocrLog: document.querySelector("#ocrLog"),
     history: document.querySelector("#history"),
     start: document.querySelector("#startWatch"),
     stop: document.querySelector("#stopWatch"),
@@ -31,8 +37,7 @@
     recognize: document.querySelector("#recognizeBtn"),
     match: document.querySelector("#matchBtn"),
     printMatched: document.querySelector("#printMatchedBtn"),
-    device: document.querySelector("#device"),
-    refreshDevices: document.querySelector("#refreshDevices"),
+    settingsBtn: document.querySelector("#settingsBtn"),
     vialBtn: document.querySelector("#vialBtn"),
     packingBtn: document.querySelector("#packingBtn"),
     screwBtn: document.querySelector("#screwBtn"),
@@ -54,6 +59,8 @@
     branding: null,
     lastLotKey: "",
     history: [],
+    ocrLog: [],
+    ocrLogSig: "",
     pollTimer: 0,
     liveTimer: 0,
     queueTimer: 0,
@@ -86,8 +93,6 @@
       els.recognize,
       els.match,
       els.printMatched,
-      els.device,
-      els.refreshDevices,
     ].forEach((el) => {
       if (el) el.disabled = disabled;
     });
@@ -181,15 +186,54 @@
     });
   }
 
+  function formatLogTime(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return "--:--:--";
+    const p = (n) => String(n).padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
+  function renderOcrLog(rows) {
+    if (!els.ocrLog) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const sig = list.map((r) => r.id || r.at || r.line).join("|");
+    if (sig === state.ocrLogSig) return;
+    state.ocrLogSig = sig;
+    state.ocrLog = list;
+    els.ocrLog.replaceChildren();
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "ocr-log-empty";
+      empty.textContent = "촬영·인식 기록이 여기에 쌓입니다.";
+      els.ocrLog.appendChild(empty);
+      return;
+    }
+    list.forEach((row) => {
+      const card = document.createElement("div");
+      card.className = "ocr-log-card" + (row.kind ? ` kind-${row.kind}` : "");
+      const time = document.createElement("span");
+      time.className = "ocr-log-time";
+      time.textContent = formatLogTime(row.at);
+      const line = document.createElement("span");
+      line.className = "ocr-log-line";
+      line.textContent = row.line || row.lot || "—";
+      card.appendChild(time);
+      card.appendChild(line);
+      els.ocrLog.appendChild(card);
+    });
+  }
+
   function applyWatch(data) {
     state.reachable = true;
     state.running = Boolean(data.running);
     const phase = PHASE_KO[data.phase] || data.phase || "—";
     const recent = extractLotSuffix3(data.lastLot || data.latest?.lot);
+    const rejected = extractLotSuffix3(data.lastRejected?.lot || data.lastRejected);
     els.status.textContent = [
       state.running ? "감시 중" : "중지",
       phase,
       recent ? `최근 ${recent}` : "",
+      !recent && rejected ? `거부 ${rejected}` : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -198,12 +242,16 @@
 
     if (state.running) {
       refreshLive();
+      // 확정 전 거부·실패 이유를 각인 코드 칸이 —인 채로만 두지 않고 안내에 보여 준다.
+      if (!state.matching && data.lastError) setNote(data.lastError, "bad");
     } else {
       els.live.removeAttribute("src");
       els.live.hidden = true;
       els.liveEmpty.hidden = false;
       els.liveEmpty.textContent = "감시 시작을 누르면 라이브가 표시됩니다.";
     }
+
+    renderOcrLog(data.ocrLog);
 
     const lot = recent;
     if (!lot || !state.running || state.matching) return;
@@ -214,6 +262,7 @@
     state.selectedId = "";
     state.suffix = lot;
     els.suffix.textContent = lot;
+    setNote("");
     void matchSuffix(lot, "auto");
   }
 
@@ -426,16 +475,17 @@
     }
   }
 
-  async function loadDevices() {
+  /** 카메라 목록을 select에 채운다. */
+  async function loadDevices(selectEl) {
     const data = await api("/devices");
-    els.device.replaceChildren();
+    selectEl.replaceChildren();
     const list = Array.isArray(data.devices) ? data.devices : [];
     if (!list.length) {
       const opt = document.createElement("option");
       opt.value = "";
       opt.textContent = "카메라 없음";
-      els.device.appendChild(opt);
-      return;
+      selectEl.appendChild(opt);
+      return data;
     }
     list.forEach((item) => {
       const name = typeof item === "string" ? item : item.name;
@@ -445,23 +495,489 @@
       if (item?.preferred) label += " · 현미경";
       if (item?.continuity) label += " · Continuity";
       opt.textContent = label;
-      els.device.appendChild(opt);
+      selectEl.appendChild(opt);
     });
-    if (data.selected) els.device.value = data.selected;
+    if (data.selected) selectEl.value = data.selected;
+    return data;
+  }
+
+  function el(tag, props = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key.includes("-")) node.setAttribute(key, value);
+      else node[key] = value;
+    }
+    for (const child of [].concat(children)) if (child) node.appendChild(child);
+    return node;
+  }
+
+  const SLIDERS = [
+    { key: "brightness", label: "밝기", hint: "권장 128 · 높이면 금속면이 하얗게 날아갑니다" },
+    { key: "contrast", label: "대비", hint: "글자 테두리 선명도" },
+    { key: "saturation", label: "채도", hint: "OCR은 흑백으로 읽습니다" },
+    { key: "hue", label: "색조", hint: "보통 0" },
+  ];
+
+  async function openSettingsModal() {
+    const wrap = el("div", { class: "settings" });
+
+    // 왼쪽: 미리보기
+    const previewImg = el("img", { alt: "카메라 미리보기", hidden: true });
+    const previewEmpty = el("p", { text: "미리보기를 불러오는 중…" });
+    const previewBox = el("div", { class: "settings-preview" }, [previewImg, previewEmpty]);
+    const previewBtn = el("button", { type: "button", class: "btn btn-ghost", text: "미리보기 새로고침" });
+    const previewNote = el("p", { class: "settings-hint" });
+    const left = el("div", { class: "settings-col" }, [
+      previewBox,
+      el("div", { class: "settings-preview-bar" }, [previewNote, previewBtn]),
+    ]);
+
+    // 오른쪽: 카메라
+    const deviceSel = el("select", { class: "field", id: "settingsDevice" });
+    const refreshBtn = el("button", { type: "button", class: "btn btn-ghost btn-square", title: "카메라 목록 새로고침", "aria-label": "카메라 목록 새로고침" });
+    refreshBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+    const cameraSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "카메라" }),
+      el("div", { class: "settings-inline" }, [deviceSel, refreshBtn]),
+    ]);
+
+    // 화질 슬라이더
+    const inputs = {};
+    const imageSection = el("section", { class: "settings-section" }, [el("h3", { text: "화질 (UVC)" })]);
+    for (const sl of SLIDERS) {
+      const range = el("input", { type: "range", class: "range", id: `set-${sl.key}` });
+      const num = el("input", { type: "number", class: "field field-num", "aria-label": sl.label });
+      range.addEventListener("input", () => {
+        num.value = range.value;
+        markDirty();
+      });
+      num.addEventListener("input", () => {
+        range.value = num.value;
+        markDirty();
+      });
+      inputs[sl.key] = { range, num };
+      imageSection.appendChild(
+        el("div", { class: "settings-slider" }, [
+          el("div", { class: "settings-slider-top" }, [
+            el("label", { htmlFor: `set-${sl.key}`, text: sl.label }),
+            num,
+          ]),
+          range,
+          el("p", { class: "settings-hint", text: sl.hint }),
+        ]),
+      );
+    }
+
+    // 현미경(시리얼)
+    const ledSel = el("select", { class: "field" });
+    ledSel.appendChild(el("option", { value: "0", text: "현재 단계 유지" }));
+    for (let i = 1; i <= 12; i += 1) ledSel.appendChild(el("option", { value: String(i), text: `${i} / 12` }));
+    const evSel = el("select", { class: "field" });
+    ledSel.addEventListener("change", markDirty);
+    evSel.addEventListener("change", markDirty);
+    const scopeSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "현미경 (UM20)" }),
+      el("div", { class: "settings-grid2" }, [
+        el("label", { class: "settings-field" }, [el("span", { text: "LED 밝기" }), ledSel]),
+        el("label", { class: "settings-field" }, [el("span", { text: "노출 EV" }), evSel]),
+      ]),
+      el("p", { class: "settings-hint", text: "LED는 감시 시작 때 켜고 중지 때 끕니다. 단계는 감시 중일 때 바로 바뀝니다." }),
+    ]);
+
+    left.appendChild(scopeSection);
+
+    // 각인 인식 · 지그 프로필 (ROI는 프레임 비율 0–1, 화면에는 %)
+    const roiLayer = el("div", { class: "roi-layer" });
+    const roiRect = el("div", { class: "roi-rect", hidden: true });
+    const hitLayer = el("div", { class: "roi-hits" });
+    roiLayer.append(roiRect, hitLayer);
+    previewBox.appendChild(roiLayer);
+    const jigSel = el("select", { class: "field", "aria-label": "지그 프로필" });
+    const jigDupBtn = el("button", { type: "button", class: "btn btn-ghost", text: "복제" });
+    const jigName = el("input", { type: "text", class: "field", placeholder: "프로필 이름", maxLength: 60 });
+    const roiInputs = {};
+    const roiGrid = el("div", { class: "settings-grid4" });
+    for (const [key, label] of [["x", "X %"], ["y", "Y %"], ["w", "폭 %"], ["h", "높이 %"]]) {
+      const input = el("input", { type: "number", class: "field field-num", min: "0", max: "100", step: "0.5" });
+      input.addEventListener("input", () => {
+        drawRoi(readRoi());
+        markJigDirty();
+      });
+      roiInputs[key] = input;
+      roiGrid.appendChild(el("label", { class: "settings-field" }, [el("span", { text: label }), input]));
+    }
+    const lhMin = el("input", { type: "number", class: "field field-num", min: "2", max: "60", step: "0.5" });
+    const lhMax = el("input", { type: "number", class: "field field-num", min: "2", max: "60", step: "0.5" });
+    lhMin.addEventListener("input", markJigDirty);
+    lhMax.addEventListener("input", markJigDirty);
+    const dragBtn = el("button", { type: "button", class: "btn btn-ghost", text: "미리보기에서 영역 그리기" });
+    const testBtn = el("button", { type: "button", class: "btn btn-ghost", text: "판독 시험" });
+    const jigSaveBtn = el("button", { type: "button", class: "btn btn-primary", text: "지그 저장" });
+    const jigStatus = el("p", { class: "settings-hint" });
+    const engraveInfo = el("p", { class: "settings-hint" });
+    const jigSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "각인 인식 · 지그" }),
+      el("div", { class: "settings-inline" }, [jigSel, jigDupBtn]),
+      el("label", { class: "settings-field" }, [el("span", { text: "이름" }), jigName]),
+      el("p", { class: "settings-hint", text: "각인 면을 찾을 영역(ROI). 지그를 바꾸면 프로필을 복제해 영역만 다시 잡으면 됩니다. 학습 데이터는 지그와 무관합니다." }),
+      roiGrid,
+      el("div", { class: "settings-grid2" }, [
+        el("label", { class: "settings-field" }, [el("span", { text: "글자 높이 최소 %" }), lhMin]),
+        el("label", { class: "settings-field" }, [el("span", { text: "글자 높이 최대 %" }), lhMax]),
+      ]),
+      el("div", { class: "settings-inline settings-jig-actions" }, [dragBtn, testBtn, jigSaveBtn]),
+      jigStatus,
+      engraveInfo,
+    ]);
+
+    const right = el("div", { class: "settings-col settings-controls" }, [cameraSection, imageSection, jigSection]);
+    const body = el("div", { class: "settings-body" }, [left, right]);
+
+    const status = el("p", { class: "note settings-status" });
+    const resetBtn = el("button", { type: "button", class: "btn btn-ghost", text: "권장값으로" });
+    const saveBtn = el("button", { type: "button", class: "btn btn-primary", text: "저장하고 적용" });
+    const footer = el("div", { class: "settings-footer" }, [
+      status,
+      el("div", { class: "settings-actions" }, [resetBtn, saveBtn]),
+    ]);
+    wrap.append(body, footer);
+
+    let recommended = null;
+    let limitsCache = null;
+    let evCache = null;
+    function markDirty() {
+      status.className = "note settings-status";
+      status.textContent = "바뀐 값이 있습니다. 저장하면 카메라에 바로 겁니다.";
+    }
+
+    function fill(settings, limits = limitsCache, evLabels = evCache) {
+      if (limits) limitsCache = limits;
+      if (evLabels) evCache = evLabels;
+      for (const sl of SLIDERS) {
+        const [lo, hi] = limits?.[sl.key] || [0, 255];
+        for (const input of [inputs[sl.key].range, inputs[sl.key].num]) {
+          input.min = String(lo);
+          input.max = String(hi);
+          input.step = "1";
+          input.value = String(settings[sl.key]);
+        }
+      }
+      ledSel.value = String(settings.ledLevel || 0);
+      if (evLabels && !evSel.options.length) {
+        evLabels.forEach((label, idx) => {
+          if (label === "FLK") return;
+          evSel.appendChild(el("option", { value: String(idx), text: label === "Auto" ? "자동 (Auto)" : label }));
+        });
+      }
+      evSel.value = String(settings.ev);
+    }
+
+    function readForm() {
+      const out = {};
+      for (const sl of SLIDERS) out[sl.key] = Number(inputs[sl.key].num.value);
+      out.ledLevel = Number(ledSel.value);
+      out.ev = Number(evSel.value);
+      return out;
+    }
+
+    function describeSaved(data) {
+      const s = data.settings || {};
+      const when = s.savedAt ? new Date(s.savedAt).toLocaleString("ko-KR", { hour12: false }) : "";
+      return s.saved ? `저장됨 · ${when}` : "저장된 값 없음 · 권장값 사용 중";
+    }
+
+    async function refreshPreview() {
+      previewBtn.disabled = true;
+      previewEmpty.textContent = "미리보기를 불러오는 중…";
+      try {
+        const res = await fetch("/api/camera-preview?t=" + Date.now());
+        if (!res.ok) throw new Error("미리보기 실패");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        previewImg.onload = () => URL.revokeObjectURL(url);
+        previewImg.src = url;
+        previewImg.hidden = false;
+        previewEmpty.hidden = true;
+        previewNote.textContent = state.running ? "감시 중 라이브 화면" : "감시 중이 아니면 LED가 꺼져 있어 어둡게 보일 수 있습니다.";
+      } catch (err) {
+        previewImg.hidden = true;
+        previewEmpty.hidden = false;
+        previewEmpty.textContent = "미리보기를 받지 못했습니다. UM Viewer가 켜져 있으면 닫아 주세요.";
+      } finally {
+        previewBtn.disabled = false;
+      }
+    }
+
+    async function load() {
+      const data = await api("/api/camera-settings");
+      recommended = data.recommended;
+      fill(data.settings, data.limits, data.evLabels);
+      status.className = "note settings-status";
+      status.textContent = describeSaved(data);
+    }
+
+    async function save(path, payload) {
+      saveBtn.disabled = true;
+      resetBtn.disabled = true;
+      status.className = "note settings-status";
+      status.textContent = "카메라에 거는 중… (몇 초 걸립니다)";
+      try {
+        const data = await api(path, { method: path.endsWith("/reset") ? "POST" : "PUT", body: JSON.stringify(payload || {}) });
+        fill(data.settings, data.limits, data.evLabels);
+        const uvcOk = data.applied?.uvc?.ok;
+        status.className = "note settings-status " + (uvcOk === false ? "bad" : "ok");
+        status.textContent =
+          uvcOk === false
+            ? `저장했지만 카메라에 걸지 못했습니다(${data.applied?.uvc?.reason || "오류"}). 감시 시작 때 다시 겁니다.`
+            : "저장하고 적용했습니다. " + describeSaved(data);
+        await refreshPreview();
+      } catch (err) {
+        status.className = "note settings-status bad";
+        status.textContent = err.message || "저장에 실패했습니다.";
+      } finally {
+        saveBtn.disabled = false;
+        resetBtn.disabled = false;
+      }
+    }
+
+    // ---- 지그 프로필 ----
+    let jigState = { active: "", profiles: [] };
+    let dragMode = false;
+    const pct = (v) => Math.round(Number(v) * 1000) / 10;
+    function markJigDirty() {
+      jigStatus.className = "settings-hint";
+      jigStatus.textContent = "바뀐 지그 값이 있습니다. ‘지그 저장’을 누르면 인식에 씁니다.";
+    }
+    function readRoi() {
+      const v = (k) => Math.max(0, Math.min(100, Number(roiInputs[k].value) || 0)) / 100;
+      return { x: v("x"), y: v("y"), w: v("w"), h: v("h") };
+    }
+    function readProfile() {
+      const cur = jigState.profiles.find((p) => p.id === jigSel.value) || {};
+      return {
+        ...cur,
+        id: jigSel.value,
+        name: jigName.value.trim() || cur.name,
+        roi: readRoi(),
+        letterH: { min: (Number(lhMin.value) || 8.5) / 100, max: (Number(lhMax.value) || 16.5) / 100 },
+      };
+    }
+    function drawRoi(roi) {
+      roiRect.hidden = !roi;
+      if (!roi) return;
+      Object.assign(roiRect.style, { left: `${roi.x * 100}%`, top: `${roi.y * 100}%`, width: `${roi.w * 100}%`, height: `${roi.h * 100}%` });
+    }
+    function fillJig(p) {
+      if (!p) return;
+      jigName.value = p.name || "";
+      roiInputs.x.value = pct(p.roi.x);
+      roiInputs.y.value = pct(p.roi.y);
+      roiInputs.w.value = pct(p.roi.w);
+      roiInputs.h.value = pct(p.roi.h);
+      lhMin.value = pct(p.letterH.min);
+      lhMax.value = pct(p.letterH.max);
+      drawRoi(p.roi);
+      hitLayer.replaceChildren();
+    }
+    function renderJigs(data) {
+      jigState = { active: data.active, profiles: data.profiles || [] };
+      jigSel.replaceChildren(
+        ...jigState.profiles.map((p) => el("option", { value: p.id, text: p.id === data.active ? `${p.name} · 사용 중` : p.name })),
+      );
+      jigSel.value = data.active;
+      fillJig(jigState.profiles.find((p) => p.id === data.active));
+    }
+    async function loadJigs() {
+      renderJigs(await api("/api/jig-profiles"));
+      const st = await api("/api/engrave/status").catch(() => null);
+      if (st) {
+        const m = st.model?.file ? `모델 ${st.model.file}` : "모델 없음";
+        const d = st.dataset || {};
+        engraveInfo.textContent = `${m} · 학습 표본 ${d.samples || 0}개(글자 위치 있음 ${d.boxed || 0}개)`;
+      }
+    }
+    /** 회전된 ROI 기준 상자(0–1) → 프레임 비율. */
+    function boxToFrame(b, rot, roi) {
+      const pt = (u, v) => {
+        const r = ((rot % 360) + 360) % 360;
+        const [a, c] = r === 90 ? [v, 1 - u] : r === 180 ? [1 - u, 1 - v] : r === 270 ? [1 - v, u] : [u, v];
+        return [roi.x + a * roi.w, roi.y + c * roi.h];
+      };
+      const p1 = pt(b[0], b[1]);
+      const p2 = pt(b[2], b[3]);
+      return { x: Math.min(p1[0], p2[0]), y: Math.min(p1[1], p2[1]), w: Math.abs(p2[0] - p1[0]), h: Math.abs(p2[1] - p1[1]) };
+    }
+    jigSel.addEventListener("change", () => {
+      api("/api/jig-profiles/select", { method: "POST", body: JSON.stringify({ id: jigSel.value }) })
+        .then((data) => {
+          renderJigs(data);
+          jigStatus.className = "settings-hint ok";
+          jigStatus.textContent = "이 지그 프로필로 인식합니다.";
+        })
+        .catch((err) => {
+          jigStatus.className = "settings-hint bad";
+          jigStatus.textContent = err.message || "프로필 선택 실패";
+        });
+    });
+    jigDupBtn.addEventListener("click", () => {
+      const name = `${jigName.value.trim() || "지그"} 복사본`;
+      api("/api/jig-profiles/duplicate", { method: "POST", body: JSON.stringify({ id: jigSel.value, name }) })
+        .then((data) => {
+          renderJigs(data);
+          jigStatus.className = "settings-hint ok";
+          jigStatus.textContent = "복제했습니다. 이름과 영역을 고친 뒤 ‘지그 저장’을 누르세요.";
+          jigName.focus();
+          jigName.select();
+        })
+        .catch((err) => {
+          jigStatus.className = "settings-hint bad";
+          jigStatus.textContent = err.message || "복제 실패";
+        });
+    });
+    jigName.addEventListener("input", markJigDirty);
+    jigSaveBtn.addEventListener("click", () => {
+      jigSaveBtn.disabled = true;
+      api("/api/jig-profiles", { method: "PUT", body: JSON.stringify({ profile: readProfile(), activate: true }) })
+        .then((data) => {
+          renderJigs(data);
+          jigStatus.className = "settings-hint ok";
+          jigStatus.textContent = "지그를 저장했습니다. 다음 인식부터 씁니다.";
+        })
+        .catch((err) => {
+          jigStatus.className = "settings-hint bad";
+          jigStatus.textContent = err.message || "저장 실패";
+        })
+        .finally(() => {
+          jigSaveBtn.disabled = false;
+        });
+    });
+    testBtn.addEventListener("click", () => {
+      testBtn.disabled = true;
+      jigStatus.className = "settings-hint";
+      jigStatus.textContent = "판독 중… (매칭·저장은 하지 않습니다)";
+      const profile = readProfile();
+      api("/api/engrave/test", { method: "POST", body: JSON.stringify({ profile }) })
+        .then(async (data) => {
+          await refreshPreview();
+          const r = data.result || {};
+          hitLayer.replaceChildren();
+          for (const b of r.boxes || []) {
+            const f = boxToFrame(b, r.rotation || 0, profile.roi);
+            const hit = el("div", { class: `roi-hit ${r.success ? "ok" : ""}` });
+            Object.assign(hit.style, { left: `${f.x * 100}%`, top: `${f.y * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%` });
+            hitLayer.appendChild(hit);
+          }
+          const why = { "not_in_queue": "대기 목록에 없음", ambiguous: "다른 코드와 비슷함", "low-confidence": "확신 낮음", "no-model": "모델 없음" };
+          jigStatus.className = `settings-hint ${r.success ? "ok" : "bad"}`;
+          jigStatus.textContent = r.success
+            ? `읽음: ${r.lot} (신뢰도 ${r.confidence}, ${r.rotation}°, ${data.ms}ms)`
+            : `확정 못 함: ${why[r.reason] || r.reason || "실패"}${r.top ? ` · 1위 ${r.top}` : ""}`;
+        })
+        .catch((err) => {
+          jigStatus.className = "settings-hint bad";
+          jigStatus.textContent = err.message || "판독 시험 실패";
+        })
+        .finally(() => {
+          testBtn.disabled = false;
+        });
+    });
+    dragBtn.addEventListener("click", () => {
+      dragMode = !dragMode;
+      roiLayer.classList.toggle("drawing", dragMode);
+      dragBtn.textContent = dragMode ? "그리기 끝내기" : "미리보기에서 영역 그리기";
+      if (dragMode) {
+        jigStatus.className = "settings-hint";
+        jigStatus.textContent = "미리보기에서 각인 면을 드래그해 감싸세요.";
+      }
+    });
+    let dragStart = null;
+    const posOf = (ev) => {
+      const r = roiLayer.getBoundingClientRect();
+      return [Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height))];
+    };
+    roiLayer.addEventListener("pointerdown", (ev) => {
+      if (!dragMode) return;
+      dragStart = posOf(ev);
+      roiLayer.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+    roiLayer.addEventListener("pointermove", (ev) => {
+      if (!dragMode || !dragStart) return;
+      const [x, y] = posOf(ev);
+      const roi = { x: Math.min(x, dragStart[0]), y: Math.min(y, dragStart[1]), w: Math.abs(x - dragStart[0]), h: Math.abs(y - dragStart[1]) };
+      drawRoi(roi);
+      roiInputs.x.value = pct(roi.x);
+      roiInputs.y.value = pct(roi.y);
+      roiInputs.w.value = pct(roi.w);
+      roiInputs.h.value = pct(roi.h);
+    });
+    roiLayer.addEventListener("pointerup", () => {
+      if (!dragStart) return;
+      dragStart = null;
+      hitLayer.replaceChildren();
+      markJigDirty();
+    });
+
+    deviceSel.addEventListener("change", () => {
+      api("/devices", { method: "POST", body: JSON.stringify({ device: deviceSel.value }) })
+        .then(() => {
+          status.className = "note settings-status ok";
+          status.textContent = "카메라를 바꿨습니다.";
+          return refreshPreview();
+        })
+        .catch((err) => {
+          status.className = "note settings-status bad";
+          status.textContent = err.message || "카메라 선택 실패";
+        });
+    });
+    refreshBtn.addEventListener("click", () => {
+      refreshBtn.disabled = true;
+      loadDevices(deviceSel)
+        .catch((err) => {
+          status.className = "note settings-status bad";
+          status.textContent = err.message || "카메라 목록 실패";
+        })
+        .finally(() => {
+          refreshBtn.disabled = false;
+        });
+    });
+    previewBtn.addEventListener("click", () => void refreshPreview());
+    resetBtn.addEventListener("click", () => {
+      if (recommended) fill(recommended);
+      void save("/api/camera-settings/reset");
+    });
+    saveBtn.addEventListener("click", () => void save("/api/camera-settings", { settings: readForm(), apply: true }));
+
+    openModal("카메라 · 화질 · 각인 인식 설정", wrap);
+    const shell = els.modal?.querySelector(".modal");
+    if (shell) shell.classList.add("modal-wide", "modal-settings");
+    loadDevices(deviceSel).catch(() => undefined);
+    load().catch((err) => {
+      status.className = "note settings-status bad";
+      status.textContent = err.message || "설정을 불러오지 못했습니다.";
+    });
+    loadJigs().catch((err) => {
+      jigStatus.className = "settings-hint bad";
+      jigStatus.textContent = err.message || "지그 프로필을 불러오지 못했습니다.";
+    });
+    void refreshPreview();
   }
 
   function openModal(title, bodyNode) {
     els.modalTitle.textContent = title;
     els.modalBody.replaceChildren(bodyNode);
     const shell = els.modal?.querySelector(".modal");
-    if (shell) shell.classList.remove("modal-wide");
+    if (shell) shell.classList.remove("modal-wide", "modal-settings");
     els.modal.classList.add("open");
   }
 
   function closeModal() {
     els.modal.classList.remove("open");
     const shell = els.modal?.querySelector(".modal");
-    if (shell) shell.classList.remove("modal-wide");
+    if (shell) shell.classList.remove("modal-wide", "modal-settings");
   }
 
   async function openScrewModal() {
@@ -1217,15 +1733,8 @@
     void openMatchedPrintModal();
   });
 
-  els.refreshDevices.addEventListener("click", () => {
-    loadDevices().catch((err) => setNote(err.message || "카메라 목록 실패", "bad"));
-  });
-
-  els.device.addEventListener("change", () => {
-    api("/devices", {
-      method: "POST",
-      body: JSON.stringify({ device: els.device.value }),
-    }).catch((err) => setNote(err.message || "카메라 선택 실패", "bad"));
+  els.settingsBtn?.addEventListener("click", () => {
+    void openSettingsModal();
   });
 
   els.vialBtn.addEventListener("click", () => {
@@ -1240,6 +1749,9 @@
   els.modalClose.addEventListener("click", closeModal);
   els.modal.addEventListener("click", (ev) => {
     if (ev.target === els.modal) closeModal();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && els.modal.classList.contains("open")) closeModal();
   });
 
   function tickWatch() {
@@ -1267,7 +1779,7 @@
 
   setBusy(false);
   els.suffix.textContent = "—";
-  loadDevices().catch(() => undefined);
+  renderOcrLog([]);
   tickWatch();
   tickQueue();
   state.liveTimer = window.setInterval(() => {

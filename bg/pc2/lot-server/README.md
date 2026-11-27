@@ -110,3 +110,92 @@ ViTiny `mltcCom`(32비트, `vendor/vitiny`, `microscope-ctl.ps1`)은 이 UM20에
 
 - `/api/queue`는 백엔드 `/api/bg/packing/queue`(manufacturerStage=세척.패킹)에서 **우편함이 배정된 건만** 남긴다(`src/packing-queue.js`). 우편함 배정 규칙 이전에 남은 옛 건(우편함 없음)이 섞여 카드가 너무 많던 문제. `total`·직경 건수(`counts`)도 다시 세고, 숨긴 건수는 `hidden`.
 - `LOT_QUEUE_REQUIRE_MAILBOX=0`이면 거르지 않고 백엔드 목록을 그대로 쓴다.
+
+## 카메라·화질 설정 (2026-11-27)
+
+- 작업 화면 「감시」 줄의 톱니(설정) 버튼 → 모달: 카메라 선택·목록 새로고침, 밝기·대비·채도·색조(UVC), LED 단계·노출 EV(UM20 시리얼), 미리보기, 권장값으로, 저장하고 적용. Esc·바깥 클릭으로 닫는다.
+- 저장: `data/camera-settings.json`(`LOT_CAMERA_SETTINGS`로 경로 변경). 재시작 후에도 유지. 감시 시작 때 UVC 값·LED 단계·EV를 건다.
+- 권장값: 밝기·대비·채도 128, 색조 0, EV Auto, LED 유지. UM Viewer와 같은 화면(평균 밝기 ~85). 예전처럼 255면 평균 ~200으로 하얗게 날아간다. `LOT_UVC_BRIGHTNESS`·`LOT_UVC_CONTRAST`·`LOT_UVC_SATURATION`·`LOT_UVC_HUE`·`LOT_UM_EV`(0–19, 10=Auto)로 권장값을 바꿀 수 있다.
+- API: `GET /api/camera-settings`, `PUT /api/camera-settings` `{ settings, apply }`, `POST /api/camera-settings/reset`, `GET /api/camera-preview`(jpeg).
+- UvcTool.exe: `UvcTool.exe "<장치>" [apply|get|set] [brightness=128,contrast=128,...]`.
+- EV(시리얼): 레지스터 0x16(UM20 0–19, 10=Auto, 7=FLK), 키 0x26(+)/0x27(-). `um-serial.ps1 -Action ev -Ev 10`.
+
+## 인식 안전장치 (2026-11-27)
+
+- 감시·수동 인식 결과는 지금 세척.패킹 대기 목록(우편함 배정 건)에 있는 3글자일 때만 낸다. 목록을 못 받으면 결과를 내지 않는다.
+- 같은 코드를 `LOT_OCR_CONFIRM`(기본 2)번 연속 읽어야 확정. 엇갈리면 버린다.
+- 1위 판독이 목록 밖이면 버리고(로그 `ocr rejected`), 목록 안의 약한 후보로 바꾸지 않는다.
+
+## 각인 전용 인식 (2026-11-27)
+
+테두리만 진한 양각 3글자 각인은 Tesseract로 안정적으로 못 읽어, 이 PC 안에서만 도는 전용 인식기를 쓴다(외부 AI·클라우드 없음).
+
+- 순서: 활성 **지그 프로필**의 ROI(각인 면 영역)를 자른다 → 0/90/180/270도로 돌린다 → 글자 높이·글자 간격 가설마다 32×48 칸으로 맞춰 칸마다 특징(HOG 기울기 방향 + 밝기 블록)을 뽑는다 → 작은 신경망(MLP, A–Z + 배경)이 칸마다 글자 확률을 낸다 → 이웃한 세 칸이 한 코드.
+- 확정 조건: 세 글자 모두 확률 0.45↑, 1위가 세척.패킹 대기 목록에 있음, 대기 목록 안 다른 코드보다 증거가 4배↑. 1위가 목록 밖이면 `not_in_queue`로 버린다(목록 안 2위로 바꾸지 않는다). 목록 밖 오독은 마진 계산에 넣지 않는다. 감시는 여기에 2회 연속 같은 판독(`LOT_OCR_CONFIRM`)을 더 요구한다.
+- `LOT_RECOGNIZER=engrave`(기본, 각인 모델만) · `both`(각인이 못 읽으면 Tesseract도) · `tesseract`(이전 방식).
+- 코드(개발용 지도):
+  - `src/engrave/features.js` 32×48 칸 특징(HOG 9방향×4×6 + 밝기 4×6 = 240차원, 적분 영상으로 격자 전체 빠르게)
+  - `src/engrave/mlp.js` 240→96→27 MLP(A–Z + 배경 `_`), SGD 학습, JSON 저장 형식 `engrave-mlp-1`
+  - `src/engrave/recognize.js` `scanFrame`(ROI·회전·글자 높이 5단계×피치 3단계 격자) · `codeEvidence`(코드별 최고 창과 그 근처 증거) · `recognizeEngraving`(확정 규칙) · `locateCode`(아는 코드 위치) · `locationTrusted`
+  - `src/engrave/crops.js` 회색조·ROI·회전(`rotateGray`/`rotatePoint`/`rotateBox` 같은 규칙)·칸 자르기·밝기 증강
+  - `src/engrave/synth.js` 합성 각인(SVG 글꼴 윤곽·halo·면, 실측 금속면 조각 위에)
+  - `src/engrave/train-data.js` 합성/실측 표본, 실측 바탕 조각, 어려운 배경 찾기
+  - `src/engrave/dataset.js` 표본 저장·목록 · `src/engrave/model-store.js` 모델 버전 · `src/engrave/annotations.js` 라벨 좌표 변환
+  - `src/jig-profiles.js` 지그 프로필 · `src/ocr/index.js` `recognizeLot`(각인 → 필요하면 Tesseract) · `src/index.js` API·표본 수집
+  - `scripts/` seed·add·train·eval, 시험 `test/engrave.test.js`, 실측 라벨 `test/fixtures/engrave-annotations.json`(24장)
+- API: `GET/PUT /api/jig-profiles`, `POST /api/jig-profiles/select {id}`, `POST /api/jig-profiles/duplicate {id,name}`, `GET /api/engrave/status`, `POST /api/engrave/test {profile?, queueOnly?}`(판독만).
+- 속도: 지그 1은 회전 `90/270`만 훑어 한 장 판독을 줄인다. 감시 폴링·안정 프레임·버스트·홀드는 `local.env`(`LOT_WATCH_POLL_MS` 등). 확정은 기본 2회(`LOT_OCR_CONFIRM`)이며 2번째 촬영은 라이브 1장(quick). 촬영·인식은 화면 아래 가로 로그 카드(`ocrLog`)로 한 줄씩 쌓인다.
+
+### 지그 프로필 (ROI 설정)
+
+- 톱니 → 설정 모달 → **각인 인식 · 지그**. 프로필 선택(바로 사용), **복제**, 이름, ROI(X/Y/폭/높이, 프레임 대비 %), 글자 높이 범위(프레임 높이 대비 %).
+- **미리보기에서 영역 그리기**를 누르고 미리보기에서 각인 면을 드래그 → **판독 시험**(미리보기 한 장으로 판독만, 매칭·저장 없음, 찾은 글자 상자를 초록/빨강으로 표시) → **지그 저장**.
+- 지그를 바꾸면: 기존 프로필을 복제 → 영역만 새로 그리기 → 저장. 다시 학습할 필요 없다(분류기와 데이터셋은 ROI 상대 좌표·정규화 글자라 지그와 무관).
+- 저장 파일: `data/jig-profiles.json`(`LOT_JIG_PROFILES`). 기본 프로필 `jig-1`(2026-11 지그): ROI x 33%·y 12%·폭 25%·높이 56%, 글자 높이 8.5–16.5%.
+
+### 학습 데이터 모으기
+
+- 작업 화면에서 매칭이 성공하면(카드 직접 선택·자동 인식 모두) 그 코드로 표본을 하나 저장한다: 같은 코드의 마지막 확정 촬영(10분 안) 또는 감시 중 라이브 프레임. 감시를 켜 둔 채 부품을 올리고 카드를 누르면 모인다. 끄기 `LOT_ENGRAVE_COLLECT=0`.
+- 위치: `data/engrave-dataset/samples/YYYYMMDD/HHMMSS-mmm-CODE/`(`LOT_ENGRAVE_DATASET`)
+  - `frame.jpg`(전체 프레임), `roi.jpg`(ROI 크롭, 회전 전), `letters/0-B.png …`(바로 세운 32×48 글자), `meta.json`(코드·글자·지그 프로필 id/이름·ROI·회전·회전된 ROI 기준 0–1 글자 상자·화질 설정·출처·요청 id·시각).
+  - 지금 모델로 글자 위치를 믿기 어려우면(코드 확률 0.35 미만이고 세 칸 글자다움 0.6 미만) 상자 없이 저장한다(학습에는 안 쓰고 나중에 라벨을 붙일 수 있게 남김).
+- 처음 표본: `npm run seed:engrave`(test/fixtures/engrave-annotations.json의 실측 23장: BYU·BYK·BDZ + 대기 건 UM Viewer 캡처 BYX·BZB·BYW·BYT·BYV·BZA·BYY·BYZ·BZC, 이미 있으면 건너뜀).
+- 코드를 아는 사진 직접 넣기(UM Viewer 캡처 등, 지금 활성 지그 ROI 기준): `npm run add:engrave -- D:\bg\lot-server\images\<사진>.jpg=BYX …` → 표본 폴더의 `check.png`(찾은 글자 상자)를 눈으로 확인. 틀렸으면 그 표본 폴더를 지우고(다른 곳으로 옮기고) 다시 학습.
+
+### 다시 학습
+
+```powershell
+cd D:\bg\lot-server
+npm run train:engrave            # 합성 2000장(희소·혼동 글자·기하 획 보조) + 데이터셋 전체(+어려운 배경 3회), 은닉 96, 약 4–8분
+npm run eval:engrave             # fixtures 라벨 프레임(코드별 집계). 날아간 장 제외: --skip-washed
+npm run eval:engrave -- --dataset   # 위 + data/engrave-dataset 표본
+npm run holdout:engrave -- --codes BYV,BYW,BYT   # 해당 코드를 학습에서 빼고 정확도 측정(감시·매칭 없음)
+D:\bg\lot-server\nssm.exe restart AbutsLotServer   # 모델 파일은 바뀌면 자동으로 다시 읽는다(재시작은 선택)
+```
+
+- 결과: `data/engrave-models/model-<시각>.json` 새 버전, `current.json`이 가리킨다(`previous`에 이전 버전). 이전 파일은 지우지 않는다.
+- 되돌리기: `data/engrave-models/current.json`의 `file`을 이전 파일 이름으로 바꾼다. 데이터 모델이 없으면 코드에 든 기본 모델 `src/engrave/model-default.json`을 쓴다.
+- 학습은 항상 합성 각인 + 데이터셋의 모든 표본(모든 지그)을 합친다. 실측 바탕 질감 조각도 데이터셋에서 가져온다. 합성은 희소·혼동 글자(V/Y, T/I, W…)에 기하 획을 섞어 홀드아웃을 보강한다.
+- 홀드아웃: `npm run holdout:engrave -- --codes BYV,BYW,BYT`(코드 단위, 해당 글자 실측 없음) · `npm run holdout:engrave -- --lof`(같은 코드의 다른 장으로 일반화). 희소 글자 코드는 작업 화면에서 카드 매칭으로 표본을 더 모은 뒤 재학습하는 편이 안전하다.
+- 검증용: `npm run train:engrave -- --exclude BYK --out D:\tmp\m.json` 후 `node scripts/eval-engrave.mjs --model D:\tmp\m.json --only BYK --skip-washed`.
+- 코드에 라벨이 붙은 `images/` 파일(`…-BDZ.jpg` 또는 `…=BYX.jpg`)도 `npm run eval:engrave -- --images D:\bg\lot-server\images`로 볼 수 있다. 시험 중에는 감시(watch)를 끄고 `/api/match`를 호출하지 않는다.
+
+### 지그 추가
+
+1. 작업 화면 톱니 → **각인 인식 · 지그** → 기존 프로필 **복제** → 이름 수정.
+2. **미리보기에서 영역 그리기**로 새 지그의 각인 면을 드래그 → **판독 시험**(매칭·저장 없음) → **지그 저장**.
+3. 글자 데이터셋·모델은 그대로 둔다(ROI만 바뀜). `data/jig-profiles.json`에 쌓인다.
+
+### 백업·복원
+
+- `data/`(engrave-dataset, engrave-models, jig-profiles.json, camera-settings.json)는 코드 배포·덮어쓰기 대상이 아니다. 코드를 새로 풀 때 `data/`를 지우거나 덮지 않는다.
+- 백업(예시):
+
+```powershell
+$ts = Get-Date -Format "yyyyMMdd-HHmmss"
+robocopy D:\bg\lot-server\data D:\bg\backup\lot-server-data-$ts /E
+# 또는 프로젝트 전체( node_modules 제외 ):
+robocopy D:\bg\lot-server D:\bg\lot-server-backup-$ts /E /XD node_modules captures logs ocr-cache
+```
+
+- 복원: 백업의 `data`를 `D:\bg\lot-server\data`로 다시 복사 → 필요하면 `npm run train:engrave`(또는 백업한 `engrave-models/current.json` 그대로) → `nssm.exe restart AbutsLotServer`.

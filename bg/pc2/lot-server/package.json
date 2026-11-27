@@ -1,13 +1,18 @@
 {
   "name": "abuts-lot-server",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "capture": "node src/index.js --once",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "train:engrave": "node scripts/train-engrave.mjs",
+    "seed:engrave": "node scripts/seed-engrave.mjs",
+    "eval:engrave": "node scripts/eval-engrave.mjs",
+    "holdout:engrave": "node scripts/holdout-engrave.mjs",
+    "add:engrave": "node scripts/add-engrave.mjs"
   },
   "dependencies": {
     "ffmpeg-static": "^5.2.0",

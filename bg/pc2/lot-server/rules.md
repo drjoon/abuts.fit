@@ -53,3 +53,7 @@
 - [ ] 루트 rules와 충돌 여부 점검
 
 - 작업 화면 의뢰 카드(`/api/queue`)는 우편함이 배정된 세척.패킹 건만 보낸다(`src/packing-queue.js`, `LOT_QUEUE_REQUIRE_MAILBOX`).
+- 화질(2026-11-27): UVC 밝기를 255로 고정하지 않는다(금속면이 하얗게 날아가 각인을 못 읽었다). 권장 밝기·대비·채도 128, 색조 0, EV Auto. 작업 화면 톱니(설정) 모달에서 바꾸고 `data/camera-settings.json`에 저장(`src/camera-settings.js`). 감시 시작·수동 촬영 때 저장값을 건다.
+- 인식 안전(2026-11-27): 감시·수동 인식 결과는 지금 세척.패킹 대기 목록(우편함 배정)에 있는 코드일 때만 낸다. 목록을 못 받으면 결과 없음. 같은 코드를 `LOT_OCR_CONFIRM`(기본 2)번 연속 읽어야 확정. 1위가 목록 밖이면 버린다(목록 안 2위로 바꾸지 않는다). 끄기 `LOT_OCR_QUEUE_ONLY=0`(권장하지 않음).
+- 테스트 중에는 감시를 멈추고 `/api/match`를 부르지 않는다(작업 화면은 인식되면 자동으로 매칭해 포장.발송으로 넘긴다).
+- 각인 인식(2026-11-27): 기본 `LOT_RECOGNIZER=engrave` — `src/engrave`(ROI→회전→칸 특징→MLP, 로컬). 지그별 ROI는 `data/jig-profiles.json`, 학습 데이터 `data/engrave-dataset`, 모델 버전 `data/engrave-models`(current.json, 이전 버전 보존). `data/`는 배포로 덮지 않는다. 매칭 성공 때 표본 저장(`LOT_ENGRAVE_COLLECT`), 재학습 `npm run train:engrave`.

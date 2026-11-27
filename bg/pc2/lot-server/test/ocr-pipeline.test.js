@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-27: 인쇄체 합성 이미지 판독은 Tesseract 경로(recognizeLotTesseract)로 시험한다(기본 recognizeLot은 각인 전용).
 // - 2026-11-26: 완전한 JPEG 판별·Otsu·글자 영역·투표·합성 이미지 OCR(학습 데이터 캐시가 있을 때만).
 // related files:
 // - bg/pc2/lot-server2/src/camera.js
@@ -69,7 +70,7 @@ const hasTrainedData =
   fs.existsSync(path.join(OCR_CACHE_DIR, "eng.traineddata")) || Boolean(process.env.LOT_OCR_LANG_PATH);
 
 test("합성 각인 이미지에서 3글자를 읽는다", { skip: !hasTrainedData && "ocr-cache/eng.traineddata 없음" }, async () => {
-  const { recognizeLot, disposeOcrWorker } = await import("../src/ocr/index.js");
+  const { recognizeLotTesseract: recognizeLot, disposeOcrWorker } = await import("../src/ocr/index.js");
   try {
     for (const [text, opts] of [
       ["KXR", {}],
