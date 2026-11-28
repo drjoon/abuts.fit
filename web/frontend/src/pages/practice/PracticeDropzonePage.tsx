@@ -117,7 +117,7 @@ import { COMPANY_PHONE } from "@/shared/lib/contactInfo";
 import {
   getFile as getFileFromIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
-} from "@/shared/storage/fileIndexedDB";
+} from "@/pages/requestor/new_request/utils/fileIndexedDB";
 import {
   PRACTICE_ACCEPTED_HINT,
   getBusinessLabel,
