@@ -2,7 +2,7 @@
 // - web/backend/models/labOralScanCase.model.js
 // - web/backend/modules/labOralScanCases/labOralScanCase.routes.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-// 기공소 「커스텀어벗 의뢰하기」 스캔 케이스 CRUD.
+// 기공소 「어벗 디자인으로 의뢰하기」 스캔 케이스 CRUD.
 import { Types } from "mongoose";
 import LabOralScanCase from "../../models/labOralScanCase.model.js";
 import {

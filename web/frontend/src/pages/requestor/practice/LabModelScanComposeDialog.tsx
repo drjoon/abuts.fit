@@ -1249,7 +1249,7 @@ export function LabModelScanComposeDialog({
                   },
                   lockedAbutmentProductMode:
                     ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-                  alternateAbutmentModePageLabel: "커스텀어벗 의뢰하기",
+                  alternateAbutmentModePageLabel: "어벗 디자인으로 의뢰하기",
                   onAlternateAbutmentModeNavigate: () => {
                     onOpenChange(false);
                     navigate("/dashboard/new-request");

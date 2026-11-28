@@ -231,7 +231,7 @@
   - 크레딧은 선불전자지급수단(선불페이)이 아니라 **B2B 거래 선수금/예치금**(플랫폼 내 계약 물품·용역: 기공·커스텀어벗·스토어 기성품만). 충전 화면·FAQ·약관·입금 확인에 `크레딧(거래 선수금)`을 명시한다.
   - 크레딧 충전: `vatAmount = 0`, `amountTotal = supplyAmount`. **입금(충전) 시점에는 (세금)계산서를 발행하지 않는다.** 선결제 크레딧은 **어벗츠 커스텀어벗 주문**에만 쓴다(기공소·기공실 있는 치과).
   - **치과 기공비 직접 입금**: 외부 기공소 수행 기공비(`labFeeTotal`+`labAbutmentTotal`)는 KST 익월 1일 `PracticeLabDirectSettlement`로 치과·기공소에 보여 주고, 치과가 기공소 계좌로 직접 입금한다. 회사는 이 금액을 받아 다시 보내지 않는다. 기공소가 내역·총액을 고친 뒤 입금 확인을 하면, `taxInvoice.trusteeIssueEnabled === true`(기본 `null`, `updatedAt` 있는 명시 답만)일 때만 `LAB_TO_PRACTICE` 면세 위수탁을 발행한다. 커스텀어벗 제작비는 선결제 크레딧만 쓰고 이 기공비와 상계하지 않는다. 신규 외부 기공비는 `LAB_SETTLEMENT_CREDIT`에 넣지 않는다. 정산서에 들어간 기존 적립만 월 지급액에서 뺀다.
-  - **월말 선결제 증빙**: 기공소·기공실 있는 치과가 커스텀어벗 의뢰하기로 올린 사용분(`REQUEST_SPEND_COMMIT`)만 어벗츠 법인 면세 계산서(`ABUTS_TO_CUSTOMER`, SELF). 스토어·기공서비스·배송은 이 월합에 넣지 않는다.
+  - **월말 선결제 증빙**: 기공소·기공실 있는 치과가 어벗 디자인으로 의뢰하기로 올린 사용분(`REQUEST_SPEND_COMMIT`)만 어벗츠 법인 면세 계산서(`ABUTS_TO_CUSTOMER`, SELF). 스토어·기공서비스·배송은 이 월합에 넣지 않는다.
   - 의뢰자 소비·기공 `REV_ADMIN` 잔여: 공급가 기준, `vatAmount = 0`(면세). 제조사·딜러·개발운영 `REV_*`는 적립 시 공급가+VAT 기록, **잔액·미정산=포함가**.
   - 제조사·딜러사·개발운영사 장부=포함가. 지급은 잔액 그대로(`SETTLEMENT_PAYOUT`: `amount`/`amountIncludingVat`=입금=잔액 차감, `amountExcludingVat`/`vatAmount`=세금계산서 분해).
   - 보존식·의뢰자 잔액 집계는 `amountExcludingVat`(없으면 `amount`) = 공급가. 제조사·딜러사·개발운영사 지급 VAT는 어벗츠 추가 지급분(의뢰자 크레딧에서 차감하지 않음).
@@ -263,9 +263,9 @@
   - `PRACTICE_MEMBERSHIP_SPEND`(레거시 치과 멤버십 월 구독. 신규 과금 없음)
   - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`, `STORE_SALE`, `REFUND`
   - `OB_MONTHLY_SETTLEMENT` (치과 오픈뱅킹 월말 일괄정산 완료)
-- **치과 기공의뢰 후불(수기 입금) + 커스텀어벗 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-24)**:
-  - **월 후불 한도 없음**: 스토어는 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). 치과는 출금동의 없이 정산한다(`isPracticeObPostpaidActive`). 계좌 이체는 자동화하지 않는다. **신규 기공의뢰(PTX)는 잔액이 이번 견적보다 적으면 접수하지 않고 에러를 낸다.** 전송 완료로 보이지 않는다. **기공소·기공실 있는 치과의 커스텀어벗 의뢰하기(`Request`)는 선불 크레딧**이다.
-  - **기공소 커스텀어벗 의뢰하기(커스텀어벗 `Request`)**: 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy`). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. **미납으로 신규 기공의뢰를 막지 않는다.** 관리자 대시보드 「런칭 - 실사용 전환」 확인 시 `SystemSettings.practiceLaunch.status=live`로 기록하고 베타를 끈다. 그때 미납 정지와 일반 기공소 충전 크레딧 결제가 켜지고, 모달에 보인 관리자 할 일·플랫폼 할 일 목록을 그 문서에 남긴다(`practiceLaunch.service.js`). `PRACTICE_OB_LAUNCH_BETA=false`도 베타를 끈다. 치과 `Request`는 선불이다. 신규 PTX 기공비·어벗 소매는 잔액이 견적 미만이면 접수하지 않는다. 미납 정지와는 별개다. 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
+- **치과 기공의뢰 후불(수기 입금) + 어벗 디자인으로 의뢰하기 선불 크레딧 + 대형 치과 보증금 SSOT (2026-10-24)**:
+  - **월 후불 한도 없음**: 스토어는 후불이다. 한도를 두지 않는다(`monthlyCreditLimit` 폐기). 치과는 출금동의 없이 정산한다(`isPracticeObPostpaidActive`). 계좌 이체는 자동화하지 않는다. **신규 기공의뢰(PTX)는 잔액이 이번 견적보다 적으면 접수하지 않고 에러를 낸다.** 전송 완료로 보이지 않는다. **기공소·기공실 있는 치과의 어벗 디자인으로 의뢰하기(`Request`)는 선불 크레딧**이다.
+  - **기공소 어벗 디자인으로 의뢰하기(커스텀어벗 `Request`)**: 기공소는 **선충전·무료 크레딧만**(`resolveLabCustomAbutmentCreditHoldPolicy`). **런칭 전 베타** ON이면 일반 기공소는 무료크레딧만·`테스트기공소`만 충전 테스트. **미납으로 신규 기공의뢰를 막지 않는다.** 관리자 대시보드 「런칭 - 실사용 전환」 확인 시 `SystemSettings.practiceLaunch.status=live`로 기록하고 베타를 끈다. 그때 미납 정지와 일반 기공소 충전 크레딧 결제가 켜지고, 모달에 보인 관리자 할 일·플랫폼 할 일 목록을 그 문서에 남긴다(`practiceLaunch.service.js`). `PRACTICE_OB_LAUNCH_BETA=false`도 베타를 끈다. 치과 `Request`는 선불이다. 신규 PTX 기공비·어벗 소매는 잔액이 견적 미만이면 접수하지 않는다. 미납 정지와는 별개다. 정산 잠금은 `Request`에 적용하지 않는다(`checkCreditLock`은 ChargeOrder·거래처 가격 승인만).
   - **월 기공료 입금**: 외부 기공소 기공비는 어벗츠 계좌로 받지 않는다. 익월 1일 직접 정산서(`PracticeLabDirectSettlement`)를 보고 치과가 기공소 계좌로 입금한다. 어벗·스토어·기공사업부 법인 수금은 여전히 `PRACTICE_MONTHLY_SETTLEMENT_COLLECTION_ENABLED`가 꺼져 있으면 받지 않는다. 미납 문자·신규 의뢰 정지는 하지 않는다.
   - **안내·입금·정지(수집 재개 시)**: 익월 1일 09:00 KST 전월분 문자. 5일(영업일)까지 1차 입금, 그날 12:00에 미확인이면 재안내. 10일(영업일)까지 2차. 그 다음 날 09:00부터 미확인이면 **신규 PTX만** 정지(`checkPracticeSettlementLock`, `scheduledTransferAt`). **베타 중에는 이 정지를 하지 않는다.** 실사용 전환 뒤에만 적용한다. 자정이 아닌 오전 9시인 이유: 전날 입금을 담당자가 아침에 확인하기 전에 막지 않기 위해서다. 문구는 정중하게. 진행 중 의뢰는 막지 않는다. 담당자가 전액 입금 확인(`POST /api/admin/practice-lab-fees/:id/receive`)하면 즉시 해제하고, 정지 중이었으면 확인 문자를 보낸다. 문자 실패는 다음 시간 주기에 다시 보낸다. 일부 입금은 확인하지 않는다. 입금자명은 치과명. 이미 확정된 미입금 정산서의 기한은 워커가 이 달력으로 다시 맞춘다.
   - **기공소 지급**: 1차까지 확인된 금액은 다음 영업일(보통 6일), 그 이후 확인분은 확인한 다음 영업일에 담당자가 기공소 계좌로 직접 송금하고 기록한다(`pay-labs`). 입금 확인 전에는 기공소에 보내지 않는다. 0원은 문자·정지 없음.
@@ -289,7 +289,7 @@
 - **의뢰비·딜러·배송 SSOT (2026-10-31, 이전 기술과 충돌하면 이 항목이 우선)**:
   - 의뢰비는 치과·기공소 모두 **어벗 1개당 15,000원 단일가**. 판매자(딜러·어벗츠, 영업팀 승인가)가 거래처(`BusinessAnchor.dealerUnitPrice`, `select:false`)별로 **12,000~15,000원**을 정할 수 있고 거래처 본인에게만 보인다(외부 비공개). 서버·FE 모두 12,000 미만/15,000 초과 거절(`validateDealerUnitPrice`). 그룹할인·가입 90일 1만원·주문량 할인·런칭 이벤트 단가는 폐지. 영업팀(`salesTeam`)이 입력한 가격은 `dealerPriceApproval.status=pending`이 되어 본사(admin) 승인(`POST /api/admin/price-approvals/:anchorId`) 전까지 의뢰가 막힌다(`checkCreditLock`). 승인 시 `dealerUnitPrice` 반영. devops는 소개 거래처 등록 없이 고정 분배(1,000원/어벗).
   - 분배(어벗 1개당, **부가세 포함**): 어벗츠 몫 **10,000** = 제조 **5,000**(50%) · 개발운영 **1,000**(10%) · 어벗츠 **4,000**(40%). 나머지 **판매자(판매가 − 10,000)**. 딜러 없음(직판·영업팀 소개)이면 판매자 몫은 어벗츠. 어벗츠가 거래처에 직접 공급(면세 계산서)하고, 딜러·제조·개발운영에게는 부가세 포함으로 지급(세금계산서 ÷1.1). 구현 `resolveRevenueOwnerBaseAllocation` (`creditRevenuePolicy.service.js`).
-  - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 커스텀어벗 의뢰하기 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
+  - **구현(2026-10-09)**: 거래처 배송비 `REQUESTOR_SHIPPING_FEE_PER_BOX=0`(`requestorUnitPricePolicy.js`). 의뢰 사전 잔액검사·`SHIPPING_SPEND_HOLD`(`shouldSkipShippingHold`)·포장.발송 `SHIPPING_SPEND_COMMIT`(레거시 hold 없으면 skip) 모두 거래처 크레딧을 건드리지 않는다. 어벗 디자인으로 의뢰하기 리메이크도 고정 1만원이 아니라 거래처 개별가(`dealerUnitPrice`) 또는 기본 15,000원(`computePriceForRequest`).
   - 배송은 **택배(기본)와 딜리버리** 중 거래처별 하나(2026-10-13, §2.7). 거래처에게 배송비를 받지 않는다. **택배**: 배정 제조사가 대납하고, 포장.발송 때 판매자 장부에서 박스당 택배비를 빼 제조사에 환입한다(`DEALER_PARCEL_SHIPPING_COST`). 딜러 없으면 어벗츠 판매자 몫(`REV_ADMIN`)에서 뺀다. 월 지급은 그 잔액. **딜리버리**: 판매자와 딜리버리사가 직접 계약한다. 어벗츠는 관여하지 않는다. 월정액 원가 저널은 중단(`deliveryMonthlyCost.service.js` reason `disabled`).
 - 롤백 원칙:
   - **제조사 의뢰비·배송비**(`REQUEST_SPEND_`* / `SHIPPING_SPEND_*`): 롤백·준비 취소 시 원본 저널/라인 **물리 삭제**(REFUND 추가 금지)
@@ -369,7 +369,7 @@
 - UI 라벨 SSOT(`REQUESTOR_KIND_LABEL` / `PRACTICE_IN_HOUSE_LAB_LABEL`):
   - 사업자등록증 검증 후 선택. 설정 > 사업자에서 변경.
   - `practice` + `practiceHasInHouseLab`가 true가 아님(기본): **기공실 없는 치과** — 사이드바는 「기공의뢰」만(내용은 기공소에)
-  - `practice` + `practiceHasInHouseLab: true`(테스트 DB는 평온치과만): **기공실 있는 치과** — 사이드바에 「커스텀어벗 의뢰하기」
+  - `practice` + `practiceHasInHouseLab: true`(테스트 DB는 평온치과만): **기공실 있는 치과** — 사이드바에 「어벗 디자인으로 의뢰하기」
   - `lab`: **기공소** — 기공실 유무 구분 없음
 - `requestorServices`는 **paid-only**. `free`(기공의뢰서) 옵션은 폐기. 읽기 시 레거시 `free`는 `paid`로 승격, 쓰기는 `{free:false,paid:true}`.
 - 가입·온보딩 흐름:
@@ -388,7 +388,7 @@
   - **완료 뱃지** (`isPracticeRecentFinishedBadgeStatus` · 서버 `isPracticeTransferFinishedBadge`): 표시 단계 `작업완료`(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지가 없을 때. 어벗은 생산진행·포장.발송 또는 designFiles·designReadyAt. 집계·필터·목록·채팅·번호표는 이 판정만. 필터 문구는 의뢰·작업시작·완료·취소·어벗.
   - **커스텀어벗 접수 둘** (`caseInfos.intake`). 화면 이름은 유지한다.
     - `ptx`: 기공의뢰. 환자·치과·임플란트는 치과가 쓴 값을 쓴다. STL은 치과가 확정한 플랫폼 디자인(`designRoute=platform`)이거나, 수행 기공소 수작업(`designRoute=lab`)이다. 어벗츠 기공사업부가 수행 기공소일 수 있다.
-    - `lab`: 커스텀어벗 의뢰하기. 기공소·기공실이 STL과 정보를 올린다. `designRoute=direct`. 이 값의 `lab`은 수작업 경로가 아니다.
+    - `lab`: 어벗 디자인으로 의뢰하기. 기공소·기공실이 STL과 정보를 올린다. `designRoute=direct`. 이 값의 `lab`은 수작업 경로가 아니다.
     - 디자인 확정이 기본이다. 치과→어벗츠 디자인+생산 2.5만. 수행 기공소는 같은 화면에서 검수한다. 화면에서 고치지 못하면 업로드 확인 뒤 수작업으로 바꾸고, 그때 기공소 수가 + 생산 1.5만으로 맞춘다.
     - 접수 뒤 치과가 확정하지 않으면 캘린더 툴바에 「어벗 디자인 N건 검토 대기중」을 남긴다. 누르면 디자인 화면에서 의뢰를 하나씩 확정한다. 확정 전에는 건이 남는다. 채팅에 한 줄 안내한다. 기공소 STL 지연 경고는 그때 띄우지 않는다. 보철 작업은 진행된다.
 - 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **PTX CA 디자인 확정**는 치과→어벗츠 디자인+생산 **2.5만**. 기공소는 같은 디자인 화면에서 그 파일을 수정한다. **수작업 의뢰**는 치과→기공소 `커스텀어벗` 수가. 기공소가 3Shape·ExoCAD로 새로 올려 가공한다. 수행 기공소가 수작업으로 다시 디자인한다고 명시한 업로드만 확정된 플랫폼 디자인을 바꾼다. 수작업의 기공소→어벗츠 Request는 생산 1.5만. 확정을 취소하면 어벗 비용은 비우고, 기공소 확인 또는 1영업일 안에 의뢰자가 다시 고른다.

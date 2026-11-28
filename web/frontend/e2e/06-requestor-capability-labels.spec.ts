@@ -30,7 +30,7 @@ const REQUESTOR = resolveAccount("requestor");
 
 const RELATED_REQUESTOR_PAGES = [
   { path: "/dashboard", label: "대시보드" },
-  { path: "/dashboard/new-request", label: "커스텀어벗 의뢰하기" },
+  { path: "/dashboard/new-request", label: "어벗 디자인으로 의뢰하기" },
   { path: "/dashboard/practice-transfers", label: "기공소에 의뢰하기/치과의뢰 수신하기" },
   { path: "/dashboard/settings?tab=business", label: "설정 > 사업자" },
   { path: "/dashboard/credits", label: "정산" },

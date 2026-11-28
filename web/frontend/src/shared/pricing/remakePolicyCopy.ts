@@ -4,8 +4,8 @@
 // - web/frontend/src/pages/public/HelpPage.tsx
 // - web/backend/utils/remakePricingPolicy.js
 // change-log:
-// - 2026-10-23: 치과 경로 라벨 — 기공소에 의뢰하기 / 커스텀어벗 의뢰하기.
-// - 2026-10-23: 기공소 경로 라벨 — 치과의뢰 수신하기 / 커스텀어벗 의뢰하기.
+// - 2026-10-23: 치과 경로 라벨 — 기공소에 의뢰하기 / 어벗 디자인으로 의뢰하기.
+// - 2026-10-23: 기공소 경로 라벨 — 치과의뢰 수신하기 / 어벗 디자인으로 의뢰하기.
 // - 2026-10-09: 어벗츠로 리메이크 고정 1만원 폐지 — 거래처가(딜러 설정가) 또는 기본가 적용.
 // - 2026-10-09: 치과 안내 모달 — 기공소에 무료 행 추가(어벗츠로부터 라벨은 기공소에).
 // - 2026-10-09: 치과 본인 정책은 어벗츠에 건당 1만원 한 줄만 쓰던 표시를 되돌림.
@@ -13,7 +13,7 @@
 // - 2026-10-07: 리메이크 행 라벨에 플랫폼 이용 조건 병합. 하단 노트=180일·배송비.
 // - 2026-10-07: 리메이크 과금 카피 SSOT — 어벗츠로부터/기공소에=무료, 어벗츠로/어벗츠에=건당 1만원.
 
-/** 커스텀어벗 의뢰하기(Request) 리메이크 단가(원). 배송비는 판매자 부담. */
+/** 어벗 디자인으로 의뢰하기(Request) 리메이크 단가(원). 배송비는 판매자 부담. */
 export const REMAKE_ABUTS_FIXED_AMOUNT = 10_000;
 
 export type RemakePolicyAudience = "lab" | "practice" | "public";
@@ -25,8 +25,8 @@ export type RemakePolicyRow = {
 
 /**
  * 역할별 리메이크 경로 라벨.
- * - lab: 사이드바 「치과의뢰 수신하기 / 커스텀어벗 의뢰하기」
- * - practice: 사이드바 「기공소에 의뢰하기 / 커스텀어벗 의뢰하기」
+ * - lab: 사이드바 「치과의뢰 수신하기 / 어벗 디자인으로 의뢰하기」
+ * - practice: 사이드바 「기공소에 의뢰하기 / 어벗 디자인으로 의뢰하기」
  * - public: 약관·헬프 — 양쪽 표기
  */
 export function remakePolicyRows(
@@ -39,7 +39,7 @@ export function remakePolicyRows(
         priceLabel: "무료",
       },
       {
-        pathLabel: "커스텀어벗 의뢰하기 (기공소만 플랫폼 이용)",
+        pathLabel: "어벗 디자인으로 의뢰하기 (기공소만 플랫폼 이용)",
         priceLabel: "일반 의뢰비와 동일",
       },
     ];
@@ -51,7 +51,7 @@ export function remakePolicyRows(
         priceLabel: "무료",
       },
       {
-        pathLabel: "커스텀어벗 의뢰하기 (기공소만 플랫폼 이용)",
+        pathLabel: "어벗 디자인으로 의뢰하기 (기공소만 플랫폼 이용)",
         priceLabel: "일반 의뢰비와 동일",
       },
     ];
@@ -62,7 +62,7 @@ export function remakePolicyRows(
       priceLabel: "무료",
     },
     {
-      pathLabel: "커스텀어벗 의뢰하기 (기공소만 플랫폼 이용)",
+      pathLabel: "어벗 디자인으로 의뢰하기 (기공소만 플랫폼 이용)",
       priceLabel: "일반 의뢰비와 동일",
     },
   ];
@@ -80,18 +80,18 @@ export function remakePolicySummaryLine(
   audience: RemakePolicyAudience = "lab",
 ): string {
   if (audience === "practice") {
-    return "리메이크는 기공소에 의뢰하기 무료, 커스텀어벗 의뢰하기 일반 의뢰비와 동일합니다.";
+    return "리메이크는 기공소에 의뢰하기 무료, 어벗 디자인으로 의뢰하기 일반 의뢰비와 동일합니다.";
   }
   if (audience === "public") {
-    return "리메이크는 치과의뢰 수신하기·기공소에 의뢰하기는 무료, 커스텀어벗 의뢰하기는 일반 의뢰비와 동일합니다.";
+    return "리메이크는 치과의뢰 수신하기·기공소에 의뢰하기는 무료, 어벗 디자인으로 의뢰하기는 일반 의뢰비와 동일합니다.";
   }
-  return "리메이크는 치과의뢰 수신하기 무료, 커스텀어벗 의뢰하기 일반 의뢰비와 동일합니다.";
+  return "리메이크는 치과의뢰 수신하기 무료, 어벗 디자인으로 의뢰하기 일반 의뢰비와 동일합니다.";
 }
 
 /** 이용약관 제6조 본문(문장 배열 — 호출측에서 br). */
 export const REMAKE_TERMS_ARTICLE_LINES = [
   "리메이크는 치과의뢰 수신하기·기공소에 의뢰하기(치과·기공소 모두 플랫폼 이용)는 무료이며,",
-  "커스텀어벗 의뢰하기(기공소만 플랫폼 이용)는 일반 의뢰비와 동일합니다.",
+  "어벗 디자인으로 의뢰하기(기공소만 플랫폼 이용)는 일반 의뢰비와 동일합니다.",
   "배송비 판매자 부담.",
   "상세는 서비스 화면의 가격·출고 정책 안내를 따릅니다.",
 ] as const;

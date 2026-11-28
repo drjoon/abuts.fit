@@ -40,9 +40,9 @@ import {
 // - 2026-11-19: practice-transfers — 크레딧·공지는 헤더 중요 공지 레일. 전폭 바·상단 배너 숨김.
 // - 2026-11-19: PTX·커스텀어벗 의뢰 — 최근 충전 1/4 이하 크레딧 경고. 기공사도 본다.
 // - 2026-10-26: 치과 사이드「스토어」숨김 — PRACTICE_STORE_OPEN.
-// - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `커스텀어벗 의뢰하기`.
+// - 2026-10-23: 치과 사이드 — 「기공의뢰」그룹 제거. 상위 `기공소에 의뢰하기` · `어벗 디자인으로 의뢰하기`.
 // - 2026-10-17: 기공소 수신·커스텀어벗 — `compactLabel` + 기공/어벗 accent 밑줄.
-// - 2026-10-17: 기공소·어벗츠기공소 사이드 — 「기공의뢰」그룹 제거. 상위 `치과의뢰 수신하기` · `커스텀어벗 의뢰하기`.
+// - 2026-10-17: 기공소·어벗츠기공소 사이드 — 「기공의뢰」그룹 제거. 상위 `치과의뢰 수신하기` · `어벗 디자인으로 의뢰하기`.
 // - 2026-10-08: 기공소 사이드「할인그룹」폐지.
 // - 2026-10-01: 설정 사이드 배지는 기본 기공수가 검토를 세지 않는다. 그 수는 재무에 붙는다.
 // - 2026-10-07: 공지는 DashboardLayout 작업영역 맨 위 전폭 1행(전 role).
@@ -310,7 +310,7 @@ const buildLabSidebarRequestItems = (
   },
   {
     icon: FileText,
-    label: "커스텀어벗 의뢰하기",
+    label: "어벗 디자인으로 의뢰하기",
     href: LAB_ABUTMENT_PRODUCTION_HREF,
     tooltip: ABUTMENT_REQUEST_TOOLTIP,
     accent: "어벗",
@@ -336,7 +336,7 @@ const buildPracticeSidebarRequestItems = (options?: {
   if (!options?.hideAbutment) {
     items.push({
       icon: FileText,
-      label: "커스텀어벗 의뢰하기",
+      label: "어벗 디자인으로 의뢰하기",
       href: PRACTICE_ABUTMENT_DESIGN_HREF,
       tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
       accent: "어벗",

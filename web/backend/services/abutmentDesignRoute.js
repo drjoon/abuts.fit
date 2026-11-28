@@ -1,6 +1,6 @@
 // 커스텀어벗 가공 원본은 한 경로만 가진다.
 // intake ptx: 기공의뢰. designRoute platform=치과 확정, lab=수행 기공소 수작업 STL.
-// intake lab: 커스텀어벗 의뢰하기. designRoute direct.
+// intake lab: 어벗 디자인으로 의뢰하기. designRoute direct.
 // designRoute=lab 은 접수 이름 lab 이 아니다.
 // 플랫폼 확정을 기공소 STL로 바꾸는 것은 explicitPlatformToLab 일 때만.
 // 다른 경로의 파일을 같은 Request·같은 S3 키에 두지 않는다.
@@ -87,7 +87,7 @@ export const DESIGN_ROUTE_PLATFORM = "platform";
 export const DESIGN_ROUTE_LAB = "lab";
 export const DESIGN_ROUTE_DIRECT = "direct";
 
-/** 접수. ptx=기공의뢰, lab=커스텀어벗 의뢰하기. designRoute 와 별개다. */
+/** 접수. ptx=기공의뢰, lab=어벗 디자인으로 의뢰하기. designRoute 와 별개다. */
 export const INTAKE_PTX = "ptx";
 export const INTAKE_LAB = "lab";
 
@@ -183,13 +183,13 @@ export function designRouteBlockMessage(request, incoming, options = {}) {
     return "기공소가 올린 디자인입니다. 플랫폼 디자인으로 바꾸지 않습니다.";
   }
   if (next === DESIGN_ROUTE_PLATFORM && current === DESIGN_ROUTE_DIRECT) {
-    return "커스텀어벗 의뢰하기에서 접수된 건입니다. 플랫폼 디자인으로 바꾸지 않습니다.";
+    return "어벗 디자인으로 의뢰하기에서 접수된 건입니다. 플랫폼 디자인으로 바꾸지 않습니다.";
   }
   if (next === DESIGN_ROUTE_LAB && current === DESIGN_ROUTE_PLATFORM) {
     return "의뢰자가 확정한 디자인입니다. 수작업으로 다시 디자인할 때만 기공소 파일로 바꿉니다.";
   }
   if (next === DESIGN_ROUTE_LAB && current === DESIGN_ROUTE_DIRECT) {
-    return "커스텀어벗 의뢰하기에서 접수된 건입니다. 기공소 파일로 바꾸지 않습니다.";
+    return "어벗 디자인으로 의뢰하기에서 접수된 건입니다. 기공소 파일로 바꾸지 않습니다.";
   }
   return "다른 경로의 디자인이 있어 파일을 바꾸지 않습니다.";
 }
@@ -229,7 +229,7 @@ export function clearMachiningBind(request) {
   }
 }
 
-/** 커스텀어벗 의뢰하기 접수. PTX 연동 건은 여기서 경로를 정하지 않는다. */
+/** 어벗 디자인으로 의뢰하기 접수. PTX 연동 건은 여기서 경로를 정하지 않는다. */
 export function stampDirectDesignRoute(request) {
   if (!request?.caseInfos) return;
   const mode = String(request.caseInfos.productMode || "").trim();

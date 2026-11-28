@@ -437,7 +437,7 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
    */
   scanDownloadLocked?: boolean;
   /**
-   * 기공소 「커스텀어벗 의뢰하기」 스캔 분기.
+   * 기공소 「어벗 디자인으로 의뢰하기」 스캔 분기.
    * 치과 채팅·유예·기공소 2차 확정 없이 바로 생산 의뢰.
    */
   labOralScanMode?: boolean;

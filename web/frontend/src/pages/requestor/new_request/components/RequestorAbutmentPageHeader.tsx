@@ -135,7 +135,7 @@ export type RequestorAbutmentPageHeaderVariant = "full" | "policyInProgress";
 
 type RequestorAbutmentPageHeaderProps = {
   /**
-   * full — 커스텀어벗 의뢰하기 상단(기간필터+정책·진행중·출고·완료·불완전).
+   * full — 어벗 디자인으로 의뢰하기 상단(기간필터+정책·진행중·출고·완료·불완전).
    * policyInProgress — 기공의뢰수신 등: 어벗츠 생산중만(정책은 사이드바).
    */
   variant?: RequestorAbutmentPageHeaderVariant;

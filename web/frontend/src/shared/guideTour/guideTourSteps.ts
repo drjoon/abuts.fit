@@ -5,8 +5,8 @@
 // change-log:
 // - 2026-11-19: lab_design — 치과 디자인 확정이 기본. 수작업 STL은 그다음.
 // - 2026-10-24: 기공소 정산 투어 — 충전·지급 힌트를 화면 안내와 맞춤.
-// - 2026-10-23: 치과 투어 — 사이드바 「기공소에 의뢰하기」「커스텀어벗 의뢰하기」.
-// - 2026-10-23: 기공소 투어 — 사이드바 「치과의뢰 수신하기」「커스텀어벗 의뢰하기」.
+// - 2026-10-23: 치과 투어 — 사이드바 「기공소에 의뢰하기」「어벗 디자인으로 의뢰하기」.
+// - 2026-10-23: 기공소 투어 — 사이드바 「치과의뢰 수신하기」「어벗 디자인으로 의뢰하기」.
 // - 2026-09-26: lab_calendar — 제목 「기공의뢰 · 어벗츠로부터」.
 // - 2026-10-07: remake·lab_remake — 어벗츠로부터 무료·어벗츠로 건당 1만원.
 // - 2026-09-14: remake·lab_remake — 180일 동일건 치과↔기공소 무료·어벗츠 1만원.
@@ -227,10 +227,10 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "autopay",
   },
-  // —— 챕터3: 커스텀어벗(사이드바「커스텀어벗 의뢰하기」) ——
+  // —— 챕터3: 커스텀어벗(사이드바「어벗 디자인으로 의뢰하기」) ——
   {
     id: "abutment",
-    title: "커스텀어벗 의뢰하기",
+    title: "어벗 디자인으로 의뢰하기",
     hint: "완성된 어벗 디자인(STL)을 올려 CNC 생산을 의뢰합니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
@@ -312,7 +312,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n치과의뢰 수신하기 리메이크비는 무료, 커스텀어벗 의뢰하기는 일반 의뢰비와 동일합니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n치과의뢰 수신하기 리메이크비는 무료, 어벗 디자인으로 의뢰하기는 일반 의뢰비와 동일합니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",
@@ -344,7 +344,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_stats",
     title: "정산 · 통계",
-    hint: "치과의뢰 수신하기·커스텀어벗 의뢰하기 통계를 확인합니다.",
+    hint: "치과의뢰 수신하기·어벗 디자인으로 의뢰하기 통계를 확인합니다.",
     path: `${CREDITS_PATH}?tab=stats`,
     target: "credits_stats",
     advance: "next",
@@ -371,11 +371,11 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "payout",
   },
-  // —— 챕터3: 커스텀어벗 CNC(사이드바「커스텀어벗 의뢰하기」) ——
+  // —— 챕터3: 커스텀어벗 CNC(사이드바「어벗 디자인으로 의뢰하기」) ——
   {
     id: "abutment_order",
-    title: "커스텀어벗 의뢰하기",
-    hint: "플랫폼 미가입 치과 의뢰의 CNC 커스텀어벗 생산은 「커스텀어벗 의뢰하기」에서 진행합니다.",
+    title: "어벗 디자인으로 의뢰하기",
+    hint: "플랫폼 미가입 치과 의뢰의 CNC 커스텀어벗 생산은 「어벗 디자인으로 의뢰하기」에서 진행합니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",

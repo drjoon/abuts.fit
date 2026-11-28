@@ -24,11 +24,11 @@ export const FREE_REMAKE_YEARS_MAX = 30;
 
 /**
  * @deprecated 과금 SSOT 아님. 레거시 문서·집계용.
- * 치과의뢰 수신하기(PTX)=무료, 커스텀어벗 의뢰하기=건당 ABUTS_REMAKE_FIXED_AMOUNT.
+ * 치과의뢰 수신하기(PTX)=무료, 어벗 디자인으로 의뢰하기=건당 ABUTS_REMAKE_FIXED_AMOUNT.
  */
 export const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
-/** 커스텀어벗 의뢰하기(Request) 리메이크 고객 단가(원). 배송비는 판매자 부담. */
+/** 어벗 디자인으로 의뢰하기(Request) 리메이크 고객 단가(원). 배송비는 판매자 부담. */
 export const ABUTS_REMAKE_FIXED_AMOUNT = 10000;
 
 export const ABUTS_REMAKE_PRICE_RULE = "remake_fixed_10000";
@@ -261,7 +261,7 @@ export function buildAbutsRemakeMonthlyFreePrice({
 }
 
 /**
- * @deprecated 과금 SSOT 아님. 커스텀어벗 의뢰하기는 buildAbutsRemakeFixedPrice.
+ * @deprecated 과금 SSOT 아님. 어벗 디자인으로 의뢰하기는 buildAbutsRemakeFixedPrice.
  * @param {{ baseAmount: number, used: number, quotedAt?: Date, limit?: number }} input
  */
 export function buildAbutsRemakePriceFromMonthlyUsage({

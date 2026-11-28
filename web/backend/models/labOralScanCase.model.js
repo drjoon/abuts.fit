@@ -3,7 +3,7 @@
 // - web/backend/modules/labOralScanCases/labOralScanCase.routes.js
 // - web/backend/services/labOralScanCaseDesign.service.js
 // - web/backend/controllers/ai/customAbutmentDesignChat.controller.js
-// 기공소 「커스텀어벗 의뢰하기」 스캔 분기. PTX·치과 채팅 없이 자동 디자인 → 생산 Request.
+// 기공소 「어벗 디자인으로 의뢰하기」 스캔 분기. PTX·치과 채팅 없이 자동 디자인 → 생산 Request.
 import mongoose from "mongoose";
 
 const labOralScanFileSchema = new mongoose.Schema(
