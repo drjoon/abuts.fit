@@ -6,7 +6,7 @@ import {
   saveFile as saveFileToIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
   getFile as getFileFromIndexedDb,
-} from "@/shared/storage/fileIndexedDB";
+} from "@/pages/requestor/new_request/utils/fileIndexedDB";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx

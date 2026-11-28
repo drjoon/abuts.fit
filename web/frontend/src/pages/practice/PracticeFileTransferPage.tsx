@@ -424,7 +424,7 @@ import {
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { isCustomAbutmentWork } from "@/shared/practice/labFeeSchedule";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
-import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
+import { deleteFile as deleteFileFromIndexedDb } from "@/pages/requestor/new_request/utils/fileIndexedDB";
 import {
   PRACTICE_TRANSFER_FORM_LOCAL_KEY,
   PRACTICE_TRANSFER_TEMP_DRAFT_KEY,
