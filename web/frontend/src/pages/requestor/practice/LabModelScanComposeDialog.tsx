@@ -9,7 +9,7 @@
 // - 2026-11-28: 치과 「주문」작성 화면을 재사용. 기공소 선택·기공비 견적·가이드투어는 두지 않음.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookmarkPlus, Repeat, Trash2, X } from "lucide-react";
+import { BookmarkPlus, Plus, Repeat, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogClose,
