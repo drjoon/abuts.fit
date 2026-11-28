@@ -249,6 +249,7 @@ import {
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
 // - 2026-11-28: 모델스캔 치아카드 — 형태 메뉴·스캔바디 라디오 제거. 규격·복사만.
 // - 2026-11-28: 모델스캔 치아카드 — 스캔바디만·쉐이드 숨김·높이 축소(한 화면).
+// - 2026-11-29: 모델스캔 드롭존 — absolute 높이 잠금 제거(첨부 시 행이 늘어남).
 // - 2026-11-29: 리메이크 체크 라벨 「리메이크 의뢰」.
 // - 2026-11-28: 모델스캔 드롭존 높이=왼쪽 2×2. 리메이크 체크.
 
@@ -3853,16 +3854,15 @@ export const PracticeTransferRequestIntakePanel = ({
               ) : null}
             </div>
             {filesBesideHeader ? (
-              <div className="relative min-h-[8rem] min-w-0 lg:min-h-0">
+              <div
+                ref={besideMemoPaneRef}
+                className="flex min-h-[8rem] min-w-0 flex-col self-stretch"
+              >
                 {/*
-                  lg: absolute로 행 높이는 왼쪽 2×2만 기여. 드롭존은 그 높이에 맞춤.
+                  items-stretch로 빈 드롭존은 왼쪽 2×2 높이에 맞춤.
+                  첨부 후는 목록 높이만큼 행이 늘어나 스크롤바 없이 카드를 보여 준다.
                 */}
-                <div
-                  ref={besideMemoPaneRef}
-                  className="flex min-h-0 min-w-0 flex-col overflow-y-auto max-lg:h-full lg:absolute lg:inset-0"
-                >
-                  {besideMemoContent}
-                </div>
+                {besideMemoContent}
               </div>
             ) : showRightRail ? (
               <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:max-w-[22rem]">

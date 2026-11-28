@@ -34,7 +34,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
-// - 2026-11-29: fillHeight+첨부 시 목록 flex-1·드롭존 축소 — 카드가 높이 잠금에 안 가려짐.
+// - 2026-11-29: fillHeight(모델스캔) — 첨부 후 높이·드롭존 유지, 목록 2열·스크롤 없음.
 // - 2026-09-29: requirementNoteExtra는 ReactNode. 3D 스캔 선택 안내는 문장마다 `<br />`.
 // - 2026-10-27: 첨부 카드에 ExoCAD·3Shape 라벨.
 // - 2026-09-19: 치과 신규의뢰 — PLY·DCM 추천 강조, TRIOS 안내 제거·드롭존 높이 보정.
@@ -141,14 +141,17 @@ export const PracticeTransferFilePane = ({
   const highlightMobilePhotoTip =
     platformGuideTour.active && platformGuideTour.stepId === "oral_phone";
 
-  /** 높이 맞춤 열에 첨부가 있으면 목록이 남은 공간을 먹고, 드롭존은 줄인다. */
-  const fillWithFiles = fillHeight && hasFiles;
+  /**
+   * 모델스캔(fillHeight): 빈 칸만 왼쪽 높이에 맞추고,
+   * 첨부가 있으면 드롭존·카드를 줄이지 않고 행을 늘린다.
+   */
+  const matchEmptyHeight = fillHeight && !hasFiles;
 
   return (
     <div
       className={cn(
         "flex min-h-0 flex-col gap-2.5",
-        fillHeight ? "h-full" : "shrink-0",
+        matchEmptyHeight ? "h-full" : "shrink-0",
         className,
       )}
     >
@@ -156,12 +159,12 @@ export const PracticeTransferFilePane = ({
         fileInputId={fileInputId}
         onFiles={onPickFiles}
         disabled={disabled}
-        acceptedHint={hasFiles ? null : acceptedHint}
-        dropZoneGrowClassName={!hasFiles ? dropZoneGrowClassName : undefined}
-        compact={hasFiles}
-        fillHeight={fillHeight && !hasFiles}
+        acceptedHint={hasFiles && !fillHeight ? null : acceptedHint}
+        dropZoneGrowClassName={matchEmptyHeight ? dropZoneGrowClassName : undefined}
+        compact={hasFiles && !fillHeight}
+        fillHeight={matchEmptyHeight}
         label={
-          hasFiles
+          hasFiles && !fillHeight
             ? "클릭하거나 드래그해 추가"
             : "클릭하거나 파일을 드래그해 추가"
         }
@@ -237,13 +240,20 @@ export const PracticeTransferFilePane = ({
 
           <div
             className={cn(
-              "overflow-y-auto px-0.5 py-0.5",
-              fillWithFiles
-                ? "min-h-[3.5rem] flex-1"
-                : listViewportClassName,
+              "min-w-0 overflow-x-hidden px-0.5 py-0.5",
+              fillHeight
+                ? undefined
+                : cn(listViewportClassName, "overflow-y-auto"),
             )}
           >
-            <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem] sm:grid-cols-2 lg:grid-cols-3">
+            <div
+              className={cn(
+                "grid min-w-0 gap-1.5 auto-rows-[3.5rem]",
+                fillHeight
+                  ? "grid-cols-1 sm:grid-cols-2"
+                  : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+              )}
+            >
               {files.map((file) => {
                 const meta = resolveFileMeta(file);
                 const cadLabel = practiceTransferCadProjectLabel(file.name);
