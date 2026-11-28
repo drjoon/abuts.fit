@@ -24,6 +24,11 @@
   - 조회·백필·reconcile 등 one-off는 **`MONGODB_URI_TEST`** (`abuts_fit_test`).
   - 실행: `ENV_FILE=local.env NODE_ENV=test` (`scripts/db/_mongo.js`가 TEST URI 선택).
   - Atlas 쓰기: `ABUTS_DB_FORCE=true`. Cursor 룰: `.cursor/rules/mongodb-uri-test.mdc`.
+- 클라우드 개발 샌드박스
+  - `MONGODB_URI_TEST`는 베타 서비스 DB다. Cloud Agent는 여기에 붙지 않는다.
+  - `ABUTS_CLOUD_SANDBOX=1`이면 `resolveMongoUri()`가 주입된 URI를 무시하고 `mongodb://127.0.0.1:27017/abuts_fit_sandbox`만 연다.
+  - 기동 시 `scripts/db/cloud-sandbox.js up`이 저장소 샘플(연결·파일명 규칙·라벨)을 그 샌드박스에 복사한다.
+  - 해제: `node scripts/db/cloud-sandbox.js down`. 지우는 대상은 `127.0.0.1`의 `abuts_fit_sandbox`뿐이다.
 - 서버 엔트리
   - `app.js`
   - `server.js`

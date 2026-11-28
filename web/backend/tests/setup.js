@@ -30,6 +30,8 @@ const pinnedJestMongoUri = resolveJestMongoUri();
 assertSafeJestMongoUri(pinnedJestMongoUri);
 globalThis.__abuts_env_loaded = true;
 delete process.env.ENV_FILE;
+// 클라우드 샌드박스 플래그가 켜져 있으면 앱이 Jest URI 대신 샌드박스를 연다.
+delete process.env.ABUTS_CLOUD_SANDBOX;
 for (const key of [
   "MONGODB_URI_TEST",
   "MONGO_URI_TEST",

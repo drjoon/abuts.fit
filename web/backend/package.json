@@ -17,6 +17,8 @@
     "db:seed-account": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/seed-account.js",
     "db:reset-password": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/reset-password.js",
     "db:seed-data": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/seed-data.js",
+    "db:cloud-sandbox": "cross-env TZ=Asia/Seoul ABUTS_CLOUD_SANDBOX=1 node scripts/db/cloud-sandbox.js up",
+    "db:cloud-sandbox:down": "cross-env TZ=Asia/Seoul ABUTS_CLOUD_SANDBOX=1 node scripts/db/cloud-sandbox.js down",
     "db:recomputeAnchor": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/recomputeAnchor.js",
     "db:seed-branding": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/seed-branding.js",
     "db:implant-preset": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/implant-preset.js",
