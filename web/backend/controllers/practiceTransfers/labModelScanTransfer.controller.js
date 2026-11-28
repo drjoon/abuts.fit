@@ -201,6 +201,10 @@ export async function createLabModelScanTransfer(req, res) {
       String(req.body?.transferId || "").trim() ||
       `PTX-${Date.now().toString(36).toUpperCase()}`;
 
+    const crownRaw = String(req.body?.crownFabrication || "").trim();
+    const crownFabrication =
+      crownRaw === "scan" || crownRaw === "impression" ? crownRaw : null;
+
     const transferDoc = await PracticeTransfer.create({
       transferId,
       practiceUserId: req.user._id,
@@ -220,6 +224,7 @@ export async function createLabModelScanTransfer(req, res) {
       status: "active",
       files,
       toothWorks,
+      crownFabrication,
       billing: {
         total: 0,
         labFeeTotal: 0,

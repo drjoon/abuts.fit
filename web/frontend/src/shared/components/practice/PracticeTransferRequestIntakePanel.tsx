@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import {
   Check,
   ChevronsUpDown,
+  CircleHelp,
   Link2,
   Loader2,
   Minus,
@@ -29,6 +30,11 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   CUSTOM_ABUT_GUIDE_TARGETS,
   scrollToothChartGuideTargetIntoView,
@@ -765,6 +771,13 @@ export type PracticeTransferRequestIntakePanelProps = {
   showHeaderFields?: boolean;
   /** 헤더 필드 개별 표시. 미지정 시 showHeaderFields 따름 */
   showLabField?: boolean;
+  /**
+   * 기공소 열 대신 치과명 자유 입력.
+   * 기공소 「모델스캔으로 의뢰하기」— 수신 기공소는 본인, 발신 치과는 가명·미등록 가능.
+   */
+  clinicLabel?: string;
+  onClinicLabelChange?: (next: string) => void;
+  clinicLabelSuggestions?: string[];
   showPatientField?: boolean;
   showDateFields?: boolean;
   /**
@@ -961,6 +974,9 @@ export type PracticeTransferRequestIntakePanelProps = {
 export const PracticeTransferRequestIntakePanel = ({
   showHeaderFields = true,
   showLabField: showLabFieldProp,
+  clinicLabel = "",
+  onClinicLabelChange,
+  clinicLabelSuggestions = [],
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
   showProsthesisSection = true,
@@ -1097,6 +1113,9 @@ export const PracticeTransferRequestIntakePanel = ({
     return () => ro.disconnect();
   }, [showMemoSection, besideMemoContent]);
   const showLabField = showLabFieldProp ?? showHeaderFields;
+  const clinicLabelMode = typeof onClinicLabelChange === "function";
+  const showPartyField = clinicLabelMode || showLabField;
+  const clinicLabelListId = useId();
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
   const showDateFields = showDateFieldsProp ?? showHeaderFields;
   const defaultAbutmentProductMode = normalizeAccountAbutmentProductMode(
@@ -1520,7 +1539,10 @@ export const PracticeTransferRequestIntakePanel = ({
   );
   const showCrownFabricationChoice =
     Boolean(onCrownFabricationChange) && crownHasRegionPrices;
-  const showLiveFee = showFeeEstimate || showCrownFabricationChoice;
+  const showChartMidBand =
+    showFeeEstimate ||
+    showCrownFabricationChoice ||
+    Boolean(onAnodizingEnabledChange);
   const labFeeByTooth = useMemo(() => {
     const map = new Map<string, { min: number; max: number }>();
     if (!isAutoMatchLab(selectedLab)) return map;
@@ -3158,11 +3180,11 @@ export const PracticeTransferRequestIntakePanel = ({
   const memoOnly =
     showMemoSection && !showHeaderFields && !showProsthesisSection;
 
-  const showAnyHeaderFields = showLabField || showPatientField || showDateFields;
+  const showAnyHeaderFields = showPartyField || showPatientField || showDateFields;
   const showDoctorField =
     Boolean(showDateFields && setDoctorName && onDoctorNamesChange);
   const headerFieldCount =
-    Number(showLabField) +
+    Number(showPartyField) +
     Number(showPatientField) +
     Number(showDateFields) +
     Number(showDoctorField);
@@ -3267,7 +3289,45 @@ export const PracticeTransferRequestIntakePanel = ({
           isOralSpotlight("oral_header") ? "oral_header" : undefined
         }
       >
-        {showLabField ? (
+        {clinicLabelMode ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <Label htmlFor={clinicLabelListId} className="text-sm">
+              치과명 <span className="text-destructive">*</span>
+            </Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground"
+                  aria-label="치과명 안내"
+                >
+                  <CircleHelp className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs leading-snug">
+                플랫폼 미등록 치과도 입력할 수 있습니다.
+                <br />
+                거래처 노출을 피하려면 가명을 쓰세요.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <ImeSafeInput
+            id={clinicLabelListId}
+            value={clinicLabel}
+            onChange={(next) => onClinicLabelChange?.(next)}
+            placeholder="등록·가명 모두 가능"
+            list={`${clinicLabelListId}-options`}
+            autoComplete="off"
+            className="h-11 text-base"
+          />
+          <datalist id={`${clinicLabelListId}-options`}>
+            {clinicLabelSuggestions.map((label) => (
+              <option key={label} value={label} />
+            ))}
+          </datalist>
+        </div>
+        ) : showLabField ? (
         <div className="space-y-2">
           <Label className="text-sm">
             기공소 <span className="text-destructive">*</span>
@@ -4637,7 +4697,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 onPointerDown={handleToothChartPointerDown}
               >
                 {chartRows[0]}
-                {showLiveFee ? (
+                {showChartMidBand ? (
                   <div
                     className={cn(
                       "flex flex-col items-center justify-center gap-2 px-1",
@@ -4687,7 +4747,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         name={crownFabricationRadioName ? `${crownFabricationRadioName}-ano` : "ptx-anodizing"}
                       />
                     ) : null}
-                    {showLiveFee ? (
+                    {showFeeEstimate ? (
                     <PracticeTransferFeeEstimate
                       className="min-w-0 w-full"
                       quote={feeQuote}

@@ -27,6 +27,7 @@ export type LabModelScanCreateBody = {
   }>;
   rushProcessing?: boolean;
   anodizingEnabled?: boolean;
+  crownFabrication?: "scan" | "impression" | null;
 };
 
 function readLocalLabels(): string[] {
@@ -115,7 +116,7 @@ export async function createLabModelScanTransfer(
     path: "/api/practice/transfers/lab-model-scan",
     method: "POST",
     token,
-    body,
+    jsonBody: body,
   });
   if (!res.ok || !res.data?.success) {
     return {

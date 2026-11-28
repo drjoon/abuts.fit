@@ -31,7 +31,7 @@ export const PracticeTransferIntakeSection = ({
     <PracticeTransferMiddleGrid className={middleGridClassName}>
       <PracticeTransferRequestIntakePanel
         {...requestIntakeProps}
-        showFeeEstimate
+        showFeeEstimate={requestIntakeProps.showFeeEstimate ?? true}
         besideMemoContent={<PracticeTransferFilePane {...filePaneProps} />}
       />
     </PracticeTransferMiddleGrid>
