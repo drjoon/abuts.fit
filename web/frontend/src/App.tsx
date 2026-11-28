@@ -94,6 +94,9 @@ const NewRequestPage = lazy(
 const RequestorPracticePage = lazy(
   () => import("./pages/requestor/practice/RequestorPracticePage"),
 );
+const LabModelScanTransfersPage = lazy(
+  () => import("./pages/requestor/practice/LabModelScanTransfersPage"),
+);
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
     default: m.ManufacturerWorksheetPage,
@@ -758,6 +761,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["requestor", "practice"]}>
                         <RequestorPracticePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="model-scan-transfers"
+                    element={
+                      <RoleProtectedRoute roles={["requestor", "internalLab"]}>
+                        <LabModelScanTransfersPage />
                       </RoleProtectedRoute>
                     }
                   />

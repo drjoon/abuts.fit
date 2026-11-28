@@ -1479,6 +1479,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .lean()
     : null;
   const clinicName =
+    String(transferDoc?.clinicLabel || "").trim() ||
     String(practiceAnchor?.name || "").trim() ||
     String(labOrg?.name || "").trim() ||
     "치과";

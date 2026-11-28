@@ -111,16 +111,14 @@ export function NewRequestDesignAbutmentFields({
   onAlternateNavigate,
   alternateNavigateLabel,
 }: Props) {
-  const { token, user: authUser } = useAuthStore();
+  const { token } = useAuthStore();
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const isLabRequestor = requestorKind === "lab";
   const oralScanPageLabel = isLabRequestor
-    ? "치과의뢰 수신하기"
+    ? "모델스캔으로 의뢰하기"
     : "기공소에 의뢰하기";
   const oralScanPageHref = isLabRequestor
-    ? authUser?.role === "internalLab"
-      ? "/dashboard/lab-work"
-      : "/dashboard/practice-transfers?mode=receive"
+    ? "/dashboard/model-scan-transfers"
     : "/dashboard/practice-transfers?mode=send";
   const navigate = useNavigate();
   const designEntry = abutmentEntryMode === "design";

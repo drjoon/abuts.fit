@@ -1030,6 +1030,14 @@ const businessAnchorSchema = new mongoose.Schema(
         type: [String],
         default: [],
       },
+      /**
+       * 기공소 「모델스캔으로 의뢰하기」치과명 MRU(자유 입력·가명).
+       * 최신 사용이 앞. 최대 40개.
+       */
+      labClientLabels: {
+        type: [String],
+        default: [],
+      },
       /** 치아 카드 쉐이드 직접 입력(MRU). A2·A3·A1·A3.5 프리셋은 제외 */
       shadeFavorites: {
         type: [String],

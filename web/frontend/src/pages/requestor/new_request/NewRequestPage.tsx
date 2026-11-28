@@ -70,20 +70,12 @@ import { Button } from "@/components/ui/button";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
-import { PracticeCustomAbutmentPreviewDialog } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
-import { createLabOralScanCase } from "@/shared/practice/labOralScanCaseApi";
-import {
-  ABUTMENT_PRODUCT_MODE,
-  normalizeToothWorks,
-} from "@/shared/practice/transferMemo";
-import { isCustomAbutmentWork } from "@/shared/practice/labFeeSchedule";
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import { type LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import {
   findGroupByFileKey,
   isLikelyOralScanFile,
   resolveFileSizeBytes,
-  resolveOralScanGroupTitle,
 } from "./utils/patientGroups";
 import {
   getPracticeTransferFileExtension,
@@ -141,16 +133,14 @@ const NewRequestPageContent = () => {
   const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
-  /** 사이드바 SSOT: 치과=기공소에 의뢰하기, 기공소=치과의뢰 수신하기 */
+  /** 사이드바 SSOT: 치과=기공소에 의뢰하기, 기공소=모델스캔으로 의뢰하기 */
   const oralScanPageLabel = isLabRequestor
-    ? "치과의뢰 수신하기"
+    ? "모델스캔으로 의뢰하기"
     : "기공소에 의뢰하기";
   /** 사이드바 SSOT: 치과·기공소 모두 커스텀어벗 의뢰하기 */
   const abutmentMenuLabel = "커스텀어벗 의뢰하기";
   const oralScanPageHref = isLabRequestor
-    ? authUser?.role === "internalLab"
-      ? "/dashboard/lab-work"
-      : "/dashboard/practice-transfers?mode=receive"
+    ? "/dashboard/model-scan-transfers"
     : "/dashboard/practice-transfers?mode=send";
 
   const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
@@ -159,19 +149,6 @@ const NewRequestPageContent = () => {
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
   const handleIncomingFilesRef = useRef<(files: File[]) => void>(() => {});
   const submitClickGuardRef = useRef(false);
-  const [labDesignBusy, setLabDesignBusy] = useState(false);
-  const [labDesignOpen, setLabDesignOpen] = useState(false);
-  const [labDesignCaseId, setLabDesignCaseId] = useState("");
-  const [labDesignFiles, setLabDesignFiles] = useState<
-    { fileName: string; s3Key: string; size: number; scanRole?: string | null }[]
-  >([]);
-  const [labDesignToothWorks, setLabDesignToothWorks] = useState(
-    [] as ReturnType<typeof normalizeToothWorks>,
-  );
-  const [labDesignPatientName, setLabDesignPatientName] = useState("");
-  const [labDesignUnitIndex, setLabDesignUnitIndex] = useState(0);
-  const [labDesignClinicName, setLabDesignClinicName] = useState("");
-  const labDesignCaseByUnitIdRef = useRef<Record<string, string>>({});
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -254,7 +231,6 @@ const NewRequestPageContent = () => {
     clearPatientGroups,
     localDraftRestoreDone,
     suppressLocalDraftForGuideTour,
-    ensureFilesUploaded,
   } = useNewRequestPage(existingRequestId, {
     enableOralScanGrouping: true,
   });
@@ -281,245 +257,7 @@ const NewRequestPageContent = () => {
     return keys;
   }, [files, patientGroups, toNormalizedFileKey]);
 
-  const labOralScanFiles = useMemo(
-    () => (isLabRequestor ? files.filter((file) => isLikelyOralScanFile(file)) : []),
-    [files, isLabRequestor],
-  );
-  const labAbutmentStlFiles = useMemo(
-    () =>
-      isLabRequestor
-        ? files.filter((file) => !isLikelyOralScanFile(file))
-        : files,
-    [files, isLabRequestor],
-  );
-
-  type LabOralScanDesignUnit = {
-    id: string;
-    label: string;
-    fileKeys: string[];
-    files: File[];
-  };
-
-  const labOralScanUnits = useMemo((): LabOralScanDesignUnit[] => {
-    if (!isLabRequestor) return [];
-    const units: LabOralScanDesignUnit[] = [];
-    const grouped = new Set<string>();
-    for (const group of patientGroups || []) {
-      const groupFiles = group.fileKeys
-        .map((key) => files.find((file) => toNormalizedFileKey(file) === key))
-        .filter((file): file is File => Boolean(file));
-      if (groupFiles.length === 0) continue;
-      if (!groupFiles.some((file) => isLikelyOralScanFile(file))) continue;
-      for (const key of group.fileKeys) grouped.add(key);
-      const names = groupFiles.map((file) => file.name);
-      const primaryKey = group.fileKeys[0] || toNormalizedFileKey(groupFiles[0]!);
-      const info = caseInfosMap?.[primaryKey];
-      const patientName = String(info?.patientName || "").trim();
-      const title = resolveOralScanGroupTitle(names);
-      units.push({
-        id: primaryKey,
-        label: [patientName || title, patientName ? title : ""]
-          .filter(Boolean)
-          .join(" · "),
-        fileKeys: [...group.fileKeys],
-        files: groupFiles,
-      });
-    }
-    for (const file of files) {
-      if (!isLikelyOralScanFile(file)) continue;
-      const key = toNormalizedFileKey(file);
-      if (grouped.has(key)) continue;
-      const info = caseInfosMap?.[key];
-      const patientName = String(info?.patientName || "").trim();
-      units.push({
-        id: key,
-        label: [patientName || file.name, patientName ? file.name : ""]
-          .filter(Boolean)
-          .join(" · "),
-        fileKeys: [key],
-        files: [file],
-      });
-    }
-    return units;
-  }, [caseInfosMap, files, isLabRequestor, patientGroups, toNormalizedFileKey]);
-
-  const applyLabDesignUnitState = useCallback(
-    (params: {
-      unit: LabOralScanDesignUnit;
-      caseId: string;
-      patientName: string;
-      clinicName: string;
-      toothWorks: ReturnType<typeof normalizeToothWorks>;
-      fileRows: {
-        originalName: string;
-        s3Key: string;
-        size: number;
-      }[];
-      unitIndex: number;
-    }) => {
-      setLabDesignCaseId(params.caseId);
-      setLabDesignPatientName(params.patientName);
-      setLabDesignClinicName(params.clinicName);
-      setLabDesignToothWorks(params.toothWorks);
-      setLabDesignFiles(
-        params.fileRows.map((row) => ({
-          fileName: row.originalName,
-          s3Key: row.s3Key,
-          size: row.size,
-          scanRole: null,
-        })),
-      );
-      setLabDesignUnitIndex(params.unitIndex);
-      setLabDesignOpen(true);
-    },
-    [],
-  );
-
-  const openLabOralScanUnitAt = useCallback(
-    async (unitIndex: number): Promise<"opened" | "need_detail" | "busy" | "error"> => {
-      if (!token) return "error";
-      if (labDesignBusy) return "busy";
-      const unit = labOralScanUnits[unitIndex];
-      if (!unit) {
-        toast({
-          title: "구강 스캔이 필요합니다",
-          description:
-            "구강 스캔(STL·PLY·OBJ·3Shape·ExoCAD)을 첨부한 뒤 카드를 눌러 주세요.",
-          variant: "destructive",
-        });
-        return "error";
-      }
-      const primaryKey = unit.id;
-      const info = caseInfosMap?.[primaryKey] || caseInfos || {};
-      const patientName = String(
-        info.patientName || caseInfos?.patientName || "",
-      ).trim();
-      if (!patientName) {
-        toast({
-          title: "환자명을 입력해 주세요",
-          variant: "destructive",
-        });
-        return "need_detail";
-      }
-      const toothWorks = normalizeToothWorks(
-        Array.isArray(info.toothWorks)
-          ? info.toothWorks
-          : caseInfos?.toothWorks || [],
-      ).filter((row) => isCustomAbutmentWork(row));
-      if (toothWorks.length === 0) {
-        toast({
-          title: "커스텀어벗 치식을 선택해 주세요",
-          variant: "destructive",
-        });
-        return "need_detail";
-      }
-
-      const cachedCaseId = String(
-        labDesignCaseByUnitIdRef.current[unit.id] || "",
-      ).trim();
-      setLabDesignBusy(true);
-      try {
-        const uploaded = await ensureFilesUploaded(unit.files);
-        const fileRows = uploaded.map((row, index) => ({
-          originalName:
-            row.originalName || unit.files[index]?.name || "scan.stl",
-          mimetype: row.mimetype || "application/octet-stream",
-          size: row.size || unit.files[index]?.size || 0,
-          s3Key: String(row.key || "").trim(),
-          patientName,
-        }));
-        if (fileRows.some((row) => !row.s3Key)) {
-          toast({
-            title: "업로드 실패",
-            description: "스캔 파일 업로드를 다시 시도해 주세요.",
-            variant: "destructive",
-          });
-          return "error";
-        }
-
-        const clinicName = String(
-          info.clinicName || caseInfos?.clinicName || "",
-        ).trim();
-        let caseId = cachedCaseId;
-        if (!caseId) {
-          const created = await createLabOralScanCase(token, {
-            clinicName,
-            patientName,
-            memo: String(info.memo || caseInfos?.memo || "").trim(),
-            toothWorks: toothWorks.map((row) => ({
-              ...row,
-              customAbutment: true,
-              abutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
-            })),
-            files: fileRows,
-          });
-          if (!created.ok || !created.data?.caseId) {
-            toast({
-              title: "케이스 생성 실패",
-              description: created.message || "다시 시도해 주세요.",
-              variant: "destructive",
-            });
-            return "error";
-          }
-          caseId = created.data.caseId;
-          labDesignCaseByUnitIdRef.current[unit.id] = caseId;
-        }
-
-        applyLabDesignUnitState({
-          unit,
-          caseId,
-          patientName,
-          clinicName,
-          toothWorks,
-          fileRows,
-          unitIndex,
-        });
-        return "opened";
-      } catch (error) {
-        toast({
-          title: "디자인 시작 실패",
-          description:
-            error instanceof Error ? error.message : "다시 시도해 주세요.",
-          variant: "destructive",
-        });
-        return "error";
-      } finally {
-        setLabDesignBusy(false);
-      }
-    },
-    [
-      applyLabDesignUnitState,
-      caseInfos,
-      caseInfosMap,
-      ensureFilesUploaded,
-      labDesignBusy,
-      labOralScanUnits,
-      toast,
-      token,
-    ],
-  );
-
-  const handleOpenLabOralScanDesign = useCallback(
-    async (fileIndex: number) => {
-      const file = files[fileIndex];
-      if (!file) return "error" as const;
-      const key = toNormalizedFileKey(file);
-      const unitIndex = labOralScanUnits.findIndex((unit) =>
-        unit.fileKeys.includes(key),
-      );
-      if (unitIndex < 0) return "error" as const;
-      return openLabOralScanUnitAt(unitIndex);
-    },
-    [files, labOralScanUnits, openLabOralScanUnitAt, toNormalizedFileKey],
-  );
-
-  const handleLabDesignReviewIndexChange = useCallback(
-    (next: number) => {
-      if (next === labDesignUnitIndex) return;
-      void openLabOralScanUnitAt(next);
-    },
-    [labDesignUnitIndex, openLabOralScanUnitAt],
-  );
+  const labAbutmentStlFiles = useMemo(() => files, [files]);
 
   const {
     fileVerificationStatus,
@@ -1566,9 +1304,33 @@ const NewRequestPageContent = () => {
     if (!normalized.length) return;
 
     const batch = classifyIncomingFiles(normalized);
-    // 기공소: 어벗 STL·구강 스캔을 한 드롭존에서 받고 내부 분류만 한다.
+    // 기공소: 어벗 STL만. 모델스캔은 「모델스캔으로 의뢰하기」.
     if (isLabRequestor) {
-      applyClassifiedBatch(batch);
+      const abutmentCandidates = [];
+      const modelScanCandidates = [];
+      for (const candidate of batch.stlCandidates) {
+        if (isLikelyOralScanFile(candidate.file)) {
+          modelScanCandidates.push(candidate);
+        } else {
+          abutmentCandidates.push(candidate);
+        }
+      }
+      if (modelScanCandidates.length > 0) {
+        toast({
+          title: "모델스캔은 여기가 아닙니다",
+          description:
+            "사이드바 「모델스캔으로 의뢰하기」에서 기공의뢰를 작성해 주세요.",
+          duration: 5000,
+        });
+      }
+      applyClassifiedBatch(
+        {
+          stlCandidates: abutmentCandidates,
+          rejectedFiles: batch.rejectedFiles,
+          ignoredFiles: batch.ignoredFiles,
+        },
+        { suppressEmptyToast: modelScanCandidates.length > 0 },
+      );
       return;
     }
 
@@ -1761,7 +1523,7 @@ const NewRequestPageContent = () => {
               <DialogTitle>{abutmentMenuLabel}</DialogTitle>
               <DialogDescription>
                 {isLabRequestor
-                  ? "어벗 디자인 STL은 바로 생산하고, 구강 스캔은 자동 디자인 후 생산합니다."
+                  ? "어벗 디자인 STL로 CNC 생산을 의뢰합니다. 모델스캔은 「모델스캔으로 의뢰하기」를 이용하세요."
                   : "커스텀 어벗 디자인(STL) 파일로 CNC 생산을 의뢰하는 메뉴입니다."}
               </DialogDescription>
             </DialogHeader>
@@ -2138,10 +1900,6 @@ const NewRequestPageContent = () => {
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
               productionOnly={isLabRequestor}
-              acceptOralScanModels
-              onOpenLabOralScanDesign={
-                isLabRequestor ? handleOpenLabOralScanDesign : undefined
-              }
               localDraftRestoreDone={localDraftRestoreDone}
               suppressDetailAutoOpen={suppressLocalDraftForGuideTour}
               onGroupSelectedFiles={groupSelectedFiles}
@@ -2204,9 +1962,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "어벗 디자인 STL이 필요합니다",
                     description:
-                      labOralScanFiles.length > 0
-                        ? "구강 스캔은 카드를 눌러 디자인하고, 생산은 어벗 STL을 첨부해 의뢰하세요."
-                        : "최소 1개의 어벗 디자인 STL을 추가한 뒤 의뢰해주세요.",
+                      "최소 1개의 어벗 디자인 STL을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });
@@ -2216,7 +1972,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "파일이 필요합니다",
                     description:
-                      "어벗 디자인 STL 또는 구강 스캔을 추가한 뒤 의뢰해주세요.",
+                      "어벗 디자인 STL을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });
@@ -2265,45 +2021,6 @@ const NewRequestPageContent = () => {
           </div>
         </div>
 
-        {isLabRequestor ? (
-          <PracticeCustomAbutmentPreviewDialog
-            key={labDesignCaseId || "lab-oral-scan-empty"}
-            open={labDesignOpen}
-            onOpenChange={(open) => {
-              setLabDesignOpen(open);
-              if (!open) setLabDesignCaseId("");
-            }}
-            authToken={token}
-            viewerRole="lab"
-            labOralScanMode
-            caseTitle={
-              [
-                labDesignClinicName ||
-                  String(caseInfos?.clinicName || "").trim() ||
-                  "치과",
-                labDesignPatientName || "환자",
-              ].join(" · ")
-            }
-            patientName={labDesignPatientName}
-            toothWorks={labDesignToothWorks}
-            files={labDesignFiles}
-            transferId={labDesignCaseId}
-            reviewItems={labOralScanUnits.map((unit) => ({
-              id: unit.id,
-              label: unit.label,
-            }))}
-            reviewIndex={labDesignUnitIndex}
-            onReviewIndexChange={handleLabDesignReviewIndexChange}
-            onActionComplete={(action) => {
-              if (action !== "confirmed") return;
-              setLabDesignOpen(false);
-              setLabDesignCaseId("");
-              window.dispatchEvent(
-                new Event("abutsfit:requestor-abutment-refresh"),
-              );
-            }}
-          />
-        ) : null}
       </div>
     </PageFileDropZone>
   );

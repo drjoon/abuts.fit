@@ -102,6 +102,10 @@ import {
   getPracticeTransferWorkFilePaint,
   savePracticeTransferWorkFilePaint,
 } from "../../controllers/practiceTransfers/practiceTransferWorkFilePaint.controller.js";
+import {
+  createLabModelScanTransfer,
+  listLabClientLabels,
+} from "../../controllers/practiceTransfers/labModelScanTransfer.controller.js";
 
 const router = express.Router();
 const caseShareAuth = authorize(["practice", "requestor", "internalLab", "admin"]);
@@ -114,6 +118,20 @@ const receiveAuth = authorizePracticeTransferReceive();
 // practice 전송 전용 라우트 (Request 컬렉션과 분리)
 // 발신: legacy practice 또는 requestor+practice
 router.post("/", authenticate, sendAuth, createPracticeTransfer);
+
+// 기공소 「모델스캔으로 의뢰하기」
+router.post(
+  "/lab-model-scan",
+  authenticate,
+  receiveAuth,
+  createLabModelScanTransfer,
+);
+router.get(
+  "/lab-client-labels",
+  authenticate,
+  receiveAuth,
+  listLabClientLabels,
+);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
 router.get(

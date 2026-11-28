@@ -217,6 +217,7 @@ import {
   X,
   Monitor,
   Gift,
+  Scan,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -276,12 +277,15 @@ const PRACTICE_ABUTMENT_DESIGN_HREF = "/dashboard/new-request";
 const LAB_RECEIVE_HREF = "/dashboard/practice-transfers?mode=receive";
 const INTERNAL_LAB_RECEIVE_HREF = "/dashboard/lab-work";
 const LAB_ABUTMENT_PRODUCTION_HREF = "/dashboard/new-request";
+const LAB_MODEL_SCAN_HREF = "/dashboard/model-scan-transfers";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
   "어벗·임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 const LAB_RECEIVE_TOOLTIP =
   "인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리";
+const LAB_MODEL_SCAN_TOOLTIP =
+  "모델스캔으로 기공의뢰를 직접 작성(미등록·가명 치과 가능)";
 
 const buildLabSidebarRequestItems = (
   receiveHref: string,
@@ -295,6 +299,14 @@ const buildLabSidebarRequestItems = (
     accent: "기공",
     compactLabel: true,
     guideTourSatellite: "lab_calendar",
+  },
+  {
+    icon: Scan,
+    label: "모델스캔으로 의뢰하기",
+    href: LAB_MODEL_SCAN_HREF,
+    tooltip: LAB_MODEL_SCAN_TOOLTIP,
+    accent: "기공",
+    compactLabel: true,
   },
   {
     icon: FileText,
@@ -1673,14 +1685,19 @@ export const DashboardLayout = () => {
   const isPracticeTransfersRoute = location.pathname.startsWith(
     "/dashboard/practice-transfers",
   );
+  const isModelScanTransfersRoute = location.pathname.startsWith(
+    "/dashboard/model-scan-transfers",
+  );
   const isLabReceiveWorkArea =
     location.pathname.startsWith("/dashboard/lab-work") ||
+    isModelScanTransfersRoute ||
     (isPracticeTransfersRoute && requestorKind === "lab");
   const isPracticeOralScanWorkArea =
     isPracticeTransfersRoute && requestorKind === "practice";
   /** 기공의뢰·커스텀어벗 의뢰는 헤더 중요 공지 레일이 공지·크레딧을 맡는다. */
   const hideTopNoticeAndCreditBanner =
     isPracticeTransfersRoute ||
+    isModelScanTransfersRoute ||
     location.pathname.startsWith("/dashboard/new-request");
   /** 정산·문의·설정은 전폭 공지 바를 쓰지 않는다. */
   const hideTopNoticeBar =

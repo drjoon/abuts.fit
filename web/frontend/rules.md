@@ -279,7 +279,7 @@ Notes:
 ## 2. 구현 메모
 
 - 커스텀어벗 접수 이름: 화면은 「기공소에 의뢰하기」「커스텀어벗 의뢰하기」. 코드 `intake`는 `ptx` | `lab`. `designRoute=lab`은 PTX 수작업 STL이고, `designRoute=direct`가 커스텀어벗 의뢰하기다. 디자인 확정이 기본. 수행 기공소가 플랫폼 확정본을 STL로 바꿀 때는 업로드 전에 「수작업으로 다시 디자인」 확인을 거친다(`explicitPlatformToLabManual`). 확정 전 기공의뢰는 캘린더 툴바 「어벗 디자인 N건 검토 대기중」과 수신 카드 「디자인 대기」. 툴바를 누르면 디자인 화면에서 하나씩 확정한다. 그 동안 기공소 STL 지연 경고는 띄우지 않는다.
-- 기공소 「커스텀어벗 의뢰하기」(`/dashboard/new-request`): 드롭존 하나. 어벗 디자인 STL(<3MB)과 구강 스캔(≥3MB STL·PLY·OBJ·DCM(3Shape)·ExoCAD·3ox)을 내부 분류. STL→생산 의뢰, 스캔 카드 클릭→`LabOralScanCase` 자동 디자인 모달(헤더 롤링 카드로 스캔 전환)→생산(디자인비 없음). 사이드바·치과의뢰 수신하기는 그대로. 스캔 경로에 치과 채팅 없음.
+- 기공소 사이드: `치과의뢰 수신하기` · **`모델스캔으로 의뢰하기`**(`/dashboard/model-scan-transfers`) · `커스텀어벗 의뢰하기`. 모델스캔=자유 치과명(미등록·가명)·수신=본인·목록은 수신하기와 분리(`intakeSource=lab_model_scan`)·어벗 생산비는 기공소. 「커스텀어벗 의뢰하기」는 어벗 STL만(모델스캔은 새 메뉴로).
 - 신규의뢰 파일명 자동 인식:
   - 첨부 시 룰/AI(`parseFilenameWithRules`, `/api/ai/parse-filenames`)로 **치과명·환자명만** 자동 채움.
   - **치아번호는 자동 채우지 않음** — 의뢰자가 직접 입력(오인식 방지). 검증은 기존처럼 치아번호 필수.
@@ -739,7 +739,7 @@ Notes:
     - 변경 후 `notifyRequestorAccessUpdated`
   - 기공의뢰서: 발신=`kind===practice`, 수신=`kind===lab` (`PracticeTransferRoleTabs`)
   - 치과 사이드: 상위 `기공소에 의뢰하기`(`/dashboard/practice-transfers?mode=send`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 기공실 없는 치과는 `기공소에 의뢰하기`만. 대시보드 메뉴 없음.
-  - 기공소·어벗츠기공소 사이드: 상위 `치과의뢰 수신하기`(lab=`/dashboard/practice-transfers?mode=receive`, 어벗츠기공소=`/dashboard/lab-work`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 대시보드/대기보드 메뉴 없음. 가입 후 최근 경로가 없으면 기공소는 커스텀어벗 의뢰하기, 어벗츠기공소는 치과의뢰 수신하기. 제출 후 커스텀어벗 의뢰하기.
+  - 기공소·어벗츠기공소 사이드: 상위 `치과의뢰 수신하기`(lab=`/dashboard/practice-transfers?mode=receive`, 어벗츠기공소=`/dashboard/lab-work`) · `모델스캔으로 의뢰하기`(`/dashboard/model-scan-transfers`) · `커스텀어벗 의뢰하기`(`/dashboard/new-request`). 대시보드/대기보드 메뉴 없음. 가입 후 최근 경로가 없으면 기공소는 커스텀어벗 의뢰하기, 어벗츠기공소는 치과의뢰 수신하기. 제출 후 커스텀어벗 의뢰하기.
   - 치과 대시보드 요약 행 라벨: `구강스캔` / `어벗디자인` (기공소는 `기공` / `어벗`). 액센트는 기공·어벗 토큰. 치과·기공소는 대시보드 페이지를 쓰지 않고 같은 기간 건수를 커스텀어벗 의뢰하기 헤더 버튼으로 연다. 기공 수신 건수는 치과의뢰 수신하기 상태 탭.
   - 접근 훅: `useRequestorBusinessAccess` (kind/services + verified)
   - 계정 전환: `AccountSwitcher`

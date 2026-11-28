@@ -194,6 +194,23 @@ const practiceTransferSchema = new mongoose.Schema(
       default: "practice_file_transfer",
       trim: true,
     },
+    /**
+     * 접수 경로. lab_model_scan=기공소 「모델스캔으로 의뢰하기」(치과 BA 없음·자유 치과명).
+     * 빈 문자열=치과 발신 등 기존 경로. 「치과의뢰 수신하기」목록에서 lab_model_scan 제외.
+     */
+    intakeSource: {
+      type: String,
+      enum: ["", "lab_model_scan"],
+      default: "",
+      index: true,
+      trim: true,
+    },
+    /** 기공소가 자유 입력한 치과 표시명(미등록·가명 가능). intakeSource=lab_model_scan */
+    clinicLabel: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     // active | deleted(치과 의뢰 삭제·휴지통) | canceled(레거시 휴지통, deleted와 동일)
     // 기공소 작업취소는 status를 바꾸지 않고 workCanceledAt만 사용.
     status: {

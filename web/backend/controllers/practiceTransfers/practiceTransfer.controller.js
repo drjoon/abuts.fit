@@ -8787,6 +8787,22 @@ export async function getReceivedPracticeTransfers(req, res) {
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 10)));
     const skip = (page - 1) * limit;
+    // intakeSource=lab_model_scan → 「모델스캔으로 의뢰하기」만.
+    // 그 외(치과의뢰 수신하기)는 lab_model_scan 제외. ID hydrate는 소스 무관.
+    const intakeSourceQuery = String(req.query?.intakeSource || "")
+      .trim()
+      .toLowerCase();
+    const intakeSourceFilter = transferMongoIds || transferIdFilter
+      ? null
+      : intakeSourceQuery === "lab_model_scan"
+        ? { intakeSource: "lab_model_scan" }
+        : {
+            $or: [
+              { intakeSource: { $exists: false } },
+              { intakeSource: null },
+              { intakeSource: "" },
+            ],
+          };
 
     const { scope, labAnchorId } = await buildReceivedScope(req);
     if (scope === null) {
@@ -8818,34 +8834,36 @@ export async function getReceivedPracticeTransfers(req, res) {
     const idFilter = transferIdFilter
       ? buildTransferIdFilter(transferIdFilter)
       : null;
+    const withIntake = (parts) =>
+      intakeSourceFilter ? [...parts, intakeSourceFilter] : parts;
     const listScope = transferMongoIds
       ? {
-          $and: [
+          $and: withIntake([
             scope,
             practiceTransferNotDeletedMongoFilter(),
             { _id: { $in: transferMongoIds } },
-          ],
+          ]),
         }
       : idFilter
         ? {
-            $and: [
+            $and: withIntake([
               scope,
               practiceTransferNotDeletedMongoFilter(),
               idFilter,
-            ],
+            ]),
           }
       : calendarFilter
         ? {
-            $and: [
+            $and: withIntake([
               scope,
               practiceTransferNotDeletedMongoFilter(),
               mergeCalendarRangeWithAttentionFilter(
                 calendarFilter,
                 attentionFilter,
               ),
-            ],
+            ]),
           }
-        : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
+        : { $and: withIntake([scope, practiceTransferNotDeletedMongoFilter()]) };
 
     const useCalendarIndex =
       Boolean(calendarRange) && !transferMongoIds && !transferIdFilter;
@@ -8854,20 +8872,24 @@ export async function getReceivedPracticeTransfers(req, res) {
     let unreadCount;
     if (useCalendarIndex) {
       const notDeleted = practiceTransferNotDeletedMongoFilter();
+      const calendarBase = withIntake([scope, notDeleted]);
       const [ranged, attentionDocs, unread] = await Promise.all([
         findPracticeTransferDocsInCalendarRange(PracticeTransfer, {
-          baseFilter: { $and: [scope, notDeleted] },
+          baseFilter: { $and: calendarBase },
           range: calendarRange,
           select: PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT,
         }),
         PracticeTransfer.find({
-          $and: [scope, notDeleted, attentionFilter],
+          $and: withIntake([scope, notDeleted, attentionFilter]),
         })
           .select(PRACTICE_TRANSFER_CALENDAR_INDEX_SELECT)
           .limit(500)
           .lean(),
         PracticeTransfer.countDocuments({
-          $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
+          $and: withIntake([
+            scope,
+            ...buildLabReceiveUnreadMatchParts(labAnchorId),
+          ]),
         }),
       ]);
       const seen = new Set(ranged.map((doc) => String(doc?._id || "")));
@@ -8920,7 +8942,10 @@ export async function getReceivedPracticeTransfers(req, res) {
       transferMongoIds
         ? Promise.resolve(0)
         : PracticeTransfer.countDocuments({
-            $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
+            $and: withIntake([
+              scope,
+              ...buildLabReceiveUnreadMatchParts(labAnchorId),
+            ]),
           }),
     ]);
     rawDocs = listed[0];
@@ -9002,11 +9027,17 @@ export async function getReceivedPracticeTransfers(req, res) {
       const matchingMode = autoFields.matchingMode;
       const revealIdentities =
         role === "admin" || role === "internalLab";
+      const clinicLabel = String(doc?.clinicLabel || "").trim();
+      const isLabModelScan =
+        String(doc?.intakeSource || "").trim() === "lab_model_scan";
       const practiceIdentity = redactAutoMatchPracticeIdentity(
         matchingMode,
         {
           businessName: String(
-            practiceBusiness?.name || practiceProfile?.clinicName || "",
+            (isLabModelScan && clinicLabel
+              ? clinicLabel
+              : practiceBusiness?.name || practiceProfile?.clinicName || "") ||
+              "",
           ).trim(),
           userName: String(
             practiceProfile?.staffName || practiceUser?.name || "",
@@ -9051,6 +9082,8 @@ export async function getReceivedPracticeTransfers(req, res) {
       return {
         _id: String(doc?._id || ""),
         transferId: String(doc?.transferId || "").trim(),
+        intakeSource: String(doc?.intakeSource || "").trim() || "",
+        clinicLabel: clinicLabel || "",
         targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim() || null,
         targetLabName: String(doc?.targetLabName || "").trim(),
         assigneeKind: resolveAssigneeKind(doc),
@@ -9957,11 +9990,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
     if (!alreadyAccepted) {
       const remake = toRemakeApiFields(doc).isRemake;
+      const isLabModelScan =
+        String(doc?.intakeSource || "").trim() === "lab_model_scan";
       const labFeeTotal = Math.max(
         0,
         Math.round(Number(billingResult?.fees?.labFeeTotal || 0)),
       );
+      // 모델스캔 의뢰: 치과 기공비 플랫폼 정산 없음 → 0원도 작업시작 허용.
       if (
+        !isLabModelScan &&
         !remake &&
         toothWorksNeedLabFee(doc.toothWorks) &&
         labFeeTotal <= 0

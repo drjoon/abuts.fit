@@ -558,6 +558,8 @@ import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUn
 import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
 import { DashboardImportantNoticesRail } from "@/shared/notices/DashboardImportantNoticesRail";
 import { LabReceiveAlarmSettingsButton } from "@/shared/components/practice/LabReceiveAlarmSettingsButton";
+import { LabModelScanComposeDialog } from "@/pages/requestor/practice/LabModelScanComposeDialog";
+import { withLabModelScanIntakeSource } from "@/shared/practice/labModelScanApi";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_UNCONFIGURED_REASON,
@@ -1111,6 +1113,7 @@ export function RequestorPracticeReceivePage({
   showDesignQueue = false,
   designQueueListMode = "partner",
   showTransfers = true,
+  listMode = "receive",
 }: {
   roleSwitcher?: ReactNode;
   /** 지정 기공소: 디자인+생산 준비 큐를 의뢰수신에 통합 */
@@ -1119,9 +1122,23 @@ export function RequestorPracticeReceivePage({
   designQueueListMode?: "partner" | "acceptingLab";
   /** 무료 기공의뢰서 수신 목록 표시 */
   showTransfers?: boolean;
+  /** receive=치과의뢰 수신하기 · model_scan=모델스캔으로 의뢰하기 */
+  listMode?: "receive" | "model_scan";
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const isModelScanList = listMode === "model_scan";
+  const receivedListQuery = useCallback(
+    (qs: string | URLSearchParams) => {
+      const raw = typeof qs === "string" ? qs : qs.toString();
+      return isModelScanList ? withLabModelScanIntakeSource(raw) : raw;
+    },
+    [isModelScanList],
+  );
+  const [modelScanComposeOpen, setModelScanComposeOpen] = useState(false);
+  const [modelScanPrefillFiles, setModelScanPrefillFiles] = useState<File[]>(
+    [],
+  );
   const platformGuideTour = useGuideTour();
   const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
@@ -2334,7 +2351,9 @@ export function RequestorPracticeReceivePage({
       if (!silent) setError("");
 
       try {
-        const qs = buildPracticeTransferCalendarApiQuery(calendarYmdRange, dateKey);
+        const qs = receivedListQuery(
+          buildPracticeTransferCalendarApiQuery(calendarYmdRange, dateKey),
+        );
         const res = await apiFetch<unknown>({
           path: `/api/practice/transfers/received?${qs}`,
           method: "GET",
@@ -2433,6 +2452,7 @@ export function RequestorPracticeReceivePage({
       mapTransferRows,
       mergeTransferPreserveOptimisticDesigns,
       parseTransfersBody,
+      receivedListQuery,
       reopenStuckTransfers,
       token,
     ],
@@ -8630,7 +8650,7 @@ export function RequestorPracticeReceivePage({
       void (async () => {
         const qs = new URLSearchParams({ transferId, limit: "8" });
         const res = await apiFetch<unknown>({
-          path: `/api/practice/transfers/received?${qs.toString()}`,
+          path: `/api/practice/transfers/received?${receivedListQuery(qs)}`,
           method: "GET",
           token,
         });
@@ -8661,6 +8681,7 @@ export function RequestorPracticeReceivePage({
       mapTransferRows,
       openTransferDialog,
       parseTransfersBody,
+      receivedListQuery,
       toast,
       token,
       transfers,
@@ -9699,7 +9720,7 @@ export function RequestorPracticeReceivePage({
       if (!id || !token || labTransferHasDesignScan(transfer)) return transfer;
       const qs = new URLSearchParams({ transferId: id, limit: "8" });
       const res = await apiFetch<unknown>({
-        path: `/api/practice/transfers/received?${qs.toString()}`,
+        path: `/api/practice/transfers/received?${receivedListQuery(qs)}`,
         method: "GET",
         token,
       });
@@ -9712,7 +9733,7 @@ export function RequestorPracticeReceivePage({
         transfer
       );
     },
-    [mapTransferRows, parseTransfersBody, token],
+    [mapTransferRows, parseTransfersBody, receivedListQuery, token],
   );
 
   /** 캘린더 INDEX 행에 없는 스캔 s3Key를 목록·선택에 남겨 다음 클릭이 즉시 열리게 한다. */
@@ -10436,6 +10457,19 @@ export function RequestorPracticeReceivePage({
 
   const labMobileHeaderActionButtons = (
     <>
+      {isModelScanList ? (
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 shrink-0 px-2.5 text-xs"
+          onClick={() => {
+            setModelScanPrefillFiles([]);
+            setModelScanComposeOpen(true);
+          }}
+        >
+          새로 작성
+        </Button>
+      ) : null}
       {shipLabelButton}
       {bookmarkNavigateButton()}
       {labAbutmentInProgressTrigger}
@@ -10494,6 +10528,19 @@ export function RequestorPracticeReceivePage({
         alwaysLabeled
       />
       <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
+        {isModelScanList ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 shrink-0 px-2.5 text-xs"
+            onClick={() => {
+              setModelScanPrefillFiles([]);
+              setModelScanComposeOpen(true);
+            }}
+          >
+            새로 작성
+          </Button>
+        ) : null}
         {shipLabelButton}
         {bookmarkNavigateButton()}
         {labAbutmentInProgressTrigger}
@@ -10890,6 +10937,16 @@ export function RequestorPracticeReceivePage({
         forceRequired={requestSettingsForceRequired}
       />
       {labWorkFolderDialogs}
+      {isModelScanList ? (
+        <LabModelScanComposeDialog
+          open={modelScanComposeOpen}
+          onOpenChange={setModelScanComposeOpen}
+          prefilledFiles={modelScanPrefillFiles}
+          onCreated={() => {
+            void loadCalendarTransfers({ silent: true });
+          }}
+        />
+      ) : null}
       <RequestorAbutmentPageHeader
         variant="policyInProgress"
         hideInProgressTrigger
