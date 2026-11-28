@@ -127,6 +127,7 @@ type Props = {
   onRemoveFileFromPatientGroup?: (fileKey: string) => void;
   /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
   productionOnly?: boolean;
+  acceptOralScanModels?: boolean;
   /** 로컬 draft 복원 완료 전 known keys bootstrap 보류 */
   localDraftRestoreDone?: boolean;
   /** 가이드투어 중 3D 확인 모달 자동 오픈·유지 금지 */
@@ -201,10 +202,12 @@ export function NewRequestDetailsSection({
   onUngroupPatientFiles,
   onRemoveFileFromPatientGroup,
   productionOnly = false,
+  acceptOralScanModels = false,
   localDraftRestoreDone = true,
   suppressDetailAutoOpen = false,
   machiningPreflightByFileKey = {},
 }: Props) {
+  const allowOralScanGrouping = !productionOnly || acceptOralScanModels;
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -843,10 +846,15 @@ export function NewRequestDetailsSection({
             defaultShippingMode={defaultShippingMode}
             expressSelectableGlobal={expressSelectableGlobal}
             listItems={attachmentListItems}
-            onGroupSelectedFiles={productionOnly ? undefined : onGroupSelectedFiles}
-            onUngroup={productionOnly ? undefined : onUngroupPatientFiles}
-            onRemoveFileFromGroup={productionOnly ? undefined : onRemoveFileFromPatientGroup}
+            onGroupSelectedFiles={
+              allowOralScanGrouping ? onGroupSelectedFiles : undefined
+            }
+            onUngroup={allowOralScanGrouping ? onUngroupPatientFiles : undefined}
+            onRemoveFileFromGroup={
+              allowOralScanGrouping ? onRemoveFileFromPatientGroup : undefined
+            }
             productionOnly={productionOnly}
+            acceptOralScanModels={acceptOralScanModels}
             machiningPreflightByFileKey={machiningPreflightByFileKey}
           />
         </div>

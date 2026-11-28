@@ -52,6 +52,19 @@ export function isLikelyOralScanSize(sizeBytes: number | null | undefined): bool
   return typeof sizeBytes === "number" && sizeBytes >= ORAL_SCAN_MIN_BYTES;
 }
 
+/** PLY/OBJ는 용량과 무관하게 구강 스캔. STL은 3MB 기준. */
+export function isLikelyOralScanFile(file: {
+  name?: string;
+  size?: number;
+} | null | undefined): boolean {
+  if (!file) return false;
+  const name = String(file.name || "").trim().toLowerCase();
+  const idx = name.lastIndexOf(".");
+  const ext = idx >= 0 ? name.slice(idx) : "";
+  if (ext === ".ply" || ext === ".obj") return true;
+  return isLikelyOralScanSize(file.size);
+}
+
 /** 커스텀어벗 디자인 STL 후보(<3MB). **자동** 묶음 제외·생산. */
 export function isLikelyCustomAbutDesignSize(
   sizeBytes: number | null | undefined,

@@ -1,6 +1,6 @@
 // related files:
 // - web/backend/controllers/labOralScanCases/labOralScanCase.controller.js
-// - web/frontend/src/pages/requestor/new_request/components/LabOralScanEntryPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { apiFetch } from "@/shared/api/apiClient";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 

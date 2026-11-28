@@ -73,10 +73,12 @@ import {
   EXPRESS_SHIPPING_LABEL_SHORT,
 } from "@/shared/shipping/shippingPolicyCopy";
 import { useToast } from "@/shared/hooks/use-toast";
+import { PRACTICE_TRANSFER_STL_ACCEPT } from "@/shared/practice/practiceTransferAccept";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
   getPrimaryFileKey,
   isLikelyCustomAbutDesignSize,
+  isLikelyOralScanFile,
   isLikelyOralScanSize,
   resolveOralScanGroupTitle,
 } from "../utils/patientGroups";
@@ -103,8 +105,6 @@ function formatAttachmentSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}MB`;
 }
-
-import { PRACTICE_TRANSFER_STL_ACCEPT } from "@/shared/practice/practiceTransferAccept";
 
 function pickUploadProgress(
   filesForCard: Array<File | undefined>,
@@ -303,6 +303,11 @@ type Props = {
   onRemoveFileFromGroup?: (fileKey: string) => void;
   /** true: 기공소 — 생산 전용(구강스캔 묶음·파일유형 뱃지 없음) */
   productionOnly?: boolean;
+  /**
+   * 기공소 통합 드롭존: 어벗 STL + 구강 스캔.
+   * accept·안내 문구·파일 유형 뱃지를 연다. productionOnly와 함께 쓸 수 있다.
+   */
+  acceptOralScanModels?: boolean;
   /** 파일 키별 접수 전 가공 검사 결과 */
   machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
 };
@@ -347,8 +352,19 @@ export function NewRequestAttachmentsPanel({
   onUngroup,
   onRemoveFileFromGroup,
   productionOnly = false,
+  acceptOralScanModels = false,
   machiningPreflightByFileKey = {},
 }: Props) {
+  const showKindBadges = !productionOnly || acceptOralScanModels;
+  const dropAccept = acceptOralScanModels
+    ? ".stl,.STL,.ply,.PLY,.obj,.OBJ,model/stl,application/sla"
+    : PRACTICE_TRANSFER_STL_ACCEPT;
+  const dropLabel = acceptOralScanModels
+    ? "어벗 디자인 STL 또는 구강 스캔을 추가하세요."
+    : "여기를 클릭하거나 STL 파일을 드래그해 추가하세요.";
+  const dropHint = acceptOralScanModels
+    ? "어벗 STL · 구강 스캔(STL·PLY·OBJ)"
+    : "";
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
   const [now, setNow] = useState(() => new Date());
@@ -851,8 +867,9 @@ export function NewRequestAttachmentsPanel({
     const fileInfo = caseInfosMap?.[fileKey];
     const checked = selectedKeys.has(fileKey);
     const canGroupSelect = Boolean(onGroupSelectedFiles);
-    const isOralScanFile = isLikelyOralScanSize(file.size);
-    const isAbutDesignFile = isLikelyCustomAbutDesignSize(file.size);
+    const isOralScanFile = isLikelyOralScanFile(file);
+    const isAbutDesignFile =
+      !isOralScanFile && isLikelyCustomAbutDesignSize(file.size);
 
     const baseClasses = isVerified
       ? "border border-gray-200 bg-white text-gray-900"
@@ -939,9 +956,10 @@ export function NewRequestAttachmentsPanel({
             fileKey,
             fileKeysForMode: [fileKey],
             fileInfo,
-            hideDesignBadge: productionOnly ? true : isOralScanFile,
-            forceDesignProductMode: productionOnly ? false : isOralScanFile,
-            fileKindBadge: productionOnly
+            hideDesignBadge: showKindBadges ? isOralScanFile : true,
+            forceDesignProductMode:
+              !productionOnly && isOralScanFile,
+            fileKindBadge: !showKindBadges
               ? null
               : isOralScanFile
                 ? "oral_scan"
@@ -1196,11 +1214,11 @@ export function NewRequestAttachmentsPanel({
         <PracticeTransferFileDropTarget
           fileInputId="new-request-stl-upload"
           onFiles={onFilesSelected}
-          accept={PRACTICE_TRANSFER_STL_ACCEPT}
-          acceptedHint=""
+          accept={dropAccept}
+          acceptedHint={dropHint}
           filterFiles={(incoming) => incoming}
           compact={hasAnyAttachment}
-          label="여기를 클릭하거나 STL 파일을 드래그해 추가하세요."
+          label={dropLabel}
           className="shrink-0 w-full"
         />
 

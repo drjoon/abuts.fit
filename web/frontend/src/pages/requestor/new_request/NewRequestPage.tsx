@@ -69,16 +69,18 @@ import { Button } from "@/components/ui/button";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
+import { PracticeCustomAbutmentPreviewDialog } from "@/shared/components/practice/PracticeCustomAbutmentPreviewDialog";
+import { createLabOralScanCase } from "@/shared/practice/labOralScanCaseApi";
 import {
-  LabAbutmentEntryChooser,
-  type LabAbutmentEntryMode,
-} from "./components/LabAbutmentEntryChooser";
-import { LabOralScanEntryPanel } from "./components/LabOralScanEntryPanel";
-
+  ABUTMENT_PRODUCT_MODE,
+  normalizeToothWorks,
+} from "@/shared/practice/transferMemo";
+import { isCustomAbutmentWork } from "@/shared/practice/labFeeSchedule";
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import { type LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import {
   findGroupByFileKey,
+  isLikelyOralScanFile,
   isLikelyOralScanSize,
   resolveFileSizeBytes,
 } from "./utils/patientGroups";
@@ -146,15 +148,21 @@ const NewRequestPageContent = () => {
     : "/dashboard/practice-transfers?mode=send";
 
   const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
-  /** 기공소: 스캔 디자인 vs STL 생산. null이면 선택 UI. */
-  const [labEntryMode, setLabEntryMode] = useState<LabAbutmentEntryMode | null>(
-    null,
-  );
-  /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
+  /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 (치과만) */
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
   const handleIncomingFilesRef = useRef<(files: File[]) => void>(() => {});
   const submitClickGuardRef = useRef(false);
+  const [labDesignBusy, setLabDesignBusy] = useState(false);
+  const [labDesignOpen, setLabDesignOpen] = useState(false);
+  const [labDesignCaseId, setLabDesignCaseId] = useState("");
+  const [labDesignFiles, setLabDesignFiles] = useState<
+    { fileName: string; s3Key: string; size: number; scanRole?: string | null }[]
+  >([]);
+  const [labDesignToothWorks, setLabDesignToothWorks] = useState(
+    [] as ReturnType<typeof normalizeToothWorks>,
+  );
+  const [labDesignPatientName, setLabDesignPatientName] = useState("");
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -236,8 +244,9 @@ const NewRequestPageContent = () => {
     clearPatientGroups,
     localDraftRestoreDone,
     suppressLocalDraftForGuideTour,
+    ensureFilesUploaded,
   } = useNewRequestPage(existingRequestId, {
-    enableOralScanGrouping: !isLabRequestor,
+    enableOralScanGrouping: true,
   });
 
   // STL 첨부 즉시 JS 파이프라인 가공 검사(불완전가공 사전 안내)
@@ -261,6 +270,119 @@ const NewRequestPageContent = () => {
     }
     return keys;
   }, [files, patientGroups, toNormalizedFileKey]);
+
+  const labOralScanFiles = useMemo(
+    () => (isLabRequestor ? files.filter((file) => isLikelyOralScanFile(file)) : []),
+    [files, isLabRequestor],
+  );
+  const labAbutmentStlFiles = useMemo(
+    () =>
+      isLabRequestor
+        ? files.filter((file) => !isLikelyOralScanFile(file))
+        : files,
+    [files, isLabRequestor],
+  );
+
+  const handleLabDesignStart = useCallback(async () => {
+    if (!token || labDesignBusy) return;
+    if (labOralScanFiles.length === 0) {
+      toast({
+        title: "구강 스캔이 필요합니다",
+        description: "구강 스캔(STL·PLY·OBJ)을 첨부한 뒤 디자인을 시작하세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const primaryKey = toNormalizedFileKey(labOralScanFiles[0]!);
+    const info = caseInfosMap?.[primaryKey] || caseInfos || {};
+    const patientName = String(info.patientName || caseInfos?.patientName || "").trim();
+    if (!patientName) {
+      toast({
+        title: "환자명을 입력해 주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+    const toothWorks = normalizeToothWorks(
+      Array.isArray(info.toothWorks) ? info.toothWorks : caseInfos?.toothWorks || [],
+    ).filter((row) => isCustomAbutmentWork(row));
+    if (toothWorks.length === 0) {
+      toast({
+        title: "커스텀어벗 치식을 선택해 주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLabDesignBusy(true);
+    try {
+      const uploaded = await ensureFilesUploaded(labOralScanFiles);
+      const fileRows = uploaded.map((row, index) => ({
+        originalName: row.originalName || labOralScanFiles[index]?.name || "scan.stl",
+        mimetype: row.mimetype || "application/octet-stream",
+        size: row.size || labOralScanFiles[index]?.size || 0,
+        s3Key: String(row.key || "").trim(),
+        patientName,
+      }));
+      if (fileRows.some((row) => !row.s3Key)) {
+        toast({
+          title: "업로드 실패",
+          description: "스캔 파일 업로드를 다시 시도해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const created = await createLabOralScanCase(token, {
+        clinicName: String(info.clinicName || caseInfos?.clinicName || "").trim(),
+        patientName,
+        memo: String(info.memo || caseInfos?.memo || "").trim(),
+        toothWorks: toothWorks.map((row) => ({
+          ...row,
+          customAbutment: true,
+          abutmentProductMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+        })),
+        files: fileRows,
+      });
+      if (!created.ok || !created.data?.caseId) {
+        toast({
+          title: "케이스 생성 실패",
+          description: created.message || "다시 시도해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setLabDesignCaseId(created.data.caseId);
+      setLabDesignPatientName(patientName);
+      setLabDesignToothWorks(toothWorks);
+      setLabDesignFiles(
+        fileRows.map((row) => ({
+          fileName: row.originalName,
+          s3Key: row.s3Key,
+          size: row.size,
+          scanRole: null,
+        })),
+      );
+      setLabDesignOpen(true);
+    } catch (error) {
+      toast({
+        title: "디자인 시작 실패",
+        description:
+          error instanceof Error ? error.message : "다시 시도해 주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setLabDesignBusy(false);
+    }
+  }, [
+    caseInfos,
+    caseInfosMap,
+    ensureFilesUploaded,
+    labDesignBusy,
+    labOralScanFiles,
+    toast,
+    token,
+    toNormalizedFileKey,
+  ]);
 
   const {
     fileVerificationStatus,
@@ -1170,11 +1292,13 @@ const NewRequestPageContent = () => {
       }
 
       if (ext === ".ply" || ext === ".obj") {
+        if (isLabRequestor) {
+          stlCandidates.push({ id: toNormalizedFileKey(file), file });
+          return;
+        }
         rejectedFiles.push({
           name: file.name,
-          reason: isLabRequestor
-            ? `${abutmentMenuLabel}에서 「구강 스캔으로 디자인」을 선택한 뒤 첨부해 주세요.`
-            : `${abutmentMenuLabel} 화면은 STL만 받습니다. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
+          reason: `${abutmentMenuLabel} 화면은 STL만 받습니다. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
         });
         return;
       }
@@ -1186,7 +1310,9 @@ const NewRequestPageContent = () => {
 
       rejectedFiles.push({
         name: file.name,
-        reason: "STL 파일만 업로드할 수 있어요.",
+        reason: isLabRequestor
+          ? "STL·PLY·OBJ만 업로드할 수 있어요."
+          : "STL 파일만 업로드할 수 있어요.",
       });
     });
 
@@ -1321,6 +1447,12 @@ const NewRequestPageContent = () => {
     if (!normalized.length) return;
 
     const batch = classifyIncomingFiles(normalized);
+    // 기공소: 어벗 STL·구강 스캔을 한 드롭존에서 받고 내부 분류만 한다.
+    if (isLabRequestor) {
+      applyClassifiedBatch(batch);
+      return;
+    }
+
     const smallCandidates: StlSelectionCandidate[] = [];
     const largeCandidates: StlSelectionCandidate[] = [];
     for (const candidate of batch.stlCandidates) {
@@ -1508,7 +1640,9 @@ const NewRequestPageContent = () => {
             <DialogHeader>
               <DialogTitle>{abutmentMenuLabel}</DialogTitle>
               <DialogDescription>
-                커스텀 어벗 디자인(STL) 파일로 CNC 생산을 의뢰하는 메뉴입니다.
+                {isLabRequestor
+                  ? "어벗 디자인 STL은 바로 생산하고, 구강 스캔은 자동 디자인 후 생산합니다."
+                  : "커스텀 어벗 디자인(STL) 파일로 CNC 생산을 의뢰하는 메뉴입니다."}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 sm:gap-2">
@@ -1547,7 +1681,7 @@ const NewRequestPageContent = () => {
           }}
         />
         <ConfirmDialog
-          open={oversizedPendingFiles.length > 0}
+          open={!isLabRequestor && oversizedPendingFiles.length > 0}
           panelClassName="max-w-xl"
           confirmTone="primary"
           title="커스텀 어벗 STL이 맞나요?"
@@ -1564,36 +1698,23 @@ const NewRequestPageContent = () => {
               </p>
               <p>
                 구강 스캔이라면{" "}
-                {isLabRequestor ? (
-                  <button
-                    type="button"
-                    className="font-semibold text-primary-strong underline underline-offset-2"
-                    onClick={() => {
-                      clearOversizedPending();
-                      setLabEntryMode("scan");
-                    }}
-                  >
-                    구강 스캔으로 디자인
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="font-semibold text-primary-strong underline underline-offset-2"
-                    onClick={() => {
-                      const filesToPrefill = [...oversizedPendingFiles];
-                      clearOversizedPending();
-                      navigate(oralScanPageHref, {
-                        state: {
-                          prefilledFiles: filesToPrefill,
-                          source: "new-request-oversized",
-                        },
-                      });
-                    }}
-                  >
-                    {oralScanPageLabel}
-                  </button>
-                )}{" "}
-                {isLabRequestor ? "으로 시작해 주세요." : "페이지를 이용해주세요."}
+                <button
+                  type="button"
+                  className="font-semibold text-primary-strong underline underline-offset-2"
+                  onClick={() => {
+                    const filesToPrefill = [...oversizedPendingFiles];
+                    clearOversizedPending();
+                    navigate(oralScanPageHref, {
+                      state: {
+                        prefilledFiles: filesToPrefill,
+                        source: "new-request-oversized",
+                      },
+                    });
+                  }}
+                >
+                  {oralScanPageLabel}
+                </button>{" "}
+                페이지를 이용해주세요.
               </p>
               {oversizedPendingFiles.length > 1 ? (
                 <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
@@ -1821,50 +1942,7 @@ const NewRequestPageContent = () => {
           contentClassName="new-request-page sm:max-w-sm"
         />
 
-        {isLabRequestor && labEntryMode === null ? (
-          <div className="flex flex-1 items-start justify-center pt-8">
-            <LabAbutmentEntryChooser onChoose={setLabEntryMode} />
-          </div>
-        ) : null}
-
-        {isLabRequestor && labEntryMode === "scan" ? (
-          <LabOralScanEntryPanel
-            onBack={() => setLabEntryMode(null)}
-            onSwitchToStl={() => setLabEntryMode("stl")}
-            onProductionOrdered={() => {
-              setLabEntryMode(null);
-              window.dispatchEvent(new Event("abutsfit:requestor-abutment-refresh"));
-            }}
-          />
-        ) : null}
-
-        {(!isLabRequestor || labEntryMode === "stl") ? (
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
-          {isLabRequestor ? (
-            <div className="xl:col-span-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-slate-600">
-                어벗 디자인 STL로 바로 생산 의뢰합니다.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setLabEntryMode(null)}
-                >
-                  처음으로
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLabEntryMode("scan")}
-                >
-                  구강 스캔으로 디자인
-                </Button>
-              </div>
-            </div>
-          ) : null}
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
               files={files}
@@ -1940,6 +2018,7 @@ const NewRequestPageContent = () => {
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
               productionOnly={isLabRequestor}
+              acceptOralScanModels={isLabRequestor}
               localDraftRestoreDone={localDraftRestoreDone}
               suppressDetailAutoOpen={suppressLocalDraftForGuideTour}
               onGroupSelectedFiles={groupSelectedFiles}
@@ -1990,13 +2069,35 @@ const NewRequestPageContent = () => {
             />
           </div>
 
-          <div className="flex flex-col flex-1 min-h-0 h-full">
+          <div className="flex flex-col flex-1 min-h-0 h-full gap-2">
+            {isLabRequestor && labOralScanFiles.length > 0 ? (
+              <Button
+                type="button"
+                className="h-11 w-full font-semibold"
+                disabled={labDesignBusy}
+                onClick={() => void handleLabDesignStart()}
+              >
+                {labDesignBusy ? "준비 중…" : "구강 스캔 디자인 시작"}
+              </Button>
+            ) : null}
             <NewRequestShippingSection
               disabled={isSubmitting}
               defaultShippingMode={defaultShippingMode}
-              highlight={files.length > 0}
+              highlight={labAbutmentStlFiles.length > 0}
               onSubmit={() => {
                 if (isSubmitting || submitClickGuardRef.current) return;
+                if (isLabRequestor && labAbutmentStlFiles.length === 0) {
+                  toast({
+                    title: "어벗 디자인 STL이 필요합니다",
+                    description:
+                      labOralScanFiles.length > 0
+                        ? "구강 스캔은 위 「디자인 시작」으로, 생산은 어벗 STL을 첨부해 의뢰하세요."
+                        : "최소 1개의 어벗 디자인 STL을 추가한 뒤 의뢰해주세요.",
+                    variant: "destructive",
+                    duration: 4000,
+                  });
+                  return;
+                }
                 if (!files.length) {
                   toast({
                     title: "파일이 필요합니다",
@@ -2048,6 +2149,36 @@ const NewRequestPageContent = () => {
             />
           </div>
         </div>
+
+        {isLabRequestor ? (
+          <PracticeCustomAbutmentPreviewDialog
+            open={labDesignOpen}
+            onOpenChange={(open) => {
+              setLabDesignOpen(open);
+              if (!open) setLabDesignCaseId("");
+            }}
+            authToken={token}
+            viewerRole="lab"
+            labOralScanMode
+            caseTitle={
+              [
+                String(caseInfos?.clinicName || "").trim() || "치과",
+                labDesignPatientName || "환자",
+              ].join(" · ")
+            }
+            patientName={labDesignPatientName}
+            toothWorks={labDesignToothWorks}
+            files={labDesignFiles}
+            transferId={labDesignCaseId}
+            onActionComplete={(action) => {
+              if (action !== "confirmed") return;
+              setLabDesignOpen(false);
+              setLabDesignCaseId("");
+              window.dispatchEvent(
+                new Event("abutsfit:requestor-abutment-refresh"),
+              );
+            }}
+          />
         ) : null}
       </div>
     </PageFileDropZone>
