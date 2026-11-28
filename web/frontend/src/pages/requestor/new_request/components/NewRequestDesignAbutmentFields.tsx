@@ -83,6 +83,13 @@ type Props = {
   addPatientPreset: (label: string) => void;
   clearAllPatientPresets: () => void;
   handleAddOrSelectClinic: (label: string) => void;
+  /**
+   * 기공소 스캔 분기: 디자인+생산 고정, 생산만 클릭 시 onAlternateNavigate.
+   * 기본(STL 생산)=생산만 고정.
+   */
+  abutmentEntryMode?: "production" | "design";
+  onAlternateNavigate?: () => void;
+  alternateNavigateLabel?: string;
 };
 
 export function hasDesignAbutmentProsthesis(toothWorks: ToothWorkSelection[] | undefined) {
@@ -100,6 +107,9 @@ export function NewRequestDesignAbutmentFields({
   addPatientPreset,
   clearAllPatientPresets,
   handleAddOrSelectClinic,
+  abutmentEntryMode = "production",
+  onAlternateNavigate,
+  alternateNavigateLabel,
 }: Props) {
   const { token, user: authUser } = useAuthStore();
   const { kind: requestorKind } = useRequestorBusinessAccess();
@@ -113,6 +123,20 @@ export function NewRequestDesignAbutmentFields({
       : "/dashboard/practice-transfers?mode=receive"
     : "/dashboard/practice-transfers?mode=send";
   const navigate = useNavigate();
+  const designEntry = abutmentEntryMode === "design";
+  const lockedMode = designEntry
+    ? ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+    : ABUTMENT_PRODUCT_MODE.PRODUCTION;
+  const alternateLabel =
+    alternateNavigateLabel ||
+    (designEntry ? "어벗 STL로 생산" : oralScanPageLabel);
+  const handleAlternate = () => {
+    if (onAlternateNavigate) {
+      onAlternateNavigate();
+      return;
+    }
+    navigate(oralScanPageHref);
+  };
   const { connections: implantConnections } = useImplantConnectionCatalog(token);
 
   const requestMemo = String(caseInfos?.memo || "");
@@ -387,11 +411,9 @@ export function NewRequestDesignAbutmentFields({
     requestMemo,
     setRequestMemo,
     implantConnections,
-    lockedAbutmentProductMode: ABUTMENT_PRODUCT_MODE.PRODUCTION,
-    onAlternateAbutmentModeNavigate: () => {
-      navigate(oralScanPageHref);
-    },
-    alternateAbutmentModePageLabel: oralScanPageLabel,
+    lockedAbutmentProductMode: lockedMode,
+    onAlternateAbutmentModeNavigate: handleAlternate,
+    alternateAbutmentModePageLabel: alternateLabel,
     implantFavorites,
     onPresetEditorOpen: () => {
       void loadFavoritesFromServer();

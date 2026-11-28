@@ -69,6 +69,11 @@ import { Button } from "@/components/ui/button";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { RequestorAbutmentPageHeader } from "./components/RequestorAbutmentPageHeader";
+import {
+  LabAbutmentEntryChooser,
+  type LabAbutmentEntryMode,
+} from "./components/LabAbutmentEntryChooser";
+import { LabOralScanEntryPanel } from "./components/LabOralScanEntryPanel";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 import { type LeadTimesMap } from "@/shared/shipping/estimateShipDate";
@@ -141,6 +146,10 @@ const NewRequestPageContent = () => {
     : "/dashboard/practice-transfers?mode=send";
 
   const [practiceIntroOpen, setPracticeIntroOpen] = useState(false);
+  /** 기공소: 스캔 디자인 vs STL 생산. null이면 선택 UI. */
+  const [labEntryMode, setLabEntryMode] = useState<LabAbutmentEntryMode | null>(
+    null,
+  );
   /** 3MB 초과(구강스캔 후보) — ConfirmDialog 확인 후 첨부 */
   const [oversizedPendingFiles, setOversizedPendingFiles] = useState<File[]>([]);
   const [oversizedPreviewIndex, setOversizedPreviewIndex] = useState(0);
@@ -1163,7 +1172,9 @@ const NewRequestPageContent = () => {
       if (ext === ".ply" || ext === ".obj") {
         rejectedFiles.push({
           name: file.name,
-          reason: `${abutmentMenuLabel} 화면은 STL만 받습니다. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
+          reason: isLabRequestor
+            ? `${abutmentMenuLabel}에서 「구강 스캔으로 디자인」을 선택한 뒤 첨부해 주세요.`
+            : `${abutmentMenuLabel} 화면은 STL만 받습니다. PLY/OBJ는 ${oralScanPageLabel} 페이지를 이용해주세요.`,
         });
         return;
       }
@@ -1553,28 +1564,36 @@ const NewRequestPageContent = () => {
               </p>
               <p>
                 구강 스캔이라면{" "}
-                <button
-                  type="button"
-                  className="font-semibold text-primary-strong underline underline-offset-2"
-                  onClick={() => {
-                    const filesToPrefill = [...oversizedPendingFiles];
-                    clearOversizedPending();
-                    // 치과만 발신(send)+prefill. 기공소는 수신 페이지로만 안내.
-                    if (isLabRequestor) {
-                      navigate(oralScanPageHref);
-                      return;
-                    }
-                    navigate(oralScanPageHref, {
-                      state: {
-                        prefilledFiles: filesToPrefill,
-                        source: "new-request-oversized",
-                      },
-                    });
-                  }}
-                >
-                  {oralScanPageLabel}
-                </button>{" "}
-                페이지를 이용해주세요.
+                {isLabRequestor ? (
+                  <button
+                    type="button"
+                    className="font-semibold text-primary-strong underline underline-offset-2"
+                    onClick={() => {
+                      clearOversizedPending();
+                      setLabEntryMode("scan");
+                    }}
+                  >
+                    구강 스캔으로 디자인
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="font-semibold text-primary-strong underline underline-offset-2"
+                    onClick={() => {
+                      const filesToPrefill = [...oversizedPendingFiles];
+                      clearOversizedPending();
+                      navigate(oralScanPageHref, {
+                        state: {
+                          prefilledFiles: filesToPrefill,
+                          source: "new-request-oversized",
+                        },
+                      });
+                    }}
+                  >
+                    {oralScanPageLabel}
+                  </button>
+                )}{" "}
+                {isLabRequestor ? "으로 시작해 주세요." : "페이지를 이용해주세요."}
               </p>
               {oversizedPendingFiles.length > 1 ? (
                 <ul className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs">
@@ -1802,7 +1821,50 @@ const NewRequestPageContent = () => {
           contentClassName="new-request-page sm:max-w-sm"
         />
 
+        {isLabRequestor && labEntryMode === null ? (
+          <div className="flex flex-1 items-start justify-center pt-8">
+            <LabAbutmentEntryChooser onChoose={setLabEntryMode} />
+          </div>
+        ) : null}
+
+        {isLabRequestor && labEntryMode === "scan" ? (
+          <LabOralScanEntryPanel
+            onBack={() => setLabEntryMode(null)}
+            onSwitchToStl={() => setLabEntryMode("stl")}
+            onProductionOrdered={() => {
+              setLabEntryMode(null);
+              window.dispatchEvent(new Event("abutsfit:requestor-abutment-refresh"));
+            }}
+          />
+        ) : null}
+
+        {(!isLabRequestor || labEntryMode === "stl") ? (
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(34rem,1.2fr)_minmax(0,1fr)] gap-3 items-stretch flex-1 min-h-0 h-full">
+          {isLabRequestor ? (
+            <div className="xl:col-span-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-slate-600">
+                어벗 디자인 STL로 바로 생산 의뢰합니다.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLabEntryMode(null)}
+                >
+                  처음으로
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLabEntryMode("scan")}
+                >
+                  구강 스캔으로 디자인
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
               files={files}
@@ -1986,6 +2048,7 @@ const NewRequestPageContent = () => {
             />
           </div>
         </div>
+        ) : null}
       </div>
     </PageFileDropZone>
   );

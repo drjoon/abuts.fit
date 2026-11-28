@@ -436,6 +436,11 @@ export type PracticeCustomAbutmentPreviewDialogProps = {
    * 프록시 403을 기다리지 않고 안내만 보여 준다.
    */
   scanDownloadLocked?: boolean;
+  /**
+   * 기공소 「커스텀어벗 의뢰하기」 스캔 분기.
+   * 치과 채팅·유예·기공소 2차 확정 없이 바로 생산 의뢰.
+   */
+  labOralScanMode?: boolean;
 };
 
 type CenterGuideMode = "off" | "center" | "grid";
@@ -1410,6 +1415,7 @@ export function PracticeCustomAbutmentPreviewDialog({
   onReviewIndexChange,
   filesPending = false,
   scanDownloadLocked = false,
+  labOralScanMode = false,
 }: PracticeCustomAbutmentPreviewDialogProps) {
   const { toast } = useToast();
   const { connections } = useImplantConnectionCatalog(open ? (authToken ?? null) : null);
@@ -1417,7 +1423,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     const user = state.user as { id?: string; _id?: string } | null;
     return String(user?.id || user?._id || "");
   });
-  const isLabViewer = viewerRole === "lab";
+  const isLabViewer = viewerRole === "lab" && !labOralScanMode;
 
   const normalizedToothWorks = useMemo(() => {
     const seen = new Set<string>();
@@ -8668,30 +8674,36 @@ export function PracticeCustomAbutmentPreviewDialog({
         if (!res.ok) {
           skipSnapshotFlushRef.current = false;
           toast({
-            title: "디자인 확정 실패",
+            title: labOralScanMode ? "생산 의뢰 실패" : "디자인 확정 실패",
             description: res.message || "잠시 후 다시 시도해 주세요.",
             variant: "destructive",
           });
           return;
         }
 
-        const graceAt = res.gracePromoteAt || res.cancelDeadlineAt || null;
-        if (res.cancelDeadlineAt) setCancelDeadlineAt(res.cancelDeadlineAt);
+        const graceAt = labOralScanMode
+          ? null
+          : res.gracePromoteAt || res.cancelDeadlineAt || null;
+        if (res.cancelDeadlineAt && !labOralScanMode) {
+          setCancelDeadlineAt(res.cancelDeadlineAt);
+        }
         setGracePromoteAt(graceAt);
         setRemoteMode("confirmed");
         reportGenerationEdits("confirm");
         toast({
-          title: "디자인을 확정했습니다",
-          description: "5분 후 제조사 준비에 들어갑니다.",
+          title: labOralScanMode ? "생산 의뢰 완료" : "디자인을 확정했습니다",
+          description: labOralScanMode
+            ? "커스텀어벗 생산이 접수되었습니다."
+            : "5분 후 제조사 준비에 들어갑니다.",
         });
         onActionComplete?.("confirmed", {
           gracePromoteAt: graceAt,
-          cancelDeadlineAt: res.cancelDeadlineAt || null,
+          cancelDeadlineAt: labOralScanMode ? null : res.cancelDeadlineAt || null,
         });
       } catch (err) {
         skipSnapshotFlushRef.current = false;
         toast({
-          title: "디자인 확정 실패",
+          title: labOralScanMode ? "생산 의뢰 실패" : "디자인 확정 실패",
           description: err instanceof Error ? err.message : "잠시 후 다시 시도해 주세요.",
           variant: "destructive",
         });
@@ -8701,6 +8713,7 @@ export function PracticeCustomAbutmentPreviewDialog({
     },
     [
       authToken,
+      labOralScanMode,
       confirmCandidateForTooth,
       onActionComplete,
       patientName,
@@ -10075,7 +10088,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 />
               </div>
             ) : null}
-            {viewerLive && !readOnly && transferIdParam ? (
+            {viewerLive && !readOnly && transferIdParam && !labOralScanMode ? (
               <DesignShareChatPanel
                 boundsRef={viewerFrameRef}
                 panelRef={chatPanelRef}
@@ -10337,13 +10350,25 @@ export function PracticeCustomAbutmentPreviewDialog({
                             ) : (
                               <Check className="h-4 w-4" />
                             )}
-                            <span>디자인 완료</span>
+                            <span>
+                              {labOralScanMode ? "생산 의뢰" : "디자인 완료"}
+                            </span>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="z-[520] max-w-xs text-xs">
-                          디자인을 확정합니다.
-                          <br />
-                          5분 후 제조사 준비에 들어갑니다.
+                          {labOralScanMode ? (
+                            <>
+                              디자인을 확정하고
+                              <br />
+                              어벗츠에 생산을 의뢰합니다.
+                            </>
+                          ) : (
+                            <>
+                              디자인을 확정합니다.
+                              <br />
+                              5분 후 제조사 준비에 들어갑니다.
+                            </>
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     ) : null}

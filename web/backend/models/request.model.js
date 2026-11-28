@@ -1400,6 +1400,13 @@ const requestSchema = new mongoose.Schema(
         ref: "BusinessAnchor",
         default: null,
       },
+      // 기공소 「커스텀어벗 의뢰하기」 스캔 분기(LabOralScanCase). PTX 없음.
+      labOralScanCaseId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LabOralScanCase",
+        default: null,
+      },
+      offlineClinic: { type: Boolean, default: false },
     },
 
     // 제조사 택배 수취인 스냅샷 (PTX 직납=치과).

@@ -13,8 +13,15 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import LabOralScanCase from "../../models/labOralScanCase.model.js";
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
+import {
+  DESIGN_HOST_LAB_ORAL_SCAN,
+  resolveDesignHost,
+  resolveLabOralScanAccess,
+} from "../../services/labOralScanCaseDesignHost.js";
+import { confirmLabOralScanCaseDesign } from "../../services/labOralScanCaseDesign.service.js";
 import { getGenAI } from "../../services/businessLicenseOcr.service.js";
 import { recordAiDesignChatUsage } from "../../services/aiDesignChatUsage.service.js";
 import { quoteAiDesignChatUsage } from "../../services/aiDesignChatUsageCost.js";
@@ -411,6 +418,7 @@ function preferenceView(stored) {
 /**
  * 취향을 둘 치과 사업자. 의뢰(transferId)가 있으면 그 의뢰의 치과, 없으면 로그인 사업자.
  * canSave: 의뢰 치과 본인 계정일 때만 대화 내용을 취향으로 저장한다(기공소 대화는 읽기만).
+ * LabOralScanCase(caseId)도 같은 입력으로 resolve — 기공소가 practice·lab 양측.
  */
 async function findTransferForDesignChat(raw) {
   const id = String(raw || "").trim();
@@ -425,7 +433,48 @@ async function findTransferForDesignChat(raw) {
     const byId = await PracticeTransfer.findById(id).select(select).lean();
     if (byId?.practiceBusinessAnchorId) return byId;
   }
-  return PracticeTransfer.findOne({ transferId: id }).select(select).lean();
+  const transfer = await PracticeTransfer.findOne({ transferId: id }).select(select).lean();
+  if (transfer) return transfer;
+
+  const labCase = await LabOralScanCase.findOne({ caseId: id })
+    .select({
+      caseId: 1,
+      labBusinessAnchorId: 1,
+      patientName: 1,
+      clinicName: 1,
+      toothWorks: 1,
+      files: 1,
+      production: 1,
+      status: 1,
+      createdByUserId: 1,
+    })
+    .lean();
+  if (!labCase) return null;
+  const labId = labCase.labBusinessAnchorId;
+  return {
+    transferId: String(labCase.caseId || id),
+    practiceBusinessAnchorId: labId,
+    targetLabAnchorId: labId,
+    assigneeLabAnchorId: labId,
+    practiceUserId: labCase.createdByUserId,
+    patientName: labCase.patientName,
+    toothWorks: labCase.toothWorks,
+    files: labCase.files,
+    production: labCase.production,
+    _id: labCase._id,
+    _labOralScan: true,
+  };
+}
+
+async function persistDesignPreviewSet(transferOrCase, transferId, previewSet, unset) {
+  if (transferOrCase?._labOralScan) {
+    const update = { $set: previewSet };
+    if (unset && Object.keys(unset).length > 0) update.$unset = unset;
+    return LabOralScanCase.updateOne({ caseId: transferId }, update);
+  }
+  const update = { $set: previewSet };
+  if (unset && Object.keys(unset).length > 0) update.$unset = unset;
+  return PracticeTransfer.updateOne({ transferId }, update);
 }
 
 async function resolvePreferenceAnchor(req, rawTransferId, preloaded) {
@@ -629,24 +678,32 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
       return res.status(400).json({ success: false, message: "의뢰를 확인해 주세요." });
     }
     const [transfer, gaps] = await Promise.all([
-      PracticeTransfer.findOne({ transferId })
-        .select({
-          practiceBusinessAnchorId: 1,
-          targetLabAnchorId: 1,
-          assigneeLabAnchorId: 1,
-          toothWorks: 1,
-          "billing.lines": 1,
-          "production.customAbutmentPreview": 1,
-          "production.customAbutmentManualDesign": 1,
-          "production.practiceDesignConfirmedAt": 1,
-          "production.abutmentFeeRoute": 1,
-          "production.abutmentFeeRouteRevision": 1,
-          "production.abutmentCancelDeadlineAt": 1,
-          "production.abutmentGracePromoteAt": 1,
-          "production.labDesignConfirmedAt": 1,
-          "production.relatedRequestIds": 1,
-        })
-        .lean(),
+      (async () => {
+        const host = await findTransferForDesignChat(transferId);
+        if (!host) return null;
+        if (host._labOralScan) {
+          return { ...host, billing: { lines: [] } };
+        }
+        return PracticeTransfer.findOne({ transferId: host.transferId || transferId })
+          .select({
+            transferId: 1,
+            practiceBusinessAnchorId: 1,
+            targetLabAnchorId: 1,
+            assigneeLabAnchorId: 1,
+            toothWorks: 1,
+            "billing.lines": 1,
+            "production.customAbutmentPreview": 1,
+            "production.customAbutmentManualDesign": 1,
+            "production.practiceDesignConfirmedAt": 1,
+            "production.abutmentFeeRoute": 1,
+            "production.abutmentFeeRouteRevision": 1,
+            "production.abutmentCancelDeadlineAt": 1,
+            "production.abutmentGracePromoteAt": 1,
+            "production.labDesignConfirmedAt": 1,
+            "production.relatedRequestIds": 1,
+          })
+          .lean();
+      })(),
       AiDesignGap.find({ transferId })
         .sort({ createdAt: 1 })
         .select({ message: 1, reply: 1, manualChoice: 1 })
@@ -728,7 +785,13 @@ export async function getCustomAbutmentDesignSnapshot(req, res) {
     };
     // 기공소가 제조 주문을 취소하면 확정·취소 기한이 남아 「취소 가능」이 뜬다.
     // 활성 주문이 없으면 확정을 풀고, 치과는 다시 디자인 확정한다.
-    if (mode === "confirmed" && !choice.labCheckedAt && transfer?._id) {
+    // LabOralScanCase는 PTX hold가 없다.
+    if (
+      mode === "confirmed" &&
+      !choice.labCheckedAt &&
+      transfer?._id &&
+      !transfer?._labOralScan
+    ) {
       const released = await releasePracticePlatformDesignHoldIfOrderGone(
         transfer._id,
         req.user?._id,
@@ -790,17 +853,7 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         return { ...row, size, crownS3Key };
       }),
     );
-    const transfer = await PracticeTransfer.findOne({ transferId })
-      .select({
-        transferId: 1,
-        patientName: 1,
-        practiceUserId: 1,
-        practiceBusinessAnchorId: 1,
-        targetLabAnchorId: 1,
-        assigneeLabAnchorId: 1,
-        "production.customAbutmentPreview": 1,
-      })
-      .lean();
+    const transfer = await findTransferForDesignChat(transferId);
     const prev = transfer?.production?.customAbutmentPreview || {};
     const teeth = validated.filter(Boolean);
     if (teeth.length > 0 && isStaleDesignWrite(prev.savedAt, req.body?.baseSavedAt)) {
@@ -908,8 +961,8 @@ export async function saveCustomAbutmentDesignSnapshot(req, res) {
         archFrame: incomingFrame || prev.archFrame,
       }).catch((err) => console.warn("[AI] design sync emit failed", err));
     }
-    await PracticeTransfer.updateOne({ transferId }, { $set: previewSet });
-    if (teeth.length > 0 && transfer?.practiceBusinessAnchorId) {
+    await persistDesignPreviewSet(transfer, transferId, previewSet);
+    if (teeth.length > 0 && transfer?.practiceBusinessAnchorId && !transfer?._labOralScan) {
       void recordGenerationEdits({
         transferId,
         practiceBusinessAnchorId: transfer.practiceBusinessAnchorId,
@@ -988,16 +1041,7 @@ export async function saveCustomAbutmentDesignView(req, res) {
     savedAt = Math.min(Math.max(savedAt, 0), Date.now() + 2000);
     const updatedBy = req.user?._id ? String(req.user._id) : "";
     const sharedView = { ...view, savedAt, updatedBy };
-    const existing = await PracticeTransfer.findOne({ transferId })
-      .select({
-        transferId: 1,
-        practiceUserId: 1,
-        practiceBusinessAnchorId: 1,
-        targetLabAnchorId: 1,
-        assigneeLabAnchorId: 1,
-        "production.customAbutmentPreview.sharedView": 1,
-      })
-      .lean();
+    const existing = await findTransferForDesignChat(transferId);
     if (!existing) {
       return res.status(404).json({ success: false, message: "의뢰를 찾지 못했습니다." });
     }
@@ -1011,13 +1055,14 @@ export async function saveCustomAbutmentDesignView(req, res) {
         },
       });
     }
-    void emitCustomAbutmentViewSync(existing, sharedView).catch((err) =>
-      console.warn("[AI] view sync emit failed", err),
-    );
-    await PracticeTransfer.updateOne(
-      { transferId },
-      { $set: { "production.customAbutmentPreview.sharedView": sharedView } },
-    );
+    if (!existing._labOralScan) {
+      void emitCustomAbutmentViewSync(existing, sharedView).catch((err) =>
+        console.warn("[AI] view sync emit failed", err),
+      );
+    }
+    await persistDesignPreviewSet(existing, transferId, {
+      "production.customAbutmentPreview.sharedView": sharedView,
+    });
     res.json({ success: true, data: { saved: true, savedAt } });
     return;
   } catch (error) {
@@ -1129,20 +1174,24 @@ export async function saveCustomAbutmentDesignPaint(req, res) {
       updatedBy: req.user?._id || null,
       updatedSide: side,
     };
-    const transferDoc = await PracticeTransfer.findOneAndUpdate(
-      { transferId },
-      { $set: { "production.customAbutmentPreview.paint": paint } },
-      {
-        new: true,
-        projection: {
-          transferId: 1,
-          practiceUserId: 1,
-          practiceBusinessAnchorId: 1,
-          targetLabAnchorId: 1,
-          assigneeLabAnchorId: 1,
-        },
-      },
-    ).lean();
+    const host = await findTransferForDesignChat(transferId);
+    if (!host) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾지 못했습니다." });
+    }
+    await persistDesignPreviewSet(host, transferId, {
+      "production.customAbutmentPreview.paint": paint,
+    });
+    const transferDoc = host._labOralScan
+      ? null
+      : await PracticeTransfer.findOne({ transferId })
+          .select({
+            transferId: 1,
+            practiceUserId: 1,
+            practiceBusinessAnchorId: 1,
+            targetLabAnchorId: 1,
+            assigneeLabAnchorId: 1,
+          })
+          .lean();
     res.json({ success: true, data: { paint } });
     void (async () => {
       if (!transferDoc?._id) return;
@@ -1254,8 +1303,8 @@ export async function confirmCustomAbutmentDesign(req, res) {
 
     const now = new Date();
     const t0 = Date.now();
-    const [transferDoc, checkedTeeth] = await Promise.all([
-      PracticeTransfer.findOne({ transferId: transferIdInput }).lean(),
+    const [designHost, checkedTeeth] = await Promise.all([
+      resolveDesignHost(transferIdInput),
       Promise.all(
         incoming.map(async (row) => {
           if (!row.s3Key) return null;
@@ -1270,6 +1319,63 @@ export async function confirmCustomAbutmentDesign(req, res) {
       ),
     ]);
     const tLoad = Date.now();
+    if (!designHost) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    // 기공소 스캔 케이스: 디자인비 없이 생산 Request만 생성.
+    if (designHost.kind === DESIGN_HOST_LAB_ORAL_SCAN) {
+      const access = resolveLabOralScanAccess(req, designHost.labCase);
+      if (!access.ok) {
+        return res.status(403).json({
+          success: false,
+          message: "이 의뢰의 디자인을 확정할 수 없습니다.",
+        });
+      }
+      const validTeeth = checkedTeeth.filter(Boolean);
+      if (validTeeth.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "커스텀어벗 STL 파일을 확인하지 못했습니다. 다시 시도해 주세요.",
+        });
+      }
+      try {
+        const result = await confirmLabOralScanCaseDesign({
+          labCase: designHost.labCase,
+          actorUserId: userId,
+          teeth: validTeeth,
+          patientName: String(req.body?.patientName || "").trim(),
+          version: Number(req.body?.version) || 0,
+          fitVersion: Number(req.body?.fitVersion) || 0,
+        });
+        console.log(
+          `[abutment-confirm][labOralScan] ${result.caseId} ${Date.now() - t0}ms load=${tLoad - t0}`,
+        );
+        return res.json({
+          success: true,
+          data: {
+            confirmed: true,
+            transferId: result.caseId,
+            caseId: result.caseId,
+            requestCount: result.requestIds.length,
+            requestIds: result.requestIds,
+            teeth: result.teeth,
+            cancelDeadlineAt: null,
+            gracePromoteAt: null,
+            productionOnly: true,
+          },
+        });
+      } catch (labErr) {
+        const statusCode = Number(labErr?.statusCode) || 500;
+        return res.status(statusCode).json({
+          success: false,
+          message: labErr?.message || "커스텀어벗 확정 처리 중 오류가 발생했습니다.",
+          data: labErr?.payload || null,
+        });
+      }
+    }
+
+    const transferDoc = designHost.transferDoc;
     if (!transferDoc) {
       return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
