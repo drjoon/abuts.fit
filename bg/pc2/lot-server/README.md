@@ -211,3 +211,53 @@ robocopy D:\bg\lot-server D:\bg\lot-server-backup-$ts /E /XD node_modules captur
 ```
 
 - 복원: 백업의 `data`를 `D:\bg\lot-server\data`로 다시 복사 → 필요하면 `npm run train:engrave`(또는 백업한 `engrave-models/current.json` 그대로) → `nssm.exe restart AbutsLotServer`.
+
+## 패킹 작업 한 바퀴 (2026-11-28)
+
+권장 순서(손은 지그·팩·라벨, 눈은 라이브 화면):
+
+1. 감시 **시작**(또는 단축키 `S`). LED가 켜지고, 이미 꽂혀 있으면 바로 읽는다.
+2. 지그에 제품을 건다. 멈추면 자동 인식(2회 확인. 두 번째는 같은 회전만 다시 읽어 시간을 줄인다).
+3. 화면 아래 HUD에 큰 코드가 초록으로 뜨고 소리가 난다. `자동 프린트 · 포장.발송`이 켜져 있으면 매칭·패킹 라벨이 바로 나간다(프린터는 패킹 라벨 모달에서 한 번 고르거나, pack 기본 프린터).
+4. 라벨을 확인한 뒤 제품을 지그에서 빼 팩에 담고 스티커를 붙인다.
+5. 빼는 움직임이 보이면 다음 대기로 돌아간다. 새 제품을 걸면 2부터 반복.
+6. 목록에 없는 코드는 빨간 HUD + 소리, 포장.발송으로 보내지 않는다. 같은 부품으로 반복 인식하지 않는다(뺄 때까지).
+
+그 밖에: 단축키 `P`는 마지막 건 재출력. 연습만 하려면 설정에서 자동 커밋을 끈다. 오늘의 인식·출력 횟수·중앙 소요는 `GET /api/cycle-stats`, 기록은 `data/cycle-log.jsonl`.
+
+손·눈을 줄이려고 한 것: 버튼을 누르지 않고 꽂기/빼기로 한 바퀴가 돌아가게, 작은 안내문 대신 라이브 위 큰 코드·다음 행동, 소리, 2번째 판독 단축, 서버 기동 때 모델 미리 로드, 기본 프린터. 라벨을 미리 여러 장 뽑아 두기는 오부착 위험이 있어 넣지 않았다.
+
+## pack-server 내재화 · 이후 제거
+
+lot-server가 패킹 라벨 출력(프린터 목록, 브랜딩, ZPL/RAW 인쇄)을 직접 한다. 코드: `src/pack/index.js`(원래 `D:\bg\pack-server\pack-server\app.js`).
+
+- 기본 `LOT_PACK_EMBED=1`: 8012에서 pack-server와 같은 경로를 제공한다 — `GET /printers`, `GET /branding`, `POST /print-zpl`, `POST /print-packing-label`, 그리고 기존 `/api/printers` 등. 작업 화면은 더 이상 8004를 거치지 않는다.
+- 기동 때 `D:\bg\pack-server\pack-server\local.env`의 `PACK_*`·`ALLOW_IPS`를, lot-server `local.env`에 없는 키만 읽는다(`LOT_PACK_ENV`로 경로 지정 가능).
+- `LOT_PACK_EMBED=0`이면 예전처럼 `PACK_SERVER_BASE`(8004)로 프록시한다.
+- `LOT_PRINT_DRY_RUN=1`이면 프린터로 보내지 않고 `data/print-dry-run/`에만 쓴다(시험용). 운영에서는 켜지 말 것.
+- **지금 pack-server 서비스(`AbutsPackPrintServer`, 포트 8004)는 그대로 둔다.** 끄거나 지우라는 요청이 있기 전에는 중지하지 않는다. 다른 프로그램이 아직 8004를 쓰면 함께 살아 있어도 된다.
+
+이후 pack-server만 끄고 lot-server만 쓰려면:
+
+```powershell
+# 1) lot-server local.env에 PACK_* 가 들어 있는지 확인(없으면 pack-server local.env에서 복사)
+# 2) http://127.0.0.1:8012/pack/health 와 /api/printers 가 사는지 확인
+# 3) 작업 화면에서 패킹 라벨 시험 출력
+# 4) pack-server 서비스를 중지(삭제 전 백업 유지)
+D:\bg\pack-server\nssm.exe stop AbutsPackPrintServer
+# 완전히 빼려면 (원할 때):
+# D:\bg\pack-server\nssm.exe remove AbutsPackPrintServer confirm
+```
+
+마진 안전: 각인 확정은 기본적으로 **모든 코드**(대기 목록 밖 오독 포함)보다 4배 앞설 때만 한다. `LOT_ENGRAVE_QUEUE_MARGIN=1`이면 목록 안 코드하고만 비교한다(느슨함). 1위가 목록 밖이면 여전히 `not_in_queue`이고, 확정은 `LOT_OCR_CONFIRM`(기본 2)회.
+
+## 인식 주기 · 화면 (0.4.2)
+
+- 부품당 첫 판독은 이미 안정된 라이브 1장과, 같은 지그에서 쓰던 회전·글자 높이 힌트를 먼저 쓴다. 시작 때 카메라·모델 데우기(최대 약 20초)는 그대로 둔다.
+- 설정 모달은 카메라 / 각인·지그 / 동작 / 학습 탭이고, 저장은 아래 ‘저장하고 적용’ 한 번이다.
+
+## 자동 학습
+
+확정된 촬영(대기 목록 매칭 성공, 작업자가 코드를 확인한 대기 표본)만 `data/engrave-dataset`에 들어간다. 목록 밖·미확정은 `data/engrave-pending`에 두고 설정 → 학습 탭에서 코드를 확인한다. 감시가 몇 분 쉬면 낮은 우선순위로 다시 배우고, 홀드아웃 평가에서 지금 모델보다 정확도가 낮거나 틀린 확정이 있으면 `current.json`을 바꾸지 않는다. 이전 모델 파일은 남긴다. 학습 과정은 매칭·라벨 출력을 하지 않는다.
+
+로트서버 서비스를 끄면 자동 학습도 함께 멈춘다. 다시 쓰려면 `nssm.exe start AbutsLotServer`로 올린다. 종료 때는 UM20 LED를 끄고 나서 서비스를 중지한다.

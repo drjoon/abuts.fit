@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-11-28: 리사이즈를 프로세스 안에서 동기 처리, 이전 회전·글자 높이를 먼저 보고 확신이 있으면 나머지 가설을 건너뛴다.
+// - 2026-11-28: 마진 기본은 모든 코드와 비교(LOT_ENGRAVE_QUEUE_MARGIN=1이면 목록 안만). 1위가 목록 밖이면 먼저 not_in_queue.
 // - 2026-11-27: 대기 목록이 있을 때 마진은 목록 안 라이벌만 본다(목록 밖 오독이 ambiguous로 막지 않음).
 //   1위가 목록 밖이면 여전히 not_in_queue(목록 안 2위로 바꾸지 않음). 확정 전에 not_in_queue를 ambiguous보다 먼저 검사.
 // - 2026-11-27: 각인 전용 인식. 지그 프로필 ROI를 자르고 0/90/180/270도로 돌려, 글자 높이·피치 가설마다
@@ -13,7 +15,6 @@
 // - bg/pc2/lot-server/src/jig-profiles.js
 // - bg/pc2/lot-server/src/ocr/index.js
 
-import sharp from "sharp";
 import { CELL_H, CELL_W, FEAT_DIM, buildIntegrals, cellFeature } from "./features.js";
 import { BG, CLASSES, forward } from "./mlp.js";
 import { CELL_PAD_Y, cropGray, decodeGray, roiPixels, rotateGray } from "./crops.js";
@@ -26,15 +27,77 @@ export const STRIDE = 4;
 const ASPECTS = [0.66, 0.78, 0.9];
 const HEIGHT_STEPS = 5;
 
-/** 회색조 raw 리사이즈(비등방) + 약한 흐림. */
-async function resizeGray(gray, width, height, outW, outH) {
-  const { data } = await sharp(Buffer.from(gray), { raw: { width, height, channels: 1 } })
-    .resize(Math.max(CELL_W * 3 + 1, outW), Math.max(CELL_H + 1, outH), { fit: "fill" })
-    .blur(0.8)
-    .extractChannel(0)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  return { gray: new Uint8Array(data), width: Math.max(CELL_W * 3 + 1, outW), height: Math.max(CELL_H + 1, outH) };
+/** 회색조 raw 리사이즈(비등방) + 3×3 상자 흐림. sharp 왕복 없이 같은 프로세스에서 처리한다. */
+function resizeGray(gray, width, height, outW, outH) {
+  const tw = Math.max(CELL_W * 3 + 1, Math.round(outW));
+  const th = Math.max(CELL_H + 1, Math.round(outH));
+  const tmp = new Uint8Array(tw * th);
+  const xScale = width / tw;
+  const yScale = height / th;
+  for (let y = 0; y < th; y += 1) {
+    const fy = (y + 0.5) * yScale - 0.5;
+    const y0 = fy < 0 ? 0 : fy >= height - 1 ? height - 1 : Math.floor(fy);
+    const y1 = Math.min(height - 1, y0 + 1);
+    const ty = fy < 0 ? 0 : fy >= height - 1 ? 1 : fy - y0;
+    for (let x = 0; x < tw; x += 1) {
+      const fx = (x + 0.5) * xScale - 0.5;
+      const x0 = fx < 0 ? 0 : fx >= width - 1 ? width - 1 : Math.floor(fx);
+      const x1 = Math.min(width - 1, x0 + 1);
+      const tx = fx < 0 ? 0 : fx >= width - 1 ? 1 : fx - x0;
+      const a = gray[y0 * width + x0];
+      const b = gray[y0 * width + x1];
+      const c = gray[y1 * width + x0];
+      const d = gray[y1 * width + x1];
+      tmp[y * tw + x] = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty + 0.5;
+    }
+  }
+  const out = new Uint8Array(tw * th);
+  for (let y = 0; y < th; y += 1) {
+    const y0 = y === 0 ? 0 : y - 1;
+    const y2 = y === th - 1 ? th - 1 : y + 1;
+    for (let x = 0; x < tw; x += 1) {
+      const x0 = x === 0 ? 0 : x - 1;
+      const x2 = x === tw - 1 ? tw - 1 : x + 1;
+      let s = 0;
+      s += tmp[y0 * tw + x0] + tmp[y0 * tw + x] + tmp[y0 * tw + x2];
+      s += tmp[y * tw + x0] + tmp[y * tw + x] + tmp[y * tw + x2];
+      s += tmp[y2 * tw + x0] + tmp[y2 * tw + x] + tmp[y2 * tw + x2];
+      out[y * tw + x] = (s / 9) + 0.5;
+    }
+  }
+  return { gray: out, width: tw, height: th };
+}
+
+/** 힌트 회전을 맨 앞에. */
+export function orderRotations(rots, hintRot) {
+  const list = [...new Set((rots || []).map((r) => ((Math.round(Number(r) / 90) * 90) % 360 + 360) % 360))];
+  if (hintRot == null || !list.includes(hintRot)) return list.length ? list : [0, 90, 180, 270];
+  return [hintRot, ...list.filter((r) => r !== hintRot)];
+}
+
+function orderHeights(heights, hintLh) {
+  if (hintLh == null || !Number.isFinite(hintLh)) return heights;
+  return [...heights].sort((a, b) => Math.abs(a - hintLh) - Math.abs(b - hintLh));
+}
+
+function hintHeightPx(hint, frameHeight) {
+  if (hint?.letterH == null || !Number.isFinite(Number(hint.letterH))) return null;
+  const v = Number(hint.letterH);
+  return v <= 2 ? v * frameHeight : v;
+}
+
+function orderAspects(aspects, hintAspect) {
+  if (hintAspect == null || !Number.isFinite(hintAspect)) return aspects;
+  return [...aspects].sort((a, b) => Math.abs(a - hintAspect) - Math.abs(b - hintAspect));
+}
+
+/** 이 격자만으로 확정(또는 확실한 목록 밖)으로 봐도 되는가. */
+export function confidentEnough(info, { hinted = false } = {}) {
+  if (!info?.top || info.reason === "no-candidate" || info.reason === "no-model") return false;
+  if ((info.minP || 0) < MIN_P) return false;
+  if ((info.margin || 0) >= MARGIN) return true;
+  // 힌트 회전에서 세 글자 확률이 매우 높으면 나머지 회전은 건너뛴다(마진은 최종 판정 규칙을 그대로 적용).
+  return Boolean(hinted && (info.minP || 0) >= 0.8);
 }
 
 /**
@@ -68,7 +131,7 @@ export function heightHypotheses(minPx, maxPx, steps = HEIGHT_STEPS) {
  * 회전된 ROI 한 장에 대해 (글자 높이 × 피치) 가설마다 확률 격자를 만들어 넘긴다.
  * visit({ cols, rows, probs, sx, sy, lh, aspect })
  */
-export async function forEachGrid(model, rg, heights, visit, aspects = ASPECTS) {
+export function forEachGrid(model, rg, heights, visit, aspects = ASPECTS) {
   for (const lh of heights) {
     const sy = CELL_H / (lh * CELL_PAD_Y);
     for (const aspect of aspects) {
@@ -76,11 +139,17 @@ export async function forEachGrid(model, rg, heights, visit, aspects = ASPECTS) 
       const outW = Math.round(rg.width * sx);
       const outH = Math.round(rg.height * sy);
       if (outW < CELL_W * 3 || outH < CELL_H) continue;
-      const img = await resizeGray(rg.gray, rg.width, rg.height, outW, outH);
+      const img = resizeGray(rg.gray, rg.width, rg.height, outW, outH);
       const grid = probGrid(model, img);
-      await visit({ ...grid, sx, sy, lh, aspect });
+      visit({ ...grid, sx, sy, lh, aspect });
     }
   }
+}
+
+function pushGrids(model, rg, rot, heights, aspects, grids) {
+  forEachGrid(model, rg, heights, (g) => {
+    grids.push({ ...g, rot, rgW: rg.width, rgH: rg.height });
+  }, aspects);
 }
 
 /** 격자 칸 (col,row) → 회전된 ROI 픽셀 칸 {cx,cy,w,h}. */
@@ -95,18 +164,20 @@ export function gridCell(g, col, row) {
  * @param {Buffer} input JPEG
  * @param {{ profile: object, model?: object }} opts
  */
-export async function scanFrame(input, { profile, model = loadModel()?.model } = {}) {
+export async function scanFrame(input, { profile, model = loadModel()?.model, hint = null } = {}) {
   if (!model) return { ok: false, reason: "no-model", grids: [] };
   const frame = await decodeGray(input);
   const rect = roiPixels(profile.roi, frame.width, frame.height);
   const roiGray = cropGray(frame.gray, frame.width, rect);
-  const heights = heightHypotheses(profile.letterH.min * frame.height, profile.letterH.max * frame.height);
+  const heights = orderHeights(
+    heightHypotheses(profile.letterH.min * frame.height, profile.letterH.max * frame.height),
+    hintHeightPx(hint, frame.height),
+  );
+  const aspects = orderAspects(ASPECTS, hint?.aspect);
   const grids = [];
-  for (const rot of profile.rotations) {
+  for (const rot of orderRotations(profile.rotations, hint?.rot)) {
     const rg = rotateGray(roiGray, rect.width, rect.height, rot);
-    await forEachGrid(model, rg, heights, (g) => {
-      grids.push({ ...g, rot, rgW: rg.width, rgH: rg.height });
-    });
+    pushGrids(model, rg, rot, heights, aspects, grids);
   }
   return { ok: true, grids, rect, frame: { width: frame.width, height: frame.height } };
 }
@@ -216,20 +287,57 @@ const round = (v, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
  * @param {Buffer} input
  * @param {{ profile: object, allowed?: Iterable<string> | null, model?: object }} opts
  */
-export async function recognizeEngraving(input, { profile, allowed = null, model } = {}) {
-  const scan = await scanFrame(input, { profile, model });
-  if (!scan.ok) return { success: false, reason: scan.reason, method: "engrave" };
+export async function recognizeEngraving(input, { profile, allowed = null, model, hint = null } = {}) {
+  const loaded = model || loadModel()?.model;
+  if (!loaded) return { success: false, reason: "no-model", method: "engrave" };
+  const frame = await decodeGray(input);
+  const rect = roiPixels(profile.roi, frame.width, frame.height);
+  const roiGray = cropGray(frame.gray, frame.width, rect);
   const allow = allowed ? new Set([...allowed].map((v) => String(v).toUpperCase())) : null;
-  const free = freeReadings(scan.grids).slice(0, 12).map(([code]) => code);
+  const heights = orderHeights(
+    heightHypotheses(profile.letterH.min * frame.height, profile.letterH.max * frame.height),
+    hintHeightPx(hint, frame.height),
+  );
+  const aspects = orderAspects(ASPECTS, hint?.aspect);
+  const rots = orderRotations(profile.rotations, hint?.rot);
+  const grids = [];
+  let last = { success: false, reason: "no-candidate", method: "engrave", top: "" };
+  for (let i = 0; i < rots.length; i += 1) {
+    const rot = rots[i];
+    const hinted = hint?.rot != null && rot === hint.rot;
+    const rg = rotateGray(roiGray, rect.width, rect.height, rot);
+    // 힌트가 있으면 그 높이·피치부터 넣고, 확신이 있으면 같은 회전의 나머지 가설도 건너뛴다.
+    if (hinted && (hint?.letterH != null || hint?.aspect != null)) {
+      const firstH = [heights[0]];
+      const firstA = [aspects[0]];
+      pushGrids(loaded, rg, rot, firstH, firstA, grids);
+      last = decideFromGrids(grids, allow, profile, rect, frame);
+      if (confidentEnough(last, { hinted: true })) return { ...last, early: true };
+      const restH = heights.slice(1);
+      const restA = aspects.slice(1);
+      if (restH.length) pushGrids(loaded, rg, rot, restH, firstA, grids);
+      if (aspects.length > 1) pushGrids(loaded, rg, rot, heights, restA, grids);
+    } else {
+      pushGrids(loaded, rg, rot, heights, aspects, grids);
+    }
+    last = decideFromGrids(grids, allow, profile, rect, frame);
+    if (confidentEnough(last, { hinted })) return { ...last, early: i + 1 < rots.length };
+  }
+  return last;
+}
+
+function decideFromGrids(grids, allow, profile, rect, frame) {
+  const free = freeReadings(grids).slice(0, 12).map(([code]) => code);
   if (!free.length) return { success: false, reason: "no-candidate", method: "engrave", top: "" };
-  const ev = codeEvidence(scan.grids, [...free, ...(allow || [])]);
+  const ev = codeEvidence(grids, [...free, ...(allow || [])]);
   const top = ev[0];
-  // 대기 목록이 있으면 마진은 목록 안 다른 코드와만 비교. 목록 밖 오독(예: BLZ)이 확정을 막지 않는다.
-  // 다만 1위 자체가 목록 밖이면 아래에서 not_in_queue로 버린다(2위로 바꾸지 않음).
-  const rival =
-    (allow
-      ? ev.find((e) => e.code !== top.code && allow.has(e.code))
-      : ev.find((e) => e.code !== top.code)) || { code: "", mass: 0 };
+  if (!top) return { success: false, reason: "no-candidate", method: "engrave", top: "" };
+  // 기본: 마진은 모든 코드(목록 밖 오독 포함)와 비교한다. LOT_ENGRAVE_QUEUE_MARGIN=1이면 목록 안만.
+  // 1위가 목록 밖이면 마진과 상관없이 not_in_queue(목록 안 2위로 바꾸지 않음).
+  const anyRival = ev.find((e) => e.code !== top.code) || { code: "", mass: 0 };
+  const queueRival = allow ? ev.find((e) => e.code !== top.code && allow.has(e.code)) : null;
+  const queueMarginOnly = String(process.env.LOT_ENGRAVE_QUEUE_MARGIN || "0") === "1";
+  const rival = (queueMarginOnly && allow ? queueRival || { code: "", mass: 0 } : anyRival);
   const margin = rival.mass > 0 ? Math.log(top.mass / rival.mass) : 99;
   const w = top.best;
   const info = {
@@ -242,7 +350,8 @@ export async function recognizeEngraving(input, { profile, allowed = null, model
     rival: rival.code,
     minP: round(w.minP, 3),
     rotation: w.rot,
-    letterH: round(w.lh / scan.frame.height, 4),
+    letterH: round(w.lh / frame.height, 4),
+    aspect: w.aspect,
     boxes: windowBoxes(w),
     roi: profile.roi,
     profileId: profile.id,

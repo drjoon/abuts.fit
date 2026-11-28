@@ -4,3 +4,26 @@ ocr-cache/
 images/
 data/engrave-dataset/
 data/engrave-models/
+data/engrave-pending/
+data/engrave-pending-skipped/
+data/cycle-log.jsonl
+data/scan-hint.json
+data/station-settings.json
+data/print-dry-run/
+# 운영PC 폴더를 public/에 통째로 넣었을 때 생기는 중첩 복사
+public/src/
+public/test/
+public/public/
+public/vendor/vitiny/
+public/nssm.exe
+public/package.json
+public/package-lock.json
+public/local.env
+public/local.env.example
+public/README.md
+public/rules.md
+public/setup-windows-service.cmd
+public/install-windows-service.ps1
+public/captures/
+public/ocr-cache/
+public/.gitignore

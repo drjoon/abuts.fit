@@ -99,7 +99,7 @@ export function recognizerMode() {
  * @param {Buffer | string} input
  * @param {{ allowed?: Set<string> | string[] | null, profile?: object }} [opts] allowed가 있으면 1위가 목록에 있어야 성공(reason not_in_queue).
  */
-export async function recognizeLot(input, { allowed = null, profile = null } = {}) {
+export async function recognizeLot(input, { allowed = null, profile = null, hint = null } = {}) {
   const buffer = typeof input === "string" ? await fs.readFile(input) : Buffer.from(input);
   const mode = recognizerMode();
   let engraved = null;
@@ -112,7 +112,7 @@ export async function recognizeLot(input, { allowed = null, profile = null } = {
       }
     })();
     if (loaded?.model) {
-      engraved = await recognizeEngraving(buffer, { profile: profile || activeProfile(), allowed, model: loaded.model }).catch((e) => ({
+      engraved = await recognizeEngraving(buffer, { profile: profile || activeProfile(), allowed, model: loaded.model, hint }).catch((e) => ({
         success: false,
         reason: `engrave-error: ${e.message}`,
         method: "engrave",

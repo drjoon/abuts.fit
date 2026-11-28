@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-11-28: 첫 판독도 이전 회전·글자 높이 힌트, 라이브 1장만 사용(4장 버스트 대기 제거). 힌트는 감시 재시작 뒤에도 유지.
+// - 2026-11-28: 2번째 확정은 첫 판독 회전만 다시 읽는다. 작업 바퀴(cycle) 상태를 남긴다.
 // - 2026-11-27: 목록 밖 코드도 confirm(기본 2)회 연속 같은 판독이면 ‘대기열 없음’으로 확정·ocrLog 카드에 남기고 HOLD(움직임 전까지 재시도 안 함).
 // - 2026-11-27: 첫 인식·지그 교체 체감 단축: 시작 시 바로 armed, LED/EV는 스트림 뒤 비동기,
 //   폴링·안정·버스트·홀드 기본값 하향, 2번째 확정은 quick 촬영. ocrLog(한 줄)를 상태에 실어 UI 카드 스트립용.
@@ -34,6 +36,7 @@
 // - bg/pc2/lot-server2/public/index.html
 
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
 import sharp from "sharp";
 import {
@@ -49,6 +52,8 @@ import { runUmSerial, umAutoFocus, umLed, umLedOffSync, umSerialEnabled, umSetEv
 import { EV_AUTO, loadSettings } from "./camera-settings.js";
 import { lotFileName } from "./names.js";
 import { recognizeLot } from "./ocr/index.js";
+import { activeProfile } from "./jig-profiles.js";
+import { createCycleTracker } from "./cycle.js";
 import { meanAbsDiff, selectBest as pickSharpest } from "./sharpness.js";
 
 const PHASE = {
@@ -73,6 +78,9 @@ export function createWatcher({
   onRecognize = () => {},
   /** () => Promise<Set<string> | null>. 주면 그 코드만 인식 결과로 낸다. null이면(목록 실패) 결과를 내지 않는다. */
   allowedLots = null,
+  /** 목록 밖·미확정 촬영. 학습에는 넣지 않고 대기 폴더용. */
+  onUnconfirmed = () => {},
+  onActivity = () => {},
 } = {}) {
   let deviceNameOverride = String(deviceName || "").trim();
   const currentDeviceName = () =>
@@ -81,8 +89,8 @@ export function createWatcher({
   const sharpThreshold = numEnv("LOT_SHARP_THRESHOLD", 8);
   const stableNeeded = Math.max(1, Math.floor(numEnv("LOT_STABLE_FRAMES", 2)));
   // 폴링·버스트를 너무 조이면 CPU·카메라가 버벅인다. 기본은 체감 빠르게.
-  const pollMs = Math.max(350, Math.floor(numEnv("LOT_WATCH_POLL_MS", 700)));
-  const holdMs = Math.max(400, Math.floor(numEnv("LOT_HOLD_MS", 900)));
+  const pollMs = Math.max(250, Math.floor(numEnv("LOT_WATCH_POLL_MS", 450)));
+  const holdMs = Math.max(400, Math.floor(numEnv("LOT_HOLD_MS", 800)));
   const burstFrames = Math.max(1, Math.floor(numEnv("LOT_OCR_FRAMES", 2)));
   const streamFps = Math.max(1, Math.min(5, Number(process.env.LOT_STREAM_FPS || 3)));
   // 어두우면 LED+AF를 다시 건다(0–255 평균).
@@ -143,6 +151,27 @@ export function createWatcher({
   let afSettleUntil = 0;
   /** @type {{ score: number, mean: number, motion: number, at: number } | null} */
   let lastFrame = null;
+  let lastHintRot = null;
+  let lastHintLetterH = null;
+  let lastHintAspect = null;
+  const hintFile = process.env.LOT_SCAN_HINT || path.join(path.dirname(captureDir), "data", "scan-hint.json");
+  function loadHint() {
+    try {
+      if (!fsSync.existsSync(hintFile)) return;
+      const j = JSON.parse(fsSync.readFileSync(hintFile, "utf8"));
+      if (j.rot != null) lastHintRot = Number(j.rot);
+      if (j.letterH != null) lastHintLetterH = Number(j.letterH);
+      if (j.aspect != null) lastHintAspect = Number(j.aspect);
+    } catch {}
+  }
+  function persistHint() {
+    try {
+      fsSync.mkdirSync(path.dirname(hintFile), { recursive: true });
+      fsSync.writeFileSync(hintFile, JSON.stringify({ rot: lastHintRot, letterH: lastHintLetterH, aspect: lastHintAspect, at: new Date().toISOString() }));
+    } catch {}
+  }
+  loadHint();
+  const cycle = createCycleTracker();
   /** tick과 수동 인식이 장치를 동시에 만지지 않게 직렬화. */
   let lockChain = Promise.resolve();
   function withLock(fn) {
@@ -193,6 +222,7 @@ export function createWatcher({
       lastRejected,
       lastSettings,
       ocrLog: ocrLog.slice(0, 24),
+      cycle: cycle.snapshot(),
     };
   }
 
@@ -489,7 +519,9 @@ export function createWatcher({
     if (!stream?.running) {
       await ensureStream().catch(() => {});
     }
-    const nFrames = quick ? 1 : burstFrames;
+    // 이미 안정된 라이브 1장으로 읽는다. 4장 버스트 대기는 부품 주기만 늘린다.
+    // quick(2번째 확정)도 새 라이브 장(독립 프레임) 1장.
+    const nFrames = 1;
     const scored = [];
     for (let i = 0; i < nFrames; i += 1) {
       const buffer = (await stream?.readFrame()) || liveFrame;
@@ -501,7 +533,6 @@ export function createWatcher({
         score: analysis.score,
         buffer,
       });
-      if (i + 1 < nFrames) await sleep(Math.max(80, Math.floor(800 / streamFps)));
     }
 
     let best = pickSharpest(scored);
@@ -576,7 +607,15 @@ export function createWatcher({
         });
         return { shot: null, ocr: null, unfocused: true };
       }
-      const ocr = await recognizeLot(shot.buffer, allowedLots ? { allowed } : {});
+      const baseProfile = activeProfile();
+      const hint = lastHintRot != null || lastHintLetterH != null
+        ? { rot: lastHintRot, letterH: lastHintLetterH, aspect: lastHintAspect }
+        : null;
+      const ocr = await recognizeLot(shot.buffer, { allowed: allowedLots ? allowed : null, profile: baseProfile, hint });
+      if (ocr?.rotation != null) lastHintRot = ocr.rotation;
+      if (ocr?.letterH != null) lastHintLetterH = ocr.letterH;
+      if (ocr?.aspect != null) lastHintAspect = ocr.aspect;
+      persistHint();
       const ms = Date.now() - t0;
       const sec = (ms / 1000).toFixed(1);
       if (!ocr.success) {
@@ -639,11 +678,14 @@ export function createWatcher({
     let agreed = null;
     let count = 0;
     let lastShot = null;
+    let lastOcr = null;
     let rejectedLot = "";
     let rejectedCount = 0;
     const tAll = Date.now();
     for (let attempt = 0; attempt < confirm + 1 && count < confirm && rejectedCount < confirm; attempt += 1) {
       const { shot, ocr, unfocused } = await readCandidate(allowed, { quick: count > 0 || rejectedCount > 0 });
+      if (shot) lastShot = shot;
+      if (ocr) lastOcr = ocr;
       if (unfocused) {
         phase = PHASE.STABLE;
         lastError = "초점이 부족해 OCR을 건너뜁니다.";
@@ -686,8 +728,17 @@ export function createWatcher({
             });
             log(`ocr rejected ${rejectedLot || "-"} (not in queue ×${confirm})`);
             lastError = `${rejectedLot || "?"}는 대기 목록에 없습니다.`;
+            cycle.rejected(rejectedLot, { ms: Date.now() - tAll, reason: "not_in_queue" });
             // 같은 부품으로 반복 OCR하지 않음. 지그에서 빼거나 새 부품이 들어올 때까지 HOLD.
             lastLot = rejectedLot || lastLot;
+            try {
+              onUnconfirmed({
+                lot: rejectedLot,
+                reason: "not_in_queue",
+                buffer: lastShot?.buffer || null,
+                ocr: lastOcr || { rejected: rejectedLot, reason: "not_in_queue" },
+              });
+            } catch {}
             phase = PHASE.HOLD;
             if (hold) await sleep(holdMs);
             return null;
@@ -782,6 +833,8 @@ export function createWatcher({
     log(
       `lot ${ocr.lot} conf=${Number(ocr.confidence).toFixed(1)} x${count} file=${fileName} score=${latest.score}`,
     );
+    cycle.recognized(ocr.lot, { ms: Date.now() - tAll });
+    if (ocr.rotation != null) lastHintRot = ocr.rotation;
     onRecognize(latest);
     if (hold) await sleep(holdMs);
     return latest;
@@ -807,6 +860,13 @@ export function createWatcher({
       motion: motion === 999 ? null : Number(motion.toFixed(2)),
       at: Date.now(),
     };
+    if (phase === PHASE.OCR || phase === PHASE.FOCUSING || phase === PHASE.MOVING || (motion !== 999 && motion > motionThreshold)) {
+      try { onActivity(); } catch {}
+    }
+    const cycleExtra = {};
+    if (phase === PHASE.HOLD && lastRejected && lastLot && lastLot === lastRejected.lot) cycleExtra.rejected = true;
+    else if (phase === PHASE.HOLD && latest?.lot) cycleExtra.confirmed = true;
+    cycle.watchPhase(phase, cycleExtra);
 
     if (motion >= motionThreshold && Date.now() < afSettleUntil) {
       // AF 직후 초점 변화. 정지 카운트만 다시 센다.
@@ -897,6 +957,7 @@ export function createWatcher({
       lastAfAt = 0;
       lastLot = "";
       pushOcrLog({ kind: "start", line: "감시 시작" });
+      cycle.reset();
       // UVC 노출·밝기·포커스를 스트림보다 먼저 건다. mltcCom은 이 UM20에서 init-failed.
       // LED/EV는 수 초 걸릴 수 있어 스트림을 연 뒤 루프와 겹친다(첫 인식 대기 단축).
       loopPromise = (async () => {
@@ -992,6 +1053,14 @@ export function createWatcher({
       });
     },
     /** 미리보기 한 장. 감시 중이면 라이브, 아니면 스트림을 잠깐 연다. */
+    cycleSnapshot() { return cycle.snapshot(); },
+    cycleEvent(kind, extra = {}) {
+      if (kind === "matched") return cycle.matched(extra.code || extra.lot);
+      if (kind === "printed") return cycle.printed(extra.code || extra.lot);
+      if (kind === "rejected") return cycle.rejected(extra.code || extra.lot, extra);
+      if (kind === "error") return cycle.fail(extra.message || extra.error);
+      return cycle.snapshot();
+    },
     async previewFrame() {
       if (running && liveFrame) return liveFrame;
       return withLock(async () => {

@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-11-28: 유휴 자동 학습(확정 표본만 데이터셋, 미확정은 pending). 인식 가속(힌트·1장 촬영). /api/engrave/pending·train.
+// - 2026-11-28: pack-server 기능을 내재화(LOT_PACK_EMBED=1 기본). /printers·/branding·/print-zpl·/print-packing-label 과 /api/* 동일.
+//   LOT_PACK_EMBED=0이면 이전처럼 8004로 프록시. pack-server 서비스는 끄지 않음. 모델 기동 시 미리 로드. /api/cycle-stats.
 // - 2026-11-27: 패킹 작업대 SSOT — station-settings(자동 커밋·표본 수집), /api/match 시 촬영본 S3 업로드(presign)+s3Key 전달.
 // - 2026-11-27: 각인 인식 지그 프로필 API(GET/PUT /api/jig-profiles, POST /api/jig-profiles/select·duplicate),
 //   GET /api/engrave/status, POST /api/engrave/test(미리보기 한 장으로 판독만, 저장·매칭 없음).
@@ -60,6 +63,10 @@ import { activeProfile, duplicateProfile, loadProfiles, normalizeProfile, profil
 import { datasetSummary, saveSample } from "./engrave/dataset.js";
 import { listModelVersions, loadModel, modelsDir } from "./engrave/model-store.js";
 import { locateCode, locationTrusted, recognizeEngraving } from "./engrave/recognize.js";
+import { labelPending, listPending, pendingDir, savePending, skipPending } from "./engrave/pending.js";
+import { createIdleTrainer } from "./engrave/auto-train.js";
+import { handlePackRequest, isPackPath, loadPackFallbackEnv, packEmbedEnabled, packStatus } from "./pack/index.js";
+import { summarizeCycles } from "./cycle.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -83,6 +90,7 @@ function loadLocalEnv() {
 }
 
 loadLocalEnv();
+loadPackFallbackEnv();
 
 const PORT = Number(process.env.PORT || 8012);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -236,11 +244,20 @@ async function fetchAllowedLots() {
   return set;
 }
 
+let trainer;
 const watcher = createWatcher({
   captureDir: CAPTURE_DIR,
   deviceName: getSelectedDeviceName(),
   log,
   allowedLots: String(process.env.LOT_OCR_QUEUE_ONLY ?? "1") === "0" ? null : fetchAllowedLots,
+  onActivity: () => trainer?.markBusy(),
+  onUnconfirmed: (ev) => {
+    collectPending(ev).catch((e) => log(`engrave pending error ${e?.message || e}`));
+  },
+});
+trainer = createIdleTrainer({
+  getWatchStatus: () => watcher.status(),
+  log,
 });
 
 function cameraSettingsPayload() {
@@ -272,7 +289,7 @@ function engraveStatus() {
   } catch (e) {
     model = { error: String(e?.message || e) };
   }
-  return { success: true, model, versions: listModelVersions(), modelsDir: modelsDir(), dataset: datasetSummary() };
+  return { success: true, model, versions: listModelVersions(), modelsDir: modelsDir(), dataset: datasetSummary(), train: trainer ? trainer.snapshot() : null };
 }
 
 /** 이 프레임이 언제 찍혔는지 모르면 쓰지 않는다. 마지막 확정 촬영(같은 코드, 10분 안) → 감시 중 라이브. */
@@ -369,6 +386,26 @@ async function collectSample(code, source, requestId) {
   log(`engrave sample ${code} boxed=${Boolean(boxed)} p=${loc ? loc.meanP.toFixed(2) : "-"} → ${dir}`);
 }
 
+/** 목록 밖·미확정 촬영은 학습에 넣지 않고 대기 폴더에만 둔다. */
+async function collectPending(ev) {
+  if (String(process.env.LOT_ENGRAVE_COLLECT ?? "1") === "0") return;
+  if (!ev?.buffer) return;
+  const profile = activeProfile();
+  const guess = String(ev.lot || ev.ocr?.rejected || ev.ocr?.top || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+  const { dir, id } = await savePending({
+    frame: ev.buffer,
+    profile,
+    guess,
+    reason: ev.reason || ev.ocr?.reason || "unconfirmed",
+    rotation: ev.ocr?.rotation,
+    boxes: ev.ocr?.boxes || null,
+    settings: loadSettings(),
+    extra: { margin: ev.ocr?.margin, minP: ev.ocr?.minP, top: ev.ocr?.top || "" },
+  });
+  log(`engrave pending ${guess || "UNK"} ${ev.reason || ""} → ${id}`);
+  return { dir, id };
+}
+
 async function shoot(deviceName) {
   if (busy) {
     const err = new Error("다른 작업이 진행 중입니다.");
@@ -418,6 +455,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    if (packEmbedEnabled() && isPackPath(url.pathname)) {
+      const handled = await handlePackRequest(req, res, url, { log });
+      if (handled) return;
+    }
     if (
       req.method === "GET" &&
       (url.pathname === "/" ||
@@ -493,6 +534,58 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, engraveStatus());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/engrave/pending") {
+      json(res, 200, { success: true, ...(() => {
+        const items = listPending(pendingDir()).slice(0, 80).map((it) => ({
+          id: it.id,
+          guess: it.meta.guess || "",
+          reason: it.meta.reason || "",
+          createdAt: it.meta.createdAt,
+        }));
+        return { pending: items.length, items };
+      })() });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/engrave/pending/frame") {
+      const id = String(url.searchParams.get("id") || "");
+      const items = listPending(pendingDir());
+      const it = items.find((x) => x.id === id);
+      if (!it) {
+        json(res, 404, { success: false, message: "대기 표본을 찾지 못했습니다." });
+        return;
+      }
+      const frame = path.join(it.dir, "frame.jpg");
+      const roi = path.join(it.dir, "roi.jpg");
+      const file = fs.existsSync(frame) ? frame : roi;
+      if (!file || !fs.existsSync(file)) {
+        json(res, 404, { success: false, message: "이미지가 없습니다." });
+        return;
+      }
+      const buf = fs.readFileSync(file);
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "no-store", "Content-Length": buf.length });
+      res.end(buf);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/engrave/pending/label") {
+      const body = await readBody(req);
+      const saved = await labelPending(String(body.id || ""), String(body.code || ""), { profile: activeProfile() });
+      log(`engrave pending labeled ${body.id} → ${body.code}`);
+      json(res, 200, { success: true, sample: { dir: saved.sample.dir, code: saved.sample.meta.code }, dataset: datasetSummary() });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/engrave/pending/skip") {
+      const body = await readBody(req);
+      const moved = skipPending(String(body.id || ""));
+      log(`engrave pending skipped ${body.id}`);
+      json(res, 200, { success: true, dir: moved.dir });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/engrave/train") {
+      // 수동 학습 요청. 매칭·출력 없음.
+      const started = trainer.startTrain({ manual: true });
+      json(res, started.ok ? 200 : 409, { success: Boolean(started.ok), ...started, train: trainer.snapshot() });
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/api/engrave/test") {
       // 판독만 한다. 저장·매칭·백엔드 변경 없음.
       const body = await readBody(req);
@@ -553,6 +646,7 @@ const server = http.createServer(async (req, res) => {
       const result = out.data || {};
       if (upstream.status >= 200 && upstream.status < 300 && result.matched) {
         const code = String(result.suffix || body.recognizedSuffix || "").toUpperCase();
+        watcher.cycleEvent?.("matched", { code });
         collectSample(code, String(body.source || "manual"), String(result.requestId || body.requestMongoId || "")).catch((e) =>
           log(`engrave sample error ${e?.message || e}`),
         );
@@ -626,6 +720,7 @@ const server = http.createServer(async (req, res) => {
         dll: fs.existsSync(path.join(DLL_DIR, "mltcCom.dll")),
         platform: process.platform,
         watch: watcher.status(),
+        pack: packStatus(),
       });
       return;
     }
@@ -746,6 +841,16 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, saved);
       return;
     }
+    if (req.method === "GET" && url.pathname === "/api/cycle-stats") {
+      json(res, 200, { success: true, cycle: watcher.cycleSnapshot?.() || null, today: summarizeCycles() });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/cycle-event") {
+      const body = await readBody(req);
+      const snap = watcher.cycleEvent?.(String(body.kind || ""), body) || null;
+      json(res, 200, { success: true, cycle: snap });
+      return;
+    }
     json(res, 404, { success: false, message: "없는 경로입니다." });
   } catch (err) {
     log(
@@ -765,6 +870,9 @@ let shuttingDown = false;
 function shutdown(code) {
   if (shuttingDown) return;
   shuttingDown = true;
+  try {
+    trainer?.stop();
+  } catch {}
   try {
     watcher.shutdownSync();
   } catch {}
@@ -806,9 +914,17 @@ async function main() {
     process.exit(1);
   });
   server.listen(PORT, HOST, () => {
+    try {
+      const m = loadModel();
+      log(`engrave model ${m?.file ? path.basename(m.file) : "none"}`);
+    } catch (err) {
+      log(`engrave model load ${err?.message || err}`);
+    }
+    const pack = packStatus();
     log(
-      `lot-server v${APP_VERSION} node=${process.arch} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR} backend=${BACKEND_BASE} pack=${PACK_SERVER_BASE}`,
+      `lot-server v${APP_VERSION} node=${process.arch} listening http://${HOST}:${PORT}/ dir=${CAPTURE_DIR} backend=${BACKEND_BASE} pack=${pack.embed ? "embed" : PACK_SERVER_BASE}${pack.dryRun ? " dry-run" : ""}`,
     );
+    try { trainer.start(); } catch (e) { log(`auto-train start ${e?.message || e}`); }
     if (AUTO_WATCH) watcher.start();
   });
 }

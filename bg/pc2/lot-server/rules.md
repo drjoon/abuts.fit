@@ -61,3 +61,7 @@
 - `/api/match`는 촬영본을 `presign-upload`(packing-capture)로 S3에 올린 뒤 `s3Key`와 함께 lot-capture로 보낸다. 업로드 실패해도 코드 매칭은 진행한다.
 - 테스트 중에는 감시를 멈추고 `/api/match`를 부르지 않는다. 실작업(autoCommit)에서는 인식되면 자동 매칭·라벨·포장.발송한다.
 - 각인 인식(2026-11-27): 기본 `LOT_RECOGNIZER=engrave` — `src/engrave`(ROI→회전→칸 특징→MLP, 로컬). 지그별 ROI는 `data/jig-profiles.json`, 학습 데이터 `data/engrave-dataset`, 모델 버전 `data/engrave-models`(current.json, 이전 버전 보존). `data/`는 배포로 덮지 않는다. 매칭 성공 때 표본 저장(`collectSamples`·`LOT_ENGRAVE_COLLECT`), 재학습 `npm run train:engrave`.
+- pack-server 내재화(2026-11-28): `LOT_PACK_EMBED=1`(기본)이면 라벨 출력을 lot-server(`src/pack`)가 8012에서 처리. pack-server 서비스는 요청 없이 중지·삭제하지 않는다. 시험 출력은 `LOT_PRINT_DRY_RUN=1`. 작업 바퀴 기록 `data/cycle-log.jsonl`.
+- 각인 마진 기본은 모든 코드와 비교(`LOT_ENGRAVE_QUEUE_MARGIN=0`). 1이면 목록 안만.
+- 인식 가속(2026-11-28): 라이브 1장, 이전 회전 힌트, 동기 리사이즈. 마진 기본은 모든 코드 비교 유지.
+- 유휴 자동 학습(2026-11-28): 확정(매칭·작업자 라벨) 표본만 데이터셋. 미확정은 data/engrave-pending. 모델은 평가 게이트를 통과할 때만 승격. 학습은 매칭·출력을 하지 않는다. 로트서버가 꺼져 있으면 자동 학습은 돌지 않는다.

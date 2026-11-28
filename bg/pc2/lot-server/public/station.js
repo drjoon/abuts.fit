@@ -4,6 +4,8 @@
 // - bg/pc2/lot-server/src/station-settings.js
 // - docs/intent/lot-server-packing-station.md
 // change-log:
+// - 2026-11-28: 작업 화면 단순화, 설정 탭(카메라/지그/동작/학습)과 저장 버튼 하나로 정리. 학습 현황·대기 표본 라벨.
+// - 2026-11-28: 라이브 HUD(큰 코드·다음 행동), 성공/실패 소리, 단축키(S 감시, P 재출력), 기본 프린터 기억, 바퀴 이벤트.
 // - 2026-11-27: 패킹 작업대 SSOT — 연습/자동 커밋 토글, 인식→(설정 시)매칭·S3 이미지·라벨·포장.발송, 에러 히스토리 모달+복사, 작업 영역에서 초점·수동인식 제거(설정으로).
 // - 2026-11-27: 촬영·인식 ocrLog를 라이브 아래 가로 스크롤 카드로 표시(한 줄).
 // - 2026-11-27: 감시 중 OCR 거부·실패(lastError)를 각인 코드 옆 안내(note)에 표시. 코드 칸이 —로만 남아 원인을 모르게 두지 않는다.
@@ -48,6 +50,9 @@
     modalTitle: document.querySelector("#modalTitle"),
     modalBody: document.querySelector("#modalBody"),
     modalClose: document.querySelector("#modalClose"),
+    cycleHud: document.querySelector("#cycleHud"),
+    cycleHudCode: document.querySelector("#cycleHudCode"),
+    cycleHudMsg: document.querySelector("#cycleHudMsg"),
   };
 
   const ERROR_HISTORY_MAX = 80;
@@ -75,6 +80,9 @@
     stationLoaded: false,
     errors: [],
     lastErrorSig: "",
+    defaultPrinter: "",
+    sound: localStorage.getItem("abuts.lot.sound") !== "0",
+    lastHudSig: "",
   };
 
   function extractLotSuffix3(value) {
@@ -201,8 +209,55 @@
     }
   }
 
+
+  function playCue(kind) {
+    if (!state.sound) return;
+    try {
+      const ctx = playCue.ctx || (playCue.ctx = new (window.AudioContext || window.webkitAudioContext)());
+      const now = ctx.currentTime;
+      const tones = kind === "ok" ? [523, 784] : kind === "bad" ? [196, 147] : [440];
+      tones.forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.08, now + 0.02 + i * 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16 + i * 0.1);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start(now + i * 0.08);
+        o.stop(now + 0.2 + i * 0.1);
+      });
+    } catch {}
+  }
+
+  function updateHud(cycle) {
+    if (!els.cycleHud) return;
+    if (!state.running) {
+      els.cycleHud.hidden = true;
+      return;
+    }
+    const title = cycle?.title || "";
+    const message = cycle?.message || "";
+    const tone = cycle?.tone || "wait";
+    els.cycleHud.hidden = false;
+    els.cycleHud.className = `cycle-hud tone-${tone}`;
+    els.cycleHudCode.textContent = title;
+    els.cycleHudMsg.textContent = message;
+    const sig = `${tone}|${title}|${message}`;
+    if (sig !== state.lastHudSig) {
+      if (tone === "ok" && title && /출력됨|인식됨/.test(message)) playCue("ok");
+      else if (tone === "bad") playCue("bad");
+      state.lastHudSig = sig;
+    }
+  }
+
+  function reportCycle(kind, extra = {}) {
+    api("/api/cycle-event", { method: "POST", body: JSON.stringify({ kind, ...extra }) }).catch(() => {});
+  }
   function rememberedPackPrinter() {
-    return String(localStorage.getItem(PRINTER_PACK_KEY) || "").trim();
+    return String(localStorage.getItem(PRINTER_PACK_KEY) || state.defaultPrinter || "").trim();
   }
 
   async function autoPrintAfterMatch(item) {
@@ -349,16 +404,10 @@
     const phase = PHASE_KO[data.phase] || data.phase || "—";
     const recent = extractLotSuffix3(data.lastLot || data.latest?.lot);
     const rejected = extractLotSuffix3(data.lastRejected?.lot || data.lastRejected);
+    document.body.classList.toggle("mode-auto", state.station.autoCommit !== false);
+    document.body.classList.toggle("mode-practice", state.station.autoCommit === false);
     const modeHint = state.station.autoCommit ? "" : "연습";
-    els.status.textContent = [
-      state.running ? "감시 중" : "정지",
-      phase,
-      modeHint,
-      recent ? `최근 ${recent}` : "",
-      !recent && rejected ? `거부 ${rejected}` : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    els.status.textContent = [state.running ? "감시 중" : "정지", modeHint].filter(Boolean).join(" · ");
     if (els.stop) els.stop.hidden = !state.running;
     if (els.start) els.start.hidden = state.running;
 
@@ -383,6 +432,7 @@
     }
 
     renderOcrLog(data.ocrLog);
+    updateHud(data.cycle);
 
     const lot = recent;
     if (!lot || !state.running || state.matching) return;
@@ -610,6 +660,7 @@
         const printed = await autoPrintAfterMatch(state.lastMatched);
         if (printed.ok) {
           note += "\n패킹 라벨을 출력했습니다.";
+          reportCycle("printed", { code: state.lastMatched?.lotSuffix || state.lastMatched?.suffix || suffix });
         } else if (printed.reason === "no-printer") {
           note += "\n프린터를 패킹 라벨에서 한 번 고르세요.";
           pushError("자동 출력: 저장된 프린터 없음", "print");
@@ -745,7 +796,6 @@
       el("p", { class: "settings-hint", text: "LED는 감시 시작 때 켜고 중지 때 끕니다. 단계는 감시 중일 때 바로 바뀝니다." }),
     ]);
 
-    left.appendChild(scopeSection);
 
     // 각인 인식 · 지그 프로필 (ROI는 프레임 비율 0–1, 화면에는 %)
     const roiLayer = el("div", { class: "roi-layer" });
@@ -786,11 +836,17 @@
         el("label", { class: "settings-field" }, [el("span", { text: "글자 높이 최소 %" }), lhMin]),
         el("label", { class: "settings-field" }, [el("span", { text: "글자 높이 최대 %" }), lhMax]),
       ]),
-      el("div", { class: "settings-inline settings-jig-actions" }, [dragBtn, testBtn, jigSaveBtn]),
+      el("div", { class: "settings-inline settings-jig-actions" }, [dragBtn, testBtn]),
       jigStatus,
       engraveInfo,
     ]);
 
+    const soundChk = el("input", { type: "checkbox" });
+    soundChk.checked = state.sound !== false;
+    soundChk.addEventListener("change", () => {
+      state.sound = soundChk.checked;
+      localStorage.setItem("abuts.lot.sound", soundChk.checked ? "1" : "0");
+    });
     const autoCommitChk = el("input", {
       type: "checkbox",
       id: "stationAutoCommit",
@@ -819,11 +875,14 @@
         collectChk,
         el("span", { text: "매칭 성공 때 각인 표본 수집" }),
       ]),
+      el("label", { class: "settings-check" }, [
+        soundChk,
+        el("span", { text: "인식·오류 소리 (단축키: S 감시, P 재출력)" }),
+      ]),
       el("p", {
         class: "settings-hint",
-        text: "재학습(train:engrave)은 운영 PC 터미널에서 합니다.",
+        text: "아래 ‘저장하고 적용’으로 함께 저장합니다. 재학습은 학습 탭에서도 할 수 있습니다.",
       }),
-      el("div", { class: "settings-inline" }, [workflowSaveBtn]),
       workflowStatus,
     ]);
 
@@ -848,14 +907,43 @@
       checkStatus,
     ]);
 
-    const right = el("div", { class: "settings-col settings-controls" }, [
-      workflowSection,
-      cameraSection,
-      imageSection,
-      jigSection,
-      checkSection,
+    const trainStatus = el("div", { class: "settings-train" });
+    const trainSection = el("section", { class: "settings-section" }, [
+      el("h3", { text: "자동 학습" }),
+      el("p", { class: "settings-hint", text: "확정된 표본만 학습에 씁니다. 목록 밖 촬영은 아래에서 코드를 확인한 뒤 넣습니다. 유휴 시간에 자동으로 다시 배우며, 정확도가 떨어지거나 틀린 확정이 있으면 모델을 올리지 않습니다." }),
+      trainStatus,
     ]);
+
+    const paneCamera = el("div", { class: "settings-pane", "data-pane": "camera" }, [cameraSection, imageSection, scopeSection, checkSection]);
+    const paneJig = el("div", { class: "settings-pane", "data-pane": "jig", hidden: true }, [jigSection]);
+    const paneFlow = el("div", { class: "settings-pane", "data-pane": "flow", hidden: true }, [workflowSection]);
+    const paneTrain = el("div", { class: "settings-pane", "data-pane": "train", hidden: true }, [trainSection]);
+    const right = el("div", { class: "settings-col settings-controls" }, [paneCamera, paneJig, paneFlow, paneTrain]);
+    const tabBar = el("div", { class: "settings-tabs", role: "tablist" });
+    const tabDefs = [
+      ["camera", "카메라"],
+      ["jig", "각인·지그"],
+      ["flow", "동작"],
+      ["train", "학습"],
+    ];
+    const tabBtns = {};
+    function showSettingsTab(id) {
+      left.hidden = id === "flow" || id === "train";
+      [paneCamera, paneJig, paneFlow, paneTrain].forEach((pane) => {
+        pane.hidden = pane.getAttribute("data-pane") !== id;
+      });
+      Object.entries(tabBtns).forEach(([k, b]) => b.setAttribute("aria-selected", k === id ? "true" : "false"));
+      if (id === "train") void refreshTrain();
+    }
+    tabDefs.forEach(([id, label], i) => {
+      const btn = el("button", { type: "button", class: "settings-tab", role: "tab", text: label });
+      btn.setAttribute("aria-selected", i === 0 ? "true" : "false");
+      btn.addEventListener("click", () => showSettingsTab(id));
+      tabBtns[id] = btn;
+      tabBar.appendChild(btn);
+    });
     const body = el("div", { class: "settings-body" }, [left, right]);
+    wrap.appendChild(tabBar);
 
     const status = el("p", { class: "note settings-status" });
     const resetBtn = el("button", { type: "button", class: "btn btn-ghost", text: "권장값으로" });
@@ -954,6 +1042,7 @@
           uvcOk === false
             ? `저장했지만 카메라에 걸지 못했습니다(${data.applied?.uvc?.reason || "오류"}). 감시 시작 때 다시 겁니다.`
             : "저장하고 적용했습니다. " + describeSaved(data);
+        await Promise.allSettled([saveJig(), saveWorkflow()]);
         await refreshPreview();
       } catch (err) {
         status.className = "note settings-status bad";
@@ -970,7 +1059,7 @@
     const pct = (v) => Math.round(Number(v) * 1000) / 10;
     function markJigDirty() {
       jigStatus.className = "settings-hint";
-      jigStatus.textContent = "바뀐 지그 값이 있습니다. ‘지그 저장’을 누르면 인식에 씁니다.";
+      jigStatus.textContent = "바뀐 지그 값이 있습니다. 아래 ‘저장하고 적용’으로 저장합니다.";
     }
     function readRoi() {
       const v = (k) => Math.max(0, Math.min(100, Number(roiInputs[k].value) || 0)) / 100;
@@ -1059,22 +1148,12 @@
         });
     });
     jigName.addEventListener("input", markJigDirty);
-    jigSaveBtn.addEventListener("click", () => {
-      jigSaveBtn.disabled = true;
-      api("/api/jig-profiles", { method: "PUT", body: JSON.stringify({ profile: readProfile(), activate: true }) })
-        .then((data) => {
-          renderJigs(data);
-          jigStatus.className = "settings-hint ok";
-          jigStatus.textContent = "지그를 저장했습니다. 다음 인식부터 씁니다.";
-        })
-        .catch((err) => {
-          jigStatus.className = "settings-hint bad";
-          jigStatus.textContent = err.message || "저장 실패";
-        })
-        .finally(() => {
-          jigSaveBtn.disabled = false;
-        });
-    });
+    async function saveJig() {
+      const data = await api("/api/jig-profiles", { method: "PUT", body: JSON.stringify({ profile: readProfile(), activate: true }) });
+      renderJigs(data);
+      jigStatus.className = "settings-hint ok";
+      jigStatus.textContent = "지그를 저장했습니다. 다음 인식부터 씁니다.";
+    }
     testBtn.addEventListener("click", () => {
       testBtn.disabled = true;
       jigStatus.className = "settings-hint";
@@ -1172,36 +1251,90 @@
     });
     saveBtn.addEventListener("click", () => void save("/api/camera-settings", { settings: readForm(), apply: true }));
 
-    workflowSaveBtn.addEventListener("click", async () => {
-      workflowSaveBtn.disabled = true;
-      workflowStatus.className = "settings-hint";
-      workflowStatus.textContent = "저장 중…";
+    async function saveWorkflow() {
+      const data = await api("/api/station-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          settings: {
+            autoCommit: Boolean(autoCommitChk.checked),
+            collectSamples: Boolean(collectChk.checked),
+          },
+        }),
+      });
+      const s = data.settings || {};
+      state.station = {
+        autoCommit: s.autoCommit !== false,
+        collectSamples: s.collectSamples !== false,
+      };
+      document.body.classList.toggle("mode-auto", state.station.autoCommit !== false);
+      workflowStatus.className = "settings-hint ok";
+      workflowStatus.textContent = state.station.autoCommit
+        ? "자동 프린트·포장.발송을 켭니다."
+        : "연습 모드(인식만)입니다.";
+    }
+
+    async function refreshTrain() {
+      trainStatus.textContent = "불러오는 중…";
       try {
-        const data = await api("/api/station-settings", {
-          method: "PUT",
-          body: JSON.stringify({
-            settings: {
-              autoCommit: Boolean(autoCommitChk.checked),
-              collectSamples: Boolean(collectChk.checked),
-            },
-          }),
+        const data = await api("/api/engrave/status");
+        const pending = await api("/api/engrave/pending").catch(() => ({ items: [] }));
+        const tr = data.train || {};
+        const letters = (tr.letters || data.dataset?.letters || {});
+        const grid = el("div", { class: "letter-grid" });
+        for (let i = 0; i < 26; i += 1) {
+          const ch = String.fromCharCode(65 + i);
+          const n = Number(letters[ch] || 0);
+          const cell = el("div", { class: "letter-cell" + (n ? "" : " zero") });
+          cell.appendChild(el("span", { text: ch }));
+          cell.appendChild(el("span", { class: "n", text: String(n) }));
+          grid.appendChild(cell);
+        }
+        const last = tr.lastTrain || tr.lastResult || {};
+        const acc = last.accuracy != null ? `${(Number(last.accuracy) * 100).toFixed(1)}%` : "—";
+        const missing = (tr.missingLetters || []).join(" ") || "없음";
+        const info = el("div");
+        info.appendChild(el("p", { class: "settings-hint", text: `상태: ${tr.message || tr.state || "대기"}` }));
+        info.appendChild(el("p", { class: "settings-hint", text: `마지막 학습 정확도 ${acc}${last.promoted === false ? " · 승격 안 함" : last.promoted ? " · 적용됨" : ""}` }));
+        info.appendChild(el("p", { class: "settings-hint", text: `표본 없는 글자: ${missing}` }));
+        const runBtn = el("button", { type: "button", class: "btn", text: "지금 학습(출력·매칭 없음)" });
+        runBtn.addEventListener("click", async () => {
+          runBtn.disabled = true;
+          try {
+            await api("/api/engrave/train", { method: "POST", body: "{}" });
+            await refreshTrain();
+          } catch (err) {
+            info.appendChild(el("p", { class: "settings-hint bad", text: err.message || "학습 요청 실패" }));
+          } finally {
+            runBtn.disabled = false;
+          }
         });
-        const s = data.settings || {};
-        state.station = {
-          autoCommit: s.autoCommit !== false,
-          collectSamples: s.collectSamples !== false,
-        };
-        workflowStatus.className = "settings-hint ok";
-        workflowStatus.textContent = state.station.autoCommit
-          ? "저장했습니다. 인식 후 자동으로 프린트·포장.발송합니다."
-          : "저장했습니다. 연습 모드(인식만)입니다.";
+        const list = el("div");
+        list.appendChild(el("h3", { text: "확인 대기 촬영" }));
+        const items = pending.items || [];
+        if (!items.length) list.appendChild(el("p", { class: "settings-hint", text: "대기 중인 촬영이 없습니다." }));
+        items.slice(0, 20).forEach((it) => {
+          const row = el("div", { class: "pending-row" });
+          const img = el("img", { alt: it.guess || "대기" });
+          img.src = `/api/engrave/pending/frame?id=${encodeURIComponent(it.id)}`;
+          const code = el("input", { type: "text", class: "field", maxLength: "3", placeholder: it.guess || "코드", value: it.guess || "" });
+          const ok = el("button", { type: "button", class: "btn btn-primary", text: "확인" });
+          const skip = el("button", { type: "button", class: "btn btn-ghost", text: "건너뛰기" });
+          ok.addEventListener("click", async () => {
+            await api("/api/engrave/pending/label", { method: "POST", body: JSON.stringify({ id: it.id, code: code.value }) });
+            await refreshTrain();
+          });
+          skip.addEventListener("click", async () => {
+            await api("/api/engrave/pending/skip", { method: "POST", body: JSON.stringify({ id: it.id }) });
+            await refreshTrain();
+          });
+          row.append(img, code, ok, skip);
+          list.appendChild(row);
+        });
+        trainStatus.replaceChildren(grid, info, runBtn, list);
       } catch (err) {
-        workflowStatus.className = "settings-hint bad";
-        workflowStatus.textContent = err.message || "작업 흐름 저장 실패";
-      } finally {
-        workflowSaveBtn.disabled = false;
+        trainStatus.textContent = err.message || "학습 현황을 불러오지 못했습니다.";
       }
-    });
+    }
 
     checkFocusBtn.addEventListener("click", async () => {
       checkFocusBtn.disabled = true;
@@ -2230,4 +2363,27 @@
     window.clearTimeout(state.queueTimer);
     window.clearInterval(state.liveTimer);
   });
+
+  document.addEventListener("keydown", (ev) => {
+    if (els.modal?.classList.contains("open")) return;
+    const tag = (ev.target && ev.target.tagName) || "";
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+    if (ev.key === "s" || ev.key === "S") {
+      ev.preventDefault();
+      if (state.running) els.stop?.click();
+      else els.start?.click();
+    } else if (ev.key === "p" || ev.key === "P") {
+      ev.preventDefault();
+      els.printMatched?.click();
+    }
+  });
+
+  api("/api/printers")
+    .then((data) => {
+      state.defaultPrinter = String(data.defaultPrinter || "").trim();
+    })
+    .catch(() => {});
+
+  if (location.hash === "#settings") void openSettingsModal();
+
 })();

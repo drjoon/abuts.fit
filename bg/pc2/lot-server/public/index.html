@@ -20,7 +20,7 @@
     <main class="main">
       <section class="station">
         <div class="station-top">
-          <div class="row">
+          <div class="row row-controls">
             <span class="label">현미경</span>
             <span class="muted" id="watchStatus">중지</span>
             <button type="button" class="btn btn-dark" id="startWatch">시작</button>
@@ -34,7 +34,7 @@
             </button>
             <button type="button" class="error-chip" id="errorChip" hidden title="에러 히스토리">에러</button>
           </div>
-          <div class="row">
+          <div class="row row-actions" id="manualActions">
             <span class="label">각인 코드</span>
             <div class="suffix" id="suffix" aria-label="선택된 각인 코드">—</div>
             <button type="button" class="btn btn-primary" id="matchBtn">매칭</button>
@@ -45,7 +45,11 @@
         <div class="live-wrap">
           <div class="live-box">
             <img id="live" alt="현미경 라이브" hidden />
-            <p id="liveEmpty">감시를 시작하면 라이브가 표시됩니다.</p>
+            <p id="liveEmpty">감시를 시작하면 라이브가 표시됩니다. 단축키: S 시작/정지 · P 재출력</p>
+            <div class="cycle-hud" id="cycleHud" hidden>
+              <div class="cycle-hud-code" id="cycleHudCode"></div>
+              <div class="cycle-hud-msg" id="cycleHudMsg"></div>
+            </div>
           </div>
         </div>
         <div class="ocr-log" id="ocrLog" aria-label="인식 히스토리"></div>

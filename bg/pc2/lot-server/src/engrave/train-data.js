@@ -28,7 +28,7 @@ export async function backgroundPool(root, { exclude = [] } = {}) {
   const ex = new Set(exclude.map((c) => c.toUpperCase()));
   const pool = [];
   for (const { dir, meta } of listSamples(root)) {
-    if (ex.has(meta.code) || !meta.boxes) continue;
+    if (ex.has(meta.code) || (exDir.size && exDir.has(path.resolve(dir))) || !meta.boxes) continue;
     const roiFile = path.join(dir, "roi.jpg");
     if (!fs.existsSync(roiFile)) continue;
     const roi = await decodeGray(fs.readFileSync(roiFile));
@@ -145,14 +145,15 @@ export async function realCells(sample, { perLetter = 48, perBg = 32, seed = 3 }
 }
 
 /** 데이터셋 전체 → 특징. exclude: 뺄 코드(검증용). */
-export async function realSet(root, { exclude = [], perLetter = 48, perBg = 32, log = () => {} } = {}) {
+export async function realSet(root, { exclude = [], excludeDirs = [], perLetter = 48, perBg = 32, log = () => {} } = {}) {
   const ex = new Set(exclude.map((c) => c.toUpperCase()));
+  const exDir = new Set([...excludeDirs].map((d) => path.resolve(d)));
   const X = [];
   const Y = [];
   const used = [];
   let seed = 100;
   for (const s of listSamples(root)) {
-    if (ex.has(s.meta.code)) continue;
+    if (ex.has(s.meta.code) || (exDir.size && exDir.has(path.resolve(s.dir)))) continue;
     const cells = await realCells(s, { perLetter, perBg, seed: (seed += 1) });
     if (!cells.length) continue;
     used.push(path.basename(s.dir));
@@ -169,13 +170,14 @@ export async function realSet(root, { exclude = [], perLetter = 48, perBg = 32, 
  * 어려운 배경 찾기: 지금 모델로 실측 ROI를 훑어, 글자 자리가 아닌데 글자로 높게 읽힌 칸을 배경("_")으로 모은다.
  * 맞는 회전의 글자 칸 근처(중심 ±0.3 피치·칸 높이, 크기 0.8–1.25배)는 뺀다.
  */
-export async function mineNegatives(model, root, { exclude = [], perSample = 200, thr = 0.3, seed = 9, log = () => {} } = {}) {
+export async function mineNegatives(model, root, { exclude = [], excludeDirs = [], perSample = 200, thr = 0.3, seed = 9, log = () => {} } = {}) {
   const ex = new Set(exclude.map((c) => c.toUpperCase()));
+  const exDir = new Set([...excludeDirs].map((d) => path.resolve(d)));
   const r = makeRng(seed);
   const X = [];
   const Y = [];
   for (const { dir, meta } of listSamples(root)) {
-    if (ex.has(meta.code) || !meta.boxes) continue;
+    if (ex.has(meta.code) || (exDir.size && exDir.has(path.resolve(dir))) || !meta.boxes) continue;
     const roiFile = path.join(dir, "roi.jpg");
     if (!fs.existsSync(roiFile)) continue;
     const roi = await decodeGray(fs.readFileSync(roiFile));

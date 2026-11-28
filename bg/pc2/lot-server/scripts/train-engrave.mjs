@@ -10,9 +10,10 @@
 // - bg/pc2/lot-server/README.md
 
 import fs from "fs";
+import path from "path";
 import { FEAT_DIM } from "../src/engrave/features.js";
 import { CLASSES, createMlp, toJson, train } from "../src/engrave/mlp.js";
-import { DEFAULT_MODEL, saveModelVersion } from "../src/engrave/model-store.js";
+import { DEFAULT_MODEL, saveModelVersion, writeModelFile } from "../src/engrave/model-store.js";
 import { datasetDir } from "../src/engrave/dataset.js";
 import { backgroundPool, bgSourceFrom, mineNegatives, realSet, synthSet } from "../src/engrave/train-data.js";
 import { FOCUS_LETTERS } from "../src/engrave/synth.js";
@@ -29,6 +30,8 @@ const mineRounds = Number(flag("--mine", "3"));
 const hidden = Number(flag("--hidden", "96"));
 const seed = Number(flag("--seed", "1"));
 const exclude = (flag("--exclude", "") || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
+const excludeDirs = (flag("--holdout-dirs", "") || "").split(path.delimiter).map((s) => s.trim()).filter(Boolean);
+
 const focusFlag = (flag("--focus", "") || "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
 // 홀드아웃·희소 글자 편향(너무 세게 넣지 않음 — 실측 마진 유지).
 const focusLetters = [...new Set([...FOCUS_LETTERS, ...focusFlag, ...exclude.join("")])].filter((c) => /[A-Z]/.test(c));
@@ -42,7 +45,7 @@ const pool = has("--no-real-bg") ? [] : await backgroundPool(root, { exclude });
 log(`실측 바탕 조각 ${pool.length}`);
 const syn = await synthSet(synthN, seed, log, { bgSource: bgSourceFrom(pool), focusLetters });
 log(`합성 칸 ${syn.X.length}`);
-const real = await realSet(root, { exclude, log });
+const real = await realSet(root, { exclude, excludeDirs, log });
 const X = [...syn.X, ...real.X];
 const Y = [...syn.Y, ...real.Y];
 const W = [...syn.X.map(() => 1), ...real.X.map(() => realWeight)];
@@ -50,7 +53,7 @@ const m = createMlp(FEAT_DIM, hidden, CLASSES.length, seed + 6);
 train(m, X, Y, { epochs, lr: 0.02, momentum: 0.9, decay: 2e-5, weights: W, seed: seed + 10, log });
 let mined = 0;
 for (let round = 1; round <= mineRounds; round += 1) {
-  const neg = await mineNegatives(m, root, { exclude, seed: seed + round * 31, log });
+  const neg = await mineNegatives(m, root, { exclude, excludeDirs, seed: seed + round * 31, log });
   if (!neg.X.length) break;
   mined += neg.X.length;
   X.push(...neg.X);
@@ -82,6 +85,8 @@ if (flag("--out")) {
 } else if (has("--default")) {
   file = DEFAULT_MODEL;
   fs.writeFileSync(file, JSON.stringify(json));
+} else if (has("--no-promote")) {
+  file = writeModelFile(json).file;
 } else {
   file = saveModelVersion(json);
 }

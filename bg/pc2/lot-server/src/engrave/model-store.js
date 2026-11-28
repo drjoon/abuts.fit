@@ -57,6 +57,28 @@ export function saveModelVersion(json, dir = modelsDir()) {
   return file;
 }
 
+/** 파일만 쌓고 current.json은 건드리지 않는다(평가 후 승격). */
+export function writeModelFile(json, dir = modelsDir()) {
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
+  const name = `model-${stamp}.json`;
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(json));
+  return { file, name };
+}
+
+/** current.json만 새 파일을 가리키게 한다. 이전 파일은 남긴다. */
+export function promoteModel(name, dir = modelsDir()) {
+  const base = path.basename(String(name || ""));
+  const file = path.join(dir, base);
+  if (!base || !fs.existsSync(file)) throw new Error("승격할 모델 파일이 없습니다.");
+  const pointer = path.join(dir, "current.json");
+  const prev = fs.existsSync(pointer) ? JSON.parse(fs.readFileSync(pointer, "utf8")) : null;
+  fs.writeFileSync(pointer, JSON.stringify({ file: base, previous: prev?.file || null, at: new Date().toISOString() }, null, 2));
+  cache = { file: "", mtime: 0, model: null, meta: null };
+  return file;
+}
+
 export function listModelVersions(dir = modelsDir()) {
   if (!fs.existsSync(dir)) return [];
   return fs
