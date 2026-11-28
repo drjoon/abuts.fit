@@ -11118,8 +11118,27 @@ export function RequestorPracticeReceivePage({
             setModelScanDraftsOpen(false);
             setModelScanTrashOpen(true);
           }}
-          onCreated={() => {
+          onCreated={({ transferId, mongoId }) => {
             void loadCalendarTransfers({ silent: true });
+            const id = String(transferId || "").trim();
+            if (!id) return;
+            openLabAbutmentDesign(
+              [
+                {
+                  transferId: id,
+                  _id: String(mongoId || "").trim() || id,
+                  files: [],
+                  toothWorks: [],
+                  hasCustomAbutment: true,
+                  production: {
+                    skipDesignConfirm: true,
+                    designFiles: [],
+                  },
+                } as ReceivedPracticeTransfer,
+              ],
+              0,
+              false,
+            );
           }}
         />
         <LabModelScanDraftPanels

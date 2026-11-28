@@ -247,6 +247,7 @@ import {
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
+// - 2026-11-28: 모델스캔 치아카드 — 형태 메뉴·스캔바디 라디오 제거. 규격·복사만.
 // - 2026-11-28: 모델스캔 치아카드 — 스캔바디만·쉐이드 숨김·높이 축소(한 화면).
 // - 2026-11-28: 모델스캔 드롭존 높이=왼쪽 2×2. 리메이크 「이전 어벗 재의뢰」.
 // - 2026-11-28: 모델스캔 — 치과·환자·기공소도착·리메이크 2×2, 오른쪽 드롭존, 메모 숨김.
@@ -335,8 +336,8 @@ const MAX_MEMO_SUGGESTIONS = 20;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12.75rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
 const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12.75rem]";
-/** 모델스캔 — 스캔바디 1줄·쉐이드 없음. 상·하악이 한 화면에 들어오게 축소 */
-const TOOTH_CARD_HEIGHT_MODEL_SCAN_CLASS = "h-[8.5rem]";
+/** 모델스캔 — 번호+임플란트/스캔바디 2줄+복사. 형태·라디오·쉐이드 없음 */
+const TOOTH_CARD_HEIGHT_MODEL_SCAN_CLASS = "h-[6.75rem]";
 const BUILTIN_PROSTHESIS_TYPE_SET = new Set<string>([
   ...STANDALONE_PROSTHESIS_TYPES,
   ...LINKED_PROSTHESIS_TYPES,
@@ -387,7 +388,7 @@ const activateToothInWorks = (
   toothNumber: string,
   defaultProsthesisType: string,
   prosthesisTypes: string[],
-  options?: { autoLinkBridgeNeighbor?: boolean },
+  options?: { autoLinkBridgeNeighbor?: boolean; forceScanbody?: boolean },
 ): ToothWorkSelection[] => {
   const existingIdx = prev.findIndex(
     (row) => String(row.toothNumber || "").trim() === toothNumber,
@@ -395,6 +396,7 @@ const activateToothInWorks = (
   if (existingIdx >= 0) return prev;
 
   const autoLinkBridgeNeighbor = options?.autoLinkBridgeNeighbor === true;
+  const forceScanbody = options?.forceScanbody === true;
   const adj = getAdjacentTeeth(toothNumber);
   const bridgeNeighborIdx = autoLinkBridgeNeighbor
     ? prev.findIndex(
@@ -411,7 +413,10 @@ const activateToothInWorks = (
   const base = {
     toothNumber,
     prosthesisType: defaultProsthesisType,
-    customAbutment: false,
+    customAbutment: forceScanbody,
+    ...(forceScanbody
+      ? { customAbutmentSelection: CUSTOM_ABUTMENT_SELECTION.SCANBODY }
+      : {}),
     bridgeLinkedTeeth: [] as string[],
     ...emptyToothWorkCustomSpecs(),
   };
@@ -441,7 +446,7 @@ const activateTeethInWorks = (
   toothNumbers: readonly string[],
   defaultProsthesisType: string,
   prosthesisTypes: string[],
-  options?: { autoLinkBridgeNeighbor?: boolean },
+  options?: { autoLinkBridgeNeighbor?: boolean; forceScanbody?: boolean },
 ): ToothWorkSelection[] => {
   let next = prev;
   for (const toothNumber of toothNumbers) {
@@ -1763,7 +1768,10 @@ export const PracticeTransferRequestIntakePanel = ({
           [...selectedTeeth],
           defaultProsthesisType,
           normalizedProsthesisTypes,
-          { autoLinkBridgeNeighbor: false },
+          {
+            autoLinkBridgeNeighbor: false,
+            forceScanbody: clinicLabelMode,
+          },
         );
         if (bridgesToApply.length > 0) {
           next = applyBridgeLinksInWorks(
@@ -2690,6 +2698,53 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStep == null) return;
     goToothWorkGuideTourStep(toothWorkGuideTourStep + 1);
   };
+
+  /** 모델스캔 — 선택 치아는 스캔바디 커스텀어벗 고정(형태 라벨·라디오 없음). */
+  const clinicLabelScanbodyMismatch = useMemo(() => {
+    if (!clinicLabelMode) return false;
+    return toothWorks.some((row) => {
+      const tooth = String(row.toothNumber || "").trim();
+      if (!/^[1-4][1-8]$/.test(tooth)) return false;
+      if (isMissingToothProsthesisType(row.prosthesisType)) return false;
+      if (!isCustomAbutmentSupportedProsthesisType(row.prosthesisType)) {
+        return false;
+      }
+      if (!row.customAbutment) return true;
+      return (
+        resolveCustomAbutmentSelection(row) !==
+        CUSTOM_ABUTMENT_SELECTION.SCANBODY
+      );
+    });
+  }, [clinicLabelMode, toothWorks]);
+
+  useEffect(() => {
+    if (!clinicLabelScanbodyMismatch) return;
+    setToothWorks((prev) => {
+      let changed = false;
+      const next = prev.map((row) => {
+        const tooth = String(row.toothNumber || "").trim();
+        if (!/^[1-4][1-8]$/.test(tooth)) return row;
+        if (isMissingToothProsthesisType(row.prosthesisType)) return row;
+        if (!isCustomAbutmentSupportedProsthesisType(row.prosthesisType)) {
+          return row;
+        }
+        if (
+          row.customAbutment &&
+          resolveCustomAbutmentSelection(row) ===
+            CUSTOM_ABUTMENT_SELECTION.SCANBODY
+        ) {
+          return row;
+        }
+        changed = true;
+        return {
+          ...row,
+          customAbutment: true,
+          customAbutmentSelection: CUSTOM_ABUTMENT_SELECTION.SCANBODY,
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [clinicLabelScanbodyMismatch, setToothWorks]);
 
   // 연결 여부 ↔ 형태(인레이/크라운/커스텀어벗/임시치아 vs 브리지/작업X/유지장치/임시치아) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
@@ -4591,45 +4646,49 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — PracticeToothWorkCardFields */}
-                            <PracticeToothTypeMenu
-                              toothNumber={toothNumber}
-                              value={
-                                isMissingTooth
-                                  ? NO_WORK_PROSTHESIS_TYPE
-                                  : row.prosthesisType ||
-                                    resolveProsthesisTypeForLinkState(
-                                      "",
-                                      isLinked,
-                                      normalizedProsthesisTypes,
-                                    )
-                              }
-                              options={getProsthesisTypesForLinkState(
-                                isLinked,
-                                normalizedProsthesisTypes,
-                              )}
-                              allowCustom
-                              isBuiltinType={isBuiltinProsthesisType}
-                              onChange={(next) =>
-                                applyProsthesisTypeFromMenu(toothNumber, next)
-                              }
-                              onCommitCustomType={(next) =>
-                                applyProsthesisTypeFromMenu(toothNumber, next, {
-                                  ensureInCatalog: true,
-                                })
-                              }
-                              onRemoveCustomType={removeCustomProsthesisType}
-                              className={cn(
-                                isMissingTooth
-                                  ? "z-20 bg-transparent text-slate-500 hover:bg-slate-100/80"
-                                  : "z-[1]",
-                                toothWorkGuideTourStepId === "type" &&
-                                  "practice-tooth-guide-pulse",
-                              )}
-                              missingToothTooltip={
-                                isMissingTooth ? NO_WORK_PROSTHESIS_TOOLTIP : null
-                              }
-                            />
+                            {/* 2) 치아형태 — 모델스캔은 연결(+/-)로 크라운/브리지만 구분 */}
+                            {!clinicLabelMode ? (
+                              <PracticeToothTypeMenu
+                                toothNumber={toothNumber}
+                                value={
+                                  isMissingTooth
+                                    ? NO_WORK_PROSTHESIS_TYPE
+                                    : row.prosthesisType ||
+                                      resolveProsthesisTypeForLinkState(
+                                        "",
+                                        isLinked,
+                                        normalizedProsthesisTypes,
+                                      )
+                                }
+                                options={getProsthesisTypesForLinkState(
+                                  isLinked,
+                                  normalizedProsthesisTypes,
+                                )}
+                                allowCustom
+                                isBuiltinType={isBuiltinProsthesisType}
+                                onChange={(next) =>
+                                  applyProsthesisTypeFromMenu(toothNumber, next)
+                                }
+                                onCommitCustomType={(next) =>
+                                  applyProsthesisTypeFromMenu(toothNumber, next, {
+                                    ensureInCatalog: true,
+                                  })
+                                }
+                                onRemoveCustomType={removeCustomProsthesisType}
+                                className={cn(
+                                  isMissingTooth
+                                    ? "z-20 bg-transparent text-slate-500 hover:bg-slate-100/80"
+                                    : "z-[1]",
+                                  toothWorkGuideTourStepId === "type" &&
+                                    "practice-tooth-guide-pulse",
+                                )}
+                                missingToothTooltip={
+                                  isMissingTooth
+                                    ? NO_WORK_PROSTHESIS_TOOLTIP
+                                    : null
+                                }
+                              />
+                            ) : null}
 
                             {/* 3–4) 어벗|스캔바디 + 임플란트·규격 */}
                             {showAbutmentCheckbox ? (

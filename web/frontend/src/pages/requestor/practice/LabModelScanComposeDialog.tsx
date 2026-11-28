@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/backend/controllers/practiceTransfers/labModelScanTransfer.controller.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
+// - 2026-11-28: 의뢰 등록 후 커스텀어벗 디자인 모달 오픈.
+// - 2026-11-28: 치아카드 — 형태 메뉴·스캔바디 라디오 제거(연결=브리지, 규격만).
 // - 2026-11-28: 치아카드 스캔바디만·쉐이드 숨김·높이 축소(한 화면).
 // - 2026-11-28: 리메이크 「이전 어벗 재의뢰」. 드롭존 높이=왼쪽 2×2.
 // - 2026-11-28: 메모 제거. 치과·환자·기공소도착·리메이크 2×2 + 오른쪽 드롭존.
@@ -931,7 +933,7 @@ export function LabModelScanComposeDialog({
       }
       toast({
         title: "의뢰를 등록했습니다",
-        description: "작업시작 후 커스텀어벗 의뢰하기에 카드가 생깁니다.",
+        description: "커스텀어벗 디자인을 엽니다.",
       });
       sealedRef.current = true;
       purgeLabModelScanDraft(draftUserId, draftIdRef.current);

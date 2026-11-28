@@ -4,6 +4,7 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
  * change-log:
+ * - 2026-11-28: scanbodyOnly — 라디오 없이 임플란트·스캔바디 규격만(모델스캔).
  * - 2026-11-28: scanbodyOnly — 직접어벗 숨김·라벨 스캔바디(모델스캔).
  * - 2026-09-23: 라디오 라벨 — 어벗→직접어벗, 스캔바디→간접어벗.
  * - 2026-09-22: 신규의뢰 intake 본문 이관 — 커스텀 형태 삭제·missing tooltip·어벗 상세 툴팁·즐겨찾기 삭제.
@@ -301,7 +302,7 @@ type AbutmentRadiosProps = {
   title?: string;
   /** intake: 임플란트/스캔바디 요약 툴팁 */
   detailTooltips?: boolean;
-  /** 모델스캔 — 직접어벗 숨김, 스캔바디만 */
+  /** 모델스캔 — 라디오 없이 스캔바디 규격만 표시 */
   scanbodyOnly?: boolean;
 };
 
@@ -367,22 +368,39 @@ export function PracticeToothAbutmentRadios({
 }: AbutmentRadiosProps) {
   if (!isCustomAbutmentSupportedProsthesisType(row.prosthesisType)) return null;
   const selectionKind = resolveCustomAbutmentSelection(row);
-  const showDetails = Boolean(row.customAbutment);
+  const showDetails = scanbodyOnly || Boolean(row.customAbutment);
   const implantCompact = formatImplantCompact(row);
   const abutmentCompact = formatAbutmentCompact(row);
   const implantSummary = formatImplantSummary(row);
   const abutmentSummary = formatAbutmentSummary(row);
   const radioOptions = (
     scanbodyOnly
-      ? ([{ value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "스캔바디" }] as const)
+      ? ([] as const)
       : ([
           { value: CUSTOM_ABUTMENT_SELECTION.ABUTMENT, label: "직접어벗" },
           { value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "간접어벗" },
         ] as const)
   );
 
+  const openSpecsForSelection = (selection: CustomAbutmentSelection) => {
+    if (scanbodyOnly && !row.customAbutment) {
+      onPatch({
+        customAbutment: true,
+        customAbutmentSelection: CUSTOM_ABUTMENT_SELECTION.SCANBODY,
+      });
+      onOpenSpecs?.(CUSTOM_ABUTMENT_SELECTION.SCANBODY);
+      return;
+    }
+    onOpenSpecs?.(selection);
+  };
+
   const details = showDetails ? (
-    <div className="flex w-full flex-col items-stretch gap-0.5 pt-0.5">
+    <div
+      className={cn(
+        "flex w-full flex-col items-stretch gap-0.5",
+        !scanbodyOnly && "pt-0.5",
+      )}
+    >
       {detailTooltips ? (
         <TooltipProvider>
           <Tooltip>
@@ -400,9 +418,10 @@ export function PracticeToothAbutmentRadios({
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
-                  const selection =
-                    selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
-                  onOpenSpecs?.(selection);
+                  const selection = scanbodyOnly
+                    ? CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                    : selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+                  openSpecsForSelection(selection);
                 }}
               >
                 {implantCompact || "임플란트"}
@@ -428,19 +447,25 @@ export function PracticeToothAbutmentRadios({
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
-                  const selection =
-                    selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
-                  onOpenSpecs?.(selection);
+                  const selection = scanbodyOnly
+                    ? CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                    : selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+                  openSpecsForSelection(selection);
                 }}
               >
-                {abutmentCompact || abutmentSidePlaceholder(row)}
+                {abutmentCompact ||
+                  (scanbodyOnly ? "스캔바디" : abutmentSidePlaceholder(row))}
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
               {abutmentSummary ||
                 (missingPreset
-                  ? abutmentSideHint(row)
-                  : abutmentSideEmptyHint(row))}
+                  ? scanbodyOnly
+                    ? "스캔바디를 선택해주세요"
+                    : abutmentSideHint(row)
+                  : scanbodyOnly
+                    ? "스캔바디 선택"
+                    : abutmentSideEmptyHint(row))}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -452,9 +477,10 @@ export function PracticeToothAbutmentRadios({
             className="min-h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong hover:underline"
             onClick={(e) => {
               e.stopPropagation();
-              const selection =
-                selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
-              onOpenSpecs?.(selection);
+              const selection = scanbodyOnly
+                ? CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                : selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+              openSpecsForSelection(selection);
             }}
           >
             {implantCompact || "임플란트"}
@@ -465,26 +491,47 @@ export function PracticeToothAbutmentRadios({
             className="min-h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut hover:underline"
             onClick={(e) => {
               e.stopPropagation();
-              const selection =
-                selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
-              onOpenSpecs?.(selection);
+              const selection = scanbodyOnly
+                ? CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                : selectionKind || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+              openSpecsForSelection(selection);
             }}
           >
             {abutmentCompact ||
-              (selectionKind === CUSTOM_ABUTMENT_SELECTION.ABUTMENT
-                ? "직접 입력"
-                : "스캔바디")}
+              (scanbodyOnly
+                ? "스캔바디"
+                : selectionKind === CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                  ? "직접 입력"
+                  : "스캔바디")}
           </button>
         </>
       )}
     </div>
   ) : null;
 
+  if (scanbodyOnly) {
+    return (
+      <div
+        data-no-tooth-marquee=""
+        aria-label="스캔바디"
+        title={title}
+        className={cn(
+          "mt-1 flex shrink-0 flex-col items-stretch gap-0.5 px-0.5",
+          className,
+        )}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {details}
+      </div>
+    );
+  }
+
   return (
     <div
       data-no-tooth-marquee=""
       role="radiogroup"
-      aria-label={scanbodyOnly ? "스캔바디" : "직접어벗 또는 간접어벗"}
+      aria-label="직접어벗 또는 간접어벗"
       title={title}
       className={cn(
         "mt-1 flex shrink-0 flex-col items-stretch gap-0.5 px-0.5",
