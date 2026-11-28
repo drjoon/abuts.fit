@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import {
@@ -24,7 +24,7 @@ import {
   ABUTMENT_PRODUCT_MODE,
 } from "@/shared/practice/transferMemo";
 import { toKstYmd } from "@/shared/date/kst";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 
 type Props = {
   open: boolean;
