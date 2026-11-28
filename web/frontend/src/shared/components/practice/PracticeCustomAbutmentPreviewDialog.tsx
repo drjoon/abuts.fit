@@ -225,9 +225,31 @@ import {
   type CustomAbutmentDesignPreference,
 } from "@/shared/practice/customAbutmentDesignParams";
 import {
+  EMPTY_CUSTOM_ABUTMENT_LAB_STYLE,
+  listLabStyleProfileChoices,
+  mergeDesignParamLayers,
+  parseCustomAbutmentLabStyle,
+  type CustomAbutmentLabStyleLibrary,
+} from "@/shared/practice/customAbutmentLabStyle";
+import {
   parseAbutmentGenerationRules,
   type AbutmentGenerationRule,
 } from "@/shared/practice/abutmentDesignLogic";
+
+/** 치종 기본 위에 얹을 기공소 스타일 → 치과 취향 → 케이스 조정. */
+function layeredDesignParams(
+  toothNumber: string,
+  labStyle: CustomAbutmentLabStyleLibrary | null | undefined,
+  preference: CustomAbutmentDesignPreference | null | undefined,
+  caseOverrides?: Partial<CustomAbutmentDesignParams> | null,
+): Partial<CustomAbutmentDesignParams> {
+  return mergeDesignParamLayers({
+    toothNumber,
+    labStyle,
+    preference: preferenceOverridesForTooth(toothNumber, preference),
+    caseOverrides,
+  });
+}
 import { getDesignControls, matchDesignKey } from "@/shared/practice/labDesignControls";
 import {
   SCANBODY_SPLIT_IMPL_TOKEN,
@@ -817,12 +839,13 @@ function HeaderIconButton({
           type="button"
           size="sm"
           variant={active ? "default" : "outline"}
-          className="h-8 w-8 px-0"
+          className="h-8 gap-1.5 px-2 text-xs"
           disabled={disabled}
           aria-label={label}
           onClick={onClick}
         >
           {children}
+          <span className="hidden sm:inline">{label}</span>
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="z-[520]">
@@ -1498,6 +1521,11 @@ export function PracticeCustomAbutmentPreviewDialog({
   );
   const [exportChargeBusy, setExportChargeBusy] = useState(false);
   const preferenceRef = useRef<CustomAbutmentDesignPreference>(EMPTY_CUSTOM_ABUTMENT_PREFERENCE);
+  const labStyleRef = useRef<CustomAbutmentLabStyleLibrary>(EMPTY_CUSTOM_ABUTMENT_LAB_STYLE);
+  const [labStyleLibrary, setLabStyleLibrary] = useState<CustomAbutmentLabStyleLibrary>(
+    EMPTY_CUSTOM_ABUTMENT_LAB_STYLE,
+  );
+  const [canSaveLabStyle, setCanSaveLabStyle] = useState(false);
   const logicRulesRef = useRef<AbutmentGenerationRule[]>([]);
   const transferIdParam = String(transferId || "").trim();
   const readOnlyRef = useRef(readOnly);
@@ -3155,7 +3183,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             toothWorks: ctx.allToothWorks,
             sharedInsertionAxisWorld: sharedInsertionAxisOf(lockedBridgeAxisRef.current, row.toothNumber),
             params: {
-              ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+              ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
               ...rowOverrides,
             },
             explicitParams: rowOverrides,
@@ -3832,7 +3860,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         for (const fx of jawFixtures) {
           if (!proposalInputRef.current[fx.toothNumber]) {
             proposalInputRef.current[fx.toothNumber] = {
-              ...preferenceOverridesForTooth(fx.toothNumber, preference),
+              ...layeredDesignParams(fx.toothNumber, labStyleRef.current, preference),
             };
           }
           const fxOverrides = ctx.overrides[fx.toothNumber] ?? {};
@@ -3843,7 +3871,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             neighbors: jawFixtures,
             toothWorks: ctx.allToothWorks,
             params: {
-              ...preferenceOverridesForTooth(fx.toothNumber, preference),
+              ...layeredDesignParams(fx.toothNumber, labStyleRef.current, preference),
               ...fxOverrides,
             },
             explicitParams: fxOverrides,
@@ -5532,6 +5560,19 @@ export function PracticeCustomAbutmentPreviewDialog({
             canSave: Boolean(res.ok && res.data?.data?.canSave),
           }))
           .catch(() => ({ preference: EMPTY_CUSTOM_ABUTMENT_PREFERENCE, canSave: false }));
+        const labStylePromise = apiFetch<{
+          data?: { style?: unknown; canSave?: boolean };
+        }>({
+          path: `/api/ai/custom-abutment-lab-style${
+            transferIdParam ? `?transferId=${encodeURIComponent(transferIdParam)}` : ""
+          }`,
+          token,
+        })
+          .then((res) => ({
+            style: parseCustomAbutmentLabStyle(res.ok ? res.data?.data?.style : null),
+            canSave: Boolean(res.ok && res.data?.data?.canSave),
+          }))
+          .catch(() => ({ style: EMPTY_CUSTOM_ABUTMENT_LAB_STYLE, canSave: false }));
         const logicPromise = apiFetch<{ data?: { rules?: unknown } }>({
           path: "/api/ai/custom-abutment-design-logic",
           token,
@@ -5547,6 +5588,12 @@ export function PracticeCustomAbutmentPreviewDialog({
           if (cancelled) return;
           canSavePreferenceRef.current = p.canSave;
           preferenceRef.current = mergeEditPreference(p.preference, readUserEditPreference(authUserIdRef.current));
+        });
+        void labStylePromise.then((p) => {
+          if (cancelled) return;
+          labStyleRef.current = p.style;
+          setLabStyleLibrary(p.style);
+          setCanSaveLabStyle(p.canSave);
         });
 
         const progressByIdx = new Array<number>(Math.max(toLoad.length, 1)).fill(0);
@@ -6119,7 +6166,7 @@ export function PracticeCustomAbutmentPreviewDialog({
             overrides[row.toothNumber] = rowOverrides;
             if (!proposalInputRef.current[row.toothNumber]) {
               proposalInputRef.current[row.toothNumber] = {
-                ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
               };
             }
             if (restoredGumball) {
@@ -6130,7 +6177,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 neighbors: fixtures.filter((f) => f.jaw === jaw),
                 toothWorks: curAllToothWorks,
                 params: {
-                  ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                  ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
                   ...rowOverrides,
                 },
                 explicitParams: rowOverrides,
@@ -6157,7 +6204,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 neighbors: fixtures.filter((f) => f.jaw === jaw),
                 toothWorks: curAllToothWorks,
                 params: {
-                  ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                  ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
                   ...rowOverrides,
                 },
                 explicitParams: rowOverrides,
@@ -6182,7 +6229,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 neighbors: fixtures.filter((f) => f.jaw === jaw),
                 toothWorks: curAllToothWorks,
                 params: {
-                  ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                  ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
                   ...rowOverrides,
                 },
                 explicitParams: rowOverrides,
@@ -6874,7 +6921,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 overrides[row.toothNumber] = rowOverrides;
                 if (!proposalInputRef.current[row.toothNumber]) {
                   proposalInputRef.current[row.toothNumber] = {
-                    ...preferenceOverridesForTooth(row.toothNumber, preferenceRef.current),
+                    ...layeredDesignParams(row.toothNumber, labStyleRef.current, preferenceRef.current),
                     ...rowOverrides,
                   };
                 }
@@ -6939,7 +6986,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 }
                 if (!proposalInputRef.current[matched.toothNumber]) {
                   proposalInputRef.current[matched.toothNumber] = {
-                    ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                    ...layeredDesignParams(matched.toothNumber, labStyleRef.current, preferenceRef.current),
                     ...rowOverrides,
                   };
                 }
@@ -6950,7 +6997,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                   neighbors: job.fixtures,
                   toothWorks: curAllToothWorks,
                   params: {
-                    ...preferenceOverridesForTooth(matched.toothNumber, preferenceRef.current),
+                    ...layeredDesignParams(matched.toothNumber, labStyleRef.current, preferenceRef.current),
                     ...rowOverrides,
                   },
                   explicitParams: rowOverrides,
@@ -7073,7 +7120,7 @@ export function PracticeCustomAbutmentPreviewDialog({
         for (const d of builtAbutments) {
           if (!proposalInputRef.current[d.toothNumber]) {
             proposalInputRef.current[d.toothNumber] = {
-              ...preferenceOverridesForTooth(d.toothNumber, preferenceRef.current),
+              ...layeredDesignParams(d.toothNumber, labStyleRef.current, preferenceRef.current),
             };
           }
           const cachedRow = cached?.teeth.find((r) => r.toothNumber === d.toothNumber);
@@ -7561,8 +7608,8 @@ export function PracticeCustomAbutmentPreviewDialog({
             const proposal = proposalInputRef.current[tooth];
             const params =
               mode === "proposal"
-                ? { ...(proposal ?? preferenceOverridesForTooth(tooth, preferenceRef.current)) }
-                : { ...preferenceOverridesForTooth(tooth, preferenceRef.current), ...merged };
+                ? { ...(proposal ?? layeredDesignParams(tooth, labStyleRef.current, preferenceRef.current)) }
+                : { ...layeredDesignParams(tooth, labStyleRef.current, preferenceRef.current), ...merged };
             await new Promise<void>((r) => window.setTimeout(r, 16));
             if (designEpochRef.current !== epoch) {
               committed = false;
@@ -9679,7 +9726,7 @@ export function PracticeCustomAbutmentPreviewDialog({
                 </>
               ) : null}
               <HeaderIconButton
-                label="크라운 스캔"
+                label="파일 받기"
                 disabled={
                   crownDownloadBusy ||
                   exportChargeBusy ||
@@ -9688,9 +9735,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                 }
                 tip={
                   <>
-                    상·하악·바이트 PLY와 어벗 치아별 STL입니다.
+                    상·하악·바이트 PLY와 어벗 STL을 받습니다.
                     <br />
-                    어벗은 월드 좌표이며, 생산비 차감 확인 후 받습니다.
+                    생산비 차감 확인 후 내려받습니다.
                   </>
                 }
                 onClick={() => void openCrownExportConfirm()}
@@ -9721,9 +9768,11 @@ export function PracticeCustomAbutmentPreviewDialog({
                       설정
                     </TooltipContent>
                   </Tooltip>
-                  <PopoverContent align="end" className="z-[520] w-60 space-y-3 p-3 text-xs">
+                  <PopoverContent align="end" className="z-[520] w-64 space-y-3 p-3 text-xs">
                     <label className="flex items-center justify-between gap-3">
-                      <span className="font-medium">스캔색</span>
+                      <span className="font-medium" title="칼라 스캔이면 색을 그대로 보여 줍니다.">
+                        스캔 색
+                      </span>
                       <Switch
                         checked={colorMapping}
                         onCheckedChange={(checked) => {
@@ -9759,6 +9808,44 @@ export function PracticeCustomAbutmentPreviewDialog({
                           </Button>
                         ))}
                       </div>
+                    </div>
+                    <div className="space-y-1.5 border-t pt-2">
+                      <span className="font-medium">디자인 스타일</span>
+                      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                        기공소 기본 경사·마진 값입니다.
+                        <br />
+                        다음 재생성부터 적용됩니다.
+                      </p>
+                      <select
+                        className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                        value={labStyleLibrary.activeId}
+                        disabled={!canSaveLabStyle}
+                        aria-label="디자인 스타일"
+                        onChange={(e) => {
+                          const activeId = e.target.value;
+                          const next = { ...labStyleRef.current, activeId };
+                          labStyleRef.current = next;
+                          setLabStyleLibrary(next);
+                          const saveToken = String(authToken || "").trim();
+                          if (!canSaveLabStyle || !saveToken || !transferIdParam) return;
+                          void apiFetch({
+                            path: "/api/ai/custom-abutment-lab-style",
+                            method: "PUT",
+                            token: saveToken,
+                            body: {
+                              transferId: transferIdParam,
+                              activeId,
+                              profiles: next.profiles,
+                            },
+                          }).catch(() => undefined);
+                        }}
+                      >
+                        {listLabStyleProfileChoices(labStyleLibrary).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -9862,9 +9949,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                   {!biteAlignChrome ? (
                     <div className="flex items-center gap-1.5">
                       <ToolbarToggle
-                        iconOnly
                         active={showFinishLine}
-                        label="피니시라인"
+                        label="마진"
+                        tip="피니시라인(마진) 표시"
                         icon={<CircleDashed className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("margin");
@@ -9878,9 +9965,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                         }}
                       />
                       <ToolbarToggle
-                        iconOnly
                         active={showFixtureAnalog}
                         label="픽스쳐"
+                        tip="픽스쳐 아날로그 표시"
                         icon={<Cylinder className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("fixture");
@@ -9894,9 +9981,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                         }}
                       />
                       <ToolbarToggle
-                        iconOnly
                         active={designedList.some((d) => shownScanbodies[d.toothNumber] === true)}
                         label="스캔바디"
+                        tip="스캔바디 표시"
                         icon={<Hexagon className="h-4 w-4" />}
                         onClick={() => {
                           touchViewer("scanbodies");
@@ -9914,9 +10001,9 @@ export function PracticeCustomAbutmentPreviewDialog({
                       />
                       {ready && canEditDesign ? (
                         <ToolbarToggle
-                          iconOnly
                           active={gumballOn && !paint.paintOn}
-                          label="검볼"
+                          label="직접 조절"
+                          tip="3D 핸들로 어벗 위치·크기를 직접 조절합니다."
                           icon={<Move3d className="h-4 w-4" />}
                           onClick={() => {
                             touchViewer("gumball");

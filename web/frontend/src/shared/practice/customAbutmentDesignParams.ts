@@ -71,19 +71,19 @@ export type CustomAbutmentParamSpec = {
 export const CUSTOM_ABUTMENT_PARAM_SPECS: Record<CustomAbutmentParamKey, CustomAbutmentParamSpec> = {
   occlusalClearanceMm: { label: "대합 거리", unit: "mm", min: 0.7, max: Infinity, step: 0.05 },
   postTaperDeg: { label: "테이퍼", unit: "°", min: 2, max: 4.2, step: 0.1 },
-  postTaperLink: { label: "높이·테이퍼 연결", unit: "", min: 0, max: 1, step: 1 },
-  postTopPlaneCode: { label: "교합 사면", unit: "", min: 0, max: 2, step: 1 },
-  postLingualBevelMm: { label: "설측 사면", unit: "mm", min: -1, max: 11.5, step: 0.1 },
-  postLabialBevelMm: { label: "순측 사면", unit: "mm", min: 0, max: 11.5, step: 0.1 },
+  postTaperLink: { label: "높이·테이퍼 연동", unit: "", min: 0, max: 1, step: 1 },
+  postTopPlaneCode: { label: "윗면 방향", unit: "", min: 0, max: 2, step: 1 },
+  postLingualBevelMm: { label: "설측 경사", unit: "mm", min: -1, max: 11.5, step: 0.1 },
+  postLabialBevelMm: { label: "순측 경사", unit: "mm", min: 0, max: 11.5, step: 0.1 },
   postYawDeg: { label: "포스트 회전", unit: "°", min: -30, max: 30, step: 1 },
   postHeightOffsetMm: { label: "포스트 높이 보정", unit: "mm", min: -6, max: 6, step: 0.1 },
   postWidthScale: { label: "포스트 굵기", unit: "배", min: 0.65, max: 1.45, step: 0.01 },
-  marginFilletRadiusMm: { label: "마진 필레 R", unit: "mm", min: 0.5, max: 1.0, step: 0.1 },
+  marginFilletRadiusMm: { label: "마진 둥글기", unit: "mm", min: 0.5, max: 1.0, step: 0.1 },
   marginShoulderMm: { label: "마진 폭", unit: "mm", min: 0.2, max: 0.9, step: 0.05 },
-  marginDepthMm: { label: "마진 깊이(치은 하방)", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
-  marginSubgMinMm: { label: "치은 연하 얕은 끝", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
-  marginSubgMaxMm: { label: "치은 연하 깊은 끝", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
-  marginScallopMm: { label: "마진 스캘럽(근원심 상승)", unit: "mm", min: 0, max: 1.6, step: 0.1 },
+  marginDepthMm: { label: "마진 깊이", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
+  marginSubgMinMm: { label: "치은 아래 얕은 쪽", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
+  marginSubgMaxMm: { label: "치은 아래 깊은 쪽", unit: "mm", min: -2.5, max: 2.5, step: 0.1 },
+  marginScallopMm: { label: "근원심 마진 상승", unit: "mm", min: 0, max: 1.6, step: 0.1 },
   marginSizeScale: { label: "마진 크기", unit: "배", min: 0.7, max: 1.4, step: 0.01 },
   crownContactMm: { label: "크라운 접촉량", unit: "mm", min: 0, max: 0.2, step: 0.01 },
   minCrownThicknessMm: { label: "크라운 두께", unit: "mm", min: 0.5, max: 2.5, step: 0.05 },
@@ -745,7 +745,7 @@ export function describeCustomAbutmentPreference(pref: CustomAbutmentDesignPrefe
         }
         if (key === "postTopPlaneCode") {
           const label = POST_TOP_PLANE_CODE_LABEL[Math.round(num)];
-          return label ? `교합 사면 ${label}` : "";
+          return label ? `윗면 방향 ${label}` : "";
         }
         const spec = CUSTOM_ABUTMENT_PARAM_SPECS[key as CustomAbutmentParamKey];
         if (!spec) return "";

@@ -104,15 +104,15 @@ export type AbutmentInfoFieldKey =
 export type AbutmentInfoEditValue = number | AbutmentAxisSource | { min: number; max: number };
 
 export const ABUTMENT_INFO_FIELD_LABELS: Record<AbutmentInfoFieldKey, string> = {
-  marginSubgMm: "치은 연하",
+  marginSubgMm: "치은 아래",
   maxDiameterMm: "최대 직경",
-  marginFilletRadiusMm: "마진 필레 R",
+  marginFilletRadiusMm: "마진 둥글기",
   postHeightMm: "포스트 높이",
   postTaperDeg: "테이퍼",
-  postTaperLink: "높이·테이퍼 연결",
-  postLingualBevelMm: "설측 사면",
-  postLabialBevelMm: "순측 사면",
-  postTopPlaneCode: "교합 사면",
+  postTaperLink: "높이·테이퍼 연동",
+  postLingualBevelMm: "설측 경사",
+  postLabialBevelMm: "순측 경사",
+  postTopPlaneCode: "윗면 방향",
   occlusalClearanceMm: "대합 거리",
   axisSource: "삽입축 기준",
 };
@@ -338,9 +338,9 @@ function PostHeightTaperLinkButton({
 }) {
   const title = linked
     ? isBridge
-      ? "높이·테이퍼 연결됨 · 브리지 보정 (클릭하면 개별 조절)"
-      : "높이·테이퍼 연결됨 (클릭하면 개별 조절)"
-    : "높이·테이퍼 연결 해제됨 (클릭하면 최적 접착력으로 자동 조절)";
+      ? "높이·테이퍼 연동 · 브리지 보정 (클릭하면 개별 조절)"
+      : "높이·테이퍼 연동 (클릭하면 개별 조절)"
+    : "높이·테이퍼 연동 해제 (클릭하면 최적 접착력으로 자동 조절)";
   const lineClass = linked
     ? "border-primary/45"
     : "border-dashed border-muted-foreground/35";
@@ -896,7 +896,7 @@ function posteriorBevelHint(side: "설측" | "협측") {
   );
 }
 
-/** 포스트 상단 교합 사면. 삽입축 기준과 같은 드롭다운. */
+/** 포스트 상단 윗면 방향. 삽입축 기준과 같은 드롭다운. */
 function EditablePostTopPlaneRow({
   value,
   disabled,
@@ -985,7 +985,7 @@ function EditablePostTopPlaneRow({
           }
         }}
       >
-        교합 사면
+        윗면 방향
       </span>
       <div
         className={cn(
@@ -994,7 +994,7 @@ function EditablePostTopPlaneRow({
         )}
       >
         <select
-          aria-label="교합 사면"
+          aria-label="윗면 방향"
           disabled={disabled}
           value={shown}
           className="h-full w-0 min-w-0 flex-1 truncate bg-transparent pr-1 text-right text-xs font-medium text-foreground outline-none"
@@ -1011,7 +1011,7 @@ function EditablePostTopPlaneRow({
             type="button"
             tabIndex={-1}
             disabled={disabled}
-            aria-label="교합 사면 이전"
+            aria-label="윗면 방향 이전"
             className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             onClick={() => stepBy(-1)}
           >
@@ -1021,7 +1021,7 @@ function EditablePostTopPlaneRow({
             type="button"
             tabIndex={-1}
             disabled={disabled}
-            aria-label="교합 사면 다음"
+            aria-label="윗면 방향 다음"
             className="flex h-3 w-4 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
             onClick={() => stepBy(1)}
           >
@@ -1721,12 +1721,12 @@ export function PracticeCustomAbutmentDesignTree({
         <span className="shrink-0">어벗 정보</span>
         <ScanbodyButton
           shown={anyScanbody}
-          label="모든"
+          label="전체"
           onClick={() => onSetAllScanbodies(!anyScanbody)}
         />
         <PredictedCrownButton
           shown={anyPredictedCrown}
-          label="모든"
+          label="전체"
           onClick={() => onSetAllPredictedCrowns(!anyPredictedCrown)}
         />
         <button
@@ -1793,7 +1793,7 @@ export function PracticeCustomAbutmentDesignTree({
         <p className="px-3 pt-1.5 text-[0.75rem] leading-relaxed text-muted-foreground">
           {selectedTeeth.length}개 선택입니다.
           <br />
-          수치와 검볼은 같이 바뀝니다.
+          수치와 직접 조절은 같이 바뀝니다.
         </p>
       ) : null}
       <ul className="px-1.5 py-1.5">
@@ -1961,7 +1961,7 @@ export function PracticeCustomAbutmentDesignTree({
                     )}
                     {editable ? (
                       <EditableNumberRow
-                        label="마진 필레 R"
+                        label="마진 둥글기"
                         value={m.marginFilletRadiusMm}
                         min={0.5}
                         max={1}
@@ -1972,7 +1972,7 @@ export function PracticeCustomAbutmentDesignTree({
                         onCommit={(v) => onEditField?.(item, "marginFilletRadiusMm", v)}
                       />
                     ) : (
-                      <DetailRow label="마진 필레 R" value={`${m.marginFilletRadiusMm}mm`} />
+                      <DetailRow label="마진 둥글기" value={`${m.marginFilletRadiusMm}mm`} />
                     )}
                   </InfoGroup>
                   <InfoGroup title="포스트">
@@ -2061,10 +2061,10 @@ export function PracticeCustomAbutmentDesignTree({
                       );
                     })()}
                     <BevelNumberRow
-                      label="설측 사면"
+                      label="설측 경사"
                       hint={
                         isAnteriorTooth(item.toothNumber) ? (
-                          "마진에서 설측 사면이 시작되는 높이입니다."
+                          "마진에서 설측 경사가 시작되는 높이입니다."
                         ) : (
                           posteriorBevelHint("설측")
                         )
@@ -2081,11 +2081,11 @@ export function PracticeCustomAbutmentDesignTree({
                       onCommit={(v) => onEditField?.(item, "postLingualBevelMm", v)}
                     />
                     <BevelNumberRow
-                      label={isAnteriorTooth(item.toothNumber) ? "순측 사면" : "협측 사면"}
+                      label={isAnteriorTooth(item.toothNumber) ? "순측 경사" : "협측 경사"}
                       hint={
                         isAnteriorTooth(item.toothNumber) ? (
                           <>
-                            마진에서 순측 사면이 시작되는 높이입니다.
+                            마진에서 순측 경사가 시작되는 높이입니다.
                             <br />
                             절단연 크라운 두께가 부족하면 필요한 높이가 잡힙니다.
                           </>
@@ -2112,7 +2112,7 @@ export function PracticeCustomAbutmentDesignTree({
                       />
                     ) : (
                       <DetailRow
-                        label="교합 사면"
+                        label="윗면 방향"
                         value={
                           POST_TOP_PLANE_CODE_LABEL[
                             Math.max(0, Math.min(2, Math.round(item.params.postTopPlaneCode ?? 0)))

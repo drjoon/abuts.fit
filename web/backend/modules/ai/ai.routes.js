@@ -23,6 +23,10 @@ import {
   getCustomAbutmentGenerationLogic,
   recordCustomAbutmentGenerationEdits,
 } from "../../controllers/ai/abutmentDesignLogic.controller.js";
+import {
+  getCustomAbutmentLabStyle,
+  saveCustomAbutmentLabStyle,
+} from "../../controllers/ai/customAbutmentLabStyle.controller.js";
 import { getToothAnatomyCatalog } from "../../controllers/ai/toothAnatomy.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
@@ -104,6 +108,16 @@ router.get(
   "/custom-abutment-design-logic",
   authenticate,
   getCustomAbutmentGenerationLogic
+);
+router.get(
+  "/custom-abutment-lab-style",
+  authenticate,
+  getCustomAbutmentLabStyle
+);
+router.put(
+  "/custom-abutment-lab-style",
+  authenticate,
+  saveCustomAbutmentLabStyle
 );
 router.post(
   "/custom-abutment-design-edits",

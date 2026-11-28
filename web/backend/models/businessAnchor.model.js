@@ -773,6 +773,14 @@ const businessAnchorSchema = new mongoose.Schema(
       notes: { type: [String], default: undefined },
       updatedAt: { type: Date, default: null },
     },
+    // 기공소 커스텀어벗 디자인 스타일 프로필(파라미터 세트). lab only.
+    // activeId + profiles[{ id, name, note, scopes }]. 단면 형상은 넣지 않는다.
+    // related: web/backend/controllers/ai/customAbutmentLabStyle.controller.js
+    customAbutmentLabStyle: {
+      activeId: { type: String, default: "uri-altoran" },
+      profiles: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+      updatedAt: { type: Date, default: null },
+    },
     // 기공소→치과별 기공수가 할증(배수). 현재값 + history(변경·1x 해제 이력).
     // as-of: 의뢰 createdAt 기준 당시 배수. 이후 변경분은 다음 건부터.
     // related: web/backend/utils/labFeeSchedule.js (resolveLabPracticeFeeMultiplierAsOf)
