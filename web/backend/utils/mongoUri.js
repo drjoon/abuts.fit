@@ -2,7 +2,20 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/cloudSandbox.js
+import {
+  CLOUD_SANDBOX_URI,
+  assertCloudSandboxEnabledForRuntime,
+  isCloudSandboxEnabled,
+} from "./cloudSandbox.js";
+
 export function resolveMongoUri() {
+  if (isCloudSandboxEnabled()) {
+    assertCloudSandboxEnabledForRuntime();
+    // 주입된 베타 URI가 있어도 로컬 샌드박스만 연다.
+    return CLOUD_SANDBOX_URI;
+  }
+
   const isProd = process.env.NODE_ENV === "production";
 
   if (isProd) {
@@ -14,6 +27,8 @@ export function resolveMongoUri() {
 }
 
 export function resolveMongoSourceLabel() {
+  if (isCloudSandboxEnabled()) return "SANDBOX DB";
+
   const isProd = process.env.NODE_ENV === "production";
   if (isProd) return "PROD DB";
 

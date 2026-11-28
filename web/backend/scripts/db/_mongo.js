@@ -4,6 +4,10 @@
 // - web/backend/server.js
 import mongoose from "mongoose";
 import "../../bootstrap/env.js";
+import {
+  CLOUD_SANDBOX_URI,
+  isCloudSandboxEnabled,
+} from "../../utils/cloudSandbox.js";
 
 function redactMongoUri(uri) {
   const s = String(uri || "");
@@ -12,6 +16,10 @@ function redactMongoUri(uri) {
 }
 
 export function getMongoUri() {
+  if (isCloudSandboxEnabled()) {
+    return CLOUD_SANDBOX_URI;
+  }
+
   const nodeEnv = String(process.env.NODE_ENV || "").trim() || "development";
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
   const mongoUriTest =
