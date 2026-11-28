@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-28: 자동 묶음 — 역할어 제거 줄기(stem) 우선, 포맷 무관(isLikelyOralScanFile).
 // - 2026-08-10: 수동 합치기/해제는 3MB 필터 없음(모든 파일). 자동만 크기 기준 — 룰 SSOT 정리.
 // - 2026-08-09: 크기 판정 3MB 단일 기준 — >=3MB 구강스캔, <3MB 어벗디자인(중간 구간 제거).
 // - 2026-08-09: 크기별 productMode·상단 뱃지(구강스캔/어벗디자인) SSOT 주석.
@@ -11,6 +12,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/shared/filename/parseFilenameWithRules.ts
 // - .cursor/rules/oral-scan-file-size.mdc
+// - docs/intent/oral-scan-bundle-multi-abutment.md
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import {
@@ -84,13 +86,63 @@ export function isLikelyCustomAbutDesignSize(
   );
 }
 
-/** 자동 묶음 전용 — 수동 합치기/해제에는 호출하지 않는다. */
+/**
+ * fileKey(`name:size`)에서 원본 파일명 추출.
+ */
+export function resolveFileNameFromKey(fileKey: string): string {
+  const raw = String(fileKey || "");
+  const idx = raw.lastIndexOf(":");
+  if (idx < 0) return raw;
+  return raw.slice(0, idx);
+}
+
+/**
+ * 상악·하악·바이트 등 역할 토큰.
+ * 자동 묶음 줄기(stem)에서 제거한다. 스캐너·언어 무관 공통 키워드만.
+ */
+const ORAL_SCAN_ROLE_TOKEN_RE =
+  /^(?:상악|하악|바이트|바이트[12]|교합|스캔|인상|모델|upper|lower|maxilla|mandible|bite|bite[12]|jaw|occlusion|occlusal|antagonist|scan|prep|situation)$/iu;
+
+const ORAL_SCAN_ROLE_EMBEDDED_RE =
+  /(?:^|[\s_\-./\\]+)(?:상악|하악|바이트[12]?|교합|스캔|인상|upper|lower|maxilla|mandible|bite[12]?|jaw|occlusion|occlusal|antagonist|scan)(?=$|[\s_\-./\\]+)/giu;
+
+/** 역할어를 뺀 파일명 줄기(확장자 제외). 같으면 같은 구강스캔 묶음. */
+export function resolveOralScanBundleStem(filename: string): string {
+  const base = stripExtension(String(filename || ""));
+  if (!base) return "";
+
+  const tokens = base
+    .split(/[\s_\-./\\]+/u)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const kept = tokens.filter((token) => !ORAL_SCAN_ROLE_TOKEN_RE.test(token));
+  let stem = kept.join("_").replace(/_+/g, "_").replace(/^_|_$/g, "").trim();
+
+  if (!stem || stem.length < 2) {
+    stem = base
+      .replace(ORAL_SCAN_ROLE_EMBEDDED_RE, " ")
+      .replace(/[\s_\-./\\]+/gu, "_")
+      .replace(/^_|_$/g, "")
+      .trim();
+  }
+
+  return stem.length >= 2 ? stem : "";
+}
+
+export function normalizeOralScanBundleStemKey(stem: string): string {
+  return normalizePatientKey(stem);
+}
+
+/** 자동 묶음 전용 — 수동 합치기/해제에는 호출하지 않는다. 포맷·크기 무관 구강스캔 후보. */
 function filterOralScanFileKeys(
   fileKeys: string[],
   sizeByFileKey?: Record<string, number | undefined>,
 ): string[] {
   return fileKeys.filter((key) =>
-    isLikelyOralScanSize(resolveFileSizeBytes(key, sizeByFileKey)),
+    isLikelyOralScanFile({
+      name: resolveFileNameFromKey(key),
+      size: resolveFileSizeBytes(key, sizeByFileKey) ?? undefined,
+    }),
   );
 }
 
@@ -279,9 +331,37 @@ export function buildAttachmentListItems(
 }
 
 /**
- * 새로 추가된 파일들 중 같은 환자명(비어 있지 않음)끼리 묶을 후보를 만든다.
- * 기존 그룹에 같은 환자가 있으면 그 그룹 id로 합친다.
- * 구강 스캔 크기(>=3MB)만 대상 — 소형 커스텀어벗 디자인 STL은 같은 환자여도 묶지 않는다.
+ * 기존 그룹의 묶음 키(줄기 우선, 없으면 환자명).
+ */
+function resolveGroupBundleKey(
+  group: PatientFileGroup,
+  patientNameByFileKey: Record<string, string | undefined>,
+): { stemKey: string; patientKey: string } {
+  const stems = group.fileKeys
+    .map((key) =>
+      normalizeOralScanBundleStemKey(
+        resolveOralScanBundleStem(resolveFileNameFromKey(key)),
+      ),
+    )
+    .filter(Boolean);
+  const stemCounts = new Map<string, number>();
+  for (const stem of stems) {
+    stemCounts.set(stem, (stemCounts.get(stem) || 0) + 1);
+  }
+  const stemKey =
+    [...stemCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  const primary = getPrimaryFileKey(group);
+  const patientKey = primary
+    ? normalizePatientKey(patientNameByFileKey[primary])
+    : "";
+  return { stemKey, patientKey };
+}
+
+/**
+ * 새로 추가된 구강스캔을 묶는다.
+ * 1) 역할어를 뺀 파일명 줄기(stem)가 같으면 합친다 (포맷 무관).
+ * 2) 줄기가 없으면 환자명 폴백.
+ * 소형 커스텀어벗 디자인 STL은 제외.
  */
 export function planAutoGroupsForNewFiles(params: {
   newFileKeys: string[];
@@ -292,52 +372,99 @@ export function planAutoGroupsForNewFiles(params: {
   const { newFileKeys, patientNameByFileKey, existingGroups, sizeByFileKey } =
     params;
   const oralScanKeys = filterOralScanFileKeys(newFileKeys, sizeByFileKey);
-  const byPatient = new Map<string, string[]>();
+
+  const byStem = new Map<string, string[]>();
+  const leftoverKeys: string[] = [];
 
   for (const fileKey of oralScanKeys) {
+    const stemKey = normalizeOralScanBundleStemKey(
+      resolveOralScanBundleStem(resolveFileNameFromKey(fileKey)),
+    );
+    if (!stemKey) {
+      leftoverKeys.push(fileKey);
+      continue;
+    }
+    const list = byStem.get(stemKey) || [];
+    list.push(fileKey);
+    byStem.set(stemKey, list);
+  }
+
+  const groupsToCreate: PatientFileGroup[] = [];
+  const groupsToUpdate: PatientFileGroup[] = [];
+  const usedExisting = new Set<string>();
+  const claimedKeys = new Set<string>();
+
+  const claimIntoExistingOrCreate = (
+    matchKey: string,
+    keys: string[],
+    match: "stem" | "patient",
+  ) => {
+    if (!keys.length) return;
+    const existing = existingGroups.find((group) => {
+      if (usedExisting.has(group.id)) return false;
+      const bundle = resolveGroupBundleKey(group, patientNameByFileKey);
+      return match === "stem"
+        ? bundle.stemKey === matchKey
+        : bundle.patientKey === matchKey;
+    });
+
+    if (existing) {
+      usedExisting.add(existing.id);
+      const merged = Array.from(new Set([...existing.fileKeys, ...keys]));
+      for (const key of keys) claimedKeys.add(key);
+      if (merged.length !== existing.fileKeys.length) {
+        groupsToUpdate.push({ ...existing, fileKeys: merged });
+      }
+      return;
+    }
+
+    if (keys.length >= 2) {
+      for (const key of keys) claimedKeys.add(key);
+      groupsToCreate.push({
+        id: createPatientGroupId(),
+        fileKeys: keys,
+      });
+    }
+  };
+
+  for (const [stemKey, keys] of byStem.entries()) {
+    claimIntoExistingOrCreate(stemKey, keys, "stem");
+  }
+
+  const byPatient = new Map<string, string[]>();
+  for (const fileKey of leftoverKeys) {
+    if (claimedKeys.has(fileKey)) continue;
     const patientKey = normalizePatientKey(patientNameByFileKey[fileKey]);
     if (!patientKey) continue;
     const list = byPatient.get(patientKey) || [];
     list.push(fileKey);
     byPatient.set(patientKey, list);
   }
-
-  const groupsToCreate: PatientFileGroup[] = [];
-  const groupsToUpdate: PatientFileGroup[] = [];
-  const usedExisting = new Set<string>();
+  // stem으로 1개만 남아 환자명으로 기존 묶음에 붙일 수 있는 경우
+  for (const [stemKey, keys] of byStem.entries()) {
+    for (const fileKey of keys) {
+      if (claimedKeys.has(fileKey)) continue;
+      const patientKey = normalizePatientKey(patientNameByFileKey[fileKey]);
+      if (!patientKey) continue;
+      const list = byPatient.get(patientKey) || [];
+      list.push(fileKey);
+      byPatient.set(patientKey, list);
+    }
+    void stemKey;
+  }
 
   for (const [patientKey, keys] of byPatient.entries()) {
-    const existing = existingGroups.find((group) => {
-      if (usedExisting.has(group.id)) return false;
-      const primary = getPrimaryFileKey(group);
-      if (!primary) return false;
-      return normalizePatientKey(patientNameByFileKey[primary]) === patientKey;
-    });
-
-    if (existing) {
-      usedExisting.add(existing.id);
-      const merged = Array.from(new Set([...existing.fileKeys, ...keys]));
-      if (merged.length !== existing.fileKeys.length) {
-        groupsToUpdate.push({ ...existing, fileKeys: merged });
-      }
-      continue;
-    }
-
-    if (keys.length >= 2) {
-      groupsToCreate.push({
-        id: createPatientGroupId(),
-        fileKeys: keys,
-      });
-    }
+    const unique = Array.from(new Set(keys)).filter((k) => !claimedKeys.has(k));
+    claimIntoExistingOrCreate(patientKey, unique, "patient");
   }
 
   return { groupsToCreate, groupsToUpdate };
 }
 
 /**
- * 한 번에 드롭/선택한 파일이 2개 이상이고 환자명이 없거나 모두 같으면
- * (구강 스캔 묶음으로 보고) 하나의 환자 그룹으로 만든다.
- * 구강 스캔 크기(>=3MB)만 대상 — 동일 환자 커스텀어벗 여러 개를 한꺼번에 올려도 묶지 않는다.
+ * 한 번에 드롭/선택한 파일이 2개 이상이고 환자명·줄기가 없거나 모두 같으면
+ * (구강 스캔 묶음으로 보고) 하나의 그룹으로 만든다.
+ * 포맷 무관 구강스캔 후보만 — 소형 어벗 STL은 묶지 않는다.
  */
 export function planBatchGroupIfAmbiguous(params: {
   newFileKeys: string[];
@@ -354,14 +481,34 @@ export function planBatchGroupIfAmbiguous(params: {
   const patientKeys = keys.map((k) =>
     normalizePatientKey(params.patientNameByFileKey[k]),
   );
-  const nonEmpty = patientKeys.filter(Boolean);
-  const unique = new Set(nonEmpty);
+  const nonEmptyPatients = patientKeys.filter(Boolean);
+  const uniquePatients = new Set(nonEmptyPatients);
 
-  // 환자명이 서로 다르면 배치 묶음 금지 (환자명 기반 자동묶음에 맡김)
-  if (unique.size > 1) return null;
+  // 환자명이 서로 다르면 배치 묶음 금지
+  if (uniquePatients.size > 1) return null;
 
-  // 이미 환자명으로 묶였으면 스킵
-  if (unique.size === 1 && nonEmpty.length === keys.length) return null;
+  const stemKeys = keys
+    .map((k) =>
+      normalizeOralScanBundleStemKey(
+        resolveOralScanBundleStem(resolveFileNameFromKey(k)),
+      ),
+    )
+    .filter(Boolean);
+  const uniqueStems = new Set(stemKeys);
+
+  // 줄기가 서로 다르면 줄기 자동묶음에 맡김
+  if (uniqueStems.size > 1) return null;
+
+  // 이미 환자명 또는 줄기로 전부 식별되면 스킵(위에서 묶였어야 함)
+  if (
+    uniquePatients.size === 1 &&
+    nonEmptyPatients.length === keys.length
+  ) {
+    return null;
+  }
+  if (uniqueStems.size === 1 && stemKeys.length === keys.length) {
+    return null;
+  }
 
   return {
     id: createPatientGroupId(),

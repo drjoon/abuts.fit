@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
 // - web/frontend/src/shared/hooks/useFilePreUpload.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-11-28: 구강스캔 묶음은 toothWorks 어벗마다 caseInfo 1건(스캔 files 공유).
 // - 2026-08-21: 제출 시 아노 미설정이면 defaults→true로 보정(사업체 OFF 폴백만 타는 경우 방지).
 // - 2026-08-19: 성공 시 로컬 초안을 파일 비우기 전에 지움. 제출 시작/성공 콜백으로 입력 중 중복 체크를 무효화.
 // - 2026-08-19: IndexedDB 파일 삭제는 이동과 겹쳐 제출 체감을 막지 않는다.
@@ -37,7 +38,9 @@ import type { PatientFileGroup } from "../utils/patientGroups";
 import {
   buildAttachmentListItems,
   getPrimaryFileKey,
+  isLikelyOralScanFile,
 } from "../utils/patientGroups";
+import { expandCasePayloadsForOralScanAbutments } from "../utils/oralScanAbutmentCases";
 import {
   buildNewSystemRequestPayload,
   collectNewImplantAckLines,
@@ -677,13 +680,22 @@ export const useNewRequestSubmitV2 = ({
           };
 
           submitCaseInfos = listItems
-            .map((item) => {
+            .flatMap((item) => {
               if (item.kind === "group") {
                 const primary =
                   getPrimaryFileKey(item.group) || item.group.fileKeys[0];
-                return buildCasePayload(primary, item.group.fileKeys);
+                const payload = buildCasePayload(primary, item.group.fileKeys);
+                if (!payload) return [];
+                // 구강스캔 묶음: 어벗(치식) 1개 = 의뢰 1건, 스캔 files 공유
+                return expandCasePayloadsForOralScanAbutments(payload);
               }
-              return buildCasePayload(item.fileKey, [item.fileKey]);
+              const payload = buildCasePayload(item.fileKey, [item.fileKey]);
+              if (!payload) return [];
+              const primaryFile = fileByKey.get(item.fileKey)?.file;
+              if (primaryFile && isLikelyOralScanFile(primaryFile)) {
+                return expandCasePayloadsForOralScanAbutments(payload);
+              }
+              return [payload];
             })
             .filter((ci): ci is NonNullable<typeof ci> =>
               Boolean(ci?.file?.s3Key),

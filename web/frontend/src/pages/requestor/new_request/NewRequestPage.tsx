@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-11-28: 구강스캔 포맷(PLY·OBJ·3Shape·ExoCAD)도 신규의뢰에서 받고 묶음·다치아 어벗 제출.
 // - 2026-10-24: 커스텀어벗 의뢰 소개 모달은 화면을 열 때 띄우지 않는다.
 // - 2026-10-23: 생산 의뢰 화면 라벨 — 치과·기공소 모두 커스텀어벗 의뢰하기. 치과 보철은 기공소에 의뢰하기.
 // - 2026-10-23: 기공소 이동 라벨 — 치과의뢰 수신하기. 중복 안내 — 커스텀어벗 의뢰하기.
@@ -81,7 +82,6 @@ import { type LeadTimesMap } from "@/shared/shipping/estimateShipDate";
 import {
   findGroupByFileKey,
   isLikelyOralScanFile,
-  isLikelyOralScanSize,
   resolveFileSizeBytes,
   resolveOralScanGroupTitle,
 } from "./utils/patientGroups";
@@ -248,6 +248,7 @@ const NewRequestPageContent = () => {
     attachmentListItems,
     patientGroups,
     groupSelectedFiles,
+    addFilesToPatientGroup,
     ungroupPatientFiles,
     removeFileFromPatientGroup,
     clearPatientGroups,
@@ -1422,28 +1423,15 @@ const NewRequestPageContent = () => {
         (PRACTICE_TRANSFER_MODEL_EXTENSIONS.has(ext) && ext !== ".stl") ||
         PRACTICE_TRANSFER_CAD_PROJECT_EXTENSIONS.has(ext);
 
-      if (isScannerOralScan) {
-        if (isLabRequestor) {
-          stlCandidates.push({ id: toNormalizedFileKey(file), file });
-          return;
-        }
-        rejectedFiles.push({
-          name: file.name,
-          reason: `${abutmentMenuLabel} 화면은 STL만 받습니다. 구강 스캔·프로젝트 파일은 ${oralScanPageLabel} 페이지를 이용해주세요.`,
-        });
-        return;
-      }
-
-      if (ext === ".stl") {
+      // 커스텀어벗 의뢰: 어벗 STL + 구강스캔(포맷 무관). 기공의뢰(PTX)와 별개.
+      if (isScannerOralScan || ext === ".stl") {
         stlCandidates.push({ id: toNormalizedFileKey(file), file });
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: isLabRequestor
-          ? "STL·PLY·OBJ·3Shape·ExoCAD만 업로드할 수 있어요."
-          : "STL 파일만 업로드할 수 있어요.",
+        reason: "STL·PLY·OBJ·3Shape·ExoCAD만 업로드할 수 있어요.",
       });
     });
 
@@ -1587,7 +1575,8 @@ const NewRequestPageContent = () => {
     const smallCandidates: StlSelectionCandidate[] = [];
     const largeCandidates: StlSelectionCandidate[] = [];
     for (const candidate of batch.stlCandidates) {
-      if (isLikelyOralScanSize(candidate.file.size)) {
+      // PLY/OBJ/DCM·대형 STL은 구강스캔 확인 모달. 소형 STL만 즉시 어벗디자인.
+      if (isLikelyOralScanFile(candidate.file)) {
         largeCandidates.push(candidate);
       } else {
         smallCandidates.push(candidate);
@@ -2149,13 +2138,14 @@ const NewRequestPageContent = () => {
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
               productionOnly={isLabRequestor}
-              acceptOralScanModels={isLabRequestor}
+              acceptOralScanModels
               onOpenLabOralScanDesign={
                 isLabRequestor ? handleOpenLabOralScanDesign : undefined
               }
               localDraftRestoreDone={localDraftRestoreDone}
               suppressDetailAutoOpen={suppressLocalDraftForGuideTour}
               onGroupSelectedFiles={groupSelectedFiles}
+              onAddFilesToPatientGroup={addFilesToPatientGroup}
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
               machiningPreflightByFileKey={machiningPreflightByFileKey}
@@ -2226,7 +2216,7 @@ const NewRequestPageContent = () => {
                   toast({
                     title: "파일이 필요합니다",
                     description:
-                      "최소 1개의 STL 파일을 추가한 뒤 의뢰해주세요.",
+                      "어벗 디자인 STL 또는 구강 스캔을 추가한 뒤 의뢰해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });
@@ -2244,7 +2234,8 @@ const NewRequestPageContent = () => {
                   setHighlightUnverifiedArrows(true);
                   toast({
                     title: "확인 필요",
-                    description: `카드를 클릭해서 환자/임플란트 정보를 입력해주세요.`,
+                    description:
+                      "카드를 눌러 환자·치아·임플란트 정보를 입력해주세요.",
                     duration: 5000,
                   });
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);

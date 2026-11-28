@@ -7,6 +7,7 @@
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
 // - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
+// - 2026-11-28: 구강스캔 묶음 안에 어벗 N장 + 드래그 병합. 줄기 자동묶음과 맞춤.
 // - 2026-11-28: 케이스 메타 뱃지(디자인SW·아노·스크류)를 ETA줄·구강스캔 뱃지 왼쪽으로. 파일명 truncate 해제.
 // - 2026-11-28: 기공소 구강 스캔 카드 클릭 → 디자인 모달(환자·치식 없으면 상세).
 // - 2026-08-11: 디자인소프트웨어·아노다이징 뱃지를 파일 용량 오른쪽으로 이동, 축소. 아노 OFF도 동일 secondary 색.
@@ -85,9 +86,14 @@ import {
   getPrimaryFileKey,
   isLikelyCustomAbutDesignSize,
   isLikelyOralScanFile,
-  isLikelyOralScanSize,
   resolveOralScanGroupTitle,
 } from "../utils/patientGroups";
+import {
+  listCustomAbutmentToothWorks,
+  summarizeOralScanAbutmentCard,
+} from "../utils/oralScanAbutmentCases";
+
+const ORAL_SCAN_BUNDLE_DRAG_MIME = "application/x-abuts-oral-scan-keys";
 
 type ShippingMode = "normal" | "express";
 
@@ -305,6 +311,8 @@ type Props = {
   expressSelectableGlobal?: boolean;
   listItems?: AttachmentListItem[];
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
+  /** 드래그로 기존 묶음에 파일 키를 합친다 */
+  onAddFilesToGroup?: (groupId: string, fileKeys: string[]) => void;
   onUngroup?: (groupId: string) => void;
   onRemoveFileFromGroup?: (fileKey: string) => void;
   /** true: 기공소 — 생산 전용(구강스캔 묶음·파일유형 뱃지 없음) */
@@ -362,6 +370,7 @@ export function NewRequestAttachmentsPanel({
   expressSelectableGlobal = true,
   listItems,
   onGroupSelectedFiles,
+  onAddFilesToGroup,
   onUngroup,
   onRemoveFileFromGroup,
   productionOnly = false,
@@ -761,9 +770,128 @@ export function NewRequestAttachmentsPanel({
     toast({
       title: "구강 스캔으로 합쳤습니다",
       description:
-        "디자인+생산 1건입니다. 치식에서 어벗을 추가하세요. 출고는 +1영업일입니다.",
+        "묶음 카드를 눌러 치아별 커스텀어벗을 입력하세요. 어벗 1개 = 의뢰 1건입니다.",
       duration: 3000,
     });
+  };
+
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+
+  const readDragFileKeys = (event: React.DragEvent): string[] => {
+    const raw =
+      event.dataTransfer.getData(ORAL_SCAN_BUNDLE_DRAG_MIME) ||
+      event.dataTransfer.getData("text/plain");
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as { fileKeys?: unknown };
+      if (!Array.isArray(parsed?.fileKeys)) return [];
+      return parsed.fileKeys
+        .map((key) => String(key || "").trim())
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+
+  const beginCardDrag = (
+    event: React.DragEvent,
+    fileKeys: string[],
+  ) => {
+    if (!onAddFilesToGroup && !onGroupSelectedFiles) return;
+    const keys = Array.from(new Set(fileKeys.filter(Boolean)));
+    if (!keys.length) return;
+    const payload = JSON.stringify({ fileKeys: keys });
+    event.dataTransfer.setData(ORAL_SCAN_BUNDLE_DRAG_MIME, payload);
+    event.dataTransfer.setData("text/plain", payload);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDropOntoGroup = (
+    event: React.DragEvent,
+    targetGroupId: string,
+    targetKeys: string[],
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragOverGroupId(null);
+    const incoming = readDragFileKeys(event).filter(
+      (key) => !targetKeys.includes(key),
+    );
+    if (!incoming.length) return;
+    if (onAddFilesToGroup) {
+      onAddFilesToGroup(targetGroupId, incoming);
+      toast({
+        title: "구강 스캔 묶음에 합쳤습니다",
+        description: "묶음 카드를 눌러 커스텀어벗을 입력하세요.",
+        duration: 2500,
+      });
+      return;
+    }
+    if (onGroupSelectedFiles) {
+      onGroupSelectedFiles([...targetKeys, ...incoming]);
+    }
+  };
+
+  const handleDropOntoFile = (
+    event: React.DragEvent,
+    targetFileKey: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragOverGroupId(null);
+    if (!onGroupSelectedFiles) return;
+    const incoming = readDragFileKeys(event).filter(
+      (key) => key !== targetFileKey,
+    );
+    if (!incoming.length) return;
+    onGroupSelectedFiles([targetFileKey, ...incoming]);
+    toast({
+      title: "구강 스캔으로 합쳤습니다",
+      description:
+        "묶음 카드를 눌러 치아별 커스텀어벗을 입력하세요. 어벗 1개 = 의뢰 1건입니다.",
+      duration: 3000,
+    });
+  };
+
+  const renderAbutmentNestedCards = (
+    fileInfo: CaseInfos | undefined,
+    openIndex: number,
+  ) => {
+    const abutments = listCustomAbutmentToothWorks(fileInfo?.toothWorks);
+    if (!abutments.length) {
+      return (
+        <p className="rounded-lg border border-dashed border-slate-200 bg-white/60 px-2.5 py-2 text-xs text-slate-500">
+          카드를 눌러 커스텀어벗을 추가하세요.
+        </p>
+      );
+    }
+    return (
+      <ul className="space-y-1.5 px-0.5 py-0.5">
+        {abutments.map((row) => {
+          const summary = summarizeOralScanAbutmentCard(row);
+          return (
+            <li key={`${summary.toothNumber}-${summary.implantSummary}`}>
+              <button
+                type="button"
+                className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-sm hover:border-primary/50"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openDetailModal(openIndex);
+                }}
+                data-no-marquee
+              >
+                <div className="text-sm font-medium text-slate-900">
+                  #{summary.toothNumber}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {summary.implantSummary}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    );
   };
 
   const renderEtaAndModes = (params: {
@@ -915,9 +1043,19 @@ export function NewRequestAttachmentsPanel({
     const selectFill = checked ? "bg-primary-soft/90" : "";
     const uploadProgressRow = pickUploadProgress([file], uploadProgress);
 
+    const canDragMerge = Boolean(onAddFilesToGroup || onGroupSelectedFiles);
+
     return (
       <div
         key={`${fileKey}-${fileIndex}`}
+        draggable={canDragMerge}
+        onDragStart={(e) => beginCardDrag(e, [fileKey])}
+        onDragOver={(e) => {
+          if (!canDragMerge) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(e) => handleDropOntoFile(e, fileKey)}
         onClick={() => handleCardClick(fileIndex)}
         onPointerDown={(e) => handleCardPointerDown(e, fileKey, [fileKey])}
         data-file-index={fileIndex}
@@ -980,6 +1118,9 @@ export function NewRequestAttachmentsPanel({
               </ImmediateTooltip>
             </div>
           </div>
+          {isOralScanFile && !productionOnly
+            ? renderAbutmentNestedCards(fileInfo, fileIndex)
+            : null}
           {renderEtaAndModes({
             fileKey,
             fileKeysForMode: [fileKey],
@@ -1048,9 +1189,27 @@ export function NewRequestAttachmentsPanel({
       })();
     };
 
+    const canDragMerge = Boolean(onAddFilesToGroup || onGroupSelectedFiles);
+    const dropHighlight =
+      dragOverGroupId === group.id
+        ? "ring-2 ring-primary ring-offset-1 ring-offset-white"
+        : "";
+
     return (
       <div
         key={group.id}
+        draggable={canDragMerge}
+        onDragStart={(e) => beginCardDrag(e, group.fileKeys)}
+        onDragOver={(e) => {
+          if (!canDragMerge) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setDragOverGroupId(group.id);
+        }}
+        onDragLeave={() => {
+          setDragOverGroupId((prev) => (prev === group.id ? null : prev));
+        }}
+        onDrop={(e) => handleDropOntoGroup(e, group.id, group.fileKeys)}
         onClick={() => handleCardClick(primaryIndex)}
         onPointerDown={(e) =>
           handleCardPointerDown(e, primaryKey, group.fileKeys)
@@ -1061,7 +1220,7 @@ export function NewRequestAttachmentsPanel({
           canGroupSelect ? group.fileKeys.join("|") : undefined
         }
         aria-selected={checked}
-        className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} hover:border-gray-400`}
+        className={`relative shrink-0 overflow-hidden app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${selectFill} ${dropHighlight} hover:border-gray-400`}
       >
         {renderUploadProgressBar(uploadProgressRow)}
         <div className="relative z-10 flex flex-col gap-2">
@@ -1194,6 +1353,10 @@ export function NewRequestAttachmentsPanel({
               );
             })}
           </ul>
+
+          {!productionOnly
+            ? renderAbutmentNestedCards(fileInfo, primaryIndex)
+            : null}
 
           {renderEtaAndModes({
             fileKey: primaryKey,

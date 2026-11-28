@@ -14,6 +14,7 @@ import {
   isLikelyCustomAbutDesignSize,
   isLikelyOralScanFile,
 } from "../utils/patientGroups";
+import { missingFieldsForOralScanAbutments } from "../utils/oralScanAbutmentCases";
 import {
   finalizeCustomImplantCaseUpdates,
   isCustomImplantCaseInfos,
@@ -27,6 +28,7 @@ import {
 } from "../utils/shortPostRetention";
 
 // change-log:
+// - 2026-11-28: 구강스캔 확인은 toothWorks 커스텀어벗·임플란트 검증. 드래그 병합 연결.
 // - 2026-10-24: 짧은 포스트 유지홈을 한 번 고르면 파일 키로 로컬 스토리지에 둔다.
 // - 2026-10-18: 유지홈 라디오가 「없음」인데 저장값이 비면 없음으로 저장. 만료 토스트처럼 막지 않음.
 // - 2026-09-08: 가이드투어 abutment — 확인 모달 자동 오픈 억제·draft 복원 bootstrap 대기.
@@ -35,6 +37,7 @@ import {
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
 // - web/frontend/src/pages/requestor/new_request/utils/patientGroups.ts
+// - web/frontend/src/pages/requestor/new_request/utils/oralScanAbutmentCases.ts
 // Rhino의 align 기능이 구성정보를 대체하므로, 신규의뢰에서 개별 구성정보 파일은 사용하지 않는다.
 
 type ToastFn = (props: {
@@ -123,6 +126,7 @@ type Props = {
   attachmentListItems?: AttachmentListItem[];
   patientGroups?: PatientFileGroup[];
   onGroupSelectedFiles?: (fileKeys: string[]) => void;
+  onAddFilesToPatientGroup?: (groupId: string, fileKeys: string[]) => void;
   onUngroupPatientFiles?: (groupId: string) => void;
   onRemoveFileFromPatientGroup?: (fileKey: string) => void;
   /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
@@ -202,6 +206,7 @@ export function NewRequestDetailsSection({
   attachmentListItems,
   patientGroups = [],
   onGroupSelectedFiles,
+  onAddFilesToPatientGroup,
   onUngroupPatientFiles,
   onRemoveFileFromPatientGroup,
   productionOnly = false,
@@ -639,19 +644,13 @@ export function NewRequestDetailsSection({
       const group = findGroupByFileKey(patientGroups, fileKey);
       const customMode = isCustomImplantCaseInfos(fileCaseInfos);
       const missingFields: string[] = [];
-      const isDesignCustomMode = false; // design_custom_abutment 폐기 — 생산만 검증
+      // 구강스캔(묶음·단일) → 치식 커스텀어벗 N개. 어벗 STL → 단일 tooth·임플란트.
+      const isOralScanCase =
+        !productionOnly &&
+        (Boolean(group) || isLikelyOralScanFile(file));
 
-      if (isDesignCustomMode) {
-        if (!fileCaseInfos?.clinicName) missingFields.push("치과명");
-        if (!fileCaseInfos?.patientName) missingFields.push("환자명");
-        const hasProsthesis = Array.isArray(fileCaseInfos?.toothWorks)
-          ? fileCaseInfos.toothWorks.some(
-              (row) =>
-                /^[1-4][1-8]$/.test(String(row?.toothNumber || "").trim()) &&
-                Boolean(String(row?.prosthesisType || "").trim()),
-            )
-          : Boolean(String(fileCaseInfos?.prosthesisType || "").trim());
-        if (!hasProsthesis) missingFields.push("보철물");
+      if (isOralScanCase) {
+        missingFields.push(...missingFieldsForOralScanAbutments(fileCaseInfos));
       } else {
         if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
         if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
@@ -804,6 +803,7 @@ export function NewRequestDetailsSection({
       files,
       machiningPreflightByFileKey,
       patientGroups,
+      productionOnly,
       setFileVerificationStatus,
       setHighlightUnverifiedArrows,
       setSelectedPreviewIndex,
@@ -851,6 +851,9 @@ export function NewRequestDetailsSection({
             listItems={attachmentListItems}
             onGroupSelectedFiles={
               allowOralScanGrouping ? onGroupSelectedFiles : undefined
+            }
+            onAddFilesToGroup={
+              allowOralScanGrouping ? onAddFilesToPatientGroup : undefined
             }
             onUngroup={allowOralScanGrouping ? onUngroupPatientFiles : undefined}
             onRemoveFileFromGroup={
