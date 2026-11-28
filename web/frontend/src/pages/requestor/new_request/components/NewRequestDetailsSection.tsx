@@ -12,7 +12,7 @@ import {
   findGroupByFileKey,
   getPrimaryFileKey,
   isLikelyCustomAbutDesignSize,
-  isLikelyOralScanSize,
+  isLikelyOralScanFile,
 } from "../utils/patientGroups";
 import {
   finalizeCustomImplantCaseUpdates,
@@ -128,6 +128,9 @@ type Props = {
   /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
   productionOnly?: boolean;
   acceptOralScanModels?: boolean;
+  onOpenLabOralScanDesign?: (
+    fileIndex: number,
+  ) => Promise<"opened" | "need_detail" | "busy" | "error"> | "opened" | "need_detail" | "busy" | "error";
   /** 로컬 draft 복원 완료 전 known keys bootstrap 보류 */
   localDraftRestoreDone?: boolean;
   /** 가이드투어 중 3D 확인 모달 자동 오픈·유지 금지 */
@@ -203,6 +206,7 @@ export function NewRequestDetailsSection({
   onRemoveFileFromPatientGroup,
   productionOnly = false,
   acceptOralScanModels = false,
+  onOpenLabOralScanDesign,
   localDraftRestoreDone = true,
   suppressDetailAutoOpen = false,
   machiningPreflightByFileKey = {},
@@ -237,8 +241,8 @@ export function NewRequestDetailsSection({
     (fileKey: string) => {
       if (productionOnly) return true;
       if (findGroupByFileKey(patientGroups, fileKey)) return false;
-      const size = files.find((file) => toNormalizedFileKey(file) === fileKey)?.size;
-      return !isLikelyOralScanSize(size);
+      const file = files.find((f) => toNormalizedFileKey(f) === fileKey);
+      return !isLikelyOralScanFile(file);
     },
     [files, patientGroups, productionOnly, toNormalizedFileKey],
   );
@@ -390,8 +394,9 @@ export function NewRequestDetailsSection({
   const detailCaseInfosBase = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
-  const detailIsOralScan = isLikelyOralScanSize(detailFile?.size);
-  const detailIsAbutDesign = isLikelyCustomAbutDesignSize(detailFile?.size);
+  const detailIsOralScan = isLikelyOralScanFile(detailFile);
+  const detailIsAbutDesign =
+    !detailIsOralScan && isLikelyCustomAbutDesignSize(detailFile?.size);
   // 구강스캔(묶음·단일) → 디자인+생산 고정. 어벗디자인 STL → 생산 고정. 기공소 → 항상 생산.
   const lockDesignProductMode = productionOnly
     ? false
@@ -434,10 +439,8 @@ export function NewRequestDetailsSection({
         return;
       }
       const group = findGroupByFileKey(patientGroups, detailFileKey);
-      const fileSize = files.find(
-        (f) => toNormalizedFileKey(f) === detailFileKey,
-      )?.size;
-      const oralScanLocked = isLikelyOralScanSize(fileSize);
+      const file = files.find((f) => toNormalizedFileKey(f) === detailFileKey);
+      const oralScanLocked = isLikelyOralScanFile(file);
       if (group || oralScanLocked) {
         // 구강스캔(묶음·단일)은 항상 디자인+생산
         const nextUpdates: Partial<CaseInfos> = {
@@ -451,7 +454,7 @@ export function NewRequestDetailsSection({
         }
         return;
       }
-      if (isLikelyCustomAbutDesignSize(fileSize)) {
+      if (isLikelyCustomAbutDesignSize(file?.size)) {
         // 어벗디자인 STL은 항상 생산
         updateCaseInfos(detailFileKey, {
           ...updates,
@@ -855,6 +858,7 @@ export function NewRequestDetailsSection({
             }
             productionOnly={productionOnly}
             acceptOralScanModels={acceptOralScanModels}
+            onOpenLabOralScanDesign={onOpenLabOralScanDesign}
             machiningPreflightByFileKey={machiningPreflightByFileKey}
           />
         </div>

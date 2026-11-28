@@ -7,6 +7,8 @@
 // - 2026-08-13: 첨부를 PracticeTransferFileDropTarget + useFilePreUpload 진행률바로.
 // - 2026-08-11: 어벗생산의뢰 첨부는 STL만 허용(accept·드롭존 문구).
 // - 2026-08-11: 상단 버튼·드롭존 카드내 좌우상하 여백 균일(중첩 px 제거, 카드 패딩 SSOT).
+// - 2026-11-28: 케이스 메타 뱃지(디자인SW·아노·스크류)를 ETA줄·구강스캔 뱃지 왼쪽으로. 파일명 truncate 해제.
+// - 2026-11-28: 기공소 구강 스캔 카드 클릭 → 디자인 모달(환자·치식 없으면 상세).
 // - 2026-08-11: 디자인소프트웨어·아노다이징 뱃지를 파일 용량 오른쪽으로 이동, 축소. 아노 OFF도 동일 secondary 색.
 // - 2026-08-21: 아노 툴바 변경 시 기존 카드 뱃지도 NewRequestPage에서 동기화.
 // - 2026-08-11: 아노다이징/디자인소프트웨어 기본값 변경은 기존 첨부 카드 뱃지에 미반영(디자인SW는 유지).
@@ -73,7 +75,11 @@ import {
   EXPRESS_SHIPPING_LABEL_SHORT,
 } from "@/shared/shipping/shippingPolicyCopy";
 import { useToast } from "@/shared/hooks/use-toast";
-import { PRACTICE_TRANSFER_STL_ACCEPT } from "@/shared/practice/practiceTransferAccept";
+import {
+  PRACTICE_LAB_ORAL_SCAN_HINT,
+  PRACTICE_TRANSFER_LAB_ORAL_SCAN_ACCEPT,
+  PRACTICE_TRANSFER_STL_ACCEPT,
+} from "@/shared/practice/practiceTransferAccept";
 import type { AttachmentListItem, PatientFileGroup } from "../utils/patientGroups";
 import {
   getPrimaryFileKey,
@@ -308,6 +314,13 @@ type Props = {
    * accept·안내 문구·파일 유형 뱃지를 연다. productionOnly와 함께 쓸 수 있다.
    */
   acceptOralScanModels?: boolean;
+  /**
+   * 기공소 구강 스캔 카드 클릭 → 디자인 모달.
+   * `need_detail`이면 환자·치식 상세를 연다.
+   */
+  onOpenLabOralScanDesign?: (
+    fileIndex: number,
+  ) => Promise<"opened" | "need_detail" | "busy" | "error"> | "opened" | "need_detail" | "busy" | "error";
   /** 파일 키별 접수 전 가공 검사 결과 */
   machiningPreflightByFileKey?: Record<string, StlMachiningPreflight>;
 };
@@ -353,18 +366,17 @@ export function NewRequestAttachmentsPanel({
   onRemoveFileFromGroup,
   productionOnly = false,
   acceptOralScanModels = false,
+  onOpenLabOralScanDesign,
   machiningPreflightByFileKey = {},
 }: Props) {
   const showKindBadges = !productionOnly || acceptOralScanModels;
   const dropAccept = acceptOralScanModels
-    ? ".stl,.STL,.ply,.PLY,.obj,.OBJ,model/stl,application/sla"
+    ? PRACTICE_TRANSFER_LAB_ORAL_SCAN_ACCEPT
     : PRACTICE_TRANSFER_STL_ACCEPT;
   const dropLabel = acceptOralScanModels
     ? "어벗 디자인 STL 또는 구강 스캔을 추가하세요."
     : "여기를 클릭하거나 STL 파일을 드래그해 추가하세요.";
-  const dropHint = acceptOralScanModels
-    ? "어벗 STL · 구강 스캔(STL·PLY·OBJ)"
-    : "";
+  const dropHint = acceptOralScanModels ? PRACTICE_LAB_ORAL_SCAN_HINT : "";
   const hasAnyAttachment = files.length > 0;
   const { toast } = useToast();
   const [now, setNow] = useState(() => new Date());
@@ -611,6 +623,19 @@ export function NewRequestAttachmentsPanel({
     }
     // 마키가 실제로 시작된 뒤에만 클릭을 무시한다
     if (marqueeSessionRef.current?.moved) return;
+    const file = files[fileIndex];
+    if (
+      acceptOralScanModels &&
+      onOpenLabOralScanDesign &&
+      file &&
+      isLikelyOralScanFile(file)
+    ) {
+      void (async () => {
+        const result = await onOpenLabOralScanDesign(fileIndex);
+        if (result === "need_detail") openDetailModal(fileIndex);
+      })();
+      return;
+    }
     openDetailModal(fileIndex);
   };
 
@@ -825,9 +850,10 @@ export function NewRequestAttachmentsPanel({
         )}
 
         <div
-          className="flex items-center gap-1.5 shrink-0"
+          className="flex flex-wrap items-center justify-end gap-1.5 shrink-0"
           onClick={(event) => event.stopPropagation()}
         >
+          {renderCaseMetaBadges(fileInfo)}
           {isDesignMode && !hideDesignBadge ? (
             <ImmediateTooltip label={ORAL_SCAN_BADGE_TOOLTIP}>
               <Badge
@@ -920,7 +946,10 @@ export function NewRequestAttachmentsPanel({
                   data-no-marquee
                 />
               ) : null}
-              <div className="min-w-0 flex-1 truncate pr-1" title={filename}>
+              <div
+                className="min-w-0 flex-1 break-words text-sm leading-snug pr-1"
+                title={filename}
+              >
                 {filename}
               </div>
             </div>
@@ -932,7 +961,6 @@ export function NewRequestAttachmentsPanel({
                 {formatAttachmentSize(file.size)}
                 {renderUploadProgressMeta(uploadProgressRow)}
               </span>
-              {renderCaseMetaBadges(fileInfo)}
               {isVerified && (
                 <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
               )}
@@ -1059,7 +1087,7 @@ export function NewRequestAttachmentsPanel({
                   data-no-marquee
                 />
               ) : null}
-              <div className="min-w-0 flex-1 truncate font-medium">
+              <div className="min-w-0 flex-1 break-words font-medium leading-snug">
                 {patientLabel}
               </div>
             </div>
@@ -1112,7 +1140,7 @@ export function NewRequestAttachmentsPanel({
                 >
                   <button
                     type="button"
-                    className="min-w-0 flex-1 truncate text-left hover:text-primary"
+                    className="min-w-0 flex-1 break-words text-left leading-snug hover:text-primary"
                     title={member.name}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1131,9 +1159,6 @@ export function NewRequestAttachmentsPanel({
                         uploadProgress[toTempUploadFileKey(member)],
                       )}
                     </span>
-                    {memberKey === primaryKey
-                      ? renderCaseMetaBadges(fileInfo)
-                      : null}
                     {onRemoveFileFromGroup ? (
                       <ImmediateTooltip label="연결 끊기">
                         <button

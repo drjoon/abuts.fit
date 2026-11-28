@@ -13,6 +13,11 @@
 // - .cursor/rules/oral-scan-file-size.mdc
 
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import {
+  getPracticeTransferFileExtension,
+  PRACTICE_TRANSFER_CAD_PROJECT_EXTENSIONS,
+  PRACTICE_TRANSFER_MODEL_EXTENSIONS,
+} from "@/shared/practice/practiceTransferAccept";
 
 /** 이 크기 이상이면 구강 스캔으로 간주 (**자동** 묶음 대상 → 디자인+생산) */
 export const ORAL_SCAN_MIN_BYTES = 3 * 1024 * 1024;
@@ -52,16 +57,19 @@ export function isLikelyOralScanSize(sizeBytes: number | null | undefined): bool
   return typeof sizeBytes === "number" && sizeBytes >= ORAL_SCAN_MIN_BYTES;
 }
 
-/** PLY/OBJ는 용량과 무관하게 구강 스캔. STL은 3MB 기준. */
+/**
+ * 구강 스캔·스캐너 프로젝트 후보.
+ * PLY/OBJ/DCM(3Shape)·ExoCAD·3ox는 용량과 무관. STL은 3MB 기준.
+ */
 export function isLikelyOralScanFile(file: {
   name?: string;
   size?: number;
 } | null | undefined): boolean {
   if (!file) return false;
-  const name = String(file.name || "").trim().toLowerCase();
-  const idx = name.lastIndexOf(".");
-  const ext = idx >= 0 ? name.slice(idx) : "";
-  if (ext === ".ply" || ext === ".obj") return true;
+  const ext = getPracticeTransferFileExtension(String(file.name || ""));
+  if (ext === ".stl") return isLikelyOralScanSize(file.size);
+  if (PRACTICE_TRANSFER_MODEL_EXTENSIONS.has(ext)) return true;
+  if (PRACTICE_TRANSFER_CAD_PROJECT_EXTENSIONS.has(ext)) return true;
   return isLikelyOralScanSize(file.size);
 }
 

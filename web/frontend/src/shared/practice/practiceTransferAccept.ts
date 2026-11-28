@@ -12,6 +12,17 @@ export const PRACTICE_TRANSFER_STL_ACCEPT =
   ".stl,.STL,model/stl,application/sla,application/vnd.ms-pki.stl";
 
 /**
+ * 기공소 커스텀어벗 드롭존 — 어벗 STL + 구강 스캔·스캐너 프로젝트.
+ * 이미지 제외(PRACTICE_TRANSFER_ACCEPT와 다름).
+ */
+export const PRACTICE_TRANSFER_LAB_ORAL_SCAN_ACCEPT =
+  ".stl,.STL,.ply,.PLY,.obj,.OBJ,.dcm,.DCM,.dentalproject,.dentalProject,.3ox,.3OX,.3oxz,.3OXZ,model/stl,application/sla,application/vnd.ms-pki.stl";
+
+/** 기공소 커스텀어벗 드롭 안내. DCM은 3Shape에 포함. */
+export const PRACTICE_LAB_ORAL_SCAN_HINT =
+  "어벗 STL · 구강 스캔(STL·PLY·OBJ·3Shape·ExoCAD)";
+
+/**
  * 뷰어가 형상을 읽는 파일.
  * `.dcm`은 STL·PLY·OBJ 같은 메시가 아니라 TRIOS(3Shape) 파일이다.
  */
