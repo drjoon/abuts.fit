@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/backend/controllers/practiceTransfers/labModelScanTransfer.controller.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
+// - 2026-11-28: 기공소도착(최소 2영업일). 원장님·모바일 사진·모델스캔 필수 안내 제거. 치과명 placeholder.
 // - 2026-11-28: 치과 주문과 같이 리메이크·임시저장·휴지통. 치과명 선택. 모델스캔 파일 필수.
 // - 2026-11-28: 치과 「주문」작성 화면을 재사용. 기공소 선택·기공비 견적·가이드투어는 두지 않음.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -140,6 +141,8 @@ const PRESET_PROSTHESIS_TYPES = [
 ] as const;
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
+/** 모델스캔 기공소도착 최소 영업일 */
+const MIN_LAB_ARRIVAL_BUSINESS_DAYS = 2;
 
 const ensurePresetProsthesisTypes = (items: string[] | null | undefined) =>
   normalizeProsthesisTypes([
@@ -588,10 +591,28 @@ export function LabModelScanComposeDialog({
   const onOrderArrivalDatesChange = useCallback(
     ({ arrivalDate: nextArrival }: { orderDate: string; arrivalDate: string }) => {
       const todayYmd = toKstYmd(new Date()) || orderDate;
-      const arrival =
+      let arrival =
         String(nextArrival || "").trim() >= todayYmd
           ? String(nextArrival || "").trim()
           : addCalendarDays(todayYmd, arrivalDefaultDays);
+      let periodDays = getPracticeWorkPeriodDays(todayYmd, arrival);
+      let clampedToMin = false;
+      if (
+        periodDays != null &&
+        periodDays < MIN_LAB_ARRIVAL_BUSINESS_DAYS
+      ) {
+        clampedToMin = true;
+        for (let i = 0; i < 60; i += 1) {
+          arrival = addCalendarDays(arrival, 1);
+          periodDays = getPracticeWorkPeriodDays(todayYmd, arrival);
+          if (
+            periodDays != null &&
+            periodDays >= MIN_LAB_ARRIVAL_BUSINESS_DAYS
+          ) {
+            break;
+          }
+        }
+      }
       arrivalPinnedRef.current = true;
       setOrderDate(todayYmd);
       setArrivalDate(arrival);
@@ -601,8 +622,12 @@ export function LabModelScanComposeDialog({
         setArrivalDefaultDays(days);
         persist({ arrivalDefaultDays: days });
       }
-      const periodDays = getPracticeWorkPeriodDays(todayYmd, arrival);
-      if (isPracticeWorkPeriodBlocked(periodDays)) {
+      if (clampedToMin) {
+        toast({
+          title: `기공소도착은 최소 ${MIN_LAB_ARRIVAL_BUSINESS_DAYS}영업일입니다.`,
+          variant: "destructive",
+        });
+      } else if (isPracticeWorkPeriodBlocked(periodDays)) {
         toast({
           title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
           variant: "destructive",
@@ -755,13 +780,23 @@ export function LabModelScanComposeDialog({
     if (!token || !canSubmit) return;
     if (arrivalDate < orderDate) {
       toast({
-        title: "치과도착일을 확인해주세요",
-        description: "치과도착일은 주문일보다 빠를 수 없습니다.",
+        title: "기공소도착일을 확인해주세요",
+        description: "기공소도착일은 주문일보다 빠를 수 없습니다.",
         variant: "destructive",
       });
       return;
     }
     const periodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate);
+    if (
+      periodDays != null &&
+      periodDays < MIN_LAB_ARRIVAL_BUSINESS_DAYS
+    ) {
+      toast({
+        title: `기공소도착은 최소 ${MIN_LAB_ARRIVAL_BUSINESS_DAYS}영업일입니다.`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (isPracticeWorkPeriodBlocked(periodDays)) {
       toast({
         title: PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
@@ -1076,9 +1111,6 @@ export function LabModelScanComposeDialog({
                       ExoCAD · 3Shape · 이미지
                     </>
                   ),
-                  requirementNote: "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
-                  requirementNoteExtra:
-                    "모델스캔 파일(DCM·PLY·STL·OBJ·ExoCAD·3Shape)이 있어야 등록됩니다.",
                   files: filePaneFiles,
                   totalSizeMb,
                   onPickFiles: addFiles,

@@ -33,6 +33,7 @@ import {
 // - web/frontend/src/shared/ui/PeriodFilter.tsx
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/shared/guideTour/GuideTourSpotlight.tsx
+// - 2026-11-28: label·minBusinessDays — 모델스캔 「기공소도착」최소 2영업일.
 // - 2026-09-05: 가이드투어 — 캘린더 팝오버를 satellite로 마킹(홀 확장·블러 위 z-430).
 // - 2026-08-20: CA 안내 — 지정 도착일 2영업일 전 발송.
 // - 2026-08-20: 낮 12시 전은 오늘 포함, 이후는 오늘 제외.
@@ -57,25 +58,45 @@ const addDaysToYmd = (ymd: string, days: number) => {
   return toKstYmd(d) || "";
 };
 
-const formatArrivalLabel = (arrivalYmd: string) => {
+const formatArrivalLabel = (arrivalYmd: string, emptyLabel: string) => {
   const arrival = ymdToKstDate(arrivalYmd);
-  if (!arrival) return "치과도착일 선택";
+  if (!arrival) return emptyLabel;
   return `오늘 – ${format(arrival, "M월 d일", { locale: ko })}`;
+};
+
+/** 주문일 기준 최소 영업일을 만족하는 가장 이른 도착 YMD. */
+const earliestArrivalYmdForMinBusinessDays = (
+  orderYmd: string,
+  minBusinessDays: number,
+): string => {
+  const min = Math.max(0, Math.floor(minBusinessDays));
+  if (!orderYmd || min <= 0) return orderYmd;
+  let cursor = orderYmd;
+  for (let i = 0; i < 60; i += 1) {
+    const days = getPracticeWorkPeriodDays(orderYmd, cursor);
+    if (days != null && days >= min) return cursor;
+    cursor = addDaysToYmd(cursor, 1);
+    if (!cursor) break;
+  }
+  return cursor || orderYmd;
 };
 
 const pinRangeToToday = (
   range: DateRange | undefined,
   todayYmd: string,
   todayDate: Date,
+  minArrivalYmd?: string,
 ): DateRange | undefined => {
   if (!todayYmd) return range;
+  const floorYmd = minArrivalYmd && minArrivalYmd > todayYmd ? minArrivalYmd : todayYmd;
+  const floorDate = ymdToKstDate(floorYmd) || todayDate;
   const clicked = range?.to ?? range?.from;
   if (!clicked) {
-    return { from: todayDate, to: undefined };
+    return { from: todayDate, to: floorDate };
   }
   const clickedYmd = toKstYmd(clicked) || "";
-  if (!clickedYmd || clickedYmd < todayYmd) {
-    return { from: todayDate, to: todayDate };
+  if (!clickedYmd || clickedYmd < floorYmd) {
+    return { from: todayDate, to: floorDate };
   }
   return { from: todayDate, to: clicked };
 };
@@ -99,6 +120,10 @@ export type PracticeOrderArrivalDateRangeFieldProps = {
   hideCaDirectShipNote?: boolean;
   /** 도움말(?) 툴팁 숨김 */
   hideHelpTooltip?: boolean;
+  /** 필드 라벨. 기본 주문-치과도착 */
+  label?: string;
+  /** 선택 가능 최소 영업일(주문→도착). 미지정 시 오늘부터 */
+  minBusinessDays?: number;
 };
 
 export function PracticeOrderArrivalDateRangeField({
@@ -114,6 +139,8 @@ export function PracticeOrderArrivalDateRangeField({
   onOpenChange,
   hideCaDirectShipNote = false,
   hideHelpTooltip = false,
+  label = PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL,
+  minBusinessDays,
 }: PracticeOrderArrivalDateRangeFieldProps) {
   const [open, setOpen] = useState(false);
 
@@ -123,28 +150,67 @@ export function PracticeOrderArrivalDateRangeField({
   };
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const todayDate = useMemo(() => ymdToKstDate(todayYmd) || undefined, [todayYmd]);
+  const minDays =
+    typeof minBusinessDays === "number" && Number.isFinite(minBusinessDays)
+      ? Math.max(0, Math.floor(minBusinessDays))
+      : 0;
+  const minArrivalYmd = useMemo(() => {
+    if (!todayYmd || minDays <= 0) return todayYmd;
+    return earliestArrivalYmdForMinBusinessDays(todayYmd, minDays);
+  }, [minDays, todayYmd]);
+  const minArrivalDate = useMemo(
+    () => ymdToKstDate(minArrivalYmd) || todayDate,
+    [minArrivalYmd, todayDate],
+  );
+  const isDefaultOrderArrivalLabel = label === PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL;
+  const emptyPickLabel = isDefaultOrderArrivalLabel
+    ? "치과도착일 선택"
+    : `${label}일 선택`;
+  const pickHelpNote = isDefaultOrderArrivalLabel
+    ? "주문일은 오늘 고정. 치과도착일만 선택하면 됩니다."
+    : `주문일은 오늘 고정. ${label}일만 선택하면 됩니다.`;
 
   const appliedArrivalYmd = String(arrivalDate || "").trim();
   const [draftRange, setDraftRange] = useState<DateRange | undefined>();
 
   useEffect(() => {
     if (!open || !todayDate || !todayYmd) return;
-    const arrivalYmd =
+    let arrivalYmd =
       appliedArrivalYmd && appliedArrivalYmd >= todayYmd
         ? appliedArrivalYmd
         : addDaysToYmd(todayYmd, arrivalDefaultDays);
+    if (minArrivalYmd && arrivalYmd < minArrivalYmd) {
+      arrivalYmd = minArrivalYmd;
+    }
     setDraftRange({
       from: todayDate,
-      to: ymdToKstDate(arrivalYmd) || todayDate,
+      to: ymdToKstDate(arrivalYmd) || minArrivalDate || todayDate,
     });
-  }, [appliedArrivalYmd, arrivalDefaultDays, open, todayDate, todayYmd]);
+  }, [
+    appliedArrivalYmd,
+    arrivalDefaultDays,
+    minArrivalDate,
+    minArrivalYmd,
+    open,
+    todayDate,
+    todayYmd,
+  ]);
 
   const draftArrivalYmd = draftRange?.to
     ? toKstYmd(draftRange.to) || ""
     : draftRange?.from
       ? toKstYmd(draftRange.from) || ""
       : "";
-  const canApply = Boolean(todayYmd && draftArrivalYmd && draftArrivalYmd >= todayYmd);
+  const draftLeadDays = getPracticeWorkPeriodDays(todayYmd, draftArrivalYmd);
+  const meetsMinBusinessDays =
+    minDays <= 0 ||
+    (draftLeadDays != null && draftLeadDays >= minDays);
+  const canApply = Boolean(
+    todayYmd &&
+      draftArrivalYmd &&
+      draftArrivalYmd >= (minArrivalYmd || todayYmd) &&
+      meetsMinBusinessDays,
+  );
   const appliedOrderYmd = String(orderDate || "").trim() || todayYmd;
   const leadFromYmd = open ? todayYmd : appliedOrderYmd;
   const leadToYmd = open ? draftArrivalYmd : appliedArrivalYmd;
@@ -161,13 +227,16 @@ export function PracticeOrderArrivalDateRangeField({
       setOpenAndNotify(false);
       return;
     }
-    const arrivalYmd =
+    let arrivalYmd =
       appliedArrivalYmd && appliedArrivalYmd >= todayYmd
         ? appliedArrivalYmd
         : addDaysToYmd(todayYmd, arrivalDefaultDays);
+    if (minArrivalYmd && arrivalYmd < minArrivalYmd) {
+      arrivalYmd = minArrivalYmd;
+    }
     setDraftRange({
       from: todayDate,
-      to: ymdToKstDate(arrivalYmd) || todayDate,
+      to: ymdToKstDate(arrivalYmd) || minArrivalDate || todayDate,
     });
     setOpenAndNotify(false);
   };
@@ -176,14 +245,14 @@ export function PracticeOrderArrivalDateRangeField({
     <div className={cn("space-y-2", className)}>
       <div className="flex h-7 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
-          <Label className="text-sm leading-none">{PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL}</Label>
+          <Label className="text-sm leading-none">{label}</Label>
           {hideHelpTooltip ? null : (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className="inline-flex text-muted-foreground/80 transition-colors hover:text-foreground"
-                aria-label={`${PRACTICE_ORDER_ARRIVAL_PERIOD_LABEL} 도움말`}
+                aria-label={`${label} 도움말`}
               >
                 <CircleHelp className="h-3.5 w-3.5" />
               </button>
@@ -193,7 +262,10 @@ export function PracticeOrderArrivalDateRangeField({
               className="max-w-[min(100vw-2rem,36rem)] space-y-1.5 text-left text-xs leading-relaxed"
             >
               <p>{PRACTICE_ORDER_DAY_CUTOFF_NOTE}</p>
-              <p>주문일은 오늘 고정. 치과도착일만 선택하면 됩니다.</p>
+              <p>{pickHelpNote}</p>
+              {minDays > 0 ? (
+                <p>최소 {minDays}영업일입니다.</p>
+              ) : null}
               {hideCaDirectShipNote ? null : <p>{PRACTICE_CA_DIRECT_SHIP_NOTE}</p>}
               <p>3영업일 이하는 도착이 늦을 수 있습니다.</p>
               <p>{PRACTICE_WORK_PERIOD_RECOMMEND_NOTE}</p>
@@ -228,7 +300,9 @@ export function PracticeOrderArrivalDateRangeField({
           >
             <span className="inline-flex min-w-0 items-center gap-2 truncate">
               <CalendarIcon className="h-4 w-4 shrink-0 text-slate-500" />
-              <span className="truncate">{formatArrivalLabel(appliedArrivalYmd)}</span>
+              <span className="truncate">
+                {formatArrivalLabel(appliedArrivalYmd, emptyPickLabel)}
+              </span>
             </span>
             <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
           </Button>
@@ -253,9 +327,17 @@ export function PracticeOrderArrivalDateRangeField({
               selected={draftRange}
               onSelect={(range) => {
                 if (!todayDate || !todayYmd) return;
-                setDraftRange(pinRangeToToday(range, todayYmd, todayDate));
+                setDraftRange(
+                  pinRangeToToday(range, todayYmd, todayDate, minArrivalYmd),
+                );
               }}
-              disabled={todayDate ? { before: todayDate } : undefined}
+              disabled={
+                minArrivalDate
+                  ? { before: minArrivalDate }
+                  : todayDate
+                    ? { before: todayDate }
+                    : undefined
+              }
               defaultMonth={draftRange?.to || draftRange?.from || todayDate}
               initialFocus
               classNames={{
@@ -264,7 +346,9 @@ export function PracticeOrderArrivalDateRangeField({
             />
             <div className="flex w-0 min-w-full items-center justify-between gap-2 border-t px-3 py-2">
               <p className="min-w-0 truncate text-[11px] text-muted-foreground">
-                {draftArrivalYmd ? formatArrivalLabel(draftArrivalYmd) : "치과도착일 선택"}
+                {draftArrivalYmd
+                  ? formatArrivalLabel(draftArrivalYmd, emptyPickLabel)
+                  : emptyPickLabel}
               </p>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Button

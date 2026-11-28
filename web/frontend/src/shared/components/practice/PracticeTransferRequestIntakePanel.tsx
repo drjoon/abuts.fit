@@ -246,6 +246,7 @@ import {
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
+// - 2026-11-28: 모델스캔(clinicLabel) — 기공소도착·최소 2영업일, 원장님 숨김, 치과명 placeholder.
 // - 2026-09-21: 헤더 날짜 옆 「원장님 성함」드롭다운(BA doctorNames 추가·수정·삭제).
 // - 2026-09-05: 전체 선택 모달 — 고정 폭·높이, 커스텀 입력 X 인라인, Enter 적용.
 // - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
@@ -3181,8 +3182,10 @@ export const PracticeTransferRequestIntakePanel = ({
     showMemoSection && !showHeaderFields && !showProsthesisSection;
 
   const showAnyHeaderFields = showPartyField || showPatientField || showDateFields;
+  /** 모델스캔(치과명 모드)은 원장님 성함을 두지 않는다. */
   const showDoctorField =
-    Boolean(showDateFields && setDoctorName && onDoctorNamesChange);
+    Boolean(showDateFields && setDoctorName && onDoctorNamesChange) &&
+    !clinicLabelMode;
   const headerFieldCount =
     Number(showPartyField) +
     Number(showPatientField) +
@@ -3317,7 +3320,7 @@ export const PracticeTransferRequestIntakePanel = ({
             id={clinicLabelListId}
             value={clinicLabel}
             onChange={(next) => onClinicLabelChange?.(next)}
-            placeholder="등록·가명 모두 가능"
+            placeholder="치과명"
             list={`${clinicLabelListId}-options`}
             autoComplete="off"
             className="h-11 text-base"
@@ -3701,6 +3704,9 @@ export const PracticeTransferRequestIntakePanel = ({
           orderDate={orderDate}
           arrivalDate={arrivalDate}
           arrivalDefaultDays={arrivalDefaultDays}
+          label={clinicLabelMode ? "기공소도착" : undefined}
+          minBusinessDays={clinicLabelMode ? 2 : undefined}
+          hideCaDirectShipNote={clinicLabelMode}
           triggerClassName={
             isOralSpotlight("oral_header")
               ? "practice-tooth-guide-pulse"
