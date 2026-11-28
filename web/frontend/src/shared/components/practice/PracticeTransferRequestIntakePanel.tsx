@@ -23,6 +23,7 @@ import {
   Pencil,
   Pin,
   Plus,
+  Repeat,
   Trash2,
   X,
 } from "lucide-react";
@@ -246,6 +247,7 @@ import {
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
+// - 2026-11-28: 모델스캔 — 치과·환자·기공소도착·리메이크 2×2, 오른쪽 드롭존, 메모 숨김.
 // - 2026-11-28: 모델스캔(clinicLabel) — 기공소도착·최소 2영업일, 원장님 숨김, 치과명 placeholder.
 // - 2026-09-21: 헤더 날짜 옆 「원장님 성함」드롭다운(BA doctorNames 추가·수정·삭제).
 // - 2026-09-05: 전체 선택 모달 — 고정 폭·높이, 커스텀 입력 X 인라인, Enter 적용.
@@ -779,6 +781,12 @@ export type PracticeTransferRequestIntakePanelProps = {
   clinicLabel?: string;
   onClinicLabelChange?: (next: string) => void;
   clinicLabelSuggestions?: string[];
+  /**
+   * 모델스캔 헤더 2×2 네 번째 칸(리메이크).
+   * onRemakeCheckedChange가 있으면 표시한다.
+   */
+  remakeChecked?: boolean;
+  onRemakeCheckedChange?: (next: boolean) => void;
   showPatientField?: boolean;
   showDateFields?: boolean;
   /**
@@ -978,6 +986,8 @@ export const PracticeTransferRequestIntakePanel = ({
   clinicLabel = "",
   onClinicLabelChange,
   clinicLabelSuggestions = [],
+  remakeChecked = false,
+  onRemakeCheckedChange,
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
   showProsthesisSection = true,
@@ -1115,6 +1125,11 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [showMemoSection, besideMemoContent]);
   const showLabField = showLabFieldProp ?? showHeaderFields;
   const clinicLabelMode = typeof onClinicLabelChange === "function";
+  const showRemakeField =
+    clinicLabelMode && typeof onRemakeCheckedChange === "function";
+  /** 모델스캔: 메모 없이 헤더 옆 드롭존 */
+  const filesBesideHeader =
+    clinicLabelMode && Boolean(besideMemoContent) && !showMemoSection;
   const showPartyField = clinicLabelMode || showLabField;
   const clinicLabelListId = useId();
   const showPatientField = showPatientFieldProp ?? showHeaderFields;
@@ -3190,19 +3205,19 @@ export const PracticeTransferRequestIntakePanel = ({
     Number(showPartyField) +
     Number(showPatientField) +
     Number(showDateFields) +
-    Number(showDoctorField);
-  const headerGridClassName =
-    headerFieldCount <= 1
+    Number(showDoctorField) +
+    Number(showRemakeField);
+  const headerGridClassName = clinicLabelMode
+    ? // 치과명 | 환자명 / 기공소도착 | 리메이크
+      "grid grid-cols-1 items-end gap-3 sm:grid-cols-2"
+    : headerFieldCount <= 1
       ? "grid grid-cols-1 items-end gap-3 max-w-lg"
       : headerFieldCount === 2
         ? "grid grid-cols-1 items-end gap-3"
         : headerFieldCount === 3
           ? "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1.1fr)]"
-          : clinicLabelMode
-            ? // 치과명 | 환자 | 날짜 | 원장님 | 오른쪽 여백
-              "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,14rem)_minmax(0,20rem)_minmax(0,14rem)_minmax(2rem,1fr)]"
-            : // 기공소 | 환자명 | 주문-치과도착 | 원장님 — 환자·원장 동일 폭
-              "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]";
+          : // 기공소 | 환자명 | 주문-치과도착 | 원장님 — 환자·원장 동일 폭
+            "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]";
 
   const isHeaderTourStep =
     toothWorkGuideTourStep != null && toothWorkGuideTourStepId === "header";
@@ -3281,9 +3296,11 @@ export const PracticeTransferRequestIntakePanel = ({
           ) : null}
           <div
             className={cn(
-              showRightRail
-                ? "grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
-                : "flex flex-col gap-y-7",
+              filesBesideHeader
+                ? "grid grid-cols-1 items-start gap-6 lg:grid-cols-2"
+                : showRightRail
+                  ? "grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
+                  : "flex flex-col gap-y-7",
             )}
           >
             <div className="flex min-w-0 flex-col gap-y-7">
@@ -3743,13 +3760,45 @@ export const PracticeTransferRequestIntakePanel = ({
             }
           />
         ) : null}
-        {clinicLabelMode && showDoctorField ? (
-          <div className="hidden lg:block" aria-hidden />
+        {showRemakeField ? (
+          <div className="space-y-2">
+            <Label className="text-sm">리메이크</Label>
+            <label
+              className={cn(
+                "flex h-11 cursor-pointer items-center gap-2.5 rounded-md border px-3",
+                remakeChecked
+                  ? "border-amber-300 bg-amber-50/80"
+                  : "border-input bg-background",
+              )}
+            >
+              <Checkbox
+                checked={remakeChecked}
+                onCheckedChange={(next) =>
+                  onRemakeCheckedChange?.(next === true)
+                }
+                aria-label="리메이크"
+              />
+              <span className="min-w-0 truncate text-sm text-muted-foreground">
+                <Repeat
+                  className="mr-1 inline h-3.5 w-3.5 shrink-0 -translate-y-px text-amber-700"
+                  aria-hidden
+                />
+                이전 보철 재의뢰
+              </span>
+            </label>
+          </div>
         ) : null}
       </div>
               ) : null}
             </div>
-            {showRightRail ? (
+            {filesBesideHeader ? (
+              <div
+                ref={besideMemoPaneRef}
+                className="flex min-h-0 min-w-0 flex-col"
+              >
+                {besideMemoContent}
+              </div>
+            ) : showRightRail ? (
               <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:max-w-[22rem]">
                 {asideTourBanner}
               </div>
@@ -3758,7 +3807,7 @@ export const PracticeTransferRequestIntakePanel = ({
         </>
       ) : null}
 
-      {showMemoSection || besideMemoContent ? (
+      {showMemoSection || (besideMemoContent && !filesBesideHeader) ? (
       <div
         className={cn(
           showMemoSection && besideMemoContent

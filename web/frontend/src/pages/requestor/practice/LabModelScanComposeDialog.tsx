@@ -5,12 +5,13 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/backend/controllers/practiceTransfers/labModelScanTransfer.controller.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
+// - 2026-11-28: 메모 제거. 치과·환자·기공소도착·리메이크 2×2 + 오른쪽 드롭존.
 // - 2026-11-28: 기공소도착(최소 2영업일). 원장님·모바일 사진·모델스캔 필수 안내 제거. 치과명 placeholder.
 // - 2026-11-28: 치과 주문과 같이 리메이크·임시저장·휴지통. 치과명 선택. 모델스캔 파일 필수.
 // - 2026-11-28: 치과 「주문」작성 화면을 재사용. 기공소 선택·기공비 견적·가이드투어는 두지 않음.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookmarkPlus, Plus, Repeat, Trash2, X } from "lucide-react";
+import { BookmarkPlus, Plus, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -22,7 +23,6 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -894,14 +894,14 @@ export function LabModelScanComposeDialog({
       }
 
       const transferMemo = buildPracticeTransferMemo({
-        memo: requestMemo,
+        memo: "",
         orderDate,
         arrivalDate,
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: normalizedToothWorks,
         patientName: normalizedPatientName,
-        doctorName,
+        doctorName: "",
         skipDesignConfirm: true,
         skipJig: resolvePracticeTransferSkipJig(normalizedToothWorks, true),
       });
@@ -1129,6 +1129,7 @@ export function LabModelScanComposeDialog({
                   variant: "plain",
                   toothChartDisplayMode: "full",
                   showFeeEstimate: false,
+                  showMemoSection: false,
                   scanFabrication: crownFabrication === "scan",
                   crownFabrication,
                   onCrownFabricationChange: setCrownFabrication,
@@ -1137,6 +1138,8 @@ export function LabModelScanComposeDialog({
                   clinicLabel,
                   onClinicLabelChange: setClinicLabel,
                   clinicLabelSuggestions: labelSuggestions,
+                  remakeChecked: isRemake,
+                  onRemakeCheckedChange: setIsRemake,
                   selectedLab: selfLab,
                   setSelectedLab: () => {},
                   labOpen: false,
@@ -1149,14 +1152,6 @@ export function LabModelScanComposeDialog({
                   recentLabsInitialized: true,
                   patientName,
                   setPatientName,
-                  doctorName,
-                  setDoctorName,
-                  doctorNames,
-                  onDoctorNamesChange: async (next) => {
-                    const normalized = normalizeDoctorNames(next);
-                    setDoctorNames(normalized);
-                    persist({ doctorNames: normalized });
-                  },
                   orderDate,
                   setOrderDate,
                   arrivalDate,
@@ -1200,16 +1195,10 @@ export function LabModelScanComposeDialog({
                   onLabRequestStagePlansChange: setLabRequestStagePlans,
                   toothWorks,
                   setToothWorks,
-                  requestMemo,
-                  setRequestMemo,
+                  requestMemo: "",
+                  setRequestMemo: () => {},
                   memoInputId: "lab-model-scan-memo",
                   toothChartResetNonce,
-                  memoSnippets,
-                  onMemoSnippetsChange: async (next) => {
-                    const normalized = normalizeMemoSnippets(next);
-                    setMemoSnippets(normalized);
-                    persist({ memoSnippets: normalized });
-                  },
                   shadeFavorites,
                   onShadeFavoritesChange: async (next) => {
                     const normalized = normalizeShadeFavorites(next);
@@ -1261,35 +1250,6 @@ export function LabModelScanComposeDialog({
                     navigate("/dashboard/new-request");
                   },
                   showInlineGuideTourButton: false,
-                  aboveMemoContent: (
-                    <div
-                      className={cn(
-                        "rounded-lg border px-3 py-2.5",
-                        isRemake
-                          ? "border-amber-300 bg-amber-50/80"
-                          : "border-slate-200 bg-slate-50/60",
-                      )}
-                    >
-                      <label className="flex cursor-pointer items-start gap-2.5">
-                        <Checkbox
-                          checked={isRemake}
-                          onCheckedChange={(next) => setIsRemake(next === true)}
-                          className="mt-0.5"
-                          aria-label="리메이크"
-                        />
-                        <span className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
-                          <Repeat
-                            className="mr-1 inline h-3.5 w-3.5 shrink-0 -translate-y-px text-amber-700"
-                            aria-hidden
-                          />
-                          <span className="font-semibold text-slate-900">
-                            리메이크.
-                          </span>{" "}
-                          이전에 받은 보철·어벗을 다시 의뢰할 때 선택하세요.
-                        </span>
-                      </label>
-                    </div>
-                  ),
                 }}
               />
               <div className="flex items-center justify-end gap-3">
