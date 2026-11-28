@@ -80,6 +80,11 @@ export const isPracticeTransferCadProjectFileName = (fileName: string) =>
     getPracticeTransferFileExtension(fileName),
   );
 
+/** 기공소 모델스캔 등록에 필요한 스캔·스캐너 프로젝트. 사진만으로는 부족하다. */
+export const isLabModelScanRegistrationFileName = (fileName: string) =>
+  isPracticeTransferModelFileName(fileName) ||
+  isPracticeTransferCadProjectFileName(fileName);
+
 /** 타일 뱃지. STL·PLY·OBJ는 호출측이 확장자를 보여 준다. */
 export const practiceTransferCadProjectLabel = (fileName: string) => {
   const ext = getPracticeTransferFileExtension(fileName);

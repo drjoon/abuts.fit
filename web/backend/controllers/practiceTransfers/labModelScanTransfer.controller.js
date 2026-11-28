@@ -3,6 +3,7 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
+// - 2026-11-28: 치과명은 선택. 모델스캔 파일(DCM·PLY·STL·OBJ·ExoCAD·3Shape)이 없으면 등록하지 않음. 리메이크 체크.
 // - 2026-11-28: 기공소 「모델스캔으로 의뢰하기」— PTX 생성·치과명 이력.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -25,6 +26,16 @@ import { toKstYmd } from "../requests/utils.js";
 
 export const LAB_MODEL_SCAN_SOURCE = "lab_model_scan";
 const LAB_CLIENT_LABEL_MAX = 40;
+const LAB_MODEL_SCAN_REGISTRATION_EXTENSIONS = new Set([
+  ".stl",
+  ".ply",
+  ".obj",
+  ".dcm",
+  ".3ox",
+  ".3oxz",
+  ".dentalproject",
+]);
+
 const PRACTICE_ALLOWED_EXTENSIONS = new Set([
   ".stl",
   ".ply",
@@ -124,12 +135,6 @@ export async function createLabModelScanTransfer(req, res) {
     const clinicLabel = String(
       req.body?.clinicLabel || req.body?.clinicName || "",
     ).trim();
-    if (!clinicLabel) {
-      return res.status(400).json({
-        success: false,
-        message: "치과명을 입력해 주세요.",
-      });
-    }
 
     const patientName = String(req.body?.patientName || "").trim();
     if (!patientName) {
@@ -156,6 +161,18 @@ export async function createLabModelScanTransfer(req, res) {
       ...row,
       patientName: row.patientName || patientName,
     }));
+    const hasModelScanFile = files.some((row) =>
+      LAB_MODEL_SCAN_REGISTRATION_EXTENSIONS.has(
+        getLowerExt(row?.file?.originalName),
+      ),
+    );
+    if (!hasModelScanFile) {
+      return res.status(400).json({
+        success: false,
+        message: "모델스캔 파일을 첨부해 주세요.",
+      });
+    }
+    const isRemake = req.body?.isRemake === true;
 
     const labAnchor = await BusinessAnchor.findById(labAnchorId)
       .select({ name: 1 })
@@ -231,7 +248,17 @@ export async function createLabModelScanTransfer(req, res) {
         abutmentRetailTotal: 0,
         abutmentQty: 0,
         skipPracticeHold: true,
+        ...(isRemake ? { isRemake: true } : {}),
       },
+      ...(isRemake
+        ? {
+            remake: {
+              requestedAt: new Date(),
+              requestedBy: req.user?._id || null,
+              initiatedByLab: true,
+            },
+          }
+        : {}),
       production: {
         skipDesignConfirm: true,
         skipJig: true,

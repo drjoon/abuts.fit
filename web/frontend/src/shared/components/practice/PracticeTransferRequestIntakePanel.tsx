@@ -3195,8 +3195,11 @@ export const PracticeTransferRequestIntakePanel = ({
         ? "grid grid-cols-1 items-end gap-3"
         : headerFieldCount === 3
           ? "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1.1fr)]"
-          : // 기공소 | 환자명 | 주문-치과도착 | 원장님 — 환자·원장 동일 폭
-            "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]";
+          : clinicLabelMode
+            ? // 치과명 | 환자 | 날짜 | 원장님 | 오른쪽 여백
+              "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,18rem)_minmax(0,14rem)_minmax(0,20rem)_minmax(0,14rem)_minmax(2rem,1fr)]"
+            : // 기공소 | 환자명 | 주문-치과도착 | 원장님 — 환자·원장 동일 폭
+              "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]";
 
   const isHeaderTourStep =
     toothWorkGuideTourStep != null && toothWorkGuideTourStepId === "header";
@@ -3293,7 +3296,7 @@ export const PracticeTransferRequestIntakePanel = ({
         <div className="space-y-2">
           <div className="flex items-center gap-1">
             <Label htmlFor={clinicLabelListId} className="text-sm">
-              치과명 <span className="text-destructive">*</span>
+              치과명
             </Label>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -3307,8 +3310,6 @@ export const PracticeTransferRequestIntakePanel = ({
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs leading-snug">
                 플랫폼 미등록 치과도 입력할 수 있습니다.
-                <br />
-                거래처 노출을 피하려면 가명을 쓰세요.
               </TooltipContent>
             </Tooltip>
           </div>
@@ -3735,6 +3736,9 @@ export const PracticeTransferRequestIntakePanel = ({
                 : undefined
             }
           />
+        ) : null}
+        {clinicLabelMode && showDoctorField ? (
+          <div className="hidden lg:block" aria-hidden />
         ) : null}
       </div>
               ) : null}

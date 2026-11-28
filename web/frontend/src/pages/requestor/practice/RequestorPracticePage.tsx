@@ -240,7 +240,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, FolderOpen, Hexagon, Search, Truck, X } from "lucide-react";
+import { BookmarkPlus, ChevronRight, FolderOpen, Hexagon, Plus, Search, Trash2, Truck, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { UnsupportedConnectionCancelDialog } from "@/shared/components/practice/UnsupportedConnectionCancelDialog";
 import {
@@ -331,6 +331,7 @@ import {
 import { mobileActionOverlayTopStyle, MOBILE_ACTION_CHROME_ATTR } from "@/shared/ui/mobileActionOverlay";
 import {
   LAB_RECEIVE_STATUS_BADGES,
+  PRACTICE_RECENT_STATUS_BADGES,
   PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
@@ -559,6 +560,15 @@ import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabRece
 import { DashboardImportantNoticesRail } from "@/shared/notices/DashboardImportantNoticesRail";
 import { LabReceiveAlarmSettingsButton } from "@/shared/components/practice/LabReceiveAlarmSettingsButton";
 import { LabModelScanComposeDialog } from "@/pages/requestor/practice/LabModelScanComposeDialog";
+import { LabModelScanDraftPanels } from "@/pages/requestor/practice/LabModelScanDraftPanels";
+import {
+  useLabModelScanDrafts,
+  type LabModelScanDraft,
+} from "@/shared/practice/labModelScanDrafts";
+import {
+  practiceTransferDraftCountBadgeClassName,
+  practiceTransferDraftStaleAttentionClassName,
+} from "@/shared/practice/practiceTransferDraft";
 import { withLabModelScanIntakeSource } from "@/shared/practice/labModelScanApi";
 import {
   labFeeSettingsFromAcceptPath,
@@ -1139,6 +1149,35 @@ export function RequestorPracticeReceivePage({
   const [modelScanPrefillFiles, setModelScanPrefillFiles] = useState<File[]>(
     [],
   );
+  const [modelScanArrivalYmd, setModelScanArrivalYmd] = useState("");
+  const [modelScanResetNonce, setModelScanResetNonce] = useState(0);
+  const [modelScanLoadDraft, setModelScanLoadDraft] =
+    useState<LabModelScanDraft | null>(null);
+  const [modelScanLoadNonce, setModelScanLoadNonce] = useState(0);
+  const [modelScanDraftsOpen, setModelScanDraftsOpen] = useState(false);
+  const [modelScanTrashOpen, setModelScanTrashOpen] = useState(false);
+  const modelScanDraftBook = useLabModelScanDrafts(String(user?.id || ""));
+  const openModelScanCompose = useCallback(
+    (opts?: { arrivalYmd?: string }) => {
+      setModelScanLoadDraft(null);
+      setModelScanPrefillFiles([]);
+      setModelScanArrivalYmd(String(opts?.arrivalYmd || "").trim());
+      setModelScanResetNonce((n) => n + 1);
+      setModelScanDraftsOpen(false);
+      setModelScanTrashOpen(false);
+      setModelScanComposeOpen(true);
+    },
+    [],
+  );
+  const continueModelScanDraft = useCallback((draft: LabModelScanDraft) => {
+    setModelScanDraftsOpen(false);
+    setModelScanTrashOpen(false);
+    setModelScanArrivalYmd("");
+    setModelScanPrefillFiles([]);
+    setModelScanLoadDraft(draft);
+    setModelScanLoadNonce((n) => n + 1);
+    setModelScanComposeOpen(true);
+  }, []);
   const platformGuideTour = useGuideTour();
   const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
@@ -9928,7 +9967,9 @@ export function RequestorPracticeReceivePage({
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
     const items: PracticeStatusFilterBadgeItem[] = [];
-    for (const item of LAB_RECEIVE_STATUS_BADGES) {
+    for (const item of isModelScanList
+      ? PRACTICE_RECENT_STATUS_BADGES
+      : LAB_RECEIVE_STATUS_BADGES) {
       if (item.filter !== "작업완료") {
         items.push({
           key: item.filter,
@@ -9958,6 +9999,7 @@ export function RequestorPracticeReceivePage({
     }
     return items;
   }, [
+    isModelScanList,
     labDesignReviewTransfers.length,
     statusCounts,
     statusUnreadCounts,
@@ -10299,8 +10341,9 @@ export function RequestorPracticeReceivePage({
   }, [isMobile]);
 
   /** 북마크는 항상 아이콘(+건수). */
-  const bookmarkNavigateButton = () => {
+  const bookmarkNavigateButton = (opts?: { modelScan?: boolean }) => {
     const count = bookmarkItems.length;
+    const modelScan = Boolean(opts?.modelScan);
     return (
       <PracticeTransferBookmarkNavigateButton
         count={count}
@@ -10313,14 +10356,143 @@ export function RequestorPracticeReceivePage({
           }
         }}
         buttonClassName={cn(
-          "h-8 shrink-0 gap-1 text-xs",
-          count > 0 ? "px-2" : "w-8 px-0",
+          "shrink-0 gap-1 text-xs",
+          modelScan ? "h-9" : "h-8",
+          count > 0 ? "px-2" : modelScan ? "w-9 px-0" : "w-8 px-0",
           count > 0 && "border-sky-300 bg-sky-50/80",
         )}
-        iconClassName="h-3.5 w-3.5"
+        iconClassName={modelScan ? "h-4 w-4" : "h-3.5 w-3.5"}
         showLabel={false}
         withTooltip={!isMobile}
       />
+    );
+  };
+
+  const modelScanHeaderActions = (mobile: boolean) => {
+    const orderButton = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "shrink-0 gap-1.5",
+          mobile
+            ? "h-9 w-9 rounded-full border-slate-200 bg-white p-0 shadow-sm"
+            : "h-9 w-9 px-0 group-data-[wide=true]/practice-hdr:w-auto group-data-[wide=true]/practice-hdr:px-3",
+        )}
+        aria-label="주문"
+        onClick={() => openModelScanCompose()}
+      >
+        <Plus className="h-4 w-4 shrink-0" />
+        {mobile ? null : (
+          <span className="hidden group-data-[wide=true]/practice-hdr:inline">
+            주문
+          </span>
+        )}
+      </Button>
+    );
+    const draftButton = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "shrink-0 gap-1",
+          mobile
+            ? "h-9 rounded-full border-slate-200 bg-white shadow-sm"
+            : "h-9 gap-1.5 group-data-[wide=true]/practice-hdr:px-3",
+          modelScanDraftBook.activeCount === 0
+            ? mobile
+              ? "w-9 p-0"
+              : "w-9 px-0 group-data-[wide=true]/practice-hdr:w-auto"
+            : "px-2",
+          modelScanDraftBook.activeCount > 0 && "border-amber-300 bg-amber-50/80",
+          practiceTransferDraftStaleAttentionClassName(modelScanDraftBook.hasStale),
+        )}
+        aria-label={
+          modelScanDraftBook.activeCount > 0
+            ? `임시저장 ${modelScanDraftBook.activeCount}건`
+            : "임시저장"
+        }
+        onClick={() => {
+          setModelScanTrashOpen(false);
+          setModelScanDraftsOpen(true);
+        }}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        {mobile ? null : (
+          <span className="hidden group-data-[wide=true]/practice-hdr:inline">
+            임시저장
+          </span>
+        )}
+        {modelScanDraftBook.activeCount > 0 ? (
+          <Badge
+            variant="outline"
+            className={cn(
+              practiceTransferDraftCountBadgeClassName(),
+              "h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none",
+            )}
+          >
+            {modelScanDraftBook.activeCount}
+          </Badge>
+        ) : null}
+      </Button>
+    );
+    const trashButton = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "shrink-0 gap-1",
+          mobile
+            ? "h-9 rounded-full border-slate-200 bg-white shadow-sm"
+            : "h-9",
+          modelScanDraftBook.trashCount === 0
+            ? mobile
+              ? "w-9 p-0"
+              : "w-9 px-0"
+            : "px-2",
+        )}
+        aria-label={
+          modelScanDraftBook.trashCount > 0
+            ? `휴지통 ${modelScanDraftBook.trashCount}건`
+            : "휴지통"
+        }
+        onClick={() => {
+          setModelScanDraftsOpen(false);
+          setModelScanTrashOpen(true);
+        }}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        {modelScanDraftBook.trashCount > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+          >
+            {modelScanDraftBook.trashCount}
+          </Badge>
+        ) : null}
+      </Button>
+    );
+    const withTip = (node: ReactNode, label: string) =>
+      mobile ? (
+        node
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>{node}</TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      );
+    return (
+      <>
+        {withTip(orderButton, "주문")}
+        {withTip(draftButton, "임시저장 — 등록 전 작성 중 의뢰")}
+        {bookmarkNavigateButton({ modelScan: true })}
+        {withTip(trashButton, "휴지통")}
+      </>
     );
   };
 
@@ -10455,21 +10627,10 @@ export function RequestorPracticeReceivePage({
     );
   })();
 
-  const labMobileHeaderActionButtons = (
+  const labMobileHeaderActionButtons = isModelScanList ? (
+    modelScanHeaderActions(true)
+  ) : (
     <>
-      {isModelScanList ? (
-        <Button
-          type="button"
-          size="sm"
-          className="h-8 shrink-0 px-2.5 text-xs"
-          onClick={() => {
-            setModelScanPrefillFiles([]);
-            setModelScanComposeOpen(true);
-          }}
-        >
-          새로 작성
-        </Button>
-      ) : null}
       {shipLabelButton}
       {bookmarkNavigateButton()}
       {labAbutmentInProgressTrigger}
@@ -10489,9 +10650,10 @@ export function RequestorPracticeReceivePage({
       items={labStatusFilterBadgeItems}
       onUnreadNavigate={navigateNextUnreadForStatus}
       gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
-      countSuffix="건"
+      countSuffix={isModelScanList ? undefined : "건"}
       compact
       iconAtNarrow
+      labelsWhenHeaderWide={isModelScanList}
     />
   );
 
@@ -10502,12 +10664,14 @@ export function RequestorPracticeReceivePage({
       </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
-        <LabReceiveAlarmSettingsButton
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          hiddenWeekdays={hiddenWeekdays}
-          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
-        />
+        {isModelScanList ? null : (
+          <LabReceiveAlarmSettingsButton
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            hiddenWeekdays={hiddenWeekdays}
+            onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+          />
+        )}
       </div>
       {labMobileStatusBadges}
     </div>
@@ -10523,33 +10687,27 @@ export function RequestorPracticeReceivePage({
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
-        countSuffix="건"
-        compact
-        alwaysLabeled
+        countSuffix={isModelScanList ? undefined : "건"}
+        compact={isModelScanList ? false : true}
+        alwaysLabeled={!isModelScanList}
+        labelsWhenHeaderWide={isModelScanList}
       />
       <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5">
         {isModelScanList ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
-            onClick={() => {
-              setModelScanPrefillFiles([]);
-              setModelScanComposeOpen(true);
-            }}
-          >
-            새로 작성
-          </Button>
-        ) : null}
-        {shipLabelButton}
-        {bookmarkNavigateButton()}
-        {labAbutmentInProgressTrigger}
-        <LabReceiveAlarmSettingsButton
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          hiddenWeekdays={hiddenWeekdays}
-          onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
-        />
+          modelScanHeaderActions(false)
+        ) : (
+          <>
+            {shipLabelButton}
+            {bookmarkNavigateButton()}
+            {labAbutmentInProgressTrigger}
+            <LabReceiveAlarmSettingsButton
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              hiddenWeekdays={hiddenWeekdays}
+              onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -10843,6 +11001,11 @@ export function RequestorPracticeReceivePage({
               searchLeading={subcontractPoolAlert}
               onSearchChange={setSearch}
               searchPlaceholder="환자명, 치과명, 치아번호"
+              onSelectFutureDay={
+                isModelScanList
+                  ? (ymd) => openModelScanCompose({ arrivalYmd: ymd })
+                  : undefined
+              }
               hiddenWeekdays={calendarHiddenWeekdays}
               alignEpoch={alignEpoch}
               focusItemId={badgeFocusItemId}
@@ -10938,14 +11101,36 @@ export function RequestorPracticeReceivePage({
       />
       {labWorkFolderDialogs}
       {isModelScanList ? (
+        <>
         <LabModelScanComposeDialog
           open={modelScanComposeOpen}
           onOpenChange={setModelScanComposeOpen}
           prefilledFiles={modelScanPrefillFiles}
+          initialArrivalYmd={modelScanArrivalYmd}
+          resetNonce={modelScanResetNonce}
+          loadDraft={modelScanLoadDraft}
+          loadNonce={modelScanLoadNonce}
+          onOpenDrafts={() => {
+            setModelScanTrashOpen(false);
+            setModelScanDraftsOpen(true);
+          }}
+          onOpenTrash={() => {
+            setModelScanDraftsOpen(false);
+            setModelScanTrashOpen(true);
+          }}
           onCreated={() => {
             void loadCalendarTransfers({ silent: true });
           }}
         />
+        <LabModelScanDraftPanels
+          userId={String(user?.id || "")}
+          draftsOpen={modelScanDraftsOpen}
+          trashOpen={modelScanTrashOpen}
+          onDraftsOpenChange={setModelScanDraftsOpen}
+          onTrashOpenChange={setModelScanTrashOpen}
+          onContinue={continueModelScanDraft}
+        />
+        </>
       ) : null}
       <RequestorAbutmentPageHeader
         variant="policyInProgress"

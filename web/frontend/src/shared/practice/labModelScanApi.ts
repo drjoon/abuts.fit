@@ -28,6 +28,7 @@ export type LabModelScanCreateBody = {
   rushProcessing?: boolean;
   anodizingEnabled?: boolean;
   crownFabrication?: "scan" | "impression" | null;
+  isRemake?: boolean;
 };
 
 function readLocalLabels(): string[] {

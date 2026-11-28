@@ -5,10 +5,11 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/backend/controllers/practiceTransfers/labModelScanTransfer.controller.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
-// - 2026-11-28: 치과 「주문」작성 화면을 재사용. 기공소 선택·기공비 견적·리메이크·임시저장·가이드투어는 두지 않음.
+// - 2026-11-28: 치과 주문과 같이 리메이크·임시저장·휴지통. 치과명 선택. 모델스캔 파일 필수.
+// - 2026-11-28: 치과 「주문」작성 화면을 재사용. 기공소 선택·기공비 견적·가이드투어는 두지 않음.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, X } from "lucide-react";
+import { BookmarkPlus, Repeat, Trash2, X } from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -18,7 +19,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -43,12 +46,18 @@ import {
 } from "@/shared/practice/labModelScanApi";
 import {
   getPracticeTransferFileExtension,
+  isLabModelScanRegistrationFileName,
   PRACTICE_TRANSFER_ALLOWED_EXTENSIONS,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
 import {
-  ORAL_SCAN_OPTIONAL_NOTE_PRIMARY,
-} from "@/shared/practice/oralScanRequirement";
+  purgeLabModelScanDraft,
+  upsertLabModelScanDraft,
+  useLabModelScanDrafts,
+  type LabModelScanDraft,
+  type LabModelScanDraftFile,
+} from "@/shared/practice/labModelScanDrafts";
+import { practiceTransferDraftCountBadgeClassName } from "@/shared/practice/practiceTransferDraft";
 import {
   ARCH_BULK_PROSTHESIS_PRESETS,
   normalizeArchBulkProsthesisTypes,
@@ -107,8 +116,18 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   prefilledFiles?: File[];
+  /** 캘린더에서 고른 치과도착일. resetNonce와 함께 빈 주문에 넣는다. */
+  initialArrivalYmd?: string;
+  resetNonce?: number;
+  loadDraft?: LabModelScanDraft | null;
+  loadNonce?: number;
+  onOpenDrafts?: () => void;
+  onOpenTrash?: () => void;
   onCreated?: (payload: { transferId: string; mongoId: string }) => void;
 };
+
+const newDraftId = () =>
+  `lms-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 const PRESET_PROSTHESIS_TYPES = [
   "인레이",
@@ -193,6 +212,12 @@ export function LabModelScanComposeDialog({
   open,
   onOpenChange,
   prefilledFiles = [],
+  initialArrivalYmd = "",
+  resetNonce = 0,
+  loadDraft = null,
+  loadNonce = 0,
+  onOpenDrafts,
+  onOpenTrash,
   onCreated,
 }: Props) {
   const token = useAuthStore((s) => s.token);
@@ -203,8 +228,16 @@ export function LabModelScanComposeDialog({
   const { connections: implantConnections } = useImplantConnectionCatalog(
     open ? token : null,
   );
-  const { ensureFilesUploaded, preUploadFiles, forgetFile, uploadProgress } =
-    useFilePreUpload({ token });
+  const {
+    ensureFilesUploaded,
+    peekCachedUploadedFiles,
+    preUploadFiles,
+    forgetFile,
+    uploadProgress,
+  } = useFilePreUpload({ token });
+  const draftUserId = String(user?.id || "");
+  const draftBook = useLabModelScanDrafts(draftUserId);
+  const draftCountBadgeClass = practiceTransferDraftCountBadgeClassName();
   const preUploadRef = useRef(preUploadFiles);
   preUploadRef.current = preUploadFiles;
   const filesRef = useRef<File[]>([]);
@@ -213,6 +246,16 @@ export function LabModelScanComposeDialog({
   const prosthesisTypesRef = useRef<string[]>([...PRESET_PROSTHESIS_TYPES]);
   const arrivalPinnedRef = useRef(false);
   const openGenRef = useRef(0);
+  const draftIdRef = useRef(newDraftId());
+  const lastDraftFpRef = useRef("");
+  const sealedRef = useRef(false);
+  const appliedLoadRef = useRef(0);
+  const arrivalPrefillRef = useRef(initialArrivalYmd);
+  arrivalPrefillRef.current = initialArrivalYmd;
+  const loadDraftRef = useRef(loadDraft);
+  loadDraftRef.current = loadDraft;
+  const loadNonceRef = useRef(loadNonce);
+  loadNonceRef.current = loadNonce;
 
   const [clinicLabel, setClinicLabel] = useState("");
   const [labelSuggestions, setLabelSuggestions] = useState<string[]>([]);
@@ -268,10 +311,12 @@ export function LabModelScanComposeDialog({
   const [toothChartResetNonce, setToothChartResetNonce] = useState(0);
   const [crownFabrication, setCrownFabrication] = useState<
     "scan" | "impression"
-  >("impression");
+  >("scan");
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [rushProcessing, setRushProcessing] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [savedFiles, setSavedFiles] = useState<LabModelScanDraftFile[]>([]);
+  const [isRemake, setIsRemake] = useState(false);
   const [previewByKey, setPreviewByKey] = useState<Record<string, string>>({});
   const [oralPhotoPreview, setOralPhotoPreview] = useState<{
     name: string;
@@ -310,20 +355,33 @@ export function LabModelScanComposeDialog({
     };
   }, [user?.businessAnchorId, user?.companyName]);
 
-  const applyBlank = useCallback((nextFiles: File[]) => {
+  const applyBlank = useCallback((nextFiles: File[], opts?: { arrivalYmd?: string }) => {
     const todayYmd = toKstYmd(new Date()) || "";
-    const arrival = todayYmd
-      ? addCalendarDays(todayYmd, DEFAULT_ARRIVAL_OFFSET_DAYS)
-      : "";
-    arrivalPinnedRef.current = false;
+    const arrivalOverride = String(opts?.arrivalYmd || "").trim();
+    const pinned = /^\d{4}-\d{2}-\d{2}$/.test(arrivalOverride);
+    const arrival = pinned
+      ? arrivalOverride
+      : todayYmd
+        ? addCalendarDays(todayYmd, DEFAULT_ARRIVAL_OFFSET_DAYS)
+        : "";
+    const offset =
+      pinned && todayYmd ? kstYmdDiffDays(todayYmd, arrival) : null;
+    arrivalPinnedRef.current = pinned;
+    sealedRef.current = false;
+    draftIdRef.current = newDraftId();
+    lastDraftFpRef.current = "";
     setClinicLabel("");
     setPatientName("");
     setDoctorName("");
     setRequestMemo("");
+    setIsRemake(false);
+    setSavedFiles([]);
     setOrderDate(todayYmd);
     setArrivalDate(arrival);
-    setArrivalDefaultDays(DEFAULT_ARRIVAL_OFFSET_DAYS);
-    setCrownFabrication("impression");
+    setArrivalDefaultDays(
+      offset != null ? clampArrivalDays(offset) : DEFAULT_ARRIVAL_OFFSET_DAYS,
+    );
+    setCrownFabrication("scan");
     setAnodizingEnabled(true);
     setRushProcessing(
       shouldEnablePracticeRushProcessing({
@@ -343,10 +401,16 @@ export function LabModelScanComposeDialog({
 
   useEffect(() => {
     if (!open) return;
+    const pendingLoad =
+      Boolean(loadDraftRef.current) &&
+      loadNonceRef.current !== appliedLoadRef.current;
+    if (pendingLoad) return;
     openGenRef.current += 1;
     const seeded = prefilledRef.current.length ? [...prefilledRef.current] : [];
-    applyBlankRef.current(seeded);
-  }, [open]);
+    applyBlankRef.current(seeded, {
+      arrivalYmd: arrivalPrefillRef.current,
+    });
+  }, [open, resetNonce]);
 
   useEffect(() => {
     if (!open || !token) return;
@@ -498,7 +562,20 @@ export function LabModelScanComposeDialog({
   const clearFiles = useCallback(() => {
     for (const file of filesRef.current) forgetFile(file);
     setFiles([]);
+    setSavedFiles([]);
   }, [forgetFile]);
+
+  const removeListedFile = useCallback(
+    (key: string) => {
+      if (key.startsWith("saved:")) {
+        const s3Key = key.slice("saved:".length);
+        setSavedFiles((prev) => prev.filter((row) => row.s3Key !== s3Key));
+        return;
+      }
+      removeFile(key);
+    },
+    [removeFile],
+  );
 
   const persist = useCallback(
     (jsonBody: Record<string, unknown>) => {
@@ -538,9 +615,138 @@ export function LabModelScanComposeDialog({
     [arrivalDefaultDays, orderDate, persist, toast],
   );
 
+  const hasModelScanFile = useMemo(() => {
+    if (files.some((file) => isLabModelScanRegistrationFileName(file.name))) {
+      return true;
+    }
+    return savedFiles.some((file) =>
+      isLabModelScanRegistrationFileName(file.originalName),
+    );
+  }, [files, savedFiles]);
+
+  const draftFingerprint = useMemo(() => {
+    const uploaded: LabModelScanDraftFile[] = [];
+    for (const file of files) {
+      const cached = peekCachedUploadedFiles([file]);
+      const row = cached?.[0];
+      const s3Key = String(row?.key || "").trim();
+      if (!s3Key) continue;
+      uploaded.push({
+        originalName: String(row?.originalName || file.name).trim(),
+        mimetype: String(row?.mimetype || file.type || "").trim(),
+        size: Number(row?.size || file.size || 0),
+        s3Key,
+      });
+    }
+    const seen = new Set<string>();
+    const merged = [...savedFiles, ...uploaded].filter((row) => {
+      if (!row.s3Key || seen.has(row.s3Key)) return false;
+      seen.add(row.s3Key);
+      return true;
+    });
+    const uploadSig = files
+      .map((file) => {
+        const progress = uploadProgress[toTempUploadFileKey(file)];
+        return `${file.name}:${progress?.status || ""}:${progress?.percent || 0}`;
+      })
+      .join("|");
+    return JSON.stringify({
+      uploadSig,
+      clinicLabel: clinicLabel.trim(),
+      patientName: normalizedPatientName,
+      doctorName: doctorName.trim(),
+      orderYmd: orderDate,
+      arrivalYmd: arrivalDate,
+      requestMemo,
+      toothWorks: normalizedToothWorks,
+      isRemake,
+      files: merged,
+    });
+  }, [
+    arrivalDate,
+    clinicLabel,
+    doctorName,
+    files,
+    isRemake,
+    normalizedPatientName,
+    normalizedToothWorks,
+    orderDate,
+    peekCachedUploadedFiles,
+    requestMemo,
+    savedFiles,
+    uploadProgress,
+  ]);
+
+  useEffect(() => {
+    if (!open) return;
+    const draft = loadDraftRef.current;
+    if (!draft) return;
+    if (loadNonceRef.current === appliedLoadRef.current) return;
+    appliedLoadRef.current = loadNonceRef.current;
+    sealedRef.current = false;
+    draftIdRef.current = draft.id;
+    arrivalPinnedRef.current = true;
+    setClinicLabel(draft.clinicLabel);
+    setPatientName(draft.patientName);
+    setDoctorName(draft.doctorName);
+    setRequestMemo(draft.requestMemo);
+    setIsRemake(draft.isRemake);
+    setOrderDate(draft.orderYmd);
+    setArrivalDate(draft.arrivalYmd);
+    setSavedFiles(draft.files);
+    setFiles([]);
+    setCrownFabrication("scan");
+    const works = normalizeToothWorks(draft.toothWorks);
+    setToothWorks(
+      works.length ? works : [blankTooth(prosthesisTypesRef.current)],
+    );
+    setToothChartResetNonce((n) => n + 1);
+    lastDraftFpRef.current = JSON.stringify({
+      clinicLabel: draft.clinicLabel,
+      patientName: String(draft.patientName || "").trim().normalize("NFC"),
+      doctorName: draft.doctorName,
+      orderYmd: draft.orderYmd,
+      arrivalYmd: draft.arrivalYmd,
+      requestMemo: draft.requestMemo,
+      toothWorks: works,
+      isRemake: draft.isRemake,
+      files: draft.files,
+    });
+  }, [loadNonce, open]);
+
+  useEffect(() => {
+    if (!open || submitting || sealedRef.current) return;
+    if (!normalizedPatientName) return;
+    if (draftFingerprint === lastDraftFpRef.current) return;
+    const userId = draftUserId;
+    const draftId = draftIdRef.current;
+    const timer = window.setTimeout(() => {
+      if (sealedRef.current) return;
+      let snapshot: LabModelScanDraft;
+      try {
+        const parsed = JSON.parse(draftFingerprint) as Omit<
+          LabModelScanDraft,
+          "id" | "updatedAt" | "deletedAt"
+        >;
+        snapshot = {
+          ...parsed,
+          id: draftId,
+          updatedAt: new Date().toISOString(),
+          deletedAt: null,
+        };
+      } catch {
+        return;
+      }
+      if (!String(snapshot.patientName || "").trim()) return;
+      lastDraftFpRef.current = draftFingerprint;
+      upsertLabModelScanDraft(userId, snapshot);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [draftFingerprint, draftUserId, normalizedPatientName, open, submitting]);
+
   const canSubmit =
-    Boolean(clinicLabel.trim()) &&
     Boolean(normalizedPatientName) &&
+    hasModelScanFile &&
     normalizedToothWorks.length > 0 &&
     missingAbutmentPresetTeeth.length === 0 &&
     !submitting;
@@ -621,6 +827,36 @@ export function LabModelScanComposeDialog({
         size: number;
         s3Key: string;
       }>;
+      const seenKeys = new Set(fileRows.map((row) => row.s3Key));
+      for (const saved of savedFiles) {
+        if (!saved.s3Key || seenKeys.has(saved.s3Key)) continue;
+        seenKeys.add(saved.s3Key);
+        const role = filenameScanRoleFields(saved.originalName);
+        fileRows.push({
+          patientName: normalizedPatientName,
+          tooth: resolvePracticeCaseToothFromToothWorks(normalizedToothWorks, {
+            fileIndex: fileRows.length,
+            fileCount: fileRows.length + 1,
+          }),
+          ...(role || {}),
+          originalName: saved.originalName,
+          mimetype: saved.mimetype || "application/octet-stream",
+          size: saved.size,
+          s3Key: saved.s3Key,
+        });
+      }
+      if (
+        !fileRows.some((row) =>
+          isLabModelScanRegistrationFileName(row.originalName),
+        )
+      ) {
+        toast({
+          title: "모델스캔 파일이 필요합니다",
+          description: "DCM·PLY·STL·OBJ·ExoCAD·3Shape 파일을 첨부해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
@@ -645,7 +881,8 @@ export function LabModelScanComposeDialog({
         files: fileRows,
         rushProcessing,
         anodizingEnabled,
-        crownFabrication,
+        crownFabrication: "scan",
+        isRemake,
       });
       if (!created.ok) {
         toast({
@@ -659,6 +896,8 @@ export function LabModelScanComposeDialog({
         title: "의뢰를 등록했습니다",
         description: "작업시작 후 커스텀어벗 의뢰하기에 카드가 생깁니다.",
       });
+      sealedRef.current = true;
+      purgeLabModelScanDraft(draftUserId, draftIdRef.current);
       onOpenChange(false);
       onCreated?.({
         transferId: String(created.data?.transferId || ""),
@@ -677,11 +916,19 @@ export function LabModelScanComposeDialog({
   };
 
   const totalSizeMb = (
-    files.reduce((sum, file) => sum + file.size, 0) /
+    (files.reduce((sum, file) => sum + file.size, 0) +
+      savedFiles.reduce((sum, file) => sum + file.size, 0)) /
     (1024 * 1024)
   ).toFixed(1);
 
-  const filePaneFiles = files.map((file) => {
+  const filePaneFiles = [
+    ...savedFiles.map((file) => ({
+      key: `saved:${file.s3Key}`,
+      name: file.originalName,
+      size: file.size,
+      metaSuffix: "업로드됨",
+    })),
+    ...files.map((file) => {
     const key = fileKey(file);
     const progress = uploadProgress[toTempUploadFileKey(file)];
     return {
@@ -693,7 +940,8 @@ export function LabModelScanComposeDialog({
       uploadStatus: progress?.status,
       ...(isPreviewableImage(file) ? { previewUrl: previewByKey[key] || null } : {}),
     };
-  });
+  }),
+  ];
 
   return (
     <>
@@ -760,6 +1008,41 @@ export function LabModelScanComposeDialog({
               >
                 새로 작성
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-9 gap-1.5 px-3",
+                  draftBook.activeCount > 0 && "border-amber-300 bg-amber-50/80",
+                )}
+                onClick={() => onOpenDrafts?.()}
+                disabled={submitting}
+              >
+                <BookmarkPlus className="h-4 w-4 shrink-0" />
+                임시저장
+                {draftBook.activeCount > 0 ? (
+                  <Badge variant="outline" className={draftCountBadgeClass}>
+                    {draftBook.activeCount}
+                  </Badge>
+                ) : null}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 px-3"
+                onClick={() => onOpenTrash?.()}
+                disabled={submitting}
+              >
+                <Trash2 className="h-4 w-4 shrink-0" />
+                휴지통
+                {draftBook.trashCount > 0 ? (
+                  <Badge variant="secondary" className="ml-0.5">
+                    {draftBook.trashCount}
+                  </Badge>
+                ) : null}
+              </Button>
             </div>
           </DialogHeader>
           <PageFileDropZone
@@ -794,17 +1077,12 @@ export function LabModelScanComposeDialog({
                     </>
                   ),
                   requirementNote: "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
-                  requirementNoteExtra: (
-                    <>
-                      {ORAL_SCAN_OPTIONAL_NOTE_PRIMARY}
-                      <br />
-                      러버인상(석고모델)은 파일 없이 등록할 수 있습니다.
-                    </>
-                  ),
+                  requirementNoteExtra:
+                    "모델스캔 파일(DCM·PLY·STL·OBJ·ExoCAD·3Shape)이 있어야 등록됩니다.",
                   files: filePaneFiles,
                   totalSizeMb,
                   onPickFiles: addFiles,
-                  onRemoveFile: removeFile,
+                  onRemoveFile: removeListedFile,
                   onClearAllFiles: clearFiles,
                   onPreviewFile: (file) => {
                     const url = String(file.previewUrl || "").trim();
@@ -951,6 +1229,35 @@ export function LabModelScanComposeDialog({
                     navigate("/dashboard/new-request");
                   },
                   showInlineGuideTourButton: false,
+                  aboveMemoContent: (
+                    <div
+                      className={cn(
+                        "rounded-lg border px-3 py-2.5",
+                        isRemake
+                          ? "border-amber-300 bg-amber-50/80"
+                          : "border-slate-200 bg-slate-50/60",
+                      )}
+                    >
+                      <label className="flex cursor-pointer items-start gap-2.5">
+                        <Checkbox
+                          checked={isRemake}
+                          onCheckedChange={(next) => setIsRemake(next === true)}
+                          className="mt-0.5"
+                          aria-label="리메이크"
+                        />
+                        <span className="min-w-0 flex-1 text-xs leading-snug text-muted-foreground">
+                          <Repeat
+                            className="mr-1 inline h-3.5 w-3.5 shrink-0 -translate-y-px text-amber-700"
+                            aria-hidden
+                          />
+                          <span className="font-semibold text-slate-900">
+                            리메이크.
+                          </span>{" "}
+                          이전에 받은 보철·어벗을 다시 의뢰할 때 선택하세요.
+                        </span>
+                      </label>
+                    </div>
+                  ),
                 }}
               />
               <div className="flex items-center justify-end gap-3">
@@ -981,12 +1288,12 @@ export function LabModelScanComposeDialog({
                         {(
                           [
                             {
-                              key: "치과명",
-                              ok: Boolean(clinicLabel.trim()),
-                            },
-                            {
                               key: "환자명",
                               ok: Boolean(normalizedPatientName),
+                            },
+                            {
+                              key: "모델스캔 파일",
+                              ok: hasModelScanFile,
                             },
                             {
                               key: "보철물",
