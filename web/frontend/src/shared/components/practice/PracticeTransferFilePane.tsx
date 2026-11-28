@@ -34,6 +34,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 이미지 첨부는 카드에 썸네일 미리보기.
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
+// - 2026-11-29: fillHeight+첨부 시 목록 flex-1·드롭존 축소 — 카드가 높이 잠금에 안 가려짐.
 // - 2026-09-29: requirementNoteExtra는 ReactNode. 3D 스캔 선택 안내는 문장마다 `<br />`.
 // - 2026-10-27: 첨부 카드에 ExoCAD·3Shape 라벨.
 // - 2026-09-19: 치과 신규의뢰 — PLY·DCM 추천 강조, TRIOS 안내 제거·드롭존 높이 보정.
@@ -140,6 +141,9 @@ export const PracticeTransferFilePane = ({
   const highlightMobilePhotoTip =
     platformGuideTour.active && platformGuideTour.stepId === "oral_phone";
 
+  /** 높이 맞춤 열에 첨부가 있으면 목록이 남은 공간을 먹고, 드롭존은 줄인다. */
+  const fillWithFiles = fillHeight && hasFiles;
+
   return (
     <div
       className={cn(
@@ -152,15 +156,20 @@ export const PracticeTransferFilePane = ({
         fileInputId={fileInputId}
         onFiles={onPickFiles}
         disabled={disabled}
-        acceptedHint={acceptedHint}
+        acceptedHint={hasFiles ? null : acceptedHint}
         dropZoneGrowClassName={!hasFiles ? dropZoneGrowClassName : undefined}
         compact={hasFiles}
         fillHeight={fillHeight && !hasFiles}
-        label="클릭하거나 파일을 드래그해 추가"
+        label={
+          hasFiles
+            ? "클릭하거나 드래그해 추가"
+            : "클릭하거나 파일을 드래그해 추가"
+        }
+        className={hasFiles ? "shrink-0" : undefined}
       />
 
       {requirementNote || requirementNoteExtra ? (
-        <div className="flex flex-col items-center gap-1 px-1 text-center">
+        <div className="flex shrink-0 flex-col items-center gap-1 px-1 text-center">
           {requirementNote ? (
             <div
               data-guide-tour={
@@ -187,7 +196,7 @@ export const PracticeTransferFilePane = ({
 
       {hasFiles ? (
         <>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center justify-between gap-2">
             <p className="truncate text-xs text-muted-foreground">
               {files.length}개 · {totalSizeMb}MB
             </p>
@@ -226,7 +235,14 @@ export const PracticeTransferFilePane = ({
             </div>
           </div>
 
-          <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
+          <div
+            className={cn(
+              "overflow-y-auto px-0.5 py-0.5",
+              fillWithFiles
+                ? "min-h-[3.5rem] flex-1"
+                : listViewportClassName,
+            )}
+          >
             <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.5rem] sm:grid-cols-2 lg:grid-cols-3">
               {files.map((file) => {
                 const meta = resolveFileMeta(file);

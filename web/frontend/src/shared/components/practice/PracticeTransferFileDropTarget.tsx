@@ -8,6 +8,7 @@
 // - 2026-08-21: pickPracticeTransferFilesViaInput — 상세 모달(카드 없는 경로) 파일 선택.
 // - 2026-08-27: Windows 파일창 race — pickOsFilesViaInput SSOT로 위임.
 // - 2026-08-17: 파일창 오픈 — button+Tooltip+input.click 제거, label/htmlFor + sr-only input.
+// - 2026-11-29: compact 드롭존 높이 축소(첨부 후 파일 카드 공간).
 import {
   useRef,
   useState,
@@ -181,7 +182,7 @@ export function PracticeTransferFileDropTarget({
             fillHeight
               ? "flex h-full min-h-[7rem] flex-1 flex-col items-center justify-center px-4 py-5"
               : compact
-                ? "block min-h-[4.75rem] px-3 py-3"
+                ? "flex min-h-0 items-center justify-center gap-2 px-3 py-2"
                 : "block min-h-[7rem] px-4 py-5",
             "border-slate-300 bg-white hover:border-primary/50",
             isDragActive ? "border-primary bg-primary-soft/30" : "",
@@ -192,27 +193,42 @@ export function PracticeTransferFileDropTarget({
         >
           <div
             className={cn(
-              "mx-auto flex w-fit items-center justify-center rounded-full bg-primary-soft text-primary-strong",
-              compact && !fillHeight ? "mb-1 p-1.5" : "mb-1.5 p-2",
+              "flex w-fit shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-strong",
+              compact && !fillHeight
+                ? "p-1.5"
+                : "mx-auto mb-1.5 p-2",
             )}
           >
             <UploadCloud
               className={compact && !fillHeight ? "h-4 w-4" : "h-5 w-5"}
             />
           </div>
-          <p className="whitespace-nowrap text-sm text-muted-foreground">
-            {label}
-          </p>
-          {acceptedHint ? (
+          <div
+            className={cn(
+              compact && !fillHeight ? "min-w-0 text-left" : undefined,
+            )}
+          >
             <p
               className={cn(
-                "text-muted-foreground/80",
-                compact && !fillHeight ? "mt-0.5 text-[11px]" : "mt-1 text-xs",
+                "text-sm text-muted-foreground",
+                compact && !fillHeight
+                  ? "truncate"
+                  : "whitespace-nowrap",
               )}
             >
-              {acceptedHint}
+              {label}
             </p>
-          ) : null}
+            {acceptedHint ? (
+              <p
+                className={cn(
+                  "text-muted-foreground/80",
+                  compact && !fillHeight ? "mt-0.5 text-[11px]" : "mt-1 text-xs",
+                )}
+              >
+                {acceptedHint}
+              </p>
+            ) : null}
+          </div>
           {dropZoneGrowClassName ? (
             <span className={cn("block", dropZoneGrowClassName)} aria-hidden />
           ) : null}
