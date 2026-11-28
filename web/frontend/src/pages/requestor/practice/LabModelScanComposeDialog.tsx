@@ -5,6 +5,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/backend/controllers/practiceTransfers/labModelScanTransfer.controller.js
 // - docs/intent/lab-oral-scan-opens-practice-transfer.md
+// - 2026-11-28: 치아카드 스캔바디만·쉐이드 숨김·높이 축소(한 화면).
+// - 2026-11-28: 리메이크 「이전 어벗 재의뢰」. 드롭존 높이=왼쪽 2×2.
 // - 2026-11-28: 메모 제거. 치과·환자·기공소도착·리메이크 2×2 + 오른쪽 드롭존.
 // - 2026-11-28: 기공소도착(최소 2영업일). 원장님·모바일 사진·모델스캔 필수 안내 제거. 치과명 placeholder.
 // - 2026-11-28: 치과 주문과 같이 리메이크·임시저장·휴지통. 치과명 선택. 모델스캔 파일 필수.
@@ -1099,6 +1101,7 @@ export function LabModelScanComposeDialog({
               <PracticeTransferIntakeSection
                 filePaneProps={{
                   fileInputId: "lab-model-scan-file-input",
+                  fillHeight: true,
                   acceptedHint: (
                     <>
                       <span className="font-bold text-foreground">DCM (제일 추천)</span>

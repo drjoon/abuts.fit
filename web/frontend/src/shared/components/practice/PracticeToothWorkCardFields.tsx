@@ -4,6 +4,7 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
  * change-log:
+ * - 2026-11-28: scanbodyOnly — 직접어벗 숨김·라벨 스캔바디(모델스캔).
  * - 2026-09-23: 라디오 라벨 — 어벗→직접어벗, 스캔바디→간접어벗.
  * - 2026-09-22: 신규의뢰 intake 본문 이관 — 커스텀 형태 삭제·missing tooltip·어벗 상세 툴팁·즐겨찾기 삭제.
  * - 2026-09-22: 어벗·스캔바디 선택 시 onOpenSpecs(신규의뢰 규격 모달과 동일).
@@ -300,6 +301,8 @@ type AbutmentRadiosProps = {
   title?: string;
   /** intake: 임플란트/스캔바디 요약 툴팁 */
   detailTooltips?: boolean;
+  /** 모델스캔 — 직접어벗 숨김, 스캔바디만 */
+  scanbodyOnly?: boolean;
 };
 
 function abutmentSidePlaceholder(row: ToothWorkSelection): string {
@@ -360,6 +363,7 @@ export function PracticeToothAbutmentRadios({
   className,
   title,
   detailTooltips = false,
+  scanbodyOnly = false,
 }: AbutmentRadiosProps) {
   if (!isCustomAbutmentSupportedProsthesisType(row.prosthesisType)) return null;
   const selectionKind = resolveCustomAbutmentSelection(row);
@@ -368,6 +372,14 @@ export function PracticeToothAbutmentRadios({
   const abutmentCompact = formatAbutmentCompact(row);
   const implantSummary = formatImplantSummary(row);
   const abutmentSummary = formatAbutmentSummary(row);
+  const radioOptions = (
+    scanbodyOnly
+      ? ([{ value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "스캔바디" }] as const)
+      : ([
+          { value: CUSTOM_ABUTMENT_SELECTION.ABUTMENT, label: "직접어벗" },
+          { value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "간접어벗" },
+        ] as const)
+  );
 
   const details = showDetails ? (
     <div className="flex w-full flex-col items-stretch gap-0.5 pt-0.5">
@@ -472,7 +484,7 @@ export function PracticeToothAbutmentRadios({
     <div
       data-no-tooth-marquee=""
       role="radiogroup"
-      aria-label="직접어벗 또는 간접어벗"
+      aria-label={scanbodyOnly ? "스캔바디" : "직접어벗 또는 간접어벗"}
       title={title}
       className={cn(
         "mt-1 flex shrink-0 flex-col items-stretch gap-0.5 px-0.5",
@@ -481,12 +493,7 @@ export function PracticeToothAbutmentRadios({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {(
-        [
-          { value: CUSTOM_ABUTMENT_SELECTION.ABUTMENT, label: "직접어벗" },
-          { value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "간접어벗" },
-        ] as const
-      ).map((option) => {
+      {radioOptions.map((option) => {
         const checked =
           Boolean(row.customAbutment) && selectionKind === option.value;
         return (

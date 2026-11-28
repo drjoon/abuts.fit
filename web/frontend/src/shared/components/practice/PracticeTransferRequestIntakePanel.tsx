@@ -247,6 +247,8 @@ import {
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
+// - 2026-11-28: 모델스캔 치아카드 — 스캔바디만·쉐이드 숨김·높이 축소(한 화면).
+// - 2026-11-28: 모델스캔 드롭존 높이=왼쪽 2×2. 리메이크 「이전 어벗 재의뢰」.
 // - 2026-11-28: 모델스캔 — 치과·환자·기공소도착·리메이크 2×2, 오른쪽 드롭존, 메모 숨김.
 // - 2026-11-28: 모델스캔(clinicLabel) — 기공소도착·최소 2영업일, 원장님 숨김, 치과명 placeholder.
 // - 2026-09-21: 헤더 날짜 옆 「원장님 성함」드롭다운(BA doctorNames 추가·수정·삭제).
@@ -333,6 +335,8 @@ const MAX_MEMO_SUGGESTIONS = 20;
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12.75rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
 const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12.75rem]";
+/** 모델스캔 — 스캔바디 1줄·쉐이드 없음. 상·하악이 한 화면에 들어오게 축소 */
+const TOOTH_CARD_HEIGHT_MODEL_SCAN_CLASS = "h-[8.5rem]";
 const BUILTIN_PROSTHESIS_TYPE_SET = new Set<string>([
   ...STANDALONE_PROSTHESIS_TYPES,
   ...LINKED_PROSTHESIS_TYPES,
@@ -3297,7 +3301,7 @@ export const PracticeTransferRequestIntakePanel = ({
           <div
             className={cn(
               filesBesideHeader
-                ? "grid grid-cols-1 items-start gap-6 lg:grid-cols-2"
+                ? "grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-stretch"
                 : showRightRail
                   ? "grid grid-cols-1 items-start gap-x-12 gap-y-7 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]"
                   : "flex flex-col gap-y-7",
@@ -3783,7 +3787,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   className="mr-1 inline h-3.5 w-3.5 shrink-0 -translate-y-px text-amber-700"
                   aria-hidden
                 />
-                이전 보철 재의뢰
+                이전 어벗 재의뢰
               </span>
             </label>
           </div>
@@ -3792,11 +3796,16 @@ export const PracticeTransferRequestIntakePanel = ({
               ) : null}
             </div>
             {filesBesideHeader ? (
-              <div
-                ref={besideMemoPaneRef}
-                className="flex min-h-0 min-w-0 flex-col"
-              >
-                {besideMemoContent}
+              <div className="relative min-h-[8rem] min-w-0 lg:min-h-0">
+                {/*
+                  lg: absolute로 행 높이는 왼쪽 2×2만 기여. 드롭존은 그 높이에 맞춤.
+                */}
+                <div
+                  ref={besideMemoPaneRef}
+                  className="flex min-h-0 min-w-0 flex-col overflow-y-auto max-lg:h-full lg:absolute lg:inset-0"
+                >
+                  {besideMemoContent}
+                </div>
               </div>
             ) : showRightRail ? (
               <div className="flex w-full min-w-0 flex-col gap-3 self-start lg:max-w-[22rem]">
@@ -4196,9 +4205,11 @@ export const PracticeTransferRequestIntakePanel = ({
             const toothSlotClass = showFullToothChart
               ? TOOTH_SLOT_FULL_CLASS
               : TOOTH_SLOT_COMPACT_CLASS;
-            const toothCardHeightClass = showFullToothChart
-              ? TOOTH_CARD_HEIGHT_FULL_CLASS
-              : TOOTH_CARD_HEIGHT_CLASS;
+            const toothCardHeightClass = clinicLabelMode
+              ? TOOTH_CARD_HEIGHT_MODEL_SCAN_CLASS
+              : showFullToothChart
+                ? TOOTH_CARD_HEIGHT_FULL_CLASS
+                : TOOTH_CARD_HEIGHT_CLASS;
 
             const chartRows = TOOTH_CHART_ROWS.map((decade) => {
               const rowTrack = (
@@ -4627,6 +4638,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 toothNumber={`${toothNumber}-${originalIndex}`}
                                 missingPreset={missingAbutmentPreset}
                                 detailTooltips
+                                scanbodyOnly={clinicLabelMode}
                                 openSpecsOnSelect={
                                   toothWorkGuideTourStepId !== "abutment"
                                 }
@@ -4641,7 +4653,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                 }
                                 title={
                                   missingAbutmentPreset
-                                    ? isAbutmentSelection
+                                    ? clinicLabelMode
+                                      ? "임플란트·스캔바디를 선택해주세요"
+                                      : isAbutmentSelection
                                       ? "임플란트·심플어벗/직접 입력을 선택해주세요"
                                       : "임플란트·스캔바디/심플 힐링을 선택해주세요"
                                     : undefined
@@ -4712,7 +4726,8 @@ export const PracticeTransferRequestIntakePanel = ({
                             {renderToothFooter(toothNumber, {
                               canDragCopy: true,
                               shade: row.shade,
-                              showShade: !isMissingTooth,
+                              showShade:
+                                !clinicLabelMode && !isMissingTooth,
                             })}
                           </div>
                           </div>
@@ -4749,7 +4764,11 @@ export const PracticeTransferRequestIntakePanel = ({
                 }
                 className={cn(
                   "relative select-none px-1",
-                  showFullToothChart ? "space-y-3 py-2.5" : "space-y-2 py-1",
+                  clinicLabelMode
+                    ? "space-y-2 py-1.5"
+                    : showFullToothChart
+                      ? "space-y-3 py-2.5"
+                      : "space-y-2 py-1",
                   toothMarquee ? "cursor-crosshair" : null,
                   toothCopyDrag ? "cursor-copy" : null,
                 )}
